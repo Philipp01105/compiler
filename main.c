@@ -4,10 +4,10 @@
 #include <ctype.h>
 #include <stdarg.h>
 
-#define MAX_VARS 100
-#define MAX_LINE 256
-#define MAX_TOKEN 64
-#define MAX_FUNCTIONS 50
+#define MAX_VARS 200
+#define MAX_LINE 512
+#define MAX_TOKEN 128
+#define MAX_FUNCTIONS 100
 
 // Globale Debug-Flag
 int DEBUG_MODE = 0;
@@ -45,7 +45,7 @@ Variable vars[MAX_VARS];
 int var_count = 0;
 int stack_offset = 0;
 
-StringLiteral string_literals[100];
+StringLiteral string_literals[1000];
 int string_literal_count = 0;
 int string_count = 0;
 
@@ -53,14 +53,15 @@ Function functions[MAX_FUNCTIONS];
 int function_count = 0;
 int current_function_scope = 0;
 
-char code_buffer[100000];
+char code_buffer[500000];
 int code_pos = 0;
 
-char function_code_buffer[100000];
+char function_code_buffer[500000];
 int function_code_pos = 0;
 
 int label_counter = 0;
 int current_line_number = 0;
+int main_function_found = 0;
 
 void code_printf(const char *format, ...) {
     va_list args;
@@ -192,6 +193,15 @@ DataType emit_term(char *term) {
 
     DEBUG_PRINT("DEBUG emit_term: '%s'\n", term);
 
+    // Klammern behandeln
+    if (term[0] == '(' && term[strlen(term) - 1] == ')') {
+        term[strlen(term) - 1] = '\0';
+        char *inner = term + 1;
+        trim(inner);
+        DEBUG_PRINT("  -> Klammern entfernt, evaluiere: '%s'\n", inner);
+        return emit_expression(inner);
+    }
+
     if (isdigit(term[0]) || (term[0] == '-' && isdigit(term[1]))) {
         code_printf("    pushq $%d\n", atoi(term));
         return TYPE_INT;
@@ -208,6 +218,33 @@ DataType emit_term(char *term) {
     return var_type;
 }
 
+char *find_operator_outside_parens(char *expr, const char *op) {
+    int depth = 0;
+    int op_len = strlen(op);
+    char *last_found = NULL;
+
+    for (int i = 0; expr[i] != '\0'; i++) {
+        if (expr[i] == '(') depth++;
+        if (expr[i] == ')') depth--;
+
+        if (depth == 0) {
+            if (strncmp(&expr[i], op, op_len) == 0) {
+                if (strcmp(op, "++") == 0 || strcmp(op, "--") == 0) {
+                    return &expr[i];
+                }
+
+                if (strcmp(op, " + ") == 0 || strcmp(op, " - ") == 0) {
+                    last_found = &expr[i];
+                } else {
+                    return &expr[i];
+                }
+            }
+        }
+    }
+
+    return last_found;
+}
+
 DataType emit_expression(char *expr) {
     char temp[MAX_LINE];
     strcpy(temp, expr);
@@ -221,12 +258,13 @@ DataType emit_expression(char *expr) {
         trim(temp);
     }
 
-    char *le = strstr(temp, " <= ");
-    char *ge = strstr(temp, " >= ");
-    char *eq = strstr(temp, " == ");
-    char *ne = strstr(temp, " != ");
-    char *lt = strstr(temp, " < ");
-    char *gt = strstr(temp, " > ");
+    // Vergleichsoperatoren (niedrigste Priorität)
+    char *le = find_operator_outside_parens(temp, " <= ");
+    char *ge = find_operator_outside_parens(temp, " >= ");
+    char *eq = find_operator_outside_parens(temp, " == ");
+    char *ne = find_operator_outside_parens(temp, " != ");
+    char *lt = find_operator_outside_parens(temp, " < ");
+    char *gt = find_operator_outside_parens(temp, " > ");
 
     if (le) {
         *le = '\0';
@@ -301,10 +339,9 @@ DataType emit_expression(char *expr) {
         return TYPE_INT;
     }
 
-    char *plus = strstr(temp, " + ");
-    char *minus = strstr(temp, " - ");
-    char *mult = strstr(temp, " * ");
-    char *divd = strstr(temp, " / ");
+    // Addition und Subtraktion
+    char *plus = find_operator_outside_parens(temp, " + ");
+    char *minus = find_operator_outside_parens(temp, " - ");
 
     if (plus) {
         *plus = '\0';
@@ -336,7 +373,13 @@ DataType emit_expression(char *expr) {
         code_printf("    subl %%ebx, %%eax\n");
         code_printf("    pushq %%rax\n");
         return TYPE_INT;
-    } else if (mult) {
+    }
+
+    // Multiplikation und Division
+    char *mult = find_operator_outside_parens(temp, " * ");
+    char *divd = find_operator_outside_parens(temp, " / ");
+
+    if (mult) {
         *mult = '\0';
         DataType left_type = emit_expression(temp);
         DataType right_type = emit_expression(mult + 3);
@@ -386,42 +429,76 @@ void emit_print(char *stmt) {
 
     *close = '\0';
     char *content = open + 1;
+    trim(content);
 
-    char temp[MAX_LINE];
-    strcpy(temp, content);
-    char *part = strtok(temp, "+");
+    DEBUG_PRINT("DEBUG emit_print: content='%s'\n", content);
 
-    while (part) {
-        trim(part);
+    char parts[10][MAX_LINE];
+    int part_count = 0;
 
-        if (part[0] == '"') {
-            char *end = strchr(part + 1, '"');
+    int in_string = 0;
+    int paren_depth = 0;
+    int start = 0;
+
+    for (int i = 0; content[i] != '\0' && part_count < 10; i++) {
+        if (content[i] == '"') {
+            in_string = !in_string;
+        }
+
+        if (!in_string) {
+            if (content[i] == '(') paren_depth++;
+            if (content[i] == ')') paren_depth--;
+        }
+
+        if (content[i] == '+' && !in_string && paren_depth == 0) {
+            int len = i - start;
+            strncpy(parts[part_count], content + start, len);
+            parts[part_count][len] = '\0';
+            trim(parts[part_count]);
+
+            DEBUG_PRINT("  Part %d: '%s'\n", part_count, parts[part_count]);
+            part_count++;
+
+            start = i + 1;
+        }
+    }
+
+    if (start < strlen(content)) {
+        strcpy(parts[part_count], content + start);
+        trim(parts[part_count]);
+        DEBUG_PRINT("  Part %d: '%s'\n", part_count, parts[part_count]);
+        part_count++;
+    }
+
+    for (int i = 0; i < part_count; i++) {
+        trim(parts[i]);
+
+        if (parts[i][0] == '"') {
+            char *end = strchr(parts[i] + 1, '"');
             if (end) {
                 *end = '\0';
-                int id = add_string_literal(part + 1);
+                int id = add_string_literal(parts[i] + 1);
                 code_printf("    leaq .LC%d(%%rip), %%rcx\n", id);
-                code_printf("    subq $40, %%rsp\n");
+                code_printf("    subq $32, %%rsp\n");
                 code_printf("    call printf\n");
-                code_printf("    addq $40, %%rsp\n");
+                code_printf("    addq $32, %%rsp\n");
             }
         } else {
-            emit_expression(part);
+            emit_expression(parts[i]);
             code_printf("    popq %%rax\n");
             code_printf("    movl %%eax, %%edx\n");
             int id = add_string_literal("%d");
             code_printf("    leaq .LC%d(%%rip), %%rcx\n", id);
-            code_printf("    subq $40, %%rsp\n");
+            code_printf("    subq $32, %%rsp\n");
             code_printf("    call printf\n");
-            code_printf("    addq $40, %%rsp\n");
+            code_printf("    addq $32, %%rsp\n");
         }
-
-        part = strtok(NULL, "+");
     }
 
     code_printf("    movl $10, %%ecx\n");
-    code_printf("    subq $40, %%rsp\n");
+    code_printf("    subq $32, %%rsp\n");
     code_printf("    call putchar\n");
-    code_printf("    addq $40, %%rsp\n");
+    code_printf("    addq $32, %%rsp\n");
 }
 
 void emit_function_call(char *stmt) {
@@ -441,35 +518,49 @@ void emit_function_call(char *stmt) {
     trim(args);
 
     if (strlen(args) > 0) {
-        char temp[MAX_LINE];
-        strcpy(temp, args);
+        // Klammer-bewusstes Argument-Parsing
+        char arg_list[10][MAX_LINE];
+        int arg_count = 0;
+        int paren_depth = 0;
+        int start = 0;
 
-        int arg_count = 1;
-        for (char *p = temp; *p; p++) {
-            if (*p == ',') arg_count++;
+        for (int i = 0; args[i] != '\0' && arg_count < 10; i++) {
+            if (args[i] == '(') paren_depth++;
+            if (args[i] == ')') paren_depth--;
+
+            if (args[i] == ',' && paren_depth == 0) {
+                int len = i - start;
+                strncpy(arg_list[arg_count], args + start, len);
+                arg_list[arg_count][len] = '\0';
+                trim(arg_list[arg_count]);
+
+                DEBUG_PRINT("  Argument %d: '%s'\n", arg_count, arg_list[arg_count]);
+                arg_count++;
+
+                start = i + 1;
+            }
         }
 
-        char *arg_list[10];
-        int idx = 0;
-        char *token = strtok(temp, ",");
-        while (token && idx < 10) {
-            arg_list[idx++] = token;
-            token = strtok(NULL, ",");
+        if (start < strlen(args)) {
+            strcpy(arg_list[arg_count], args + start);
+            trim(arg_list[arg_count]);
+            DEBUG_PRINT("  Argument %d: '%s'\n", arg_count, arg_list[arg_count]);
+            arg_count++;
         }
 
-        for (int i = idx - 1; i >= 0; i--) {
+        for (int i = arg_count - 1; i >= 0; i--) {
             emit_expression(arg_list[i]);
         }
 
-        if (idx > 0) code_printf("    popq %%rcx\n");
-        if (idx > 1) code_printf("    popq %%rdx\n");
-        if (idx > 2) code_printf("    popq %%r8\n");
-        if (idx > 3) code_printf("    popq %%r9\n");
+        if (arg_count > 0) code_printf("    popq %%rcx\n");
+        if (arg_count > 1) code_printf("    popq %%rdx\n");
+        if (arg_count > 2) code_printf("    popq %%r8\n");
+        if (arg_count > 3) code_printf("    popq %%r9\n");
     }
 
-    code_printf("    subq $40, %%rsp\n");
+    code_printf("    subq $32, %%rsp\n");
     code_printf("    call %s\n", func_name);
-    code_printf("    addq $40, %%rsp\n");
+    code_printf("    addq $32, %%rsp\n");
     code_printf("    pushq %%rax\n");
 }
 
@@ -514,16 +605,18 @@ void compile_for_loop(FILE *input, char *for_stmt) {
     DEBUG_PRINT("  Condition: '%s'\n", condition);
     DEBUG_PRINT("  Increment: '%s'\n", increment);
 
+    current_function_scope++;
+    int saved_var_count = var_count;
+    DEBUG_PRINT("  Loop-Scope start: scope=%d, var_count=%d\n", current_function_scope, saved_var_count);
+
     int loop_id = label_counter++;
 
-    // === Initialisierung ===
     if (strlen(init) > 0) {
         compile_line(init);
     }
 
     code_printf(".L_for_start_%d:\n", loop_id);
 
-    // === Bedingung ===
     if (strlen(condition) > 0) {
         emit_expression(condition);
         code_printf("    popq %%rax\n");
@@ -531,7 +624,6 @@ void compile_for_loop(FILE *input, char *for_stmt) {
         code_printf("    je .L_for_end_%d\n", loop_id);
     }
 
-    // === Body ===
     char line[MAX_LINE];
     int brace_count = 0;
     int found_brace = 0;
@@ -553,10 +645,12 @@ void compile_for_loop(FILE *input, char *for_stmt) {
 
     if (!found_brace) {
         fprintf(stderr, "Fehler: Keine öffnende Klammer für for-Schleife\n");
+        current_function_scope--;
+        var_count = saved_var_count;
         return;
     }
 
-    while (fgets(line, sizeof(line), input) && brace_count > 0) {
+    while (fgets(line, sizeof(line), input)) {
         current_line_number++;
         size_t len = strlen(line);
         while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r')) {
@@ -568,24 +662,22 @@ void compile_for_loop(FILE *input, char *for_stmt) {
             if (*p == '}') brace_count--;
         }
 
-        if (brace_count > 0) {
-            trim(line);
-            // Verschachtelte For-Schleifen
-            if (strncmp(line, "for", 3) == 0 && strchr(line, '(')) {
-                compile_for_loop(input, line);
-            } else {
-                compile_line(line);
-            }
+        if (brace_count == 0) {
+            break;
+        }
+
+        trim(line);
+        if (strncmp(line, "for", 3) == 0 && strchr(line, '(')) {
+            compile_for_loop(input, line);
+        } else {
+            compile_line(line);
         }
     }
 
-    // === Inkrement ===
     if (strlen(increment) > 0) {
-        // Unterstütze i++ und i--
         trim(increment);
 
         if (strstr(increment, "++")) {
-            // i++ -> i += 1
             char var_name[MAX_TOKEN];
             char *pp = strstr(increment, "++");
             int name_len = pp - increment;
@@ -598,7 +690,6 @@ void compile_for_loop(FILE *input, char *for_stmt) {
             code_printf("    addl $1, %%eax\n");
             code_printf("    movl %%eax, -%d(%%rbp)\n", offset);
         } else if (strstr(increment, "--")) {
-            // i-- -> i -= 1
             char var_name[MAX_TOKEN];
             char *mm = strstr(increment, "--");
             int name_len = mm - increment;
@@ -617,6 +708,10 @@ void compile_for_loop(FILE *input, char *for_stmt) {
 
     code_printf("    jmp .L_for_start_%d\n", loop_id);
     code_printf(".L_for_end_%d:\n", loop_id);
+
+    DEBUG_PRINT("  Loop-Scope end: var_count %d -> %d\n", var_count, saved_var_count);
+    var_count = saved_var_count;
+    current_function_scope--;
 }
 
 void compile_function(FILE *input, char *func_header) {
@@ -639,11 +734,6 @@ void compile_function(FILE *input, char *func_header) {
         *brace = '\0';
         has_opening_brace = 1;
         fprintf(stderr, "⚠️  Warnung (Zeile %d): Öffnende Klammer '{' sollte auf neuer Zeile stehen.\n", current_line_number);
-        fprintf(stderr, "   Empfohlener Stil:\n");
-        fprintf(stderr, "   func name(params) -> type\n");
-        fprintf(stderr, "   {\n");
-        fprintf(stderr, "       ...\n");
-        fprintf(stderr, "   }\n\n");
     }
     trim(return_type_str);
 
@@ -659,8 +749,20 @@ void compile_function(FILE *input, char *func_header) {
     *open = '\0';
     *close = '\0';
 
-    char *name_part = func_header + 4;
+    char *name_part = func_header + 5;
     trim(name_part);
+
+    int is_main = (strcmp(name_part, "main") == 0);
+    if (is_main) {
+        main_function_found = 1;
+
+        if (return_type != TYPE_VOID) {
+            fprintf(stderr, "Fehler (Zeile %d): main() muss Rückgabetyp 'void' haben!\n", current_line_number);
+            exit(1);
+        }
+
+        DEBUG_PRINT("  *** MAIN-FUNKTION gefunden ***\n");
+    }
 
     char *params = open + 1;
     trim(params);
@@ -710,7 +812,7 @@ void compile_function(FILE *input, char *func_header) {
     code_printf("%s:\n", name_part);
     code_printf("    pushq %%rbp\n");
     code_printf("    movq %%rsp, %%rbp\n");
-    code_printf("    subq $256, %%rsp\n");
+    code_printf("    subq $2048, %%rsp\n");
 
     for (int i = 0; i < functions[function_count].param_count; i++) {
         DEBUG_PRINT("  Erstelle Parameter-Variable '%s'\n", functions[function_count].params[i]);
@@ -758,7 +860,7 @@ void compile_function(FILE *input, char *func_header) {
         }
     }
 
-    while (fgets(line, sizeof(line), input) && brace_count > 0) {
+    while (fgets(line, sizeof(line), input)) {
         current_line_number++;
         size_t len = strlen(line);
         while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r')) {
@@ -770,22 +872,25 @@ void compile_function(FILE *input, char *func_header) {
             if (*p == '}') brace_count--;
         }
 
-        if (brace_count > 0) {
-            DEBUG_PRINT("  Body-Zeile: '%s'\n", line);
-            trim(line);
-
-            // For-Schleifen in Funktionen
-            if (strncmp(line, "for", 3) == 0 && strchr(line, '(')) {
-                compile_for_loop(input, line);
-            } else {
-                compile_line(line);
-            }
-        } else {
+        if (brace_count == 0) {
             DEBUG_PRINT("  Funktionsende erreicht bei: '%s'\n", line);
+            break;
+        }
+
+        DEBUG_PRINT("  Body-Zeile: '%s'\n", line);
+        trim(line);
+
+        if (strncmp(line, "for", 3) == 0 && strchr(line, '(')) {
+            compile_for_loop(input, line);
+        } else {
+            compile_line(line);
         }
     }
 
-    code_printf("    movl $0, %%eax\n");
+    if (return_type == TYPE_VOID) {
+        code_printf("    movl $0, %%eax\n");
+    }
+
     code_printf("    leave\n");
     code_printf("    ret\n\n");
 
@@ -813,6 +918,10 @@ void compile_line(char *line) {
 
     if (strlen(line) == 0) return;
 
+    if (strcmp(line, "{") == 0 || strcmp(line, "}") == 0) {
+        return;
+    }
+
     if (strncmp(line, "print", 5) == 0) {
         emit_print(line);
         return;
@@ -830,7 +939,7 @@ void compile_line(char *line) {
         return;
     }
 
-    if (strchr(line, '(') && strchr(line, ')') && !strchr(line, '=') && strncmp(line, "var ", 4) != 0) {
+    if (strchr(line, '(') && strchr(line, ')') && !strchr(line, '=') && strncmp(line, "var ", 4) != 0 && strncmp(line, "func ", 5) != 0) {
         emit_function_call(line);
         code_printf("    popq %%rax\n");
         return;
@@ -959,7 +1068,6 @@ int main(int argc, char *argv[]) {
 
     char line[MAX_LINE];
     int line_num = 0;
-    int main_var_start = 0;
 
     while (fgets(line, sizeof(line), input)) {
         line_num++;
@@ -976,16 +1084,25 @@ int main(int argc, char *argv[]) {
 
         if (strncmp(line, "func ", 5) == 0) {
             compile_function(input, line);
-            main_var_start = var_count;
-            DEBUG_PRINT("Nach Funktion: main_var_start=%d\n", main_var_start);
-        } else if (strncmp(line, "for", 3) == 0 && strchr(line, '(')) {
-            compile_for_loop(input, line);
-        } else {
-            compile_line(line);
+        } else if (strlen(line) > 0 && line[0] != '/' && strcmp(line, "{") != 0 && strcmp(line, "}") != 0) {
+            fprintf(stderr, "⚠️  Warnung (Zeile %d): Code außerhalb von Funktionen wird ignoriert: '%s'\n",
+                    line_num, line);
+            fprintf(stderr, "   Alle Statements müssen innerhalb von Funktionen stehen!\n");
         }
     }
 
     fclose(input);
+
+    if (!main_function_found) {
+        fprintf(stderr, "\n❌ Fehler: Keine main() Funktion gefunden!\n");
+        fprintf(stderr, "   Jedes Programm muss eine main() -> void Funktion enthalten.\n");
+        fprintf(stderr, "\n   Beispiel:\n");
+        fprintf(stderr, "   func main() -> void\n");
+        fprintf(stderr, "   {\n");
+        fprintf(stderr, "       print(\"Hello World\");\n");
+        fprintf(stderr, "   }\n");
+        return 1;
+    }
 
     char output_name[256];
     snprintf(output_name, sizeof(output_name), "%s.s", source_file);
@@ -998,30 +1115,7 @@ int main(int argc, char *argv[]) {
     }
 
     fprintf(output, "    .text\n");
-
     fprintf(output, "%s", function_code_buffer);
-
-    fprintf(output, "    .globl main\n");
-    fprintf(output, "main:\n");
-    fprintf(output, "    pushq %%rbp\n");
-    fprintf(output, "    movq %%rsp, %%rbp\n");
-
-    int main_var_count = var_count - main_var_start;
-    int stack_space = ((main_var_count * 4 + 15) / 16) * 16 + 160;
-    fprintf(output, "    subq $%d, %%rsp\n\n", stack_space);
-
-    for (int i = main_var_start; i < var_count; i++) {
-        if (vars[i].scope == 0) {
-            fprintf(output, "    movl $0, -%d(%%rbp)\n", vars[i].offset);
-        }
-    }
-    fprintf(output, "\n");
-
-    fprintf(output, "%s", code_buffer);
-
-    fprintf(output, "\n    movl $0, %%eax\n");
-    fprintf(output, "    leave\n");
-    fprintf(output, "    ret\n");
 
     fclose(output);
 
@@ -1029,7 +1123,6 @@ int main(int argc, char *argv[]) {
     printf("✅ Kompilierung erfolgreich!\n");
     printf("=================================\n");
     printf("📄 Zeilen: %d\n", line_num);
-    printf("🔢 Main Variablen: %d\n", main_var_count);
     printf("🔤 Strings: %d\n", string_literal_count);
     printf("⚙️  Funktionen: %d\n", function_count);
     printf("\n📝 Assembly: %s\n", output_name);
