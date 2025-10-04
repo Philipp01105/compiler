@@ -3,82 +3,52 @@
 
 #include "compiler_types.h"
 #include "lexer.h"
-#include <stdarg.h>
 
-// Parser State
-typedef struct {
-    TokenStream *tokens;
-
-    // Symbol Tables
-    Variable vars[MAX_VARS];
-    int var_count;
-
-    Function functions[MAX_FUNCTIONS];
-    int function_count;
-
-    StringLiteral string_literals[1000];
-    int string_literal_count;
-    int string_count;
-
-    // Scope Management
-    int current_scope;
-    int stack_offset;
-
-    // Code Generation Buffers
-    char code_buffer[500000];
-    int code_pos;
-
-    char function_code_buffer[500000];
-    int function_code_pos;
-
-    // State
-    int label_counter;
-    int current_line;
-    int main_function_found;
-    int has_error;
-
-    // Debug
-    int debug_mode;
-} Parser;
-
-// Parser Creation/Destruction
+// Parser creation/destruction
 Parser *create_parser(TokenStream *tokens);
 void free_parser(Parser *parser);
 
-// Main Parsing Functions
+// Code generation
+void code_printf(Parser *parser, const char *format, ...);
+void code_comment(Parser *parser, const char *format, ...);
+
+// Error handling
+void parser_error(Parser *parser, const char *format, ...);
+void expect(Parser *parser, TokenType type, const char *message);
+
+// Variable & function management
+Variable *find_variable(Parser *parser, const char *name);
+Function *find_function(Parser *parser, const char *name);
+int add_string_literal(Parser *parser, const char *text);
+int add_float_literal(Parser *parser, const char *value);
+void cleanup_scope(Parser *parser, int scope);
+
+// Type helpers
+const char *datatype_to_string(DataType type);
+int datatype_size(DataType type);
+DataType token_to_datatype(TokenType token);
+
+// Parsing functions
 int parse_program(Parser *parser);
 void parse_function(Parser *parser);
+void parse_function_body(Parser *parser);
 void parse_statement(Parser *parser);
+void parse_variable_declaration(Parser *parser);
+void parse_assignment(Parser *parser);
 void parse_for_loop(Parser *parser);
-void parse_var_declaration(Parser *parser);
-void parse_assignment(Parser *parser, Token var_name);
-void parse_return(Parser *parser);
-void parse_print(Parser *parser);
-void parse_function_call(Parser *parser, Token func_name);
+void parse_if_statement(Parser *parser);
+void parse_return_statement(Parser *parser);
+void parse_print_statement(Parser *parser);
+void parse_function_call_statement(Parser *parser);
 
-// Expression Parsing
-DataType parse_expression(Parser *parser);
-DataType parse_comparison(Parser *parser);
-DataType parse_term(Parser *parser);
-DataType parse_factor(Parser *parser);
-DataType parse_primary(Parser *parser);
-
-// Helper Functions
-void code_printf(Parser *parser, const char *format, ...);
-int add_string_literal(Parser *parser, const char *text);
-int create_variable(Parser *parser, const char *name, DataType type);
-int get_var_offset(Parser *parser, const char *name);
-DataType get_var_type(Parser *parser, const char *name);
-void enter_scope(Parser *parser);
-void exit_scope(Parser *parser);
-
-// Error Handling
-void parser_error(Parser *parser, const char *format, ...);
-void parser_error_at_token(Parser *parser, Token token, const char *format, ...);
-
-// Utility
-Token expect(Parser *parser, TokenType type, const char *message);
-int match_any(Parser *parser, int count, ...);
-DataType token_to_datatype(Token token);
+// Expression parsing
+void parse_expression(Parser *parser);
+void parse_logical_or(Parser *parser);
+void parse_logical_and(Parser *parser);
+void parse_comparison(Parser *parser);
+void parse_term(Parser *parser);
+void parse_factor(Parser *parser);
+void parse_unary(Parser *parser);
+void parse_primary(Parser *parser);
 
 #endif
