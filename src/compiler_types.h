@@ -75,6 +75,8 @@ typedef enum {
     TOKEN_RPAREN,
     TOKEN_LBRACE,
     TOKEN_RBRACE,
+    TOKEN_LBRACKET,
+    TOKEN_RBRACKET,
     TOKEN_SEMICOLON,
     TOKEN_COMMA,
     TOKEN_COLON,
@@ -127,14 +129,18 @@ typedef struct {
     int scope;            // Scope level
     DataType type;        // Variable type (ERWEITERT!)
     int size;             // Size in bytes (NEU!)
+    int is_array;         // 1 if this is an array, 0 otherwise
+    int array_size;       // Number of elements (0 for non-arrays or unknown size)
 } Variable;
 
 typedef struct {
     char name[MAX_TOKEN];
     char params[10][MAX_TOKEN];
     DataType param_types[10];  // ERWEITERT!
+    int param_is_array[10];    // 1 if parameter is an array
     int param_count;
     DataType return_type;      // ERWEITERT!
+    int return_is_array;       // 1 if return type is an array
 } Function;
 
 typedef struct {
@@ -172,4 +178,4 @@ typedef struct {
     int loop_counter;
 } Parser;
 
-#endif // COMPILER_TYPES_H
+#endif

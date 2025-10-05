@@ -406,6 +406,8 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
             case ')': type = TOKEN_RPAREN; break;
             case '{': type = TOKEN_LBRACE; break;
             case '}': type = TOKEN_RBRACE; break;
+            case '[': type = TOKEN_LBRACKET; break;
+            case ']': type = TOKEN_RBRACKET; break;
             case ';': type = TOKEN_SEMICOLON; break;
             case ',': type = TOKEN_COMMA; break;
             case ':': type = TOKEN_COLON; break;
@@ -516,6 +518,8 @@ const char *token_type_to_string(TokenType type) {
         case TOKEN_RPAREN: return "RPAREN";
         case TOKEN_LBRACE: return "LBRACE";
         case TOKEN_RBRACE: return "RBRACE";
+        case TOKEN_LBRACKET: return "LBRACKET";
+        case TOKEN_RBRACKET: return "RBRACKET";
         case TOKEN_SEMICOLON: return "SEMICOLON";
         case TOKEN_COMMA: return "COMMA";
         case TOKEN_COLON: return "COLON";
