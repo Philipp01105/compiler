@@ -282,10 +282,10 @@ int parse_program(Parser *parser) {
         return 0;
     }
 
-    printf("✓ Parsing successful\n");
-    printf("  Functions: %d\n", parser->function_count);
-    printf("  String literals: %d\n", parser->string_literal_count);
-    printf("  Float literals: %d\n", parser->float_literal_count);
+    printf("[+] Parsing successful\n");
+    printf("    - Functions: %d\n", parser->function_count);
+    printf("    - String literals: %d\n", parser->string_literal_count);
+    printf("    - Float literals: %d\n", parser->float_literal_count);
 
     return 1;
 }
@@ -294,17 +294,6 @@ int parse_program(Parser *parser) {
 // FUNCTION PARSING
 // ============================================================================
 
-/**
- * Parse a function declaration including:
- * - Function name
- * - Parameters with types
- * - Return type
- * - Function body
- *
- * Handles parameter passing via registers (Windows x64 calling convention):
- * - Integer/Pointer parameters: RCX, RDX, R8, R9
- * - Float parameters: XMM0, XMM1, XMM2, XMM3
- */
 void parse_function(Parser *parser) {
     Token func_token = peek(parser->tokens);
     consume(parser->tokens);
@@ -326,6 +315,7 @@ void parse_function(Parser *parser) {
     expect(parser, TOKEN_LPAREN, "Expected '(' after function name");
 
     int saved_var_count = parser->var_count;
+    int param_offset = 8;
 
     while (!check(parser->tokens, TOKEN_RPAREN) && !is_at_end(parser->tokens)) {
         Token param_token = consume(parser->tokens);
@@ -358,15 +348,14 @@ void parse_function(Parser *parser) {
         strcpy(var->name, param_token.value);
         var->type = param_type;
         var->size = datatype_size(param_type);
-        int param_offset = 0;
-        for (int j = 0; j < func->param_count; j++) {
-            param_offset += datatype_size(func->param_types[j]);
-        }
-        var->offset = -(param_offset + datatype_size(param_type));
 
-        if (datatype_size(param_type) == 8 && var->offset % 8 != 0) {
-            var->offset -= (8 - ((-var->offset) % 8));
+        var->offset = -param_offset;
+        param_offset += var->size;
+
+        if (var->size == 8) {
+            param_offset = ((param_offset + 7) / 8) * 8;
         }
+
         var->scope = 1;
         parser->var_count++;
 
@@ -414,14 +403,6 @@ void parse_function(Parser *parser) {
         code_comment(parser, "Save parameters to stack");
     }
 
-    /**
-     * Windows x64 calling convention parameter passing:
-     * - 64-bit registers for pointers (strings): RCX, RDX, R8, R9
-     * - 32-bit register names for integers: ECX, EDX, R8D, R9D
-     * - Float registers: XMM0-XMM3
-     *
-     * Critical: Must use correct register size to avoid data corruption!
-     */
     const char *param_regs_64[] = {"%rcx", "%rdx", "%r8", "%r9"};
     const char *param_regs_32[] = {"%ecx", "%edx", "%r8d", "%r9d"};
     const char *param_regs_float[] = {"%xmm0", "%xmm1", "%xmm2", "%xmm3"};
@@ -513,20 +494,6 @@ void parse_statement(Parser *parser) {
     }
 }
 
-/**
- * Parse variable declarations with optional type inference and initialization
- *
- * Syntax variations:
- * - var x = 42;              (type inference from initializer)
- * - var x:int;               (explicit type, uninitialized)
- * - var x:int = 42;          (explicit type with initializer)
- * - var name:string = "Hi";  (string literal assignment)
- *
- * Stack layout considerations:
- * - Variables are allocated on the stack with proper alignment
- * - Strings (8 bytes) require 8-byte alignment
- * - Offsets are calculated cumulatively based on actual sizes
- */
 void parse_variable_declaration(Parser *parser) {
     Token var_token = peek(parser->tokens);
     consume(parser->tokens);
@@ -597,29 +564,44 @@ void parse_variable_declaration(Parser *parser) {
     var->type = var_type;
     var->size = datatype_size(var_type);
 
-    /**
-     * Calculate stack offset with proper alignment:
-     * - Sum actual byte sizes of all existing variables
-     * - Align 8-byte types (string, double) to 8-byte boundaries
-     * - This ensures proper memory access and prevents corruption
-     */
-    int total_bytes = 0;
+    // ========== KOMPLETT NEUE OFFSET-BERECHNUNG ==========
+    // Strategie: Finde den kleinsten (negativsten) bereits verwendeten Offset
+    // und platziere die neue Variable DARUNTER
+
+    int smallest_offset = 0;  // Beginne bei 0 (direkt unter %rbp)
+
+    // Durchsuche ALLE Variablen und finde den kleinsten Offset
     for (int i = 0; i < parser->var_count; i++) {
-        if (parser->vars[i].scope >= 1) {
-            total_bytes += parser->vars[i].size;
+        Variable *v = &parser->vars[i];
+
+        // Nur Variablen im aktuellen Scope oder höher betrachten
+        if (v->scope >= 1 && v->scope <= parser->current_scope) {
+            // Berechne das Ende dieser Variable (offset - size)
+            int var_end = v->offset - v->size;
+            if (var_end < smallest_offset) {
+                smallest_offset = var_end;
+            }
         }
     }
 
+    // Jetzt platziere die neue Variable unter smallest_offset
+    int new_offset = smallest_offset;
+
+    // Alignment für 8-Byte Variablen
     if (var->size == 8) {
-        if (total_bytes % 8 != 0) {
-            total_bytes += (8 - (total_bytes % 8));
+        // Stelle sicher, dass new_offset auf 8-Byte-Grenze liegt
+        if ((-new_offset) % 8 != 0) {
+            // Runde nach unten (negativer)
+            new_offset = -((((-new_offset) / 8) + 1) * 8);
         }
     }
 
-    var->offset = -(total_bytes + var->size);
+    // Setze den finalen Offset
+    var->offset = new_offset - var->size;
     var->scope = parser->current_scope;
     parser->var_count++;
 
+    // Code-Generierung (unverändert)
     if (var_type == TYPE_FLOAT) {
         code_printf(parser, "    movss (%%rsp), %%xmm0\n");
         code_printf(parser, "    addq $8, %%rsp\n");
@@ -640,16 +622,6 @@ void parse_variable_declaration(Parser *parser) {
     }
 }
 
-/**
- * Parse assignment statements including:
- * - Simple assignment: x = 5;
- * - Compound assignment: x += 5; x -= 3; x *= 2; x /= 4;
- * - Increment/Decrement: x++; x--;
- * - String assignment: name = "Hello";
- * - String function assignment: name = getGreeting();  // NEW!
- *
- * Strings are assigned by pointer copy (shallow copy)
- */
 void parse_assignment(Parser *parser) {
     Token assign_token = peek(parser->tokens);
     Token name_token = consume(parser->tokens);
@@ -662,17 +634,15 @@ void parse_assignment(Parser *parser) {
 
     TokenType op = peek(parser->tokens).type;
 
-    // ========== STRING ASSIGNMENT ==========
     if (var->type == TYPE_STRING) {
         if (op != TOKEN_EQUAL) {
             parser_error(parser, "Compound assignment not allowed for strings");
             return;
         }
 
-        consume(parser->tokens);  // '='
+        consume(parser->tokens);
 
         if (check(parser->tokens, TOKEN_STRING_LITERAL)) {
-            // String literal assignment: name = "Hello";
             Token str_token = consume(parser->tokens);
             int str_id = add_string_literal(parser, str_token.value);
 
@@ -686,10 +656,8 @@ void parse_assignment(Parser *parser) {
             Token src_name = peek(parser->tokens);
             Token lookahead = peek_ahead(parser->tokens, 1);
 
-            // Check if it's a function call
             if (lookahead.type == TOKEN_LPAREN) {
-                // String function call: name = getGreeting();
-                consume(parser->tokens);  // identifier
+                consume(parser->tokens);
 
                 Function *func = find_function(parser, src_name.value);
                 if (!func) {
@@ -707,7 +675,6 @@ void parse_assignment(Parser *parser) {
 
                 expect(parser, TOKEN_LPAREN, "Expected '('");
 
-                // Parse function arguments
                 int arg_count = 0;
                 while (!check(parser->tokens, TOKEN_RPAREN) && !is_at_end(parser->tokens)) {
                     if (check(parser->tokens, TOKEN_STRING_LITERAL)) {
@@ -733,7 +700,6 @@ void parse_assignment(Parser *parser) {
                     return;
                 }
 
-                // Load arguments into registers (Windows x64 calling convention)
                 const char *arg_regs_64[] = {"%rcx", "%rdx", "%r8", "%r9"};
                 const char *arg_regs_32[] = {"%ecx", "%edx", "%r8d", "%r9d"};
 
@@ -741,24 +707,20 @@ void parse_assignment(Parser *parser) {
                     DataType param_type = func->param_types[i];
 
                     if (param_type == TYPE_STRING) {
-                        // String parameter: use 64-bit register
                         code_printf(parser, "    popq %s\n", arg_regs_64[i]);
                     } else if (param_type == TYPE_FLOAT || param_type == TYPE_DOUBLE) {
-                        // Float parameter: use XMM register
                         code_printf(parser, "    popq %%rax\n");
                         if (i == 0) code_printf(parser, "    movq %%rax, %%xmm0\n");
                         else if (i == 1) code_printf(parser, "    movq %%rax, %%xmm1\n");
                         else if (i == 2) code_printf(parser, "    movq %%rax, %%xmm2\n");
                         else if (i == 3) code_printf(parser, "    movq %%rax, %%xmm3\n");
                     } else if (param_type == TYPE_CHAR || param_type == TYPE_BYTE || param_type == TYPE_BIT) {
-                        // Byte parameter: use 8-bit register
                         code_printf(parser, "    popq %%rax\n");
                         if (i == 0) code_printf(parser, "    movb %%al, %%cl\n");
                         else if (i == 1) code_printf(parser, "    movb %%al, %%dl\n");
                         else if (i == 2) code_printf(parser, "    movb %%al, %%r8b\n");
                         else if (i == 3) code_printf(parser, "    movb %%al, %%r9b\n");
                     } else {
-                        // Integer parameter: use 32-bit register
                         code_printf(parser, "    popq %%rax\n");
                         if (i == 0) code_printf(parser, "    movl %%eax, %%ecx\n");
                         else if (i == 1) code_printf(parser, "    movl %%eax, %%edx\n");
@@ -767,17 +729,14 @@ void parse_assignment(Parser *parser) {
                     }
                 }
 
-                // Call function
                 code_printf(parser, "    subq $40, %%rsp\n");
                 code_printf(parser, "    call %s\n", src_name.value);
                 code_printf(parser, "    addq $40, %%rsp\n");
 
-                // Store string pointer return value (RAX contains pointer)
                 code_printf(parser, "    movq %%rax, %d(%%rbp)\n", var->offset);
 
             } else {
-                // String variable assignment: name = otherName;
-                consume(parser->tokens);  // identifier
+                consume(parser->tokens);
 
                 Variable *src_var = find_variable(parser, src_name.value);
                 if (!src_var || src_var->type != TYPE_STRING) {
@@ -800,7 +759,6 @@ void parse_assignment(Parser *parser) {
         return;
     }
 
-    // ========== INCREMENT/DECREMENT ==========
     if (op == TOKEN_PLUS_PLUS || op == TOKEN_MINUS_MINUS) {
         code_comment(parser, "Line %d: %s%s", assign_token.line, name_token.value,
                      op == TOKEN_PLUS_PLUS ? "++" : "--");
@@ -832,7 +790,6 @@ void parse_assignment(Parser *parser) {
         return;
     }
 
-    // ========== NORMAL ASSIGNMENT ==========
     const char *op_str = "";
     if (op == TOKEN_EQUAL) op_str = "=";
     else if (op == TOKEN_PLUS_EQUAL) op_str = "+=";
@@ -846,7 +803,6 @@ void parse_assignment(Parser *parser) {
     parse_expression(parser);
     expect(parser, TOKEN_SEMICOLON, "Expected ';'");
 
-    // ========== FLOAT ASSIGNMENT ==========
     if (var->type == TYPE_FLOAT) {
         if (op == TOKEN_EQUAL) {
             code_printf(parser, "    movss (%%rsp), %%xmm0\n");
@@ -869,8 +825,6 @@ void parse_assignment(Parser *parser) {
 
             code_printf(parser, "    movss %%xmm0, %d(%%rbp)\n", var->offset);
         }
-
-    // ========== DOUBLE ASSIGNMENT ==========
     } else if (var->type == TYPE_DOUBLE) {
         if (op == TOKEN_EQUAL) {
             code_printf(parser, "    movsd (%%rsp), %%xmm0\n");
@@ -893,8 +847,6 @@ void parse_assignment(Parser *parser) {
 
             code_printf(parser, "    movsd %%xmm0, %d(%%rbp)\n", var->offset);
         }
-
-    // ========== CHAR/BYTE/BIT ASSIGNMENT ==========
     } else if (var->type == TYPE_CHAR || var->type == TYPE_BYTE || var->type == TYPE_BIT) {
         if (op == TOKEN_EQUAL) {
             code_printf(parser, "    popq %%rax\n");
@@ -915,8 +867,6 @@ void parse_assignment(Parser *parser) {
 
             code_printf(parser, "    movb %%al, %d(%%rbp)\n", var->offset);
         }
-
-    // ========== INT ASSIGNMENT ==========
     } else {
         if (op == TOKEN_EQUAL) {
             code_printf(parser, "    popq %%rax\n");
@@ -1062,6 +1012,10 @@ void parse_for_loop(Parser *parser) {
     parser->current_scope = saved_scope;
 }
 
+// ============================================================================
+// IF STATEMENT WITH ELSE IF SUPPORT (NEW!)
+// ============================================================================
+
 void parse_if_statement(Parser *parser) {
     Token if_token = peek(parser->tokens);
     consume(parser->tokens);
@@ -1098,28 +1052,40 @@ void parse_if_statement(Parser *parser) {
     parser->current_scope = saved_scope;
     parser->scope_depth--;
 
+    // ========== NEW: ELSE IF SUPPORT ==========
     if (check(parser->tokens, TOKEN_KEYWORD_ELSE)) {
         Token else_token = peek(parser->tokens);
         consume(parser->tokens);
 
         code_printf(parser, "    jmp .L_endif_%d\n", if_id);
-        code_comment(parser, "If-Else-Block (Line %d)", else_token.line);
         code_printf(parser, ".L_else_%d:\n", if_id);
 
-        expect(parser, TOKEN_LBRACE, "Expected '{' after 'else'");
+        // Check if 'if' follows 'else' (else if chain)
+        if (check(parser->tokens, TOKEN_KEYWORD_IF)) {
+            code_comment(parser, "Else-If (Line %d)", else_token.line);
 
-        parser->current_scope++;
-        parser->scope_depth++;
+            // Recursively parse the if statement (handles else if chains!)
+            parse_if_statement(parser);
 
-        while (!check(parser->tokens, TOKEN_RBRACE) && !is_at_end(parser->tokens)) {
-            parse_statement(parser);
+        } else {
+            // Regular else block
+            code_comment(parser, "Else-Block (Line %d)", else_token.line);
+
+            expect(parser, TOKEN_LBRACE, "Expected '{' after 'else'");
+
+            parser->current_scope++;
+            parser->scope_depth++;
+
+            while (!check(parser->tokens, TOKEN_RBRACE) && !is_at_end(parser->tokens)) {
+                parse_statement(parser);
+            }
+
+            expect(parser, TOKEN_RBRACE, "Expected '}' at end of else-block");
+
+            cleanup_scope(parser, parser->current_scope);
+            parser->current_scope = saved_scope;
+            parser->scope_depth--;
         }
-
-        expect(parser, TOKEN_RBRACE, "Expected '}' at end of else-block");
-
-        cleanup_scope(parser, parser->current_scope);
-        parser->current_scope = saved_scope;
-        parser->scope_depth--;
 
         code_comment(parser, "If-End (ID: %d)", if_id);
         code_printf(parser, ".L_endif_%d:\n", if_id);
@@ -1129,14 +1095,6 @@ void parse_if_statement(Parser *parser) {
     }
 }
 
-/**
- * Parse return statement
- *
- * Critical for string returns:
- * - String literals must be loaded as 64-bit pointers
- * - Must NOT use movl %eax, %eax as it zeros upper 32 bits
- * - Pointers are returned in RAX (full 64 bits)
- */
 void parse_return_statement(Parser *parser) {
     Token return_token = peek(parser->tokens);
     consume(parser->tokens);
@@ -1168,20 +1126,6 @@ void parse_return_statement(Parser *parser) {
 // PRINT STATEMENT
 // ============================================================================
 
-/**
- * Parse print statement with support for:
- * - String literals: print("Hello");
- * - Variables: print(x);
- * - Expressions: print((5 + 3));
- * - Function calls: print(getNumber());
- * - String concatenation: print("Result: " + result);
- *
- * Uses printf with appropriate format strings:
- * - %d for integers
- * - %f for floats/doubles
- * - %c for characters
- * - %s for strings
- */
 void parse_print_statement(Parser *parser) {
     Token print_token = peek(parser->tokens);
     code_comment(parser, "Line %d: print(...)", print_token.line);
@@ -1351,14 +1295,6 @@ void parse_print_statement(Parser *parser) {
     expect(parser, TOKEN_SEMICOLON, "Expected ';' after print");
 }
 
-/**
- * Parse function call as statement (not in expression)
- *
- * Handles argument passing via Windows x64 calling convention:
- * - First 4 args in registers: RCX, RDX, R8, R9
- * - Floats in XMM0-XMM3
- * - String literals passed as pointers
- */
 void parse_function_call_statement(Parser *parser) {
     Token call_token = peek(parser->tokens);
     Token name = consume(parser->tokens);
@@ -1381,7 +1317,7 @@ void parse_function_call_statement(Parser *parser) {
             int str_id = add_string_literal(parser, str_token.value);
 
             code_comment(parser, "String argument: \"%s\"", str_token.value);
-            code_printf(parser, "    leaq .LC%d(%%rip), %%rax\n", str_id);
+                        code_printf(parser, "    leaq .LC%d(%%rip), %%rax\n", str_id);
             code_printf(parser, "    pushq %%rax\n");
         } else {
             parse_expression(parser);
@@ -1480,13 +1416,6 @@ void parse_logical_and(Parser *parser) {
     }
 }
 
-/**
- * Parse comparison operators: ==, !=, <, <=, >, >=
- *
- * String comparison uses 64-bit pointer comparison (cmpq)
- * This works for string literals as they share the same address
- * when identical
- */
 void parse_comparison(Parser *parser) {
     parse_term(parser);
 
@@ -1555,8 +1484,7 @@ void parse_term(Parser *parser) {
 void parse_factor(Parser *parser) {
     parse_unary(parser);
 
-    while (check(parser->tokens, TOKEN_STAR) || check(parser->tokens, TOKEN_SLASH) || check(
-               parser->tokens, TOKEN_PERCENT)) {
+    while (check(parser->tokens, TOKEN_STAR) || check(parser->tokens, TOKEN_SLASH) || check(parser->tokens, TOKEN_PERCENT)) {
         TokenType op = peek(parser->tokens).type;
         consume(parser->tokens);
 
@@ -1604,15 +1532,6 @@ void parse_unary(Parser *parser) {
     parse_primary(parser);
 }
 
-/**
- * Parse primary expressions (literals, variables, function calls)
- *
- * This is where the actual values enter the evaluation stack:
- * - Literals are loaded and pushed
- * - Variables are read from stack and pushed
- * - Function calls are executed and result pushed
- * - Parenthesized expressions are recursively parsed
- */
 void parse_primary(Parser *parser) {
     if (check(parser->tokens, TOKEN_NUMBER)) {
         Token num = consume(parser->tokens);
@@ -1638,20 +1557,13 @@ void parse_primary(Parser *parser) {
         int char_value = 0;
         if (ch.value[0] == '\\') {
             switch (ch.value[1]) {
-                case 'n': char_value = '\n';
-                    break;
-                case 't': char_value = '\t';
-                    break;
-                case 'r': char_value = '\r';
-                    break;
-                case '0': char_value = '\0';
-                    break;
-                case '\\': char_value = '\\';
-                    break;
-                case '\'': char_value = '\'';
-                    break;
-                default: char_value = ch.value[1];
-                    break;
+                case 'n': char_value = '\n'; break;
+                case 't': char_value = '\t'; break;
+                case 'r': char_value = '\r'; break;
+                case '0': char_value = '\0'; break;
+                case '\\': char_value = '\\'; break;
+                case '\'': char_value = '\''; break;
+                default: char_value = ch.value[1]; break;
             }
         } else {
             char_value = (unsigned char) ch.value[0];
@@ -1716,14 +1628,6 @@ void parse_primary(Parser *parser) {
                 return;
             }
 
-            /**
-             * Load arguments into registers according to type:
-             * - INT: Use 32-bit register names (ECX, EDX, R8D, R9D)
-             * - STRING: Use 64-bit registers (RCX, RDX, R8, R9)
-             * - FLOAT: Use XMM registers (XMM0-XMM3)
-             *
-             * Critical: Register size must match parameter type!
-             */
             const char *arg_regs_int[] = {"%rcx", "%rdx", "%r8", "%r9"};
             const char *arg_regs_float[] = {"%xmm0", "%xmm1", "%xmm2", "%xmm3"};
 
