@@ -32,13 +32,48 @@ void print_header(const char *source_file) {
     strftime(datetime, sizeof(datetime), "%Y-%m-%d %H:%M:%S", t);
 
     printf("\n");
-    printf("================================================================\n");
-    printf("    COMPILER VERSION 3.0.2 - Philipp01105 (2025-10-15)\n");
-    printf("================================================================\n");
-    printf("  Datei: %s\n", source_file);
-    printf("  Groesse: %ld Bytes\n", st.st_size);
-    printf("  Datum: %s\n", datetime);
+    printf("################################################################\n");
+    printf("#                                                              #\n");
+    printf("#                   COMPILER - COMPILE MODE                   #\n");
+    printf("#                                                              #\n");
+    printf("################################################################\n");
     printf("\n");
+    printf("  File:    %s\n", source_file);
+    printf("  Size:    %ld Bytes\n", st.st_size);
+    printf("  Date:    %s\n", datetime);
+    printf("\n");
+}
+
+void write_escaped_string(FILE *out, const char *str) {
+    for (int i = 0; str[i] != '\0'; i++) {
+        unsigned char c = (unsigned char)str[i];
+        switch (c) {
+            case '\n':
+                fprintf(out, "\\n");
+                break;
+            case '\t':
+                fprintf(out, "\\t");
+                break;
+            case '\r':
+                fprintf(out, "\\r");
+                break;
+            case '\\':
+                fprintf(out, "\\\\");
+                break;
+            case '"':
+                fprintf(out, "\\\"");
+                break;
+            case '\0':
+                fprintf(out, "\\0");
+                break;
+            default:
+                if (c >= 32 && c < 127) {
+                    fprintf(out, "%c", c);
+                } else {
+                    fprintf(out, "\\%03o", c);
+                }
+        }
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -46,7 +81,6 @@ int main(int argc, char *argv[]) {
     int debug_mode = 0;
     const char *source_file = NULL;
 
-    // Parse command line arguments
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--tokens") == 0) {
             show_tokens = 1;
@@ -58,53 +92,51 @@ int main(int argc, char *argv[]) {
         } else if (argv[i][0] != '-') {
             source_file = argv[i];
         } else {
-            fprintf(stderr, "Unbekannte Option: %s\n", argv[i]);
+            fprintf(stderr, "Unknown option: %s\n", argv[i]);
             print_usage(argv[0]);
             return 1;
         }
     }
 
     if (!source_file) {
-        fprintf(stderr, "Fehler: Keine Quelldatei angegeben\n\n");
+        fprintf(stderr, "Error: No source file specified\n\n");
         print_usage(argv[0]);
         return 1;
     }
 
     print_header(source_file);
 
-    // Phase 1: Lexical Analysis
     printf("================================================================\n");
-    printf("           PHASE 1: LEXIKALISCHE ANALYSE (LEXER)\n");
+    printf("           PHASE 1: LEXICAL ANALYSIS (LEXER)\n");
     printf("================================================================\n");
     printf("\n");
 
     TokenStream *tokens = tokenize_file(source_file, debug_mode);
     if (!tokens) {
-        fprintf(stderr, "❌ Lexer fehlgeschlagen!\n");
+        fprintf(stderr, "[ERROR] Lexer failed!\n");
         return 1;
     }
 
-    printf("✓ %d Tokens generiert\n", tokens->count);
+    printf("  [+] %d Tokens generated\n", tokens->count);
+    printf("\n");
 
     if (show_tokens) {
         print_tokens(tokens);
     }
 
-    // Phase 2: Syntax Analysis
     Parser *parser = create_parser(tokens);
     parser->debug_mode = debug_mode;
 
     if (!parse_program(parser)) {
-        fprintf(stderr, "\n❌ Kompilierung fehlgeschlagen!\n\n");
+        fprintf(stderr, "\n[ERROR] Compilation failed!\n\n");
         free_parser(parser);
         free_token_stream(tokens);
         return 1;
     }
 
-    // Phase 3: Code Generation
     printf("\n");
     printf("================================================================\n");
-    printf("           PHASE 3: CODE-GENERIERUNG\n");
+    printf("           PHASE 3: CODE GENERATION\n");
     printf("================================================================\n");
     printf("\n");
 
@@ -113,7 +145,7 @@ int main(int argc, char *argv[]) {
 
     FILE *output = fopen(output_filename, "w");
     if (!output) {
-        fprintf(stderr, "Fehler: Ausgabedatei '%s' konnte nicht erstellt werden\n", output_filename);
+        fprintf(stderr, "Error: Could not create output file '%s'\n", output_filename);
         free_parser(parser);
         free_token_stream(tokens);
         return 1;
@@ -124,19 +156,14 @@ int main(int argc, char *argv[]) {
     char datetime[64];
     strftime(datetime, sizeof(datetime), "%Y-%m-%d %H:%M:%S", t);
 
-    // Write assembly header
-    fprintf(output, "# Generated by Philipp01105's Compiler Version 3.0.2\n");
+    fprintf(output, "# Generated by Philipp01105's Compiler\n");
     fprintf(output, "# Source: %s\n", source_file);
     fprintf(output, "# Date: %s\n", datetime);
-    fprintf(output, "# Features: 6 data types (int, char, byte, bit, float, double)\n");
-    fprintf(output, "#           Type inference, character/float literals\n");
-    fprintf(output, "#           If/else, for loops, logical operators\n");
-    fprintf(output, "\n");
     fprintf(output, "    .text\n");
     fprintf(output, "    .def    printf; .scl    2; .type   32; .endef\n");
     fprintf(output, "    .def    putchar; .scl    2; .type   32; .endef\n");
     fprintf(output, "    .section .rdata,\"dr\"\n");
-    // Write format strings for different types
+
     fprintf(output, ".LC_int_format:\n");
     fprintf(output, "    .ascii \"%%d\\0\"\n");
     fprintf(output, ".LC_float_format:\n");
@@ -145,63 +172,65 @@ int main(int argc, char *argv[]) {
     fprintf(output, "    .ascii \"%%lf\\0\"\n");
     fprintf(output, ".LC_char_format:\n");
     fprintf(output, "    .ascii \"%%c\\0\"\n");
+    fprintf(output, ".LC_string_format:\n");
+    fprintf(output, "    .ascii \"%%s\\0\"\n");
     fprintf(output, "\n");
 
-    // Write string literals
-    for (int i = 0; i < parser->string_literal_count; i++) {
-        fprintf(output, ".LC%d:\n", parser->string_literals[i].id);
-        fprintf(output, "    .ascii \"%s\\0\"\n", parser->string_literals[i].text);
+    if (parser->string_literal_count > 0) {
+        fprintf(output, "# String literals\n");
+        for (int i = 0; i < parser->string_literal_count; i++) {
+            fprintf(output, ".LC%d:\n", parser->string_literals[i].id);
+            fprintf(output, "    .ascii \"");
+            write_escaped_string(output, parser->string_literals[i].text);
+            fprintf(output, "\\0\"\n");
+        }
+        fprintf(output, "\n");
     }
 
-    // Write float literals (WICHTIG: VOR .text!)
     if (parser->float_literal_count > 0) {
-        fprintf(output, "\n");
         fprintf(output, "# Float/Double constants\n");
         fprintf(output, "    .align 4\n");
 
         for (int i = 0; i < parser->float_literal_count; i++) {
             fprintf(output, ".LC_float_%d:\n", parser->float_literals[i].id);
 
-            // Check if it's a double (more than 8 digits after decimal)
             int is_double = (strchr(parser->float_literals[i].value, '.') != NULL &&
                            strlen(strchr(parser->float_literals[i].value, '.')) > 8);
 
             if (is_double) {
-                // Double precision
                 double dval = strtod(parser->float_literals[i].value, NULL);
                 unsigned long long *double_bits = (unsigned long long*)&dval;
                 fprintf(output, "    .quad 0x%016llx    # double %s\n",
                         *double_bits, parser->float_literals[i].value);
             } else {
-                // Single precision float
                 float fval = strtof(parser->float_literals[i].value, NULL);
                 unsigned int *float_bits = (unsigned int*)&fval;
                 fprintf(output, "    .long 0x%08x    # float %s\n",
                         *float_bits, parser->float_literals[i].value);
             }
         }
+        fprintf(output, "\n");
     }
 
-    // NOW start .text section (NACH allen Konstanten)
-    fprintf(output, "\n    .text\n");
-
-    // Write generated code
+    fprintf(output, "    .text\n");
     fprintf(output, "%s", parser->function_code_buffer);
 
     fclose(output);
 
-    printf("✓ Assembly-Code generiert: %s\n", output_filename);
-    printf("  Code-Größe: %d Bytes\n", parser->function_code_pos);
-    printf("  String-Literale: %d\n", parser->string_literal_count);
-    printf("  Float-Literale: %d\n", parser->float_literal_count);
+    printf("  [+] Assembly code generated: %s\n", output_filename);
+    printf("      - Code size: %d Bytes\n", parser->function_code_pos);
+    printf("      - String literals: %d\n", parser->string_literal_count);
+    printf("      - Float literals: %d\n", parser->float_literal_count);
     printf("\n");
-    printf("================================================================\n");
-    printf("   ✓ KOMPILIERUNG ERFOLGREICH ABGESCHLOSSEN!\n");
-    printf("================================================================\n");
+    printf("################################################################\n");
+    printf("#                                                              #\n");
+    printf("#            [SUCCESS] COMPILATION COMPLETED!                 #\n");
+    printf("#                                                              #\n");
+    printf("################################################################\n");
     printf("\n");
-    printf("Nächste Schritte:\n");
-    printf("  1. Assemblieren: gcc -no-pie %s -o program\n", output_filename);
-    printf("  2. Ausführen:    ./program\n");
+    printf("Next steps:\n");
+    printf("  [1] Assemble: gcc -no-pie %s -o program\n", output_filename);
+    printf("  [2] Execute:  ./program\n");
     printf("\n");
 
     free_parser(parser);
