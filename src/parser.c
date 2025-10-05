@@ -358,7 +358,7 @@ void parse_function(Parser *parser) {
         var->type = param_type;
         var->is_array = is_array_param;
         var->array_size = 0;  // Unknown size for array parameters
-
+        
         // Array parameters are passed as pointers (8 bytes)
         if (is_array_param) {
             var->size = 8;
@@ -395,6 +395,15 @@ void parse_function(Parser *parser) {
     }
 
     func->return_type = return_type;
+    
+    // Check for array return type: -> int[]
+    if (check(parser->tokens, TOKEN_LBRACKET)) {
+        consume(parser->tokens);
+        func->return_is_array = 1;
+        expect(parser, TOKEN_RBRACKET, "Expected ']' after array return type");
+    } else {
+        func->return_is_array = 0;
+    }
 
     // Check for array return type: -> int[]
     if (check(parser->tokens, TOKEN_LBRACKET)) {
@@ -526,20 +535,20 @@ void parse_statement(Parser *parser) {
 void parse_variable_declaration(Parser *parser) {
     Token var_token = peek(parser->tokens);
     consume(parser->tokens);
-
+    
     // Check for array syntax: var[size] or var[]
     int is_array = 0;
     int array_size = 0;
-
+    
     if (check(parser->tokens, TOKEN_LBRACKET)) {
         consume(parser->tokens);
         is_array = 1;
-
+        
         // Check if size is specified
         if (check(parser->tokens, TOKEN_NUMBER)) {
             Token size_token = consume(parser->tokens);
             array_size = atoi(size_token.value);
-
+            
             if (array_size <= 0) {
                 parser_error(parser, "Array size must be positive");
                 return;
@@ -568,7 +577,7 @@ void parse_variable_declaration(Parser *parser) {
 
         has_explicit_type = 1;
     }
-
+    
     // Arrays must have explicit types
     if (is_array && !has_explicit_type) {
         parser_error(parser, "Arrays must have explicit type specified");
@@ -580,7 +589,7 @@ void parse_variable_declaration(Parser *parser) {
         parser_error(parser, "Array initialization with '=' not supported. Use assignment to elements.");
         return;
     }
-
+    
     if (!is_array && check(parser->tokens, TOKEN_EQUAL)) {
         consume(parser->tokens);
 
@@ -633,7 +642,7 @@ void parse_variable_declaration(Parser *parser) {
     var->type = var_type;
     var->is_array = is_array;
     var->array_size = array_size;
-
+    
     // Calculate total size: element_size * array_count
     int element_size = datatype_size(var_type);
     if (is_array) {
@@ -688,7 +697,7 @@ void parse_variable_declaration(Parser *parser) {
     if (is_array) {
         // Arrays don't need initialization - space is just allocated
         // The offset points to the start of the array
-        code_comment(parser, "Array allocated at offset %d, total size %d bytes",
+        code_comment(parser, "Array allocated at offset %d, total size %d bytes", 
                      var->offset, var->size);
     } else if (var_type == TYPE_FLOAT) {
         code_printf(parser, "    movss (%%rsp), %%xmm0\n");
@@ -725,33 +734,33 @@ void parse_assignment(Parser *parser) {
     if (check(parser->tokens, TOKEN_LBRACKET)) {
         consume(parser->tokens);
         is_array_access = 1;
-
+        
         if (!var->is_array) {
             parser_error(parser, "Variable '%s' is not an array", name_token.value);
             return;
         }
-
+        
         code_comment(parser, "Line %d: %s[index] = value (array assignment)",
                      assign_token.line, name_token.value);
-
+        
         // Parse the index expression
         parse_expression(parser);
-
+        
         expect(parser, TOKEN_RBRACKET, "Expected ']' after array index");
         expect(parser, TOKEN_EQUAL, "Expected '=' in array assignment");
-
+        
         // Parse the value to assign
         parse_expression(parser);
-
+        
         // Stack now has: [value, index]
         // Pop value into a temp, pop index, compute address, store value
-
+        
         int element_size = datatype_size(var->type);
-
+        
         // Pop value into appropriate register
         code_printf(parser, "    popq %%rcx\n");  // value
         code_printf(parser, "    popq %%rax\n");  // index
-
+        
         // For array parameters (pointers), load the pointer first
         if (var->is_array && var->array_size == 0) {
             // Array parameter - it's a pointer, load it
@@ -760,7 +769,7 @@ void parse_assignment(Parser *parser) {
             // Local array - calculate address
             code_printf(parser, "    leaq %d(%%rbp), %%rbx\n", var->offset);  // base address
         }
-
+        
         if (var->type == TYPE_FLOAT || var->type == TYPE_DOUBLE) {
             if (var->type == TYPE_FLOAT) {
                 code_printf(parser, "    movq %%rcx, %%xmm0\n");
@@ -778,7 +787,7 @@ void parse_assignment(Parser *parser) {
                 code_printf(parser, "    movl %%ecx, (%%rbx, %%rax, %d)\n", element_size);
             }
         }
-
+        
         expect(parser, TOKEN_SEMICOLON, "Expected ';' after array assignment");
         return;
     }
@@ -1380,29 +1389,29 @@ void parse_print_statement(Parser *parser) {
                 // Array access in print: arr[index]
                 consume(parser->tokens);  // consume identifier
                 consume(parser->tokens);  // consume [
-
+                
                 Variable *var = find_variable(parser, name.value);
                 if (!var) {
                     parser_error(parser, "Variable '%s' not found", name.value);
                     return;
                 }
-
+                
                 // Parse the index expression
                 parse_expression(parser);
-
+                
                 expect(parser, TOKEN_RBRACKET, "Expected ']' after array index");
-
+                
                 // Load array element value
                 int element_size = datatype_size(var->type);
                 code_printf(parser, "    popq %%rax\n");  // index
-
+                
                 // For array parameters (pointers), load the pointer first
                 if (var->is_array && var->array_size == 0) {
                     code_printf(parser, "    movq %d(%%rbp), %%rbx\n", var->offset);
                 } else {
                     code_printf(parser, "    leaq %d(%%rbp), %%rbx\n", var->offset);
                 }
-
+                
                 // Load the array element based on type
                 if (var->type == TYPE_INT) {
                     code_printf(parser, "    movl (%%rbx, %%rax, %d), %%edx\n", element_size);
@@ -1417,7 +1426,7 @@ void parse_print_statement(Parser *parser) {
                     parser_error(parser, "Unsupported array element type in print");
                     return;
                 }
-
+                
                 code_printf(parser, "    subq $40, %%rsp\n");
                 code_printf(parser, "    call printf\n");
                 code_printf(parser, "    addq $40, %%rsp\n");
@@ -1778,14 +1787,14 @@ void parse_primary(Parser *parser) {
         // Check for string literal indexing: "hello"[0]
         if (check(parser->tokens, TOKEN_LBRACKET)) {
             consume(parser->tokens);
-
+            
             code_comment(parser, "String literal indexing: \"%s\"[...]", str.value);
-
+            
             // Parse the index expression
             parse_expression(parser);
-
+            
             expect(parser, TOKEN_RBRACKET, "Expected ']' after string index");
-
+            
             // Stack has: [index]
             code_printf(parser, "    popq %%rax\n");  // index
             code_printf(parser, "    leaq .LC%d(%%rip), %%rbx\n", str_id);  // base address of string
@@ -1900,22 +1909,22 @@ void parse_primary(Parser *parser) {
             // Check for array indexing: var[index]
             if (check(parser->tokens, TOKEN_LBRACKET)) {
                 consume(parser->tokens);
-
+                
                 if (!var->is_array && var->type != TYPE_STRING) {
                     parser_error(parser, "Variable '%s' is not an array or string", name.value);
                     return;
                 }
-
+                
                 // Parse the index expression
                 parse_expression(parser);
-
+                
                 expect(parser, TOKEN_RBRACKET, "Expected ']' after array index");
-
+                
                 // Stack now has: [index]
                 int element_size = datatype_size(var->type);
-
+                
                 code_printf(parser, "    popq %%rax\n");  // index
-
+                
                 // For array parameters (pointers), load the pointer first
                 if (var->is_array && var->array_size == 0) {
                     // Array parameter - it's a pointer, load it
@@ -1924,7 +1933,7 @@ void parse_primary(Parser *parser) {
                     // Local array - calculate address
                     code_printf(parser, "    leaq %d(%%rbp), %%rbx\n", var->offset);  // base address
                 }
-
+                
                 if (var->type == TYPE_FLOAT) {
                     code_printf(parser, "    movss (%%rbx, %%rax, %d), %%xmm0\n", element_size);
                     code_printf(parser, "    movq %%xmm0, %%rax\n");
