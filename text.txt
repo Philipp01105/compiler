@@ -1,9 +1,0 @@
-func main() -> void
-{
-    var x = 10;
-    var y = "t";
-    if (x == y){
-    print("test");
-    }
-
-}

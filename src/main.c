@@ -2,176 +2,150 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include "compiler_types.h"
+#include <sys/stat.h>
 #include "lexer.h"
 #include "parser.h"
 
-// Print usage information
 void print_usage(const char *program_name) {
     printf("Usage: %s [OPTIONS] <source_file>\n", program_name);
-    printf("\nOptions:\n");
+    printf("\n");
+    printf("Options:\n");
     printf("  --tokens    Show generated token stream\n");
     printf("  --debug     Enable debug output during parsing\n");
     printf("  --help      Show this help message\n");
-    printf("\nExample:\n");
+    printf("\n");
+    printf("Examples:\n");
     printf("  %s program.txt\n", program_name);
+    printf("  %s --tokens program.txt\n", program_name);
+    printf("  %s --debug program.txt\n", program_name);
     printf("  %s --tokens --debug program.txt\n", program_name);
+    printf("\n");
 }
 
-// Get current date/time as string
-void get_current_datetime(char *buffer, size_t size) {
+void print_header(const char *source_file) {
+    struct stat st;
+    stat(source_file, &st);
+
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
-    strftime(buffer, size, "%Y-%m-%d %H:%M:%S", t);
+    char datetime[64];
+    strftime(datetime, sizeof(datetime), "%Y-%m-%d %H:%M:%S", t);
+
+    printf("\n");
+    printf("================================================================\n");
+    printf("    COMPILER VERSION 3.0.2 - Philipp01105 (2025-10-15)\n");
+    printf("================================================================\n");
+    printf("  Datei: %s\n", source_file);
+    printf("  Groesse: %ld Bytes\n", st.st_size);
+    printf("  Datum: %s\n", datetime);
+    printf("\n");
 }
 
-// Main function
 int main(int argc, char *argv[]) {
-    // Parse command line arguments
     int show_tokens = 0;
     int debug_mode = 0;
-    char *source_file = NULL;
+    const char *source_file = NULL;
 
+    // Parse command line arguments
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--tokens") == 0) {
             show_tokens = 1;
         } else if (strcmp(argv[i], "--debug") == 0) {
             debug_mode = 1;
-        } else if (strcmp(argv[i], "--help") == 0) {
+        } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             print_usage(argv[0]);
             return 0;
-        } else if (argv[i][0] == '-') {
+        } else if (argv[i][0] != '-') {
+            source_file = argv[i];
+        } else {
             fprintf(stderr, "Unbekannte Option: %s\n", argv[i]);
             print_usage(argv[0]);
             return 1;
-        } else {
-            source_file = argv[i];
         }
     }
 
-    // Check if source file was provided
     if (!source_file) {
         fprintf(stderr, "Fehler: Keine Quelldatei angegeben\n\n");
         print_usage(argv[0]);
         return 1;
     }
 
-    // Print header
-    printf("\n");
-    printf("================================================================\n");
-    printf("         COMPILER MIT LEXER & PARSER - Philipp01105\n");
-    printf("================================================================\n");
-    printf("  Datei: %s\n", source_file);
+    print_header(source_file);
 
-    // Read source file - BINARY MODE
-    FILE *input = fopen(source_file, "rb");
-    if (!input) {
-        fprintf(stderr, "Fehler: Datei '%s' konnte nicht geoeffnet werden\n", source_file);
-        return 1;
-    }
-
-    // Get file size
-    fseek(input, 0, SEEK_END);
-    long file_size = ftell(input);
-    fseek(input, 0, SEEK_SET);
-
-    if (file_size <= 0) {
-        fprintf(stderr, "Fehler: Datei ist leer oder konnte nicht gelesen werden\n");
-        fclose(input);
-        return 1;
-    }
-
-    printf("  Groesse: %ld Bytes\n", file_size);
-
-    // Get current date/time
-    char datetime[64];
-    get_current_datetime(datetime, sizeof(datetime));
-    printf("  Datum: %s\n", datetime);
-
-    // Allocate buffer with extra space for null terminator
-    char *source = (char *)malloc(file_size + 1);
-    if (!source) {
-        fprintf(stderr, "Fehler: Speicher konnte nicht allokiert werden (%ld Bytes)\n", file_size + 1);
-        fclose(input);
-        return 1;
-    }
-
-    // Read file into buffer
-    size_t bytes_read = fread(source, 1, file_size, input);
-    fclose(input);
-
-    // Null-terminate the buffer
-    source[bytes_read] = '\0';
-
-    if (bytes_read != (size_t)file_size) {
-        fprintf(stderr, "Warnung: Nur %zu von %ld Bytes gelesen\n", bytes_read, file_size);
-    }
-
-    // Phase 1: Lexical Analysis (Tokenization)
-    printf("\n");
+    // Phase 1: Lexical Analysis
     printf("================================================================\n");
     printf("           PHASE 1: LEXIKALISCHE ANALYSE (LEXER)\n");
     printf("================================================================\n");
     printf("\n");
 
-    TokenStream *tokens = tokenize_source(source);
-
+    TokenStream *tokens = tokenize_file(source_file, debug_mode);
     if (!tokens) {
-        fprintf(stderr, "Fehler: Tokenisierung fehlgeschlagen\n");
-        free(source);
+        fprintf(stderr, "❌ Lexer fehlgeschlagen!\n");
         return 1;
     }
 
-    printf("\xE2\x9C\x93 %d Tokens generiert\n", tokens->count);
+    printf("✓ %d Tokens generiert\n", tokens->count);
 
-    // Show tokens if requested
     if (show_tokens) {
-        print_all_tokens(tokens);
+        print_tokens(tokens);
     }
 
-    // Phase 2: Syntax Analysis (Parsing)
+    // Phase 2: Syntax Analysis
     Parser *parser = create_parser(tokens);
     parser->debug_mode = debug_mode;
 
-    int success = parse_program(parser);
-
-    if (!success) {
-        fprintf(stderr, "\n\xE2\x9D\x8C Kompilierung fehlgeschlagen!\n\n");
+    if (!parse_program(parser)) {
+        fprintf(stderr, "\n❌ Kompilierung fehlgeschlagen!\n\n");
         free_parser(parser);
         free_token_stream(tokens);
-        free(source);
         return 1;
     }
 
-    // Phase 3: Code Generation (Output Assembly)
+    // Phase 3: Code Generation
     printf("\n");
     printf("================================================================\n");
-    printf("           PHASE 3: CODE-GENERIERUNG (ASSEMBLY)\n");
+    printf("           PHASE 3: CODE-GENERIERUNG\n");
     printf("================================================================\n");
     printf("\n");
 
-    // Generate output filename
-    char output_file[512];
-    snprintf(output_file, sizeof(output_file), "%s.s", source_file);
+    char output_filename[512];
+    snprintf(output_filename, sizeof(output_filename), "%s.s", source_file);
 
-    FILE *output = fopen(output_file, "w");
+    FILE *output = fopen(output_filename, "w");
     if (!output) {
-        fprintf(stderr, "Fehler: Ausgabedatei '%s' konnte nicht erstellt werden\n", output_file);
+        fprintf(stderr, "Fehler: Ausgabedatei '%s' konnte nicht erstellt werden\n", output_filename);
         free_parser(parser);
         free_token_stream(tokens);
-        free(source);
         return 1;
     }
+
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    char datetime[64];
+    strftime(datetime, sizeof(datetime), "%Y-%m-%d %H:%M:%S", t);
 
     // Write assembly header
-    fprintf(output, "# Generated by Philipp01105's Compiler\n");
+    fprintf(output, "# Generated by Philipp01105's Compiler Version 3.0.2\n");
     fprintf(output, "# Source: %s\n", source_file);
     fprintf(output, "# Date: %s\n", datetime);
+    fprintf(output, "# Features: 6 data types (int, char, byte, bit, float, double)\n");
+    fprintf(output, "#           Type inference, character/float literals\n");
+    fprintf(output, "#           If/else, for loops, logical operators\n");
     fprintf(output, "\n");
     fprintf(output, "    .text\n");
     fprintf(output, "    .def    printf; .scl    2; .type   32; .endef\n");
     fprintf(output, "    .def    putchar; .scl    2; .type   32; .endef\n");
     fprintf(output, "    .section .rdata,\"dr\"\n");
+    // Write format strings for different types
+    fprintf(output, ".LC_int_format:\n");
+    fprintf(output, "    .ascii \"%%d\\0\"\n");
+    fprintf(output, ".LC_float_format:\n");
+    fprintf(output, "    .ascii \"%%f\\0\"\n");
+    fprintf(output, ".LC_double_format:\n");
+    fprintf(output, "    .ascii \"%%lf\\0\"\n");
+    fprintf(output, ".LC_char_format:\n");
+    fprintf(output, "    .ascii \"%%c\\0\"\n");
+    fprintf(output, "\n");
 
     // Write string literals
     for (int i = 0; i < parser->string_literal_count; i++) {
@@ -179,36 +153,59 @@ int main(int argc, char *argv[]) {
         fprintf(output, "    .ascii \"%s\\0\"\n", parser->string_literals[i].text);
     }
 
+    // Write float literals (WICHTIG: VOR .text!)
+    if (parser->float_literal_count > 0) {
+        fprintf(output, "\n");
+        fprintf(output, "# Float/Double constants\n");
+        fprintf(output, "    .align 4\n");
+
+        for (int i = 0; i < parser->float_literal_count; i++) {
+            fprintf(output, ".LC_float_%d:\n", parser->float_literals[i].id);
+
+            // Check if it's a double (more than 8 digits after decimal)
+            int is_double = (strchr(parser->float_literals[i].value, '.') != NULL &&
+                           strlen(strchr(parser->float_literals[i].value, '.')) > 8);
+
+            if (is_double) {
+                // Double precision
+                double dval = strtod(parser->float_literals[i].value, NULL);
+                unsigned long long *double_bits = (unsigned long long*)&dval;
+                fprintf(output, "    .quad 0x%016llx    # double %s\n",
+                        *double_bits, parser->float_literals[i].value);
+            } else {
+                // Single precision float
+                float fval = strtof(parser->float_literals[i].value, NULL);
+                unsigned int *float_bits = (unsigned int*)&fval;
+                fprintf(output, "    .long 0x%08x    # float %s\n",
+                        *float_bits, parser->float_literals[i].value);
+            }
+        }
+    }
+
+    // NOW start .text section (NACH allen Konstanten)
     fprintf(output, "\n    .text\n");
 
-    // Write main code (global scope)
-    fprintf(output, "%s", parser->code_buffer);
-
-    // Write function code
+    // Write generated code
     fprintf(output, "%s", parser->function_code_buffer);
 
     fclose(output);
 
-    printf("OK Assembly-Datei geschrieben: %s\n", output_file);
-    printf("OK Code-Groesse: %d Bytes (Global), %d Bytes (Funktionen)\n",
-           parser->code_pos, parser->function_code_pos);
-    printf("OK String-Literale: %d\n", parser->string_literal_count);
-
-    // Success message
+    printf("✓ Assembly-Code generiert: %s\n", output_filename);
+    printf("  Code-Größe: %d Bytes\n", parser->function_code_pos);
+    printf("  String-Literale: %d\n", parser->string_literal_count);
+    printf("  Float-Literale: %d\n", parser->float_literal_count);
     printf("\n");
     printf("================================================================\n");
-    printf("                    KOMPILIERUNG ERFOLGREICH\n");
+    printf("   ✓ KOMPILIERUNG ERFOLGREICH ABGESCHLOSSEN!\n");
     printf("================================================================\n");
     printf("\n");
-    printf("Naechste Schritte:\n");
-    printf("  1. Assembly zu Binary: gcc %s -o %s.exe\n", output_file, source_file);
-    printf("  2. Programm ausfuehren: ./%s.exe\n", source_file);
+    printf("Nächste Schritte:\n");
+    printf("  1. Assemblieren: gcc -no-pie %s -o program\n", output_filename);
+    printf("  2. Ausführen:    ./program\n");
     printf("\n");
 
-    // Cleanup
     free_parser(parser);
     free_token_stream(tokens);
-    free(source);
-    
+
     return 0;
 }
