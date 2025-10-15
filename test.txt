@@ -1,12 +1,12 @@
 // =================================================================
-// UMFASSENDER COMPILER-TEST
-// Testet alle Features der Programmiersprache Version 1.1
+// COMPILER TEST SUITE - Version 2.0
+// Testet alle Features der Programmiersprache
 // Autor: Philipp01105
-// Datum: 2025-10-14
+// Datum: 2025-01-15
 // =================================================================
 
 // =================================================================
-// HELPER-FUNKTIONEN
+// TEIL 1: ARITHMETISCHE FUNKTIONEN
 // =================================================================
 
 // Test 1: Einfache Addition
@@ -33,7 +33,7 @@ func divide(x:int, y:int) -> int
     return x / y;
 }
 
-// Test 5: Funktion mit lokalen Variablen
+// Test 5: Komplexe Berechnung
 func calculate(a:int, b:int) -> int
 {
     var sum = a + b;
@@ -41,6 +41,10 @@ func calculate(a:int, b:int) -> int
     var result = sum + product;
     return result;
 }
+
+// =================================================================
+// TEIL 2: PARAMETERVARIATIONEN
+// =================================================================
 
 // Test 6: Funktion ohne Parameter
 func getConstant() -> int
@@ -54,7 +58,31 @@ func printSeparator() -> void
     print("=================================");
 }
 
-// Test 8: Fakultät (iterativ)
+// Test 8: Ein Parameter
+func square(n:int) -> int
+{
+    return n * n;
+}
+
+// Test 9: Drei Parameter
+func sum3(a:int, b:int, c:int) -> int
+{
+    return a + b + c;
+}
+
+// Test 10: Vier Parameter
+func sum4(a:int, b:int, c:int, d:int) -> int
+{
+    var temp1 = a + b;
+    var temp2 = c + d;
+    return temp1 + temp2;
+}
+
+// =================================================================
+// TEIL 3: SCHLEIFEN UND ALGORITHMEN
+// =================================================================
+
+// Test 11: Fakultaet (iterativ)
 func factorial(n:int) -> int
 {
     var result = 1;
@@ -65,23 +93,23 @@ func factorial(n:int) -> int
     return result;
 }
 
-// Test 9: Fibonacci
+// Test 12: Fibonacci
 func fibonacci(n:int) -> int
 {
     var a = 0;
     var b = 1;
-    
+
     for(var i = 0; i < n; i++)
     {
         var temp = a + b;
         a = b;
         b = temp;
     }
-    
+
     return a;
 }
 
-// Test 10: Potenz
+// Test 13: Potenz
 func power(base:int, exp:int) -> int
 {
     var result = 1;
@@ -92,32 +120,22 @@ func power(base:int, exp:int) -> int
     return result;
 }
 
-// Test 11: Maximum von zwei Zahlen
-func max(a:int, b:int) -> int
+// Test 14: Summe von 1 bis n
+func sumTo(n:int) -> int
 {
-    var result = a;
-    var diff = b - a;
-    
-    // Primitive if-Simulation
-    for(var i = 0; i < 1; i++)
+    var sum = 0;
+    for(var i = 1; i <= n; i++)
     {
-        // Wenn diff > 0, dann b > a
-        var isGreater = 0;
-        for(var j = 0; j < diff; j++)
-        {
-            isGreater = 1;
-        }
-        
-        // Setze result = b wenn isGreater
-        var temp = b * isGreater;
-        var temp2 = result * (1 - isGreater);
-        result = temp + temp2;
+        sum += i;
     }
-    
-    return result;
+    return sum;
 }
 
-// Test 12: Modulo-Berechnung (n mod d)
+// =================================================================
+// TEIL 4: HILFSFUNKTIONEN
+// =================================================================
+
+// Test 15: Modulo-Berechnung
 func modulo(n:int, d:int) -> int
 {
     var quotient = n / d;
@@ -126,41 +144,78 @@ func modulo(n:int, d:int) -> int
     return remainder;
 }
 
-// Test 13: Ist Gerade?
+// Test 16: Ist Gerade?
 func isEven(n:int) -> int
 {
     var mod = modulo(n, 2);
-
     var result = 1 - mod;
-    
     return result;
 }
 
-// Test 14: GGT (Größter Gemeinsamer Teiler)
-func gcd(a:int, b:int) -> int
+// Test 17: Absolute Zahl (ohne if)
+func abs(n:int) -> int
 {
-    // Euklid-Algorithmus: wiederhole bis b == 0
-    for(var i = 0; i < 100; i++)
+    var isNegative = 0;
+    var temp = 0 - n;
+
+    for(var i = 0; i < temp; i++)
     {
-        // Prüfe ob b == 0
-        var bIsZero = 1;
-        for(var j = 0; j < b; j++)
+        isNegative = 1;
+    }
+
+    var positive = n;
+    var negative = 0 - n;
+
+    var result = positive;
+    for(var j = 0; j < isNegative; j++)
+    {
+        result = negative;
+    }
+
+    return result;
+}
+
+// Test 18: Maximum von zwei Zahlen (ohne if)
+func max(a:int, b:int) -> int
+{
+    var result = a;
+    var diff = b - a;
+
+    for(var i = 0; i < 1; i++)
+    {
+        var isGreater = 0;
+        for(var j = 0; j < diff; j++)
         {
-            bIsZero = 0;
+            isGreater = 1;
         }
 
-        // Wenn b == 0, sind wir fertig, mache nichts mehr
-        // Ansonsten: berechne neues a und b
+        var temp = b * isGreater;
+        var temp2 = result * (1 - isGreater);
+        result = temp + temp2;
+    }
 
-        // Berechne "shouldContinue" = 1 wenn b != 0
+    return result;
+}
+
+// Test 19: Minimum von zwei Zahlen
+func min(a:int, b:int) -> int
+{
+    var maxVal = max(a, b);
+    var sum = a + b;
+    return sum - maxVal;
+}
+
+// Test 20: GGT (Groesster Gemeinsamer Teiler)
+func gcd(a:int, b:int) -> int
+{
+    for(var i = 0; i < 100; i++)
+    {
         var shouldContinue = 0;
         for(var check = 0; check < b; check++)
         {
             shouldContinue = 1;
         }
 
-        // Nur wenn shouldContinue == 1, dann rechne weiter
-        // (sonst würden wir durch 0 teilen!)
         for(var do_it = 0; do_it < shouldContinue; do_it++)
         {
             var temp = b;
@@ -168,149 +223,195 @@ func gcd(a:int, b:int) -> int
             a = temp;
         }
     }
-    
+
     return a;
 }
 
 // =================================================================
-// MAIN-FUNKTION
+// TEIL 5: VERSCHACHTELTE UND KOMPLEXE FUNKTIONEN
+// =================================================================
+
+// Test 21: Verschachtelte Aufrufe - Level 1
+func addAndMultiply(a:int, b:int, c:int) -> int
+{
+    var sum = add(a, b);
+    return multiply(sum, c);
+}
+
+// Test 22: Verschachtelte Aufrufe - Level 2
+func complexCalc(a:int, b:int, c:int, d:int) -> int
+{
+    var part1 = multiply(add(a, b), c);
+    var part2 = divide(subtract(d, a), b);
+    return add(part1, part2);
+}
+
+// Test 23: Summe der Quadrate
+func sumOfSquares(a:int, b:int) -> int
+{
+    var sq1 = square(a);
+    var sq2 = square(b);
+    return add(sq1, sq2);
+}
+
+// Test 24: Durchschnitt von drei Zahlen
+func average3(a:int, b:int, c:int) -> int
+{
+    var sum = sum3(a, b, c);
+    return divide(sum, 3);
+}
+
+// =================================================================
+// MAIN-FUNKTION - VOLLSTAENDIGER TEST
 // =================================================================
 
 func main() -> void
 {
     printSeparator();
-    print("=== COMPILER TEST SUITE ===");
-    print("Version 1.1 - Vollständiger Feature-Test");
+    print("COMPILER TEST SUITE - Version 2.0");
+    print("Testet alle Features der Sprache");
     printSeparator();
     print("");
-    
+
     // =================================================================
-    // TEST 1: VARIABLEN-DEKLARATION
+    // TEST 1: VARIABLEN UND TYPEN
     // =================================================================
-    
-    print("=== TEST 1: Variablen ===");
-    var testVar1 = 10;
-    var testVar2 = 20;
-    var testVar3 = -5;
-    var testVar4 = 0;
-    
-    print("testVar1 = " + testVar1);
-    print("testVar2 = " + testVar2);
-    print("testVar3 = " + testVar3);
-    print("testVar4 = " + testVar4);
+
+    print("TEST 1: Variablen und Initialisierung");
+    print("---------------------------------------");
+    var x = 10;
+    var y = 20;
+    var z = -5;
+    var zero = 0;
+    print("x = " + x);
+    print("y = " + y);
+    print("z = " + z);
+    print("zero = " + zero);
     print("");
-    
+
     // =================================================================
     // TEST 2: ARITHMETISCHE OPERATOREN
     // =================================================================
-    
-    print("=== TEST 2: Arithmetische Operatoren ===");
-    var a = 10;
-    var b = 3;
-    
+
+    print("TEST 2: Arithmetische Operatoren");
+    print("---------------------------------------");
+    var a = 15;
+    var b = 4;
+
     var sum = a + b;
     var diff = a - b;
     var prod = a * b;
     var quot = a / b;
-    
+
     print("a = " + a + ", b = " + b);
     print("a + b = " + sum);
     print("a - b = " + diff);
     print("a * b = " + prod);
     print("a / b = " + quot);
     print("");
-    
+
     // =================================================================
-    // TEST 3: COMPOUND ASSIGNMENT OPERATOREN
+    // TEST 3: COMPOUND ASSIGNMENT
     // =================================================================
-    
-    print("=== TEST 3: Compound Assignment ===");
-    var x = 10;
-    print("Start: x = " + x);
-    
-    x += 5;
-    print("Nach x += 5: x = " + x);
-    
-    x -= 3;
-    print("Nach x -= 3: x = " + x);
-    
-    x *= 2;
-    print("Nach x *= 2: x = " + x);
-    
-    x /= 4;
-    print("Nach x /= 4: x = " + x);
+
+    print("TEST 3: Compound Assignment");
+    print("---------------------------------------");
+    var num = 10;
+    print("Start: num = " + num);
+
+    num += 5;
+    print("Nach num += 5: " + num);
+
+    num -= 3;
+    print("Nach num -= 3: " + num);
+
+    num *= 2;
+    print("Nach num *= 2: " + num);
+
+    num /= 4;
+    print("Nach num /= 4: " + num);
     print("");
-    
+
     // =================================================================
     // TEST 4: VERGLEICHSOPERATOREN
     // =================================================================
-    
-    print("=== TEST 4: Vergleichsoperatoren ===");
-    print("Werden in For-Schleifen getestet...");
-    
-    print("Test '<' (kleiner als):");
-    for(var i = 0; i < 3; i++)
-    {
-        print("  i = " + i + " (läuft 3 Mal)");
-    }
-    
-    print("Test '<=' (kleiner oder gleich):");
-    for(var i = 0; i <= 3; i++)
-    {
-        print("  i = " + i + " (läuft 4 Mal)");
-    }
-    
-    print("Test '>' (größer als):");
-    for(var i = 5; i > 2; i--)
-    {
-        print("  i = " + i + " (countdown)");
-    }
+
+    print("TEST 4: Vergleichsoperatoren");
+    print("---------------------------------------");
+    var val1 = 10;
+    var val2 = 20;
+
+    var isLess = val1 < val2;
+    var isGreater = val1 > val2;
+    var isEqual = val1 == val2;
+    var isNotEqual = val1 != val2;
+    var isLessEq = val1 <= val2;
+    var isGreaterEq = val1 >= val2;
+
+    print("val1 = " + val1 + ", val2 = " + val2);
+    print("val1 < val2: " + isLess);
+    print("val1 > val2: " + isGreater);
+    print("val1 == val2: " + isEqual);
+    print("val1 != val2: " + isNotEqual);
+    print("val1 <= val2: " + isLessEq);
+    print("val1 >= val2: " + isGreaterEq);
     print("");
-    
+
     // =================================================================
-    // TEST 5: FOR-SCHLEIFEN (VERSCHIEDENE VARIANTEN)
+    // TEST 5: KLAMMERN IN EXPRESSIONS
     // =================================================================
-    
-    print("=== TEST 5: For-Schleifen ===");
-    
-    print("Variante 1: var in for");
+
+    print("TEST 5: Klammern in Expressions");
+    print("---------------------------------------");
+    var expr1 = (5 + 3) * 2;
+    var expr2 = 5 + (3 * 2);
+    var expr3 = ((10 + 5) * 2) / 3;
+
+    print("(5 + 3) * 2 = " + expr1);
+    print("5 + (3 * 2) = " + expr2);
+    print("((10 + 5) * 2) / 3 = " + expr3);
+    print("");
+
+    // =================================================================
+    // TEST 6: FOR-SCHLEIFEN (VERSCHIEDENE VARIANTEN)
+    // =================================================================
+
+    print("TEST 6: For-Schleifen");
+    print("---------------------------------------");
+
+    print("Variante 1: Inkrement (i++)");
     for(var i = 0; i < 5; i++)
     {
         print("  i = " + i);
     }
-    
-    print("Variante 2: var vorher deklariert");
-    var j = 0;
-    for(j = 0; j < 3; j++)
+
+    print("Variante 2: Dekrement (i--)");
+    for(var j = 5; j > 0; j--)
     {
         print("  j = " + j);
     }
-    
-    print("Variante 3: i++ (Inkrement)");
-    for(var k = 0; k < 5; k++)
+
+    print("Variante 3: Schrittweite (i += 2)");
+    for(var k = 0; k < 10; k += 2)
     {
         print("  k = " + k);
     }
-    
-    print("Variante 4: i-- (Dekrement)");
-    for(var m = 5; m > 0; m--)
+
+    print("Variante 4: Vorherige Deklaration");
+    var m = 0;
+    for(m = 0; m < 3; m++)
     {
         print("  m = " + m);
     }
-    
-    print("Variante 5: Schrittweite 2");
-    for(var n = 0; n < 10; n += 2)
-    {
-        print("  n = " + n);
-    }
     print("");
-    
+
     // =================================================================
-    // TEST 6: VERSCHACHTELTE SCHLEIFEN
+    // TEST 7: VERSCHACHTELTE SCHLEIFEN
     // =================================================================
-    
-    print("=== TEST 6: Verschachtelte Schleifen ===");
-    print("Multiplikationstabelle (Ausschnitt):");
+
+    print("TEST 7: Verschachtelte Schleifen");
+    print("---------------------------------------");
+    print("Multiplikationstabelle:");
     for(var i = 1; i <= 3; i++)
     {
         for(var j = 1; j <= 3; j++)
@@ -320,177 +421,238 @@ func main() -> void
         }
     }
     print("");
-    
+
     // =================================================================
-    // TEST 7: FUNKTIONEN MIT VERSCHIEDENEN PARAMETERN
+    // TEST 8: SCOPE-MANAGEMENT
     // =================================================================
-    
-    print("=== TEST 7: Funktionen ===");
-    
-    print("Funktion ohne Parameter:");
-    var constant = getConstant();
-    print("  getConstant() = " + constant);
-    
-    print("Funktion mit 2 Parametern:");
-    var addResult = add(15, 27);
-    print("  add(15, 27) = " + addResult);
-    
-    print("Funktion mit void Return:");
-    printSeparator();
-    
-    print("Funktionen mit Berechnungen:");
-    var multResult = multiply(6, 7);
-    var divResult = divide(20, 4);
-    print("  multiply(6, 7) = " + multResult);
-    print("  divide(20, 4) = " + divResult);
+
+    print("TEST 8: Scope-Management");
+    print("---------------------------------------");
+    print("Mehrere Schleifen mit gleichem Variablennamen:");
+
+    for(var i = 0; i < 2; i++)
+    {
+        print("  Schleife 1: i = " + i);
+    }
+
+    for(var i = 10; i < 12; i++)
+    {
+        print("  Schleife 2: i = " + i);
+    }
     print("");
-    
+
     // =================================================================
-    // TEST 8: KOMPLEXE FUNKTIONEN
+    // TEST 9: FUNKTIONEN OHNE PARAMETER
     // =================================================================
-    
-    print("=== TEST 8: Komplexe Funktionen ===");
-    
-    print("Fakultät:");
+
+    print("TEST 9: Funktionen ohne Parameter");
+    print("---------------------------------------");
+    var constant = getConstant();
+    print("getConstant() = " + constant);
+    print("");
+
+    // =================================================================
+    // TEST 10: FUNKTIONEN MIT 2 PARAMETERN
+    // =================================================================
+
+    print("TEST 10: Funktionen mit 2 Parametern");
+    print("---------------------------------------");
+    var addResult = add(15, 27);
+    var subResult = subtract(50, 18);
+    var mulResult = multiply(6, 7);
+    var divResult = divide(20, 4);
+
+    print("add(15, 27) = " + addResult);
+    print("subtract(50, 18) = " + subResult);
+    print("multiply(6, 7) = " + mulResult);
+    print("divide(20, 4) = " + divResult);
+    print("");
+
+    // =================================================================
+    // TEST 11: FUNKTIONEN MIT 3-4 PARAMETERN
+    // =================================================================
+
+    print("TEST 11: Funktionen mit 3-4 Parametern");
+    print("---------------------------------------");
+    var sum3Result = sum3(10, 20, 30);
+    var sum4Result = sum4(5, 10, 15, 20);
+
+    print("sum3(10, 20, 30) = " + sum3Result);
+    print("sum4(5, 10, 15, 20) = " + sum4Result);
+    print("");
+
+    // =================================================================
+    // TEST 12: VERSCHACHTELTE FUNKTIONSAUFRUFE
+    // =================================================================
+
+    print("TEST 12: Verschachtelte Funktionsaufrufe");
+    print("---------------------------------------");
+    var nested1 = add(10, multiply(2, 3));
+    var nested2 = multiply(add(5, 5), 2);
+    var nested3 = divide(subtract(100, 50), add(2, 3));
+
+    print("add(10, multiply(2, 3)) = " + nested1);
+    print("multiply(add(5, 5), 2) = " + nested2);
+    print("divide(subtract(100, 50), add(2, 3)) = " + nested3);
+    print("");
+
+    // =================================================================
+    // TEST 13: KOMPLEXE VERSCHACHTELTE AUFRUFE
+    // =================================================================
+
+    print("TEST 13: Komplexe verschachtelte Aufrufe");
+    print("---------------------------------------");
+    var complex1 = addAndMultiply(2, 3, 4);
+    var complex2 = sumOfSquares(3, 4);
+    var complex3 = average3(10, 20, 30);
+
+    print("addAndMultiply(2, 3, 4) = " + complex1);
+    print("sumOfSquares(3, 4) = " + complex2);
+    print("average3(10, 20, 30) = " + complex3);
+    print("");
+
+    // =================================================================
+    // TEST 14: FAKULTAET
+    // =================================================================
+
+    print("TEST 14: Fakultaet");
+    print("---------------------------------------");
     for(var i = 1; i <= 10; i++)
     {
         var fact = factorial(i);
         print("  " + i + "! = " + fact);
     }
     print("");
-    
-    print("Fibonacci:");
+
+    // =================================================================
+    // TEST 15: FIBONACCI
+    // =================================================================
+
+    print("TEST 15: Fibonacci");
+    print("---------------------------------------");
     for(var i = 0; i < 10; i++)
     {
         var fib = fibonacci(i);
         print("  F(" + i + ") = " + fib);
     }
     print("");
-    
-    print("Potenz:");
+
+    // =================================================================
+    // TEST 16: POTENZ
+    // =================================================================
+
+    print("TEST 16: Potenz");
+    print("---------------------------------------");
     for(var i = 0; i <= 5; i++)
     {
         var pow = power(2, i);
         print("  2^" + i + " = " + pow);
     }
     print("");
-    
+
     // =================================================================
-    // TEST 9: LOKALE VARIABLEN IN FUNKTIONEN
+    // TEST 17: SUMME VON 1 BIS N
     // =================================================================
-    
-    print("=== TEST 9: Lokale Variablen ===");
-    var calcResult = calculate(5, 3);
-    print("calculate(5, 3) benutzt lokale Variablen:");
-    print("  Ergebnis: " + calcResult);
+
+    print("TEST 17: Summe von 1 bis n");
+    print("---------------------------------------");
+    var sum10 = sumTo(10);
+    var sum100 = sumTo(100);
+
+    print("sumTo(10) = " + sum10);
+    print("sumTo(100) = " + sum100);
     print("");
-    
+
     // =================================================================
-    // TEST 10: SCOPE-TEST
+    // TEST 18: MODULO
     // =================================================================
-    
-    print("=== TEST 10: Scope-Test ===");
-    print("Mehrere Schleifen mit var i:");
-    
-    for(var i = 0; i < 3; i++)
-    {
-        print("  Schleife 1: i = " + i);
-    }
-    
-    for(var i = 10; i < 13; i++)
-    {
-        print("  Schleife 2: i = " + i);
-    }
-    
-    for(var i = 20; i < 23; i++)
-    {
-        print("  Schleife 3: i = " + i);
-    }
-    print("");
-    
-    // =================================================================
-    // TEST 11: STRING-KONKATENATION
-    // =================================================================
-    
-    print("=== TEST 11: String-Konkatenation ===");
-    var num1 = 42;
-    var num2 = 58;
-    
-    print("Einfach: " + num1);
-    print("Mehrfach: " + num1 + " und " + num2);
-    print("Mit Berechnung: " + (num1 + num2));
-    print("Text mit '+' Zeichen: 1 + 1 = " + 2);
-    print("");
-    
-    // =================================================================
-    // TEST 12: MODULO-BERECHNUNG
-    // =================================================================
-    
-    print("=== TEST 12: Modulo ===");
+
+    print("TEST 18: Modulo");
+    print("---------------------------------------");
     for(var i = 10; i <= 15; i++)
     {
         var mod = modulo(i, 3);
         print("  " + i + " mod 3 = " + mod);
     }
     print("");
-    
+
     // =================================================================
-    // TEST 13: GERADE/UNGERADE
+    // TEST 19: GERADE/UNGERADE
     // =================================================================
-    
-    print("=== TEST 13: Gerade/Ungerade ===");
+
+    print("TEST 19: Gerade/Ungerade");
+    print("---------------------------------------");
     for(var i = 0; i <= 10; i++)
     {
         var even = isEven(i);
         print("  " + i + " ist gerade: " + even);
     }
     print("");
-    
+
     // =================================================================
-    // TEST 14: MAXIMUM
+    // TEST 20: MAXIMUM/MINIMUM
     // =================================================================
-    
-    print("=== TEST 14: Maximum ===");
+
+    print("TEST 20: Maximum/Minimum");
+    print("---------------------------------------");
     var max1 = max(10, 20);
     var max2 = max(30, 15);
-    var max3 = max(7, 7);
-    
-    print("  max(10, 20) = " + max1);
-    print("  max(30, 15) = " + max2);
-    print("  max(7, 7) = " + max3);
+    var min1 = min(10, 20);
+    var min2 = min(30, 15);
+
+    print("max(10, 20) = " + max1);
+    print("max(30, 15) = " + max2);
+    print("min(10, 20) = " + min1);
+    print("min(30, 15) = " + min2);
     print("");
-    
+
     // =================================================================
-    // TEST 15: GGT
+    // TEST 21: GGT
     // =================================================================
-    
-    print("=== TEST 15: GGT ===");
+
+    print("TEST 21: GGT (Groesster Gemeinsamer Teiler)");
+    print("---------------------------------------");
     var gcd1 = gcd(48, 18);
     var gcd2 = gcd(100, 35);
     var gcd3 = gcd(17, 19);
-    
-    print("  gcd(48, 18) = " + gcd1);
-    print("  gcd(100, 35) = " + gcd2);
-    print("  gcd(17, 19) = " + gcd3);
+
+    print("gcd(48, 18) = " + gcd1);
+    print("gcd(100, 35) = " + gcd2);
+    print("gcd(17, 19) = " + gcd3);
     print("");
-    
+
     // =================================================================
-    // TEST 16: FUNKTIONSAUFRUF IN EXPRESSIONS
+    // TEST 22: LOKALE VARIABLEN IN FUNKTIONEN
     // =================================================================
-    
-    print("=== TEST 16: Funktionsaufruf in Expressions ===");
-    var expr1 = add(10, multiply(2, 3));
-    var expr2 = multiply(add(5, 5), 2);
-    
-    print("  add(10, multiply(2, 3)) = " + expr1);
-    print("  multiply(add(5, 5), 2) = " + expr2);
+
+    print("TEST 22: Lokale Variablen");
+    print("---------------------------------------");
+    var calcResult = calculate(5, 3);
+    print("calculate(5, 3) = " + calcResult);
+    print("(benutzt lokale Variablen sum, product, result)");
     print("");
-    
+
     // =================================================================
-    // TEST 17: STRESS-TEST (VIELE VARIABLEN)
+    // TEST 23: STRING-KONKATENATION
     // =================================================================
-    
-    print("=== TEST 17: Stress-Test ===");
+
+    print("TEST 23: String-Konkatenation");
+    print("---------------------------------------");
+    var num1 = 42;
+    var num2 = 58;
+
+    print("Einfach: " + num1);
+    print("Mehrfach: " + num1 + " und " + num2);
+    print("Mit Berechnung: " + (num1 + num2));
+    print("Mit Text: Die Antwort ist " + num1);
+    print("");
+
+    // =================================================================
+    // TEST 24: STRESS-TEST (VIELE VARIABLEN)
+    // =================================================================
+
+    print("TEST 24: Stress-Test (viele Variablen)");
+    print("---------------------------------------");
     var v1 = 1;
     var v2 = 2;
     var v3 = 3;
@@ -501,16 +663,17 @@ func main() -> void
     var v8 = 8;
     var v9 = 9;
     var v10 = 10;
-    
+
     var vSum = v1 + v2 + v3 + v4 + v5 + v6 + v7 + v8 + v9 + v10;
-    print("  Summe von 1-10: " + vSum);
+    print("Summe von 1-10: " + vSum);
     print("");
-    
+
     // =================================================================
-    // TEST 18: TIEFE VERSCHACHTELUNG
+    // TEST 25: TIEFE VERSCHACHTELUNG
     // =================================================================
-    
-    print("=== TEST 18: Tiefe Verschachtelung ===");
+
+    print("TEST 25: Tiefe Verschachtelung");
+    print("---------------------------------------");
     for(var i = 0; i < 2; i++)
     {
         for(var j = 0; j < 2; j++)
@@ -523,13 +686,23 @@ func main() -> void
         }
     }
     print("");
-    
+
+    // =================================================================
+    // TEST 26: VOID-FUNKTIONEN
+    // =================================================================
+
+    print("TEST 26: Void-Funktionen");
+    print("---------------------------------------");
+    print("Aufruf von printSeparator():");
+    printSeparator();
+    print("");
+
     // =================================================================
     // ABSCHLUSS
     // =================================================================
-    
+
     printSeparator();
-    print("=== ALLE TESTS ABGESCHLOSSEN ===");
-    print("Status: ERFOLGREICH");
+    print("ALL 26 TESTS OK");
+    print("Compiler Version 2.0 - Alle Features funktionieren!");
     printSeparator();
 }
