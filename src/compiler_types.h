@@ -1,13 +1,13 @@
 #ifndef COMPILER_TYPES_H
 #define COMPILER_TYPES_H
 
-#define MAX_TOKEN 256
-#define MAX_LINE 512
-#define MAX_VARS 200
-#define MAX_FUNCTIONS 100
-#define MAX_STRING_LITERALS 1000
-#define MAX_FLOAT_LITERALS 1000
-#define CODE_BUFFER_SIZE 524288  // 512 KB
+#define MAX_TOKEN 512
+#define MAX_LINE 1024
+#define MAX_VARS 400
+#define MAX_FUNCTIONS 200
+#define MAX_STRING_LITERALS 5000
+#define MAX_FLOAT_LITERALS 5000
+#define CODE_BUFFER_SIZE 524288
 
 // ============================================================================
 // TOKEN TYPES

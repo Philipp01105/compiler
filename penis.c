@@ -1,51 +1,21 @@
-func fibRecursive(n:int) -> int
-{
-    if (n <= 1) {
-        return n;
-    }
-
-    var a:int = fibRecursive(n - 1);
-    var b:int = fibRecursive(n - 2);
-    return a + b;
-}
-
-func fibIterative(n:int) -> int
-{
-    if (n <= 1) {
-        return n;
-    }
-
-    var prev:int = 0;
-    var curr:int = 1;
-
-    for (var i:int = 2; i <= n; i++) {
-        var next:int = prev + curr;
-        prev = curr;
-        curr = next;
-    }
-
-    return curr;
-}
-
-func printFib(n:int, value:int) -> void
-{
-    print("F(" + n + ") = " + value);
-}
-
 func main() -> void
 {
+    print("Testing loop accumulation bug");
 
-    for (var i:int = 0; i < 20; i++) {
-        var fib:int = fibIterative(i);
-        printFib(i, fib);
+    var result:int = 1;
+    print("Initial result: " + result);
+
+    for (var i:int = 1; i <= 5; i++) {
+        print("  Loop iteration: " + i);
+        print("    Before: result = " + result);
+
+        var temp:int = result * i;
+        print("    temp = result * i = " + temp);
+
+        result = temp;
+        print("    After assignment: result = " + result);
     }
 
-    print("");
-    print("========================================");
-    print("");
-
-    for (var i:int = 0; i < 15; i++) {
-        var fib:int = fibRecursive(i);
-        printFib(i, fib);
-    }
+    print("Final result: " + result);
+    print("Expected: 120");
 }
