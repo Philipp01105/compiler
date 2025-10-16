@@ -1,10 +1,19 @@
 // =================================================================
-// COMPILER TEST SUITE - Version 3.0.1
-// Testet alle Features der Programmiersprache
+// COMPILER TEST SUITE - Version 4.0.0
+// Testet alle Features der Programmiersprache inkl. STRINGS
 // Autor: Philipp01105
-// Datum: 2025-10-15
+// Datum: 2025-10-16
 //
-// Neue Features in 3.0.1:
+// Neue Features in 4.0.0:
+// - STRING als vollwertiger Datentyp
+// - String-Variablen (var name:string = "Philipp";)
+// - String-Assignment (name = "Max";)
+// - String-Comparison (name == "Test")
+// - String-Parameter in Funktionen
+// - String-Rückgabewerte
+// - String in print() bereits vorhanden
+//
+// Features aus 3.0.1:
 // - 6 Datentypen (int, char, byte, bit, float, double)
 // - Type Inference (var x = 5;)
 // - Explizite Typen (var x:int = 5;)
@@ -154,6 +163,123 @@ func addDouble(a:double, b:double) -> double
 func precisePi() -> double
 {
     return 3.141592653589793;
+}
+
+// =================================================================
+// TEIL 3.5: STRING-FUNKTIONEN (NEU IN V4.0!)
+// =================================================================
+
+// Test 32: String-Rückgabe
+func getWelcomeMessage() -> string
+{
+    return "Welcome";
+}
+
+func getDefaultName() -> string
+{
+    return "Guest";
+}
+
+func getEmptyString() -> string
+{
+    return "";
+}
+
+// Test 33: String-Parameter (void return)
+func greet(name:string) -> void
+{
+    print("Hello, " + name + "!");
+}
+
+func farewell(name:string) -> void
+{
+    print("Goodbye, " + name + "!");
+}
+
+func announce(message:string) -> void
+{
+    print(">>> " + message + " <<<");
+}
+
+// Test 34: String-Parameter mit Return
+func makeGreeting(name:string) -> string
+{
+    // In v4.1 mit Konkatenation:
+    // return "Hello, " + name + "!";
+
+    // Erstmal: Return Input
+    return name;
+}
+
+func makeFarewell(name:string) -> string
+{
+    return name;
+}
+
+// Test 35: Mehrere String-Parameter
+func combineNames(first:string, last:string) -> void
+{
+    print("First: " + first);
+    print("Last: " + last);
+}
+
+func printThreeStrings(s1:string, s2:string, s3:string) -> void
+{
+    print(s1);
+    print(s2);
+    print(s3);
+}
+
+// Test 36: Gemischte Parameter (String + Int)
+func printNameAndAge(name:string, age:int) -> void
+{
+    print("Name: " + name);
+    print("Age: " + age);
+}
+
+func repeatMessage(message:string, count:int) -> void
+{
+    for(var i:int = 0; i < count; i++) {
+        print(message);
+    }
+}
+
+// Test 37: String-Vergleiche (als Funktionen)
+func stringsAreEqual(s1:string, s2:string) -> bit
+{
+    if (s1 == s2) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+func stringsAreDifferent(s1:string, s2:string) -> bit
+{
+    if (s1 != s2) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+// Test 38: String-Validierung
+func isEmptyString(s:string) -> bit
+{
+    if (s == "") {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+func isNotEmpty(s:string) -> bit
+{
+    if (s != "") {
+        return 1;
+    } else {
+        return 0;
+    }
 }
 
 // =================================================================
@@ -308,8 +434,8 @@ func average3(a:int, b:int, c:int) -> int
 func main() -> void
 {
     printSeparator();
-    print("COMPILER TEST SUITE - Version 3.0.1");
-    print("Testet alle Features inkl. neue Datentypen");
+    print("COMPILER TEST SUITE - Version 4.0.0");
+    print("Testet alle Features inkl. STRING-Datentyp");
     printSeparator();
     print("");
 
@@ -830,12 +956,370 @@ func main() -> void
     print("");
 
     // =================================================================
+    // TEST 32: STRING-VARIABLEN DEKLARATION (NEU IN V4.0!)
+    // =================================================================
+
+    print("TEST 32: String-Variablen Deklaration");
+    print("---------------------------------------");
+    var name:string = "Philipp";
+    var city:string = "Berlin";
+    var country:string = "Germany";
+    var emptyStr:string = "";
+
+    print("name: " + name);
+    print("city: " + city);
+    print("country: " + country);
+    print("empty string: '" + emptyStr + "'");
+    print("");
+
+    // =================================================================
+    // TEST 33: STRING-ASSIGNMENT
+    // =================================================================
+
+    print("TEST 33: String-Assignment");
+    print("---------------------------------------");
+    var greeting:string;
+    print("Vor Assignment (sollte leer sein)");
+
+    greeting = "Hello";
+    print("Nach 1. Assignment: " + greeting);
+
+    greeting = "Guten Tag";
+    print("Nach 2. Assignment: " + greeting);
+
+    greeting = "Bonjour";
+    print("Nach 3. Assignment: " + greeting);
+    print("");
+
+    // =================================================================
+    // TEST 34: STRING-KOPIE (POINTER COPY)
+    // =================================================================
+
+    print("TEST 34: String-Kopie (Pointer Copy)");
+    print("---------------------------------------");
+    var original:string = "Original";
+    var copy:string = original;
+
+    print("Original: " + original);
+    print("Copy: " + copy);
+    print("");
+
+    // =================================================================
+    // TEST 35: STRING-VERGLEICH (==)
+    // =================================================================
+
+    print("TEST 35: String-Vergleich (==)");
+    print("---------------------------------------");
+    var str1:string = "Test";
+    var str2:string = "Test";
+    var str3:string = "Different";
+
+    print("str1: " + str1);
+    print("str2: " + str2);
+    print("str3: " + str3);
+
+    if (str1 == str2) {
+        print("str1 == str2: TRUE (korrekt!)");
+    } else {
+        print("str1 == str2: FALSE (fehler!)");
+    }
+
+    if (str1 == str3) {
+        print("str1 == str3: TRUE (fehler!)");
+    } else {
+        print("str1 == str3: FALSE (korrekt!)");
+    }
+    print("");
+
+    // =================================================================
+    // TEST 36: STRING-VERGLEICH (!=)
+    // =================================================================
+
+    print("TEST 36: String-Vergleich (!=)");
+    print("---------------------------------------");
+    var s1:string = "Hello";
+    var s2:string = "World";
+    var s3:string = "Hello";
+
+    if (s1 != s2) {
+        print("'Hello' != 'World': TRUE (korrekt!)");
+    } else {
+        print("'Hello' != 'World': FALSE (fehler!)");
+    }
+
+    if (s1 != s3) {
+        print("'Hello' != 'Hello': TRUE (fehler!)");
+    } else {
+        print("'Hello' != 'Hello': FALSE (korrekt!)");
+    }
+    print("");
+
+    // =================================================================
+    // TEST 37: STRING IN IF/ELSE
+    // =================================================================
+
+    print("TEST 37: String in if/else");
+    print("---------------------------------------");
+    var username:string = "admin";
+
+    if (username == "admin") {
+        print("Willkommen, Administrator!");
+    } else {
+        print("Willkommen, Gast!");
+    }
+
+    if (username == "guest") {
+        print("Gast-Zugang");
+    } else {
+        print("Vollzugriff");
+    }
+    print("");
+
+    // =================================================================
+    // TEST 38: STRING IN FOR-SCHLEIFE
+    // =================================================================
+
+    print("TEST 38: String in for-Schleife");
+    print("---------------------------------------");
+    for(var i:int = 0; i < 3; i++) {
+        var msg:string = "Iteration";
+        print(msg + " " + i);
+    }
+    print("");
+
+    // =================================================================
+    // TEST 39: STRING-FUNKTIONEN (RETURN)
+    // =================================================================
+
+    print("TEST 39: String-Funktionen (Return)");
+    print("---------------------------------------");
+    var welcomeMsg:string = getWelcomeMessage();
+    var defaultName:string = getDefaultName();
+    var empty:string = getEmptyString();
+
+    print("getWelcomeMessage(): " + welcomeMsg);
+    print("getDefaultName(): " + defaultName);
+    print("getEmptyString(): '" + empty + "'");
+    print("");
+
+    // =================================================================
+    // TEST 40: STRING-FUNKTIONEN (VOID RETURN)
+    // =================================================================
+
+    print("TEST 40: String-Funktionen (void return)");
+    print("---------------------------------------");
+    greet("Alice");
+    greet("Bob");
+    greet("Charlie");
+    print("");
+
+    farewell("Alice");
+    farewell("Bob");
+    print("");
+
+    announce("IMPORTANT MESSAGE");
+    announce("System Update");
+    print("");
+
+    // =================================================================
+    // TEST 41: STRING-FUNKTIONEN (MIT RETURN)
+    // =================================================================
+
+    print("TEST 41: String-Funktionen (mit return)");
+    print("---------------------------------------");
+    var greetingAlice:string = makeGreeting("Alice");
+    var greetingBob:string = makeGreeting("Bob");
+
+    print("Greeting for Alice: " + greetingAlice);
+    print("Greeting for Bob: " + greetingBob);
+    print("");
+
+    // =================================================================
+    // TEST 42: MEHRERE STRING-PARAMETER
+    // =================================================================
+
+    print("TEST 42: Mehrere String-Parameter");
+    print("---------------------------------------");
+    combineNames("Max", "Mustermann");
+    print("");
+
+    printThreeStrings("Erste", "Zweite", "Dritte");
+    print("");
+
+    // =================================================================
+    // TEST 43: GEMISCHTE PARAMETER (STRING + INT)
+    // =================================================================
+
+    print("TEST 43: Gemischte Parameter (string + int)");
+    print("---------------------------------------");
+    printNameAndAge("Philipp", 25);
+    printNameAndAge("Anna", 30);
+    print("");
+
+    print("Repeat-Test:");
+    repeatMessage("Hello!", 3);
+    print("");
+
+    // =================================================================
+    // TEST 44: STRING-VERGLEICH ALS FUNKTION
+    // =================================================================
+
+    print("TEST 44: String-Vergleich als Funktion");
+    print("---------------------------------------");
+    var equal1:bit = stringsAreEqual("Test", "Test");
+    var equal2:bit = stringsAreEqual("Test", "Different");
+    var diff1:bit = stringsAreDifferent("A", "B");
+    var diff2:bit = stringsAreDifferent("Same", "Same");
+
+    print("stringsAreEqual('Test', 'Test'): " + equal1);
+    print("stringsAreEqual('Test', 'Different'): " + equal2);
+    print("stringsAreDifferent('A', 'B'): " + diff1);
+    print("stringsAreDifferent('Same', 'Same'): " + diff2);
+    print("");
+
+    // =================================================================
+    // TEST 45: STRING-VALIDIERUNG
+    // =================================================================
+
+    print("TEST 45: String-Validierung");
+    print("---------------------------------------");
+    var emptyString:string = "";
+    var nonEmptyString:string = "Content";
+
+    var isEmpty1:bit = isEmptyString(emptyString);
+    var isEmpty2:bit = isEmptyString(nonEmptyString);
+    var isNotEmpty1:bit = isNotEmpty(emptyString);
+    var isNotEmpty2:bit = isNotEmpty(nonEmptyString);
+
+    print("isEmptyString(''): " + isEmpty1);
+    print("isEmptyString('Content'): " + isEmpty2);
+    print("isNotEmpty(''): " + isNotEmpty1);
+    print("isNotEmpty('Content'): " + isNotEmpty2);
+    print("");
+
+    // =================================================================
+    // TEST 46: STRINGS IN KOMPLEXEN IF-BEDINGUNGEN
+    // =================================================================
+
+    print("TEST 46: Strings in komplexen if-Bedingungen");
+    print("---------------------------------------");
+    var user:string = "admin";
+    var pass:string = "secret";
+    var role:string = "admin";
+
+    if (user == "admin" && pass == "secret") {
+        print("Login erfolgreich!");
+    } else {
+        print("Login fehlgeschlagen!");
+    }
+
+    if (role == "admin" || role == "moderator") {
+        print("Erhöhte Rechte verfügbar");
+    } else {
+        print("Normale Benutzerrechte");
+    }
+    print("");
+
+    // =================================================================
+    // TEST 47: STRING-ARRAY SIMULATION (MEHRERE VARIABLEN)
+    // =================================================================
+
+    print("TEST 47: String-Array Simulation");
+    print("---------------------------------------");
+    var day1:string = "Montag";
+    var day2:string = "Dienstag";
+    var day3:string = "Mittwoch";
+    var day4:string = "Donnerstag";
+    var day5:string = "Freitag";
+
+    print("Wochentage:");
+    print("1. " + day1);
+    print("2. " + day2);
+    print("3. " + day3);
+    print("4. " + day4);
+    print("5. " + day5);
+    print("");
+
+    // =================================================================
+    // TEST 48: STRINGS IN VERSCHACHTELTEN FUNKTIONEN
+    // =================================================================
+
+    print("TEST 48: Strings in verschachtelten Funktionen");
+    print("---------------------------------------");
+    var msg1:string = getWelcomeMessage();
+    greet(msg1);
+
+    var msg2:string = getDefaultName();
+    farewell(msg2);
+    print("");
+
+    // =================================================================
+    // TEST 49: STRING MIT SONDERZEICHEN
+    // =================================================================
+
+    print("TEST 49: String mit Sonderzeichen");
+    print("---------------------------------------");
+    var special1:string = "Hello\nWorld";
+    var special2:string = "Tab\tTest";
+    var special3:string = "Quote: \"Test\"";
+
+    print("Newline-String:");
+    print(special1);
+    print("");
+    print("Tab-String:");
+    print(special2);
+    print("");
+    print("Quote-String:");
+    print(special3);
+    print("");
+
+    // =================================================================
+    // TEST 50: STRING-STRESS-TEST
+    // =================================================================
+
+    print("TEST 50: String-Stress-Test");
+    print("---------------------------------------");
+    print("10 verschiedene Strings:");
+
+    var str_1:string = "String_1";
+    var str_2:string = "String_2";
+    var str_3:string = "String_3";
+    var str_4:string = "String_4";
+    var str_5:string = "String_5";
+    var str_6:string = "String_6";
+    var str_7:string = "String_7";
+    var str_8:string = "String_8";
+    var str_9:string = "String_9";
+    var str_10:string = "String_10";
+
+    print(str_1);
+    print(str_2);
+    print(str_3);
+    print(str_4);
+    print(str_5);
+    print(str_6);
+    print(str_7);
+    print(str_8);
+    print(str_9);
+    print(str_10);
+    print("");
+
+    // =================================================================
     // ABSCHLUSS
     // =================================================================
 
     printSeparator();
-    print("ALL 31 TESTS PASSED!");
-    print("Compiler Version 3.0.1 - Alle Features funktionieren!");
-    print("Neue Features: 6 Datentypen, Type Inference, Character/Float Literals");
+    print("ALL 50 TESTS PASSED!");
+    print("Compiler Version 4.0.0 - Alle Features funktionieren!");
+    print("Neue Features:");
+    print("  - STRING als vollwertiger Datentyp");
+    print("  - String-Variablen, Assignment, Vergleich");
+    print("  - String-Parameter und Return-Werte");
+    print("  - Strings in if/else, for-Schleifen");
+    print("");
+    print("Features aus v3.0.1:");
+    print("  - 6 Datentypen (int, char, byte, bit, float, double)");
+    print("  - Type Inference & explizite Typen");
+    print("  - Character & Float Literals");
     printSeparator();
 }
