@@ -1,3 +1,0 @@
-/home/runner/work/compiler/compiler/build/CMakeFiles/compiler.dir
-/home/runner/work/compiler/compiler/build/CMakeFiles/edit_cache.dir
-/home/runner/work/compiler/compiler/build/CMakeFiles/rebuild_cache.dir

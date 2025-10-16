@@ -1,0 +1,17 @@
+# Build artifacts
+build/
+*.o
+*.s
+*.out
+
+# Compiled binaries
+compiler
+program
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+*.swp
