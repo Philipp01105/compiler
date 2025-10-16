@@ -327,6 +327,14 @@ void parse_function(Parser *parser) {
 
         strcpy(func->params[func->param_count], param_token.value);
 
+        // Check for array parameter: param[]:type
+        int is_array_param = 0;
+        if (check(parser->tokens, TOKEN_LBRACKET)) {
+            consume(parser->tokens);
+            is_array_param = 1;
+            expect(parser, TOKEN_RBRACKET, "Expected ']' in array parameter");
+        }
+
         expect(parser, TOKEN_COLON, "Expected ':' after parameter");
 
         Token type_token = consume(parser->tokens);
@@ -338,6 +346,7 @@ void parse_function(Parser *parser) {
         }
 
         func->param_types[func->param_count] = param_type;
+        func->param_is_array[func->param_count] = is_array_param;
 
         if (parser->var_count >= MAX_VARS) {
             parser_error(parser, "Too many variables");
@@ -347,7 +356,15 @@ void parse_function(Parser *parser) {
         Variable *var = &parser->vars[parser->var_count];
         strcpy(var->name, param_token.value);
         var->type = param_type;
-        var->size = datatype_size(param_type);
+        var->is_array = is_array_param;
+        var->array_size = 0;  // Unknown size for array parameters
+        
+        // Array parameters are passed as pointers (8 bytes)
+        if (is_array_param) {
+            var->size = 8;
+        } else {
+            var->size = datatype_size(param_type);
+        }
 
         var->offset = -param_offset;
         param_offset += var->size;
@@ -378,6 +395,15 @@ void parse_function(Parser *parser) {
     }
 
     func->return_type = return_type;
+    
+    // Check for array return type: -> int[]
+    if (check(parser->tokens, TOKEN_LBRACKET)) {
+        consume(parser->tokens);
+        func->return_is_array = 1;
+        expect(parser, TOKEN_RBRACKET, "Expected ']' after array return type");
+    } else {
+        func->return_is_array = 0;
+    }
 
     code_comment(parser, "========================================");
     code_comment(parser, "Function: %s (Line %d)", func_name, func_token.line);
@@ -410,7 +436,10 @@ void parse_function(Parser *parser) {
     for (int i = 0; i < func->param_count && i < 4; i++) {
         Variable *var = &parser->vars[saved_var_count + i];
 
-        if (var->type == TYPE_FLOAT || var->type == TYPE_DOUBLE) {
+        // Array parameters are passed as pointers (8 bytes)
+        if (var->is_array) {
+            code_printf(parser, "    movq %s, %d(%%rbp)\n", param_regs_64[i], var->offset);
+        } else if (var->type == TYPE_FLOAT || var->type == TYPE_DOUBLE) {
             if (var->type == TYPE_FLOAT) {
                 code_printf(parser, "    movss %s, %d(%%rbp)\n", param_regs_float[i], var->offset);
             } else {
@@ -720,11 +749,19 @@ void parse_assignment(Parser *parser) {
         int element_size = datatype_size(var->type);
         
         // Pop value into appropriate register
-        if (var->type == TYPE_FLOAT || var->type == TYPE_DOUBLE) {
-            code_printf(parser, "    popq %%rcx\n");  // value
-            code_printf(parser, "    popq %%rax\n");  // index
+        code_printf(parser, "    popq %%rcx\n");  // value
+        code_printf(parser, "    popq %%rax\n");  // index
+        
+        // For array parameters (pointers), load the pointer first
+        if (var->is_array && var->array_size == 0) {
+            // Array parameter - it's a pointer, load it
+            code_printf(parser, "    movq %d(%%rbp), %%rbx\n", var->offset);  // load pointer
+        } else {
+            // Local array - calculate address
             code_printf(parser, "    leaq %d(%%rbp), %%rbx\n", var->offset);  // base address
-            
+        }
+        
+        if (var->type == TYPE_FLOAT || var->type == TYPE_DOUBLE) {
             if (var->type == TYPE_FLOAT) {
                 code_printf(parser, "    movq %%rcx, %%xmm0\n");
                 code_printf(parser, "    movss %%xmm0, (%%rbx, %%rax, %d)\n", element_size);
@@ -733,10 +770,6 @@ void parse_assignment(Parser *parser) {
                 code_printf(parser, "    movsd %%xmm0, (%%rbx, %%rax, %d)\n", element_size);
             }
         } else {
-            code_printf(parser, "    popq %%rcx\n");  // value
-            code_printf(parser, "    popq %%rax\n");  // index
-            code_printf(parser, "    leaq %d(%%rbp), %%rbx\n", var->offset);  // base address
-            
             if (var->type == TYPE_CHAR || var->type == TYPE_BYTE || var->type == TYPE_BIT) {
                 code_printf(parser, "    movb %%cl, (%%rbx, %%rax, %d)\n", element_size);
             } else if (var->type == TYPE_STRING) {
@@ -1343,6 +1376,51 @@ void parse_print_statement(Parser *parser) {
                 code_printf(parser, "    subq $40, %%rsp\n");
                 code_printf(parser, "    call printf\n");
                 code_printf(parser, "    addq $40, %%rsp\n");
+            } else if (lookahead.type == TOKEN_LBRACKET) {
+                // Array access in print: arr[index]
+                consume(parser->tokens);  // consume identifier
+                consume(parser->tokens);  // consume [
+                
+                Variable *var = find_variable(parser, name.value);
+                if (!var) {
+                    parser_error(parser, "Variable '%s' not found", name.value);
+                    return;
+                }
+                
+                // Parse the index expression
+                parse_expression(parser);
+                
+                expect(parser, TOKEN_RBRACKET, "Expected ']' after array index");
+                
+                // Load array element value
+                int element_size = datatype_size(var->type);
+                code_printf(parser, "    popq %%rax\n");  // index
+                
+                // For array parameters (pointers), load the pointer first
+                if (var->is_array && var->array_size == 0) {
+                    code_printf(parser, "    movq %d(%%rbp), %%rbx\n", var->offset);
+                } else {
+                    code_printf(parser, "    leaq %d(%%rbp), %%rbx\n", var->offset);
+                }
+                
+                // Load the array element based on type
+                if (var->type == TYPE_INT) {
+                    code_printf(parser, "    movl (%%rbx, %%rax, %d), %%edx\n", element_size);
+                    code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
+                } else if (var->type == TYPE_CHAR) {
+                    code_printf(parser, "    movsbl (%%rbx, %%rax, %d), %%edx\n", element_size);
+                    code_printf(parser, "    leaq .LC_char_format(%%rip), %%rcx\n");
+                } else if (var->type == TYPE_BYTE || var->type == TYPE_BIT) {
+                    code_printf(parser, "    movzbl (%%rbx, %%rax, %d), %%edx\n", element_size);
+                    code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
+                } else {
+                    parser_error(parser, "Unsupported array element type in print");
+                    return;
+                }
+                
+                code_printf(parser, "    subq $40, %%rsp\n");
+                code_printf(parser, "    call printf\n");
+                code_printf(parser, "    addq $40, %%rsp\n");
             } else {
                 consume(parser->tokens);
 
@@ -1837,7 +1915,15 @@ void parse_primary(Parser *parser) {
                 int element_size = datatype_size(var->type);
                 
                 code_printf(parser, "    popq %%rax\n");  // index
-                code_printf(parser, "    leaq %d(%%rbp), %%rbx\n", var->offset);  // base address
+                
+                // For array parameters (pointers), load the pointer first
+                if (var->is_array && var->array_size == 0) {
+                    // Array parameter - it's a pointer, load it
+                    code_printf(parser, "    movq %d(%%rbp), %%rbx\n", var->offset);  // load pointer
+                } else {
+                    // Local array - calculate address
+                    code_printf(parser, "    leaq %d(%%rbp), %%rbx\n", var->offset);  // base address
+                }
                 
                 if (var->type == TYPE_FLOAT) {
                     code_printf(parser, "    movss (%%rbx, %%rax, %d), %%xmm0\n", element_size);

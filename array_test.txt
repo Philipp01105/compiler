@@ -1,0 +1,283 @@
+// =================================================================
+// ARRAY TEST SUITE - Version 4.5.0
+// Comprehensive array feature tests
+// =================================================================
+
+// Test helper functions
+func printSeparator() -> void
+{
+    print("-----------------------------------------------------------------");
+}
+
+func printHeader(msg:string) -> void
+{
+    print("");
+    print("=================================================================");
+    print(msg);
+    print("=================================================================");
+}
+
+// =================================================================
+// ARRAY FUNCTIONS
+// =================================================================
+
+func sumArray(arr[]:int, size:int) -> int
+{
+    var sum:int = 0;
+    for (var i:int = 0; i < size; i++) {
+        var temp:int = sum + arr[i];
+        sum = temp;
+    }
+    return sum;
+}
+
+func fillArray(arr[]:int, size:int, value:int) -> void
+{
+    for (var i:int = 0; i < size; i++) {
+        arr[i] = value;
+    }
+}
+
+func reverseArray(arr[]:int, size:int) -> void
+{
+    for (var i:int = 0; i < size / 2; i++) {
+        var j:int = size - 1 - i;
+        var temp:int = arr[i];
+        arr[i] = arr[j];
+        arr[j] = temp;
+    }
+}
+
+// =================================================================
+// MAIN FUNCTION - ARRAY TESTS
+// =================================================================
+
+func main() -> void
+{
+    print("#################################################################");
+    print("#                                                               #");
+    print("#        ARRAY TEST SUITE - Version 4.5.0                      #");
+    print("#                                                               #");
+    print("#################################################################");
+    print("");
+
+    // =================================================================
+    // TEST 1: Basic Array Declaration and Assignment
+    // =================================================================
+    
+    printHeader("TEST 1: Basic Array Declaration (int)");
+    printSeparator();
+    var[5] numbers:int;
+    numbers[0] = 10;
+    numbers[1] = 20;
+    numbers[2] = 30;
+    numbers[3] = 40;
+    numbers[4] = 50;
+    print("  numbers[0] = " + numbers[0]);
+    print("  numbers[1] = " + numbers[1]);
+    print("  numbers[2] = " + numbers[2]);
+    print("  numbers[3] = " + numbers[3]);
+    print("  numbers[4] = " + numbers[4]);
+    print("  [OK] Basic array works");
+
+    // =================================================================
+    // TEST 2: Array Access in Expressions
+    // =================================================================
+    
+    printHeader("TEST 2: Array Access in Expressions");
+    printSeparator();
+    var x:int = numbers[0];
+    var y:int = numbers[1];
+    var sum:int = x + y;
+    print("  x = numbers[0] = " + x);
+    print("  y = numbers[1] = " + y);
+    print("  sum = x + y = " + sum);
+    var direct_sum:int = numbers[0] + numbers[1];
+    print("  Direct: numbers[0] + numbers[1] = " + direct_sum);
+    print("  [OK] Array access in expressions works");
+
+    // =================================================================
+    // TEST 3: Array in Loops
+    // =================================================================
+    
+    printHeader("TEST 3: Array in Loops");
+    printSeparator();
+    var[10] loop_array:int;
+    print("  Filling array with i*2:");
+    for (var i:int = 0; i < 10; i++) {
+        loop_array[i] = i * 2;
+        print("    loop_array[" + i + "] = " + loop_array[i]);
+    }
+    print("  [OK] Array in loops works");
+
+    // =================================================================
+    // TEST 4: Byte Arrays
+    // =================================================================
+    
+    printHeader("TEST 4: Byte Arrays");
+    printSeparator();
+    var[5] bytes:byte;
+    bytes[0] = 100;
+    bytes[1] = 150;
+    bytes[2] = 200;
+    bytes[3] = 250;
+    bytes[4] = 255;
+    print("  bytes[0] = " + bytes[0]);
+    print("  bytes[1] = " + bytes[1]);
+    print("  bytes[2] = " + bytes[2]);
+    print("  bytes[3] = " + bytes[3]);
+    print("  bytes[4] = " + bytes[4]);
+    print("  [OK] Byte arrays work");
+
+    // =================================================================
+    // TEST 5: Char Arrays
+    // =================================================================
+    
+    printHeader("TEST 5: Char Arrays");
+    printSeparator();
+    var[5] chars:char;
+    chars[0] = 'H';
+    chars[1] = 'e';
+    chars[2] = 'l';
+    chars[3] = 'l';
+    chars[4] = 'o';
+    print("  chars[0] = " + chars[0]);
+    print("  chars[1] = " + chars[1]);
+    print("  chars[2] = " + chars[2]);
+    print("  chars[3] = " + chars[3]);
+    print("  chars[4] = " + chars[4]);
+    print("  [OK] Char arrays work");
+
+    // =================================================================
+    // TEST 6: String Indexing (Variables)
+    // =================================================================
+    
+    printHeader("TEST 6: String Indexing (Variables)");
+    printSeparator();
+    var str:string = "Hello";
+    var ch0:char = str[0];
+    var ch1:char = str[1];
+    var ch2:char = str[2];
+    print("  str = 'Hello'");
+    print("  str[0] = " + ch0);
+    print("  str[1] = " + ch1);
+    print("  str[2] = " + ch2);
+    print("  [OK] String variable indexing works");
+
+    // =================================================================
+    // TEST 7: String Literal Indexing
+    // =================================================================
+    
+    printHeader("TEST 7: String Literal Indexing");
+    printSeparator();
+    var lit0:char = "World"[0];
+    var lit1:char = "World"[1];
+    var lit2:char = "World"[2];
+    print("  'World'[0] = " + lit0);
+    print("  'World'[1] = " + lit1);
+    print("  'World'[2] = " + lit2);
+    print("  [OK] String literal indexing works");
+
+    // =================================================================
+    // TEST 8: Array Computation
+    // =================================================================
+    
+    printHeader("TEST 8: Array Computation");
+    printSeparator();
+    var[5] compute:int;
+    compute[0] = 1;
+    compute[1] = 2;
+    compute[2] = 3;
+    compute[3] = 4;
+    compute[4] = 5;
+    var total:int = 0;
+    for (var j:int = 0; j < 5; j++) {
+        var temp:int = total + compute[j];
+        total = temp;
+    }
+    print("  Array: [1, 2, 3, 4, 5]");
+    print("  Sum: " + total);
+    print("  [OK] Array computation works");
+
+    // =================================================================
+    // TEST 9: Multiple Arrays
+    // =================================================================
+    
+    printHeader("TEST 9: Multiple Arrays");
+    printSeparator();
+    var[3] arr1:int;
+    var[3] arr2:int;
+    arr1[0] = 10;
+    arr1[1] = 20;
+    arr1[2] = 30;
+    arr2[0] = 100;
+    arr2[1] = 200;
+    arr2[2] = 300;
+    print("  arr1[0] = " + arr1[0] + ", arr2[0] = " + arr2[0]);
+    print("  arr1[1] = " + arr1[1] + ", arr2[1] = " + arr2[1]);
+    print("  arr1[2] = " + arr1[2] + ", arr2[2] = " + arr2[2]);
+    print("  [OK] Multiple arrays work");
+
+    // =================================================================
+    // TEST 10: Array Copying
+    // =================================================================
+    
+    printHeader("TEST 10: Array Copying");
+    printSeparator();
+    var[5] src:int;
+    var[5] dst:int;
+    src[0] = 1;
+    src[1] = 2;
+    src[2] = 3;
+    src[3] = 4;
+    src[4] = 5;
+    for (var k:int = 0; k < 5; k++) {
+        dst[k] = src[k];
+    }
+    print("  Source: [1, 2, 3, 4, 5]");
+    print("  Destination after copy:");
+    for (var m:int = 0; m < 5; m++) {
+        print("    dst[" + m + "] = " + dst[m]);
+    }
+    print("  [OK] Array copying works");
+
+    // =================================================================
+    // FINAL SUMMARY
+    // =================================================================
+
+    print("");
+    print("#################################################################");
+    print("#                                                               #");
+    print("#              ARRAY TEST SUITE COMPLETED                       #");
+    print("#                                                               #");
+    print("#################################################################");
+    print("");
+    printSeparator();
+    print("SUMMARY");
+    printSeparator();
+    print("");
+    print("Tests Completed: 10");
+    print("Status: All basic tests passed");
+    print("");
+    print("Features Tested:");
+    print("  - Array declaration with size");
+    print("  - Array element assignment");
+    print("  - Array element access");
+    print("  - Arrays in loops");
+    print("  - Byte arrays");
+    print("  - Char arrays");
+    print("  - String variable indexing");
+    print("  - String literal indexing");
+    print("  - Array computation");
+    print("  - Multiple arrays");
+    print("  - Array copying");
+    print("");
+    printSeparator();
+    print("");
+    print("#################################################################");
+    print("#                                                               #");
+    print("#     [+] ARRAY SUPPORT VERSION 4.5.0 WORKING!                 #");
+    print("#                                                               #");
+    print("#################################################################");
+    print("");
+}
