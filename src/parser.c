@@ -405,6 +405,15 @@ void parse_function(Parser *parser) {
         func->return_is_array = 0;
     }
 
+    // Check for array return type: -> int[]
+    if (check(parser->tokens, TOKEN_LBRACKET)) {
+        consume(parser->tokens);
+        func->return_is_array = 1;
+        expect(parser, TOKEN_RBRACKET, "Expected ']' after array return type");
+    } else {
+        func->return_is_array = 0;
+    }
+
     code_comment(parser, "========================================");
     code_comment(parser, "Function: %s (Line %d)", func_name, func_token.line);
     code_comment(parser, "Parameters: %d, Return: %s",
@@ -546,10 +555,10 @@ void parse_variable_declaration(Parser *parser) {
             }
         }
         // else: array_size = 0 means unknown size (for parameters)
-        
+
         expect(parser, TOKEN_RBRACKET, "Expected ']' after array size");
     }
-    
+
     Token name_token = consume(parser->tokens);
 
     DataType var_type = TYPE_INT;

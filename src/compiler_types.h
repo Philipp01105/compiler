@@ -178,4 +178,4 @@ typedef struct {
     int loop_counter;
 } Parser;
 
-#endif // COMPILER_TYPES_H
+#endif
