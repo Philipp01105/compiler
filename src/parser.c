@@ -554,7 +554,6 @@ void parse_variable_declaration(Parser *parser) {
                 return;
             }
         }
-        // else: array_size = 0 means unknown size (for parameters)
 
         expect(parser, TOKEN_RBRACKET, "Expected ']' after array size");
     }
@@ -577,7 +576,7 @@ void parse_variable_declaration(Parser *parser) {
 
         has_explicit_type = 1;
     }
-    
+
     // Arrays must have explicit types
     if (is_array && !has_explicit_type) {
         parser_error(parser, "Arrays must have explicit type specified");
@@ -589,9 +588,21 @@ void parse_variable_declaration(Parser *parser) {
         parser_error(parser, "Array initialization with '=' not supported. Use assignment to elements.");
         return;
     }
-    
+
     if (!is_array && check(parser->tokens, TOKEN_EQUAL)) {
         consume(parser->tokens);
+
+        // NEW: Auto-detect type from literal if no explicit type given
+        if (!has_explicit_type) {
+            if (check(parser->tokens, TOKEN_FLOAT_LITERAL)) {
+                var_type = TYPE_FLOAT;  // Auto-detect float
+            } else if (check(parser->tokens, TOKEN_CHAR_LITERAL)) {
+                var_type = TYPE_CHAR;  // Auto-detect char
+            } else if (check(parser->tokens, TOKEN_STRING_LITERAL)) {
+                var_type = TYPE_STRING;  // Auto-detect string
+            }
+            // else: keep TYPE_INT for numbers
+        }
 
         if (var_type == TYPE_STRING && check(parser->tokens, TOKEN_STRING_LITERAL)) {
             Token str_token = consume(parser->tokens);
@@ -642,33 +653,26 @@ void parse_variable_declaration(Parser *parser) {
     var->type = var_type;
     var->is_array = is_array;
     var->array_size = array_size;
-    
+
     // Calculate total size: element_size * array_count
     int element_size = datatype_size(var_type);
     if (is_array) {
         if (array_size > 0) {
             var->size = element_size * array_size;
         } else {
-            // Unknown size (parameter) - treat as pointer
             var->size = 8;
         }
     } else {
         var->size = element_size;
     }
 
-    // ========== KOMPLETT NEUE OFFSET-BERECHNUNG ==========
-    // Strategie: Finde den kleinsten (negativsten) bereits verwendeten Offset
-    // und platziere die neue Variable DARUNTER
+    // Offset calculation (unchanged)
+    int smallest_offset = 0;
 
-    int smallest_offset = 0;  // Beginne bei 0 (direkt unter %rbp)
-
-    // Durchsuche ALLE Variablen und finde den kleinsten Offset
     for (int i = 0; i < parser->var_count; i++) {
         Variable *v = &parser->vars[i];
 
-        // Nur Variablen im aktuellen Scope oder höher betrachten
         if (v->scope >= 1 && v->scope <= parser->current_scope) {
-            // Berechne das Ende dieser Variable (offset - size)
             int var_end = v->offset - v->size;
             if (var_end < smallest_offset) {
                 smallest_offset = var_end;
@@ -676,27 +680,20 @@ void parse_variable_declaration(Parser *parser) {
         }
     }
 
-    // Jetzt platziere die neue Variable unter smallest_offset
     int new_offset = smallest_offset;
 
-    // Alignment für 8-Byte Variablen
     if (var->size == 8) {
-        // Stelle sicher, dass new_offset auf 8-Byte-Grenze liegt
         if ((-new_offset) % 8 != 0) {
-            // Runde nach unten (negativer)
             new_offset = -((((-new_offset) / 8) + 1) * 8);
         }
     }
 
-    // Setze den finalen Offset
     var->offset = new_offset - var->size;
     var->scope = parser->current_scope;
     parser->var_count++;
 
-    // Code-Generierung
+    // Code generation
     if (is_array) {
-        // Arrays don't need initialization - space is just allocated
-        // The offset points to the start of the array
         code_comment(parser, "Array allocated at offset %d, total size %d bytes", 
                      var->offset, var->size);
     } else if (var_type == TYPE_FLOAT) {
