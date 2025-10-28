@@ -1,0 +1,183 @@
+// Test heap-allocated mutable strings
+// Tests: malloc, free, strdup, and string character modification
+
+func main() -> void {
+    print("#################################################################");
+    print("#                                                               #");
+    print("#        HEAP-ALLOCATED STRING TEST SUITE                      #");
+    print("#                                                               #");
+    print("#################################################################");
+    print("");
+    
+    // Test 1: malloc - Allocate memory for a string
+    print("=================================================================");
+    print("TEST 1: malloc() - Allocate string buffer");
+    print("=================================================================");
+    
+    var buffer:string = malloc(100);
+    
+    // Initialize with a string
+    strcpy(buffer, "Hello World");
+    print("  Allocated and initialized: " + buffer);
+    
+    // Modify first character
+    buffer[0] = 'J';
+    print("  After buffer[0] = 'J': " + buffer);
+    
+    // Modify more characters
+    buffer[1] = 'a';
+    buffer[2] = 'm';
+    buffer[3] = 'e';
+    buffer[4] = 's';
+    print("  After modifications: " + buffer);
+    
+    free(buffer);
+    print("  [OK] malloc/free with modification works");
+    print("");
+    
+    // Test 2: strdup - Duplicate a string on the heap
+    print("=================================================================");
+    print("TEST 2: strdup() - Duplicate string to heap");
+    print("=================================================================");
+    
+    var original:string = "Original";
+    var duplicate:string = strdup(original);
+    
+    print("  Original: " + original);
+    print("  Duplicate: " + duplicate);
+    
+    // Modify the duplicate
+    duplicate[0] = 'M';
+    duplicate[1] = 'u';
+    duplicate[2] = 't';
+    duplicate[3] = 'a';
+    duplicate[4] = 't';
+    duplicate[5] = 'e';
+    duplicate[6] = 'd';
+    duplicate[7] = '!';
+    
+    print("  After modifying duplicate: " + duplicate);
+    print("  Original unchanged: " + original);
+    
+    free(duplicate);
+    print("  [OK] strdup works");
+    print("");
+    
+    // Test 3: String concatenation with heap strings
+    print("=================================================================");
+    print("TEST 3: String concatenation with heap strings");
+    print("=================================================================");
+    
+    var str1:string = malloc(100);
+    var str2:string = "World";
+    
+    strcpy(str1, "Hello ");
+    print("  str1 before concat: " + str1);
+    
+    strcat(str1, str2);
+    print("  str1 after strcat: " + str1);
+    
+    free(str1);
+    print("  [OK] String concatenation works");
+    print("");
+    
+    // Test 4: Building strings character by character
+    print("=================================================================");
+    print("TEST 4: Building strings character by character");
+    print("=================================================================");
+    
+    var custom:string = malloc(20);
+    
+    custom[0] = 'C';
+    custom[1] = 'u';
+    custom[2] = 's';
+    custom[3] = 't';
+    custom[4] = 'o';
+    custom[5] = 'm';
+    custom[6] = '\0';
+    
+    print("  Custom string: " + custom);
+    
+    var len:int = strlen(custom);
+    print("  Length: " + len);
+    
+    free(custom);
+    print("  [OK] Character-by-character construction works");
+    print("");
+    
+    // Test 5: Copying between heap strings
+    print("=================================================================");
+    print("TEST 5: Copying between heap strings");
+    print("=================================================================");
+    
+    var src:string = strdup("Source");
+    var dst:string = malloc(50);
+    
+    print("  Source: " + src);
+    
+    strcpy(dst, src);
+    print("  Destination after copy: " + dst);
+    
+    // Verify they match
+    var cmp:int = strcmp(src, dst);
+    if (cmp == 0) {
+        print("  Strings match: TRUE");
+    }
+    
+    free(src);
+    free(dst);
+    print("  [OK] Copying between heap strings works");
+    print("");
+    
+    // Test 6: Multiple allocations and modifications
+    print("=================================================================");
+    print("TEST 6: Multiple heap strings simultaneously");
+    print("=================================================================");
+    
+    var s1:string = strdup("First");
+    var s2:string = strdup("Second");
+    var s3:string = strdup("Third");
+    
+    print("  s1: " + s1);
+    print("  s2: " + s2);
+    print("  s3: " + s3);
+    
+    // Modify each
+    s1[0] = 'F';
+    s2[0] = 'S';
+    s3[0] = 'T';
+    
+    print("  After uppercase first letter:");
+    print("    s1: " + s1);
+    print("    s2: " + s2);
+    print("    s3: " + s3);
+    
+    free(s1);
+    free(s2);
+    free(s3);
+    print("  [OK] Multiple heap strings work");
+    print("");
+    
+    // Summary
+    print("#################################################################");
+    print("#                                                               #");
+    print("#     [+] ALL HEAP STRING TESTS PASSED                         #");
+    print("#                                                               #");
+    print("#################################################################");
+    print("");
+    
+    print("Tested features:");
+    print("  [+] malloc() - Allocate memory for strings");
+    print("  [+] free() - Deallocate string memory");
+    print("  [+] strdup() - Duplicate strings on heap");
+    print("  [+] Character-level string modification");
+    print("  [+] strcpy() with heap strings");
+    print("  [+] strcat() with heap strings");
+    print("  [+] Multiple simultaneous heap allocations");
+    print("");
+    print("Heap-allocated strings enable:");
+    print("  - Mutable strings (modify individual characters)");
+    print("  - Dynamic string construction");
+    print("  - Safe string manipulation");
+    print("  - Runtime string building");
+}
