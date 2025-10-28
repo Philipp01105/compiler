@@ -1,0 +1,105 @@
+// Final verification test for break and continue
+
+func test_break_simple() -> void
+{
+    print("Simple break test:");
+    var count:int = 0;
+    for (var i:int = 0; i < 100; i++) {
+        var temp:int = count + 1;
+        count = temp;
+        if (count == 5) {
+            break;
+        }
+    }
+    print("  Count after break: " + count);
+}
+
+func test_continue_simple() -> void
+{
+    print("Simple continue test:");
+    var sum:int = 0;
+    for (var i:int = 0; i < 10; i++) {
+        if (i % 2 != 0) {
+            continue;
+        }
+        var temp:int = sum + i;
+        sum = temp;
+    }
+    print("  Sum of even numbers 0-9: " + sum);
+}
+
+func test_nested_break() -> void
+{
+    print("Nested break test:");
+    var count:int = 0;
+    for (var i:int = 0; i < 5; i++) {
+        for (var j:int = 0; j < 5; j++) {
+            var temp:int = count + 1;
+            count = temp;
+            if (j == 2) {
+                break;
+            }
+        }
+    }
+    print("  Total iterations with inner break: " + count);
+}
+
+func test_nested_continue() -> void
+{
+    print("Nested continue test:");
+    var count:int = 0;
+    for (var i:int = 0; i < 3; i++) {
+        for (var j:int = 0; j < 10; j++) {
+            if (j < 5) {
+                continue;
+            }
+            var temp:int = count + 1;
+            count = temp;
+        }
+    }
+    print("  Total iterations with continue: " + count);
+}
+
+func test_mixed() -> void
+{
+    print("Mixed break and continue test:");
+    var result:int = 0;
+    for (var i:int = 0; i < 100; i++) {
+        if (i < 10) {
+            continue;
+        }
+        if (i > 20) {
+            break;
+        }
+        var temp:int = result + i;
+        result = temp;
+    }
+    print("  Sum of numbers 10-20: " + result);
+}
+
+func main() -> void
+{
+    print("=================================================================");
+    print("FINAL BREAK AND CONTINUE VERIFICATION");
+    print("=================================================================");
+    print("");
+    
+    test_break_simple();
+    print("");
+    
+    test_continue_simple();
+    print("");
+    
+    test_nested_break();
+    print("");
+    
+    test_nested_continue();
+    print("");
+    
+    test_mixed();
+    print("");
+    
+    print("=================================================================");
+    print("ALL VERIFICATION TESTS COMPLETED");
+    print("=================================================================");
+}

@@ -8,6 +8,7 @@
 #define MAX_STRING_LITERALS 5000
 #define MAX_FLOAT_LITERALS 5000
 #define CODE_BUFFER_SIZE 524288
+#define MAX_LOOP_DEPTH 100
 
 // ============================================================================
 // TOKEN TYPES
@@ -23,6 +24,8 @@ typedef enum {
     TOKEN_KEYWORD_ELSE,
     TOKEN_KEYWORD_WHILE,
     TOKEN_KEYWORD_PRINT,
+    TOKEN_KEYWORD_BREAK,
+    TOKEN_KEYWORD_CONTINUE,
 
     // Data Types (ERWEITERT!)
     TOKEN_TYPE_INT,
@@ -154,6 +157,10 @@ typedef struct {
 } FloatLiteral;
 
 typedef struct {
+    int loop_id;  // The ID of this loop
+} LoopContext;
+
+typedef struct {
     TokenStream *tokens;
 
     Variable vars[MAX_VARS];
@@ -176,6 +183,10 @@ typedef struct {
     int debug_mode;
     int label_counter;
     int loop_counter;
+    
+    // Loop context stack for break/continue
+    LoopContext loop_stack[MAX_LOOP_DEPTH];
+    int loop_depth;
 } Parser;
 
 #endif
