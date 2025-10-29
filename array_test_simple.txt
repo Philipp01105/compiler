@@ -1,8 +1,0 @@
-// Simple array test
-func main() -> void
-{
-    var[5] numbers:int;
-    numbers[0] = 10;
-    var x:int = numbers[0];
-    print(x);
-}
