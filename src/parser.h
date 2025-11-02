@@ -19,6 +19,7 @@ void expect(Parser *parser, TokenType type, const char *message);
 // Variable & function management
 Variable *find_variable(Parser *parser, const char *name);
 Function *find_function(Parser *parser, const char *name);
+StructDefinition *find_struct(Parser *parser, const char *name);
 int add_string_literal(Parser *parser, const char *text);
 int add_float_literal(Parser *parser, const char *value);
 void cleanup_scope(Parser *parser, int scope);
@@ -30,6 +31,7 @@ DataType token_to_datatype(TokenType token);
 
 // Parsing functions
 int parse_program(Parser *parser);
+void parse_struct(Parser *parser);
 void parse_function(Parser *parser);
 void parse_function_body(Parser *parser);
 void parse_statement(Parser *parser);
