@@ -97,6 +97,7 @@ Parser *create_parser(TokenStream *tokens) {
     parser->tokens = tokens;
     parser->var_count = 0;
     parser->function_count = 0;
+    parser->struct_count = 0;
     parser->string_literal_count = 0;
     parser->float_literal_count = 0;
     parser->code_pos = 0;
@@ -108,6 +109,7 @@ Parser *create_parser(TokenStream *tokens) {
     parser->label_counter = 0;
     parser->loop_counter = 0;
     parser->loop_depth = 0;
+    parser->current_struct_context[0] = '\0';
 
     memset(parser->code_buffer, 0, CODE_BUFFER_SIZE);
     memset(parser->function_code_buffer, 0, CODE_BUFFER_SIZE);
@@ -212,6 +214,15 @@ Function *find_function(Parser *parser, const char *name) {
     return NULL;
 }
 
+StructDefinition *find_struct(Parser *parser, const char *name) {
+    for (int i = 0; i < parser->struct_count; i++) {
+        if (strcmp(parser->structs[i].name, name) == 0) {
+            return &parser->structs[i];
+        }
+    }
+    return NULL;
+}
+
 int add_string_literal(Parser *parser, const char *text) {
     for (int i = 0; i < parser->string_literal_count; i++) {
         if (strcmp(parser->string_literals[i].text, text) == 0) {
@@ -280,10 +291,12 @@ int parse_program(Parser *parser) {
     printf("================================================================\n\n");
 
     while (!is_at_end(parser->tokens)) {
-        if (check(parser->tokens, TOKEN_KEYWORD_FUNC)) {
+        if (check(parser->tokens, TOKEN_KEYWORD_STRUCT)) {
+            parse_struct(parser);
+        } else if (check(parser->tokens, TOKEN_KEYWORD_FUNC)) {
             parse_function(parser);
         } else {
-            parser_error(parser, "Only functions allowed at top level");
+            parser_error(parser, "Only structs and functions allowed at top level");
             consume(parser->tokens);
         }
     }
@@ -299,11 +312,345 @@ int parse_program(Parser *parser) {
     }
 
     printf("[+] Parsing successful\n");
+    printf("    - Structs: %d\n", parser->struct_count);
     printf("    - Functions: %d\n", parser->function_count);
     printf("    - String literals: %d\n", parser->string_literal_count);
     printf("    - Float literals: %d\n", parser->float_literal_count);
 
     return 1;
+}
+
+// ============================================================================
+// STRUCT PARSING
+// ============================================================================
+
+void parse_struct(Parser *parser) {
+    Token struct_token = peek(parser->tokens);
+    consume(parser->tokens);  // consume 'struct'
+
+    Token name_token = consume(parser->tokens);
+    char struct_name[MAX_TOKEN];
+    strcpy(struct_name, name_token.value);
+
+    if (parser->struct_count >= 50) {
+        parser_error(parser, "Too many structs (max 50)");
+        return;
+    }
+
+    // Check if struct already exists
+    if (find_struct(parser, struct_name) != NULL) {
+        parser_error(parser, "Struct '%s' already defined", struct_name);
+        return;
+    }
+
+    StructDefinition *struct_def = &parser->structs[parser->struct_count];
+    strcpy(struct_def->name, struct_name);
+    struct_def->field_count = 0;
+    struct_def->method_count = 0;
+    struct_def->total_size = 0;
+    parser->struct_count++;
+
+    expect(parser, TOKEN_LBRACE, "Expected '{' after struct name");
+
+    code_comment(parser, "========================================");
+    code_comment(parser, "Struct: %s (Line %d)", struct_name, struct_token.line);
+    code_comment(parser, "========================================");
+
+    int current_offset = 0;
+
+    // Parse struct body (fields and methods)
+    while (!check(parser->tokens, TOKEN_RBRACE) && !is_at_end(parser->tokens)) {
+        // Check if this is a method (func keyword) or a field
+        if (check(parser->tokens, TOKEN_KEYWORD_FUNC)) {
+            // Parse method - it's like a regular function but belongs to the struct
+            consume(parser->tokens);  // consume 'func'
+            
+            Token method_name_token = consume(parser->tokens);
+            char method_name[MAX_TOKEN];
+            strcpy(method_name, method_name_token.value);
+
+            if (parser->function_count >= MAX_FUNCTIONS) {
+                parser_error(parser, "Too many functions (max %d)", MAX_FUNCTIONS);
+                return;
+            }
+
+            // Create mangled function name: StructName_methodName
+            char mangled_name[MAX_TOKEN * 2];
+            snprintf(mangled_name, sizeof(mangled_name), "%s_%s", struct_name, method_name);
+
+            Function *func = &parser->functions[parser->function_count];
+            strcpy(func->name, mangled_name);
+            strcpy(func->struct_name, struct_name);
+            func->param_count = 0;
+
+            // Add to struct's method list
+            if (struct_def->method_count >= MAX_FUNCTIONS) {
+                parser_error(parser, "Too many methods in struct");
+                return;
+            }
+            struct_def->methods[struct_def->method_count] = parser->function_count;
+            struct_def->method_count++;
+            parser->function_count++;
+
+            expect(parser, TOKEN_LPAREN, "Expected '(' after method name");
+
+            int saved_var_count = parser->var_count;
+            int param_offset = 8;
+
+            // First implicit parameter is 'this' pointer to struct instance
+            if (parser->var_count >= MAX_VARS) {
+                parser_error(parser, "Too many variables");
+                return;
+            }
+
+            Variable *this_var = &parser->vars[parser->var_count];
+            strcpy(this_var->name, "this");
+            strcpy(this_var->struct_type, struct_name);
+            this_var->type = TYPE_INT;  // Pointer type (we don't have a separate pointer type)
+            this_var->size = 8;  // Pointer is 8 bytes
+            this_var->offset = -param_offset;
+            this_var->is_array = 0;
+            this_var->array_size = 0;
+            this_var->scope = 1;
+            parser->var_count++;
+            param_offset += 8;
+
+            // Parse remaining parameters
+            while (!check(parser->tokens, TOKEN_RPAREN) && !is_at_end(parser->tokens)) {
+                Token param_token = consume(parser->tokens);
+
+                if (func->param_count >= 9) {  // 9 because first is implicit 'this'
+                    parser_error(parser, "Too many parameters (max 9 for methods, 1 is implicit 'this')");
+                    return;
+                }
+
+                strcpy(func->params[func->param_count], param_token.value);
+
+                int is_array_param = 0;
+                if (check(parser->tokens, TOKEN_LBRACKET)) {
+                    consume(parser->tokens);
+                    is_array_param = 1;
+                    expect(parser, TOKEN_RBRACKET, "Expected ']' in array parameter");
+                }
+
+                expect(parser, TOKEN_COLON, "Expected ':' after parameter");
+
+                Token type_token = consume(parser->tokens);
+                DataType param_type = token_to_datatype(type_token.type);
+
+                if (param_type == TYPE_UNKNOWN) {
+                    parser_error(parser, "Unknown parameter type");
+                    return;
+                }
+
+                func->param_types[func->param_count] = param_type;
+                func->param_is_array[func->param_count] = is_array_param;
+
+                if (parser->var_count >= MAX_VARS) {
+                    parser_error(parser, "Too many variables");
+                    return;
+                }
+
+                Variable *var = &parser->vars[parser->var_count];
+                strcpy(var->name, param_token.value);
+                var->type = param_type;
+                var->is_array = is_array_param;
+                var->array_size = 0;
+                var->struct_type[0] = '\0';
+
+                if (is_array_param) {
+                    var->size = 8;
+                } else {
+                    var->size = datatype_size(param_type);
+                }
+
+                var->offset = -param_offset;
+                param_offset += var->size;
+
+                if (var->size == 8) {
+                    param_offset = ((param_offset + 7) / 8) * 8;
+                }
+
+                var->scope = 1;
+                parser->var_count++;
+
+                func->param_count++;
+
+                if (check(parser->tokens, TOKEN_COMMA)) {
+                    consume(parser->tokens);
+                }
+            }
+
+            expect(parser, TOKEN_RPAREN, "Expected ')' after parameters");
+            expect(parser, TOKEN_ARROW, "Expected '->' before return type");
+
+            Token return_type_token = consume(parser->tokens);
+            DataType return_type = token_to_datatype(return_type_token.type);
+
+            if (return_type == TYPE_UNKNOWN) {
+                parser_error(parser, "Unknown return type");
+                return;
+            }
+
+            func->return_type = return_type;
+            func->return_is_array = 0;
+
+            if (check(parser->tokens, TOKEN_LBRACKET)) {
+                consume(parser->tokens);
+                func->return_is_array = 1;
+                expect(parser, TOKEN_RBRACKET, "Expected ']' after array return type");
+            }
+
+            // Generate method code
+            code_comment(parser, "========================================");
+            code_comment(parser, "Method: %s::%s (Line %d)", struct_name, method_name, method_name_token.line);
+            code_comment(parser, "Mangled name: %s", mangled_name);
+            code_comment(parser, "Parameters: %d (+ implicit this), Return: %s",
+                         func->param_count,
+                         datatype_to_string(func->return_type));
+            code_comment(parser, "========================================");
+
+            code_printf(parser, ".globl %s\n", mangled_name);
+            code_printf(parser, "%s:\n", mangled_name);
+
+            code_comment(parser, "Function prologue");
+            code_printf(parser, "    pushq %%rbp\n");
+            code_printf(parser, "    movq %%rsp, %%rbp\n");
+            code_printf(parser, "    subq $8192, %%rsp\n");
+
+            code_comment(parser, "Save implicit 'this' pointer and parameters to stack");
+
+            const char *param_regs_64[] = {"%rcx", "%rdx", "%r8", "%r9"};
+            const char *param_regs_32[] = {"%ecx", "%edx", "%r8d", "%r9d"};
+            const char *param_regs_float[] = {"%xmm0", "%xmm1", "%xmm2", "%xmm3"};
+
+            // Save 'this' pointer (first parameter)
+            Variable *this_param = &parser->vars[saved_var_count];
+            code_printf(parser, "    movq %s, %d(%%rbp)    # Save 'this' pointer\n", 
+                        param_regs_64[0], this_param->offset);
+
+            // Save remaining parameters
+            for (int i = 0; i < func->param_count && i + 1 < 4; i++) {
+                Variable *var = &parser->vars[saved_var_count + 1 + i];
+                int reg_idx = i + 1;  // Offset by 1 because first reg has 'this'
+
+                if (var->is_array) {
+                    code_printf(parser, "    movq %s, %d(%%rbp)\n", param_regs_64[reg_idx], var->offset);
+                } else if (var->type == TYPE_FLOAT || var->type == TYPE_DOUBLE) {
+                    if (var->type == TYPE_FLOAT) {
+                        code_printf(parser, "    movss %s, %d(%%rbp)\n", param_regs_float[reg_idx], var->offset);
+                    } else {
+                        code_printf(parser, "    movsd %s, %d(%%rbp)\n", param_regs_float[reg_idx], var->offset);
+                    }
+                } else if (var->type == TYPE_CHAR || var->type == TYPE_BYTE || var->type == TYPE_BIT) {
+                    if (reg_idx == 1) {
+                        code_printf(parser, "    movb %%dl, %d(%%rbp)\n", var->offset);
+                    } else if (reg_idx == 2) {
+                        code_printf(parser, "    movb %%r8b, %d(%%rbp)\n", var->offset);
+                    } else if (reg_idx == 3) {
+                        code_printf(parser, "    movb %%r9b, %d(%%rbp)\n", var->offset);
+                    }
+                } else if (var->type == TYPE_STRING) {
+                    code_printf(parser, "    movq %s, %d(%%rbp)\n", param_regs_64[reg_idx], var->offset);
+                } else {
+                    code_printf(parser, "    movl %s, %d(%%rbp)\n", param_regs_32[reg_idx], var->offset);
+                }
+            }
+
+            parser->current_scope = 1;
+            parser->scope_depth = 1;
+            strcpy(parser->current_struct_context, struct_name);
+
+            parse_function_body(parser);
+
+            cleanup_scope(parser, parser->current_scope);
+            parser->current_scope = 0;
+            parser->scope_depth = 0;
+            parser->current_struct_context[0] = '\0';
+            parser->var_count = saved_var_count;
+
+            if (func->return_type == TYPE_VOID) {
+                code_comment(parser, "Function epilogue (void return)");
+                code_printf(parser, "    leave\n");
+                code_printf(parser, "    ret\n");
+            }
+
+            code_printf(parser, "\n");
+
+        } else {
+            // Parse field declaration: type name; (C-style) or var name:type; or name:type;
+            Token first_token = consume(parser->tokens);
+            DataType field_type = TYPE_UNKNOWN;
+            char field_name[MAX_TOKEN];
+            
+            // Check if first token is a type (C-style: int x;)
+            field_type = token_to_datatype(first_token.type);
+            
+            if (field_type != TYPE_UNKNOWN) {
+                // C-style declaration: type name;
+                Token name_token = consume(parser->tokens);
+                strcpy(field_name, name_token.value);
+            } else if (first_token.type == TOKEN_KEYWORD_VAR) {
+                // var name:type; style
+                Token name_token = consume(parser->tokens);
+                strcpy(field_name, name_token.value);
+                
+                expect(parser, TOKEN_COLON, "Expected ':' after field name");
+                
+                Token type_token = consume(parser->tokens);
+                field_type = token_to_datatype(type_token.type);
+                
+                if (field_type == TYPE_UNKNOWN) {
+                    parser_error(parser, "Unknown field type");
+                    return;
+                }
+            } else {
+                // name:type; style
+                strcpy(field_name, first_token.value);
+                
+                expect(parser, TOKEN_COLON, "Expected ':' after field name");
+                
+                Token type_token = consume(parser->tokens);
+                field_type = token_to_datatype(type_token.type);
+                
+                if (field_type == TYPE_UNKNOWN) {
+                    parser_error(parser, "Unknown field type");
+                    return;
+                }
+            }
+
+            expect(parser, TOKEN_SEMICOLON, "Expected ';' after field declaration");
+
+            if (struct_def->field_count >= 50) {
+                parser_error(parser, "Too many fields in struct (max 50)");
+                return;
+            }
+
+            StructField *field = &struct_def->fields[struct_def->field_count];
+            strcpy(field->name, field_name);
+            field->type = field_type;
+            field->size = datatype_size(field_type);
+            field->offset = current_offset;
+            struct_def->field_count++;
+
+            current_offset += field->size;
+            // Align to 4-byte boundary
+            if (current_offset % 4 != 0) {
+                current_offset = ((current_offset + 3) / 4) * 4;
+            }
+        }
+    }
+
+    expect(parser, TOKEN_RBRACE, "Expected '}' at end of struct");
+
+    struct_def->total_size = current_offset;
+    if (struct_def->total_size % 8 != 0) {
+        struct_def->total_size = ((struct_def->total_size + 7) / 8) * 8;
+    }
+
+    code_comment(parser, "End of struct %s (size: %d bytes, fields: %d, methods: %d)",
+                 struct_name, struct_def->total_size, struct_def->field_count, struct_def->method_count);
+    code_printf(parser, "\n");
 }
 
 // ============================================================================
@@ -525,7 +872,18 @@ void parse_statement(Parser *parser) {
         parse_variable_declaration(parser);
     } else if (check(parser->tokens, TOKEN_IDENTIFIER)) {
         Token lookahead = peek_ahead(parser->tokens, 1);
-        if (lookahead.type == TOKEN_EQUAL || lookahead.type == TOKEN_PLUS_EQUAL ||
+        if (lookahead.type == TOKEN_DOT) {
+            // Could be field assignment (p.x = 10) or method call (p.move())
+            Token lookahead2 = peek_ahead(parser->tokens, 2);  // Get the member name
+            Token lookahead3 = peek_ahead(parser->tokens, 3);  // Check what follows
+            if (lookahead3.type == TOKEN_LPAREN) {
+                // Method call: p.method()
+                parse_function_call_statement(parser);
+            } else {
+                // Field assignment: p.field = value
+                parse_assignment(parser);
+            }
+        } else if (lookahead.type == TOKEN_EQUAL || lookahead.type == TOKEN_PLUS_EQUAL ||
             lookahead.type == TOKEN_MINUS_EQUAL || lookahead.type == TOKEN_STAR_EQUAL ||
             lookahead.type == TOKEN_SLASH_EQUAL || lookahead.type == TOKEN_PLUS_PLUS ||
             lookahead.type == TOKEN_MINUS_MINUS || lookahead.type == TOKEN_LBRACKET) {
@@ -582,6 +940,7 @@ void parse_variable_declaration(Parser *parser) {
 
     DataType var_type = TYPE_INT;
     int has_explicit_type = 0;
+    char struct_type_name[MAX_TOKEN] = "";
 
     if (check(parser->tokens, TOKEN_COLON)) {
         consume(parser->tokens);
@@ -590,11 +949,19 @@ void parse_variable_declaration(Parser *parser) {
         var_type = token_to_datatype(type_token.type);
 
         if (var_type == TYPE_UNKNOWN) {
-            parser_error(parser, "Unknown variable type '%s'", type_token.value);
-            return;
+            // Check if it's a struct type
+            StructDefinition *struct_def = find_struct(parser, type_token.value);
+            if (struct_def != NULL) {
+                var_type = TYPE_INT;  // We'll use TYPE_INT as a placeholder for struct types
+                strcpy(struct_type_name, type_token.value);
+                has_explicit_type = 1;
+            } else {
+                parser_error(parser, "Unknown variable type '%s'", type_token.value);
+                return;
+            }
+        } else {
+            has_explicit_type = 1;
         }
-
-        has_explicit_type = 1;
     }
 
     // Arrays must have explicit types
@@ -644,16 +1011,30 @@ void parse_variable_declaration(Parser *parser) {
             return;
         }
 
-        code_comment(parser, "Line %d: var %s:%s (uninitialized)",
-                     var_token.line, name_token.value, datatype_to_string(var_type));
-
-        if (var_type == TYPE_FLOAT || var_type == TYPE_DOUBLE) {
-            code_printf(parser, "    xorps %%xmm0, %%xmm0\n");
-            code_printf(parser, "    movq %%xmm0, %%rax\n");
-            code_printf(parser, "    pushq %%rax\n");
-        } else {
+        if (struct_type_name[0] != '\0') {
+            // Struct variable - initialize to zero
+            StructDefinition *struct_def = find_struct(parser, struct_type_name);
+            code_comment(parser, "Line %d: var %s:%s (struct, uninitialized)",
+                         var_token.line, name_token.value, struct_type_name);
+            
+            // Allocate space for struct by pushing zeros
+            int num_pushes = (struct_def->total_size + 7) / 8;  // Round up to 8-byte chunks
             code_printf(parser, "    xorq %%rax, %%rax\n");
-            code_printf(parser, "    pushq %%rax\n");
+            for (int i = 0; i < num_pushes; i++) {
+                code_printf(parser, "    pushq %%rax\n");
+            }
+        } else {
+            code_comment(parser, "Line %d: var %s:%s (uninitialized)",
+                         var_token.line, name_token.value, datatype_to_string(var_type));
+
+            if (var_type == TYPE_FLOAT || var_type == TYPE_DOUBLE) {
+                code_printf(parser, "    xorps %%xmm0, %%xmm0\n");
+                code_printf(parser, "    movq %%xmm0, %%rax\n");
+                code_printf(parser, "    pushq %%rax\n");
+            } else {
+                code_printf(parser, "    xorq %%rax, %%rax\n");
+                code_printf(parser, "    pushq %%rax\n");
+            }
         }
     } else {
         // Array declaration - just allocate space, no initialization
@@ -673,9 +1054,18 @@ void parse_variable_declaration(Parser *parser) {
     var->type = var_type;
     var->is_array = is_array;
     var->array_size = array_size;
+    strcpy(var->struct_type, struct_type_name);
 
     // Calculate total size: element_size * array_count
-    int element_size = datatype_size(var_type);
+    int element_size;
+    if (struct_type_name[0] != '\0') {
+        // This is a struct variable
+        StructDefinition *struct_def = find_struct(parser, struct_type_name);
+        element_size = struct_def->total_size;
+    } else {
+        element_size = datatype_size(var_type);
+    }
+    
     if (is_array) {
         if (array_size > 0) {
             var->size = element_size * array_size;
@@ -741,8 +1131,130 @@ void parse_assignment(Parser *parser) {
     Token name_token = consume(parser->tokens);
     Variable *var = find_variable(parser, name_token.value);
 
+    // If variable not found and we're in a method context, check if it's a field
+    if (!var && parser->current_struct_context[0] != '\0') {
+        // Look for 'this' pointer
+        Variable *this_var = find_variable(parser, "this");
+        if (this_var && this_var->struct_type[0] != '\0') {
+            StructDefinition *struct_def = find_struct(parser, this_var->struct_type);
+            if (struct_def) {
+                // Check if name is a field
+                StructField *field = NULL;
+                for (int i = 0; i < struct_def->field_count; i++) {
+                    if (strcmp(struct_def->fields[i].name, name_token.value) == 0) {
+                        field = &struct_def->fields[i];
+                        break;
+                    }
+                }
+                
+                if (field) {
+                    // Assign to field through 'this' pointer
+                    expect(parser, TOKEN_EQUAL, "Expected '=' in field assignment");
+                    
+                    code_comment(parser, "Line %d: %s = value (field through implicit 'this')",
+                                 assign_token.line, name_token.value);
+                    
+                    // Parse the value to assign
+                    parse_expression(parser);
+                    
+                    // Load 'this' pointer
+                    code_printf(parser, "    movq %d(%%rbp), %%rbx\n", this_var->offset);
+                    
+                    // Pop value and store it in the field
+                    if (field->type == TYPE_FLOAT || field->type == TYPE_DOUBLE) {
+                        code_printf(parser, "    popq %%rax\n");
+                        code_printf(parser, "    movq %%rax, %%xmm0\n");
+                        if (field->type == TYPE_FLOAT) {
+                            code_printf(parser, "    movss %%xmm0, %d(%%rbx)\n", field->offset);
+                        } else {
+                            code_printf(parser, "    movsd %%xmm0, %d(%%rbx)\n", field->offset);
+                        }
+                    } else if (field->type == TYPE_CHAR || field->type == TYPE_BYTE || field->type == TYPE_BIT) {
+                        code_printf(parser, "    popq %%rax\n");
+                        code_printf(parser, "    movb %%al, %d(%%rbx)\n", field->offset);
+                    } else if (field->type == TYPE_STRING) {
+                        code_printf(parser, "    popq %%rax\n");
+                        code_printf(parser, "    movq %%rax, %d(%%rbx)\n", field->offset);
+                    } else {
+                        code_printf(parser, "    popq %%rax\n");
+                        code_printf(parser, "    movl %%eax, %d(%%rbx)\n", field->offset);
+                    }
+                    
+                    expect(parser, TOKEN_SEMICOLON, "Expected ';' after field assignment");
+                    return;
+                }
+            }
+        }
+    }
+
     if (!var) {
         parser_error(parser, "Variable '%s' not found", name_token.value);
+        return;
+    }
+
+    // Check for field assignment: var.field = value
+    if (check(parser->tokens, TOKEN_DOT)) {
+        consume(parser->tokens);  // consume '.'
+        
+        if (var->struct_type[0] == '\0') {
+            parser_error(parser, "Variable '%s' is not a struct", name_token.value);
+            return;
+        }
+        
+        StructDefinition *struct_def = find_struct(parser, var->struct_type);
+        if (!struct_def) {
+            parser_error(parser, "Struct type '%s' not found", var->struct_type);
+            return;
+        }
+        
+        Token field_name_token = consume(parser->tokens);
+        
+        // Find the field
+        StructField *field = NULL;
+        for (int i = 0; i < struct_def->field_count; i++) {
+            if (strcmp(struct_def->fields[i].name, field_name_token.value) == 0) {
+                field = &struct_def->fields[i];
+                break;
+            }
+        }
+        
+        if (!field) {
+            parser_error(parser, "Field '%s' not found in struct '%s'", field_name_token.value, var->struct_type);
+            return;
+        }
+        
+        expect(parser, TOKEN_EQUAL, "Expected '=' in field assignment");
+        
+        code_comment(parser, "Line %d: %s.%s = value",
+                     assign_token.line, name_token.value, field_name_token.value);
+        
+        // Parse the value to assign
+        parse_expression(parser);
+        
+        // Calculate field address: var_offset + field_offset
+        int field_addr = var->offset + field->offset;
+        
+        // Pop value and store it in the field
+        if (field->type == TYPE_FLOAT || field->type == TYPE_DOUBLE) {
+            code_printf(parser, "    popq %%rax\n");
+            code_printf(parser, "    movq %%rax, %%xmm0\n");
+            if (field->type == TYPE_FLOAT) {
+                code_printf(parser, "    movss %%xmm0, %d(%%rbp)\n", field_addr);
+            } else {
+                code_printf(parser, "    movsd %%xmm0, %d(%%rbp)\n", field_addr);
+            }
+        } else if (field->type == TYPE_CHAR || field->type == TYPE_BYTE || field->type == TYPE_BIT) {
+            code_printf(parser, "    popq %%rax\n");
+            code_printf(parser, "    movb %%al, %d(%%rbp)\n", field_addr);
+        } else if (field->type == TYPE_STRING) {
+            code_printf(parser, "    popq %%rax\n");
+            code_printf(parser, "    movq %%rax, %d(%%rbp)\n", field_addr);
+        } else {
+            code_printf(parser, "    popq %%rax\n");
+            code_printf(parser, "    movl %%eax, %d(%%rbp)\n", field_addr);
+        }
+        
+        expect(parser, TOKEN_SEMICOLON, "Expected ';' after field assignment");
         return;
     }
 
@@ -1468,6 +1980,17 @@ void parse_print_statement(Parser *parser) {
                 code_printf(parser, "    subq $40, %%rsp\n");
                 code_printf(parser, "    call printf\n");
                 code_printf(parser, "    addq $40, %%rsp\n");
+            } else if (lookahead.type == TOKEN_DOT) {
+                // Field access or method call in print: p.x or p.getX()
+                // Use parse_expression to handle it
+                parse_expression(parser);
+                
+                // Result is on stack, pop it to %rdx for printing
+                code_printf(parser, "    popq %%rdx\n");
+                code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
+                code_printf(parser, "    subq $40, %%rsp\n");
+                code_printf(parser, "    call printf\n");
+                code_printf(parser, "    addq $40, %%rsp\n");
             } else if (lookahead.type == TOKEN_LBRACKET) {
                 // Array access in print: arr[index]
                 consume(parser->tokens);  // consume identifier
@@ -1586,6 +2109,115 @@ void parse_print_statement(Parser *parser) {
 void parse_function_call_statement(Parser *parser) {
     Token call_token = peek(parser->tokens);
     Token name = consume(parser->tokens);
+
+    // Check if it's a method call: var.method()
+    if (check(parser->tokens, TOKEN_DOT)) {
+        consume(parser->tokens);  // consume '.'
+        
+        Variable *var = find_variable(parser, name.value);
+        if (!var) {
+            parser_error(parser, "Variable '%s' not found", name.value);
+            return;
+        }
+        
+        if (var->struct_type[0] == '\0') {
+            parser_error(parser, "Variable '%s' is not a struct", name.value);
+            return;
+        }
+        
+        StructDefinition *struct_def = find_struct(parser, var->struct_type);
+        if (!struct_def) {
+            parser_error(parser, "Struct type '%s' not found", var->struct_type);
+            return;
+        }
+        
+        Token method_name = consume(parser->tokens);
+        
+        // Find the method
+        char mangled_name[MAX_TOKEN * 2];
+        snprintf(mangled_name, sizeof(mangled_name), "%s_%s", var->struct_type, method_name.value);
+        
+        Function *method = find_function(parser, mangled_name);
+        if (!method) {
+            parser_error(parser, "Method '%s' not found in struct '%s'", method_name.value, var->struct_type);
+            return;
+        }
+        
+        code_comment(parser, "Line %d: %s.%s(...) (method call)", call_token.line, name.value, method_name.value);
+        
+        expect(parser, TOKEN_LPAREN, "Expected '(' after method name");
+        
+        // Parse arguments
+        int arg_count = 0;
+        while (!check(parser->tokens, TOKEN_RPAREN) && !is_at_end(parser->tokens)) {
+            if (check(parser->tokens, TOKEN_STRING_LITERAL)) {
+                Token str_token = consume(parser->tokens);
+                int str_id = add_string_literal(parser, str_token.value);
+                code_printf(parser, "    leaq .LC%d(%%rip), %%rax\n", str_id);
+                code_printf(parser, "    pushq %%rax\n");
+            } else {
+                parse_expression(parser);
+            }
+            arg_count++;
+            
+            if (check(parser->tokens, TOKEN_COMMA)) {
+                consume(parser->tokens);
+            }
+        }
+        
+        expect(parser, TOKEN_RPAREN, "Expected ')' after method arguments");
+        expect(parser, TOKEN_SEMICOLON, "Expected ';' after method call");
+        
+        if (arg_count != method->param_count) {
+            parser_error(parser, "Method '%s' expects %d arguments (excluding implicit 'this')",
+                         method_name.value, method->param_count);
+            return;
+        }
+        
+        // Prepare arguments (in reverse order) and implicit 'this' pointer
+        const char *arg_regs_int[] = {"%rcx", "%rdx", "%r8", "%r9"};
+        const char *arg_regs_float[] = {"%xmm0", "%xmm1", "%xmm2", "%xmm3"};
+        
+        // Pop arguments into registers (in reverse order)
+        for (int i = arg_count - 1; i >= 0 && i + 1 < 4; i--) {
+            DataType param_type = method->param_types[i];
+            int reg_idx = i + 1;  // Offset by 1 because first reg has 'this'
+            
+            if (param_type == TYPE_FLOAT || param_type == TYPE_DOUBLE) {
+                code_printf(parser, "    popq %%rax\n");
+                code_printf(parser, "    movq %%rax, %s\n", arg_regs_float[reg_idx]);
+            } else if (param_type == TYPE_STRING) {
+                code_printf(parser, "    popq %s\n", arg_regs_int[reg_idx]);
+            } else if (param_type == TYPE_CHAR || param_type == TYPE_BYTE || param_type == TYPE_BIT) {
+                code_printf(parser, "    popq %%rax\n");
+                if (reg_idx == 1) {
+                    code_printf(parser, "    movb %%al, %%dl\n");
+                } else if (reg_idx == 2) {
+                    code_printf(parser, "    movb %%al, %%r8b\n");
+                } else if (reg_idx == 3) {
+                    code_printf(parser, "    movb %%al, %%r9b\n");
+                }
+            } else {
+                code_printf(parser, "    popq %%rax\n");
+                if (reg_idx == 1) {
+                    code_printf(parser, "    movl %%eax, %%edx\n");
+                } else if (reg_idx == 2) {
+                    code_printf(parser, "    movl %%eax, %%r8d\n");
+                } else if (reg_idx == 3) {
+                    code_printf(parser, "    movl %%eax, %%r9d\n");
+                }
+            }
+        }
+        
+        // Load 'this' pointer (address of struct instance) into %rcx
+        code_printf(parser, "    leaq %d(%%rbp), %%rcx\n", var->offset);  // Address of struct
+        
+        code_printf(parser, "    subq $40, %%rsp\n");
+        code_printf(parser, "    call %s\n", mangled_name);
+        code_printf(parser, "    addq $40, %%rsp\n");
+        
+        return;
+    }
 
     // Check if it's a built-in string function
     if (is_builtin_string_function(name.value)) {
@@ -2177,9 +2809,224 @@ void parse_primary(Parser *parser) {
             consume(parser->tokens);
 
             Variable *var = find_variable(parser, name.value);
+            
+            // If variable not found and we're in a method context, check if it's a field
+            if (!var && parser->current_struct_context[0] != '\0') {
+                // Look for 'this' pointer
+                Variable *this_var = find_variable(parser, "this");
+                if (this_var && this_var->struct_type[0] != '\0') {
+                    StructDefinition *struct_def = find_struct(parser, this_var->struct_type);
+                    if (struct_def) {
+                        // Check if name is a field
+                        StructField *field = NULL;
+                        for (int i = 0; i < struct_def->field_count; i++) {
+                            if (strcmp(struct_def->fields[i].name, name.value) == 0) {
+                                field = &struct_def->fields[i];
+                                break;
+                            }
+                        }
+                        
+                        if (field) {
+                            // Access field through 'this' pointer
+                            code_comment(parser, "Field access through implicit 'this': %s", name.value);
+                            
+                            // Load 'this' pointer
+                            code_printf(parser, "    movq %d(%%rbp), %%rbx\n", this_var->offset);
+                            
+                            // Load field value
+                            if (field->type == TYPE_FLOAT) {
+                                code_printf(parser, "    movss %d(%%rbx), %%xmm0\n", field->offset);
+                                code_printf(parser, "    movq %%xmm0, %%rax\n");
+                                code_printf(parser, "    pushq %%rax\n");
+                            } else if (field->type == TYPE_DOUBLE) {
+                                code_printf(parser, "    movsd %d(%%rbx), %%xmm0\n", field->offset);
+                                code_printf(parser, "    movq %%xmm0, %%rax\n");
+                                code_printf(parser, "    pushq %%rax\n");
+                            } else if (field->type == TYPE_CHAR) {
+                                code_printf(parser, "    movsbl %d(%%rbx), %%eax\n", field->offset);
+                                code_printf(parser, "    pushq %%rax\n");
+                            } else if (field->type == TYPE_BYTE) {
+                                code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", field->offset);
+                                code_printf(parser, "    pushq %%rax\n");
+                            } else if (field->type == TYPE_BIT) {
+                                code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", field->offset);
+                                code_printf(parser, "    andl $1, %%eax\n");
+                                code_printf(parser, "    pushq %%rax\n");
+                            } else if (field->type == TYPE_STRING) {
+                                code_printf(parser, "    movq %d(%%rbx), %%rax\n", field->offset);
+                                code_printf(parser, "    pushq %%rax\n");
+                            } else {
+                                code_printf(parser, "    movl %d(%%rbx), %%eax\n", field->offset);
+                                code_printf(parser, "    pushq %%rax\n");
+                            }
+                            
+                            return;
+                        }
+                    }
+                }
+            }
+            
             if (!var) {
                 parser_error(parser, "Variable '%s' not found", name.value);
                 return;
+            }
+
+            // Check for dot notation: var.field or var.method()
+            if (check(parser->tokens, TOKEN_DOT)) {
+                consume(parser->tokens);  // consume '.'
+                
+                if (var->struct_type[0] == '\0') {
+                    parser_error(parser, "Variable '%s' is not a struct", name.value);
+                    return;
+                }
+                
+                StructDefinition *struct_def = find_struct(parser, var->struct_type);
+                if (!struct_def) {
+                    parser_error(parser, "Struct type '%s' not found", var->struct_type);
+                    return;
+                }
+                
+                Token member_name = consume(parser->tokens);
+                
+                // Check if it's a method call
+                if (check(parser->tokens, TOKEN_LPAREN)) {
+                    consume(parser->tokens);  // consume '('
+                    
+                    // Find the method
+                    char mangled_name[MAX_TOKEN * 2];
+                    snprintf(mangled_name, sizeof(mangled_name), "%s_%s", var->struct_type, member_name.value);
+                    
+                    Function *method = find_function(parser, mangled_name);
+                    if (!method) {
+                        parser_error(parser, "Method '%s' not found in struct '%s'", member_name.value, var->struct_type);
+                        return;
+                    }
+                    
+                    // Parse arguments
+                    int arg_count = 0;
+                    while (!check(parser->tokens, TOKEN_RPAREN) && !is_at_end(parser->tokens)) {
+                        if (check(parser->tokens, TOKEN_STRING_LITERAL)) {
+                            Token str_token = consume(parser->tokens);
+                            int str_id = add_string_literal(parser, str_token.value);
+                            code_printf(parser, "    leaq .LC%d(%%rip), %%rax\n", str_id);
+                            code_printf(parser, "    pushq %%rax\n");
+                        } else {
+                            parse_expression(parser);
+                        }
+                        arg_count++;
+                        
+                        if (check(parser->tokens, TOKEN_COMMA)) {
+                            consume(parser->tokens);
+                        }
+                    }
+                    
+                    expect(parser, TOKEN_RPAREN, "Expected ')' after method arguments");
+                    
+                    if (arg_count != method->param_count) {
+                        parser_error(parser, "Method '%s' expects %d arguments (excluding implicit 'this')",
+                                     member_name.value, method->param_count);
+                        return;
+                    }
+                    
+                    // Prepare arguments (in reverse order) and implicit 'this' pointer
+                    const char *arg_regs_int[] = {"%rcx", "%rdx", "%r8", "%r9"};
+                    const char *arg_regs_float[] = {"%xmm0", "%xmm1", "%xmm2", "%xmm3"};
+                    
+                    // Pop arguments into registers (in reverse order)
+                    for (int i = arg_count - 1; i >= 0 && i + 1 < 4; i--) {
+                        DataType param_type = method->param_types[i];
+                        int reg_idx = i + 1;  // Offset by 1 because first reg has 'this'
+                        
+                        if (param_type == TYPE_FLOAT || param_type == TYPE_DOUBLE) {
+                            code_printf(parser, "    popq %%rax\n");
+                            code_printf(parser, "    movq %%rax, %s\n", arg_regs_float[reg_idx]);
+                        } else if (param_type == TYPE_STRING) {
+                            code_printf(parser, "    popq %s\n", arg_regs_int[reg_idx]);
+                        } else if (param_type == TYPE_CHAR || param_type == TYPE_BYTE || param_type == TYPE_BIT) {
+                            code_printf(parser, "    popq %%rax\n");
+                            if (reg_idx == 1) {
+                                code_printf(parser, "    movb %%al, %%dl\n");
+                            } else if (reg_idx == 2) {
+                                code_printf(parser, "    movb %%al, %%r8b\n");
+                            } else if (reg_idx == 3) {
+                                code_printf(parser, "    movb %%al, %%r9b\n");
+                            }
+                        } else {
+                            code_printf(parser, "    popq %%rax\n");
+                            if (reg_idx == 1) {
+                                code_printf(parser, "    movl %%eax, %%edx\n");
+                            } else if (reg_idx == 2) {
+                                code_printf(parser, "    movl %%eax, %%r8d\n");
+                            } else if (reg_idx == 3) {
+                                code_printf(parser, "    movl %%eax, %%r9d\n");
+                            }
+                        }
+                    }
+                    
+                    // Load 'this' pointer (address of struct instance) into %rcx
+                    code_comment(parser, "Method call: %s.%s()", name.value, member_name.value);
+                    code_printf(parser, "    leaq %d(%%rbp), %%rcx\n", var->offset);  // Address of struct
+                    
+                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    call %s\n", mangled_name);
+                    code_printf(parser, "    addq $40, %%rsp\n");
+                    
+                    if (method->return_type == TYPE_FLOAT || method->return_type == TYPE_DOUBLE) {
+                        code_printf(parser, "    movq %%xmm0, %%rax\n");
+                        code_printf(parser, "    pushq %%rax\n");
+                    } else {
+                        code_printf(parser, "    pushq %%rax\n");
+                    }
+                    
+                    return;
+                } else {
+                    // Field access
+                    StructField *field = NULL;
+                    for (int i = 0; i < struct_def->field_count; i++) {
+                        if (strcmp(struct_def->fields[i].name, member_name.value) == 0) {
+                            field = &struct_def->fields[i];
+                            break;
+                        }
+                    }
+                    
+                    if (!field) {
+                        parser_error(parser, "Field '%s' not found in struct '%s'", member_name.value, var->struct_type);
+                        return;
+                    }
+                    
+                    // Calculate field address: var_offset + field_offset
+                    int field_addr = var->offset + field->offset;
+                    
+                    code_comment(parser, "Field access: %s.%s", name.value, member_name.value);
+                    
+                    if (field->type == TYPE_FLOAT) {
+                        code_printf(parser, "    movss %d(%%rbp), %%xmm0\n", field_addr);
+                        code_printf(parser, "    movq %%xmm0, %%rax\n");
+                        code_printf(parser, "    pushq %%rax\n");
+                    } else if (field->type == TYPE_DOUBLE) {
+                        code_printf(parser, "    movsd %d(%%rbp), %%xmm0\n", field_addr);
+                        code_printf(parser, "    movq %%xmm0, %%rax\n");
+                        code_printf(parser, "    pushq %%rax\n");
+                    } else if (field->type == TYPE_CHAR) {
+                        code_printf(parser, "    movsbl %d(%%rbp), %%eax\n", field_addr);
+                        code_printf(parser, "    pushq %%rax\n");
+                    } else if (field->type == TYPE_BYTE) {
+                        code_printf(parser, "    movzbl %d(%%rbp), %%eax\n", field_addr);
+                        code_printf(parser, "    pushq %%rax\n");
+                    } else if (field->type == TYPE_BIT) {
+                        code_printf(parser, "    movzbl %d(%%rbp), %%eax\n", field_addr);
+                        code_printf(parser, "    andl $1, %%eax\n");
+                        code_printf(parser, "    pushq %%rax\n");
+                    } else if (field->type == TYPE_STRING) {
+                        code_printf(parser, "    movq %d(%%rbp), %%rax\n", field_addr);
+                        code_printf(parser, "    pushq %%rax\n");
+                    } else {
+                        code_printf(parser, "    movl %d(%%rbp), %%eax\n", field_addr);
+                        code_printf(parser, "    pushq %%rax\n");
+                    }
+                    
+                    return;
+                }
             }
 
             // Check for array indexing: var[index]

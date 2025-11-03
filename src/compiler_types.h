@@ -26,6 +26,7 @@ typedef enum {
     TOKEN_KEYWORD_PRINT,
     TOKEN_KEYWORD_BREAK,
     TOKEN_KEYWORD_CONTINUE,
+    TOKEN_KEYWORD_STRUCT,
 
     // Data Types (ERWEITERT!)
     TOKEN_TYPE_INT,
@@ -84,6 +85,7 @@ typedef enum {
     TOKEN_COMMA,
     TOKEN_COLON,
     TOKEN_ARROW,
+    TOKEN_DOT,
 
     // Special
     TOKEN_COMMENT,
@@ -134,6 +136,7 @@ typedef struct {
     int size;             // Size in bytes (NEU!)
     int is_array;         // 1 if this is an array, 0 otherwise
     int array_size;       // Number of elements (0 for non-arrays or unknown size)
+    char struct_type[MAX_TOKEN];  // If type is struct, this holds the struct name (empty for primitives)
 } Variable;
 
 typedef struct {
@@ -144,7 +147,24 @@ typedef struct {
     int param_count;
     DataType return_type;      // ERWEITERT!
     int return_is_array;       // 1 if return type is an array
+    char struct_name[MAX_TOKEN];  // If this is a method, the struct it belongs to (empty for regular functions)
 } Function;
+
+typedef struct {
+    char name[MAX_TOKEN];     // Field name
+    DataType type;            // Field type
+    int offset;               // Offset within struct
+    int size;                 // Size in bytes
+} StructField;
+
+typedef struct {
+    char name[MAX_TOKEN];     // Struct name
+    StructField fields[50];   // Struct fields
+    int field_count;
+    int methods[MAX_FUNCTIONS];  // Indices of methods in parser->functions array
+    int method_count;
+    int total_size;           // Total size of struct in bytes
+} StructDefinition;
 
 typedef struct {
     int id;
@@ -165,6 +185,7 @@ typedef struct {
 
     Variable vars[MAX_VARS];
     Function functions[MAX_FUNCTIONS];
+    StructDefinition structs[50];  // Support up to 50 struct definitions
     StringLiteral string_literals[MAX_STRING_LITERALS];
     FloatLiteral float_literals[MAX_FLOAT_LITERALS];
 
@@ -173,6 +194,7 @@ typedef struct {
 
     int var_count;
     int function_count;
+    int struct_count;
     int string_literal_count;
     int float_literal_count;
     int code_pos;
@@ -187,6 +209,9 @@ typedef struct {
     // Loop context stack for break/continue
     LoopContext loop_stack[MAX_LOOP_DEPTH];
     int loop_depth;
+    
+    // Current method context (for accessing fields without 'this.')
+    char current_struct_context[MAX_TOKEN];  // Empty if not in a method
 } Parser;
 
 #endif
