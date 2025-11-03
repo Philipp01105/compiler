@@ -49,6 +49,14 @@ DataType token_to_datatype(TokenType token) {
     }
 }
 
+// Check if a function name is a built-in string function
+int is_builtin_string_function(const char *name) {
+    return strcmp(name, "strlen") == 0 ||
+           strcmp(name, "strcpy") == 0 ||
+           strcmp(name, "strcat") == 0 ||
+           strcmp(name, "strcmp") == 0;
+}
+
 const char *get_register_for_type(DataType type, int reg_num) {
     switch (type) {
         case TYPE_FLOAT:
@@ -731,19 +739,24 @@ void parse_assignment(Parser *parser) {
         return;
     }
 
-    // Check for array indexing: var[index] = value
+    // Check for array indexing: var[index] = value (including string character assignment)
     int is_array_access = 0;
     if (check(parser->tokens, TOKEN_LBRACKET)) {
         consume(parser->tokens);
         is_array_access = 1;
         
-        if (!var->is_array) {
-            parser_error(parser, "Variable '%s' is not an array", name_token.value);
+        if (!var->is_array && var->type != TYPE_STRING) {
+            parser_error(parser, "Variable '%s' is not an array or string", name_token.value);
             return;
         }
         
-        code_comment(parser, "Line %d: %s[index] = value (array assignment)",
-                     assign_token.line, name_token.value);
+        if (var->type == TYPE_STRING) {
+            code_comment(parser, "Line %d: %s[index] = value (string character assignment)",
+                         assign_token.line, name_token.value);
+        } else {
+            code_comment(parser, "Line %d: %s[index] = value (array assignment)",
+                         assign_token.line, name_token.value);
+        }
         
         // Parse the index expression
         parse_expression(parser);
@@ -757,36 +770,42 @@ void parse_assignment(Parser *parser) {
         // Stack now has: [value, index]
         // Pop value into a temp, pop index, compute address, store value
         
-        int element_size = datatype_size(var->type);
-        
         // Pop value into appropriate register
         code_printf(parser, "    popq %%rcx\n");  // value
         code_printf(parser, "    popq %%rax\n");  // index
         
-        // For array parameters (pointers), load the pointer first
-        if (var->is_array && var->array_size == 0) {
-            // Array parameter - it's a pointer, load it
-            code_printf(parser, "    movq %d(%%rbp), %%rbx\n", var->offset);  // load pointer
+        // Handle string character assignment differently
+        if (var->type == TYPE_STRING) {
+            // For strings, load the string pointer and write a byte
+            code_printf(parser, "    movq %d(%%rbp), %%rbx\n", var->offset);  // load string pointer
+            code_printf(parser, "    movb %%cl, (%%rbx, %%rax, 1)\n");  // write byte at index
         } else {
-            // Local array - calculate address
-            code_printf(parser, "    leaq %d(%%rbp), %%rbx\n", var->offset);  // base address
-        }
-        
-        if (var->type == TYPE_FLOAT || var->type == TYPE_DOUBLE) {
-            if (var->type == TYPE_FLOAT) {
-                code_printf(parser, "    movq %%rcx, %%xmm0\n");
-                code_printf(parser, "    movss %%xmm0, (%%rbx, %%rax, %d)\n", element_size);
+            // Handle arrays
+            int element_size = datatype_size(var->type);
+            
+            // For array parameters (pointers), load the pointer first
+            if (var->is_array && var->array_size == 0) {
+                // Array parameter - it's a pointer, load it
+                code_printf(parser, "    movq %d(%%rbp), %%rbx\n", var->offset);  // load pointer
             } else {
-                code_printf(parser, "    movq %%rcx, %%xmm0\n");
-                code_printf(parser, "    movsd %%xmm0, (%%rbx, %%rax, %d)\n", element_size);
+                // Local array - calculate address
+                code_printf(parser, "    leaq %d(%%rbp), %%rbx\n", var->offset);  // base address
             }
-        } else {
-            if (var->type == TYPE_CHAR || var->type == TYPE_BYTE || var->type == TYPE_BIT) {
-                code_printf(parser, "    movb %%cl, (%%rbx, %%rax, %d)\n", element_size);
-            } else if (var->type == TYPE_STRING) {
-                code_printf(parser, "    movq %%rcx, (%%rbx, %%rax, %d)\n", element_size);
-            } else {  // TYPE_INT
-                code_printf(parser, "    movl %%ecx, (%%rbx, %%rax, %d)\n", element_size);
+            
+            if (var->type == TYPE_FLOAT || var->type == TYPE_DOUBLE) {
+                if (var->type == TYPE_FLOAT) {
+                    code_printf(parser, "    movq %%rcx, %%xmm0\n");
+                    code_printf(parser, "    movss %%xmm0, (%%rbx, %%rax, %d)\n", element_size);
+                } else {
+                    code_printf(parser, "    movq %%rcx, %%xmm0\n");
+                    code_printf(parser, "    movsd %%xmm0, (%%rbx, %%rax, %d)\n", element_size);
+                }
+            } else {
+                if (var->type == TYPE_CHAR || var->type == TYPE_BYTE || var->type == TYPE_BIT) {
+                    code_printf(parser, "    movb %%cl, (%%rbx, %%rax, %d)\n", element_size);
+                } else {  // TYPE_INT
+                    code_printf(parser, "    movl %%ecx, (%%rbx, %%rax, %d)\n", element_size);
+                }
             }
         }
         
@@ -1561,6 +1580,52 @@ void parse_function_call_statement(Parser *parser) {
     Token call_token = peek(parser->tokens);
     Token name = consume(parser->tokens);
 
+    // Check if it's a built-in string function
+    if (is_builtin_string_function(name.value)) {
+        expect(parser, TOKEN_LPAREN, "Expected '(' after function name");
+        
+        if (strcmp(name.value, "strlen") == 0) {
+            parse_expression(parser);
+            expect(parser, TOKEN_RPAREN, "Expected ')'");
+            expect(parser, TOKEN_SEMICOLON, "Expected ';'");
+            
+            code_comment(parser, "Line %d: strlen() (statement)", call_token.line);
+            code_printf(parser, "    popq %%rcx\n");
+            code_printf(parser, "    subq $40, %%rsp\n");
+            code_printf(parser, "    call strlen\n");
+            code_printf(parser, "    addq $40, %%rsp\n");
+            return;
+        } else if (strcmp(name.value, "strcmp") == 0) {
+            parse_expression(parser);
+            expect(parser, TOKEN_COMMA, "Expected ','");
+            parse_expression(parser);
+            expect(parser, TOKEN_RPAREN, "Expected ')'");
+            expect(parser, TOKEN_SEMICOLON, "Expected ';'");
+            
+            code_comment(parser, "Line %d: strcmp() (statement)", call_token.line);
+            code_printf(parser, "    popq %%rdx\n");
+            code_printf(parser, "    popq %%rcx\n");
+            code_printf(parser, "    subq $40, %%rsp\n");
+            code_printf(parser, "    call strcmp\n");
+            code_printf(parser, "    addq $40, %%rsp\n");
+            return;
+        } else if (strcmp(name.value, "strcpy") == 0 || strcmp(name.value, "strcat") == 0) {
+            parse_expression(parser);
+            expect(parser, TOKEN_COMMA, "Expected ','");
+            parse_expression(parser);
+            expect(parser, TOKEN_RPAREN, "Expected ')'");
+            expect(parser, TOKEN_SEMICOLON, "Expected ';'");
+            
+            code_comment(parser, "Line %d: %s() (statement)", call_token.line, name.value);
+            code_printf(parser, "    popq %%rdx\n");
+            code_printf(parser, "    popq %%rcx\n");
+            code_printf(parser, "    subq $40, %%rsp\n");
+            code_printf(parser, "    call %s\n", name.value);
+            code_printf(parser, "    addq $40, %%rsp\n");
+            return;
+        }
+    }
+
     Function *func = find_function(parser, name.value);
     if (!func) {
         parser_error(parser, "Function '%s' not found", name.value);
@@ -1871,6 +1936,71 @@ void parse_primary(Parser *parser) {
 
         if (lookahead.type == TOKEN_LPAREN) {
             consume(parser->tokens);
+
+            // Check if it's a built-in string function
+            if (is_builtin_string_function(name.value)) {
+                expect(parser, TOKEN_LPAREN, "Expected '('");
+                
+                // Parse arguments for built-in functions
+                if (strcmp(name.value, "strlen") == 0) {
+                    // strlen(str) -> int
+                    parse_expression(parser);  // String argument
+                    expect(parser, TOKEN_RPAREN, "Expected ')'");
+                    
+                    code_comment(parser, "Built-in: strlen()");
+                    code_printf(parser, "    popq %%rcx\n");  // string pointer
+                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    call strlen\n");
+                    code_printf(parser, "    addq $40, %%rsp\n");
+                    code_printf(parser, "    pushq %%rax\n");  // result
+                    return;
+                } else if (strcmp(name.value, "strcmp") == 0) {
+                    // strcmp(str1, str2) -> int
+                    parse_expression(parser);  // First string
+                    expect(parser, TOKEN_COMMA, "Expected ',' in strcmp");
+                    parse_expression(parser);  // Second string
+                    expect(parser, TOKEN_RPAREN, "Expected ')'");
+                    
+                    code_comment(parser, "Built-in: strcmp()");
+                    code_printf(parser, "    popq %%rdx\n");  // str2
+                    code_printf(parser, "    popq %%rcx\n");  // str1
+                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    call strcmp\n");
+                    code_printf(parser, "    addq $40, %%rsp\n");
+                    code_printf(parser, "    pushq %%rax\n");  // result
+                    return;
+                } else if (strcmp(name.value, "strcpy") == 0) {
+                    // strcpy(dst, src) -> void (modifies dst)
+                    parse_expression(parser);  // Destination
+                    expect(parser, TOKEN_COMMA, "Expected ',' in strcpy");
+                    parse_expression(parser);  // Source
+                    expect(parser, TOKEN_RPAREN, "Expected ')'");
+                    
+                    code_comment(parser, "Built-in: strcpy()");
+                    code_printf(parser, "    popq %%rdx\n");  // src
+                    code_printf(parser, "    popq %%rcx\n");  // dst
+                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    call strcpy\n");
+                    code_printf(parser, "    addq $40, %%rsp\n");
+                    code_printf(parser, "    pushq %%rax\n");  // return dst
+                    return;
+                } else if (strcmp(name.value, "strcat") == 0) {
+                    // strcat(dst, src) -> void (modifies dst)
+                    parse_expression(parser);  // Destination
+                    expect(parser, TOKEN_COMMA, "Expected ',' in strcat");
+                    parse_expression(parser);  // Source
+                    expect(parser, TOKEN_RPAREN, "Expected ')'");
+                    
+                    code_comment(parser, "Built-in: strcat()");
+                    code_printf(parser, "    popq %%rdx\n");  // src
+                    code_printf(parser, "    popq %%rcx\n");  // dst
+                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    call strcat\n");
+                    code_printf(parser, "    addq $40, %%rsp\n");
+                    code_printf(parser, "    pushq %%rax\n");  // return dst
+                    return;
+                }
+            }
 
             Function *func = find_function(parser, name.value);
             if (!func) {
