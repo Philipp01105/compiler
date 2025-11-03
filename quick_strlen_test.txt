@@ -1,0 +1,5 @@
+func main() -> void {
+    var str:string = "Test";
+    var len:int = strlen(str);
+    print("Length: " + len);
+}
