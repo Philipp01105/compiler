@@ -1,8 +1,0 @@
-func main() -> void {
-    var str:string = "Hello";
-    print("String: " + str);
-    
-    // Try to index a string
-    var ch:char = str[0];
-    print("First char: " + ch);
-}
