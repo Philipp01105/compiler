@@ -1,0 +1,102 @@
+// Advanced test for struct with methods feature
+
+struct Rectangle {
+    int width;
+    int height;
+    
+    func area() -> int {
+        return width * height;
+    }
+    
+    func perimeter() -> int {
+        return 2 * (width + height);
+    }
+    
+    func setDimensions(w:int, h:int) -> void {
+        width = w;
+        height = h;
+    }
+    
+    func isSquare() -> bit {
+        if (width == height) {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+}
+
+struct Counter {
+    int count;
+    
+    func increment() -> void {
+        count = count + 1;
+    }
+    
+    func decrement() -> void {
+        count = count - 1;
+    }
+    
+    func reset() -> void {
+        count = 0;
+    }
+    
+    func getValue() -> int {
+        return count;
+    }
+}
+
+func main() -> void {
+    print("=== Rectangle Test ===");
+    
+    var rect:Rectangle;
+    rect.setDimensions(5, 10);
+    
+    print("Width: " + rect.width);
+    print("Height: " + rect.height);
+    print("Area: " + rect.area());
+    print("Perimeter: " + rect.perimeter());
+    
+    if (rect.isSquare() == 1) {
+        print("It's a square!");
+    } else {
+        print("It's not a square.");
+    }
+    
+    print("");
+    print("=== Making it a square ===");
+    rect.setDimensions(7, 7);
+    
+    print("Width: " + rect.width);
+    print("Height: " + rect.height);
+    print("Area: " + rect.area());
+    print("Perimeter: " + rect.perimeter());
+    
+    if (rect.isSquare() == 1) {
+        print("It's a square!");
+    } else {
+        print("It's not a square.");
+    }
+    
+    print("");
+    print("=== Counter Test ===");
+    
+    var counter:Counter;
+    counter.reset();
+    
+    print("Initial count: " + counter.getValue());
+    
+    counter.increment();
+    counter.increment();
+    counter.increment();
+    
+    print("After 3 increments: " + counter.getValue());
+    
+    counter.decrement();
+    
+    print("After 1 decrement: " + counter.getValue());
+    
+    counter.reset();
+    
+    print("After reset: " + counter.getValue());
+}
