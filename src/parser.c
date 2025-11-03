@@ -1992,15 +1992,136 @@ void parse_print_statement(Parser *parser) {
                 code_printf(parser, "    addq $40, %%rsp\n");
             } else if (lookahead.type == TOKEN_DOT) {
                 // Field access or method call in print: p.x or p.getX()
-                // Use parse_expression to handle it
-                parse_expression(parser);
+                consume(parser->tokens);  // consume identifier
+                consume(parser->tokens);  // consume '.'
                 
-                // Result is on stack, pop it to %rdx for printing
-                code_printf(parser, "    popq %%rdx\n");
-                code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
-                code_printf(parser, "    subq $40, %%rsp\n");
-                code_printf(parser, "    call printf\n");
-                code_printf(parser, "    addq $40, %%rsp\n");
+                Variable *var = find_variable(parser, name.value);
+                if (!var) {
+                    parser_error(parser, "Variable '%s' not found", name.value);
+                    return;
+                }
+                
+                if (var->struct_type[0] == '\0') {
+                    parser_error(parser, "Variable '%s' is not a struct", name.value);
+                    return;
+                }
+                
+                StructDefinition *struct_def = find_struct(parser, var->struct_type);
+                if (!struct_def) {
+                    parser_error(parser, "Struct type '%s' not found", var->struct_type);
+                    return;
+                }
+                
+                Token member_name = consume(parser->tokens);
+                Token next_token = peek(parser->tokens);
+                
+                // Check if it's a method call
+                if (next_token.type == TOKEN_LPAREN) {
+                    // Method call
+                    consume(parser->tokens);  // consume '('
+                    
+                    // Find the method
+                    char mangled_name[MAX_TOKEN * 2];
+                    snprintf(mangled_name, sizeof(mangled_name), "%s_%s", var->struct_type, member_name.value);
+                    
+                    Function *method = find_function(parser, mangled_name);
+                    if (!method) {
+                        parser_error(parser, "Method '%s' not found in struct '%s'", member_name.value, var->struct_type);
+                        return;
+                    }
+                    
+                    // Parse method arguments
+                    int arg_count = 0;
+                    while (!check(parser->tokens, TOKEN_RPAREN) && !is_at_end(parser->tokens)) {
+                        parse_expression(parser);
+                        arg_count++;
+                        
+                        if (check(parser->tokens, TOKEN_COMMA)) {
+                            consume(parser->tokens);
+                        }
+                    }
+                    
+                    expect(parser, TOKEN_RPAREN, "Expected ')' after method arguments");
+                    
+                    // Check argument count (param_count already excludes implicit 'this')
+                    if (arg_count != method->param_count) {
+                        parser_error(parser, "Method '%s' expects %d arguments", member_name.value, method->param_count);
+                        return;
+                    }
+                    
+                    // Set up arguments in registers (skipping %rcx which will be 'this')
+                    const char *arg_regs[] = {"%rdx", "%r8", "%r9"};
+                    for (int i = arg_count - 1; i >= 0 && i < 3; i--) {
+                        code_printf(parser, "    popq %s\n", arg_regs[i]);
+                    }
+                    
+                    // Load struct address into %rcx (this pointer)
+                    code_printf(parser, "    leaq %d(%%rbp), %%rcx\n", var->offset);
+                    
+                    // Call method
+                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    call %s\n", mangled_name);
+                    code_printf(parser, "    addq $40, %%rsp\n");
+                    
+                    // Print the return value
+                    if (method->return_type == TYPE_FLOAT || method->return_type == TYPE_DOUBLE) {
+                        code_printf(parser, "    movq %%xmm0, %%rdx\n");
+                        code_printf(parser, "    leaq .LC_float_format(%%rip), %%rcx\n");
+                    } else if (method->return_type == TYPE_STRING) {
+                        code_printf(parser, "    movq %%rax, %%rdx\n");
+                        code_printf(parser, "    leaq .LC_string_format(%%rip), %%rcx\n");
+                    } else {
+                        code_printf(parser, "    movl %%eax, %%edx\n");
+                        code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
+                    }
+                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    call printf\n");
+                    code_printf(parser, "    addq $40, %%rsp\n");
+                } else {
+                    // Field access
+                    StructField *field = NULL;
+                    for (int i = 0; i < struct_def->field_count; i++) {
+                        if (strcmp(struct_def->fields[i].name, member_name.value) == 0) {
+                            field = &struct_def->fields[i];
+                            break;
+                        }
+                    }
+                    
+                    if (!field) {
+                        parser_error(parser, "Field '%s' not found in struct '%s'", member_name.value, var->struct_type);
+                        return;
+                    }
+                    
+                    // Load struct base address into %rbx
+                    code_printf(parser, "    leaq %d(%%rbp), %%rbx\n", var->offset);
+                    
+                    // Access field and print it
+                    if (field->type == TYPE_FLOAT) {
+                        code_printf(parser, "    movss %d(%%rbx), %%xmm0\n", field->offset);
+                        code_printf(parser, "    cvtss2sd %%xmm0, %%xmm0\n");
+                        code_printf(parser, "    movq %%xmm0, %%rdx\n");
+                        code_printf(parser, "    leaq .LC_float_format(%%rip), %%rcx\n");
+                    } else if (field->type == TYPE_DOUBLE) {
+                        code_printf(parser, "    movsd %d(%%rbx), %%xmm0\n", field->offset);
+                        code_printf(parser, "    movq %%xmm0, %%rdx\n");
+                        code_printf(parser, "    leaq .LC_float_format(%%rip), %%rcx\n");
+                    } else if (field->type == TYPE_CHAR) {
+                        code_printf(parser, "    movsbl %d(%%rbx), %%edx\n", field->offset);
+                        code_printf(parser, "    leaq .LC_char_format(%%rip), %%rcx\n");
+                    } else if (field->type == TYPE_BYTE || field->type == TYPE_BIT) {
+                        code_printf(parser, "    movzbl %d(%%rbx), %%edx\n", field->offset);
+                        code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
+                    } else if (field->type == TYPE_STRING) {
+                        code_printf(parser, "    movq %d(%%rbx), %%rdx\n", field->offset);
+                        code_printf(parser, "    leaq .LC_string_format(%%rip), %%rcx\n");
+                    } else {  // TYPE_INT and others
+                        code_printf(parser, "    movl %d(%%rbx), %%edx\n", field->offset);
+                        code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
+                    }
+                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    call printf\n");
+                    code_printf(parser, "    addq $40, %%rsp\n");
+                }
             } else if (lookahead.type == TOKEN_LBRACKET) {
                 // Array access in print: arr[index]
                 consume(parser->tokens);  // consume identifier
