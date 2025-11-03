@@ -1,0 +1,32 @@
+// Test for break and continue statements
+
+func test_break() -> void
+{
+    print("Testing break:");
+    for (var i:int = 0; i < 10; i++) {
+        if (i == 5) {
+            break;
+        }
+        print("  i = " + i);
+    }
+    print("After break loop (should stop at 4)");
+}
+
+func test_continue() -> void
+{
+    print("Testing continue:");
+    for (var i:int = 0; i < 10; i++) {
+        if (i % 2 == 0) {
+            continue;
+        }
+        print("  i = " + i);
+    }
+    print("After continue loop (should only print odd numbers)");
+}
+
+func main() -> void
+{
+    test_break();
+    print("");
+    test_continue();
+}

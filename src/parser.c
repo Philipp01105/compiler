@@ -92,6 +92,7 @@ Parser *create_parser(TokenStream *tokens) {
     parser->debug_mode = 0;
     parser->label_counter = 0;
     parser->loop_counter = 0;
+    parser->loop_depth = 0;
 
     memset(parser->code_buffer, 0, CODE_BUFFER_SIZE);
     memset(parser->function_code_buffer, 0, CODE_BUFFER_SIZE);
@@ -527,6 +528,10 @@ void parse_statement(Parser *parser) {
         parse_return_statement(parser);
     } else if (check(parser->tokens, TOKEN_KEYWORD_PRINT)) {
         parse_print_statement(parser);
+    } else if (check(parser->tokens, TOKEN_KEYWORD_BREAK)) {
+        parse_break_statement(parser);
+    } else if (check(parser->tokens, TOKEN_KEYWORD_CONTINUE)) {
+        parse_continue_statement(parser);
     } else {
         parser_error(parser, "Unexpected statement");
     }
@@ -1056,6 +1061,14 @@ void parse_for_loop(Parser *parser) {
     int loop_id = parser->loop_counter++;
     int saved_scope = parser->current_scope;
     parser->current_scope++;
+    
+    // Push loop context for break/continue
+    if (parser->loop_depth >= MAX_LOOP_DEPTH) {
+        parser_error(parser, "Maximum loop nesting depth (%d) exceeded", MAX_LOOP_DEPTH);
+        return;
+    }
+    parser->loop_stack[parser->loop_depth].loop_id = loop_id;
+    parser->loop_depth++;
 
     code_comment(parser, "========================================");
     code_comment(parser, "For-Loop (Line %d, ID: %d)", for_token.line, loop_id);
@@ -1167,6 +1180,53 @@ void parse_for_loop(Parser *parser) {
 
     cleanup_scope(parser, parser->current_scope);
     parser->current_scope = saved_scope;
+    
+    // Pop loop context
+    parser->loop_depth--;
+}
+
+// ============================================================================
+// BREAK AND CONTINUE STATEMENTS
+// ============================================================================
+
+void parse_break_statement(Parser *parser) {
+    Token break_token = peek(parser->tokens);
+    consume(parser->tokens);
+    
+    // Check if we're inside a loop
+    if (parser->loop_depth == 0) {
+        parser_error(parser, "'break' statement not within a loop");
+        expect(parser, TOKEN_SEMICOLON, "Expected ';' after 'break'");
+        return;
+    }
+    
+    // Get the current loop ID from the loop stack
+    int current_loop_id = parser->loop_stack[parser->loop_depth - 1].loop_id;
+    
+    code_comment(parser, "Break statement (Line %d)", break_token.line);
+    code_printf(parser, "    jmp .L_for_end_%d\n", current_loop_id);
+    
+    expect(parser, TOKEN_SEMICOLON, "Expected ';' after 'break'");
+}
+
+void parse_continue_statement(Parser *parser) {
+    Token continue_token = peek(parser->tokens);
+    consume(parser->tokens);
+    
+    // Check if we're inside a loop
+    if (parser->loop_depth == 0) {
+        parser_error(parser, "'continue' statement not within a loop");
+        expect(parser, TOKEN_SEMICOLON, "Expected ';' after 'continue'");
+        return;
+    }
+    
+    // Get the current loop ID from the loop stack
+    int current_loop_id = parser->loop_stack[parser->loop_depth - 1].loop_id;
+    
+    code_comment(parser, "Continue statement (Line %d)", continue_token.line);
+    code_printf(parser, "    jmp .L_for_increment_%d\n", current_loop_id);
+    
+    expect(parser, TOKEN_SEMICOLON, "Expected ';' after 'continue'");
 }
 
 // ============================================================================

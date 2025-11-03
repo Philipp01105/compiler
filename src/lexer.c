@@ -111,6 +111,8 @@ static TokenType get_keyword_type(const char *str) {
     if (strcmp(str, "if") == 0) return TOKEN_KEYWORD_IF;
     if (strcmp(str, "else") == 0) return TOKEN_KEYWORD_ELSE;
     if (strcmp(str, "while") == 0) return TOKEN_KEYWORD_WHILE;
+    if (strcmp(str, "break") == 0) return TOKEN_KEYWORD_BREAK;
+    if (strcmp(str, "continue") == 0) return TOKEN_KEYWORD_CONTINUE;
 
     // Data Types (ERWEITERT!)
     if (strcmp(str, "int") == 0) return TOKEN_TYPE_INT;

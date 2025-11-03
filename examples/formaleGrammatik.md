@@ -1,8 +1,8 @@
-# 📐 Formal Grammar Specification - Compiler Version 4.0.0
+# 📐 Formal Grammar Specification - Compiler Version 4.6.0
 
 **Author:** Philipp01105  
-**Date:** 2025-10-16 07:47:41 UTC  
-**Version:** 4.0.0  
+**Date:** 2025-11-03  
+**Version:** 4.6.0 (with break/continue)  
 **Notation:** Extended Backus-Naur Form (EBNF)
 
 ---
@@ -60,7 +60,7 @@ identifier ::= letter { letter | digit }
 
 (* Keywords *)
 keyword    ::= 'func' | 'var' | 'return' | 'for' | 'if' 
-           |   'else' | 'while' | 'print'
+           |   'else' | 'while' | 'print' | 'break' | 'continue'
 
 (* Type Keywords *)
 type_keyword ::= 'int' | 'char' | 'byte' | 'bit' 
@@ -171,6 +171,8 @@ statement        ::= var_declaration
                  |   return_statement
                  |   print_statement
                  |   expression_statement
+                 |   break_statement
+                 |   continue_statement
 
 expression_statement ::= function_call ';'
 
@@ -210,6 +212,12 @@ print_expression ::= string_literal
                  |   string_literal '+' expression
                  |   expression '+' print_expression
                  |   string_literal '+' print_expression
+
+(* Break Statement *)
+break_statement  ::= 'break' ';'
+
+(* Continue Statement *)
+continue_statement ::= 'continue' ';'
 ```
 
 ### 3.3 Expressions (with Precedence)

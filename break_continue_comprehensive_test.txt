@@ -1,0 +1,108 @@
+// Comprehensive test for break and continue statements
+
+func test_nested_loops() -> void
+{
+    print("Testing nested loops with break:");
+    for (var i:int = 0; i < 3; i++) {
+        print("  Outer loop i = " + i);
+        for (var j:int = 0; j < 5; j++) {
+            if (j == 3) {
+                print("    Breaking inner loop at j = " + j);
+                break;
+            }
+            print("    Inner loop j = " + j);
+        }
+    }
+    print("Nested loops with break completed");
+}
+
+func test_nested_continue() -> void
+{
+    print("Testing nested loops with continue:");
+    for (var i:int = 0; i < 3; i++) {
+        if (i == 1) {
+            print("  Skipping i = " + i);
+            continue;
+        }
+        print("  Outer loop i = " + i);
+        for (var j:int = 0; j < 5; j++) {
+            if (j % 2 == 0) {
+                continue;
+            }
+            print("    Inner loop j = " + j);
+        }
+    }
+    print("Nested loops with continue completed");
+}
+
+func test_break_in_if() -> void
+{
+    print("Testing break with if statements:");
+    for (var i:int = 0; i < 10; i++) {
+        if (i < 5) {
+            print("  i = " + i + " (less than 5)");
+        } else {
+            if (i == 7) {
+                print("  Breaking at i = " + i);
+                break;
+            }
+            print("  i = " + i + " (5 or more)");
+        }
+    }
+    print("Break with if completed");
+}
+
+func test_continue_patterns() -> void
+{
+    print("Testing continue with patterns:");
+    print("  Printing multiples of 3:");
+    for (var i:int = 0; i < 20; i++) {
+        if (i % 3 != 0) {
+            continue;
+        }
+        print("    " + i);
+    }
+    print("Continue patterns completed");
+}
+
+func test_early_termination() -> void
+{
+    print("Testing early loop termination:");
+    var sum:int = 0;
+    for (var i:int = 1; i <= 100; i++) {
+        var temp:int = sum + i;
+        sum = temp;
+        if (sum > 50) {
+            print("  Sum exceeded 50 at i = " + i + ", sum = " + sum);
+            break;
+        }
+    }
+    print("  Final sum: " + sum);
+}
+
+func main() -> void
+{
+    print("=================================================================");
+    print("COMPREHENSIVE BREAK AND CONTINUE TEST");
+    print("=================================================================");
+    print("");
+    
+    test_nested_loops();
+    print("");
+    
+    test_nested_continue();
+    print("");
+    
+    test_break_in_if();
+    print("");
+    
+    test_continue_patterns();
+    print("");
+    
+    test_early_termination();
+    print("");
+    
+    print("=================================================================");
+    print("ALL TESTS COMPLETED SUCCESSFULLY");
+    print("=================================================================");
+}
