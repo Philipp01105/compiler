@@ -92,13 +92,13 @@ func main() -> void {
     var byte1:byte = 10;
     var byte2:byte = 5;
     var byteResult:byte = byteAdd(byte1, byte2);
-    print("byteAdd(10, 5) = " + byteResult);
+    print("byteAdd(10, 5) = " + byteToString(byteResult));
     byteResult = byteSub(byte1, byte2);
-    print("byteSub(10, 5) = " + byteResult);
+    print("byteSub(10, 5) = " + byteToString(byteResult));
     byteResult = byteMin(byte1, byte2);
-    print("byteMin(10, 5) = " + byteResult);
+    print("byteMin(10, 5) = " + byteToString(byteResult));
     byteResult = byteMax(byte1, byte2);
-    print("byteMax(10, 5) = " + byteResult);
+    print("byteMax(10, 5) = " + byteToString(byteResult));
     print("");
     
     // Character Operations (6 functions)
@@ -462,7 +462,7 @@ func main() -> void {
     printLabeled("max4(5, 3, 8, 1)", max4(5, 3, 8, 1));
     print("");
     
-    // Sign Operations (3 functions)
+    // Sign Operations (2 functions)
     printLine();
     print("Sign Operations");
     printLine();
