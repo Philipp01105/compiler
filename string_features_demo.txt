@@ -1,0 +1,254 @@
+// Comprehensive demonstration of all string features
+// This file showcases: indexing, functions, heap allocation, mutable strings
+
+func printSeparator() -> void {
+    print("=================================================================");
+}
+
+func main() -> void {
+    print("#################################################################");
+    print("#                                                               #");
+    print("#          STRING FEATURES COMPREHENSIVE DEMO                  #");
+    print("#                                                               #");
+    print("#################################################################");
+    print("");
+    
+    // ================================================================
+    // FEATURE 1: String Indexing (Read)
+    // ================================================================
+    printSeparator();
+    print("FEATURE 1: String Indexing - Reading Characters");
+    printSeparator();
+    
+    var text:string = "Programming";
+    var first:char = text[0];
+    var last:char = text[10];
+    
+    print("Text: " + text);
+    print("First character: " + first);
+    print("Last character: " + last);
+    
+    // String literal indexing
+    var literal_char:char = "Demo"[1];
+    print("Second char of 'Demo': " + literal_char);
+    print("");
+    
+    // ================================================================
+    // FEATURE 2: String Functions
+    // ================================================================
+    printSeparator();
+    print("FEATURE 2: String Functions");
+    printSeparator();
+    
+    var str1:string = "Hello";
+    var str2:string = "World";
+    
+    // strlen - Get length
+    var len1:int = strlen(str1);
+    var len2:int = strlen(str2);
+    print("strlen('Hello') = " + len1);
+    print("strlen('World') = " + len2);
+    
+    // strcmp - Compare strings
+    var cmp1:int = strcmp("Apple", "Apple");
+    var cmp2:int = strcmp("Apple", "Banana");
+    print("strcmp('Apple', 'Apple') = " + cmp1);
+    print("strcmp('Apple', 'Banana') = " + cmp2);
+    
+    if (cmp1 == 0) {
+        print("Strings are equal!");
+    }
+    print("");
+    
+    // ================================================================
+    // FEATURE 3: Heap Allocation
+    // ================================================================
+    printSeparator();
+    print("FEATURE 3: Heap Memory Management");
+    printSeparator();
+    
+    // Allocate a buffer
+    var buffer:string = malloc(100);
+    print("Allocated 100 bytes for buffer");
+    
+    // Copy string into buffer
+    strcpy(buffer, "Heap");
+    print("After strcpy: " + buffer);
+    
+    // Concatenate to buffer
+    strcat(buffer, " Allocated");
+    print("After strcat: " + buffer);
+    
+    free(buffer);
+    print("Buffer freed");
+    print("");
+    
+    // ================================================================
+    // FEATURE 4: Mutable Strings
+    // ================================================================
+    printSeparator();
+    print("FEATURE 4: Mutable Strings");
+    printSeparator();
+    
+    // Use strdup to create a mutable copy
+    var mutable:string = strdup("Hello");
+    print("Original: " + mutable);
+    
+    // Modify individual characters
+    mutable[0] = 'J';
+    print("After mutable[0] = 'J': " + mutable);
+    
+    mutable[1] = 'e';
+    mutable[2] = 'l';
+    mutable[3] = 'l';
+    mutable[4] = 'y';
+    print("After more changes: " + mutable);
+    
+    free(mutable);
+    print("Mutable string freed");
+    print("");
+    
+    // ================================================================
+    // FEATURE 5: String Building
+    // ================================================================
+    printSeparator();
+    print("FEATURE 5: String Building Character by Character");
+    printSeparator();
+    
+    var custom:string = malloc(50);
+    
+    custom[0] = 'C';
+    custom[1] = 'o';
+    custom[2] = 'd';
+    custom[3] = 'e';
+    custom[4] = '\0';
+    
+    print("Built string: " + custom);
+    
+    var custom_len:int = strlen(custom);
+    print("Length: " + custom_len);
+    
+    free(custom);
+    print("");
+    
+    // ================================================================
+    // FEATURE 6: Combining Features
+    // ================================================================
+    printSeparator();
+    print("FEATURE 6: Combining All Features");
+    printSeparator();
+    
+    // Create a greeting with name
+    var name:string = "Alice";
+    var greeting:string = malloc(100);
+    
+    strcpy(greeting, "Hello, ");
+    strcat(greeting, name);
+    strcat(greeting, "!");
+    
+    print("Greeting: " + greeting);
+    
+    // Get length and verify
+    var greeting_len:int = strlen(greeting);
+    print("Greeting length: " + greeting_len);
+    
+    // Access first and last character
+    var g_first:char = greeting[0];
+    var g_last_idx:int = greeting_len - 1;
+    var g_last:char = greeting[g_last_idx];
+    
+    print("First char: " + g_first);
+    print("Last char: " + g_last);
+    
+    // Modify greeting
+    greeting[7] = 'B';  // Change Alice to Blice
+    print("Modified: " + greeting);
+    
+    free(greeting);
+    print("");
+    
+    // ================================================================
+    // FEATURE 7: String Array Processing
+    // ================================================================
+    printSeparator();
+    print("FEATURE 7: String Array Processing");
+    printSeparator();
+    
+    var sentence:string = "The quick brown fox";
+    var sentence_len:int = strlen(sentence);
+    
+    print("Sentence: " + sentence);
+    print("Length: " + sentence_len);
+    
+    // Count spaces
+    var spaces:int = 0;
+    for (var i:int = 0; i < sentence_len; i++) {
+        if (sentence[i] == ' ') {
+            var temp:int = spaces + 1;
+            spaces = temp;
+        }
+    }
+    
+    print("Number of spaces: " + spaces);
+    
+    // Count letter 'o'
+    var o_count:int = 0;
+    for (var j:int = 0; j < sentence_len; j++) {
+        if (sentence[j] == 'o') {
+            var temp2:int = o_count + 1;
+            o_count = temp2;
+        }
+    }
+    
+    print("Number of 'o': " + o_count);
+    print("");
+    
+    // ================================================================
+    // FEATURE 8: String Comparison
+    // ================================================================
+    printSeparator();
+    print("FEATURE 8: String Comparison");
+    printSeparator();
+    
+    var password:string = "secret";
+    var input:string = "secret";
+    
+    if (strcmp(password, input) == 0) {
+        print("Access granted!");
+    } else {
+        print("Access denied!");
+    }
+    
+    var test1:string = "ABC";
+    var test2:string = "XYZ";
+    
+    if (strcmp(test1, test2) < 0) {
+        print("ABC comes before XYZ alphabetically");
+    }
+    print("");
+    
+    // ================================================================
+    // SUMMARY
+    // ================================================================
+    print("#################################################################");
+    print("#                                                               #");
+    print("#            ALL STRING FEATURES DEMONSTRATED!                 #");
+    print("#                                                               #");
+    print("#################################################################");
+    print("");
+    print("Features shown:");
+    print("  [1] String indexing - read characters");
+    print("  [2] strlen() - get string length");
+    print("  [3] strcmp() - compare strings");
+    print("  [4] strcpy() - copy strings");
+    print("  [5] strcat() - concatenate strings");
+    print("  [6] strdup() - duplicate to heap");
+    print("  [7] malloc() - allocate memory");
+    print("  [8] free() - deallocate memory");
+    print("  [9] Mutable strings - modify characters");
+    print(" [10] Character-by-character building");
+    print(" [11] String array processing");
+    print(" [12] Combining multiple features");
+    print("");
+    print("The compiler now has FULL STRING SUPPORT!");
+}
