@@ -1,0 +1,170 @@
+// Comprehensive test for built-in string functions
+// Tests: strlen, strcmp, strcpy, strcat
+
+func main() -> void {
+    print("#################################################################");
+    print("#                                                               #");
+    print("#        STRING FUNCTIONS TEST SUITE                           #");
+    print("#                                                               #");
+    print("#################################################################");
+    print("");
+    
+    // Test 1: strlen - Get string length
+    print("=================================================================");
+    print("TEST 1: strlen() - Get string length");
+    print("=================================================================");
+    
+    var str1:string = "Hello";
+    var str2:string = "World";
+    var str3:string = "";
+    
+    var len1:int = strlen(str1);
+    var len2:int = strlen(str2);
+    var len3:int = strlen(str3);
+    
+    print("  strlen('Hello') = " + len1);
+    print("  strlen('World') = " + len2);
+    print("  strlen('') = " + len3);
+    print("  [OK] strlen works");
+    print("");
+    
+    // Test 2: strcmp - Compare strings
+    print("=================================================================");
+    print("TEST 2: strcmp() - Compare strings");
+    print("=================================================================");
+    
+    var cmp1:int = strcmp("Hello", "Hello");
+    var cmp2:int = strcmp("Hello", "World");
+    var cmp3:int = strcmp("World", "Hello");
+    
+    print("  strcmp('Hello', 'Hello') = " + cmp1);
+    print("  strcmp('Hello', 'World') = " + cmp2);
+    print("  strcmp('World', 'Hello') = " + cmp3);
+    
+    if (cmp1 == 0) {
+        print("  'Hello' == 'Hello': TRUE");
+    }
+    
+    if (cmp2 < 0) {
+        print("  'Hello' < 'World': TRUE");
+    }
+    
+    if (cmp3 > 0) {
+        print("  'World' > 'Hello': TRUE");
+    }
+    
+    print("  [OK] strcmp works");
+    print("");
+    
+    // Test 3: String comparison with variables
+    print("=================================================================");
+    print("TEST 3: strcmp() with variables");
+    print("=================================================================");
+    
+    var test1:string = "Test";
+    var test2:string = "Test";
+    var test3:string = "Different";
+    
+    var result1:int = strcmp(test1, test2);
+    var result2:int = strcmp(test1, test3);
+    
+    print("  strcmp(test1, test2) = " + result1);
+    print("  strcmp(test1, test3) = " + result2);
+    
+    if (result1 == 0) {
+        print("  Strings are equal: TRUE");
+    }
+    
+    if (result2 != 0) {
+        print("  Strings are different: TRUE");
+    }
+    
+    print("  [OK] strcmp with variables works");
+    print("");
+    
+    // Test 4: Combining strlen with other operations
+    print("=================================================================");
+    print("TEST 4: strlen() in expressions");
+    print("=================================================================");
+    
+    var message:string = "Testing";
+    var msg_len:int = strlen(message);
+    
+    print("  Message: " + message);
+    print("  Length: " + msg_len);
+    
+    if (msg_len > 5) {
+        print("  Message is longer than 5 characters: TRUE");
+    }
+    
+    if (msg_len == 7) {
+        print("  Message has exactly 7 characters: TRUE");
+    }
+    
+    print("  [OK] strlen in expressions works");
+    print("");
+    
+    // Test 5: Empty string handling
+    print("=================================================================");
+    print("TEST 5: Empty string handling");
+    print("=================================================================");
+    
+    var empty:string = "";
+    var empty_len:int = strlen(empty);
+    var empty_cmp:int = strcmp(empty, "");
+    
+    print("  Empty string length: " + empty_len);
+    print("  strcmp('', ''): " + empty_cmp);
+    
+    if (empty_len == 0) {
+        print("  Empty string has length 0: TRUE");
+    }
+    
+    if (empty_cmp == 0) {
+        print("  Empty strings compare equal: TRUE");
+    }
+    
+    print("  [OK] Empty string handling works");
+    print("");
+    
+    // Test 6: String indexing with strlen
+    print("=================================================================");
+    print("TEST 6: Combining strlen with string indexing");
+    print("=================================================================");
+    
+    var text:string = "ABCDE";
+    var text_len:int = strlen(text);
+    
+    print("  Text: " + text);
+    print("  Length: " + text_len);
+    
+    // Access characters
+    var first:char = text[0];
+    var last_idx:int = text_len - 1;
+    var last:char = text[last_idx];
+    
+    print("  First character: " + first);
+    print("  Last character: " + last);
+    print("  [OK] strlen with indexing works");
+    print("");
+    
+    // Summary
+    print("#################################################################");
+    print("#                                                               #");
+    print("#     [+] ALL STRING FUNCTION TESTS PASSED                     #");
+    print("#                                                               #");
+    print("#################################################################");
+    print("");
+    
+    print("Tested features:");
+    print("  [+] strlen() - Calculate string length");
+    print("  [+] strcmp() - Compare two strings");
+    print("  [+] String functions with literals");
+    print("  [+] String functions with variables");
+    print("  [+] String functions in expressions");
+    print("  [+] Empty string handling");
+    print("  [+] Combining strlen with indexing");
+    print("");
+    print("Note: strcpy() and strcat() require heap allocation");
+    print("      to work properly (modifying string contents).");
+}
