@@ -1,0 +1,178 @@
+// =================================================================
+// STANDARD LIBRARY DEMO
+// A simple program demonstrating common stdlib usage patterns
+// =================================================================
+
+#import <stdlib/core.txt>
+#import <stdlib/math.txt>
+#import <stdlib/array.txt>
+#import <stdlib/strings.txt>
+#import <stdlib/utils.txt>
+
+func main() -> void {
+    printDoubleLine();
+    print("         STANDARD LIBRARY DEMO");
+    printDoubleLine();
+    print("");
+    
+    // =================================================================
+    // SCENARIO 1: Input Validation
+    // =================================================================
+    printLine();
+    print("SCENARIO 1: Input Validation");
+    printLine();
+    
+    var userAge:int = 25;
+    var validAge:bit = inRange(userAge, 0, 120);
+    
+    if (validAge == 1) {
+        print("Age " + userAge + " is valid");
+        
+        if (userAge >= 18) {
+            print("User is an adult");
+        } else {
+            print("User is a minor");
+        }
+    } else {
+        print("Invalid age!");
+    }
+    print("");
+    
+    // =================================================================
+    // SCENARIO 2: Mathematical Computations
+    // =================================================================
+    printLine();
+    print("SCENARIO 2: Mathematical Computations");
+    printLine();
+    
+    var n:int = 10;
+    printLabeled("Compute for n", n);
+    printLabeled("n! (factorial)", mathFactorial(n));
+    printLabeled("F(n) (fibonacci)", mathFibonacci(n));
+    printLabeled("Sum(1..n)", mathSum(n));
+    printLabeled("Sum of squares(1..n)", mathSumSquares(n));
+    print("");
+    
+    // =================================================================
+    // SCENARIO 3: Prime Number Analysis
+    // =================================================================
+    printLine();
+    print("SCENARIO 3: Prime Number Analysis");
+    printLine();
+    
+    print("Finding first 10 prime numbers:");
+    for (var i:int = 1; i <= 10; i++) {
+        var prime:int = mathNthPrime(i);
+        print("  Prime #" + i + " = " + prime);
+    }
+    print("");
+    
+    // =================================================================
+    // SCENARIO 4: String Processing
+    // =================================================================
+    printLine();
+    print("SCENARIO 4: String Processing");
+    printLine();
+    
+    var message:string = "Hello World";
+    print("Message: '" + message + "'");
+    printLabeled("Length", strLength(message));
+    printLabeled("Index of 'o'", strIndexOf(message, 'o'));
+    printLabeled("Count of 'l'", strCountChar(message, 'l'));
+    printLabeledBool("Is alphabetic", strIsAlpha(message));
+    print("");
+    
+    // =================================================================
+    // SCENARIO 5: Data Analysis
+    // =================================================================
+    printLine();
+    print("SCENARIO 5: Data Analysis");
+    printLine();
+    
+    var[5] scores:int;
+    scores[0] = 85;
+    scores[1] = 92;
+    scores[2] = 78;
+    scores[3] = 95;
+    scores[4] = 88;
+    
+    print("Test scores: [85, 92, 78, 95, 88]");
+    printLabeled("Minimum score", arrayMinInt(scores, 5));
+    printLabeled("Maximum score", arrayMaxInt(scores, 5));
+    printLabeled("Average score", arrayAverageInt(scores, 5));
+    printLabeled("Total points", arraySumInt(scores, 5));
+    print("");
+    
+    // =================================================================
+    // SCENARIO 6: Number Properties
+    // =================================================================
+    printLine();
+    print("SCENARIO 6: Number Properties");
+    printLine();
+    
+    var testNumber:int = 48;
+    printLabeled("Testing number", testNumber);
+    printLabeledBool("Is even", intIsEven(testNumber));
+    printLabeledBool("Is prime", mathIsPrime(testNumber));
+    printLabeled("Digit count", mathDigitCount(testNumber));
+    printLabeled("Digit sum", mathDigitSum(testNumber));
+    printLabeled("Number of divisors", mathCountDivisors(testNumber));
+    
+    var gcdTest:int = mathGCD(48, 18);
+    printLabeled("GCD(48, 18)", gcdTest);
+    print("");
+    
+    // =================================================================
+    // SCENARIO 7: Safe Operations
+    // =================================================================
+    printLine();
+    print("SCENARIO 7: Safe Operations");
+    printLine();
+    
+    var dividend:int = 100;
+    var divisor1:int = 10;
+    var divisor2:int = 0;
+    
+    var result1:int = safeDivide(dividend, divisor1);
+    var result2:int = safeDivide(dividend, divisor2);
+    
+    printLabeled("100 / 10", result1);
+    printLabeled("100 / 0 (safe)", result2);
+    print("");
+    
+    // =================================================================
+    // SCENARIO 8: Bit Operations
+    // =================================================================
+    printLine();
+    print("SCENARIO 8: Bit Operations");
+    printLine();
+    
+    var flags:int = 13;
+    printLabeled("Value", flags);
+    printLabeled("Bits set", countBits(flags));
+    printLabeledBool("Bit 0 set", isBitSet(flags, 0));
+    printLabeledBool("Bit 1 set", isBitSet(flags, 1));
+    printLabeledBool("Bit 2 set", isBitSet(flags, 2));
+    printLabeledBool("Bit 3 set", isBitSet(flags, 3));
+    print("");
+    
+    // =================================================================
+    // FINAL SUMMARY
+    // =================================================================
+    printDoubleLine();
+    print("         DEMO COMPLETED SUCCESSFULLY");
+    printDoubleLine();
+    print("");
+    print("This demo showcased:");
+    print("  - Input validation and range checking");
+    print("  - Mathematical computations");
+    print("  - Prime number generation");
+    print("  - String analysis and processing");
+    print("  - Array statistics and operations");
+    print("  - Number properties and factorization");
+    print("  - Safe division operations");
+    print("  - Bit manipulation");
+    print("");
+    print("Standard Library: 145 functions at your service!");
+    printDoubleLine();
+}

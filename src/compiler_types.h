@@ -9,6 +9,8 @@
 #define MAX_FLOAT_LITERALS 5000
 #define CODE_BUFFER_SIZE 524288
 #define MAX_LOOP_DEPTH 100
+#define MAX_IMPORTS 100
+#define MAX_PATH 512
 
 // ============================================================================
 // TOKEN TYPES
@@ -27,6 +29,7 @@ typedef enum {
     TOKEN_KEYWORD_BREAK,
     TOKEN_KEYWORD_CONTINUE,
     TOKEN_KEYWORD_STRUCT,
+    TOKEN_KEYWORD_IMPORT,
 
     // Data Types (ERWEITERT!)
     TOKEN_TYPE_INT,
@@ -86,6 +89,7 @@ typedef enum {
     TOKEN_COLON,
     TOKEN_ARROW,
     TOKEN_DOT,
+    TOKEN_HASH,
 
     // Special
     TOKEN_COMMENT,
@@ -212,6 +216,10 @@ typedef struct {
     
     // Current method context (for accessing fields without 'this.')
     char current_struct_context[MAX_TOKEN];  // Empty if not in a method
+    
+    // Import tracking to prevent duplicate imports
+    char imported_files[MAX_IMPORTS][MAX_PATH];
+    int import_count;
 } Parser;
 
 #endif

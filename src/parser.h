@@ -30,7 +30,8 @@ int datatype_size(DataType type);
 DataType token_to_datatype(TokenType token);
 
 // Parsing functions
-int parse_program(Parser *parser);
+int parse_program(Parser *parser, const char *source_file);
+void parse_import(Parser *parser, const char *base_path);
 void parse_struct(Parser *parser);
 void parse_function(Parser *parser);
 void parse_function_body(Parser *parser);
