@@ -8,6 +8,7 @@
 #define MAX_STRING_LITERALS 5000
 #define MAX_FLOAT_LITERALS 5000
 #define CODE_BUFFER_SIZE 524288
+#define MAX_LOOP_DEPTH 100
 
 // ============================================================================
 // TOKEN TYPES
@@ -184,7 +185,7 @@ typedef struct {
     int loop_counter;
     
     // Loop context stack for break/continue
-    LoopContext loop_stack[100];
+    LoopContext loop_stack[MAX_LOOP_DEPTH];
     int loop_depth;
 } Parser;
 

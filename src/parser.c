@@ -1063,6 +1063,10 @@ void parse_for_loop(Parser *parser) {
     parser->current_scope++;
     
     // Push loop context for break/continue
+    if (parser->loop_depth >= MAX_LOOP_DEPTH) {
+        parser_error(parser, "Maximum loop nesting depth (%d) exceeded", MAX_LOOP_DEPTH);
+        return;
+    }
     parser->loop_stack[parser->loop_depth].loop_id = loop_id;
     parser->loop_depth++;
 
