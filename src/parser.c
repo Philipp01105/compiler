@@ -2050,6 +2050,8 @@ void parse_print_statement(Parser *parser) {
                     }
                     
                     // Set up arguments in registers (skipping %rcx which will be 'this')
+                    // Note: This only handles up to 3 arguments. Methods with more than 3 args
+                    // will need stack-based parameter passing (existing limitation in codebase)
                     const char *arg_regs[] = {"%rdx", "%r8", "%r9"};
                     for (int i = arg_count - 1; i >= 0 && i < 3; i--) {
                         code_printf(parser, "    popq %s\n", arg_regs[i]);
