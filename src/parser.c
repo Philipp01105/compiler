@@ -1232,27 +1232,27 @@ void parse_assignment(Parser *parser) {
         // Parse the value to assign
         parse_expression(parser);
         
-        // Calculate field address: var_offset + field_offset
-        int field_addr = var->offset + field->offset;
+        // Load struct base address into %rbx
+        code_printf(parser, "    leaq %d(%%rbp), %%rbx\n", var->offset);
         
-        // Pop value and store it in the field
+        // Pop value and store it in the field using offset from base address
         if (field->type == TYPE_FLOAT || field->type == TYPE_DOUBLE) {
             code_printf(parser, "    popq %%rax\n");
             code_printf(parser, "    movq %%rax, %%xmm0\n");
             if (field->type == TYPE_FLOAT) {
-                code_printf(parser, "    movss %%xmm0, %d(%%rbp)\n", field_addr);
+                code_printf(parser, "    movss %%xmm0, %d(%%rbx)\n", field->offset);
             } else {
-                code_printf(parser, "    movsd %%xmm0, %d(%%rbp)\n", field_addr);
+                code_printf(parser, "    movsd %%xmm0, %d(%%rbx)\n", field->offset);
             }
         } else if (field->type == TYPE_CHAR || field->type == TYPE_BYTE || field->type == TYPE_BIT) {
             code_printf(parser, "    popq %%rax\n");
-            code_printf(parser, "    movb %%al, %d(%%rbp)\n", field_addr);
+            code_printf(parser, "    movb %%al, %d(%%rbx)\n", field->offset);
         } else if (field->type == TYPE_STRING) {
             code_printf(parser, "    popq %%rax\n");
-            code_printf(parser, "    movq %%rax, %d(%%rbp)\n", field_addr);
+            code_printf(parser, "    movq %%rax, %d(%%rbx)\n", field->offset);
         } else {
             code_printf(parser, "    popq %%rax\n");
-            code_printf(parser, "    movl %%eax, %d(%%rbp)\n", field_addr);
+            code_printf(parser, "    movl %%eax, %d(%%rbx)\n", field->offset);
         }
         
         expect(parser, TOKEN_SEMICOLON, "Expected ';' after field assignment");
@@ -3004,34 +3004,35 @@ void parse_primary(Parser *parser) {
                         return;
                     }
                     
-                    // Calculate field address: var_offset + field_offset
-                    int field_addr = var->offset + field->offset;
-                    
                     code_comment(parser, "Field access: %s.%s", name.value, member_name.value);
                     
+                    // Load struct base address into %rbx
+                    code_printf(parser, "    leaq %d(%%rbp), %%rbx\n", var->offset);
+                    
+                    // Access field using offset from base address
                     if (field->type == TYPE_FLOAT) {
-                        code_printf(parser, "    movss %d(%%rbp), %%xmm0\n", field_addr);
+                        code_printf(parser, "    movss %d(%%rbx), %%xmm0\n", field->offset);
                         code_printf(parser, "    movq %%xmm0, %%rax\n");
                         code_printf(parser, "    pushq %%rax\n");
                     } else if (field->type == TYPE_DOUBLE) {
-                        code_printf(parser, "    movsd %d(%%rbp), %%xmm0\n", field_addr);
+                        code_printf(parser, "    movsd %d(%%rbx), %%xmm0\n", field->offset);
                         code_printf(parser, "    movq %%xmm0, %%rax\n");
                         code_printf(parser, "    pushq %%rax\n");
                     } else if (field->type == TYPE_CHAR) {
-                        code_printf(parser, "    movsbl %d(%%rbp), %%eax\n", field_addr);
+                        code_printf(parser, "    movsbl %d(%%rbx), %%eax\n", field->offset);
                         code_printf(parser, "    pushq %%rax\n");
                     } else if (field->type == TYPE_BYTE) {
-                        code_printf(parser, "    movzbl %d(%%rbp), %%eax\n", field_addr);
+                        code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", field->offset);
                         code_printf(parser, "    pushq %%rax\n");
                     } else if (field->type == TYPE_BIT) {
-                        code_printf(parser, "    movzbl %d(%%rbp), %%eax\n", field_addr);
+                        code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", field->offset);
                         code_printf(parser, "    andl $1, %%eax\n");
                         code_printf(parser, "    pushq %%rax\n");
                     } else if (field->type == TYPE_STRING) {
-                        code_printf(parser, "    movq %d(%%rbp), %%rax\n", field_addr);
+                        code_printf(parser, "    movq %d(%%rbx), %%rax\n", field->offset);
                         code_printf(parser, "    pushq %%rax\n");
                     } else {
-                        code_printf(parser, "    movl %d(%%rbp), %%eax\n", field_addr);
+                        code_printf(parser, "    movl %d(%%rbx), %%eax\n", field->offset);
                         code_printf(parser, "    pushq %%rax\n");
                     }
                     
