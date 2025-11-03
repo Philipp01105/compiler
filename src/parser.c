@@ -420,7 +420,7 @@ void parse_struct(Parser *parser) {
                 Token param_token = consume(parser->tokens);
 
                 if (func->param_count >= 9) {  // 9 because first is implicit 'this'
-                    parser_error(parser, "Too many parameters (max 9 for methods, 1 is implicit 'this')");
+                    parser_error(parser, "Too many parameters (max 8 explicit parameters plus implicit 'this')");
                     return;
                 }
 
@@ -634,9 +634,10 @@ void parse_struct(Parser *parser) {
             struct_def->field_count++;
 
             current_offset += field->size;
-            // Align to 4-byte boundary
-            if (current_offset % 4 != 0) {
-                current_offset = ((current_offset + 3) / 4) * 4;
+            // Align based on field size (8-byte types need 8-byte alignment)
+            int alignment = (field->size >= 8) ? 8 : 4;
+            if (current_offset % alignment != 0) {
+                current_offset = ((current_offset + alignment - 1) / alignment) * alignment;
             }
         }
     }
@@ -1946,7 +1947,7 @@ void parse_print_statement(Parser *parser) {
                     return;
                 }
 
-                expect(parser, TOKEN_LPAREN, "Expected '('");
+                consume(parser->tokens);  // consume '('
 
                 int arg_count = 0;
                 while (!check(parser->tokens, TOKEN_RPAREN) && !is_at_end(parser->tokens)) {
@@ -1975,8 +1976,17 @@ void parse_print_statement(Parser *parser) {
                 code_printf(parser, "    call %s\n", name.value);
                 code_printf(parser, "    addq $40, %%rsp\n");
 
-                code_printf(parser, "    movl %%eax, %%edx\n");
-                code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
+                // Print the return value
+                if (func->return_type == TYPE_FLOAT || func->return_type == TYPE_DOUBLE) {
+                    code_printf(parser, "    movq %%xmm0, %%rdx\n");
+                    code_printf(parser, "    leaq .LC_float_format(%%rip), %%rcx\n");
+                } else if (func->return_type == TYPE_STRING) {
+                    code_printf(parser, "    movq %%rax, %%rdx\n");
+                    code_printf(parser, "    leaq .LC_string_format(%%rip), %%rcx\n");
+                } else {
+                    code_printf(parser, "    movl %%eax, %%edx\n");
+                    code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
+                }
                 code_printf(parser, "    subq $40, %%rsp\n");
                 code_printf(parser, "    call printf\n");
                 code_printf(parser, "    addq $40, %%rsp\n");
