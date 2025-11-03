@@ -1,0 +1,354 @@
+// =================================================================
+// STANDARD LIBRARY - MATH MODULE
+// Version 1.0.0
+// Author: Compiler Standard Library
+// =================================================================
+//
+// This module provides mathematical functions for various
+// computational needs including arithmetic, algorithms, and
+// number theory operations.
+//
+// =================================================================
+
+// =================================================================
+// BASIC MATH OPERATIONS
+// =================================================================
+
+// Computes the power of base^exp for positive integers
+func mathPow(base:int, exp:int) -> int {
+    var result:int = 1;
+    for (var i:int = 0; i < exp; i++) {
+        var temp:int = result * base;
+        result = temp;
+    }
+    return result;
+}
+
+// Computes the square of a number
+func mathSquare(n:int) -> int {
+    var temp:int = n * n;
+    return temp;
+}
+
+// Computes the cube of a number
+func mathCube(n:int) -> int {
+    var sq:int = n * n;
+    var result:int = sq * n;
+    return result;
+}
+
+// =================================================================
+// FACTORIAL AND COMBINATIONS
+// =================================================================
+
+// Computes factorial of n
+func mathFactorial(n:int) -> int {
+    var result:int = 1;
+    for (var i:int = 1; i <= n; i++) {
+        var temp:int = result * i;
+        result = temp;
+    }
+    return result;
+}
+
+// =================================================================
+// FIBONACCI AND SEQUENCES
+// =================================================================
+
+// Computes the nth Fibonacci number
+func mathFibonacci(n:int) -> int {
+    if (n <= 1) {
+        return n;
+    }
+    
+    var prev:int = 0;
+    var curr:int = 1;
+    
+    for (var i:int = 2; i <= n; i++) {
+        var next:int = prev + curr;
+        prev = curr;
+        curr = next;
+    }
+    
+    return curr;
+}
+
+// =================================================================
+// SUMMATION FUNCTIONS
+// =================================================================
+
+// Sums all integers from 1 to n
+func mathSum(n:int) -> int {
+    var sum:int = 0;
+    for (var i:int = 1; i <= n; i++) {
+        var temp:int = sum + i;
+        sum = temp;
+    }
+    return sum;
+}
+
+// Sums all integers from start to end (inclusive)
+func mathSumRange(start:int, end:int) -> int {
+    var sum:int = 0;
+    for (var i:int = start; i <= end; i++) {
+        var temp:int = sum + i;
+        sum = temp;
+    }
+    return sum;
+}
+
+// Sums the squares of integers from 1 to n
+func mathSumSquares(n:int) -> int {
+    var sum:int = 0;
+    for (var i:int = 1; i <= n; i++) {
+        var sq:int = i * i;
+        var temp:int = sum + sq;
+        sum = temp;
+    }
+    return sum;
+}
+
+// Sums the cubes of integers from 1 to n
+func mathSumCubes(n:int) -> int {
+    var sum:int = 0;
+    for (var i:int = 1; i <= n; i++) {
+        var sq:int = i * i;
+        var cube:int = sq * i;
+        var temp:int = sum + cube;
+        sum = temp;
+    }
+    return sum;
+}
+
+// =================================================================
+// NUMBER THEORY
+// =================================================================
+
+// Computes greatest common divisor (GCD) using Euclidean algorithm
+func mathGCD(a:int, b:int) -> int {
+    for (var i:int = 0; i < 1000; i++) {
+        if (b == 0) {
+            return a;
+        }
+        var temp:int = b;
+        b = a % b;
+        a = temp;
+    }
+    return a;
+}
+
+// Computes least common multiple (LCM)
+func mathLCM(a:int, b:int) -> int {
+    var gcd_val:int = mathGCD(a, b);
+    var product:int = a * b;
+    var lcm:int = product / gcd_val;
+    return lcm;
+}
+
+// Checks if a number is prime
+func mathIsPrime(n:int) -> bit {
+    if (n <= 1) {
+        return 0;
+    }
+    if (n == 2) {
+        return 1;
+    }
+    if (n % 2 == 0) {
+        return 0;
+    }
+    
+    var i:int = 3;
+    for (var count:int = 0; count < 1000; count++) {
+        if (i * i > n) {
+            return 1;
+        }
+        if (n % i == 0) {
+            return 0;
+        }
+        i = i + 2;
+    }
+    
+    return 1;
+}
+
+// Returns the nth prime number (1-indexed)
+func mathNthPrime(n:int) -> int {
+    if (n == 1) {
+        return 2;
+    }
+    
+    var count:int = 1;
+    var candidate:int = 3;
+    
+    for (var iter:int = 0; iter < 100000; iter++) {
+        if (mathIsPrime(candidate) == 1) {
+            count = count + 1;
+            if (count == n) {
+                return candidate;
+            }
+        }
+        candidate = candidate + 2;
+    }
+    
+    return -1;
+}
+
+// Counts the number of divisors of n
+func mathCountDivisors(n:int) -> int {
+    var count:int = 0;
+    for (var i:int = 1; i <= n; i++) {
+        if (n % i == 0) {
+            count = count + 1;
+        }
+    }
+    return count;
+}
+
+// Sums all divisors of n (including 1 and n)
+func mathSumDivisors(n:int) -> int {
+    var sum:int = 0;
+    for (var i:int = 1; i <= n; i++) {
+        if (n % i == 0) {
+            var temp:int = sum + i;
+            sum = temp;
+        }
+    }
+    return sum;
+}
+
+// Checks if a number is perfect (equals sum of its proper divisors)
+func mathIsPerfect(n:int) -> bit {
+    var sum:int = 0;
+    for (var i:int = 1; i < n; i++) {
+        if (n % i == 0) {
+            var temp:int = sum + i;
+            sum = temp;
+        }
+    }
+    if (sum == n) {
+        return 1;
+    }
+    return 0;
+}
+
+// =================================================================
+// DIGIT OPERATIONS
+// =================================================================
+
+// Counts the number of digits in n
+func mathDigitCount(n:int) -> int {
+    if (n == 0) {
+        return 1;
+    }
+    
+    var count:int = 0;
+    var temp:int = n;
+    if (temp < 0) {
+        temp = -temp;
+    }
+    
+    for (var i:int = 0; i < 10; i++) {
+        if (temp == 0) {
+            return count;
+        }
+        count = count + 1;
+        temp = temp / 10;
+    }
+    
+    return count;
+}
+
+// Sums the digits of n
+func mathDigitSum(n:int) -> int {
+    var sum:int = 0;
+    var temp:int = n;
+    if (temp < 0) {
+        temp = -temp;
+    }
+    
+    for (var i:int = 0; i < 10; i++) {
+        if (temp == 0) {
+            return sum;
+        }
+        var digit:int = temp % 10;
+        var new_sum:int = sum + digit;
+        sum = new_sum;
+        temp = temp / 10;
+    }
+    
+    return sum;
+}
+
+// Reverses the digits of n
+func mathDigitReverse(n:int) -> int {
+    var result:int = 0;
+    var temp:int = n;
+    var is_negative:bit = 0;
+    
+    if (temp < 0) {
+        is_negative = 1;
+        temp = -temp;
+    }
+    
+    for (var i:int = 0; i < 10; i++) {
+        if (temp == 0) {
+            if (is_negative == 1) {
+                return -result;
+            }
+            return result;
+        }
+        var digit:int = temp % 10;
+        var new_result:int = result * 10;
+        new_result = new_result + digit;
+        result = new_result;
+        temp = temp / 10;
+    }
+    
+    if (is_negative == 1) {
+        return -result;
+    }
+    return result;
+}
+
+// =================================================================
+// COMPARISON AND UTILITIES
+// =================================================================
+
+// Returns minimum of three integers
+func mathMin3(a:int, b:int, c:int) -> int {
+    var min:int = a;
+    if (b < min) {
+        min = b;
+    }
+    if (c < min) {
+        min = c;
+    }
+    return min;
+}
+
+// Returns maximum of three integers
+func mathMax3(a:int, b:int, c:int) -> int {
+    var max:int = a;
+    if (b > max) {
+        max = b;
+    }
+    if (c > max) {
+        max = c;
+    }
+    return max;
+}
+
+// Returns the average of two integers (integer division)
+func mathAverage(a:int, b:int) -> int {
+    var sum:int = a + b;
+    var avg:int = sum / 2;
+    return avg;
+}
+
+// Returns the average of three integers (integer division)
+func mathAverage3(a:int, b:int, c:int) -> int {
+    var sum:int = a + b;
+    sum = sum + c;
+    var avg:int = sum / 3;
+    return avg;
+}

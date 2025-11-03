@@ -127,7 +127,7 @@ int main(int argc, char *argv[]) {
     Parser *parser = create_parser(tokens);
     parser->debug_mode = debug_mode;
 
-    if (!parse_program(parser)) {
+    if (!parse_program(parser, source_file)) {
         fprintf(stderr, "\n[ERROR] Compilation failed!\n\n");
         free_parser(parser);
         free_token_stream(tokens);
