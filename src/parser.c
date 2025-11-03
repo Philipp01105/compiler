@@ -54,7 +54,14 @@ int is_builtin_string_function(const char *name) {
     return strcmp(name, "strlen") == 0 ||
            strcmp(name, "strcpy") == 0 ||
            strcmp(name, "strcat") == 0 ||
-           strcmp(name, "strcmp") == 0;
+           strcmp(name, "strcmp") == 0 ||
+           strcmp(name, "strdup") == 0;
+}
+
+// Check if a function name is a built-in memory function
+int is_builtin_memory_function(const char *name) {
+    return strcmp(name, "malloc") == 0 ||
+           strcmp(name, "free") == 0;
 }
 
 const char *get_register_for_type(DataType type, int reg_num) {
@@ -1623,6 +1630,46 @@ void parse_function_call_statement(Parser *parser) {
             code_printf(parser, "    call %s\n", name.value);
             code_printf(parser, "    addq $40, %%rsp\n");
             return;
+        } else if (strcmp(name.value, "strdup") == 0) {
+            parse_expression(parser);
+            expect(parser, TOKEN_RPAREN, "Expected ')'");
+            expect(parser, TOKEN_SEMICOLON, "Expected ';'");
+            
+            code_comment(parser, "Line %d: strdup() (statement)", call_token.line);
+            code_printf(parser, "    popq %%rcx\n");
+            code_printf(parser, "    subq $40, %%rsp\n");
+            code_printf(parser, "    call strdup\n");
+            code_printf(parser, "    addq $40, %%rsp\n");
+            return;
+        }
+    }
+    
+    // Check if it's a built-in memory function
+    if (is_builtin_memory_function(name.value)) {
+        expect(parser, TOKEN_LPAREN, "Expected '(' after function name");
+        
+        if (strcmp(name.value, "malloc") == 0) {
+            parse_expression(parser);
+            expect(parser, TOKEN_RPAREN, "Expected ')'");
+            expect(parser, TOKEN_SEMICOLON, "Expected ';'");
+            
+            code_comment(parser, "Line %d: malloc() (statement)", call_token.line);
+            code_printf(parser, "    popq %%rcx\n");
+            code_printf(parser, "    subq $40, %%rsp\n");
+            code_printf(parser, "    call malloc\n");
+            code_printf(parser, "    addq $40, %%rsp\n");
+            return;
+        } else if (strcmp(name.value, "free") == 0) {
+            parse_expression(parser);
+            expect(parser, TOKEN_RPAREN, "Expected ')'");
+            expect(parser, TOKEN_SEMICOLON, "Expected ';'");
+            
+            code_comment(parser, "Line %d: free() (statement)", call_token.line);
+            code_printf(parser, "    popq %%rcx\n");
+            code_printf(parser, "    subq $40, %%rsp\n");
+            code_printf(parser, "    call free\n");
+            code_printf(parser, "    addq $40, %%rsp\n");
+            return;
         }
     }
 
@@ -1998,6 +2045,48 @@ void parse_primary(Parser *parser) {
                     code_printf(parser, "    call strcat\n");
                     code_printf(parser, "    addq $40, %%rsp\n");
                     code_printf(parser, "    pushq %%rax\n");  // return dst
+                    return;
+                } else if (strcmp(name.value, "strdup") == 0) {
+                    // strdup(str) -> string (allocates new string on heap)
+                    parse_expression(parser);  // String to duplicate
+                    expect(parser, TOKEN_RPAREN, "Expected ')'");
+                    
+                    code_comment(parser, "Built-in: strdup()");
+                    code_printf(parser, "    popq %%rcx\n");  // source string
+                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    call strdup\n");
+                    code_printf(parser, "    addq $40, %%rsp\n");
+                    code_printf(parser, "    pushq %%rax\n");  // return new string
+                    return;
+                }
+            }
+            
+            // Check if it's a built-in memory function
+            if (is_builtin_memory_function(name.value)) {
+                expect(parser, TOKEN_LPAREN, "Expected '('");
+                
+                if (strcmp(name.value, "malloc") == 0) {
+                    // malloc(size) -> pointer
+                    parse_expression(parser);  // Size in bytes
+                    expect(parser, TOKEN_RPAREN, "Expected ')'");
+                    
+                    code_comment(parser, "Built-in: malloc()");
+                    code_printf(parser, "    popq %%rcx\n");  // size
+                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    call malloc\n");
+                    code_printf(parser, "    addq $40, %%rsp\n");
+                    code_printf(parser, "    pushq %%rax\n");  // return pointer
+                    return;
+                } else if (strcmp(name.value, "free") == 0) {
+                    // free(ptr) -> void
+                    parse_expression(parser);  // Pointer to free
+                    expect(parser, TOKEN_RPAREN, "Expected ')'");
+                    
+                    code_comment(parser, "Built-in: free()");
+                    code_printf(parser, "    popq %%rcx\n");  // pointer
+                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    call free\n");
+                    code_printf(parser, "    addq $40, %%rsp\n");
                     return;
                 }
             }
