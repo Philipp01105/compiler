@@ -885,13 +885,8 @@ void parse_struct(Parser *parser) {
                         code_printf(parser, "    movsd %s, %d(%%rbp)\n", param_regs_float[reg_idx], var->offset);
                     }
                 } else if (var->type == TYPE_CHAR || var->type == TYPE_BYTE || var->type == TYPE_BIT) {
-                    if (reg_idx == 1) {
-                        code_printf(parser, "    movb %%dl, %d(%%rbp)\n", var->offset);
-                    } else if (reg_idx == 2) {
-                        code_printf(parser, "    movb %%r8b, %d(%%rbp)\n", var->offset);
-                    } else if (reg_idx == 3) {
-                        code_printf(parser, "    movb %%r9b, %d(%%rbp)\n", var->offset);
-                    }
+                    const char **method_param_regs_8 = get_arg_registers_8();
+                    code_printf(parser, "    movb %s, %d(%%rbp)\n", method_param_regs_8[reg_idx], var->offset);
                 } else if (var->type == TYPE_STRING) {
                     code_printf(parser, "    movq %s, %d(%%rbp)\n", param_regs_64[reg_idx], var->offset);
                 } else {
@@ -2446,8 +2441,9 @@ void parse_print_statement(Parser *parser) {
                         code_printf(parser, "    popq %s\n", arg_regs[i]);
                     }
                     
-                    // Load struct address into %rcx (this pointer)
-                    code_printf(parser, "    leaq %d(%%rbp), %%rcx\n", var->offset);
+                    // Load struct address into first register (this pointer)
+                    const char **this3_regs_64 = get_arg_registers_64();
+                    code_printf(parser, "    leaq %d(%%rbp), %s\n", var->offset, this3_regs_64[0]);
                     
                     // Call method
                     {
@@ -2788,28 +2784,19 @@ void parse_function_call_statement(Parser *parser) {
             } else if (param_type == TYPE_STRING) {
                 code_printf(parser, "    popq %s\n", arg_regs_64[reg_idx]);
             } else if (param_type == TYPE_CHAR || param_type == TYPE_BYTE || param_type == TYPE_BIT) {
+                const char **method_arg_regs_8 = get_arg_registers_8();
                 code_printf(parser, "    popq %%rax\n");
-                if (reg_idx == 1) {
-                    code_printf(parser, "    movb %%al, %%dl\n");
-                } else if (reg_idx == 2) {
-                    code_printf(parser, "    movb %%al, %%r8b\n");
-                } else if (reg_idx == 3) {
-                    code_printf(parser, "    movb %%al, %%r9b\n");
-                }
+                code_printf(parser, "    movb %%al, %s\n", method_arg_regs_8[reg_idx]);
             } else {
+                const char **method_arg_regs_32 = get_arg_registers_32();
                 code_printf(parser, "    popq %%rax\n");
-                if (reg_idx == 1) {
-                    code_printf(parser, "    movl %%eax, %s\n", get_arg_registers_32()[1]);
-                } else if (reg_idx == 2) {
-                    code_printf(parser, "    movl %%eax, %%r8d\n");
-                } else if (reg_idx == 3) {
-                    code_printf(parser, "    movl %%eax, %%r9d\n");
-                }
+                code_printf(parser, "    movl %%eax, %s\n", method_arg_regs_32[reg_idx]);
             }
         }
         
-        // Load 'this' pointer (address of struct instance) into %rcx
-        code_printf(parser, "    leaq %d(%%rbp), %%rcx\n", var->offset);  // Address of struct
+        // Load 'this' pointer (address of struct instance) into first register
+        const char **this_regs_64 = get_arg_registers_64();
+        code_printf(parser, "    leaq %d(%%rbp), %s\n", var->offset, this_regs_64[0]);  // Address of struct
         
         {
                 int stack_adj_18 = get_call_stack_space();
@@ -3653,29 +3640,20 @@ void parse_primary(Parser *parser) {
                         } else if (param_type == TYPE_STRING) {
                             code_printf(parser, "    popq %s\n", arg_regs_64[reg_idx]);
                         } else if (param_type == TYPE_CHAR || param_type == TYPE_BYTE || param_type == TYPE_BIT) {
+                            const char **method_call_arg_regs_8 = get_arg_registers_8();
                             code_printf(parser, "    popq %%rax\n");
-                            if (reg_idx == 1) {
-                                code_printf(parser, "    movb %%al, %%dl\n");
-                            } else if (reg_idx == 2) {
-                                code_printf(parser, "    movb %%al, %%r8b\n");
-                            } else if (reg_idx == 3) {
-                                code_printf(parser, "    movb %%al, %%r9b\n");
-                            }
+                            code_printf(parser, "    movb %%al, %s\n", method_call_arg_regs_8[reg_idx]);
                         } else {
+                            const char **method_call2_arg_regs_32 = get_arg_registers_32();
                             code_printf(parser, "    popq %%rax\n");
-                            if (reg_idx == 1) {
-                                code_printf(parser, "    movl %%eax, %s\n", get_arg_registers_32()[1]);
-                            } else if (reg_idx == 2) {
-                                code_printf(parser, "    movl %%eax, %%r8d\n");
-                            } else if (reg_idx == 3) {
-                                code_printf(parser, "    movl %%eax, %%r9d\n");
-                            }
+                            code_printf(parser, "    movl %%eax, %s\n", method_call2_arg_regs_32[reg_idx]);
                         }
                     }
                     
-                    // Load 'this' pointer (address of struct instance) into %rcx
+                    // Load 'this' pointer (address of struct instance) into first register
                     code_comment(parser, "Method call: %s.%s()", name.value, member_name.value);
-                    code_printf(parser, "    leaq %d(%%rbp), %%rcx\n", var->offset);  // Address of struct
+                    const char **this_regs2_64 = get_arg_registers_64();
+                    code_printf(parser, "    leaq %d(%%rbp), %s\n", var->offset, this_regs2_64[0]);  // Address of struct
                     
                     {
                 int stack_adj_33 = get_call_stack_space();
