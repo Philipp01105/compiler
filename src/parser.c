@@ -1161,15 +1161,8 @@ void parse_function(Parser *parser) {
                 code_printf(parser, "    movsd %s, %d(%%rbp)\n", param_regs_float[i], var->offset);
             }
         } else if (var->type == TYPE_CHAR || var->type == TYPE_BYTE || var->type == TYPE_BIT) {
-            if (i == 0) {
-                code_printf(parser, "    movb %%cl, %d(%%rbp)\n", var->offset);
-            } else if (i == 1) {
-                code_printf(parser, "    movb %%dl, %d(%%rbp)\n", var->offset);
-            } else if (i == 2) {
-                code_printf(parser, "    movb %%r8b, %d(%%rbp)\n", var->offset);
-            } else if (i == 3) {
-                code_printf(parser, "    movb %%r9b, %d(%%rbp)\n", var->offset);
-            }
+            const char **param_regs_8 = get_arg_registers_8();
+            code_printf(parser, "    movb %s, %d(%%rbp)\n", param_regs_8[i], var->offset);
         } else if (var->type == TYPE_STRING) {
             code_printf(parser, "    movq %s, %d(%%rbp)\n", param_regs_64[i], var->offset);
         } else {
@@ -1760,11 +1753,9 @@ void parse_assignment(Parser *parser) {
                         else if (i == 2) code_printf(parser, "    movq %%rax, %%xmm2\n");
                         else if (i == 3) code_printf(parser, "    movq %%rax, %%xmm3\n");
                     } else if (param_type == TYPE_CHAR || param_type == TYPE_BYTE || param_type == TYPE_BIT) {
+                        const char **call_arg_regs_8 = get_arg_registers_8();
                         code_printf(parser, "    popq %%rax\n");
-                        if (i == 0) code_printf(parser, "    movb %%al, %%cl\n");
-                        else if (i == 1) code_printf(parser, "    movb %%al, %%dl\n");
-                        else if (i == 2) code_printf(parser, "    movb %%al, %%r8b\n");
-                        else if (i == 3) code_printf(parser, "    movb %%al, %%r9b\n");
+                        code_printf(parser, "    movb %%al, %s\n", call_arg_regs_8[i]);
                     } else {
                         const char **assign_arg_regs_32 = get_arg_registers_32();
                         int assign_max_reg_args = get_max_reg_args();
