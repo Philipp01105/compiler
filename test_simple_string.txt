@@ -1,0 +1,7 @@
+func testFunc(s:string) -> void {
+    print(s);
+}
+
+func main() -> void {
+    testFunc("Hello");
+}
