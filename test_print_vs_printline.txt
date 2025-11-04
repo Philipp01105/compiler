@@ -1,0 +1,12 @@
+// Test print() vs printLine()
+func main() -> void {
+    print("Line 1");
+    print("Line 2");
+    print("Line 3");
+    printLine("");
+    printLine("Test 1");
+    printLine("Test 2");
+    print("A");
+    print("B");
+    print("C");
+}
