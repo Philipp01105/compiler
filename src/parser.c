@@ -10,6 +10,65 @@
 // TYPE HELPER FUNCTIONS
 // ============================================================================
 
+// Helper to escape character literals for safe use in comments
+static const char *escape_char_for_comment(const char *ch_value) {
+    static char buffer[32];
+    // ch_value contains the actual character, not the escape sequence
+    // We need to convert it back to a printable form for comments
+    if (ch_value[0] == '\n') {
+        return "\\n";
+    } else if (ch_value[0] == '\t') {
+        return "\\t";
+    } else if (ch_value[0] == '\r') {
+        return "\\r";
+    } else if (ch_value[0] == '\0') {
+        return "\\0";
+    } else if (ch_value[0] == '\\') {
+        return "\\\\";
+    } else if (ch_value[0] == '\'') {
+        return "\\'";
+    } else if (ch_value[0] >= 32 && ch_value[0] < 127) {
+        // Printable ASCII character
+        snprintf(buffer, sizeof(buffer), "%c", ch_value[0]);
+        return buffer;
+    } else {
+        // Non-printable character - show as hex
+        snprintf(buffer, sizeof(buffer), "\\x%02x", (unsigned char)ch_value[0]);
+        return buffer;
+    }
+}
+
+// Helper to escape strings for safe use in comments
+static void escape_string_for_comment(const char *str, char *output, size_t output_size) {
+    size_t out_pos = 0;
+    for (size_t i = 0; str[i] != '\0' && out_pos < output_size - 5; i++) {
+        unsigned char c = (unsigned char)str[i];
+        if (c == '\n') {
+            output[out_pos++] = '\\';
+            output[out_pos++] = 'n';
+        } else if (c == '\t') {
+            output[out_pos++] = '\\';
+            output[out_pos++] = 't';
+        } else if (c == '\r') {
+            output[out_pos++] = '\\';
+            output[out_pos++] = 'r';
+        } else if (c == '\\') {
+            output[out_pos++] = '\\';
+            output[out_pos++] = '\\';
+        } else if (c == '"') {
+            output[out_pos++] = '\\';
+            output[out_pos++] = '"';
+        } else if (c >= 32 && c < 127) {
+            output[out_pos++] = c;
+        } else {
+            // Non-printable - show as hex
+            int written = snprintf(&output[out_pos], output_size - out_pos, "\\x%02x", c);
+            if (written > 0) out_pos += written;
+        }
+    }
+    output[out_pos] = '\0';
+}
+
 const char *datatype_to_string(DataType type) {
     switch (type) {
         case TYPE_INT: return "int";
@@ -1224,8 +1283,10 @@ void parse_variable_declaration(Parser *parser) {
             Token str_token = consume(parser->tokens);
             int str_id = add_string_literal(parser, str_token.value);
 
+            char escaped_str[512];
+            escape_string_for_comment(str_token.value, escaped_str, sizeof(escaped_str));
             code_comment(parser, "Line %d: var %s:string = \"%s\"",
-                         var_token.line, name_token.value, str_token.value);
+                         var_token.line, name_token.value, escaped_str);
 
             code_printf(parser, "    leaq .LC%d(%%rip), %%rax\n", str_id);
             code_printf(parser, "    pushq %%rax\n");
@@ -2683,7 +2744,9 @@ void parse_function_call_statement(Parser *parser) {
             Token str_token = consume(parser->tokens);
             int str_id = add_string_literal(parser, str_token.value);
 
-            code_comment(parser, "String argument: \"%s\"", str_token.value);
+            char escaped_str[512];
+            escape_string_for_comment(str_token.value, escaped_str, sizeof(escaped_str));
+            code_comment(parser, "String argument: \"%s\"", escaped_str);
                         code_printf(parser, "    leaq .LC%d(%%rip), %%rax\n", str_id);
             code_printf(parser, "    pushq %%rax\n");
         } else {
@@ -2936,7 +2999,8 @@ void parse_primary(Parser *parser) {
             char_value = (unsigned char) ch.value[0];
         }
 
-        code_comment(parser, "Character literal: '%s' (ASCII %d)", ch.value, char_value);
+        const char *escaped_char = escape_char_for_comment(ch.value);
+        code_comment(parser, "Character literal: '%s' (ASCII %d)", escaped_char, char_value);
         code_printf(parser, "    movl $%d, %%eax\n", char_value);
         code_printf(parser, "    pushq %%rax\n");
         return;
@@ -2946,11 +3010,14 @@ void parse_primary(Parser *parser) {
         Token str = consume(parser->tokens);
         int str_id = add_string_literal(parser, str.value);
 
+        char escaped_str[512];
+        escape_string_for_comment(str.value, escaped_str, sizeof(escaped_str));
+
         // Check for string literal indexing: "hello"[0]
         if (check(parser->tokens, TOKEN_LBRACKET)) {
             consume(parser->tokens);
             
-            code_comment(parser, "String literal indexing: \"%s\"[...]", str.value);
+            code_comment(parser, "String literal indexing: \"%s\"[...]", escaped_str);
             
             // Parse the index expression
             parse_expression(parser);
@@ -2963,7 +3030,7 @@ void parse_primary(Parser *parser) {
             code_printf(parser, "    movzbl (%%rbx, %%rax, 1), %%eax\n");  // load character (byte)
             code_printf(parser, "    pushq %%rax\n");
         } else {
-            code_comment(parser, "String literal: \"%s\"", str.value);
+            code_comment(parser, "String literal: \"%s\"", escaped_str);
             code_printf(parser, "    leaq .LC%d(%%rip), %%rax\n", str_id);
             code_printf(parser, "    pushq %%rax\n");
         }
@@ -3098,7 +3165,9 @@ void parse_primary(Parser *parser) {
                     Token str_token = consume(parser->tokens);
                     int str_id = add_string_literal(parser, str_token.value);
 
-                    code_comment(parser, "String arg: \"%s\"", str_token.value);
+                    char escaped_str[512];
+                    escape_string_for_comment(str_token.value, escaped_str, sizeof(escaped_str));
+                    code_comment(parser, "String arg: \"%s\"", escaped_str);
                     code_printf(parser, "    leaq .LC%d(%%rip), %%rax\n", str_id);
                     code_printf(parser, "    pushq %%rax\n");
                 } else {
