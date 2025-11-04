@@ -1719,9 +1719,9 @@ void parse_assignment(Parser *parser) {
                     }
                 }
 
-                code_printf(parser, "    subq $40, %%rsp\n");
+                code_printf(parser, "    subq $8, %%rsp\n");
                 code_printf(parser, "    call %s\n", src_name.value);
-                code_printf(parser, "    addq $40, %%rsp\n");
+                code_printf(parser, "    addq $8, %%rsp\n");
 
                 code_printf(parser, "    movq %%rax, %d(%%rbp)\n", var->offset);
 
@@ -2184,9 +2184,9 @@ void parse_print_statement(Parser *parser) {
             int str_id = add_string_literal(parser, str_token.value);
 
             code_printf(parser, "    leaq .LC%d(%%rip), %%rcx\n", str_id);
-            code_printf(parser, "    subq $40, %%rsp\n");
+            code_printf(parser, "    subq $8, %%rsp\n");
             code_printf(parser, "    call printf\n");
-            code_printf(parser, "    addq $40, %%rsp\n");
+            code_printf(parser, "    addq $8, %%rsp\n");
         } else if (check(parser->tokens, TOKEN_LPAREN)) {
             consume(parser->tokens);
             parse_expression(parser);
@@ -2194,16 +2194,16 @@ void parse_print_statement(Parser *parser) {
 
             code_printf(parser, "    popq %%rdx\n");
             code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
-            code_printf(parser, "    subq $40, %%rsp\n");
+            code_printf(parser, "    subq $8, %%rsp\n");
             code_printf(parser, "    call printf\n");
-            code_printf(parser, "    addq $40, %%rsp\n");
+            code_printf(parser, "    addq $8, %%rsp\n");
         } else if (check(parser->tokens, TOKEN_NUMBER)) {
             Token num = consume(parser->tokens);
             code_printf(parser, "    movl $%s, %%edx\n", num.value);
             code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
-            code_printf(parser, "    subq $40, %%rsp\n");
+            code_printf(parser, "    subq $8, %%rsp\n");
             code_printf(parser, "    call printf\n");
-            code_printf(parser, "    addq $40, %%rsp\n");
+            code_printf(parser, "    addq $8, %%rsp\n");
         } else if (check(parser->tokens, TOKEN_FLOAT_LITERAL)) {
             Token num = consume(parser->tokens);
             int float_id = add_float_literal(parser, num.value);
@@ -2212,17 +2212,17 @@ void parse_print_statement(Parser *parser) {
             code_printf(parser, "    cvtss2sd %%xmm0, %%xmm0\n");
             code_printf(parser, "    movq %%xmm0, %%rdx\n");
             code_printf(parser, "    leaq .LC_float_format(%%rip), %%rcx\n");
-            code_printf(parser, "    subq $40, %%rsp\n");
+            code_printf(parser, "    subq $8, %%rsp\n");
             code_printf(parser, "    call printf\n");
-            code_printf(parser, "    addq $40, %%rsp\n");
+            code_printf(parser, "    addq $8, %%rsp\n");
         } else if (check(parser->tokens, TOKEN_CHAR_LITERAL)) {
             Token ch = consume(parser->tokens);
             int char_value = (unsigned char) ch.value[0];
             code_printf(parser, "    movb $%d, %%dl\n", char_value);
             code_printf(parser, "    leaq .LC_char_format(%%rip), %%rcx\n");
-            code_printf(parser, "    subq $40, %%rsp\n");
+            code_printf(parser, "    subq $8, %%rsp\n");
             code_printf(parser, "    call printf\n");
-            code_printf(parser, "    addq $40, %%rsp\n");
+            code_printf(parser, "    addq $8, %%rsp\n");
         } else if (check(parser->tokens, TOKEN_IDENTIFIER)) {
             Token name = peek(parser->tokens);
             Token lookahead = peek_ahead(parser->tokens, 1);
@@ -2261,9 +2261,9 @@ void parse_print_statement(Parser *parser) {
                     code_printf(parser, "    popq %s\n", arg_regs[i]);
                 }
 
-                code_printf(parser, "    subq $40, %%rsp\n");
+                code_printf(parser, "    subq $8, %%rsp\n");
                 code_printf(parser, "    call %s\n", name.value);
-                code_printf(parser, "    addq $40, %%rsp\n");
+                code_printf(parser, "    addq $8, %%rsp\n");
 
                 // Print the return value
                 if (func->return_type == TYPE_FLOAT || func->return_type == TYPE_DOUBLE) {
@@ -2276,9 +2276,9 @@ void parse_print_statement(Parser *parser) {
                     code_printf(parser, "    movl %%eax, %%edx\n");
                     code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
                 }
-                code_printf(parser, "    subq $40, %%rsp\n");
+                code_printf(parser, "    subq $8, %%rsp\n");
                 code_printf(parser, "    call printf\n");
-                code_printf(parser, "    addq $40, %%rsp\n");
+                code_printf(parser, "    addq $8, %%rsp\n");
             } else if (lookahead.type == TOKEN_DOT) {
                 // Field access or method call in print: p.x or p.getX()
                 consume(parser->tokens);  // consume identifier
@@ -2350,9 +2350,9 @@ void parse_print_statement(Parser *parser) {
                     code_printf(parser, "    leaq %d(%%rbp), %%rcx\n", var->offset);
                     
                     // Call method
-                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call %s\n", mangled_name);
-                    code_printf(parser, "    addq $40, %%rsp\n");
+                    code_printf(parser, "    addq $8, %%rsp\n");
                     
                     // Print the return value
                     if (method->return_type == TYPE_FLOAT || method->return_type == TYPE_DOUBLE) {
@@ -2365,9 +2365,9 @@ void parse_print_statement(Parser *parser) {
                         code_printf(parser, "    movl %%eax, %%edx\n");
                         code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
                     }
-                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call printf\n");
-                    code_printf(parser, "    addq $40, %%rsp\n");
+                    code_printf(parser, "    addq $8, %%rsp\n");
                 } else {
                     // Field access
                     StructField *field = NULL;
@@ -2409,9 +2409,9 @@ void parse_print_statement(Parser *parser) {
                         code_printf(parser, "    movl %d(%%rbx), %%edx\n", field->offset);
                         code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
                     }
-                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call printf\n");
-                    code_printf(parser, "    addq $40, %%rsp\n");
+                    code_printf(parser, "    addq $8, %%rsp\n");
                 }
             } else if (lookahead.type == TOKEN_LBRACKET) {
                 // Array access in print: arr[index]
@@ -2455,9 +2455,9 @@ void parse_print_statement(Parser *parser) {
                     return;
                 }
                 
-                code_printf(parser, "    subq $40, %%rsp\n");
+                code_printf(parser, "    subq $8, %%rsp\n");
                 code_printf(parser, "    call printf\n");
-                code_printf(parser, "    addq $40, %%rsp\n");
+                code_printf(parser, "    addq $8, %%rsp\n");
             } else {
                 consume(parser->tokens);
 
@@ -2472,40 +2472,40 @@ void parse_print_statement(Parser *parser) {
                     code_printf(parser, "    cvtss2sd %%xmm0, %%xmm0\n");
                     code_printf(parser, "    movq %%xmm0, %%rdx\n");
                     code_printf(parser, "    leaq .LC_float_format(%%rip), %%rcx\n");
-                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call printf\n");
-                    code_printf(parser, "    addq $40, %%rsp\n");
+                    code_printf(parser, "    addq $8, %%rsp\n");
                 } else if (var->type == TYPE_DOUBLE) {
                     code_printf(parser, "    movsd %d(%%rbp), %%xmm0\n", var->offset);
                     code_printf(parser, "    movq %%xmm0, %%rdx\n");
                     code_printf(parser, "    leaq .LC_float_format(%%rip), %%rcx\n");
-                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call printf\n");
-                    code_printf(parser, "    addq $40, %%rsp\n");
+                    code_printf(parser, "    addq $8, %%rsp\n");
                 } else if (var->type == TYPE_CHAR) {
                     code_printf(parser, "    movsbl %d(%%rbp), %%edx\n", var->offset);
                     code_printf(parser, "    leaq .LC_char_format(%%rip), %%rcx\n");
-                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call printf\n");
-                    code_printf(parser, "    addq $40, %%rsp\n");
+                    code_printf(parser, "    addq $8, %%rsp\n");
                 } else if (var->type == TYPE_BYTE || var->type == TYPE_BIT) {
                     code_printf(parser, "    movzbl %d(%%rbp), %%edx\n", var->offset);
                     code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
-                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call printf\n");
-                    code_printf(parser, "    addq $40, %%rsp\n");
+                    code_printf(parser, "    addq $8, %%rsp\n");
                 } else if (var->type == TYPE_STRING) {
                     code_printf(parser, "    movq %d(%%rbp), %%rdx\n", var->offset);
                     code_printf(parser, "    leaq .LC_string_format(%%rip), %%rcx\n");
-                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call printf\n");
-                    code_printf(parser, "    addq $40, %%rsp\n");
+                    code_printf(parser, "    addq $8, %%rsp\n");
                 } else {
                     code_printf(parser, "    movl %d(%%rbp), %%edx\n", var->offset);
                     code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
-                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call printf\n");
-                    code_printf(parser, "    addq $40, %%rsp\n");
+                    code_printf(parser, "    addq $8, %%rsp\n");
                 }
             }
         } else {
@@ -2520,9 +2520,9 @@ void parse_print_statement(Parser *parser) {
     }
 
     code_printf(parser, "    movl $10, %%ecx\n");
-    code_printf(parser, "    subq $40, %%rsp\n");
+    code_printf(parser, "    subq $8, %%rsp\n");
     code_printf(parser, "    call putchar\n");
-    code_printf(parser, "    addq $40, %%rsp\n");
+    code_printf(parser, "    addq $8, %%rsp\n");
 
     expect(parser, TOKEN_RPAREN, "Expected ')' after print arguments");
     expect(parser, TOKEN_SEMICOLON, "Expected ';' after print");
@@ -2634,9 +2634,9 @@ void parse_function_call_statement(Parser *parser) {
         // Load 'this' pointer (address of struct instance) into %rcx
         code_printf(parser, "    leaq %d(%%rbp), %%rcx\n", var->offset);  // Address of struct
         
-        code_printf(parser, "    subq $40, %%rsp\n");
+        code_printf(parser, "    subq $8, %%rsp\n");
         code_printf(parser, "    call %s\n", mangled_name);
-        code_printf(parser, "    addq $40, %%rsp\n");
+        code_printf(parser, "    addq $8, %%rsp\n");
         
         return;
     }
@@ -2652,9 +2652,9 @@ void parse_function_call_statement(Parser *parser) {
             
             code_comment(parser, "Line %d: strlen() (statement)", call_token.line);
             code_printf(parser, "    popq %%rcx\n");
-            code_printf(parser, "    subq $40, %%rsp\n");
+            code_printf(parser, "    subq $8, %%rsp\n");
             code_printf(parser, "    call strlen\n");
-            code_printf(parser, "    addq $40, %%rsp\n");
+            code_printf(parser, "    addq $8, %%rsp\n");
             return;
         } else if (strcmp(name.value, "strcmp") == 0) {
             parse_expression(parser);
@@ -2666,9 +2666,9 @@ void parse_function_call_statement(Parser *parser) {
             code_comment(parser, "Line %d: strcmp() (statement)", call_token.line);
             code_printf(parser, "    popq %%rdx\n");
             code_printf(parser, "    popq %%rcx\n");
-            code_printf(parser, "    subq $40, %%rsp\n");
+            code_printf(parser, "    subq $8, %%rsp\n");
             code_printf(parser, "    call strcmp\n");
-            code_printf(parser, "    addq $40, %%rsp\n");
+            code_printf(parser, "    addq $8, %%rsp\n");
             return;
         } else if (strcmp(name.value, "strcpy") == 0 || strcmp(name.value, "strcat") == 0) {
             parse_expression(parser);
@@ -2680,9 +2680,9 @@ void parse_function_call_statement(Parser *parser) {
             code_comment(parser, "Line %d: %s() (statement)", call_token.line, name.value);
             code_printf(parser, "    popq %%rdx\n");
             code_printf(parser, "    popq %%rcx\n");
-            code_printf(parser, "    subq $40, %%rsp\n");
+            code_printf(parser, "    subq $8, %%rsp\n");
             code_printf(parser, "    call %s\n", name.value);
-            code_printf(parser, "    addq $40, %%rsp\n");
+            code_printf(parser, "    addq $8, %%rsp\n");
             return;
         } else if (strcmp(name.value, "strdup") == 0) {
             parse_expression(parser);
@@ -2691,9 +2691,9 @@ void parse_function_call_statement(Parser *parser) {
             
             code_comment(parser, "Line %d: strdup() (statement)", call_token.line);
             code_printf(parser, "    popq %%rcx\n");
-            code_printf(parser, "    subq $40, %%rsp\n");
+            code_printf(parser, "    subq $8, %%rsp\n");
             code_printf(parser, "    call strdup\n");
-            code_printf(parser, "    addq $40, %%rsp\n");
+            code_printf(parser, "    addq $8, %%rsp\n");
             return;
         }
     }
@@ -2709,9 +2709,9 @@ void parse_function_call_statement(Parser *parser) {
             
             code_comment(parser, "Line %d: malloc() (statement)", call_token.line);
             code_printf(parser, "    popq %%rcx\n");
-            code_printf(parser, "    subq $40, %%rsp\n");
+            code_printf(parser, "    subq $8, %%rsp\n");
             code_printf(parser, "    call malloc\n");
-            code_printf(parser, "    addq $40, %%rsp\n");
+            code_printf(parser, "    addq $8, %%rsp\n");
             return;
         } else if (strcmp(name.value, "free") == 0) {
             parse_expression(parser);
@@ -2720,9 +2720,9 @@ void parse_function_call_statement(Parser *parser) {
             
             code_comment(parser, "Line %d: free() (statement)", call_token.line);
             code_printf(parser, "    popq %%rcx\n");
-            code_printf(parser, "    subq $40, %%rsp\n");
+            code_printf(parser, "    subq $8, %%rsp\n");
             code_printf(parser, "    call free\n");
-            code_printf(parser, "    addq $40, %%rsp\n");
+            code_printf(parser, "    addq $8, %%rsp\n");
             return;
         }
     }
@@ -2775,9 +2775,9 @@ void parse_function_call_statement(Parser *parser) {
         code_printf(parser, "    popq %s\n", arg_regs[i]);
     }
 
-    code_printf(parser, "    subq $40, %%rsp\n");
+    code_printf(parser, "    subq $8, %%rsp\n");
     code_printf(parser, "    call %s\n", name.value);
-    code_printf(parser, "    addq $40, %%rsp\n");
+    code_printf(parser, "    addq $8, %%rsp\n");
 
     if (func->return_type != TYPE_VOID) {
         code_printf(parser, "    pushq %%rax\n");
@@ -3056,9 +3056,9 @@ void parse_primary(Parser *parser) {
                     
                     code_comment(parser, "Built-in: strlen()");
                     code_printf(parser, "    popq %%rcx\n");  // string pointer
-                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call strlen\n");
-                    code_printf(parser, "    addq $40, %%rsp\n");
+                    code_printf(parser, "    addq $8, %%rsp\n");
                     code_printf(parser, "    pushq %%rax\n");  // result
                     return;
                 } else if (strcmp(name.value, "strcmp") == 0) {
@@ -3071,9 +3071,9 @@ void parse_primary(Parser *parser) {
                     code_comment(parser, "Built-in: strcmp()");
                     code_printf(parser, "    popq %%rdx\n");  // str2
                     code_printf(parser, "    popq %%rcx\n");  // str1
-                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call strcmp\n");
-                    code_printf(parser, "    addq $40, %%rsp\n");
+                    code_printf(parser, "    addq $8, %%rsp\n");
                     code_printf(parser, "    pushq %%rax\n");  // result
                     return;
                 } else if (strcmp(name.value, "strcpy") == 0) {
@@ -3086,9 +3086,9 @@ void parse_primary(Parser *parser) {
                     code_comment(parser, "Built-in: strcpy()");
                     code_printf(parser, "    popq %%rdx\n");  // src
                     code_printf(parser, "    popq %%rcx\n");  // dst
-                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call strcpy\n");
-                    code_printf(parser, "    addq $40, %%rsp\n");
+                    code_printf(parser, "    addq $8, %%rsp\n");
                     code_printf(parser, "    pushq %%rax\n");  // return dst
                     return;
                 } else if (strcmp(name.value, "strcat") == 0) {
@@ -3101,9 +3101,9 @@ void parse_primary(Parser *parser) {
                     code_comment(parser, "Built-in: strcat()");
                     code_printf(parser, "    popq %%rdx\n");  // src
                     code_printf(parser, "    popq %%rcx\n");  // dst
-                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call strcat\n");
-                    code_printf(parser, "    addq $40, %%rsp\n");
+                    code_printf(parser, "    addq $8, %%rsp\n");
                     code_printf(parser, "    pushq %%rax\n");  // return dst
                     return;
                 } else if (strcmp(name.value, "strdup") == 0) {
@@ -3113,9 +3113,9 @@ void parse_primary(Parser *parser) {
                     
                     code_comment(parser, "Built-in: strdup()");
                     code_printf(parser, "    popq %%rcx\n");  // source string
-                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call strdup\n");
-                    code_printf(parser, "    addq $40, %%rsp\n");
+                    code_printf(parser, "    addq $8, %%rsp\n");
                     code_printf(parser, "    pushq %%rax\n");  // return new string
                     return;
                 }
@@ -3132,9 +3132,9 @@ void parse_primary(Parser *parser) {
                     
                     code_comment(parser, "Built-in: malloc()");
                     code_printf(parser, "    popq %%rcx\n");  // size
-                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call malloc\n");
-                    code_printf(parser, "    addq $40, %%rsp\n");
+                    code_printf(parser, "    addq $8, %%rsp\n");
                     code_printf(parser, "    pushq %%rax\n");  // return pointer
                     return;
                 } else if (strcmp(name.value, "free") == 0) {
@@ -3144,9 +3144,9 @@ void parse_primary(Parser *parser) {
                     
                     code_comment(parser, "Built-in: free()");
                     code_printf(parser, "    popq %%rcx\n");  // pointer
-                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call free\n");
-                    code_printf(parser, "    addq $40, %%rsp\n");
+                    code_printf(parser, "    addq $8, %%rsp\n");
                     return;
                 }
             }
@@ -3225,9 +3225,9 @@ void parse_primary(Parser *parser) {
                 }
             }
 
-            code_printf(parser, "    subq $40, %%rsp\n");
+            code_printf(parser, "    subq $8, %%rsp\n");
             code_printf(parser, "    call %s\n", name.value);
-            code_printf(parser, "    addq $40, %%rsp\n");
+            code_printf(parser, "    addq $8, %%rsp\n");
 
             if (func->return_type == TYPE_FLOAT || func->return_type == TYPE_DOUBLE) {
                 code_printf(parser, "    movq %%xmm0, %%rax\n");
@@ -3397,9 +3397,9 @@ void parse_primary(Parser *parser) {
                     code_comment(parser, "Method call: %s.%s()", name.value, member_name.value);
                     code_printf(parser, "    leaq %d(%%rbp), %%rcx\n", var->offset);  // Address of struct
                     
-                    code_printf(parser, "    subq $40, %%rsp\n");
+                    code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call %s\n", mangled_name);
-                    code_printf(parser, "    addq $40, %%rsp\n");
+                    code_printf(parser, "    addq $8, %%rsp\n");
                     
                     if (method->return_type == TYPE_FLOAT || method->return_type == TYPE_DOUBLE) {
                         code_printf(parser, "    movq %%xmm0, %%rax\n");
