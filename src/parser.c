@@ -69,6 +69,50 @@ static void escape_string_for_comment(const char *str, char *output, size_t outp
     output[out_pos] = '\0';
 }
 
+// Platform detection
+static int is_windows_platform() {
+#if defined(_WIN32) || defined(_WIN64) || defined(__CYGWIN__)
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+// Get platform-specific argument registers
+// Windows x64: RCX, RDX, R8, R9
+// Linux x64 (System V AMD64 ABI): RDI, RSI, RDX, RCX, R8, R9
+static const char **get_arg_registers_64() {
+    static const char *windows_regs[] = {"%rcx", "%rdx", "%r8", "%r9"};
+    static const char *linux_regs[] = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
+    return is_windows_platform() ? windows_regs : linux_regs;
+}
+
+static const char **get_arg_registers_32() {
+    static const char *windows_regs[] = {"%ecx", "%edx", "%r8d", "%r9d"};
+    static const char *linux_regs[] = {"%edi", "%esi", "%edx", "%ecx", "%r8d", "%r9d"};
+    return is_windows_platform() ? windows_regs : linux_regs;
+}
+
+static const char **get_arg_registers_8() {
+    static const char *windows_regs[] = {"%cl", "%dl", "%r8b", "%r9b"};
+    static const char *linux_regs[] = {"%dil", "%sil", "%dl", "%cl", "%r8b", "%r9b"};
+    return is_windows_platform() ? windows_regs : linux_regs;
+}
+
+static int get_max_reg_args() {
+    return is_windows_platform() ? 4 : 6;
+}
+
+// Get the stack alignment requirement
+static int get_stack_alignment() {
+    return 16;  // Both Windows and Linux require 16-byte stack alignment
+}
+
+// Get shadow space size (Windows x64 requires 32 bytes, Linux doesn't need it)
+static int get_shadow_space() {
+    return is_windows_platform() ? 32 : 0;
+}
+
 const char *datatype_to_string(DataType type) {
     switch (type) {
         case TYPE_INT: return "int";
@@ -807,8 +851,8 @@ void parse_struct(Parser *parser) {
 
             code_comment(parser, "Save implicit 'this' pointer and parameters to stack");
 
-            const char *param_regs_64[] = {"%rcx", "%rdx", "%r8", "%r9"};
-            const char *param_regs_32[] = {"%ecx", "%edx", "%r8d", "%r9d"};
+            const char **param_regs_64 = get_arg_registers_64();
+            const char **param_regs_32 = get_arg_registers_32();
             const char *param_regs_float[] = {"%xmm0", "%xmm1", "%xmm2", "%xmm3"};
 
             // Save 'this' pointer (first parameter)
@@ -1089,8 +1133,8 @@ void parse_function(Parser *parser) {
         code_comment(parser, "Save parameters to stack");
     }
 
-    const char *param_regs_64[] = {"%rcx", "%rdx", "%r8", "%r9"};
-    const char *param_regs_32[] = {"%ecx", "%edx", "%r8d", "%r9d"};
+    const char **param_regs_64 = get_arg_registers_64();
+    const char **param_regs_32 = get_arg_registers_32();
     const char *param_regs_float[] = {"%xmm0", "%xmm1", "%xmm2", "%xmm3"};
 
     for (int i = 0; i < func->param_count && i < 4; i++) {
@@ -1690,8 +1734,8 @@ void parse_assignment(Parser *parser) {
                     return;
                 }
 
-                const char *arg_regs_64[] = {"%rcx", "%rdx", "%r8", "%r9"};
-                const char *arg_regs_32[] = {"%ecx", "%edx", "%r8d", "%r9d"};
+                const char **arg_regs_64 = get_arg_registers_64();
+                const char **arg_regs_32 = get_arg_registers_32();
 
                 for (int i = arg_count - 1; i >= 0 && i < 4; i--) {
                     DataType param_type = func->param_types[i];
@@ -1711,17 +1755,23 @@ void parse_assignment(Parser *parser) {
                         else if (i == 2) code_printf(parser, "    movb %%al, %%r8b\n");
                         else if (i == 3) code_printf(parser, "    movb %%al, %%r9b\n");
                     } else {
+                        const char **assign_arg_regs_32 = get_arg_registers_32();
+                        int assign_max_reg_args = get_max_reg_args();
                         code_printf(parser, "    popq %%rax\n");
-                        if (i == 0) code_printf(parser, "    movl %%eax, %%ecx\n");
-                        else if (i == 1) code_printf(parser, "    movl %%eax, %%edx\n");
-                        else if (i == 2) code_printf(parser, "    movl %%eax, %%r8d\n");
-                        else if (i == 3) code_printf(parser, "    movl %%eax, %%r9d\n");
+                        if (i < assign_max_reg_args) {
+                            code_printf(parser, "    movl %%eax, %s\n", assign_arg_regs_32[i]);
+                        }
                     }
                 }
 
-                code_printf(parser, "    subq $8, %%rsp\n");
+                int assign_stack_adjust = get_shadow_space() + 8;
+                if (assign_stack_adjust > 0) {
+                    code_printf(parser, "    subq $%d, %%rsp\n", assign_stack_adjust);
+                }
                 code_printf(parser, "    call %s\n", src_name.value);
-                code_printf(parser, "    addq $8, %%rsp\n");
+                if (assign_stack_adjust > 0) {
+                    code_printf(parser, "    addq $%d, %%rsp\n", assign_stack_adjust);
+                }
 
                 code_printf(parser, "    movq %%rax, %d(%%rbp)\n", var->offset);
 
@@ -2183,24 +2233,30 @@ void parse_print_statement(Parser *parser) {
             Token str_token = consume(parser->tokens);
             int str_id = add_string_literal(parser, str_token.value);
 
-            code_printf(parser, "    leaq .LC%d(%%rip), %%rcx\n", str_id);
-            code_printf(parser, "    subq $8, %%rsp\n");
+            const char **print_regs = get_arg_registers_64();
+            code_printf(parser, "    leaq .LC%d(%%rip), %s\n", str_id, print_regs[0]);
+            int print_stack_adjust = get_shadow_space() + 8;
+            if (print_stack_adjust > 0) {
+                code_printf(parser, "    subq $%d, %%rsp\n", print_stack_adjust);
+            }
             code_printf(parser, "    call printf\n");
-            code_printf(parser, "    addq $8, %%rsp\n");
+            if (print_stack_adjust > 0) {
+                code_printf(parser, "    addq $%d, %%rsp\n", print_stack_adjust);
+            }
         } else if (check(parser->tokens, TOKEN_LPAREN)) {
             consume(parser->tokens);
             parse_expression(parser);
             expect(parser, TOKEN_RPAREN, "Expected ')' after expression");
 
-            code_printf(parser, "    popq %%rdx\n");
-            code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
+            code_printf(parser, "    popq %s\n", get_arg_registers_64()[1]);
+            code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
             code_printf(parser, "    subq $8, %%rsp\n");
             code_printf(parser, "    call printf\n");
             code_printf(parser, "    addq $8, %%rsp\n");
         } else if (check(parser->tokens, TOKEN_NUMBER)) {
             Token num = consume(parser->tokens);
-            code_printf(parser, "    movl $%s, %%edx\n", num.value);
-            code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
+            code_printf(parser, "    movl $%s, %s\n", get_arg_registers_32()[1], num.value);
+            code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
             code_printf(parser, "    subq $8, %%rsp\n");
             code_printf(parser, "    call printf\n");
             code_printf(parser, "    addq $8, %%rsp\n");
@@ -2210,8 +2266,8 @@ void parse_print_statement(Parser *parser) {
 
             code_printf(parser, "    movss .LC_float_%d(%%rip), %%xmm0\n", float_id);
             code_printf(parser, "    cvtss2sd %%xmm0, %%xmm0\n");
-            code_printf(parser, "    movq %%xmm0, %%rdx\n");
-            code_printf(parser, "    leaq .LC_float_format(%%rip), %%rcx\n");
+            code_printf(parser, "    movq %%xmm0, %s\n", get_arg_registers_64()[1]);
+            code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_registers_64()[0]);
             code_printf(parser, "    subq $8, %%rsp\n");
             code_printf(parser, "    call printf\n");
             code_printf(parser, "    addq $8, %%rsp\n");
@@ -2219,7 +2275,7 @@ void parse_print_statement(Parser *parser) {
             Token ch = consume(parser->tokens);
             int char_value = (unsigned char) ch.value[0];
             code_printf(parser, "    movb $%d, %%dl\n", char_value);
-            code_printf(parser, "    leaq .LC_char_format(%%rip), %%rcx\n");
+            code_printf(parser, "    leaq .LC_char_format(%%rip), %s\n", get_arg_registers_64()[0]);
             code_printf(parser, "    subq $8, %%rsp\n");
             code_printf(parser, "    call printf\n");
             code_printf(parser, "    addq $8, %%rsp\n");
@@ -2256,7 +2312,7 @@ void parse_print_statement(Parser *parser) {
                     return;
                 }
 
-                const char *arg_regs[] = {"%rcx", "%rdx", "%r8", "%r9"};
+                const char **arg_regs = get_arg_registers_64();
                 for (int i = arg_count - 1; i >= 0 && i < 4; i--) {
                     code_printf(parser, "    popq %s\n", arg_regs[i]);
                 }
@@ -2267,14 +2323,14 @@ void parse_print_statement(Parser *parser) {
 
                 // Print the return value
                 if (func->return_type == TYPE_FLOAT || func->return_type == TYPE_DOUBLE) {
-                    code_printf(parser, "    movq %%xmm0, %%rdx\n");
-                    code_printf(parser, "    leaq .LC_float_format(%%rip), %%rcx\n");
+                    code_printf(parser, "    movq %%xmm0, %s\n", get_arg_registers_64()[1]);
+                    code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_registers_64()[0]);
                 } else if (func->return_type == TYPE_STRING) {
-                    code_printf(parser, "    movq %%rax, %%rdx\n");
-                    code_printf(parser, "    leaq .LC_string_format(%%rip), %%rcx\n");
+                    code_printf(parser, "    movq %%rax, %s\n", get_arg_registers_64()[1]);
+                    code_printf(parser, "    leaq .LC_string_format(%%rip), %s\n", get_arg_registers_64()[0]);
                 } else {
-                    code_printf(parser, "    movl %%eax, %%edx\n");
-                    code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
+                    code_printf(parser, "    movl %%eax, %s\n", get_arg_registers_32()[1]);
+                    code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
                 }
                 code_printf(parser, "    subq $8, %%rsp\n");
                 code_printf(parser, "    call printf\n");
@@ -2356,14 +2412,14 @@ void parse_print_statement(Parser *parser) {
                     
                     // Print the return value
                     if (method->return_type == TYPE_FLOAT || method->return_type == TYPE_DOUBLE) {
-                        code_printf(parser, "    movq %%xmm0, %%rdx\n");
-                        code_printf(parser, "    leaq .LC_float_format(%%rip), %%rcx\n");
+                        code_printf(parser, "    movq %%xmm0, %s\n", get_arg_registers_64()[1]);
+                        code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     } else if (method->return_type == TYPE_STRING) {
-                        code_printf(parser, "    movq %%rax, %%rdx\n");
-                        code_printf(parser, "    leaq .LC_string_format(%%rip), %%rcx\n");
+                        code_printf(parser, "    movq %%rax, %s\n", get_arg_registers_64()[1]);
+                        code_printf(parser, "    leaq .LC_string_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     } else {
-                        code_printf(parser, "    movl %%eax, %%edx\n");
-                        code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
+                        code_printf(parser, "    movl %%eax, %s\n", get_arg_registers_32()[1]);
+                        code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     }
                     code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call printf\n");
@@ -2390,24 +2446,24 @@ void parse_print_statement(Parser *parser) {
                     if (field->type == TYPE_FLOAT) {
                         code_printf(parser, "    movss %d(%%rbx), %%xmm0\n", field->offset);
                         code_printf(parser, "    cvtss2sd %%xmm0, %%xmm0\n");
-                        code_printf(parser, "    movq %%xmm0, %%rdx\n");
-                        code_printf(parser, "    leaq .LC_float_format(%%rip), %%rcx\n");
+                        code_printf(parser, "    movq %%xmm0, %s\n", get_arg_registers_64()[1]);
+                        code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     } else if (field->type == TYPE_DOUBLE) {
                         code_printf(parser, "    movsd %d(%%rbx), %%xmm0\n", field->offset);
-                        code_printf(parser, "    movq %%xmm0, %%rdx\n");
-                        code_printf(parser, "    leaq .LC_float_format(%%rip), %%rcx\n");
+                        code_printf(parser, "    movq %%xmm0, %s\n", get_arg_registers_64()[1]);
+                        code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     } else if (field->type == TYPE_CHAR) {
                         code_printf(parser, "    movsbl %d(%%rbx), %%edx\n", field->offset);
-                        code_printf(parser, "    leaq .LC_char_format(%%rip), %%rcx\n");
+                        code_printf(parser, "    leaq .LC_char_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     } else if (field->type == TYPE_BYTE || field->type == TYPE_BIT) {
                         code_printf(parser, "    movzbl %d(%%rbx), %%edx\n", field->offset);
-                        code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
+                        code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     } else if (field->type == TYPE_STRING) {
                         code_printf(parser, "    movq %d(%%rbx), %%rdx\n", field->offset);
-                        code_printf(parser, "    leaq .LC_string_format(%%rip), %%rcx\n");
+                        code_printf(parser, "    leaq .LC_string_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     } else {  // TYPE_INT and others
-                        code_printf(parser, "    movl %d(%%rbx), %%edx\n", field->offset);
-                        code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
+                        code_printf(parser, "    movl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
+                        code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     }
                     code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call printf\n");
@@ -2442,14 +2498,14 @@ void parse_print_statement(Parser *parser) {
                 
                 // Load the array element based on type
                 if (var->type == TYPE_INT) {
-                    code_printf(parser, "    movl (%%rbx, %%rax, %d), %%edx\n", element_size);
-                    code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
+                    code_printf(parser, "    movl (%%rbx, %%rax, %d), %s\n", element_size, get_arg_registers_32()[1]);
+                    code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
                 } else if (var->type == TYPE_CHAR) {
                     code_printf(parser, "    movsbl (%%rbx, %%rax, %d), %%edx\n", element_size);
-                    code_printf(parser, "    leaq .LC_char_format(%%rip), %%rcx\n");
+                    code_printf(parser, "    leaq .LC_char_format(%%rip), %s\n", get_arg_registers_64()[0]);
                 } else if (var->type == TYPE_BYTE || var->type == TYPE_BIT) {
                     code_printf(parser, "    movzbl (%%rbx, %%rax, %d), %%edx\n", element_size);
-                    code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
+                    code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
                 } else {
                     parser_error(parser, "Unsupported array element type in print");
                     return;
@@ -2470,39 +2526,39 @@ void parse_print_statement(Parser *parser) {
                 if (var->type == TYPE_FLOAT) {
                     code_printf(parser, "    movss %d(%%rbp), %%xmm0\n", var->offset);
                     code_printf(parser, "    cvtss2sd %%xmm0, %%xmm0\n");
-                    code_printf(parser, "    movq %%xmm0, %%rdx\n");
-                    code_printf(parser, "    leaq .LC_float_format(%%rip), %%rcx\n");
+                    code_printf(parser, "    movq %%xmm0, %s\n", get_arg_registers_64()[1]);
+                    code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call printf\n");
                     code_printf(parser, "    addq $8, %%rsp\n");
                 } else if (var->type == TYPE_DOUBLE) {
                     code_printf(parser, "    movsd %d(%%rbp), %%xmm0\n", var->offset);
-                    code_printf(parser, "    movq %%xmm0, %%rdx\n");
-                    code_printf(parser, "    leaq .LC_float_format(%%rip), %%rcx\n");
+                    code_printf(parser, "    movq %%xmm0, %s\n", get_arg_registers_64()[1]);
+                    code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call printf\n");
                     code_printf(parser, "    addq $8, %%rsp\n");
                 } else if (var->type == TYPE_CHAR) {
                     code_printf(parser, "    movsbl %d(%%rbp), %%edx\n", var->offset);
-                    code_printf(parser, "    leaq .LC_char_format(%%rip), %%rcx\n");
+                    code_printf(parser, "    leaq .LC_char_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call printf\n");
                     code_printf(parser, "    addq $8, %%rsp\n");
                 } else if (var->type == TYPE_BYTE || var->type == TYPE_BIT) {
                     code_printf(parser, "    movzbl %d(%%rbp), %%edx\n", var->offset);
-                    code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
+                    code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call printf\n");
                     code_printf(parser, "    addq $8, %%rsp\n");
                 } else if (var->type == TYPE_STRING) {
                     code_printf(parser, "    movq %d(%%rbp), %%rdx\n", var->offset);
-                    code_printf(parser, "    leaq .LC_string_format(%%rip), %%rcx\n");
+                    code_printf(parser, "    leaq .LC_string_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call printf\n");
                     code_printf(parser, "    addq $8, %%rsp\n");
                 } else {
-                    code_printf(parser, "    movl %d(%%rbp), %%edx\n", var->offset);
-                    code_printf(parser, "    leaq .LC_int_format(%%rip), %%rcx\n");
+                    code_printf(parser, "    movl %d(%%rbp), %s\n", var->offset, get_arg_registers_32()[1]);
+                    code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call printf\n");
                     code_printf(parser, "    addq $8, %%rsp\n");
@@ -2519,7 +2575,7 @@ void parse_print_statement(Parser *parser) {
         }
     }
 
-    code_printf(parser, "    movl $10, %%ecx\n");
+    code_printf(parser, "    movl $10, %s\n", get_arg_registers_32()[0]);
     code_printf(parser, "    subq $8, %%rsp\n");
     code_printf(parser, "    call putchar\n");
     code_printf(parser, "    addq $8, %%rsp\n");
@@ -2597,7 +2653,7 @@ void parse_function_call_statement(Parser *parser) {
         }
         
         // Prepare arguments (in reverse order) and implicit 'this' pointer
-        const char *arg_regs_int[] = {"%rcx", "%rdx", "%r8", "%r9"};
+        const char **arg_regs_64 = get_arg_registers_64();
         const char *arg_regs_float[] = {"%xmm0", "%xmm1", "%xmm2", "%xmm3"};
         
         // Pop arguments into registers (in reverse order)
@@ -2609,7 +2665,7 @@ void parse_function_call_statement(Parser *parser) {
                 code_printf(parser, "    popq %%rax\n");
                 code_printf(parser, "    movq %%rax, %s\n", arg_regs_float[reg_idx]);
             } else if (param_type == TYPE_STRING) {
-                code_printf(parser, "    popq %s\n", arg_regs_int[reg_idx]);
+                code_printf(parser, "    popq %s\n", arg_regs_64[reg_idx]);
             } else if (param_type == TYPE_CHAR || param_type == TYPE_BYTE || param_type == TYPE_BIT) {
                 code_printf(parser, "    popq %%rax\n");
                 if (reg_idx == 1) {
@@ -2622,7 +2678,7 @@ void parse_function_call_statement(Parser *parser) {
             } else {
                 code_printf(parser, "    popq %%rax\n");
                 if (reg_idx == 1) {
-                    code_printf(parser, "    movl %%eax, %%edx\n");
+                    code_printf(parser, "    movl %%eax, %s\n", get_arg_registers_32()[1]);
                 } else if (reg_idx == 2) {
                     code_printf(parser, "    movl %%eax, %%r8d\n");
                 } else if (reg_idx == 3) {
@@ -2664,7 +2720,7 @@ void parse_function_call_statement(Parser *parser) {
             expect(parser, TOKEN_SEMICOLON, "Expected ';'");
             
             code_comment(parser, "Line %d: strcmp() (statement)", call_token.line);
-            code_printf(parser, "    popq %%rdx\n");
+            code_printf(parser, "    popq %s\n", get_arg_registers_64()[1]);
             code_printf(parser, "    popq %%rcx\n");
             code_printf(parser, "    subq $8, %%rsp\n");
             code_printf(parser, "    call strcmp\n");
@@ -2678,7 +2734,7 @@ void parse_function_call_statement(Parser *parser) {
             expect(parser, TOKEN_SEMICOLON, "Expected ';'");
             
             code_comment(parser, "Line %d: %s() (statement)", call_token.line, name.value);
-            code_printf(parser, "    popq %%rdx\n");
+            code_printf(parser, "    popq %s\n", get_arg_registers_64()[1]);
             code_printf(parser, "    popq %%rcx\n");
             code_printf(parser, "    subq $8, %%rsp\n");
             code_printf(parser, "    call %s\n", name.value);
@@ -2769,7 +2825,7 @@ void parse_function_call_statement(Parser *parser) {
         return;
     }
 
-    const char *arg_regs[] = {"%rcx", "%rdx", "%r8", "%r9"};
+    const char **arg_regs = get_arg_registers_64();
 
     for (int i = arg_count - 1; i >= 0 && i < 4; i--) {
         code_printf(parser, "    popq %s\n", arg_regs[i]);
@@ -3069,7 +3125,7 @@ void parse_primary(Parser *parser) {
                     expect(parser, TOKEN_RPAREN, "Expected ')'");
                     
                     code_comment(parser, "Built-in: strcmp()");
-                    code_printf(parser, "    popq %%rdx\n");  // str2
+                    code_printf(parser, "    popq %s\n", get_arg_registers_64()[1]);  // str2
                     code_printf(parser, "    popq %%rcx\n");  // str1
                     code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call strcmp\n");
@@ -3084,7 +3140,7 @@ void parse_primary(Parser *parser) {
                     expect(parser, TOKEN_RPAREN, "Expected ')'");
                     
                     code_comment(parser, "Built-in: strcpy()");
-                    code_printf(parser, "    popq %%rdx\n");  // src
+                    code_printf(parser, "    popq %s\n", get_arg_registers_64()[1]);  // src
                     code_printf(parser, "    popq %%rcx\n");  // dst
                     code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call strcpy\n");
@@ -3099,7 +3155,7 @@ void parse_primary(Parser *parser) {
                     expect(parser, TOKEN_RPAREN, "Expected ')'");
                     
                     code_comment(parser, "Built-in: strcat()");
-                    code_printf(parser, "    popq %%rdx\n");  // src
+                    code_printf(parser, "    popq %s\n", get_arg_registers_64()[1]);  // src
                     code_printf(parser, "    popq %%rcx\n");  // dst
                     code_printf(parser, "    subq $8, %%rsp\n");
                     code_printf(parser, "    call strcat\n");
@@ -3189,7 +3245,7 @@ void parse_primary(Parser *parser) {
                 return;
             }
 
-            const char *arg_regs_int[] = {"%rcx", "%rdx", "%r8", "%r9"};
+            const char **arg_regs_64 = get_arg_registers_64();
             const char *arg_regs_float[] = {"%xmm0", "%xmm1", "%xmm2", "%xmm3"};
 
             for (int i = arg_count - 1; i >= 0 && i < 4; i--) {
@@ -3199,35 +3255,33 @@ void parse_primary(Parser *parser) {
                     code_printf(parser, "    popq %%rax\n");
                     code_printf(parser, "    movq %%rax, %s\n", arg_regs_float[i]);
                 } else if (param_type == TYPE_STRING) {
-                    code_printf(parser, "    popq %s\n", arg_regs_int[i]);
+                    code_printf(parser, "    popq %s\n", arg_regs_64[i]);
                 } else if (param_type == TYPE_CHAR || param_type == TYPE_BYTE || param_type == TYPE_BIT) {
                     code_printf(parser, "    popq %%rax\n");
-                    if (i == 0) {
-                        code_printf(parser, "    movb %%al, %%cl\n");
-                    } else if (i == 1) {
-                        code_printf(parser, "    movb %%al, %%dl\n");
-                    } else if (i == 2) {
-                        code_printf(parser, "    movb %%al, %%r8b\n");
-                    } else if (i == 3) {
-                        code_printf(parser, "    movb %%al, %%r9b\n");
+                    const char **expr_arg_regs_8 = get_arg_registers_8();
+                    int expr_max_reg_args_8 = get_max_reg_args();
+                    code_printf(parser, "    popq %%rax\n");
+                    if (i < expr_max_reg_args_8) {
+                        code_printf(parser, "    movb %%al, %s\n", expr_arg_regs_8[i]);
                     }
                 } else {
+                    const char **expr_arg_regs_32 = get_arg_registers_32();
+                    int expr_max_reg_args_32 = get_max_reg_args();
                     code_printf(parser, "    popq %%rax\n");
-                    if (i == 0) {
-                        code_printf(parser, "    movl %%eax, %%ecx\n");
-                    } else if (i == 1) {
-                        code_printf(parser, "    movl %%eax, %%edx\n");
-                    } else if (i == 2) {
-                        code_printf(parser, "    movl %%eax, %%r8d\n");
-                    } else if (i == 3) {
-                        code_printf(parser, "    movl %%eax, %%r9d\n");
+                    if (i < expr_max_reg_args_32) {
+                        code_printf(parser, "    movl %%eax, %s\n", expr_arg_regs_32[i]);
                     }
                 }
             }
 
-            code_printf(parser, "    subq $8, %%rsp\n");
+            int expr_stack_adjust = get_shadow_space() + 8;
+            if (expr_stack_adjust > 0) {
+                code_printf(parser, "    subq $%d, %%rsp\n", expr_stack_adjust);
+            }
             code_printf(parser, "    call %s\n", name.value);
-            code_printf(parser, "    addq $8, %%rsp\n");
+            if (expr_stack_adjust > 0) {
+                code_printf(parser, "    addq $%d, %%rsp\n", expr_stack_adjust);
+            }
 
             if (func->return_type == TYPE_FLOAT || func->return_type == TYPE_DOUBLE) {
                 code_printf(parser, "    movq %%xmm0, %%rax\n");
@@ -3359,7 +3413,7 @@ void parse_primary(Parser *parser) {
                     }
                     
                     // Prepare arguments (in reverse order) and implicit 'this' pointer
-                    const char *arg_regs_int[] = {"%rcx", "%rdx", "%r8", "%r9"};
+                    const char **arg_regs_64 = get_arg_registers_64();
                     const char *arg_regs_float[] = {"%xmm0", "%xmm1", "%xmm2", "%xmm3"};
                     
                     // Pop arguments into registers (in reverse order)
@@ -3371,7 +3425,7 @@ void parse_primary(Parser *parser) {
                             code_printf(parser, "    popq %%rax\n");
                             code_printf(parser, "    movq %%rax, %s\n", arg_regs_float[reg_idx]);
                         } else if (param_type == TYPE_STRING) {
-                            code_printf(parser, "    popq %s\n", arg_regs_int[reg_idx]);
+                            code_printf(parser, "    popq %s\n", arg_regs_64[reg_idx]);
                         } else if (param_type == TYPE_CHAR || param_type == TYPE_BYTE || param_type == TYPE_BIT) {
                             code_printf(parser, "    popq %%rax\n");
                             if (reg_idx == 1) {
@@ -3384,7 +3438,7 @@ void parse_primary(Parser *parser) {
                         } else {
                             code_printf(parser, "    popq %%rax\n");
                             if (reg_idx == 1) {
-                                code_printf(parser, "    movl %%eax, %%edx\n");
+                                code_printf(parser, "    movl %%eax, %s\n", get_arg_registers_32()[1]);
                             } else if (reg_idx == 2) {
                                 code_printf(parser, "    movl %%eax, %%r8d\n");
                             } else if (reg_idx == 3) {
