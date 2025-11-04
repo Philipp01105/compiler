@@ -3470,13 +3470,9 @@ void parse_primary(Parser *parser) {
                 } else if (param_type == TYPE_STRING) {
                     code_printf(parser, "    popq %s\n", arg_regs_64[i]);
                 } else if (param_type == TYPE_CHAR || param_type == TYPE_BYTE || param_type == TYPE_BIT) {
-                    code_printf(parser, "    popq %%rax\n");
                     const char **expr_arg_regs_8 = get_arg_registers_8();
-                    int expr_max_reg_args_8 = get_max_reg_args();
                     code_printf(parser, "    popq %%rax\n");
-                    if (i < expr_max_reg_args_8) {
-                        code_printf(parser, "    movb %%al, %s\n", expr_arg_regs_8[i]);
-                    }
+                    code_printf(parser, "    movb %%al, %s\n", expr_arg_regs_8[i]);
                 } else {
                     const char **expr_arg_regs_32 = get_arg_registers_32();
                     int expr_max_reg_args_32 = get_max_reg_args();
