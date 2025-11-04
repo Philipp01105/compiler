@@ -3774,7 +3774,18 @@ void parse_primary(Parser *parser) {
                 }
             } else {
                 // Regular variable access (not array indexing)
-                if (var->type == TYPE_FLOAT) {
+                // For arrays used as function arguments, we need to pass the address
+                if (var->is_array) {
+                    // For array parameters (pointers), load the pointer
+                    if (var->array_size == 0) {
+                        code_printf(parser, "    movq %d(%%rbp), %%rax\n", var->offset);
+                        code_printf(parser, "    pushq %%rax\n");
+                    } else {
+                        // For local arrays, load the address
+                        code_printf(parser, "    leaq %d(%%rbp), %%rax\n", var->offset);
+                        code_printf(parser, "    pushq %%rax\n");
+                    }
+                } else if (var->type == TYPE_FLOAT) {
                     code_printf(parser, "    movss %d(%%rbp), %%xmm0\n", var->offset);
                     code_printf(parser, "    movq %%xmm0, %%rax\n");
                     code_printf(parser, "    pushq %%rax\n");
