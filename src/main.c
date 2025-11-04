@@ -34,7 +34,7 @@ void print_header(const char *source_file) {
     printf("\n");
     printf("################################################################\n");
     printf("#                                                              #\n");
-    printf("#                   COMPILER - COMPILE MODE                   #\n");
+    printf("#                      DMM COMPILER                            #\n");
     printf("#                                                              #\n");
     printf("################################################################\n");
     printf("\n");

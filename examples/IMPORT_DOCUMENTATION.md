@@ -352,7 +352,7 @@ The compiler comes with a comprehensive standard library in the `stdlib/` direct
 #import <stdlib/utils.txt>    // 35 functions
 ```
 
-See [stdlib/README.md](stdlib/README.md) for complete documentation.
+See [stdlib/README.md](../stdlib/README.md) for complete documentation.
 
 ## Future Enhancements
 
