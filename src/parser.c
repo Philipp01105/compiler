@@ -702,6 +702,13 @@ void parse_struct(Parser *parser) {
 
     // Parse struct body (fields and methods)
     while (!check(parser->tokens, TOKEN_RBRACE) && !is_at_end(parser->tokens)) {
+        // Check for static methods or regular methods
+        int is_static = 0;
+        if (check(parser->tokens, TOKEN_KEYWORD_STATIC)) {
+            is_static = 1;
+            consume(parser->tokens);  // consume 'static'
+        }
+        
         // Check if this is a method (func keyword) or a field
         if (check(parser->tokens, TOKEN_KEYWORD_FUNC)) {
             // Parse method - it's like a regular function but belongs to the struct
@@ -724,6 +731,7 @@ void parse_struct(Parser *parser) {
             strcpy(func->name, mangled_name);
             strcpy(func->struct_name, struct_name);
             func->param_count = 0;
+            func->is_static = is_static;
 
             // Add to struct's method list
             if (struct_def->method_count >= MAX_FUNCTIONS) {
@@ -739,23 +747,27 @@ void parse_struct(Parser *parser) {
             int saved_var_count = parser->var_count;
             int param_offset = 8;
 
-            // First implicit parameter is 'this' pointer to struct instance
-            if (parser->var_count >= MAX_VARS) {
-                parser_error(parser, "Too many variables");
-                return;
-            }
+            // For static methods, don't add implicit 'this' parameter
+            Variable *this_var = NULL;
+            if (!is_static) {
+                // First implicit parameter is 'this' pointer to struct instance
+                if (parser->var_count >= MAX_VARS) {
+                    parser_error(parser, "Too many variables");
+                    return;
+                }
 
-            Variable *this_var = &parser->vars[parser->var_count];
-            strcpy(this_var->name, "this");
-            strcpy(this_var->struct_type, struct_name);
-            this_var->type = TYPE_INT;  // Pointer type (we don't have a separate pointer type)
-            this_var->size = 8;  // Pointer is 8 bytes
-            this_var->offset = -param_offset;
-            this_var->is_array = 0;
-            this_var->array_size = 0;
-            this_var->scope = 1;
-            parser->var_count++;
-            param_offset += 8;
+                this_var = &parser->vars[parser->var_count];
+                strcpy(this_var->name, "this");
+                strcpy(this_var->struct_type, struct_name);
+                this_var->type = TYPE_INT;  // Pointer type (we don't have a separate pointer type)
+                this_var->size = 8;  // Pointer is 8 bytes
+                this_var->offset = -param_offset;
+                this_var->is_array = 0;
+                this_var->array_size = 0;
+                this_var->scope = 1;
+                parser->var_count++;
+                param_offset += 8;
+            }
 
             // Parse remaining parameters
             while (!check(parser->tokens, TOKEN_RPAREN) && !is_at_end(parser->tokens)) {
@@ -860,22 +872,26 @@ void parse_struct(Parser *parser) {
             code_printf(parser, "    movq %%rsp, %%rbp\n");
             code_printf(parser, "    subq $8192, %%rsp\n");
 
-            code_comment(parser, "Save implicit 'this' pointer and parameters to stack");
-
             const char **param_regs_64 = get_arg_registers_64();
             const char **param_regs_32 = get_arg_registers_32();
             const char *param_regs_float[] = {"%xmm0", "%xmm1", "%xmm2", "%xmm3"};
 
-            // Save 'this' pointer (first parameter)
-            Variable *this_param = &parser->vars[saved_var_count];
-            code_printf(parser, "    movq %s, %d(%%rbp)    # Save 'this' pointer\n", 
-                        param_regs_64[0], this_param->offset);
+            if (!is_static) {
+                code_comment(parser, "Save implicit 'this' pointer and parameters to stack");
+                // Save 'this' pointer (first parameter)
+                Variable *this_param = &parser->vars[saved_var_count];
+                code_printf(parser, "    movq %s, %d(%%rbp)    # Save 'this' pointer\n", 
+                            param_regs_64[0], this_param->offset);
+            } else {
+                code_comment(parser, "Save parameters to stack (static method - no 'this')");
+            }
 
             // Save remaining parameters
             int max_reg_args = get_max_reg_args();
-            for (int i = 0; i < func->param_count && i + 1 < max_reg_args; i++) {
-                Variable *var = &parser->vars[saved_var_count + 1 + i];
-                int reg_idx = i + 1;  // Offset by 1 because first reg has 'this'
+            int param_start_idx = is_static ? 0 : 1;  // Static methods start at var index 0, non-static at 1
+            for (int i = 0; i < func->param_count && i + (is_static ? 0 : 1) < max_reg_args; i++) {
+                Variable *var = &parser->vars[saved_var_count + param_start_idx + i];
+                int reg_idx = is_static ? i : (i + 1);  // Offset by 1 for non-static (first reg has 'this')
 
                 if (var->is_array) {
                     code_printf(parser, "    movq %s, %d(%%rbp)\n", param_regs_64[reg_idx], var->offset);
@@ -3224,13 +3240,106 @@ void parse_function_call_statement(Parser *parser) {
     Token call_token = peek(parser->tokens);
     Token name = consume(parser->tokens);
 
-    // Check if it's a method call: var.method()
+    // Check if it's a method call: var.method() or StructName.staticMethod()
     if (check(parser->tokens, TOKEN_DOT)) {
         consume(parser->tokens);  // consume '.'
         
+        // Try to find as a variable first
         Variable *var = find_variable(parser, name.value);
+        
+        // If not a variable, check if it's a struct type (for static methods)
         if (!var) {
-            parser_error(parser, "Variable '%s' not found", name.value);
+            StructDefinition *struct_def = find_struct(parser, name.value);
+            if (struct_def) {
+                // This is a static method call: StructName.methodName()
+                Token method_name = consume(parser->tokens);
+                
+                // Find the static method
+                char mangled_name[MAX_TOKEN * 2];
+                snprintf(mangled_name, sizeof(mangled_name), "%s_%s", name.value, method_name.value);
+                
+                Function *method = find_function(parser, mangled_name);
+                if (!method) {
+                    parser_error(parser, "Static method '%s' not found in struct '%s'", method_name.value, name.value);
+                    return;
+                }
+                
+                if (!method->is_static) {
+                    parser_error(parser, "Method '%s' is not static. Use an instance to call it.", method_name.value);
+                    return;
+                }
+                
+                code_comment(parser, "Line %d: %s.%s(...) (static method call)", call_token.line, name.value, method_name.value);
+                
+                expect(parser, TOKEN_LPAREN, "Expected '(' after method name");
+                
+                // Parse arguments (no 'this' pointer for static methods)
+                int arg_count = 0;
+                while (!check(parser->tokens, TOKEN_RPAREN) && !is_at_end(parser->tokens)) {
+                    if (check(parser->tokens, TOKEN_STRING_LITERAL)) {
+                        Token str_token = consume(parser->tokens);
+                        int str_id = add_string_literal(parser, str_token.value);
+                        code_printf(parser, "    leaq .LC%d(%%rip), %%rax\n", str_id);
+                        code_printf(parser, "    pushq %%rax\n");
+                    } else {
+                        parse_expression(parser);
+                    }
+                    arg_count++;
+                    
+                    if (check(parser->tokens, TOKEN_COMMA)) {
+                        consume(parser->tokens);
+                    }
+                }
+                
+                expect(parser, TOKEN_RPAREN, "Expected ')' after method arguments");
+                expect(parser, TOKEN_SEMICOLON, "Expected ';' after static method call");
+                
+                if (arg_count != method->param_count) {
+                    parser_error(parser, "Static method '%s' expects %d arguments",
+                                 method_name.value, method->param_count);
+                    return;
+                }
+                
+                // Set up arguments in registers (no 'this' pointer offset)
+                const char **arg_regs_64 = get_arg_registers_64();
+                const char *arg_regs_float[] = {"%xmm0", "%xmm1", "%xmm2", "%xmm3"};
+                
+                int max_reg_args = get_max_reg_args();
+                for (int i = arg_count - 1; i >= 0 && i < max_reg_args; i--) {
+                    DataType param_type = method->param_types[i];
+                    
+                    if (param_type == TYPE_FLOAT || param_type == TYPE_DOUBLE) {
+                        code_printf(parser, "    popq %%rax\n");
+                        code_printf(parser, "    movq %%rax, %s\n", arg_regs_float[i]);
+                    } else if (param_type == TYPE_STRING) {
+                        code_printf(parser, "    popq %s\n", arg_regs_64[i]);
+                    } else if (param_type == TYPE_CHAR || param_type == TYPE_BYTE || param_type == TYPE_BIT) {
+                        const char **static_method_arg_regs_8 = get_arg_registers_8();
+                        code_printf(parser, "    popq %%rax\n");
+                        code_printf(parser, "    movb %%al, %s\n", static_method_arg_regs_8[i]);
+                    } else {
+                        const char **static_method_arg_regs_32 = get_arg_registers_32();
+                        code_printf(parser, "    popq %%rax\n");
+                        code_printf(parser, "    movl %%eax, %s\n", static_method_arg_regs_32[i]);
+                    }
+                }
+                
+                // Call the static method
+                {
+                    int stack_adj_static = get_call_stack_space();
+                    if (stack_adj_static > 0) {
+                        code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_static);
+                    }
+                    code_printf(parser, "    call %s\n", mangled_name);
+                    if (stack_adj_static > 0) {
+                        code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_static);
+                    }
+                }
+                
+                return;
+            }
+            
+            parser_error(parser, "Variable or struct type '%s' not found", name.value);
             return;
         }
         
@@ -4305,7 +4414,109 @@ void parse_primary(Parser *parser) {
                 }
             }
             
+            // If variable not found, check if it's a struct type (for static methods)
             if (!var) {
+                StructDefinition *struct_def = find_struct(parser, name.value);
+                if (struct_def && check(parser->tokens, TOKEN_DOT)) {
+                    // This is a static method call in an expression: StructName.methodName()
+                    consume(parser->tokens);  // consume '.'
+                    Token method_name = consume(parser->tokens);
+                    
+                    if (!check(parser->tokens, TOKEN_LPAREN)) {
+                        parser_error(parser, "Expected '(' after static method name");
+                        return;
+                    }
+                    
+                    consume(parser->tokens);  // consume '('
+                    
+                    // Find the static method
+                    char mangled_name[MAX_TOKEN * 2];
+                    snprintf(mangled_name, sizeof(mangled_name), "%s_%s", name.value, method_name.value);
+                    
+                    Function *method = find_function(parser, mangled_name);
+                    if (!method) {
+                        parser_error(parser, "Static method '%s' not found in struct '%s'", method_name.value, name.value);
+                        return;
+                    }
+                    
+                    if (!method->is_static) {
+                        parser_error(parser, "Method '%s' is not static. Use an instance to call it.", method_name.value);
+                        return;
+                    }
+                    
+                    // Parse arguments (no 'this' pointer for static methods)
+                    int arg_count = 0;
+                    while (!check(parser->tokens, TOKEN_RPAREN) && !is_at_end(parser->tokens)) {
+                        if (check(parser->tokens, TOKEN_STRING_LITERAL)) {
+                            Token str_token = consume(parser->tokens);
+                            int str_id = add_string_literal(parser, str_token.value);
+                            code_printf(parser, "    leaq .LC%d(%%rip), %%rax\n", str_id);
+                            code_printf(parser, "    pushq %%rax\n");
+                        } else {
+                            parse_expression(parser);
+                        }
+                        arg_count++;
+                        
+                        if (check(parser->tokens, TOKEN_COMMA)) {
+                            consume(parser->tokens);
+                        }
+                    }
+                    
+                    expect(parser, TOKEN_RPAREN, "Expected ')' after method arguments");
+                    
+                    if (arg_count != method->param_count) {
+                        parser_error(parser, "Static method '%s' expects %d arguments",
+                                     method_name.value, method->param_count);
+                        return;
+                    }
+                    
+                    // Set up arguments in registers (no 'this' pointer offset)
+                    const char **arg_regs_64 = get_arg_registers_64();
+                    const char *arg_regs_float[] = {"%xmm0", "%xmm1", "%xmm2", "%xmm3"};
+                    
+                    int max_reg_args = get_max_reg_args();
+                    for (int i = arg_count - 1; i >= 0 && i < max_reg_args; i--) {
+                        DataType param_type = method->param_types[i];
+                        
+                        if (param_type == TYPE_FLOAT || param_type == TYPE_DOUBLE) {
+                            code_printf(parser, "    popq %%rax\n");
+                            code_printf(parser, "    movq %%rax, %s\n", arg_regs_float[i]);
+                        } else if (param_type == TYPE_STRING) {
+                            code_printf(parser, "    popq %s\n", arg_regs_64[i]);
+                        } else if (param_type == TYPE_CHAR || param_type == TYPE_BYTE || param_type == TYPE_BIT) {
+                            const char **static_expr_arg_regs_8 = get_arg_registers_8();
+                            code_printf(parser, "    popq %%rax\n");
+                            code_printf(parser, "    movb %%al, %s\n", static_expr_arg_regs_8[i]);
+                        } else {
+                            const char **static_expr_arg_regs_32 = get_arg_registers_32();
+                            code_printf(parser, "    popq %%rax\n");
+                            code_printf(parser, "    movl %%eax, %s\n", static_expr_arg_regs_32[i]);
+                        }
+                    }
+                    
+                    // Call the static method
+                    {
+                        int stack_adj_static_expr = get_call_stack_space();
+                        if (stack_adj_static_expr > 0) {
+                            code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_static_expr);
+                        }
+                        code_printf(parser, "    call %s\n", mangled_name);
+                        if (stack_adj_static_expr > 0) {
+                            code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_static_expr);
+                        }
+                    }
+                    
+                    // Push return value
+                    if (method->return_type == TYPE_FLOAT || method->return_type == TYPE_DOUBLE) {
+                        code_printf(parser, "    movq %%xmm0, %%rax\n");
+                        code_printf(parser, "    pushq %%rax\n");
+                    } else {
+                        code_printf(parser, "    pushq %%rax\n");
+                    }
+                    
+                    return;
+                }
+                
                 parser_error(parser, "Variable '%s' not found", name.value);
                 return;
             }
