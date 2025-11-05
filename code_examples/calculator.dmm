@@ -127,7 +127,7 @@ struct Calculator {
     
     // Print status
     func printStatus(operation:string) -> void {
-        print(operation);
+        println(operation);
         printLabeled("  Result", currentValue);
     }
 }
@@ -135,15 +135,15 @@ struct Calculator {
 // Demonstrate basic operations
 func demonstrateBasicOps() -> void {
     printDoubleLine();
-    print("         CALCULATOR - BASIC OPERATIONS");
+    println("         CALCULATOR - BASIC OPERATIONS");
     printDoubleLine();
-    print("");
+    println("");
     
     var calc:Calculator;
     calc.init();
     
-    print("Starting value: 0");
-    print("");
+    println("Starting value: 0");
+    println("");
     
     calc.setValue(10);
     calc.printStatus("Set 10");
@@ -163,16 +163,16 @@ func demonstrateBasicOps() -> void {
     calc.modulo(3);
     calc.printStatus("Modulo 3");
     
-    print("");
-    print("Total operations: " + calc.operationCount);
+    println("");
+    println("Total operations: " + calc.operationCount);
 }
 
 // Demonstrate memory functions
 func demonstrateMemory() -> void {
     printDoubleLine();
-    print("         CALCULATOR - MEMORY FUNCTIONS");
+    println("         CALCULATOR - MEMORY FUNCTIONS");
     printDoubleLine();
-    print("");
+    println("");
     
     var calc:Calculator;
     calc.init();
@@ -181,8 +181,8 @@ func demonstrateMemory() -> void {
     calc.printStatus("Set 42");
     
     calc.memoryStore();
-    print("Stored to memory");
-    print("");
+    println("Stored to memory");
+    println("");
     
     calc.setValue(10);
     calc.printStatus("Set 10");
@@ -190,17 +190,17 @@ func demonstrateMemory() -> void {
     calc.add(5);
     calc.printStatus("Add 5");
     
-    print("");
-    print("Recalling memory...");
+    println("");
+    println("Recalling memory...");
     calc.memoryRecall();
     calc.printStatus("Memory Recall");
     
-    print("");
+    println("");
     calc.setValue(8);
     calc.printStatus("Set 8");
     
     calc.memoryAdd();
-    print("Added to memory");
+    println("Added to memory");
     
     calc.memoryRecall();
     calc.printStatus("Memory Recall");
@@ -209,15 +209,15 @@ func demonstrateMemory() -> void {
 // Demonstrate mathematical operations
 func demonstrateMath() -> void {
     printDoubleLine();
-    print("         CALCULATOR - MATH OPERATIONS");
+    println("         CALCULATOR - MATH OPERATIONS");
     printDoubleLine();
-    print("");
+    println("");
     
     var calc:Calculator;
     calc.init();
     
-    print("Computing: ((5 + 3) * 2)^2");
-    print("");
+    println("Computing: ((5 + 3) * 2)^2");
+    println("");
     
     calc.setValue(5);
     calc.printStatus("Set 5");
@@ -231,50 +231,50 @@ func demonstrateMath() -> void {
     calc.square();
     calc.printStatus("Square");
     
-    print("");
-    print("Result: " + calc.getValue());
-    print("Operations performed: " + calc.operationCount);
+    println("");
+    println("Result: " + calc.getValue());
+    println("Operations performed: " + calc.operationCount);
 }
 
 // Demonstrate chain calculations
 func demonstrateChain() -> void {
     printDoubleLine();
-    print("         CALCULATOR - CHAIN CALCULATIONS");
+    println("         CALCULATOR - CHAIN CALCULATIONS");
     printDoubleLine();
-    print("");
+    println("");
     
     var calc:Calculator;
     calc.init();
     
-    print("Computing: 100 - 25 + 10 * 2 / 4");
-    print("(Left-to-right evaluation)");
-    print("");
+    println("Computing: 100 - 25 + 10 * 2 / 4");
+    println("(Left-to-right evaluation)");
+    println("");
     
     calc.setValue(100);
-    print("Start: " + calc.getValue());
+    println("Start: " + calc.getValue());
     
     calc.subtract(25);
-    print("After -25: " + calc.getValue());
+    println("After -25: " + calc.getValue());
     
     calc.add(10);
-    print("After +10: " + calc.getValue());
+    println("After +10: " + calc.getValue());
     
     calc.multiply(2);
-    print("After *2: " + calc.getValue());
+    println("After *2: " + calc.getValue());
     
     calc.divide(4);
-    print("After /4: " + calc.getValue());
+    println("After /4: " + calc.getValue());
     
-    print("");
-    print("Final result: " + calc.getValue());
+    println("");
+    println("Final result: " + calc.getValue());
 }
 
 // Demonstrate absolute value and negative numbers
 func demonstrateAbsolute() -> void {
     printDoubleLine();
-    print("         CALCULATOR - ABSOLUTE VALUE");
+    println("         CALCULATOR - ABSOLUTE VALUE");
     printDoubleLine();
-    print("");
+    println("");
     
     var calc:Calculator;
     calc.init();
@@ -283,11 +283,11 @@ func demonstrateAbsolute() -> void {
     calc.subtract(30);
     calc.printStatus("10 - 30");
     
-    print("Taking absolute value...");
+    println("Taking absolute value...");
     calc.absolute();
     calc.printStatus("Absolute");
     
-    print("");
+    println("");
     calc.setValue(-42);
     calc.printStatus("Set -42");
     
@@ -297,21 +297,21 @@ func demonstrateAbsolute() -> void {
 
 func main() -> void {
     demonstrateBasicOps();
-    print("");
+    println("");
     
     demonstrateMemory();
-    print("");
+    println("");
     
     demonstrateMath();
-    print("");
+    println("");
     
     demonstrateChain();
-    print("");
+    println("");
     
     demonstrateAbsolute();
     
-    print("");
+    println("");
     printDoubleLine();
-    print("CALCULATOR DEMONSTRATION COMPLETE");
+    println("CALCULATOR DEMONSTRATION COMPLETE");
     printDoubleLine();
 }

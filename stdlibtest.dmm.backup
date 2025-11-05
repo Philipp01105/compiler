@@ -99,11 +99,11 @@ func main() -> void {
     println("byteMin(10, 5) = " + byteToString(byteResult));
     byteResult = byteMax(byte1, byte2);
     println("byteMax(10, 5) = " + byteToString(byteResult));
-    println("");
+    print("");
     
     // Character Operations (6 functions)
     printLine();
-    println("Character Operations");
+    print("Character Operations");
     printLine();
     printLabeledBool("charIsUpper('A')", charIsUpper('A'));
     printLabeledBool("charIsUpper('a')", charIsUpper('a'));
@@ -118,30 +118,30 @@ func main() -> void {
     printLabeledBool("charIsAlnum('!')", charIsAlnum('!'));
     printLabeledBool("charIsSpace(' ')", charIsSpace(' '));
     printLabeledBool("charIsSpace('a')", charIsSpace('a'));
-    println("");
+    print("");
     
     // Conversion Functions (5 functions)
     printLine();
-    println("Conversion Functions");
+    print("Conversion Functions");
     printLine();
-    println("intToString(42): " + intToString(42));
-    println("charToString('X'): " + charToString('X'));
-    println("byteToString(65): " + byteToString(65));
-    println("bitToString(1): " + bitToString(1));
-    println("stringToString('test'): " + stringToString("test"));
-    println("");
+    print("intToString(42): " + intToString(42));
+    print("charToString('X'): " + charToString('X'));
+    print("byteToString(65): " + byteToString(65));
+    print("bitToString(1): " + bitToString(1));
+    print("stringToString('test'): " + stringToString("test"));
+    print("");
     
     // =================================================================
     // MATH MODULE TESTS - 23 Functions
     // =================================================================
     printDoubleLine();
-    println("MATH MODULE TESTS (23 functions)");
+    print("MATH MODULE TESTS (23 functions)");
     printDoubleLine();
-    println("");
+    print("");
     
     // Basic Math (5 functions)
     printLine();
-    println("Basic Math Operations");
+    print("Basic Math Operations");
     printLine();
     printLabeled("mathPow(2, 10)", mathPow(2, 10));
     printLabeled("mathPow(3, 4)", mathPow(3, 4));
@@ -150,21 +150,21 @@ func main() -> void {
     printLabeled("mathFactorial(6)", mathFactorial(6));
     printLabeled("mathFibonacci(10)", mathFibonacci(10));
     printLabeled("mathFibonacci(15)", mathFibonacci(15));
-    println("");
+    print("");
     
     // Summation (4 functions)
     printLine();
-    println("Summation Operations");
+    print("Summation Operations");
     printLine();
     printLabeled("mathSum(100)", mathSum(100));
     printLabeled("mathSumRange(10, 20)", mathSumRange(10, 20));
     printLabeled("mathSumSquares(10)", mathSumSquares(10));
     printLabeled("mathSumCubes(5)", mathSumCubes(5));
-    println("");
+    print("");
     
     // Number Theory (6 functions)
     printLine();
-    println("Number Theory");
+    print("Number Theory");
     printLine();
     printLabeled("mathGCD(48, 18)", mathGCD(48, 18));
     printLabeled("mathGCD(56, 98)", mathGCD(56, 98));
@@ -181,11 +181,11 @@ func main() -> void {
     printLabeledBool("mathIsPerfect(6)", mathIsPerfect(6));
     printLabeledBool("mathIsPerfect(28)", mathIsPerfect(28));
     printLabeledBool("mathIsPerfect(12)", mathIsPerfect(12));
-    println("");
+    print("");
     
     // Digit Operations (3 functions)
     printLine();
-    println("Digit Operations");
+    print("Digit Operations");
     printLine();
     var testNum:int = 12345;
     printLabeled("Test number", testNum);
@@ -194,29 +194,29 @@ func main() -> void {
     printLabeled("mathDigitReverse(12345)", mathDigitReverse(testNum));
     printLabeled("mathDigitCount(987)", mathDigitCount(987));
     printLabeled("mathDigitSum(987)", mathDigitSum(987));
-    println("");
+    print("");
     
     // Comparison Utilities (4 functions)
     printLine();
-    println("Comparison Utilities");
+    print("Comparison Utilities");
     printLine();
     printLabeled("mathMin3(5, 3, 8)", mathMin3(5, 3, 8));
     printLabeled("mathMax3(5, 3, 8)", mathMax3(5, 3, 8));
     printLabeled("mathAverage(10, 20)", mathAverage(10, 20));
     printLabeled("mathAverage3(10, 20, 30)", mathAverage3(10, 20, 30));
-    println("");
+    print("");
     
     // =================================================================
     // ARRAY MODULE TESTS - 20 Functions
     // =================================================================
     printDoubleLine();
-    println("ARRAY MODULE TESTS (20 functions)");
+    print("ARRAY MODULE TESTS (20 functions)");
     printDoubleLine();
-    println("");
+    print("");
     
     // Array Initialization (4 functions)
     printLine();
-    println("Array Initialization");
+    print("Array Initialization");
     printLine();
     var[10] intArr:int;
     var[10] byteArr:byte;
@@ -224,39 +224,39 @@ func main() -> void {
     var[10] bitArr:bit;
     
     arrayFillInt(intArr, 10, 42);
-    println("arrayFillInt: Filled array with 42");
+    print("arrayFillInt: Filled array with 42");
     printLabeled("intArr[0]", intArr[0]);
     printLabeled("intArr[5]", intArr[5]);
     
     arrayFillByte(byteArr, 10, 65);
-    println("arrayFillByte: Filled array with 65");
+    print("arrayFillByte: Filled array with 65");
     
     arrayFillChar(charArr, 10, 'X');
-    println("arrayFillChar: Filled array with 'X'");
+    print("arrayFillChar: Filled array with 'X'");
     
     arrayFillBit(bitArr, 10, 1);
-    println("arrayFillBit: Filled array with 1");
-    println("");
+    print("arrayFillBit: Filled array with 1");
+    print("");
     
     // Array Search (3 functions)
     printLine();
-    println("Array Search");
+    print("Array Search");
     printLine();
     var[10] searchArr:int;
     for (var i:int = 0; i < 10; i++) {
         searchArr[i] = i * 10;
     }
-    println("Search array: [0, 10, 20, 30, 40, 50, 60, 70, 80, 90]");
+    print("Search array: [0, 10, 20, 30, 40, 50, 60, 70, 80, 90]");
     printLabeled("arrayIndexOfInt(arr, 10, 50)", arrayIndexOfInt(searchArr, 10, 50));
     printLabeled("arrayIndexOfInt(arr, 10, 25)", arrayIndexOfInt(searchArr, 10, 25));
     printLabeledBool("arrayContainsInt(arr, 10, 50)", arrayContainsInt(searchArr, 10, 50));
     printLabeledBool("arrayContainsInt(arr, 10, 25)", arrayContainsInt(searchArr, 10, 25));
     printLabeled("arrayCountInt(arr, 10, 50)", arrayCountInt(searchArr, 10, 50));
-    println("");
+    print("");
     
     // Array Statistics (6 functions)
     printLine();
-    println("Array Statistics");
+    print("Array Statistics");
     printLine();
     var[8] statsArr:int;
     statsArr[0] = 45;
@@ -267,18 +267,18 @@ func main() -> void {
     statsArr[5] = 34;
     statsArr[6] = 56;
     statsArr[7] = 23;
-    println("Stats array: [45, 12, 89, 3, 67, 34, 56, 23]");
+    print("Stats array: [45, 12, 89, 3, 67, 34, 56, 23]");
     printLabeled("arrayMinInt", arrayMinInt(statsArr, 8));
     printLabeled("arrayMaxInt", arrayMaxInt(statsArr, 8));
     printLabeled("arraySumInt", arraySumInt(statsArr, 8));
     printLabeled("arrayAverageInt", arrayAverageInt(statsArr, 8));
     printLabeled("arrayIndexOfMinInt", arrayIndexOfMinInt(statsArr, 8));
     printLabeled("arrayIndexOfMaxInt", arrayIndexOfMaxInt(statsArr, 8));
-    println("");
+    print("");
     
     // Array Manipulation (5 functions)
     printLine();
-    println("Array Manipulation");
+    print("Array Manipulation");
     printLine();
     var[5] manipArr:int;
     manipArr[0] = 1;
@@ -286,16 +286,16 @@ func main() -> void {
     manipArr[2] = 3;
     manipArr[3] = 4;
     manipArr[4] = 5;
-    println("Original: [1, 2, 3, 4, 5]");
+    print("Original: [1, 2, 3, 4, 5]");
     
     arrayReverseInt(manipArr, 5);
-    println("After arrayReverseInt: [5, 4, 3, 2, 1]");
+    print("After arrayReverseInt: [5, 4, 3, 2, 1]");
     printLabeled("manipArr[0]", manipArr[0]);
     printLabeled("manipArr[4]", manipArr[4]);
     
     var[5] copyArr:int;
     arrayCopyInt(manipArr, copyArr, 5);
-    println("arrayCopyInt: Copied to new array");
+    print("arrayCopyInt: Copied to new array");
     printLabeled("copyArr[0]", copyArr[0]);
     
     var[5] equalArr:int;
@@ -310,20 +310,20 @@ func main() -> void {
     scalarArr[2] = 6;
     scalarArr[3] = 8;
     scalarArr[4] = 10;
-    println("Scalar test: [2, 4, 6, 8, 10]");
+    print("Scalar test: [2, 4, 6, 8, 10]");
     arrayMultiplyScalarInt(scalarArr, 5, 3);
-    println("After arrayMultiplyScalarInt(arr, 5, 3):");
+    print("After arrayMultiplyScalarInt(arr, 5, 3):");
     printLabeled("scalarArr[0]", scalarArr[0]);
     printLabeled("scalarArr[2]", scalarArr[2]);
     
     arrayAddScalarInt(scalarArr, 5, 5);
-    println("After arrayAddScalarInt(arr, 5, 5):");
+    print("After arrayAddScalarInt(arr, 5, 5):");
     printLabeled("scalarArr[0]", scalarArr[0]);
-    println("");
+    print("");
     
     // Array Sorting (2 functions)
     printLine();
-    println("Array Sorting");
+    print("Array Sorting");
     printLine();
     var[6] sortArr:int;
     sortArr[0] = 64;
@@ -332,30 +332,30 @@ func main() -> void {
     sortArr[3] = 12;
     sortArr[4] = 22;
     sortArr[5] = 11;
-    println("Before sort: [64, 34, 25, 12, 22, 11]");
+    print("Before sort: [64, 34, 25, 12, 22, 11]");
     printLabeledBool("arrayIsSortedInt (before)", arrayIsSortedInt(sortArr, 6));
     
     arraySortInt(sortArr, 6);
-    println("After arraySortInt:");
+    print("After arraySortInt:");
     printLabeled("sortArr[0]", sortArr[0]);
     printLabeled("sortArr[5]", sortArr[5]);
     printLabeledBool("arrayIsSortedInt (after)", arrayIsSortedInt(sortArr, 6));
-    println("");
+    print("");
     
     // =================================================================
     // STRINGS MODULE TESTS - 20 Functions
     // =================================================================
     printDoubleLine();
-    println("STRINGS MODULE TESTS (20 functions)");
+    print("STRINGS MODULE TESTS (20 functions)");
     printDoubleLine();
-    println("");
+    print("");
     
     // String Analysis (8 functions)
     printLine();
-    println("String Analysis");
+    print("String Analysis");
     printLine();
     var testStr:string = "Hello";
-    println("Test string: 'Hello'");
+    print("Test string: 'Hello'");
     printLabeled("strLength('Hello')", strLength(testStr));
     printLabeled("strCompare('Hello', 'Hello')", strCompare(testStr, "Hello"));
     printLabeled("strCompare('Hello', 'World')", strCompare(testStr, "World"));
@@ -364,15 +364,15 @@ func main() -> void {
     printLabeledBool("strEndsWith('o')", strEndsWith(testStr, 'o'));
     printLabeledBool("strEndsWith('x')", strEndsWith(testStr, 'x'));
     var charAt:char = strCharAt(testStr, 1);
-    println("strCharAt('Hello', 1) = " + charAt);
+    print("strCharAt('Hello', 1) = " + charAt);
     printLabeled("strIndexOf('l')", strIndexOf(testStr, 'l'));
     printLabeled("strLastIndexOf('l')", strLastIndexOf(testStr, 'l'));
     printLabeled("strCountChar('l')", strCountChar(testStr, 'l'));
-    println("");
+    print("");
     
     // String Classification (5 functions)
     printLine();
-    println("String Classification");
+    print("String Classification");
     printLine();
     printLabeledBool("strIsAlpha('Hello')", strIsAlpha("Hello"));
     printLabeledBool("strIsAlpha('Hello123')", strIsAlpha("Hello123"));
@@ -384,62 +384,62 @@ func main() -> void {
     printLabeledBool("strIsUpper('Hello')", strIsUpper("Hello"));
     printLabeledBool("strIsLower('hello')", strIsLower("hello"));
     printLabeledBool("strIsLower('Hello')", strIsLower("Hello"));
-    println("");
+    print("");
     
     // String Utilities (4 functions)
     printLine();
-    println("String Utilities");
+    print("String Utilities");
     printLine();
-    println("strPrintln test:");
+    print("strPrintln test:");
     strPrintln("  This is a test line");
-    println("strRepeatChar('*', 20):");
-    println("  ");
+    print("strRepeatChar('*', 20):");
+    print("  ");
     strRepeatChar('*', 20);
-    println("");
+    print("");
     var sentence:string = "The quick brown fox";
-    println("Sentence: 'The quick brown fox'");
+    print("Sentence: 'The quick brown fox'");
     printLabeled("strCountWords", strCountWords(sentence));
     var multiline:string = "Line1\nLine2\nLine3";
     printLabeled("strCountLines", strCountLines(multiline));
-    println("");
+    print("");
     
     // String Transformation (3 functions)
     printLine();
-    println("String Transformation");
+    print("String Transformation");
     printLine();
     var digitChar:char = '7';
     printLabeled("strCharToDigit('7')", strCharToDigit(digitChar));
     var digitVal:int = 5;
     var resultChar:char = strDigitToChar(digitVal);
-    println("strDigitToChar(5) = " + resultChar);
+    print("strDigitToChar(5) = " + resultChar);
     var numStr:string = "12345";
     printLabeled("strParseInt('12345')", strParseInt(numStr));
-    println("");
+    print("");
     
     // =================================================================
     // UTILS MODULE TESTS - 33 Functions
     // =================================================================
     printDoubleLine();
-    println("UTILS MODULE TESTS (33 functions)");
+    print("UTILS MODULE TESTS (33 functions)");
     printDoubleLine();
-    println("");
+    print("");
     
     // Conversion Utilities (2 functions)
     printLine();
-    println("Conversion Utilities");
+    print("Conversion Utilities");
     printLine();
     printLabeled("abs(-42)", abs(-42));
     printLabeled("abs(42)", abs(42));
     var swapA:int = 10;
     var swapB:int = 20;
-    println("swap function (returns first value for manual swap)");
+    print("swap function (returns first value for manual swap)");
     printLabeled("Before swap: a", swapA);
     printLabeled("Before swap: b", swapB);
-    println("");
+    print("");
     
     // Range and Boundary (3 functions)
     printLine();
-    println("Range and Boundary");
+    print("Range and Boundary");
     printLine();
     printLabeled("clamp(100, 0, 50)", clamp(100, 0, 50));
     printLabeled("clamp(-10, 0, 50)", clamp(-10, 0, 50));
@@ -448,11 +448,11 @@ func main() -> void {
     printLabeledBool("inRange(75, 0, 50)", inRange(75, 0, 50));
     printLabeledBool("inRangeExclusive(25, 0, 50)", inRangeExclusive(25, 0, 50));
     printLabeledBool("inRangeExclusive(0, 0, 50)", inRangeExclusive(0, 0, 50));
-    println("");
+    print("");
     
     // Comparison (6 functions)
     printLine();
-    println("Comparison Functions");
+    print("Comparison Functions");
     printLine();
     printLabeled("min(5, 10)", min(5, 10));
     printLabeled("max(5, 10)", max(5, 10));
@@ -460,11 +460,11 @@ func main() -> void {
     printLabeled("max3(5, 3, 8)", max3(5, 3, 8));
     printLabeled("min4(5, 3, 8, 1)", min4(5, 3, 8, 1));
     printLabeled("max4(5, 3, 8, 1)", max4(5, 3, 8, 1));
-    println("");
+    print("");
     
     // Sign Operations (2 functions)
     printLine();
-    println("Sign Operations");
+    print("Sign Operations");
     printLine();
     printLabeled("sign(-42)", sign(-42));
     printLabeled("sign(0)", sign(0));
@@ -472,11 +472,11 @@ func main() -> void {
     printLabeledBool("sameSign(5, 10)", sameSign(5, 10));
     printLabeledBool("sameSign(5, -10)", sameSign(5, -10));
     printLabeledBool("sameSign(-5, -10)", sameSign(-5, -10));
-    println("");
+    print("");
     
     // Conditional Utilities (4 functions)
     printLine();
-    println("Conditional Utilities");
+    print("Conditional Utilities");
     printLine();
     printLabeled("selectInt(1, 10, 20)", selectInt(1, 10, 20));
     printLabeled("selectInt(0, 10, 20)", selectInt(0, 10, 20));
@@ -486,48 +486,48 @@ func main() -> void {
     printLabeledBool("any3(0, 0, 0)", any3(0, 0, 0));
     printLabeledBool("exactlyOne(1, 0)", exactlyOne(1, 0));
     printLabeledBool("exactlyOne(1, 1)", exactlyOne(1, 1));
-    println("");
+    print("");
     
     // Printing Utilities (7 functions)
     printLine();
-    println("Printing Utilities");
+    print("Printing Utilities");
     printLine();
-    println("printSeparator('-', 40):");
+    print("printSeparator('-', 40):");
     printSeparator('-', 40);
-    println("printLine():");
+    print("printLine():");
     printLine();
-    println("printDoubleLine():");
+    print("printDoubleLine():");
     printDoubleLine();
-    println("printNewlines(2):");
+    print("printNewlines(2):");
     printNewlines(2);
-    println("(Two newlines printed above)");
+    print("(Two newlines printed above)");
     printLabeled("Test label", 12345);
     printBool(1);
     printLabeledBool("Boolean test", 0);
-    println("");
+    print("");
     
     // Loop Utilities (2 functions)
     printLine();
-    println("Loop Utilities");
+    print("Loop Utilities");
     printLine();
-    println("repeat and range are utility functions");
-    println("repeat: Executes code n times");
-    println("range: Generates range of numbers");
-    println("");
+    print("repeat and range are utility functions");
+    print("repeat: Executes code n times");
+    print("range: Generates range of numbers");
+    print("");
     
     // Validation (2 functions)
     printLine();
-    println("Validation Functions");
+    print("Validation Functions");
     printLine();
     printLabeledBool("isValidIndex(5, 10)", isValidIndex(5, 10));
     printLabeledBool("isValidIndex(15, 10)", isValidIndex(15, 10));
     printLabeledBool("isValidRange(2, 8, 10)", isValidRange(2, 8, 10));
     printLabeledBool("isValidRange(2, 12, 10)", isValidRange(2, 12, 10));
-    println("");
+    print("");
     
     // Bit Manipulation (2 functions)
     printLine();
-    println("Bit Manipulation");
+    print("Bit Manipulation");
     printLine();
     var bitTest:int = 13;
     printLabeled("Test value", bitTest);
@@ -537,11 +537,11 @@ func main() -> void {
     printLabeledBool("isBitSet(13, 2)", isBitSet(bitTest, 2));
     printLabeledBool("isBitSet(13, 3)", isBitSet(bitTest, 3));
     printLabeledBool("isBitSet(13, 4)", isBitSet(bitTest, 4));
-    println("");
+    print("");
     
     // Safe Math (3 functions)
     printLine();
-    println("Safe Math Operations");
+    print("Safe Math Operations");
     printLine();
     printLabeledBool("isSafeDiv(10)", isSafeDiv(10));
     printLabeledBool("isSafeDiv(0)", isSafeDiv(0));
@@ -549,27 +549,27 @@ func main() -> void {
     printLabeled("safeDivide(100, 0)", safeDivide(100, 0));
     printLabeled("safeModulo(17, 5)", safeModulo(17, 5));
     printLabeled("safeModulo(17, 0)", safeModulo(17, 0));
-    println("");
+    print("");
     
     // =================================================================
     // FINAL TEST SUMMARY
     // =================================================================
     printDoubleLine();
-    println("    TEST SUMMARY");
+    print("    TEST SUMMARY");
     printDoubleLine();
-    println("");
-    println("All standard library modules tested successfully!");
-    println("");
-    println("Modules tested:");
-    println("  1. stdlib/core.txt    - 34 functions");
-    println("  2. stdlib/math.txt    - 23 functions");
-    println("  3. stdlib/array.txt   - 20 functions");
-    println("  4. stdlib/strings.txt - 20 functions");
-    println("  5. stdlib/utils.txt   - 33 functions");
-    println("");
+    print("");
+    print("All standard library modules tested successfully!");
+    print("");
+    print("Modules tested:");
+    print("  1. stdlib/core.txt    - 34 functions");
+    print("  2. stdlib/math.txt    - 23 functions");
+    print("  3. stdlib/array.txt   - 20 functions");
+    print("  4. stdlib/strings.txt - 20 functions");
+    print("  5. stdlib/utils.txt   - 33 functions");
+    print("");
     printLabeled("Total functions tested", 130);
-    println("");
+    print("");
     printDoubleLine();
-    println("    ALL TESTS COMPLETED!");
+    print("    ALL TESTS COMPLETED!");
     printDoubleLine();
 }
