@@ -127,7 +127,7 @@ struct Calculator {
     
     // Print status
     func printStatus(operation:string) -> void {
-        println(operation);
+        print(operation);
         printLabeled("  Result", currentValue);
     }
 }

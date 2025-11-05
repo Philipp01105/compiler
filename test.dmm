@@ -1013,7 +1013,7 @@ func main() -> void
 
     printHeader("TEST 36: void Return Functions");
     printSeparator();
-    println("  Call printSeparator():");
+    print("  Call printSeparator():\n");
     printSeparator();
     println("  Call greet('World'):");
     greet("World");

@@ -492,13 +492,13 @@ func main() -> void {
     printLine();
     println("Printing Utilities");
     printLine();
-    println("printSeparator('-', 40):");
+    print("printSeparator('-', 40):\n");
     printSeparator('-', 40);
-    println("printLine():");
+    print("printLine():\n");
     printLine();
-    println("printDoubleLine():");
+    print("printDoubleLine():\n");
     printDoubleLine();
-    println("printNewlines(2):");
+    print("printNewlines(2):\n");
     printNewlines(2);
     println("(Two newlines printed above)");
     printLabeled("Test label", 12345);
