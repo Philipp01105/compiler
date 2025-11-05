@@ -1,0 +1,16 @@
+// Simpler test for Issue 4
+struct Player {
+    var score:int;
+    
+    func printScore() -> void {
+        print("Score: ");
+        print(score);
+        print("\n");
+    }
+}
+
+func main() -> void {
+    var player:Player;
+    player.score = 100;
+    player.printScore();
+}

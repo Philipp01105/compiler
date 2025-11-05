@@ -31,6 +31,7 @@ typedef enum {
     TOKEN_KEYWORD_CONTINUE,
     TOKEN_KEYWORD_STRUCT,
     TOKEN_KEYWORD_IMPORT,
+    TOKEN_KEYWORD_STATIC,
 
     // Data Types (ERWEITERT!)
     TOKEN_TYPE_INT,
@@ -153,6 +154,7 @@ typedef struct {
     DataType return_type;      // ERWEITERT!
     int return_is_array;       // 1 if return type is an array
     char struct_name[MAX_TOKEN];  // If this is a method, the struct it belongs to (empty for regular functions)
+    int is_static;             // 1 if this is a static method (no implicit 'this')
 } Function;
 
 typedef struct {
@@ -160,6 +162,9 @@ typedef struct {
     DataType type;            // Field type
     int offset;               // Offset within struct
     int size;                 // Size in bytes
+    int is_array;             // 1 if this is an array field
+    int array_size;           // Number of elements if array
+    char struct_type[MAX_TOKEN];  // If field is a struct type, store struct name
 } StructField;
 
 typedef struct {
