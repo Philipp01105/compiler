@@ -1,0 +1,467 @@
+// =================================================================
+// TIC TAC TOE GAME
+// A classic 3x3 Tic Tac Toe game implementation using Structs
+// =================================================================
+// This game demonstrates:
+// - Struct usage with fields and methods
+// - Array manipulation (game board)
+// - Control flow (game loop, win condition checking)
+// - Object-oriented design principles
+// - Input validation
+// - State management
+// =================================================================
+
+#import <stdlib/core.txt>
+#import <stdlib/array.txt>
+#import <stdlib/utils.txt>
+
+// TicTacToe game struct
+struct TicTacToe {
+    // Game board: 9 cells (0-8)
+    // 0 = empty, 1 = Player X, 2 = Player O
+    int board0;
+    int board1;
+    int board2;
+    int board3;
+    int board4;
+    int board5;
+    int board6;
+    int board7;
+    int board8;
+    
+    // Current player (1 = X, 2 = O)
+    int currentPlayer;
+    
+    // Game state (0 = ongoing, 1 = X wins, 2 = O wins, 3 = draw)
+    int gameState;
+
+    // Initialize the game board
+    func init() -> void {
+        board0 = 0;
+        board1 = 0;
+        board2 = 0;
+        board3 = 0;
+        board4 = 0;
+        board5 = 0;
+        board6 = 0;
+        board7 = 0;
+        board8 = 0;
+        currentPlayer = 1;
+        gameState = 0;
+    }
+
+    // Get board value at position
+    func getBoardValue(pos:int) -> int {
+        if (pos == 0) {
+            return board0;
+        } else if (pos == 1) {
+            return board1;
+        } else if (pos == 2) {
+            return board2;
+        } else if (pos == 3) {
+            return board3;
+        } else if (pos == 4) {
+            return board4;
+        } else if (pos == 5) {
+            return board5;
+        } else if (pos == 6) {
+            return board6;
+        } else if (pos == 7) {
+            return board7;
+        } else if (pos == 8) {
+            return board8;
+        }
+        return 0;
+    }
+    
+    // Set board value at position
+    func setBoardValue(pos:int, value:int) -> void {
+        if (pos == 0) {
+            board0 = value;
+        } else if (pos == 1) {
+            board1 = value;
+        } else if (pos == 2) {
+            board2 = value;
+        } else if (pos == 3) {
+            board3 = value;
+        } else if (pos == 4) {
+            board4 = value;
+        } else if (pos == 5) {
+            board5 = value;
+        } else if (pos == 6) {
+            board6 = value;
+        } else if (pos == 7) {
+            board7 = value;
+        } else if (pos == 8) {
+            board8 = value;
+        }
+    }
+    
+    // Print the game board
+    func printBoard() -> void {
+        printLine();
+        print("Current Board:");
+        printLine();
+        
+        // Row 0
+        print("  ");
+        if (board0 == 0) { print("0"); } else if (board0 == 1) { print("X"); } else { print("O"); }
+        print(" | ");
+        if (board1 == 0) { print("1"); } else if (board1 == 1) { print("X"); } else { print("O"); }
+        print(" | ");
+        if (board2 == 0) { print("2"); } else if (board2 == 1) { print("X"); } else { print("O"); }
+        print("");
+        print(" -----------");
+        
+        // Row 1
+        print("  ");
+        if (board3 == 0) { print("3"); } else if (board3 == 1) { print("X"); } else { print("O"); }
+        print(" | ");
+        if (board4 == 0) { print("4"); } else if (board4 == 1) { print("X"); } else { print("O"); }
+        print(" | ");
+        if (board5 == 0) { print("5"); } else if (board5 == 1) { print("X"); } else { print("O"); }
+        print("");
+        print(" -----------");
+        
+        // Row 2
+        print("  ");
+        if (board6 == 0) { print("6"); } else if (board6 == 1) { print("X"); } else { print("O"); }
+        print(" | ");
+        if (board7 == 0) { print("7"); } else if (board7 == 1) { print("X"); } else { print("O"); }
+        print(" | ");
+        if (board8 == 0) { print("8"); } else if (board8 == 1) { print("X"); } else { print("O"); }
+        print("");
+        printLine();
+    }
+
+    // Check if a position is valid and empty
+    func isValidMove(pos:int) -> bit {
+        if (pos < 0) {
+            return 0;
+        }
+        if (pos > 8) {
+            return 0;
+        }
+        
+        // Check if position is empty
+        var value:int = 0;
+        if (pos == 0) { value = board0; }
+        else if (pos == 1) { value = board1; }
+        else if (pos == 2) { value = board2; }
+        else if (pos == 3) { value = board3; }
+        else if (pos == 4) { value = board4; }
+        else if (pos == 5) { value = board5; }
+        else if (pos == 6) { value = board6; }
+        else if (pos == 7) { value = board7; }
+        else if (pos == 8) { value = board8; }
+        
+        if (value != 0) {
+            return 0;
+        }
+        return 1;
+    }
+    
+    // Make a move at position
+    func makeMove(pos:int) -> bit {
+        if (pos < 0) {
+            return 0;
+        }
+        if (pos > 8) {
+            return 0;
+        }
+        
+        // Check if position is empty and make move
+        if (pos == 0) {
+            if (board0 != 0) { return 0; }
+            board0 = currentPlayer;
+        } else if (pos == 1) {
+            if (board1 != 0) { return 0; }
+            board1 = currentPlayer;
+        } else if (pos == 2) {
+            if (board2 != 0) { return 0; }
+            board2 = currentPlayer;
+        } else if (pos == 3) {
+            if (board3 != 0) { return 0; }
+            board3 = currentPlayer;
+        } else if (pos == 4) {
+            if (board4 != 0) { return 0; }
+            board4 = currentPlayer;
+        } else if (pos == 5) {
+            if (board5 != 0) { return 0; }
+            board5 = currentPlayer;
+        } else if (pos == 6) {
+            if (board6 != 0) { return 0; }
+            board6 = currentPlayer;
+        } else if (pos == 7) {
+            if (board7 != 0) { return 0; }
+            board7 = currentPlayer;
+        } else if (pos == 8) {
+            if (board8 != 0) { return 0; }
+            board8 = currentPlayer;
+        }
+        return 1;
+    }
+
+    // Check if there's a winner
+    func checkWinner() -> int {
+        // Check row 0
+        if (board0 != 0) {
+            if (board0 == board1) {
+                if (board1 == board2) {
+                    return board0;
+                }
+            }
+        }
+        
+        // Check row 1
+        if (board3 != 0) {
+            if (board3 == board4) {
+                if (board4 == board5) {
+                    return board3;
+                }
+            }
+        }
+        
+        // Check row 2
+        if (board6 != 0) {
+            if (board6 == board7) {
+                if (board7 == board8) {
+                    return board6;
+                }
+            }
+        }
+        
+        // Check column 0
+        if (board0 != 0) {
+            if (board0 == board3) {
+                if (board3 == board6) {
+                    return board0;
+                }
+            }
+        }
+        
+        // Check column 1
+        if (board1 != 0) {
+            if (board1 == board4) {
+                if (board4 == board7) {
+                    return board1;
+                }
+            }
+        }
+        
+        // Check column 2
+        if (board2 != 0) {
+            if (board2 == board5) {
+                if (board5 == board8) {
+                    return board2;
+                }
+            }
+        }
+        
+        // Check diagonal 0-4-8
+        if (board0 != 0) {
+            if (board0 == board4) {
+                if (board4 == board8) {
+                    return board0;
+                }
+            }
+        }
+        
+        // Check diagonal 2-4-6
+        if (board2 != 0) {
+            if (board2 == board4) {
+                if (board4 == board6) {
+                    return board2;
+                }
+            }
+        }
+        
+        return 0;
+    }
+
+    // Check if board is full (draw)
+    func isBoardFull() -> bit {
+        if (board0 == 0) { return 0; }
+        if (board1 == 0) { return 0; }
+        if (board2 == 0) { return 0; }
+        if (board3 == 0) { return 0; }
+        if (board4 == 0) { return 0; }
+        if (board5 == 0) { return 0; }
+        if (board6 == 0) { return 0; }
+        if (board7 == 0) { return 0; }
+        if (board8 == 0) { return 0; }
+        return 1;
+    }
+    
+    // Switch to the other player
+    func switchPlayer() -> void {
+        if (currentPlayer == 1) {
+            currentPlayer = 2;
+        } else {
+            currentPlayer = 1;
+        }
+    }
+
+    // Get AI move (simple strategy - takes first available spot)
+    func getAIMove() -> int {
+        // Take center if available
+        if (board4 == 0) {
+            return 4;
+        }
+        
+        // Take corners
+        if (board0 == 0) {
+            return 0;
+        }
+        if (board2 == 0) {
+            return 2;
+        }
+        if (board6 == 0) {
+            return 6;
+        }
+        if (board8 == 0) {
+            return 8;
+        }
+        
+        // Take edges
+        if (board1 == 0) {
+            return 1;
+        }
+        if (board3 == 0) {
+            return 3;
+        }
+        if (board5 == 0) {
+            return 5;
+        }
+        if (board7 == 0) {
+            return 7;
+        }
+        
+        return 0;
+    }
+}
+
+// Simulate a game with predetermined moves
+func simulateGame() -> void {
+    printDoubleLine();
+    print("         TIC TAC TOE GAME SIMULATION");
+    printDoubleLine();
+    print("           (Using Structs)");
+    print("");
+    
+    var game:TicTacToe;
+    game.init();
+    
+    // Game moves: X at 4, O at 0, X at 1, O at 8, X at 7 (X wins)
+    var[5] moves:int;
+    moves[0] = 4;
+    moves[1] = 0;
+    moves[2] = 1;
+    moves[3] = 8;
+    moves[4] = 7;
+    
+    var moveCount:int = 0;
+    
+    for (var turn:int = 0; turn < 5; turn++) {
+        game.printBoard();
+        
+        var move:int = moves[turn];
+        var playerName:string = "X";
+        if (game.currentPlayer == 2) {
+            playerName = "O";
+        }
+        
+        print("Player " + playerName + " plays at position " + move);
+        print("");
+        
+        if (game.makeMove(move) == 1) {
+            moveCount = moveCount + 1;
+            
+            var winner:int = game.checkWinner();
+            if (winner != 0) {
+                game.printBoard();
+                if (winner == 1) {
+                    print("PLAYER X WINS!");
+                } else {
+                    print("PLAYER O WINS!");
+                }
+                return;
+            }
+            
+            if (game.isBoardFull() == 1) {
+                game.printBoard();
+                print("IT'S A DRAW!");
+                return;
+            }
+            
+            game.switchPlayer();
+        }
+    }
+    
+    game.printBoard();
+    print("Game simulation completed!");
+}
+
+// Simulate AI vs AI game
+func simulateAIGame() -> void {
+    printDoubleLine();
+    print("         TIC TAC TOE - AI VS AI");
+    printDoubleLine();
+    print("           (Using Structs)");
+    print("");
+    
+    var game:TicTacToe;
+    game.init();
+    
+    var maxMoves:int = 9;
+    
+    for (var turn:int = 0; turn < maxMoves; turn++) {
+        game.printBoard();
+        
+        var move:int = game.getAIMove();
+        var playerName:string = "X";
+        if (game.currentPlayer == 2) {
+            playerName = "O";
+        }
+        
+        print("Player " + playerName + " (AI) plays at position " + move);
+        print("");
+        
+        if (game.makeMove(move) == 1) {
+            var winner:int = game.checkWinner();
+            if (winner != 0) {
+                game.printBoard();
+                if (winner == 1) {
+                    print("PLAYER X (AI) WINS!");
+                } else {
+                    print("PLAYER O (AI) WINS!");
+                }
+                return;
+            }
+            
+            if (game.isBoardFull() == 1) {
+                game.printBoard();
+                print("IT'S A DRAW!");
+                return;
+            }
+            
+            game.switchPlayer();
+        }
+    }
+}
+
+func main() -> void {
+    // Run predefined game simulation
+    simulateGame();
+    
+    print("");
+    print("");
+    
+    // Run AI vs AI simulation
+    simulateAIGame();
+    
+    print("");
+    printDoubleLine();
+    print("TIC TAC TOE DEMONSTRATION COMPLETE");
+    printDoubleLine();
+}
