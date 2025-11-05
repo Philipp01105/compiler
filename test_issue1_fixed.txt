@@ -1,0 +1,52 @@
+// Test for Issue 1: Methods calling other methods (FIXED)
+// This demonstrates that methods can now call other methods from the same struct
+
+struct Calculator {
+    int result;
+    
+    // Helper method that adds two numbers
+    func add(a:int, b:int) -> int {
+        return a + b;
+    }
+    
+    // Helper method that multiplies two numbers
+    func multiply(a:int, b:int) -> int {
+        return a * b;
+    }
+    
+    // Method that calls add() - demonstrates method-to-method calling
+    func addAndStore(a:int, b:int) -> void {
+        result = add(a, b);  // Calling another method
+    }
+    
+    // Method that calls multiple other methods
+    func complexCalculation(a:int, b:int, c:int) -> int {
+        var sum:int;
+        var product:int;
+        
+        sum = add(a, b);        // Call add method
+        product = multiply(sum, c);  // Call multiply method
+        
+        return product;
+    }
+    
+    func getResult() -> int {
+        return result;
+    }
+}
+
+func main() -> void {
+    var calc:Calculator;
+    calc.result = 0;
+    
+    // Test 1: Simple method-to-method call
+    calc.addAndStore(5, 3);
+    var r1:int;
+    r1 = calc.getResult();
+    // r1 should be 8
+    
+    // Test 2: Complex method-to-method calls
+    var r2:int;
+    r2 = calc.complexCalculation(2, 3, 4);
+    // r2 should be (2+3)*4 = 20
+}
