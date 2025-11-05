@@ -162,6 +162,7 @@ typedef struct {
     int size;                 // Size in bytes
     int is_array;             // 1 if this is an array field
     int array_size;           // Number of elements if array
+    char struct_type[MAX_TOKEN];  // If field is a struct type, store struct name
 } StructField;
 
 typedef struct {

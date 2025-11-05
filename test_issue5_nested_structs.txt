@@ -1,0 +1,38 @@
+// Test Issue 5: Nested structs
+// Testing if a struct can have another struct as a field
+
+struct Point {
+    int x;
+    int y;
+}
+
+struct Rectangle {
+    Point topLeft;     // Nested struct field
+    Point bottomRight; // Nested struct field
+    
+    func getWidth() -> int {
+        return bottomRight.x - topLeft.x;
+    }
+    
+    func getHeight() -> int {
+        return bottomRight.y - topLeft.y;
+    }
+}
+
+func main() -> void {
+    var rect:Rectangle;
+    
+    // Initialize top left
+    rect.topLeft.x = 10;
+    rect.topLeft.y = 20;
+    
+    // Initialize bottom right
+    rect.bottomRight.x = 50;
+    rect.bottomRight.y = 80;
+    
+    // Calculate dimensions
+    var width:int;
+    var height:int;
+    width = rect.getWidth();   // Should be 40
+    height = rect.getHeight(); // Should be 60
+}

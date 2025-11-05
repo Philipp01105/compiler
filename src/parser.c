@@ -2751,6 +2751,68 @@ void parse_print_statement(Parser *parser) {
                 consume(parser->tokens);
 
                 Variable *var = find_variable(parser, name.value);
+                
+                // If variable not found and we're in a method context, check if it's a field
+                if (!var && parser->current_struct_context[0] != '\0') {
+                    // Look for 'this' pointer
+                    Variable *this_var = find_variable(parser, "this");
+                    if (this_var && this_var->struct_type[0] != '\0') {
+                        StructDefinition *struct_def = find_struct(parser, this_var->struct_type);
+                        if (struct_def) {
+                            // Check if name is a field
+                            StructField *field = NULL;
+                            for (int i = 0; i < struct_def->field_count; i++) {
+                                if (strcmp(struct_def->fields[i].name, name.value) == 0) {
+                                    field = &struct_def->fields[i];
+                                    break;
+                                }
+                            }
+                            
+                            if (field) {
+                                // Print field through implicit 'this' pointer
+                                code_printf(parser, "    movq %d(%%rbp), %%rbx\n", this_var->offset);
+                                
+                                if (field->type == TYPE_FLOAT) {
+                                    code_printf(parser, "    movss %d(%%rbx), %%xmm0\n", field->offset);
+                                    code_printf(parser, "    cvtss2sd %%xmm0, %%xmm0\n");
+                                    code_printf(parser, "    movq %%xmm0, %s\n", get_arg_registers_64()[1]);
+                                    code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_registers_64()[0]);
+                                } else if (field->type == TYPE_DOUBLE) {
+                                    code_printf(parser, "    movsd %d(%%rbx), %%xmm0\n", field->offset);
+                                    code_printf(parser, "    movq %%xmm0, %s\n", get_arg_registers_64()[1]);
+                                    code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_registers_64()[0]);
+                                } else if (field->type == TYPE_CHAR) {
+                                    code_printf(parser, "    movsbl %d(%%rbx), %%edx\n", field->offset);
+                                    code_printf(parser, "    leaq .LC_char_format(%%rip), %s\n", get_arg_registers_64()[0]);
+                                } else if (field->type == TYPE_BYTE || field->type == TYPE_BIT) {
+                                    code_printf(parser, "    movzbl %d(%%rbx), %%edx\n", field->offset);
+                                    code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
+                                } else if (field->type == TYPE_STRING) {
+                                    code_printf(parser, "    movq %d(%%rbx), %%rdx\n", field->offset);
+                                    code_printf(parser, "    leaq .LC_string_format(%%rip), %s\n", get_arg_registers_64()[0]);
+                                } else {
+                                    code_printf(parser, "    movl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
+                                    code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
+                                }
+                                
+                                {
+                                    int stack_adj_field = get_call_stack_space();
+                                    if (stack_adj_field > 0) {
+                                        code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_field);
+                                    }
+                                    code_printf(parser, "    call printf\n");
+                                    if (stack_adj_field > 0) {
+                                        code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_field);
+                                    }
+                                }
+                                
+                                // Skip the regular variable handling
+                                goto print_next_item;
+                            }
+                        }
+                    }
+                }
+                
                 if (!var) {
                     parser_error(parser, "Variable '%s' not found", name.value);
                     return;
@@ -2843,6 +2905,7 @@ void parse_print_statement(Parser *parser) {
             parser_error(parser, "Unexpected token in print statement");
         }
 
+print_next_item:
         if (check(parser->tokens, TOKEN_PLUS)) {
             consume(parser->tokens);
         } else {
