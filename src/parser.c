@@ -3166,13 +3166,31 @@ void parse_function_call_statement(Parser *parser) {
         }
     }
 
+    // Check if we're in a method context and this might be a method call
+    int is_method_call = 0;
+    char method_mangled_name[MAX_TOKEN * 2];
     Function *func = find_function(parser, name.value);
+    
+    if (!func && parser->current_struct_context[0] != '\0') {
+        // Try to find it as a method of the current struct
+        snprintf(method_mangled_name, sizeof(method_mangled_name), "%s_%s", 
+                 parser->current_struct_context, name.value);
+        func = find_function(parser, method_mangled_name);
+        if (func) {
+            is_method_call = 1;
+        }
+    }
+    
     if (!func) {
         parser_error(parser, "Function '%s' not found", name.value);
         return;
     }
 
-    code_comment(parser, "Line %d: %s(...)", call_token.line, name.value);
+    if (is_method_call) {
+        code_comment(parser, "Line %d: %s(...) (method-to-method call)", call_token.line, name.value);
+    } else {
+        code_comment(parser, "Line %d: %s(...)", call_token.line, name.value);
+    }
 
     expect(parser, TOKEN_LPAREN, "Expected '(' after function name");
 
@@ -3210,20 +3228,47 @@ void parse_function_call_statement(Parser *parser) {
 
     const char **arg_regs = get_arg_registers_64();
 
-    for (int i = arg_count - 1; i >= 0 && i < 4; i--) {
-        code_printf(parser, "    popq %s\n", arg_regs[i]);
-    }
+    if (is_method_call) {
+        // This is a method call on the same struct - need to pass 'this' as first arg
+        // Pop arguments into registers (offset by 1 because first reg has 'this')
+        for (int i = arg_count - 1; i >= 0 && i + 1 < 4; i--) {
+            int reg_idx = i + 1;  // Offset by 1 because first reg has 'this'
+            code_printf(parser, "    popq %s\n", arg_regs[reg_idx]);
+        }
 
-    {
-                int stack_adj_25 = get_call_stack_space();
-                if (stack_adj_25 > 0) {
-                    code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_25);
-                }
-                code_printf(parser, "    call %s\n", name.value);
-                if (stack_adj_25 > 0) {
-                    code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_25);
-                }
+        // Load 'this' pointer into first register
+        Variable *this_var = find_variable(parser, "this");
+        if (this_var) {
+            code_printf(parser, "    movq %d(%%rbp), %s\n", this_var->offset, arg_regs[0]);
+        }
+
+        {
+            int stack_adj_25 = get_call_stack_space();
+            if (stack_adj_25 > 0) {
+                code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_25);
             }
+            code_printf(parser, "    call %s\n", method_mangled_name);
+            if (stack_adj_25 > 0) {
+                code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_25);
+            }
+        }
+    } else {
+        // Regular function call
+        for (int i = arg_count - 1; i >= 0 && i < 4; i--) {
+            code_printf(parser, "    popq %s\n", arg_regs[i]);
+        }
+
+        {
+            int stack_adj_25 = get_call_stack_space();
+            if (stack_adj_25 > 0) {
+                code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_25);
+            }
+            code_printf(parser, "    call %s\n", name.value);
+            if (stack_adj_25 > 0) {
+                code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_25);
+            }
+        }
+    }
 
     if (func->return_type != TYPE_VOID) {
         code_printf(parser, "    pushq %%rax\n");
@@ -3646,7 +3691,21 @@ void parse_primary(Parser *parser) {
                 }
             }
 
+            // Check if we're in a method context and this might be a method call
+            int is_method_call = 0;
+            char method_mangled_name[MAX_TOKEN * 2];
             Function *func = find_function(parser, name.value);
+            
+            if (!func && parser->current_struct_context[0] != '\0') {
+                // Try to find it as a method of the current struct
+                snprintf(method_mangled_name, sizeof(method_mangled_name), "%s_%s", 
+                         parser->current_struct_context, name.value);
+                func = find_function(parser, method_mangled_name);
+                if (func) {
+                    is_method_call = 1;
+                }
+            }
+            
             if (!func) {
                 parser_error(parser, "Function '%s' not found", name.value);
                 return;
@@ -3687,35 +3746,76 @@ void parse_primary(Parser *parser) {
             const char **arg_regs_64 = get_arg_registers_64();
             const char *arg_regs_float[] = {"%xmm0", "%xmm1", "%xmm2", "%xmm3"};
 
-            for (int i = arg_count - 1; i >= 0 && i < 4; i--) {
-                DataType param_type = func->param_types[i];
+            if (is_method_call) {
+                // This is a method call on the same struct - need to pass 'this' as first arg
+                // Pop arguments into registers (offset by 1 because first reg has 'this')
+                for (int i = arg_count - 1; i >= 0 && i + 1 < 4; i--) {
+                    DataType param_type = func->param_types[i];
+                    int reg_idx = i + 1;  // Offset by 1 because first reg has 'this'
 
-                if (param_type == TYPE_FLOAT || param_type == TYPE_DOUBLE) {
-                    code_printf(parser, "    popq %%rax\n");
-                    code_printf(parser, "    movq %%rax, %s\n", arg_regs_float[i]);
-                } else if (param_type == TYPE_STRING) {
-                    code_printf(parser, "    popq %s\n", arg_regs_64[i]);
-                } else if (param_type == TYPE_CHAR || param_type == TYPE_BYTE || param_type == TYPE_BIT) {
-                    const char **expr_arg_regs_8 = get_arg_registers_8();
-                    code_printf(parser, "    popq %%rax\n");
-                    code_printf(parser, "    movb %%al, %s\n", expr_arg_regs_8[i]);
-                } else {
-                    const char **expr_arg_regs_32 = get_arg_registers_32();
-                    int expr_max_reg_args_32 = get_max_reg_args();
-                    code_printf(parser, "    popq %%rax\n");
-                    if (i < expr_max_reg_args_32) {
-                        code_printf(parser, "    movl %%eax, %s\n", expr_arg_regs_32[i]);
+                    if (param_type == TYPE_FLOAT || param_type == TYPE_DOUBLE) {
+                        code_printf(parser, "    popq %%rax\n");
+                        code_printf(parser, "    movq %%rax, %s\n", arg_regs_float[reg_idx]);
+                    } else if (param_type == TYPE_STRING) {
+                        code_printf(parser, "    popq %s\n", arg_regs_64[reg_idx]);
+                    } else if (param_type == TYPE_CHAR || param_type == TYPE_BYTE || param_type == TYPE_BIT) {
+                        const char **method_self_call_arg_regs_8 = get_arg_registers_8();
+                        code_printf(parser, "    popq %%rax\n");
+                        code_printf(parser, "    movb %%al, %s\n", method_self_call_arg_regs_8[reg_idx]);
+                    } else {
+                        const char **method_self_call_arg_regs_32 = get_arg_registers_32();
+                        code_printf(parser, "    popq %%rax\n");
+                        code_printf(parser, "    movl %%eax, %s\n", method_self_call_arg_regs_32[reg_idx]);
                     }
                 }
-            }
 
-            int expr_stack_adjust = get_call_stack_space();
-            if (expr_stack_adjust > 0) {
-                code_printf(parser, "    subq $%d, %%rsp\n", expr_stack_adjust);
-            }
-            code_printf(parser, "    call %s\n", name.value);
-            if (expr_stack_adjust > 0) {
-                code_printf(parser, "    addq $%d, %%rsp\n", expr_stack_adjust);
+                // Load 'this' pointer into first register
+                Variable *this_var = find_variable(parser, "this");
+                if (this_var) {
+                    code_comment(parser, "Method-to-method call: %s()", name.value);
+                    code_printf(parser, "    movq %d(%%rbp), %s\n", this_var->offset, arg_regs_64[0]);
+                }
+
+                int method_stack_adjust = get_call_stack_space();
+                if (method_stack_adjust > 0) {
+                    code_printf(parser, "    subq $%d, %%rsp\n", method_stack_adjust);
+                }
+                code_printf(parser, "    call %s\n", method_mangled_name);
+                if (method_stack_adjust > 0) {
+                    code_printf(parser, "    addq $%d, %%rsp\n", method_stack_adjust);
+                }
+            } else {
+                // Regular function call
+                for (int i = arg_count - 1; i >= 0 && i < 4; i--) {
+                    DataType param_type = func->param_types[i];
+
+                    if (param_type == TYPE_FLOAT || param_type == TYPE_DOUBLE) {
+                        code_printf(parser, "    popq %%rax\n");
+                        code_printf(parser, "    movq %%rax, %s\n", arg_regs_float[i]);
+                    } else if (param_type == TYPE_STRING) {
+                        code_printf(parser, "    popq %s\n", arg_regs_64[i]);
+                    } else if (param_type == TYPE_CHAR || param_type == TYPE_BYTE || param_type == TYPE_BIT) {
+                        const char **expr_arg_regs_8 = get_arg_registers_8();
+                        code_printf(parser, "    popq %%rax\n");
+                        code_printf(parser, "    movb %%al, %s\n", expr_arg_regs_8[i]);
+                    } else {
+                        const char **expr_arg_regs_32 = get_arg_registers_32();
+                        int expr_max_reg_args_32 = get_max_reg_args();
+                        code_printf(parser, "    popq %%rax\n");
+                        if (i < expr_max_reg_args_32) {
+                            code_printf(parser, "    movl %%eax, %s\n", expr_arg_regs_32[i]);
+                        }
+                    }
+                }
+
+                int expr_stack_adjust = get_call_stack_space();
+                if (expr_stack_adjust > 0) {
+                    code_printf(parser, "    subq $%d, %%rsp\n", expr_stack_adjust);
+                }
+                code_printf(parser, "    call %s\n", name.value);
+                if (expr_stack_adjust > 0) {
+                    code_printf(parser, "    addq $%d, %%rsp\n", expr_stack_adjust);
+                }
             }
 
             if (func->return_type == TYPE_FLOAT || func->return_type == TYPE_DOUBLE) {

@@ -19,8 +19,9 @@ func main() -> void {
     var calc:Calculator;
     calc.result = 0;
     
-    printline("Testing method calling method:");
+    print("Testing method calling method:\n");
     calc.addAndStore(5, 3);
-    printline("Result should be 8:");
-    printline(calc.getResult());
+    print("Result: ");
+    print(calc.getResult());
+    print("\n");
 }
