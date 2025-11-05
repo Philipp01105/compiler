@@ -1,0 +1,7 @@
+func printChar(c:char) -> void {
+    print("Char: " + charToString(c));
+}
+
+func main() -> void {
+    printChar('A');
+}
