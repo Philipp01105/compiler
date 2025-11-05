@@ -6,6 +6,10 @@ _codeql_detected_source_root
 *.s
 *.out
 
+# Test artifacts
+test_output/
+tests/*.s
+
 # Compiled binaries
 /compiler
 /program
