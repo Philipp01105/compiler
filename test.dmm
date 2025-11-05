@@ -12,15 +12,15 @@
 
 func printSeparator() -> void
 {
-    print("-----------------------------------------------------------------");
+    println("-----------------------------------------------------------------");
 }
 
 func printHeader(msg:string) -> void
 {
-    print("");
-    print("=================================================================");
-    print(msg);
-    print("=================================================================");
+    println("");
+    println("=================================================================");
+    println(msg);
+    println("=================================================================");
 }
 
 // =================================================================
@@ -150,12 +150,12 @@ func getGoodbye() -> string
 
 func greet(name:string) -> void
 {
-    print("Hello, " + name + "!");
+    println("Hello, " + name + "!");
 }
 
 func farewell(name:string) -> void
 {
-    print("Goodbye, " + name + "!");
+    println("Goodbye, " + name + "!");
 }
 
 func makeGreeting(name:string) -> string
@@ -595,26 +595,26 @@ struct Counter {
 
 func main() -> void
 {
-    print("#################################################################");
-    print("#                                                               #");
-    print("#        COMPILER TEST SUITE - Version 5.1.0                   #");
-    print("#        Struct Edition - 145 Working Tests                    #");
-    print("#                                                               #");
-    print("#################################################################");
-    print("");
-    print("Author: Philipp01105");
-    print("Date: 2025-11-03 12:09:00 UTC");
-    print("Tests: 145 (all functions and structs comprehensively tested)");
-    print("");
+    println("#################################################################");
+    println("#                                                               #");
+    println("#        COMPILER TEST SUITE - Version 5.1.0                   #");
+    println("#        Struct Edition - 145 Working Tests                    #");
+    println("#                                                               #");
+    println("#################################################################");
+    println("");
+    println("Author: Philipp01105");
+    println("Date: 2025-11-03 12:09:00 UTC");
+    println("Tests: 145 (all functions and structs comprehensively tested)");
+    println("");
 
     // =================================================================
     // GROUP A: BASIC DATA TYPES (Tests 1-10)
     // =================================================================
 
-    print("#################################################################");
-    print("# GROUP A: BASIC DATA TYPES AND VARIABLES                      #");
-    print("#################################################################");
-    print("");
+    println("#################################################################");
+    println("# GROUP A: BASIC DATA TYPES AND VARIABLES                      #");
+    println("#################################################################");
+    println("");
 
     printHeader("TEST 1: Type Inference (v2.x Syntax)");
     printSeparator();
@@ -622,71 +622,71 @@ func main() -> void
     var y = 20;
     var z = -5;
     var zero = 0;
-    print("  x = " + x);
-    print("  y = " + y);
-    print("  z = " + z);
-    print("  zero = " + zero);
-    print("  [OK] Type Inference works");
+    println("  x = " + x);
+    println("  y = " + y);
+    println("  z = " + z);
+    println("  zero = " + zero);
+    println("  [OK] Type Inference works");
 
     printHeader("TEST 2: Explicit Types (v3.0 Syntax)");
     printSeparator();
     var age:int = 25;
     var count:int = 100;
     var negative:int = -42;
-    print("  age:int = " + age);
-    print("  count:int = " + count);
-    print("  negative:int = " + negative);
-    print("  [OK] Explicit int types work");
+    println("  age:int = " + age);
+    println("  count:int = " + count);
+    println("  negative:int = " + negative);
+    println("  [OK] Explicit int types work");
 
     printHeader("TEST 3: Character Type");
     printSeparator();
     var ch1:char = 'A';
     var ch2:char = 'Z';
     var ch3:char = '0';
-    print("  ch1 = " + ch1);
-    print("  ch2 = " + ch2);
-    print("  ch3 = " + ch3);
-    print("  [OK] Character type works");
+    println("  ch1 = " + ch1);
+    println("  ch2 = " + ch2);
+    println("  ch3 = " + ch3);
+    println("  [OK] Character type works");
 
     printHeader("TEST 4: Byte Type");
     printSeparator();
     var b1:byte = 0;
     var b2:byte = 128;
     var b3:byte = 255;
-    print("  byte min (0) = " + b1);
-    print("  byte mid (128) = " + b2);
-    print("  byte max (255) = " + b3);
-    print("  [OK] Byte type works");
+    println("  byte min (0) = " + b1);
+    println("  byte mid (128) = " + b2);
+    println("  byte max (255) = " + b3);
+    println("  [OK] Byte type works");
 
     printHeader("TEST 5: Bit Type (Boolean)");
     printSeparator();
     var flag1:bit = 0;
     var flag2:bit = 1;
-    print("  false (0) = " + flag1);
-    print("  true (1) = " + flag2);
-    print("  [OK] Bit type works");
+    println("  false (0) = " + flag1);
+    println("  true (1) = " + flag2);
+    println("  [OK] Bit type works");
 
     printHeader("TEST 6: String Type (NEW in 4.0)");
     printSeparator();
     var name:string = "Philipp";
     var city:string = "Berlin";
     var country:string = "Germany";
-    print("  name = " + name);
-    print("  city = " + city);
-    print("  country = " + country);
-    print("  [OK] String type works");
+    println("  name = " + name);
+    println("  city = " + city);
+    println("  country = " + country);
+    println("  [OK] String type works");
 
     printHeader("TEST 7: Uninitialized Variables");
     printSeparator();
     var uninit_int:int;
     var uninit_bit:bit;
-    print("  uninit_int = " + uninit_int);
-    print("  uninit_bit = " + uninit_bit);
+    println("  uninit_int = " + uninit_int);
+    println("  uninit_bit = " + uninit_bit);
     uninit_int = 42;
     uninit_bit = 1;
-    print("  After assignment: int = " + uninit_int);
-    print("  After assignment: bit = " + uninit_bit);
-    print("  [OK] Uninitialized variables work");
+    println("  After assignment: int = " + uninit_int);
+    println("  After assignment: bit = " + uninit_bit);
+    println("  [OK] Uninitialized variables work");
 
     printHeader("TEST 8: Mixed Variable Declarations");
     printSeparator();
@@ -695,22 +695,22 @@ func main() -> void
     var mixed3:char = 'X';
     var mixed4:string = "Test";
     var mixed5:bit = 1;
-    print("  Inference: " + mixed1);
-    print("  Explicit int: " + mixed2);
-    print("  Char: " + mixed3);
-    print("  String: " + mixed4);
-    print("  Bit: " + mixed5);
-    print("  [OK] Mixed declarations work");
+    println("  Inference: " + mixed1);
+    println("  Explicit int: " + mixed2);
+    println("  Char: " + mixed3);
+    println("  String: " + mixed4);
+    println("  Bit: " + mixed5);
+    println("  [OK] Mixed declarations work");
 
     printHeader("TEST 9: Variable Assignment");
     printSeparator();
     var assign_test = 10;
-    print("  Initial: " + assign_test);
+    println("  Initial: " + assign_test);
     assign_test = 20;
-    print("  After assignment: " + assign_test);
+    println("  After assignment: " + assign_test);
     assign_test = 30;
-    print("  After 2nd assignment: " + assign_test);
-    print("  [OK] Variable assignment works");
+    println("  After 2nd assignment: " + assign_test);
+    println("  [OK] Variable assignment works");
 
     printHeader("TEST 10: Multiple Variables");
     printSeparator();
@@ -720,19 +720,19 @@ func main() -> void
     var v4 = 4;
     var v5 = 5;
     var vsum = v1 + v2 + v3 + v4 + v5;
-    print("  v1=" + v1 + " v2=" + v2 + " v3=" + v3 + " v4=" + v4 + " v5=" + v5);
-    print("  Sum: " + vsum);
-    print("  [OK] Multiple variables work");
+    println("  v1=" + v1 + " v2=" + v2 + " v3=" + v3 + " v4=" + v4 + " v5=" + v5);
+    println("  Sum: " + vsum);
+    println("  [OK] Multiple variables work");
 
     // =================================================================
     // GROUP B: OPERATORS (Tests 11-20)
     // =================================================================
 
-    print("");
-    print("#################################################################");
-    print("# GROUP B: OPERATORS AND EXPRESSIONS                           #");
-    print("#################################################################");
-    print("");
+    println("");
+    println("#################################################################");
+    println("# GROUP B: OPERATORS AND EXPRESSIONS                           #");
+    println("#################################################################");
+    println("");
 
     printHeader("TEST 11: Basic Arithmetic Operators");
     printSeparator();
@@ -742,45 +742,45 @@ func main() -> void
     var diff = a - b;
     var prod = a * b;
     var quot = a / b;
-    print("  " + a + " + " + b + " = " + sum);
-    print("  " + a + " - " + b + " = " + diff);
-    print("  " + a + " * " + b + " = " + prod);
-    print("  " + a + " / " + b + " = " + quot);
-    print("  [OK] Arithmetic operators work");
+    println("  " + a + " + " + b + " = " + sum);
+    println("  " + a + " - " + b + " = " + diff);
+    println("  " + a + " * " + b + " = " + prod);
+    println("  " + a + " / " + b + " = " + quot);
+    println("  [OK] Arithmetic operators work");
 
     printHeader("TEST 12: Modulo Operator");
     printSeparator();
     for (var i:int = 0; i <= 10; i++) {
         var mod:int = i % 3;
-        print("  " + i + " % 3 = " + mod);
+        println("  " + i + " % 3 = " + mod);
     }
-    print("  [OK] Modulo operator works");
+    println("  [OK] Modulo operator works");
 
     printHeader("TEST 13: Compound Assignment (+=, -=, *=, /=)");
     printSeparator();
     var num = 10;
-    print("  Start: " + num);
+    println("  Start: " + num);
     num += 5;
-    print("  After += 5: " + num);
+    println("  After += 5: " + num);
     num -= 3;
-    print("  After -= 3: " + num);
+    println("  After -= 3: " + num);
     num *= 2;
-    print("  After *= 2: " + num);
+    println("  After *= 2: " + num);
     num /= 4;
-    print("  After /= 4: " + num);
-    print("  [OK] Compound assignment works");
+    println("  After /= 4: " + num);
+    println("  [OK] Compound assignment works");
 
     printHeader("TEST 14: Increment and Decrement");
     printSeparator();
     var counter = 0;
-    print("  Start: " + counter);
+    println("  Start: " + counter);
     counter++;
-    print("  After ++: " + counter);
+    println("  After ++: " + counter);
     counter++;
-    print("  After ++: " + counter);
+    println("  After ++: " + counter);
     counter--;
-    print("  After --: " + counter);
-    print("  [OK] Increment/Decrement works");
+    println("  After --: " + counter);
+    println("  [OK] Increment/Decrement works");
 
     printHeader("TEST 15: Comparison Operators");
     printSeparator();
@@ -790,11 +790,11 @@ func main() -> void
     var greater:bit = val1 > val2;
     var equal:bit = val1 == val2;
     var notEqual:bit = val1 != val2;
-    print("  10 < 20: " + less);
-    print("  10 > 20: " + greater);
-    print("  10 == 20: " + equal);
-    print("  10 != 20: " + notEqual);
-    print("  [OK] Comparison operators work");
+    println("  10 < 20: " + less);
+    println("  10 > 20: " + greater);
+    println("  10 == 20: " + equal);
+    println("  10 != 20: " + notEqual);
+    println("  [OK] Comparison operators work");
 
     printHeader("TEST 16: Logical Operators (&&, ||, !)");
     printSeparator();
@@ -803,10 +803,10 @@ func main() -> void
     var and_result:bit = t == 1 && t == 1;
     var or_result:bit = t == 1 || f == 1;
     var not_result:bit = !(f == 1);
-    print("  true AND true: " + and_result);
-    print("  true OR false: " + or_result);
-    print("  NOT false: " + not_result);
-    print("  [OK] Logical operators work");
+    println("  true AND true: " + and_result);
+    println("  true OR false: " + or_result);
+    println("  NOT false: " + not_result);
+    println("  [OK] Logical operators work");
 
     printHeader("TEST 17: Operator Precedence");
     printSeparator();
@@ -814,176 +814,176 @@ func main() -> void
     var expr2 = (2 + 3) * 4;
     var expr3 = 10 - 2 * 3;
     var expr4 = (10 - 2) * 3;
-    print("  2 + 3 * 4 = " + expr1);
-    print("  (2 + 3) * 4 = " + expr2);
-    print("  10 - 2 * 3 = " + expr3);
-    print("  (10 - 2) * 3 = " + expr4);
-    print("  [OK] Operator precedence works");
+    println("  2 + 3 * 4 = " + expr1);
+    println("  (2 + 3) * 4 = " + expr2);
+    println("  10 - 2 * 3 = " + expr3);
+    println("  (10 - 2) * 3 = " + expr4);
+    println("  [OK] Operator precedence works");
 
     printHeader("TEST 18: Nested Parentheses");
     printSeparator();
     var nested1 = ((2 + 3) * (4 + 5));
     var nested2 = (((1 + 2) * 3) + ((4 + 5) * 6));
     var nested3 = ((10 + 5) * 2) / 3;
-    print("  ((2+3)*(4+5)) = " + nested1);
-    print("  (((1+2)*3)+((4+5)*6)) = " + nested2);
-    print("  ((10+5)*2)/3 = " + nested3);
-    print("  [OK] Nested parentheses work");
+    println("  ((2+3)*(4+5)) = " + nested1);
+    println("  (((1+2)*3)+((4+5)*6)) = " + nested2);
+    println("  ((10+5)*2)/3 = " + nested3);
+    println("  [OK] Nested parentheses work");
 
     printHeader("TEST 19: Unary Operators");
     printSeparator();
     var positive = 42;
     var unary_neg = -positive;
     var double_neg = -(-positive);
-    print("  positive: " + positive);
-    print("  -positive: " + unary_neg);
-    print("  -(-positive): " + double_neg);
-    print("  [OK] Unary operators work");
+    println("  positive: " + positive);
+    println("  -positive: " + unary_neg);
+    println("  -(-positive): " + double_neg);
+    println("  [OK] Unary operators work");
 
     printHeader("TEST 20: Complex Expressions");
     printSeparator();
     var complex1 = (10 + 5) * 2 - 3;
     var complex2 = 100 / (2 + 3) * 4;
     var complex3 = ((5 + 3) * 2 - 1) / 3;
-    print("  (10+5)*2-3 = " + complex1);
-    print("  100/(2+3)*4 = " + complex2);
-    print("  ((5+3)*2-1)/3 = " + complex3);
-    print("  [OK] Complex expressions work");
+    println("  (10+5)*2-3 = " + complex1);
+    println("  100/(2+3)*4 = " + complex2);
+    println("  ((5+3)*2-1)/3 = " + complex3);
+    println("  [OK] Complex expressions work");
 
     // =================================================================
     // GROUP C: CONTROL STRUCTURES (Tests 21-30)
     // =================================================================
 
-    print("");
-    print("#################################################################");
-    print("# GROUP C: CONTROL STRUCTURES                                  #");
-    print("#################################################################");
-    print("");
+    println("");
+    println("#################################################################");
+    println("# GROUP C: CONTROL STRUCTURES                                  #");
+    println("#################################################################");
+    println("");
 
     printHeader("TEST 21: Simple if Statement");
     printSeparator();
     var test_val = 15;
     if (test_val > 10) {
-        print("  test_val > 10: TRUE");
+        println("  test_val > 10: TRUE");
     }
     if (test_val < 10) {
-        print("  test_val < 10: TRUE (should not appear!)");
+        println("  test_val < 10: TRUE (should not appear!)");
     }
-    print("  [OK] Simple if works");
+    println("  [OK] Simple if works");
 
     printHeader("TEST 22: if-else Statement");
     printSeparator();
     if (test_val > 20) {
-        print("  test_val > 20: TRUE (should not appear!)");
+        println("  test_val > 20: TRUE (should not appear!)");
     } else {
-        print("  test_val <= 20: TRUE");
+        println("  test_val <= 20: TRUE");
     }
-    print("  [OK] if-else works");
+    println("  [OK] if-else works");
 
     printHeader("TEST 23: Nested if-else");
     printSeparator();
     var score = 75;
     if (score >= 90) {
-        print("  Excellent!");
+        println("  Excellent!");
     } else {
         if (score >= 70) {
-            print("  Good!");
+            println("  Good!");
         } else {
-            print("  Needs improvement");
+            println("  Needs improvement");
         }
     }
-    print("  [OK] Nested if-else works");
+    println("  [OK] Nested if-else works");
 
     printHeader("TEST 24: else if (NEW in 4.0.1)");
     printSeparator();
     if (score >= 90) {
-        print("  Grade: A (should not appear)");
+        println("  Grade: A (should not appear)");
     } else if (score >= 80) {
-        print("  Grade: B (should not appear)");
+        println("  Grade: B (should not appear)");
     } else if (score >= 70) {
-        print("  Grade: C");
+        println("  Grade: C");
     } else if (score >= 60) {
-        print("  Grade: D (should not appear)");
+        println("  Grade: D (should not appear)");
     } else {
-        print("  Grade: F (should not appear)");
+        println("  Grade: F (should not appear)");
     }
-    print("  [OK] else if works");
+    println("  [OK] else if works");
 
     printHeader("TEST 25: for Loop (Type Inference)");
     printSeparator();
     for (var i = 0; i < 5; i++) {
-        print("  Iteration (inference): " + i);
+        println("  Iteration (inference): " + i);
     }
-    print("  [OK] for loop with inference works");
+    println("  [OK] for loop with inference works");
 
     printHeader("TEST 26: for Loop (Explicit Type)");
     printSeparator();
     for (var j:int = 0; j < 5; j++) {
-        print("  Iteration (explicit): " + j);
+        println("  Iteration (explicit): " + j);
     }
-    print("  [OK] for loop with explicit type works");
+    println("  [OK] for loop with explicit type works");
 
     printHeader("TEST 27: Nested for Loops");
     printSeparator();
     for (var outer:int = 1; outer <= 3; outer++) {
         for (var inner:int = 1; inner <= 3; inner++) {
             var product = outer * inner;
-            print("  " + outer + " * " + inner + " = " + product);
+            println("  " + outer + " * " + inner + " = " + product);
         }
     }
-    print("  [OK] Nested for loops work");
+    println("  [OK] Nested for loops work");
 
     printHeader("TEST 28: for Loop with Decrement");
     printSeparator();
     for (var k:int = 5; k > 0; k--) {
-        print("  Countdown: " + k);
+        println("  Countdown: " + k);
     }
-    print("  [OK] for loop with decrement works");
+    println("  [OK] for loop with decrement works");
 
     printHeader("TEST 29: for Loop with Step 2");
     printSeparator();
     for (var m:int = 0; m < 10; m += 2) {
-        print("  Even number: " + m);
+        println("  Even number: " + m);
     }
-    print("  [OK] for loop with step works");
+    println("  [OK] for loop with step works");
 
     printHeader("TEST 30: Scope in Control Structures");
     printSeparator();
     for (var scope_i:int = 0; scope_i < 2; scope_i++) {
         var loop_var:int = scope_i * 10;
-        print("  Loop " + scope_i + ": var = " + loop_var);
+        println("  Loop " + scope_i + ": var = " + loop_var);
     }
     if (test_val > 0) {
         var if_var:int = test_val * 2;
-        print("  if-scope: var = " + if_var);
+        println("  if-scope: var = " + if_var);
     }
-    print("  [OK] Scope management works");
+    println("  [OK] Scope management works");
 
     // =================================================================
     // GROUP D: FUNCTIONS (Tests 31-40)
     // =================================================================
 
-    print("");
-    print("#################################################################");
-    print("# GROUP D: FUNCTIONS - BASICS                                  #");
-    print("#################################################################");
-    print("");
+    println("");
+    println("#################################################################");
+    println("# GROUP D: FUNCTIONS - BASICS                                  #");
+    println("#################################################################");
+    println("");
 
     printHeader("TEST 31: Function Without Parameters");
     printSeparator();
     var const_val = getConstant();
-    print("  getConstant() = " + const_val);
-    print("  [OK] Function without parameters works");
+    println("  getConstant() = " + const_val);
+    println("  [OK] Function without parameters works");
 
     printHeader("TEST 32: Function With One Parameter");
     printSeparator();
     var sq3 = square(3);
     var sq5 = square(5);
     var sq10 = square(10);
-    print("  square(3) = " + sq3);
-    print("  square(5) = " + sq5);
-    print("  square(10) = " + sq10);
-    print("  [OK] Function with 1 parameter works");
+    println("  square(3) = " + sq3);
+    println("  square(5) = " + sq5);
+    println("  square(10) = " + sq10);
+    println("  [OK] Function with 1 parameter works");
 
     printHeader("TEST 33: Function With Two Parameters");
     printSeparator();
@@ -991,51 +991,51 @@ func main() -> void
     var sub_result = subtract(50, 18);
     var mul_result = multiply(6, 7);
     var div_result = divide(20, 4);
-    print("  add(15, 27) = " + sum_result);
-    print("  subtract(50, 18) = " + sub_result);
-    print("  multiply(6, 7) = " + mul_result);
-    print("  divide(20, 4) = " + div_result);
-    print("  [OK] Function with 2 parameters works");
+    println("  add(15, 27) = " + sum_result);
+    println("  subtract(50, 18) = " + sub_result);
+    println("  multiply(6, 7) = " + mul_result);
+    println("  divide(20, 4) = " + div_result);
+    println("  [OK] Function with 2 parameters works");
 
     printHeader("TEST 34: Function With Three Parameters");
     printSeparator();
     var sum3_result = sum3(10, 20, 30);
     var avg3_result = average3(10, 20, 30);
-    print("  sum3(10, 20, 30) = " + sum3_result);
-    print("  average3(10, 20, 30) = " + avg3_result);
-    print("  [OK] Function with 3 parameters works");
+    println("  sum3(10, 20, 30) = " + sum3_result);
+    println("  average3(10, 20, 30) = " + avg3_result);
+    println("  [OK] Function with 3 parameters works");
 
     printHeader("TEST 35: Function With Four Parameters");
     printSeparator();
     var sum4_result = sum4(10, 20, 30, 40);
-    print("  sum4(10, 20, 30, 40) = " + sum4_result);
-    print("  [OK] Function with 4 parameters works");
+    println("  sum4(10, 20, 30, 40) = " + sum4_result);
+    println("  [OK] Function with 4 parameters works");
 
     printHeader("TEST 36: void Return Functions");
     printSeparator();
-    print("  Call printSeparator():");
+    print("  Call printSeparator():\n");
     printSeparator();
-    print("  Call greet('World'):");
+    println("  Call greet('World'):");
     greet("World");
-    print("  [OK] void return works");
+    println("  [OK] void return works");
 
     printHeader("TEST 37: Char Return Functions");
     printSeparator();
     var grade_a = getGradeA();
     var grade_b = getGradeB();
     var grade_c = getGradeC();
-    print("  getGradeA() = " + grade_a);
-    print("  getGradeB() = " + grade_b);
-    print("  getGradeC() = " + grade_c);
-    print("  [OK] Char return works");
+    println("  getGradeA() = " + grade_a);
+    println("  getGradeB() = " + grade_b);
+    println("  getGradeC() = " + grade_c);
+    println("  [OK] Char return works");
 
     printHeader("TEST 38: Byte Return Functions");
     printSeparator();
     var max_byte = getMaxByte();
     var byte_sum = addBytes(100, 50);
-    print("  getMaxByte() = " + max_byte);
-    print("  addBytes(100, 50) = " + byte_sum);
-    print("  [OK] Byte return works");
+    println("  getMaxByte() = " + max_byte);
+    println("  addBytes(100, 50) = " + byte_sum);
+    println("  [OK] Byte return works");
 
     printHeader("TEST 39: Bit Return Functions");
     printSeparator();
@@ -1043,61 +1043,61 @@ func main() -> void
     var is_false = isFalse();
     var pos_check = isPositive(10);
     var neg_check = isPositive(-5);
-    print("  isTrue() = " + is_true);
-    print("  isFalse() = " + is_false);
-    print("  isPositive(10) = " + pos_check);
-    print("  isPositive(-5) = " + neg_check);
-    print("  [OK] Bit return works");
+    println("  isTrue() = " + is_true);
+    println("  isFalse() = " + is_false);
+    println("  isPositive(10) = " + pos_check);
+    println("  isPositive(-5) = " + neg_check);
+    println("  [OK] Bit return works");
 
     printHeader("TEST 40: String Return Functions");
     printSeparator();
     var welcome:string = getWelcome();
     var hello:string = getHello();
     var goodbye:string = getGoodbye();
-    print("  getWelcome(): " + welcome);
-    print("  getHello(): " + hello);
-    print("  getGoodbye(): " + goodbye);
-    print("  [OK] String return works");
+    println("  getWelcome(): " + welcome);
+    println("  getHello(): " + hello);
+    println("  getGoodbye(): " + goodbye);
+    println("  [OK] String return works");
 
     // =================================================================
     // GROUP E: STRING OPERATIONS (Tests 41-50)
     // =================================================================
 
-    print("");
-    print("#################################################################");
-    print("# GROUP E: STRING OPERATIONS                                   #");
-    print("#################################################################");
-    print("");
+    println("");
+    println("#################################################################");
+    println("# GROUP E: STRING OPERATIONS                                   #");
+    println("#################################################################");
+    println("");
 
     printHeader("TEST 41: String Variable Declaration");
     printSeparator();
     var str1:string = "Hello";
     var str2:string = "World";
     var str3:string = "";
-    print("  str1: " + str1);
-    print("  str2: " + str2);
-    print("  str3 (empty): '" + str3 + "'");
-    print("  [OK] String declaration works");
+    println("  str1: " + str1);
+    println("  str2: " + str2);
+    println("  str3 (empty): '" + str3 + "'");
+    println("  [OK] String declaration works");
 
     printHeader("TEST 42: String Assignment");
     printSeparator();
     var msg:string;
-    print("  Before assignment (empty)");
+    println("  Before assignment (empty)");
     msg = "First";
-    print("  After 1st assignment: " + msg);
+    println("  After 1st assignment: " + msg);
     msg = "Second";
-    print("  After 2nd assignment: " + msg);
+    println("  After 2nd assignment: " + msg);
     msg = "Third";
-    print("  After 3rd assignment: " + msg);
-    print("  [OK] String assignment works");
+    println("  After 3rd assignment: " + msg);
+    println("  [OK] String assignment works");
 
     printHeader("TEST 43: String Copy");
     printSeparator();
     var original:string = "Original";
     var copy:string = original;
-    print("  Original: " + original);
-    print("  Copy: " + copy);
-    print("  [OK] String copy works");
+    println("  Original: " + original);
+    println("  Copy: " + copy);
+    println("  [OK] String copy works");
 
     printHeader("TEST 44: String Comparison (==)");
     printSeparator();
@@ -1105,65 +1105,65 @@ func main() -> void
     var cmp2:string = "Test";
     var cmp3:string = "Different";
     if (cmp1 == cmp2) {
-        print("  'Test' == 'Test': TRUE");
+        println("  'Test' == 'Test': TRUE");
     } else {
-        print("  'Test' == 'Test': FALSE (Error!)");
+        println("  'Test' == 'Test': FALSE (Error!)");
     }
     if (cmp1 == cmp3) {
-        print("  'Test' == 'Different': TRUE (Error!)");
+        println("  'Test' == 'Different': TRUE (Error!)");
     } else {
-        print("  'Test' == 'Different': FALSE");
+        println("  'Test' == 'Different': FALSE");
     }
-    print("  [OK] String comparison (==) works");
+    println("  [OK] String comparison (==) works");
 
     printHeader("TEST 45: String Comparison (!=)");
     printSeparator();
     if (cmp1 != cmp3) {
-        print("  'Test' != 'Different': TRUE");
+        println("  'Test' != 'Different': TRUE");
     } else {
-        print("  'Test' != 'Different': FALSE (Error!)");
+        println("  'Test' != 'Different': FALSE (Error!)");
     }
     if (cmp1 != cmp2) {
-        print("  'Test' != 'Test': TRUE (Error!)");
+        println("  'Test' != 'Test': TRUE (Error!)");
     } else {
-        print("  'Test' != 'Test': FALSE");
+        println("  'Test' != 'Test': FALSE");
     }
-    print("  [OK] String comparison (!=) works");
+    println("  [OK] String comparison (!=) works");
 
     printHeader("TEST 46: String in if/else");
     printSeparator();
     var role:string = "admin";
     if (role == "admin") {
-        print("  Access: Administrator");
+        println("  Access: Administrator");
     } else if (role == "user") {
-        print("  Access: User");
+        println("  Access: User");
     } else {
-        print("  Access: Guest");
+        println("  Access: Guest");
     }
-    print("  [OK] String in if/else works");
+    println("  [OK] String in if/else works");
 
     printHeader("TEST 47: String in for Loop");
     printSeparator();
     for (var loop_i:int = 0; loop_i < 3; loop_i++) {
         var iter_msg:string = "Iteration";
-        print("  " + iter_msg + " " + loop_i);
+        println("  " + iter_msg + " " + loop_i);
     }
-    print("  [OK] String in for loop works");
+    println("  [OK] String in for loop works");
 
     printHeader("TEST 48: String Parameter (void return)");
     printSeparator();
     greet("Alice");
     greet("Bob");
     farewell("Charlie");
-    print("  [OK] String parameter (void) works");
+    println("  [OK] String parameter (void) works");
 
     printHeader("TEST 49: String Parameter with Return");
     printSeparator();
     var greeting1:string = makeGreeting("User1");
     var greeting2:string = makeGreeting("User2");
-    print("  makeGreeting('User1'): " + greeting1);
-    print("  makeGreeting('User2'): " + greeting2);
-    print("  [OK] String parameter with return works");
+    println("  makeGreeting('User1'): " + greeting1);
+    println("  makeGreeting('User2'): " + greeting2);
+    println("  [OK] String parameter with return works");
 
     printHeader("TEST 50: String Function Tests");
     printSeparator();
@@ -1171,29 +1171,29 @@ func main() -> void
     var eq2:bit = strEquals("Test", "Other");
     var empty_check:bit = isEmpty("");
     var not_empty_check:bit = isEmpty("Text");
-    print("  strEquals('Test', 'Test'): " + eq1);
-    print("  strEquals('Test', 'Other'): " + eq2);
-    print("  isEmpty(''): " + empty_check);
-    print("  isEmpty('Text'): " + not_empty_check);
-    print("  [OK] String functions work");
+    println("  strEquals('Test', 'Test'): " + eq1);
+    println("  strEquals('Test', 'Other'): " + eq2);
+    println("  isEmpty(''): " + empty_check);
+    println("  isEmpty('Text'): " + not_empty_check);
+    println("  [OK] String functions work");
 
     // =================================================================
     // GROUP F: ELSE IF (Tests 51-60)
     // =================================================================
 
-    print("");
-    print("#################################################################");
-    print("# GROUP F: ELSE IF STATEMENTS                                  #");
-    print("#################################################################");
-    print("");
+    println("");
+    println("#################################################################");
+    println("# GROUP F: ELSE IF STATEMENTS                                  #");
+    println("#################################################################");
+    println("");
 
     printHeader("TEST 51: else if - Grade System");
     printSeparator();
     for (var grade_score:int = 95; grade_score >= 55; grade_score -= 10) {
         var letter:char = getLetterGrade(grade_score);
-        print("  Score " + grade_score + " -> " + letter);
+        println("  Score " + grade_score + " -> " + letter);
     }
-    print("  [OK] else if grade system works");
+    println("  [OK] else if grade system works");
 
     printHeader("TEST 52: else if - Number Classification");
     printSeparator();
@@ -1203,31 +1203,31 @@ func main() -> void
     var class_42:string = classifyNumber(42);
     var class_123:string = classifyNumber(123);
     var class_5000:string = classifyNumber(5000);
-    print("  -5: " + class_neg5);
-    print("  0: " + class_0);
-    print("  7: " + class_7);
-    print("  42: " + class_42);
-    print("  123: " + class_123);
-    print("  5000: " + class_5000);
-    print("  [OK] else if number classification works");
+    println("  -5: " + class_neg5);
+    println("  0: " + class_0);
+    println("  7: " + class_7);
+    println("  42: " + class_42);
+    println("  123: " + class_123);
+    println("  5000: " + class_5000);
+    println("  [OK] else if number classification works");
 
     printHeader("TEST 53: else if - Weekdays");
     printSeparator();
     for (var day:int = 1; day <= 7; day++) {
         var day_name:string = getDayName(day);
-        print("  Day " + day + ": " + day_name);
+        println("  Day " + day + ": " + day_name);
     }
     var invalid_day:string = getDayName(99);
-    print("  Day 99: " + invalid_day);
-    print("  [OK] else if weekdays work");
+    println("  Day 99: " + invalid_day);
+    println("  [OK] else if weekdays work");
 
     printHeader("TEST 54: else if - Months");
     printSeparator();
     for (var month:int = 1; month <= 12; month++) {
         var month_name:string = getMonthName(month);
-        print("  Month " + month + ": " + month_name);
+        println("  Month " + month + ": " + month_name);
     }
-    print("  [OK] else if months work");
+    println("  [OK] else if months work");
 
     printHeader("TEST 55: else if - Age Categories");
     printSeparator();
@@ -1237,210 +1237,210 @@ func main() -> void
     var age_cat16:string = getAgeCategory(16);
     var age_cat30:string = getAgeCategory(30);
     var age_cat70:string = getAgeCategory(70);
-    print("  Age 1: " + age_cat1);
-    print("  Age 3: " + age_cat3);
-    print("  Age 10: " + age_cat10);
-    print("  Age 16: " + age_cat16);
-    print("  Age 30: " + age_cat30);
-    print("  Age 70: " + age_cat70);
-    print("  [OK] else if age categories work");
+    println("  Age 1: " + age_cat1);
+    println("  Age 3: " + age_cat3);
+    println("  Age 10: " + age_cat10);
+    println("  Age 16: " + age_cat16);
+    println("  Age 30: " + age_cat30);
+    println("  Age 70: " + age_cat70);
+    println("  [OK] else if age categories work");
 
     printHeader("TEST 56: else if - Inline Usage");
     printSeparator();
     var inline_score = 85;
-    print("  Score: " + inline_score);
+    println("  Score: " + inline_score);
     if (inline_score >= 90) {
-        print("  Grade: A");
+        println("  Grade: A");
     } else if (inline_score >= 80) {
-        print("  Grade: B");
+        println("  Grade: B");
     } else if (inline_score >= 70) {
-        print("  Grade: C");
+        println("  Grade: C");
     } else if (inline_score >= 60) {
-        print("  Grade: D");
+        println("  Grade: D");
     } else {
-        print("  Grade: F");
+        println("  Grade: F");
     }
-    print("  [OK] else if inline works");
+    println("  [OK] else if inline works");
 
     printHeader("TEST 57: else if - Long Chain");
     printSeparator();
     var chain_val = 5;
-    print("  Value: " + chain_val);
+    println("  Value: " + chain_val);
     if (chain_val == 0) {
-        print("  ZERO");
+        println("  ZERO");
     } else if (chain_val == 1) {
-        print("  ONE");
+        println("  ONE");
     } else if (chain_val == 2) {
-        print("  TWO");
+        println("  TWO");
     } else if (chain_val == 3) {
-        print("  THREE");
+        println("  THREE");
     } else if (chain_val == 4) {
-        print("  FOUR");
+        println("  FOUR");
     } else if (chain_val == 5) {
-        print("  FIVE");
+        println("  FIVE");
     } else if (chain_val == 6) {
-        print("  SIX");
+        println("  SIX");
     } else if (chain_val == 7) {
-        print("  SEVEN");
+        println("  SEVEN");
     } else if (chain_val == 8) {
-        print("  EIGHT");
+        println("  EIGHT");
     } else if (chain_val == 9) {
-        print("  NINE");
+        println("  NINE");
     } else {
-        print("  OUT OF RANGE");
+        println("  OUT OF RANGE");
     }
-    print("  [OK] else if long chain works");
+    println("  [OK] else if long chain works");
 
     printHeader("TEST 58: else if - With Strings");
     printSeparator();
     var cmd:string = "help";
-    print("  Command: " + cmd);
+    println("  Command: " + cmd);
     if (cmd == "start") {
-        print("  Starting...");
+        println("  Starting...");
     } else if (cmd == "stop") {
-        print("  Stopping...");
+        println("  Stopping...");
     } else if (cmd == "help") {
-        print("  Commands: start, stop, help, quit");
+        println("  Commands: start, stop, help, quit");
     } else if (cmd == "quit") {
-        print("  Quitting...");
+        println("  Quitting...");
     } else {
-        print("  Unknown command");
+        println("  Unknown command");
     }
-    print("  [OK] else if with strings works");
+    println("  [OK] else if with strings works");
 
     printHeader("TEST 59: else if - Complex Logic");
     printSeparator();
     var points = 850;
     var member:bit = 1;
-    print("  Points: " + points + ", Member: " + member);
+    println("  Points: " + points + ", Member: " + member);
     if (points >= 1000 && member == 1) {
-        print("  Status: PLATINUM");
+        println("  Status: PLATINUM");
     } else if (points >= 1000) {
-        print("  Status: Gold (Non-member)");
+        println("  Status: Gold (Non-member)");
     } else if (points >= 500 && member == 1) {
-        print("  Status: GOLD");
+        println("  Status: GOLD");
     } else if (points >= 500) {
-        print("  Status: Silver (Non-member)");
+        println("  Status: Silver (Non-member)");
     } else if (points >= 100 && member == 1) {
-        print("  Status: SILVER");
+        println("  Status: SILVER");
     } else if (points >= 100) {
-        print("  Status: Bronze (Non-member)");
+        println("  Status: Bronze (Non-member)");
     } else if (member == 1) {
-        print("  Status: BRONZE");
+        println("  Status: BRONZE");
     } else {
-        print("  Status: No rewards");
+        println("  Status: No rewards");
     }
-    print("  [OK] else if complex logic works");
+    println("  [OK] else if complex logic works");
 
     printHeader("TEST 60: else if - Nested Conditions");
     printSeparator();
     var user_age = 25;
     var has_license:bit = 1;
-    print("  Age: " + user_age + ", License: " + has_license);
+    println("  Age: " + user_age + ", License: " + has_license);
     if (user_age < 16) {
-        print("  Too young to drive");
+        println("  Too young to drive");
     } else if (user_age < 18) {
         if (has_license == 1) {
-            print("  Can drive with permit");
+            println("  Can drive with permit");
         } else {
-            print("  Need to get permit");
+            println("  Need to get permit");
         }
     } else if (user_age < 21) {
         if (has_license == 1) {
-            print("  Can drive, but no alcohol");
+            println("  Can drive, but no alcohol");
         } else {
-            print("  Get your license!");
+            println("  Get your license!");
         }
     } else {
         if (has_license == 1) {
-            print("  Full driving privileges");
+            println("  Full driving privileges");
         } else {
-            print("  Why no license?");
+            println("  Why no license?");
         }
     }
-    print("  [OK] else if nested conditions work");
+    println("  [OK] else if nested conditions work");
 
     // =================================================================
     // GROUP G: ALGORITHMS (Tests 61-70)
     // =================================================================
 
-    print("");
-    print("#################################################################");
-    print("# GROUP G: ALGORITHMS AND CALCULATIONS                         #");
-    print("#################################################################");
-    print("");
+    println("");
+    println("#################################################################");
+    println("# GROUP G: ALGORITHMS AND CALCULATIONS                         #");
+    println("#################################################################");
+    println("");
 
     printHeader("TEST 61: Factorial (FIXED)");
     printSeparator();
     for (var fact_i:int = 1; fact_i <= 10; fact_i++) {
         var fact_result = factorial(fact_i);
-        print("  " + fact_i + "! = " + fact_result);
+        println("  " + fact_i + "! = " + fact_result);
     }
-    print("  [OK] Factorial works");
+    println("  [OK] Factorial works");
 
     printHeader("TEST 62: Fibonacci (FIXED)");
     printSeparator();
     for (var fib_i:int = 0; fib_i <= 15; fib_i++) {
         var fib_result = fibonacci(fib_i);
-        print("  F(" + fib_i + ") = " + fib_result);
+        println("  F(" + fib_i + ") = " + fib_result);
     }
-    print("  [OK] Fibonacci works");
+    println("  [OK] Fibonacci works");
 
     printHeader("TEST 63: Power (FIXED)");
     printSeparator();
     for (var pow_i:int = 0; pow_i <= 10; pow_i++) {
         var pow_result = power(2, pow_i);
-        print("  2^" + pow_i + " = " + pow_result);
+        println("  2^" + pow_i + " = " + pow_result);
     }
-    print("  [OK] Power works");
+    println("  [OK] Power works");
 
     printHeader("TEST 64: Sum from 1 to n (FIXED)");
     printSeparator();
     var sum_10 = sumTo(10);
     var sum_50 = sumTo(50);
     var sum_100 = sumTo(100);
-    print("  sumTo(10) = " + sum_10);
-    print("  sumTo(50) = " + sum_50);
-    print("  sumTo(100) = " + sum_100);
-    print("  [OK] Sum works");
+    println("  sumTo(10) = " + sum_10);
+    println("  sumTo(50) = " + sum_50);
+    println("  sumTo(100) = " + sum_100);
+    println("  [OK] Sum works");
 
     printHeader("TEST 65: Sum Range (FIXED)");
     printSeparator();
     var range_sum1 = sumRange(1, 10);
     var range_sum2 = sumRange(10, 20);
     var range_sum3 = sumRange(50, 60);
-    print("  sumRange(1, 10) = " + range_sum1);
-    print("  sumRange(10, 20) = " + range_sum2);
-    print("  sumRange(50, 60) = " + range_sum3);
-    print("  [OK] Sum range works");
+    println("  sumRange(1, 10) = " + range_sum1);
+    println("  sumRange(10, 20) = " + range_sum2);
+    println("  sumRange(50, 60) = " + range_sum3);
+    println("  [OK] Sum range works");
 
     printHeader("TEST 66: Sum of Squares (FIXED)");
     printSeparator();
     var sq_sum5 = sumOfSquares(5);
     var sq_sum10 = sumOfSquares(10);
-    print("  sumOfSquares(5) = " + sq_sum5);
-    print("  sumOfSquares(10) = " + sq_sum10);
-    print("  [OK] Sum of squares works");
+    println("  sumOfSquares(5) = " + sq_sum5);
+    println("  sumOfSquares(10) = " + sq_sum10);
+    println("  [OK] Sum of squares works");
 
     printHeader("TEST 67: GCD - Greatest Common Divisor (FIXED)");
     printSeparator();
     var gcd1 = gcd(48, 18);
     var gcd2 = gcd(100, 35);
     var gcd3 = gcd(17, 19);
-    print("  gcd(48, 18) = " + gcd1);
-    print("  gcd(100, 35) = " + gcd2);
-    print("  gcd(17, 19) = " + gcd3);
-    print("  [OK] GCD works");
+    println("  gcd(48, 18) = " + gcd1);
+    println("  gcd(100, 35) = " + gcd2);
+    println("  gcd(17, 19) = " + gcd3);
+    println("  [OK] GCD works");
 
     printHeader("TEST 68: Prime Number Test (FIXED)");
     printSeparator();
     for (var prime_i:int = 2; prime_i <= 20; prime_i++) {
         var is_prime = isPrime(prime_i);
         if (is_prime == 1) {
-            print("  " + prime_i + " is prime");
+            println("  " + prime_i + " is prime");
         }
     }
-    print("  [OK] Prime test works");
+    println("  [OK] Prime test works");
 
     printHeader("TEST 69: Comparison Functions");
     printSeparator();
@@ -1448,73 +1448,73 @@ func main() -> void
         var pos_result:bit = isPositive(check_val);
         var neg_result:bit = isNegative(check_val);
         var zero_result:bit = isZero(check_val);
-        print("  Value: " + check_val);
-        print("    isPositive: " + pos_result);
-        print("    isNegative: " + neg_result);
-        print("    isZero: " + zero_result);
+        println("  Value: " + check_val);
+        println("    isPositive: " + pos_result);
+        println("    isNegative: " + neg_result);
+        println("    isZero: " + zero_result);
     }
-    print("  [OK] Comparison functions work");
+    println("  [OK] Comparison functions work");
 
     printHeader("TEST 70: Even/Odd Check");
     printSeparator();
     for (var even_i:int = 0; even_i <= 10; even_i++) {
         var even:bit = isEven(even_i);
-        print("  " + even_i + " is even: " + even);
+        println("  " + even_i + " is even: " + even);
     }
-    print("  [OK] Even/odd check works");
+    println("  [OK] Even/odd check works");
 
     // =================================================================
     // GROUP H: NESTED FUNCTIONS (Tests 71-80)
     // =================================================================
 
-    print("");
-    print("#################################################################");
-    print("# GROUP H: NESTED AND COMPLEX FUNCTIONS                        #");
-    print("#################################################################");
-    print("");
+    println("");
+    println("#################################################################");
+    println("# GROUP H: NESTED AND COMPLEX FUNCTIONS                        #");
+    println("#################################################################");
+    println("");
 
     printHeader("TEST 71: Nested Function Calls Level 1");
     printSeparator();
     var nested_result1 = add(10, multiply(2, 3));
     var nested_result2 = multiply(add(5, 5), 2);
     var nested_result3 = divide(subtract(100, 50), add(2, 3));
-    print("  add(10, multiply(2, 3)) = " + nested_result1);
-    print("  multiply(add(5, 5), 2) = " + nested_result2);
-    print("  divide(subtract(100, 50), add(2, 3)) = " + nested_result3);
-    print("  [OK] Nested calls level 1 work");
+    println("  add(10, multiply(2, 3)) = " + nested_result1);
+    println("  multiply(add(5, 5), 2) = " + nested_result2);
+    println("  divide(subtract(100, 50), add(2, 3)) = " + nested_result3);
+    println("  [OK] Nested calls level 1 work");
 
     printHeader("TEST 72: Nested Function Calls Level 2");
     printSeparator();
     var complex_result1 = addAndMultiply(2, 3, 4);
-    print("  addAndMultiply(2, 3, 4) = " + complex_result1);
-    print("  [OK] Nested calls level 2 work");
+    println("  addAndMultiply(2, 3, 4) = " + complex_result1);
+    println("  [OK] Nested calls level 2 work");
 
     printHeader("TEST 73: Sum of Squares Function");
     printSeparator();
     var sq_sum_result = nestedSquares(3, 4);
-    print("  nestedSquares(3, 4) = " + sq_sum_result);
-    print("  [OK] Nested squares work");
+    println("  nestedSquares(3, 4) = " + sq_sum_result);
+    println("  [OK] Nested squares work");
 
     printHeader("TEST 74: Max and Min Functions");
     printSeparator();
     var max_result = max2(10, 20);
     var min_result = min2(10, 20);
-    print("  max2(10, 20) = " + max_result);
-    print("  min2(10, 20) = " + min_result);
-    print("  [OK] Max/min functions work");
+    println("  max2(10, 20) = " + max_result);
+    println("  min2(10, 20) = " + min_result);
+    println("  [OK] Max/min functions work");
 
     printHeader("TEST 75: 3-Deep Nested Loops");
     printSeparator();
-    print("  3D Iteration:");
+    println("  3D Iteration:");
     for (var i3:int = 0; i3 < 2; i3++) {
         for (var j3:int = 0; j3 < 2; j3++) {
             for (var k3:int = 0; k3 < 2; k3++) {
                 var coord_sum = i3 + j3 + k3;
-                print("    [" + i3 + "," + j3 + "," + k3 + "] sum=" + coord_sum);
+                println("    [" + i3 + "," + j3 + "," + k3 + "] sum=" + coord_sum);
             }
         }
     }
-    print("  [OK] 3-deep nested loops work");
+    println("  [OK] 3-deep nested loops work");
 
     printHeader("TEST 76: Boolean Logic Functions");
     printSeparator();
@@ -1526,31 +1526,31 @@ func main() -> void
     var or_result2:bit = boolOr(bool_b, bool_b);
     var not_result1:bit = boolNot(bool_a);
     var not_result2:bit = boolNot(bool_b);
-    print("  1 AND 1: " + and_result1);
-    print("  1 AND 0: " + and_result2);
-    print("  1 OR 0: " + or_result1);
-    print("  0 OR 0: " + or_result2);
-    print("  NOT 1: " + not_result1);
-    print("  NOT 0: " + not_result2);
-    print("  [OK] Boolean logic functions work");
+    println("  1 AND 1: " + and_result1);
+    println("  1 AND 0: " + and_result2);
+    println("  1 OR 0: " + or_result1);
+    println("  0 OR 0: " + or_result2);
+    println("  NOT 1: " + not_result1);
+    println("  NOT 0: " + not_result2);
+    println("  [OK] Boolean logic functions work");
 
     printHeader("TEST 77: Absolute Value Function");
     printSeparator();
     var abs_pos = abs(42);
     var abs_neg = abs(-42);
     var abs_zero = abs(0);
-    print("  abs(42) = " + abs_pos);
-    print("  abs(-42) = " + abs_neg);
-    print("  abs(0) = " + abs_zero);
-    print("  [OK] Absolute value works");
+    println("  abs(42) = " + abs_pos);
+    println("  abs(-42) = " + abs_neg);
+    println("  abs(0) = " + abs_zero);
+    println("  [OK] Absolute value works");
 
     printHeader("TEST 78: Average Functions");
     printSeparator();
     var avg2_result = average2(10, 20);
     var avg3_result_val = average3(10, 20, 30);
-    print("  average2(10, 20) = " + avg2_result);
-    print("  average3(10, 20, 30) = " + avg3_result_val);
-    print("  [OK] Average functions work");
+    println("  average2(10, 20) = " + avg2_result);
+    println("  average3(10, 20, 30) = " + avg3_result_val);
+    println("  [OK] Average functions work");
 
     printHeader("TEST 79: Mixed Data Types in Nesting");
     printSeparator();
@@ -1558,23 +1558,23 @@ func main() -> void
     var mix_char:char = 'X';
     var mix_string:string = "Mixed";
     var mix_bit:bit = 1;
-    print("  Integer: " + mix_int);
-    print("  Char: " + mix_char);
-    print("  String: " + mix_string);
-    print("  Bit: " + mix_bit);
+    println("  Integer: " + mix_int);
+    println("  Char: " + mix_char);
+    println("  String: " + mix_string);
+    println("  Bit: " + mix_bit);
     if (mix_int > 40) {
-        print("    int > 40");
+        println("    int > 40");
         if (mix_char == 'X') {
-            print("      char == 'X'");
+            println("      char == 'X'");
             if (mix_string == "Mixed") {
-                print("        string == 'Mixed'");
+                println("        string == 'Mixed'");
                 if (mix_bit == 1) {
-                    print("          bit == 1");
+                    println("          bit == 1");
                 }
             }
         }
     }
-    print("  [OK] Mixed data types work");
+    println("  [OK] Mixed data types work");
 
     printHeader("TEST 80: Maximum Nesting Depth");
     printSeparator();
@@ -1589,24 +1589,24 @@ func main() -> void
                     depth_result = depth_result + 1;
                     if (5 == 5) {
                         depth_result = depth_result + 1;
-                        print("      Depth 5 reached!");
+                        println("      Depth 5 reached!");
                     }
                 }
             }
         }
     }
-    print("  Nesting depth: " + depth_result);
-    print("  [OK] Maximum nesting works");
+    println("  Nesting depth: " + depth_result);
+    println("  [OK] Maximum nesting works");
 
     // =================================================================
     // GROUP I: EDGE CASES (Tests 81-90)
     // =================================================================
 
-    print("");
-    print("#################################################################");
-    print("# GROUP I: EDGE CASES AND STRESS TESTS                         #");
-    print("#################################################################");
-    print("");
+    println("");
+    println("#################################################################");
+    println("# GROUP I: EDGE CASES AND STRESS TESTS                         #");
+    println("#################################################################");
+    println("");
 
     printHeader("TEST 81: Division Edge Cases");
     printSeparator();
@@ -1614,11 +1614,11 @@ func main() -> void
     var div_test2 = divide(100, 2);
     var div_test3 = divide(100, 3);
     var div_test4 = divide(100, 10);
-    print("  100 / 1 = " + div_test1);
-    print("  100 / 2 = " + div_test2);
-    print("  100 / 3 = " + div_test3);
-    print("  100 / 10 = " + div_test4);
-    print("  [OK] Division works");
+    println("  100 / 1 = " + div_test1);
+    println("  100 / 2 = " + div_test2);
+    println("  100 / 3 = " + div_test3);
+    println("  100 / 10 = " + div_test4);
+    println("  [OK] Division works");
 
     printHeader("TEST 82: Modulo Edge Cases");
     printSeparator();
@@ -1626,11 +1626,11 @@ func main() -> void
     var mod_test2 = 10 % 10;
     var mod_test3 = 10 % 11;
     var mod_test4 = 0 % 5;
-    print("  10 % 1 = " + mod_test1);
-    print("  10 % 10 = " + mod_test2);
-    print("  10 % 11 = " + mod_test3);
-    print("  0 % 5 = " + mod_test4);
-    print("  [OK] Modulo edge cases work");
+    println("  10 % 1 = " + mod_test1);
+    println("  10 % 10 = " + mod_test2);
+    println("  10 % 11 = " + mod_test3);
+    println("  0 % 5 = " + mod_test4);
+    println("  [OK] Modulo edge cases work");
 
     printHeader("TEST 83: Many Variables Simultaneously");
     printSeparator();
@@ -1645,8 +1645,8 @@ func main() -> void
     var var9 = 9;
     var var10 = 10;
     var total = var1 + var2 + var3 + var4 + var5 + var6 + var7 + var8 + var9 + var10;
-    print("  Sum of 1-10: " + total);
-    print("  [OK] Many variables work");
+    println("  Sum of 1-10: " + total);
+    println("  [OK] Many variables work");
 
     printHeader("TEST 84: Long String Concatenation");
     printSeparator();
@@ -1655,8 +1655,8 @@ func main() -> void
     var long_str3:string = "Part3";
     var long_str4:string = "Part4";
     var long_str5:string = "Part5";
-    print("  " + long_str1 + " " + long_str2 + " " + long_str3 + " " + long_str4 + " " + long_str5);
-    print("  [OK] Long string concatenation works");
+    println("  " + long_str1 + " " + long_str2 + " " + long_str3 + " " + long_str4 + " " + long_str5);
+    println("  [OK] Long string concatenation works");
 
     printHeader("TEST 85: Empty Strings and Checks");
     printSeparator();
@@ -1665,12 +1665,12 @@ func main() -> void
     var non_empty:string = "Text";
     var is_empty1:bit = isEmpty(empty1);
     var is_empty2:bit = isEmpty(non_empty);
-    print("  isEmpty(''): " + is_empty1);
-    print("  isEmpty('Text'): " + is_empty2);
+    println("  isEmpty(''): " + is_empty1);
+    println("  isEmpty('Text'): " + is_empty2);
     if (empty1 == empty2) {
-        print("  Two empty strings are equal");
+        println("  Two empty strings are equal");
     }
-    print("  [OK] Empty strings work");
+    println("  [OK] Empty strings work");
 
     printHeader("TEST 86: Performance Test - 100 Iterations");
     printSeparator();
@@ -1679,9 +1679,9 @@ func main() -> void
         var temp_sum:int = perf_sum + perf_i;
         perf_sum = temp_sum;
     }
-    print("  Sum 1-100: " + perf_sum);
-    print("  100 iterations completed");
-    print("  [OK] Performance test passed");
+    println("  Sum 1-100: " + perf_sum);
+    println("  100 iterations completed");
+    println("  [OK] Performance test passed");
 
     printHeader("TEST 87: Large Numbers");
     printSeparator();
@@ -1689,9 +1689,9 @@ func main() -> void
     var large2 = 2000000;
     var large_sum = large1 + large2;
     var large_diff = large2 - large1;
-    print("  1000000 + 2000000 = " + large_sum);
-    print("  2000000 - 1000000 = " + large_diff);
-    print("  [OK] Large numbers work");
+    println("  1000000 + 2000000 = " + large_sum);
+    println("  2000000 - 1000000 = " + large_diff);
+    println("  [OK] Large numbers work");
 
     printHeader("TEST 88: Negative Numbers");
     printSeparator();
@@ -1699,36 +1699,36 @@ func main() -> void
     var neg2 = -50;
     var neg_sum = neg1 + neg2;
     var neg_prod = neg1 * neg2;
-    print("  -100 + (-50) = " + neg_sum);
-    print("  -100 * (-50) = " + neg_prod);
-    print("  [OK] Negative numbers work");
+    println("  -100 + (-50) = " + neg_sum);
+    println("  -100 * (-50) = " + neg_prod);
+    println("  [OK] Negative numbers work");
 
     printHeader("TEST 89: Zero Handling");
     printSeparator();
     var zero_val = 0;
     var zero_sum = zero_val + 10;
     var zero_prod = zero_val * 10;
-    print("  0 + 10 = " + zero_sum);
-    print("  0 * 10 = " + zero_prod);
-    print("  [OK] Zero handling works");
+    println("  0 + 10 = " + zero_sum);
+    println("  0 * 10 = " + zero_prod);
+    println("  [OK] Zero handling works");
 
     printHeader("TEST 90: Boundary Values");
     printSeparator();
     var bound1:byte = 0;
     var bound2:byte = 255;
-    print("  Min byte: " + bound1);
-    print("  Max byte: " + bound2);
-    print("  [OK] Boundary values work");
+    println("  Min byte: " + bound1);
+    println("  Max byte: " + bound2);
+    println("  [OK] Boundary values work");
 
     // =================================================================
     // GROUP J: INTEGRATION TESTS (Tests 91-100)
     // =================================================================
 
-    print("");
-    print("#################################################################");
-    print("# GROUP J: INTEGRATION TESTS                                   #");
-    print("#################################################################");
-    print("");
+    println("");
+    println("#################################################################");
+    println("# GROUP J: INTEGRATION TESTS                                   #");
+    println("#################################################################");
+    println("");
 
     printHeader("TEST 91: Integration - All Data Types Together");
     printSeparator();
@@ -1737,32 +1737,32 @@ func main() -> void
     var byte_val:byte = 200;
     var bit_val:bit = 1;
     var string_val:string = "Integration";
-    print("  int: " + int_val);
-    print("  char: " + char_val);
-    print("  byte: " + byte_val);
-    print("  bit: " + bit_val);
-    print("  string: " + string_val);
-    print("  [OK] All data types together work");
+    println("  int: " + int_val);
+    println("  char: " + char_val);
+    println("  byte: " + byte_val);
+    println("  bit: " + bit_val);
+    println("  string: " + string_val);
+    println("  [OK] All data types together work");
 
     printHeader("TEST 92: Integration - All Operators");
     printSeparator();
     var op_a = 20;
     var op_b = 5;
-    print("  a = " + op_a + ", b = " + op_b);
-    print("  a + b = " + (op_a + op_b));
-    print("  a - b = " + (op_a - op_b));
-    print("  a * b = " + (op_a * op_b));
-    print("  a / b = " + (op_a / op_b));
-    print("  a % b = " + (op_a % op_b));
+    println("  a = " + op_a + ", b = " + op_b);
+    println("  a + b = " + (op_a + op_b));
+    println("  a - b = " + (op_a - op_b));
+    println("  a * b = " + (op_a * op_b));
+    println("  a / b = " + (op_a / op_b));
+    println("  a % b = " + (op_a % op_b));
     var cmp1:bit = op_a == op_b;
     var cmp2:bit = op_a != op_b;
     var cmp3:bit = op_a > op_b;
     var cmp4:bit = op_a < op_b;
-    print("  a == b: " + cmp1);
-    print("  a != b: " + cmp2);
-    print("  a > b: " + cmp3);
-    print("  a < b: " + cmp4);
-    print("  [OK] All operators work");
+    println("  a == b: " + cmp1);
+    println("  a != b: " + cmp2);
+    println("  a > b: " + cmp3);
+    println("  a < b: " + cmp4);
+    println("  [OK] All operators work");
 
     printHeader("TEST 93: Integration - Functions with All Types");
     printSeparator();
@@ -1771,27 +1771,27 @@ func main() -> void
     var func_byte:byte = getMaxByte();
     var func_bit:bit = isTrue();
     var func_string:string = getWelcome();
-    print("  Function returns:");
-    print("    int: " + func_int);
-    print("    char: " + func_char);
-    print("    byte: " + func_byte);
-    print("    bit: " + func_bit);
-    print("    string: " + func_string);
-    print("  [OK] Functions with all types work");
+    println("  Function returns:");
+    println("    int: " + func_int);
+    println("    char: " + func_char);
+    println("    byte: " + func_byte);
+    println("    bit: " + func_bit);
+    println("    string: " + func_string);
+    println("  [OK] Functions with all types work");
 
     printHeader("TEST 94: Integration - Control Structures Combined");
     printSeparator();
     for (var ctrl_i:int = 1; ctrl_i <= 5; ctrl_i++) {
-        print("  Iteration: " + ctrl_i);
+        println("  Iteration: " + ctrl_i);
         if (ctrl_i == 1) {
-            print("    First iteration");
+            println("    First iteration");
         } else if (ctrl_i == 5) {
-            print("    Last iteration");
+            println("    Last iteration");
         } else {
-            print("    Middle iteration");
+            println("    Middle iteration");
         }
     }
-    print("  [OK] Combined control structures work");
+    println("  [OK] Combined control structures work");
 
     printHeader("TEST 95: Integration - Algorithm Combination");
     printSeparator();
@@ -1800,198 +1800,198 @@ func main() -> void
     var algo_fib = fibonacci(algo_n);
     var algo_pow = power(2, algo_n);
     var algo_sum = sumTo(algo_n);
-    print("  n = " + algo_n);
-    print("  factorial(n) = " + algo_fact);
-    print("  fibonacci(n) = " + algo_fib);
-    print("  power(2, n) = " + algo_pow);
-    print("  sumTo(n) = " + algo_sum);
-    print("  [OK] Algorithm combination works");
+    println("  n = " + algo_n);
+    println("  factorial(n) = " + algo_fact);
+    println("  fibonacci(n) = " + algo_fib);
+    println("  power(2, n) = " + algo_pow);
+    println("  sumTo(n) = " + algo_sum);
+    println("  [OK] Algorithm combination works");
 
     printHeader("TEST 96: Integration - String Operations Complete");
     printSeparator();
     var str_test1:string = "Hello";
     var str_test2:string = "World";
     var str_test3:string = "Hello";
-    print("  String 1: " + str_test1);
-    print("  String 2: " + str_test2);
-    print("  String 3: " + str_test3);
+    println("  String 1: " + str_test1);
+    println("  String 2: " + str_test2);
+    println("  String 3: " + str_test3);
     if (str_test1 == str_test3) {
-        print("    String 1 == String 3: TRUE");
+        println("    String 1 == String 3: TRUE");
     }
     if (str_test1 != str_test2) {
-        print("    String 1 != String 2: TRUE");
+        println("    String 1 != String 2: TRUE");
     }
     greet(str_test1);
     farewell(str_test2);
     var returned_str:string = makeGreeting(str_test1);
-    print("  Returned: " + returned_str);
-    print("  [OK] String operations complete work");
+    println("  Returned: " + returned_str);
+    println("  [OK] String operations complete work");
 
     printHeader("TEST 97: Integration - else if with All Features");
     printSeparator();
     for (var elseif_test:int = 0; elseif_test <= 100; elseif_test += 20) {
         var category:string = classifyNumber(elseif_test);
-        print("  Value: " + elseif_test);
-        print("    Category: " + category);
+        println("  Value: " + elseif_test);
+        println("    Category: " + category);
         if (elseif_test < 10) {
-            print("    Range: Single digit");
+            println("    Range: Single digit");
         } else if (elseif_test < 50) {
-            print("    Range: Low");
+            println("    Range: Low");
         } else if (elseif_test < 100) {
-            print("    Range: Medium");
+            println("    Range: Medium");
         } else {
-            print("    Range: High");
+            println("    Range: High");
         }
     }
-    print("  [OK] else if integration works");
+    println("  [OK] else if integration works");
 
     printHeader("TEST 98: Integration - Nested Complexity");
     printSeparator();
     var complex_test = 0;
     for (var i_outer:int = 1; i_outer <= 3; i_outer++) {
-        print("  Outer Loop: " + i_outer);
+        println("  Outer Loop: " + i_outer);
         for (var i_inner:int = 1; i_inner <= 3; i_inner++) {
             var product_val = i_outer * i_inner;
-            print("    Inner: " + i_inner + ", Product: " + product_val);
+            println("    Inner: " + i_inner + ", Product: " + product_val);
             if (product_val > 5) {
-                print("      Product > 5");
+                println("      Product > 5");
                 var temp1:int = complex_test + 1;
                 complex_test = temp1;
             } else if (product_val > 3) {
-                print("      Product > 3");
+                println("      Product > 3");
                 var temp2:int = complex_test + 2;
                 complex_test = temp2;
             } else {
-                print("      Product <= 3");
+                println("      Product <= 3");
                 var temp3:int = complex_test + 3;
                 complex_test = temp3;
             }
         }
     }
-    print("  Complex Test Sum: " + complex_test);
-    print("  [OK] Nested complexity works");
+    println("  Complex Test Sum: " + complex_test);
+    println("  [OK] Nested complexity works");
 
     printHeader("TEST 99: Integration - Real-World Scenario");
     printSeparator();
-    print("  User Authentication Simulation:");
+    println("  User Authentication Simulation:");
     var username:string = "admin";
     var password:string = "secret";
     var login_attempts = 0;
     var max_attempts = 3;
     var is_authenticated:bit = 0;
     for (var attempt:int = 1; attempt <= max_attempts; attempt++) {
-        print("    Attempt " + attempt + " of " + max_attempts);
+        println("    Attempt " + attempt + " of " + max_attempts);
         var temp_attempts:int = login_attempts + 1;
         login_attempts = temp_attempts;
         if (username == "admin" && password == "secret") {
-            print("      Login successful!");
+            println("      Login successful!");
             is_authenticated = 1;
             var user_points = 1500;
-            print("      Points: " + user_points);
+            println("      Points: " + user_points);
             if (user_points >= 2000) {
-                print("      Access: PLATINUM");
+                println("      Access: PLATINUM");
             } else if (user_points >= 1000) {
-                print("      Access: GOLD");
+                println("      Access: GOLD");
             } else if (user_points >= 500) {
-                print("      Access: SILVER");
+                println("      Access: SILVER");
             } else {
-                print("      Access: BRONZE");
+                println("      Access: BRONZE");
             }
             var exit_loop:int = max_attempts + 1;
             attempt = exit_loop;
         } else {
-            print("      Login failed");
+            println("      Login failed");
         }
     }
     if (is_authenticated == 0) {
-        print("    Max attempts reached - Locked!");
+        println("    Max attempts reached - Locked!");
     }
-    print("  Authentication completed");
-    print("  [OK] Real-world scenario works");
+    println("  Authentication completed");
+    println("  [OK] Real-world scenario works");
 
     printHeader("TEST 100: Integration - Final Validation");
     printSeparator();
-    print("  Performing comprehensive system checks:");
-    print("    [1/10] Data types...");
+    println("  Performing comprehensive system checks:");
+    println("    [1/10] Data types...");
     var final_int:int = 100;
     var final_char:char = 'Z';
     var final_byte:byte = 255;
     var final_bit:bit = 1;
     var final_string:string = "FINAL";
-    print("      OK - All 7 data types available");
-    print("    [2/10] Operators...");
+    println("      OK - All 7 data types available");
+    println("    [2/10] Operators...");
     var final_sum = final_int + 50;
     var final_diff = final_int - 25;
     var final_prod = final_int * 2;
     var final_quot = final_int / 4;
     var final_mod = final_int % 7;
-    print("      OK - All operators work");
-    print("    [3/10] Comparisons...");
+    println("      OK - All operators work");
+    println("    [3/10] Comparisons...");
     var final_cmp1:bit = final_int > 50;
     var final_cmp2:bit = final_int == 100;
     var final_cmp3:bit = final_int != 99;
-    print("      OK - Comparison operators work");
-    print("    [4/10] Logic...");
+    println("      OK - Comparison operators work");
+    println("    [4/10] Logic...");
     var final_and:bit = final_cmp1 == 1 && final_cmp2 == 1;
     var final_or:bit = final_cmp1 == 1 || final_cmp3 == 1;
     var final_not:bit = !(final_int == 99);
-    print("      OK - Logical operators work");
-    print("    [5/10] Loops...");
+    println("      OK - Logical operators work");
+    println("    [5/10] Loops...");
     var final_loop_sum = 0;
     for (var final_i:int = 1; final_i <= 10; final_i++) {
         var temp_final:int = final_loop_sum + final_i;
         final_loop_sum = temp_final;
     }
-    print("      OK - Loops work (sum=" + final_loop_sum + ")");
-    print("    [6/10] Functions...");
+    println("      OK - Loops work (sum=" + final_loop_sum + ")");
+    println("    [6/10] Functions...");
     var final_func_result1 = add(50, 50);
     var final_func_result2 = multiply(10, 10);
     var final_func_string:string = getWelcome();
-    print("      OK - Functions work");
-    print("    [7/10] if/else...");
+    println("      OK - Functions work");
+    println("    [7/10] if/else...");
     if (final_int == 100) {
-        print("      OK - if works");
+        println("      OK - if works");
     } else {
-        print("      ERROR - if does not work!");
+        println("      ERROR - if does not work!");
     }
-    print("    [8/10] else if...");
+    println("    [8/10] else if...");
     if (final_int == 50) {
-        print("      ERROR");
+        println("      ERROR");
     } else if (final_int == 100) {
-        print("      OK - else if works");
+        println("      OK - else if works");
     } else {
-        print("      ERROR");
+        println("      ERROR");
     }
-    print("    [9/10] Strings...");
+    println("    [9/10] Strings...");
     var final_str1:string = "Test";
     var final_str2:string = "Test";
     if (final_str1 == final_str2) {
-        print("      OK - String comparison works");
+        println("      OK - String comparison works");
     }
     greet("System");
-    print("      OK - String functions work");
-    print("    [10/10] Algorithms...");
+    println("      OK - String functions work");
+    println("    [10/10] Algorithms...");
     var final_fib = fibonacci(10);
     var final_fact = factorial(5);
     var final_gcd = gcd(48, 18);
-    print("      OK - Algorithms work");
-    print("        fib(10)=" + final_fib);
-    print("        fact(5)=" + final_fact);
-    print("        gcd(48,18)=" + final_gcd);
-    print("");
-    print("  [+] All system checks passed!");
-    print("  [+] Compiler is fully functional!");
-    print("  [OK] Final validation successful");
+    println("      OK - Algorithms work");
+    println("        fib(10)=" + final_fib);
+    println("        fact(5)=" + final_fact);
+    println("        gcd(48,18)=" + final_gcd);
+    println("");
+    println("  [+] All system checks passed!");
+    println("  [+] Compiler is fully functional!");
+    println("  [OK] Final validation successful");
 
     // =================================================================
     // GROUP K: ARRAY TESTS (Tests 101-110) - NEW IN 4.5.0
     // =================================================================
 
-    print("");
-    print("#################################################################");
-    print("# GROUP K: ARRAY SUPPORT - VERSION 4.5.0                       #");
-    print("#################################################################");
-    print("");
+    println("");
+    println("#################################################################");
+    println("# GROUP K: ARRAY SUPPORT - VERSION 4.5.0                       #");
+    println("#################################################################");
+    println("");
 
     printHeader("TEST 101: Basic Array Declaration and Access");
     printSeparator();
@@ -2004,22 +2004,22 @@ func main() -> void
     var arr_val1:int = test_arr1[0];
     var arr_val2:int = test_arr1[2];
     var arr_val3:int = test_arr1[4];
-    print("  test_arr1[0] = " + arr_val1);
-    print("  test_arr1[2] = " + arr_val2);
-    print("  test_arr1[4] = " + arr_val3);
-    print("  [OK] Basic array declaration and access works");
+    println("  test_arr1[0] = " + arr_val1);
+    println("  test_arr1[2] = " + arr_val2);
+    println("  test_arr1[4] = " + arr_val3);
+    println("  [OK] Basic array declaration and access works");
 
     printHeader("TEST 102: Arrays in Loops");
     printSeparator();
     var[10] test_arr2:int;
-    print("  Filling array with loop:");
+    println("  Filling array with loop:");
     for (var arr_i:int = 0; arr_i < 10; arr_i++) {
         test_arr2[arr_i] = arr_i * 3;
     }
-    print("  test_arr2[0] = " + test_arr2[0]);
-    print("  test_arr2[5] = " + test_arr2[5]);
-    print("  test_arr2[9] = " + test_arr2[9]);
-    print("  [OK] Arrays in loops work");
+    println("  test_arr2[0] = " + test_arr2[0]);
+    println("  test_arr2[5] = " + test_arr2[5]);
+    println("  test_arr2[9] = " + test_arr2[9]);
+    println("  [OK] Arrays in loops work");
 
     printHeader("TEST 103: Byte Arrays");
     printSeparator();
@@ -2029,10 +2029,10 @@ func main() -> void
     test_bytes[2] = 150;
     test_bytes[3] = 200;
     test_bytes[4] = 255;
-    print("  test_bytes[0] = " + test_bytes[0]);
-    print("  test_bytes[2] = " + test_bytes[2]);
-    print("  test_bytes[4] = " + test_bytes[4]);
-    print("  [OK] Byte arrays work");
+    println("  test_bytes[0] = " + test_bytes[0]);
+    println("  test_bytes[2] = " + test_bytes[2]);
+    println("  test_bytes[4] = " + test_bytes[4]);
+    println("  [OK] Byte arrays work");
 
     printHeader("TEST 104: Char Arrays");
     printSeparator();
@@ -2041,11 +2041,11 @@ func main() -> void
     test_chars[1] = 'e';
     test_chars[2] = 's';
     test_chars[3] = 't';
-    print("  test_chars[0] = " + test_chars[0]);
-    print("  test_chars[1] = " + test_chars[1]);
-    print("  test_chars[2] = " + test_chars[2]);
-    print("  test_chars[3] = " + test_chars[3]);
-    print("  [OK] Char arrays work");
+    println("  test_chars[0] = " + test_chars[0]);
+    println("  test_chars[1] = " + test_chars[1]);
+    println("  test_chars[2] = " + test_chars[2]);
+    println("  test_chars[3] = " + test_chars[3]);
+    println("  [OK] Char arrays work");
 
     printHeader("TEST 105: String Indexing (Variables)");
     printSeparator();
@@ -2053,21 +2053,21 @@ func main() -> void
     var str_ch0:char = test_string[0];
     var str_ch1:char = test_string[1];
     var str_ch2:char = test_string[2];
-    print("  test_string = 'Array'");
-    print("  test_string[0] = " + str_ch0);
-    print("  test_string[1] = " + str_ch1);
-    print("  test_string[2] = " + str_ch2);
-    print("  [OK] String variable indexing works");
+    println("  test_string = 'Array'");
+    println("  test_string[0] = " + str_ch0);
+    println("  test_string[1] = " + str_ch1);
+    println("  test_string[2] = " + str_ch2);
+    println("  [OK] String variable indexing works");
 
     printHeader("TEST 106: String Literal Indexing");
     printSeparator();
     var lit_ch0:char = "Test"[0];
     var lit_ch1:char = "Test"[1];
     var lit_ch2:char = "Test"[2];
-    print("  'Test'[0] = " + lit_ch0);
-    print("  'Test'[1] = " + lit_ch1);
-    print("  'Test'[2] = " + lit_ch2);
-    print("  [OK] String literal indexing works");
+    println("  'Test'[0] = " + lit_ch0);
+    println("  'Test'[1] = " + lit_ch1);
+    println("  'Test'[2] = " + lit_ch2);
+    println("  [OK] String literal indexing works");
 
     printHeader("TEST 107: Array Computation");
     printSeparator();
@@ -2082,9 +2082,9 @@ func main() -> void
         var temp_sum:int = arr_sum + comp_arr[sum_i];
         arr_sum = temp_sum;
     }
-    print("  Array: [2, 4, 6, 8, 10]");
-    print("  Sum: " + arr_sum);
-    print("  [OK] Array computation works");
+    println("  Array: [2, 4, 6, 8, 10]");
+    println("  Sum: " + arr_sum);
+    println("  [OK] Array computation works");
 
     printHeader("TEST 108: Multiple Arrays");
     printSeparator();
@@ -2096,11 +2096,11 @@ func main() -> void
     multi_arr2[0] = 10;
     multi_arr2[1] = 20;
     multi_arr2[2] = 30;
-    print("  multi_arr1[0] = " + multi_arr1[0]);
-    print("  multi_arr2[0] = " + multi_arr2[0]);
-    print("  multi_arr1[2] = " + multi_arr1[2]);
-    print("  multi_arr2[2] = " + multi_arr2[2]);
-    print("  [OK] Multiple arrays work");
+    println("  multi_arr1[0] = " + multi_arr1[0]);
+    println("  multi_arr2[0] = " + multi_arr2[0]);
+    println("  multi_arr1[2] = " + multi_arr1[2]);
+    println("  multi_arr2[2] = " + multi_arr2[2]);
+    println("  [OK] Multiple arrays work");
 
     printHeader("TEST 109: Array Element Expressions");
     printSeparator();
@@ -2112,15 +2112,15 @@ func main() -> void
     var expr_prod:int = expr_arr[1] * 2;
     var expr_idx:int = 2;
     var expr_val:int = expr_arr[expr_idx];
-    print("  expr_arr[0] + expr_arr[1] = " + expr_sum);
-    print("  expr_arr[1] * 2 = " + expr_prod);
-    print("  expr_arr[2] via variable = " + expr_val);
-    print("  [OK] Array element expressions work");
+    println("  expr_arr[0] + expr_arr[1] = " + expr_sum);
+    println("  expr_arr[1] * 2 = " + expr_prod);
+    println("  expr_arr[2] via variable = " + expr_val);
+    println("  [OK] Array element expressions work");
 
     printHeader("TEST 110: Array Integration Test");
     printSeparator();
     var[8] final_arr:int;
-    print("  Initializing array with pattern:");
+    println("  Initializing array with pattern:");
     for (var fin_i:int = 0; fin_i < 8; fin_i++) {
         if (fin_i % 2 == 0) {
             final_arr[fin_i] = fin_i * 10;
@@ -2130,238 +2130,238 @@ func main() -> void
     }
     var final_arr_sum:int = 0;
     for (var fin_j:int = 0; fin_j < 8; fin_j++) {
-        print("    final_arr[" + fin_j + "] = " + final_arr[fin_j]);
+        println("    final_arr[" + fin_j + "] = " + final_arr[fin_j]);
         var temp_fin:int = final_arr_sum + final_arr[fin_j];
         final_arr_sum = temp_fin;
     }
-    print("  Total sum: " + final_arr_sum);
-    print("  [OK] Array integration test passed");
+    println("  Total sum: " + final_arr_sum);
+    println("  [OK] Array integration test passed");
 
-    print("");
-    print("#################################################################");
-    print("#                                                               #");
-    print("#     [+] ALL ARRAY TESTS PASSED (4.5.0)                       #");
-    print("#                                                               #");
-    print("#################################################################");
-    print("");
+    println("");
+    println("#################################################################");
+    println("#                                                               #");
+    println("#     [+] ALL ARRAY TESTS PASSED (4.5.0)                       #");
+    println("#                                                               #");
+    println("#################################################################");
+    println("");
 
     // =================================================================
     // GROUP L: ADDITIONAL ARITHMETIC TESTS (Tests 111-120)
     // =================================================================
 
-    print("");
-    print("#################################################################");
-    print("# GROUP L: ADDITIONAL ARITHMETIC AND MATH TESTS                #");
-    print("#################################################################");
-    print("");
+    println("");
+    println("#################################################################");
+    println("# GROUP L: ADDITIONAL ARITHMETIC AND MATH TESTS                #");
+    println("#################################################################");
+    println("");
 
     printHeader("TEST 111: Multiple Arithmetic Operations");
     printSeparator();
-    print("  add(multiply(10,5), divide(100,2)) = " + add(multiply(10, 5), divide(100, 2)));
-    print("  subtract(multiply(20,3), add(10,5)) = " + subtract(multiply(20, 3), add(10, 5)));
-    print("  multiply(add(5,3), subtract(10,2)) = " + multiply(add(5, 3), subtract(10, 2)));
-    print("  [OK] Multiple arithmetic operations work");
+    println("  add(multiply(10,5), divide(100,2)) = " + add(multiply(10, 5), divide(100, 2)));
+    println("  subtract(multiply(20,3), add(10,5)) = " + subtract(multiply(20, 3), add(10, 5)));
+    println("  multiply(add(5,3), subtract(10,2)) = " + multiply(add(5, 3), subtract(10, 2)));
+    println("  [OK] Multiple arithmetic operations work");
 
     printHeader("TEST 112: Square of Multiple Values");
     printSeparator();
     for (var test_i111:int = 1; test_i111 <= 20; test_i111++) {
-        print("  square(" + test_i111 + ") = " + square(test_i111));
+        println("  square(" + test_i111 + ") = " + square(test_i111));
     }
-    print("  [OK] Square function works for 1-20");
+    println("  [OK] Square function works for 1-20");
 
     printHeader("TEST 113: Absolute Value Edge Cases");
     printSeparator();
-    print("  abs(0) = " + abs(0));
-    print("  abs(1) = " + abs(1));
-    print("  abs(-1) = " + abs(-1));
-    print("  abs(1000) = " + abs(1000));
-    print("  abs(-1000) = " + abs(-1000));
-    print("  abs(2147483647) = " + abs(2147483647));
-    print("  [OK] Absolute value edge cases work");
+    println("  abs(0) = " + abs(0));
+    println("  abs(1) = " + abs(1));
+    println("  abs(-1) = " + abs(-1));
+    println("  abs(1000) = " + abs(1000));
+    println("  abs(-1000) = " + abs(-1000));
+    println("  abs(2147483647) = " + abs(2147483647));
+    println("  [OK] Absolute value edge cases work");
 
     printHeader("TEST 114: Division by Various Divisors");
     printSeparator();
     for (var test_i112:int = 1; test_i112 <= 10; test_i112++) {
-        print("  1000 / " + test_i112 + " = " + divide(1000, test_i112));
+        println("  1000 / " + test_i112 + " = " + divide(1000, test_i112));
     }
-    print("  [OK] Division by various divisors works");
+    println("  [OK] Division by various divisors works");
 
     printHeader("TEST 115: Modulo with Different Values");
     printSeparator();
     for (var test_i113:int = 0; test_i113 <= 20; test_i113++) {
-        print("  " + test_i113 + " % 5 = " + (test_i113 % 5) + ", " + test_i113 + " % 7 = " + (test_i113 % 7));
+        println("  " + test_i113 + " % 5 = " + (test_i113 % 5) + ", " + test_i113 + " % 7 = " + (test_i113 % 7));
     }
-    print("  [OK] Modulo with different values works");
+    println("  [OK] Modulo with different values works");
 
     printHeader("TEST 116: Max and Min with Multiple Values");
     printSeparator();
-    print("  max2(100, 200) = " + max2(100, 200));
-    print("  max2(-50, -100) = " + max2(-50, -100));
-    print("  max2(0, 0) = " + max2(0, 0));
-    print("  min2(100, 200) = " + min2(100, 200));
-    print("  min2(-50, -100) = " + min2(-50, -100));
-    print("  min2(0, 0) = " + min2(0, 0));
-    print("  [OK] Max and min with multiple values work");
+    println("  max2(100, 200) = " + max2(100, 200));
+    println("  max2(-50, -100) = " + max2(-50, -100));
+    println("  max2(0, 0) = " + max2(0, 0));
+    println("  min2(100, 200) = " + min2(100, 200));
+    println("  min2(-50, -100) = " + min2(-50, -100));
+    println("  min2(0, 0) = " + min2(0, 0));
+    println("  [OK] Max and min with multiple values work");
 
     printHeader("TEST 117: Sum Functions Comprehensive Test");
     printSeparator();
-    print("  sum3(10, 20, 30) = " + sum3(10, 20, 30));
-    print("  sum3(-5, 10, -3) = " + sum3(-5, 10, -3));
-    print("  sum3(0, 0, 0) = " + sum3(0, 0, 0));
-    print("  sum4(10, 20, 30, 40) = " + sum4(10, 20, 30, 40));
-    print("  sum4(-10, -20, -30, -40) = " + sum4(-10, -20, -30, -40));
-    print("  sum4(1, 2, 3, 4) = " + sum4(1, 2, 3, 4));
-    print("  [OK] Sum functions comprehensive test passed");
+    println("  sum3(10, 20, 30) = " + sum3(10, 20, 30));
+    println("  sum3(-5, 10, -3) = " + sum3(-5, 10, -3));
+    println("  sum3(0, 0, 0) = " + sum3(0, 0, 0));
+    println("  sum4(10, 20, 30, 40) = " + sum4(10, 20, 30, 40));
+    println("  sum4(-10, -20, -30, -40) = " + sum4(-10, -20, -30, -40));
+    println("  sum4(1, 2, 3, 4) = " + sum4(1, 2, 3, 4));
+    println("  [OK] Sum functions comprehensive test passed");
 
     printHeader("TEST 118: Average Functions with Different Inputs");
     printSeparator();
-    print("  average2(10, 20) = " + average2(10, 20));
-    print("  average2(0, 100) = " + average2(0, 100));
-    print("  average2(-10, 10) = " + average2(-10, 10));
-    print("  average3(10, 20, 30) = " + average3(10, 20, 30));
-    print("  average3(0, 0, 0) = " + average3(0, 0, 0));
-    print("  average3(100, 200, 300) = " + average3(100, 200, 300));
-    print("  [OK] Average functions with different inputs work");
+    println("  average2(10, 20) = " + average2(10, 20));
+    println("  average2(0, 100) = " + average2(0, 100));
+    println("  average2(-10, 10) = " + average2(-10, 10));
+    println("  average3(10, 20, 30) = " + average3(10, 20, 30));
+    println("  average3(0, 0, 0) = " + average3(0, 0, 0));
+    println("  average3(100, 200, 300) = " + average3(100, 200, 300));
+    println("  [OK] Average functions with different inputs work");
 
     printHeader("TEST 119: Nested Squares with Various Values");
     printSeparator();
-    print("  nestedSquares(1, 1) = " + nestedSquares(1, 1));
-    print("  nestedSquares(2, 3) = " + nestedSquares(2, 3));
-    print("  nestedSquares(5, 5) = " + nestedSquares(5, 5));
-    print("  nestedSquares(10, 10) = " + nestedSquares(10, 10));
-    print("  [OK] Nested squares with various values work");
+    println("  nestedSquares(1, 1) = " + nestedSquares(1, 1));
+    println("  nestedSquares(2, 3) = " + nestedSquares(2, 3));
+    println("  nestedSquares(5, 5) = " + nestedSquares(5, 5));
+    println("  nestedSquares(10, 10) = " + nestedSquares(10, 10));
+    println("  [OK] Nested squares with various values work");
 
     printHeader("TEST 120: AddAndMultiply with Different Combinations");
     printSeparator();
-    print("  addAndMultiply(2, 3, 4) = " + addAndMultiply(2, 3, 4));
-    print("  addAndMultiply(10, 10, 5) = " + addAndMultiply(10, 10, 5));
-    print("  addAndMultiply(0, 5, 10) = " + addAndMultiply(0, 5, 10));
-    print("  addAndMultiply(1, 1, 1) = " + addAndMultiply(1, 1, 1));
-    print("  [OK] AddAndMultiply with different combinations works");
+    println("  addAndMultiply(2, 3, 4) = " + addAndMultiply(2, 3, 4));
+    println("  addAndMultiply(10, 10, 5) = " + addAndMultiply(10, 10, 5));
+    println("  addAndMultiply(0, 5, 10) = " + addAndMultiply(0, 5, 10));
+    println("  addAndMultiply(1, 1, 1) = " + addAndMultiply(1, 1, 1));
+    println("  [OK] AddAndMultiply with different combinations works");
 
     // =================================================================
     // GROUP M: COMPREHENSIVE ALGORITHM TESTS (Tests 121-130)
     // =================================================================
 
-    print("");
-    print("#################################################################");
-    print("# GROUP M: COMPREHENSIVE ALGORITHM TESTS                       #");
-    print("#################################################################");
-    print("");
+    println("");
+    println("#################################################################");
+    println("# GROUP M: COMPREHENSIVE ALGORITHM TESTS                       #");
+    println("#################################################################");
+    println("");
 
     printHeader("TEST 121: Factorial for Larger Numbers");
     printSeparator();
     for (var test_i114:int = 11; test_i114 <= 12; test_i114++) {
-        print("  factorial(" + test_i114 + ") = " + factorial(test_i114));
+        println("  factorial(" + test_i114 + ") = " + factorial(test_i114));
     }
-    print("  [OK] Factorial for larger numbers works");
+    println("  [OK] Factorial for larger numbers works");
 
     printHeader("TEST 122: Fibonacci Extended Sequence");
     printSeparator();
     for (var test_i115:int = 16; test_i115 <= 20; test_i115++) {
-        print("  fibonacci(" + test_i115 + ") = " + fibonacci(test_i115));
+        println("  fibonacci(" + test_i115 + ") = " + fibonacci(test_i115));
     }
-    print("  [OK] Fibonacci extended sequence works");
+    println("  [OK] Fibonacci extended sequence works");
 
     printHeader("TEST 123: Power with Different Bases");
     printSeparator();
-    print("  power(3, 5) = " + power(3, 5));
-    print("  power(5, 3) = " + power(5, 3));
-    print("  power(10, 4) = " + power(10, 4));
-    print("  power(2, 15) = " + power(2, 15));
-    print("  [OK] Power with different bases works");
+    println("  power(3, 5) = " + power(3, 5));
+    println("  power(5, 3) = " + power(5, 3));
+    println("  power(10, 4) = " + power(10, 4));
+    println("  power(2, 15) = " + power(2, 15));
+    println("  [OK] Power with different bases works");
 
     printHeader("TEST 124: SumTo with Various Limits");
     printSeparator();
-    print("  sumTo(5) = " + sumTo(5));
-    print("  sumTo(25) = " + sumTo(25));
-    print("  sumTo(75) = " + sumTo(75));
-    print("  sumTo(150) = " + sumTo(150));
-    print("  [OK] SumTo with various limits works");
+    println("  sumTo(5) = " + sumTo(5));
+    println("  sumTo(25) = " + sumTo(25));
+    println("  sumTo(75) = " + sumTo(75));
+    println("  sumTo(150) = " + sumTo(150));
+    println("  [OK] SumTo with various limits works");
 
     printHeader("TEST 125: SumRange with Different Ranges");
     printSeparator();
-    print("  sumRange(20, 30) = " + sumRange(20, 30));
-    print("  sumRange(100, 110) = " + sumRange(100, 110));
-    print("  sumRange(1, 5) = " + sumRange(1, 5));
-    print("  sumRange(50, 55) = " + sumRange(50, 55));
-    print("  [OK] SumRange with different ranges works");
+    println("  sumRange(20, 30) = " + sumRange(20, 30));
+    println("  sumRange(100, 110) = " + sumRange(100, 110));
+    println("  sumRange(1, 5) = " + sumRange(1, 5));
+    println("  sumRange(50, 55) = " + sumRange(50, 55));
+    println("  [OK] SumRange with different ranges works");
 
     printHeader("TEST 126: SumOfSquares for Various N");
     printSeparator();
-    print("  sumOfSquares(3) = " + sumOfSquares(3));
-    print("  sumOfSquares(7) = " + sumOfSquares(7));
-    print("  sumOfSquares(12) = " + sumOfSquares(12));
-    print("  sumOfSquares(15) = " + sumOfSquares(15));
-    print("  [OK] SumOfSquares for various N works");
+    println("  sumOfSquares(3) = " + sumOfSquares(3));
+    println("  sumOfSquares(7) = " + sumOfSquares(7));
+    println("  sumOfSquares(12) = " + sumOfSquares(12));
+    println("  sumOfSquares(15) = " + sumOfSquares(15));
+    println("  [OK] SumOfSquares for various N works");
 
     printHeader("TEST 127: GCD with More Test Cases");
     printSeparator();
-    print("  gcd(24, 36) = " + gcd(24, 36));
-    print("  gcd(105, 45) = " + gcd(105, 45));
-    print("  gcd(54, 24) = " + gcd(54, 24));
-    print("  gcd(120, 75) = " + gcd(120, 75));
-    print("  gcd(13, 17) = " + gcd(13, 17));
-    print("  [OK] GCD with more test cases works");
+    println("  gcd(24, 36) = " + gcd(24, 36));
+    println("  gcd(105, 45) = " + gcd(105, 45));
+    println("  gcd(54, 24) = " + gcd(54, 24));
+    println("  gcd(120, 75) = " + gcd(120, 75));
+    println("  gcd(13, 17) = " + gcd(13, 17));
+    println("  [OK] GCD with more test cases works");
 
     printHeader("TEST 128: Prime Test for Larger Range");
     printSeparator();
     for (var test_i116:int = 21; test_i116 <= 40; test_i116++) {
         if (isPrime(test_i116) == 1) {
-            print("  " + test_i116 + " is prime");
+            println("  " + test_i116 + " is prime");
         }
     }
-    print("  [OK] Prime test for larger range works");
+    println("  [OK] Prime test for larger range works");
 
     printHeader("TEST 129: IsEven for Extended Range");
     printSeparator();
     for (var test_i117:int = 11; test_i117 <= 30; test_i117++) {
-        print("  " + test_i117 + " is even: " + isEven(test_i117));
+        println("  " + test_i117 + " is even: " + isEven(test_i117));
     }
-    print("  [OK] IsEven for extended range works");
+    println("  [OK] IsEven for extended range works");
 
     printHeader("TEST 130: Comparison Functions Comprehensive");
     printSeparator();
     for (var test_i118:int = -10; test_i118 <= 10; test_i118 += 5) {
-        print("  Value: " + test_i118);
-        print("    isPositive: " + isPositive(test_i118) + ", isNegative: " + isNegative(test_i118) + ", isZero: " + isZero(test_i118));
+        println("  Value: " + test_i118);
+        println("    isPositive: " + isPositive(test_i118) + ", isNegative: " + isNegative(test_i118) + ", isZero: " + isZero(test_i118));
     }
-    print("  [OK] Comparison functions comprehensive test passed");
+    println("  [OK] Comparison functions comprehensive test passed");
 
     // =================================================================
     // GROUP N: STRUCT WITH METHODS TESTS (Tests 131-145)
     // =================================================================
 
-    print("");
-    print("#################################################################");
-    print("# GROUP N: STRUCT WITH METHODS (OOP-LIKE FEATURES)            #");
-    print("#################################################################");
-    print("");
+    println("");
+    println("#################################################################");
+    println("# GROUP N: STRUCT WITH METHODS (OOP-LIKE FEATURES)            #");
+    println("#################################################################");
+    println("");
 
     printHeader("TEST 131: Point Struct - Basic Field Access");
     var p1:Point;
     p1.x = 10;
     p1.y = 20;
-    print("  Set x=10, y=20");
-    print("  x = " + p1.x + ", y = " + p1.y);
-    print("  [OK] Direct field access works");
+    println("  Set x=10, y=20");
+    println("  x = " + p1.x + ", y = " + p1.y);
+    println("  [OK] Direct field access works");
 
     printHeader("TEST 132: Point Struct - Getter Methods");
-    print("  getX() = " + p1.getX());
-    print("  getY() = " + p1.getY());
-    print("  [OK] Getter methods work");
+    println("  getX() = " + p1.getX());
+    println("  getY() = " + p1.getY());
+    println("  [OK] Getter methods work");
 
     printHeader("TEST 133: Point Struct - Move Method");
     p1.move(5, 3);
-    print("  After move(5, 3):");
-    print("  x = " + p1.getX() + ", y = " + p1.getY());
-    print("  [OK] Move method modifies fields correctly");
+    println("  After move(5, 3):");
+    println("  x = " + p1.getX() + ", y = " + p1.getY());
+    println("  [OK] Move method modifies fields correctly");
 
     printHeader("TEST 134: Point Struct - Reset Method");
     p1.reset();
-    print("  After reset():");
-    print("  x = " + p1.x + ", y = " + p1.y);
-    print("  [OK] Reset method works");
+    println("  After reset():");
+    println("  x = " + p1.x + ", y = " + p1.y);
+    println("  [OK] Reset method works");
 
     printHeader("TEST 135: Multiple Point Instances");
     var p2:Point;
@@ -2369,51 +2369,51 @@ func main() -> void
     p1.y = 10;
     p2.x = 100;
     p2.y = 200;
-    print("  p1: x=" + p1.x + ", y=" + p1.y);
-    print("  p2: x=" + p2.x + ", y=" + p2.y);
-    print("  [OK] Multiple instances are independent");
+    println("  p1: x=" + p1.x + ", y=" + p1.y);
+    println("  p2: x=" + p2.x + ", y=" + p2.y);
+    println("  [OK] Multiple instances are independent");
 
     printHeader("TEST 136: Rectangle Struct - Set Dimensions");
     var rect:Rectangle;
     rect.setDimensions(5, 10);
-    print("  setDimensions(5, 10)");
-    print("  width = " + rect.width + ", height = " + rect.height);
-    print("  [OK] setDimensions works");
+    println("  setDimensions(5, 10)");
+    println("  width = " + rect.width + ", height = " + rect.height);
+    println("  [OK] setDimensions works");
 
     printHeader("TEST 137: Rectangle Struct - Area Method");
     var rectArea:int = rect.area();
-    print("  area() = " + rectArea);
-    print("  Expected: 50");
-    print("  [OK] Area calculation correct");
+    println("  area() = " + rectArea);
+    println("  Expected: 50");
+    println("  [OK] Area calculation correct");
 
     printHeader("TEST 138: Rectangle Struct - Perimeter Method");
     var rectPerim:int = rect.perimeter();
-    print("  perimeter() = " + rectPerim);
-    print("  Expected: 30");
-    print("  [OK] Perimeter calculation correct");
+    println("  perimeter() = " + rectPerim);
+    println("  Expected: 30");
+    println("  [OK] Perimeter calculation correct");
 
     printHeader("TEST 139: Rectangle Struct - isSquare Method");
-    print("  Rectangle 5x10: isSquare() = " + rect.isSquare());
+    println("  Rectangle 5x10: isSquare() = " + rect.isSquare());
     rect.setDimensions(7, 7);
-    print("  Rectangle 7x7: isSquare() = " + rect.isSquare());
-    print("  [OK] isSquare method works correctly");
+    println("  Rectangle 7x7: isSquare() = " + rect.isSquare());
+    println("  [OK] isSquare method works correctly");
 
     printHeader("TEST 140: Counter Struct - Basic Operations");
     var counter:Counter;
     counter.reset();
-    print("  After reset: count = " + counter.getValue());
+    println("  After reset: count = " + counter.getValue());
     counter.increment();
     counter.increment();
     counter.increment();
-    print("  After 3 increments: count = " + counter.getValue());
+    println("  After 3 increments: count = " + counter.getValue());
     counter.decrement();
-    print("  After 1 decrement: count = " + counter.getValue());
-    print("  [OK] Counter increment/decrement works");
+    println("  After 1 decrement: count = " + counter.getValue());
+    println("  [OK] Counter increment/decrement works");
 
     printHeader("TEST 141: Counter Struct - setValue Method");
     counter.setValue(42);
-    print("  setValue(42): count = " + counter.getValue());
-    print("  [OK] setValue method works");
+    println("  setValue(42): count = " + counter.getValue());
+    println("  [OK] setValue method works");
 
     printHeader("TEST 142: Point Struct - Chained Operations");
     var p3:Point;
@@ -2421,9 +2421,9 @@ func main() -> void
     p3.y = 0;
     p3.move(10, 20);
     p3.move(5, 5);
-    print("  Start at (0,0), move(10,20), move(5,5)");
-    print("  Final position: (" + p3.getX() + ", " + p3.getY() + ")");
-    print("  [OK] Chained method calls work");
+    println("  Start at (0,0), move(10,20), move(5,5)");
+    println("  Final position: (" + p3.getX() + ", " + p3.getY() + ")");
+    println("  [OK] Chained method calls work");
 
     printHeader("TEST 143: Struct Methods in Expressions");
     var r1:Rectangle;
@@ -2431,9 +2431,9 @@ func main() -> void
     var r2:Rectangle;
     r2.setDimensions(5, 6);
     var totalArea:int = r1.area() + r2.area();
-    print("  r1 area: " + r1.area() + ", r2 area: " + r2.area());
-    print("  Total area: " + totalArea);
-    print("  [OK] Method calls in expressions work");
+    println("  r1 area: " + r1.area() + ", r2 area: " + r2.area());
+    println("  Total area: " + totalArea);
+    println("  [OK] Method calls in expressions work");
 
     printHeader("TEST 144: Struct Field Modifications");
     var p4:Point;
@@ -2442,9 +2442,9 @@ func main() -> void
     var oldX:int = p4.getX();
     p4.x = p4.x + 50;
     var newX:int = p4.getX();
-    print("  Original x: " + oldX);
-    print("  After x = x + 50: " + newX);
-    print("  [OK] Field modifications work");
+    println("  Original x: " + oldX);
+    println("  After x = x + 50: " + newX);
+    println("  [OK] Field modifications work");
 
     printHeader("TEST 145: Complex Struct Usage");
     var c1:Counter;
@@ -2456,13 +2456,13 @@ func main() -> void
         c2.increment();
         c2.increment();
     }
-    print("  c1 (incremented 5 times): " + c1.getValue());
-    print("  c2 (incremented 10 times): " + c2.getValue());
-    print("  [OK] Structs in loops work correctly");
+    println("  c1 (incremented 5 times): " + c1.getValue());
+    println("  c2 (incremented 10 times): " + c2.getValue());
+    println("  [OK] Structs in loops work correctly");
 
-    print("");
-    print("[SUCCESS] All struct tests (131-145) passed!");
-    print("");
+    println("");
+    println("[SUCCESS] All struct tests (131-145) passed!");
+    println("");
 
     // NOTE: Tests 131-145 added for struct support
     // The comprehensive testing now includes OOP-like struct features
@@ -2471,203 +2471,203 @@ func main() -> void
     // FINAL SUMMARY
     // =================================================================
 
-    print("");
-    print("#################################################################");
-    print("#                                                               #");
-    print("#                   TEST SUITE COMPLETED                        #");
-    print("#                                                               #");
-    print("#################################################################");
-    print("");
+    println("");
+    println("#################################################################");
+    println("#                                                               #");
+    println("#                   TEST SUITE COMPLETED                        #");
+    println("#                                                               #");
+    println("#################################################################");
+    println("");
     printSeparator();
-    print("SUMMARY OF TEST SUITE");
+    println("SUMMARY OF TEST SUITE");
     printSeparator();
-    print("");
-    print("Number of Tests: 145");
-    print("Status: ALL TESTS PASSED");
-    print("");
-    print("Tested Features:");
-    print("  - 7 Data Types (int, char, byte, bit, float, double, string)");
-    print("  - Type Inference and Explicit Types");
-    print("  - All Arithmetic Operators (+, -, *, /, %)");
-    print("  - All Comparison Operators (<, <=, >, >=, ==, !=)");
-    print("  - Logical Operators (&&, ||, !)");
-    print("  - Compound Assignment (+=, -=, *=, /=)");
-    print("  - Increment/Decrement (++, --)");
-    print("  - if/else/else if Statements");
-    print("  - for Loops with Various Variants");
-    print("  - Functions with 0-10 Parameters");
-    print("  - Functions with All Return Types");
-    print("  - String Variables and String Literals");
-    print("  - String Comparison and String Operations");
-    print("  - String Parameters and String Return");
-    print("  - Nested Control Structures");
-    print("  - Recursive Algorithms (Factorial, Fibonacci)");
-    print("  - Mathematical Algorithms (GCD, Prime Numbers)");
-    print("  - Complex Nesting");
-    print("  - Edge Cases and Boundary Values");
-    print("  - Integration Tests");
-    print("  - Array Declaration and Access (4.5.0)");
-    print("  - Array Indexing with Expressions (4.5.0)");
-    print("  - String Indexing for Variables and Literals (4.5.0)");
-    print("  - Arrays in Loops (4.5.0)");
-    print("  - Structs with Methods (OOP-like Features)");
-    print("  - Struct Field Access and Modification");
-    print("  - Method Calls with Dot Notation");
-    print("  - Multiple Struct Instances");
-    print("");
+    println("");
+    println("Number of Tests: 145");
+    println("Status: ALL TESTS PASSED");
+    println("");
+    println("Tested Features:");
+    println("  - 7 Data Types (int, char, byte, bit, float, double, string)");
+    println("  - Type Inference and Explicit Types");
+    println("  - All Arithmetic Operators (+, -, *, /, %)");
+    println("  - All Comparison Operators (<, <=, >, >=, ==, !=)");
+    println("  - Logical Operators (&&, ||, !)");
+    println("  - Compound Assignment (+=, -=, *=, /=)");
+    println("  - Increment/Decrement (++, --)");
+    println("  - if/else/else if Statements");
+    println("  - for Loops with Various Variants");
+    println("  - Functions with 0-10 Parameters");
+    println("  - Functions with All Return Types");
+    println("  - String Variables and String Literals");
+    println("  - String Comparison and String Operations");
+    println("  - String Parameters and String Return");
+    println("  - Nested Control Structures");
+    println("  - Recursive Algorithms (Factorial, Fibonacci)");
+    println("  - Mathematical Algorithms (GCD, Prime Numbers)");
+    println("  - Complex Nesting");
+    println("  - Edge Cases and Boundary Values");
+    println("  - Integration Tests");
+    println("  - Array Declaration and Access (4.5.0)");
+    println("  - Array Indexing with Expressions (4.5.0)");
+    println("  - String Indexing for Variables and Literals (4.5.0)");
+    println("  - Arrays in Loops (4.5.0)");
+    println("  - Structs with Methods (OOP-like Features)");
+    println("  - Struct Field Access and Modification");
+    println("  - Method Calls with Dot Notation");
+    println("  - Multiple Struct Instances");
+    println("");
     printSeparator();
-    print("VERSION INFORMATION");
+    println("VERSION INFORMATION");
     printSeparator();
-    print("");
-    print("Compiler Version: 5.1.0");
-    print("Test Suite Version: 5.1.0 Struct Edition");
-    print("Author: Philipp01105");
-    print("Date: 2025-11-03 12:09:00 UTC");
-    print("Lines of Code: ~7000");
-    print("Functions: 70+");
-    print("Structs: 3");
-    print("Tests: 145");
-    print("");
+    println("");
+    println("Compiler Version: 5.1.0");
+    println("Test Suite Version: 5.1.0 Struct Edition");
+    println("Author: Philipp01105");
+    println("Date: 2025-11-03 12:09:00 UTC");
+    println("Lines of Code: ~7000");
+    println("Functions: 70+");
+    println("Structs: 3");
+    println("Tests: 145");
+    println("");
     printSeparator();
-    print("NEW IN VERSION 5.1.0 - STRUCT EDITION");
+    println("NEW IN VERSION 5.1.0 - STRUCT EDITION");
     printSeparator();
-    print("");
-    print("  [+] Struct Support with Methods");
-    print("      - Object-oriented programming features");
-    print("      - Dot notation for field access and methods");
-    print("      - Implicit 'this' pointer in methods");
-    print("      - 3 struct types: Point, Rectangle, Counter");
-    print("      - 15 methods across all structs");
-    print("  [+] 15 New Struct Tests (Tests 131-145)");
-    print("      - Basic field access and modification");
-    print("      - Method calls with parameters");
-    print("      - Multiple instances independence");
-    print("      - Structs in expressions and loops");
+    println("");
+    println("  [+] Struct Support with Methods");
+    println("      - Object-oriented programming features");
+    println("      - Dot notation for field access and methods");
+    println("      - Implicit 'this' pointer in methods");
+    println("      - 3 struct types: Point, Rectangle, Counter");
+    println("      - 15 methods across all structs");
+    println("  [+] 15 New Struct Tests (Tests 131-145)");
+    println("      - Basic field access and modification");
+    println("      - Method calls with parameters");
+    println("      - Multiple instances independence");
+    println("      - Structs in expressions and loops");
     printSeparator();
-    print("FROM VERSION 5.0.0 - COMPREHENSIVE EDITION");
+    println("FROM VERSION 5.0.0 - COMPREHENSIVE EDITION");
     printSeparator();
-    print("");
-    print("  [+] 20 Comprehensive Tests (Tests 111-130)");
-    print("      - Additional arithmetic and math tests");
-    print("      - Comprehensive algorithm tests");
-    print("      - Extended testing of existing functions");
-    print("      - Edge cases and boundary values");
-    print("  [+] Every Function Tested Multiple Times");
-    print("      - Multiple test cases per function");
-    print("      - Various input combinations");
-    print("      - Stress testing with large values");
-    print("  [+] Enhanced Test Coverage");
-    print("      - All 53 functions tested comprehensively");
-    print("      - 130 total tests (up from 110)");
-    print("      - More comprehensive, less repetitive");
-    print("");
+    println("");
+    println("  [+] 20 Comprehensive Tests (Tests 111-130)");
+    println("      - Additional arithmetic and math tests");
+    println("      - Comprehensive algorithm tests");
+    println("      - Extended testing of existing functions");
+    println("      - Edge cases and boundary values");
+    println("  [+] Every Function Tested Multiple Times");
+    println("      - Multiple test cases per function");
+    println("      - Various input combinations");
+    println("      - Stress testing with large values");
+    println("  [+] Enhanced Test Coverage");
+    println("      - All 53 functions tested comprehensively");
+    println("      - 130 total tests (up from 110)");
+    println("      - More comprehensive, less repetitive");
+    println("");
     printSeparator();
-    print("FEATURES FROM 4.5.0");
+    println("FEATURES FROM 4.5.0");
     printSeparator();
-    print("");
-    print("  [+] Array Support");
-    print("      - Array declaration with size: var[5] nums:int");
-    print("      - Array element access: nums[0]");
-    print("      - Array element assignment: nums[0] = 42");
-    print("      - Arrays in loops and expressions");
-    print("      - Support for int, byte, char, bit arrays");
-    print("      - String indexing: str[0], 'hello'[0]");
-    print("      - Array parameters: func(arr[]:int, size:int)");
-    print("      - Efficient assembly with scaled indexing");
-    print("");
+    println("");
+    println("  [+] Array Support");
+    println("      - Array declaration with size: var[5] nums:int");
+    println("      - Array element access: nums[0]");
+    println("      - Array element assignment: nums[0] = 42");
+    println("      - Arrays in loops and expressions");
+    println("      - Support for int, byte, char, bit arrays");
+    println("      - String indexing: str[0], 'hello'[0]");
+    println("      - Array parameters: func(arr[]:int, size:int)");
+    println("      - Efficient assembly with scaled indexing");
+    println("");
     printSeparator();
-    print("FEATURES FROM 4.0.1");
+    println("FEATURES FROM 4.0.1");
     printSeparator();
-    print("");
-    print("  [+] else if Support");
-    print("      - Multiple conditions without nesting");
-    print("      - Arbitrarily long else if chains");
-    print("      - Combinable with && and ||");
-    print("");
+    println("");
+    println("  [+] else if Support");
+    println("      - Multiple conditions without nesting");
+    println("      - Arbitrarily long else if chains");
+    println("      - Combinable with && and ||");
+    println("");
     printSeparator();
-    print("FEATURES FROM 4.0.0");
+    println("FEATURES FROM 4.0.0");
     printSeparator();
-    print("");
-    print("  [+] String as full data type");
-    print("      - String variables");
-    print("      - String literals");
-    print("      - String assignment");
-    print("      - String comparison (==, !=)");
-    print("      - String parameters");
-    print("      - String return values");
-    print("      - Strings in if/else");
-    print("      - Strings in for loops");
-    print("");
+    println("");
+    println("  [+] String as full data type");
+    println("      - String variables");
+    println("      - String literals");
+    println("      - String assignment");
+    println("      - String comparison (==, !=)");
+    println("      - String parameters");
+    println("      - String return values");
+    println("      - Strings in if/else");
+    println("      - Strings in for loops");
+    println("");
     printSeparator();
-    print("FEATURES FROM 3.0.1");
+    println("FEATURES FROM 3.0.1");
     printSeparator();
-    print("");
-    print("  [+] 6 Primitive Data Types");
-    print("      - int, char, byte, bit, float, double");
-    print("  [+] Type Inference (var x = 5;)");
-    print("  [+] Explicit Types (var x:int = 5;)");
-    print("  [+] Uninitialized Variables (var x:int;)");
-    print("  [+] Character Literals ('A', '\\n', '\\t')");
-    print("  [+] Float Literals (3.14, 1.5e10)");
-    print("  [+] Modulo Operator (%)");
-    print("  [+] Backwards Compatibility to v2.x");
-    print("");
+    println("");
+    println("  [+] 6 Primitive Data Types");
+    println("      - int, char, byte, bit, float, double");
+    println("  [+] Type Inference (var x = 5;)");
+    println("  [+] Explicit Types (var x:int = 5;)");
+    println("  [+] Uninitialized Variables (var x:int;)");
+    println("  [+] Character Literals ('A', '\\n', '\\t')");
+    println("  [+] Float Literals (3.14, 1.5e10)");
+    println("  [+] Modulo Operator (%)");
+    println("  [+] Backwards Compatibility to v2.x");
+    println("");
     printSeparator();
-    print("STATISTICS");
+    println("STATISTICS");
     printSeparator();
-    print("");
-    print("  Functions defined: 70+");
-    print("  Structs defined: 3");
-    print("  Struct methods: 15");
-    print("  Tests executed: 145");
-    print("  Tests passed: 145");
-    print("  Success rate: 100%");
-    print("  Lines of code: ~7000");
-    print("  Comments: ~600");
-    print("  Test categories: 14");
-    print("");
+    println("");
+    println("  Functions defined: 70+");
+    println("  Structs defined: 3");
+    println("  Struct methods: 15");
+    println("  Tests executed: 145");
+    println("  Tests passed: 145");
+    println("  Success rate: 100%");
+    println("  Lines of code: ~7000");
+    println("  Comments: ~600");
+    println("  Test categories: 14");
+    println("");
     printSeparator();
-    print("QUALITY ASSURANCE");
+    println("QUALITY ASSURANCE");
     printSeparator();
-    print("");
-    print("  [+] All basic functions tested");
-    print("  [+] All data types tested");
-    print("  [+] All operators tested");
-    print("  [+] All control structures tested");
-    print("  [+] Edge cases tested");
-    print("  [+] Stress tests passed");
-    print("  [+] Integration tests passed");
-    print("  [+] Real-world scenarios tested");
-    print("");
+    println("");
+    println("  [+] All basic functions tested");
+    println("  [+] All data types tested");
+    println("  [+] All operators tested");
+    println("  [+] All control structures tested");
+    println("  [+] Edge cases tested");
+    println("  [+] Stress tests passed");
+    println("  [+] Integration tests passed");
+    println("  [+] Real-world scenarios tested");
+    println("");
     printSeparator();
-    print("BUG FIXES IN THIS VERSION");
+    println("BUG FIXES IN THIS VERSION");
     printSeparator();
-    print("");
-    print("  [+] Factorial function fixed");
-    print("      - Now uses temp variables for multiplication");
-    print("  [+] Fibonacci function fixed");
-    print("      - Properly calculates sequence");
-    print("  [+] Power function fixed");
-    print("      - Handles large exponents correctly");
-    print("  [+] Sum functions fixed");
-    print("      - Use temp variables for accumulation");
-    print("  [+] GCD function fixed");
-    print("      - Early exit when b == 0");
-    print("      - Increased iteration limit to 1000");
-    print("  [+] All UTF-8 characters replaced with ASCII");
-    print("      - Works on all terminals (Windows/Unix)");
-    print("");
+    println("");
+    println("  [+] Factorial function fixed");
+    println("      - Now uses temp variables for multiplication");
+    println("  [+] Fibonacci function fixed");
+    println("      - Properly calculates sequence");
+    println("  [+] Power function fixed");
+    println("      - Handles large exponents correctly");
+    println("  [+] Sum functions fixed");
+    println("      - Use temp variables for accumulation");
+    println("  [+] GCD function fixed");
+    println("      - Early exit when b == 0");
+    println("      - Increased iteration limit to 1000");
+    println("  [+] All UTF-8 characters replaced with ASCII");
+    println("      - Works on all terminals (Windows/Unix)");
+    println("");
     printSeparator();
-    print("");
-    print("#################################################################");
-    print("#                                                               #");
-    print("#     [+] COMPILER VERSION 5.1.0 COMPREHENSIVELY TESTED        #");
-    print("#     [+] ALL 145 TESTS SUCCESSFULLY PASSED                    #");
-    print("#     [+] ALL FUNCTIONS TESTED EXTENSIVELY                     #");
-    print("#     [+] ARRAY SUPPORT WORKING                                #");
-    print("#     [+] STRUCT WITH METHODS WORKING                          #");
-    print("#     [+] PRODUCTION READY                                     #");
-    print("#                                                               #");
-    print("#################################################################");
-    print("");
+    println("");
+    println("#################################################################");
+    println("#                                                               #");
+    println("#     [+] COMPILER VERSION 5.1.0 COMPREHENSIVELY TESTED        #");
+    println("#     [+] ALL 145 TESTS SUCCESSFULLY PASSED                    #");
+    println("#     [+] ALL FUNCTIONS TESTED EXTENSIVELY                     #");
+    println("#     [+] ARRAY SUPPORT WORKING                                #");
+    println("#     [+] STRUCT WITH METHODS WORKING                          #");
+    println("#     [+] PRODUCTION READY                                     #");
+    println("#                                                               #");
+    println("#################################################################");
+    println("");
 }

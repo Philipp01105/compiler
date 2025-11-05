@@ -188,6 +188,8 @@ int main(int argc, char *argv[]) {
     fprintf(output, "    .ascii \"%%c\\0\"\n");
     fprintf(output, ".LC_string_format:\n");
     fprintf(output, "    .ascii \"%%s\\0\"\n");
+    fprintf(output, ".LC_newline:\n");
+    fprintf(output, "    .ascii \"\\n\\0\"\n");
     fprintf(output, "\n");
 
     if (parser->string_literal_count > 0) {

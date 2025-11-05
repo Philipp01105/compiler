@@ -22,6 +22,7 @@ test_*
 # OS files
 .DS_Store
 *.swp
+*.backup
 *_game
 stdlib_demo
 calc_game
