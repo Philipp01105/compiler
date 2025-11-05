@@ -1,0 +1,27 @@
+// Debug test for array in struct
+struct Board {
+    int cells[9];
+    
+    func setCell(index:int, value:int) -> void {
+        cells[index] = value;
+    }
+    
+    func getCell(index:int) -> int {
+        return cells[index];
+    }
+}
+
+func main() -> void {
+    var board:Board;
+    
+    print("About to call setCell\n");
+    board.setCell(0, 1);
+    
+    print("About to call getCell\n");
+    var result:int;
+    result = board.getCell(0);
+    
+    print("Result: ");
+    print(result);
+    print("\n");
+}

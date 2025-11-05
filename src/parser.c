@@ -1501,6 +1501,10 @@ void parse_variable_declaration(Parser *parser) {
     if (is_array) {
         code_comment(parser, "Array allocated at offset %d, total size %d bytes", 
                      var->offset, var->size);
+    } else if (struct_type_name[0] != '\0') {
+        // Struct variable - space already allocated by pushes, no need to pop/move
+        code_comment(parser, "Struct variable allocated at offset %d, total size %d bytes", 
+                     var->offset, var->size);
     } else if (var_type == TYPE_FLOAT) {
         code_printf(parser, "    movss (%%rsp), %%xmm0\n");
         code_printf(parser, "    addq $8, %%rsp\n");
