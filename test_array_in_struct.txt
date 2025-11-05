@@ -1,0 +1,19 @@
+// Test Issue 3: Arrays as struct fields
+struct Board {
+    int cells[9];  // Should support array as field
+    
+    func getCell(index:int) -> int {
+        return cells[index];
+    }
+    
+    func setCell(index:int, value:int) -> void {
+        cells[index] = value;
+    }
+}
+
+func main() -> void {
+    var board:Board;
+    board.setCell(0, 1);
+    printline("Cell 0:");
+    printline(board.getCell(0));
+}
