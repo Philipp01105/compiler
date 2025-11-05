@@ -160,6 +160,8 @@ typedef struct {
     DataType type;            // Field type
     int offset;               // Offset within struct
     int size;                 // Size in bytes
+    int is_array;             // 1 if this is an array field
+    int array_size;           // Number of elements if array
 } StructField;
 
 typedef struct {

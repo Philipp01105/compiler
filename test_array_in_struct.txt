@@ -14,6 +14,7 @@ struct Board {
 func main() -> void {
     var board:Board;
     board.setCell(0, 1);
-    printline("Cell 0:");
-    printline(board.getCell(0));
+    print("Cell 0: ");
+    print(board.getCell(0));
+    print("\n");
 }

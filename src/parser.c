@@ -872,7 +872,8 @@ void parse_struct(Parser *parser) {
                         param_regs_64[0], this_param->offset);
 
             // Save remaining parameters
-            for (int i = 0; i < func->param_count && i + 1 < 4; i++) {
+            int max_reg_args = get_max_reg_args();
+            for (int i = 0; i < func->param_count && i + 1 < max_reg_args; i++) {
                 Variable *var = &parser->vars[saved_var_count + 1 + i];
                 int reg_idx = i + 1;  // Offset by 1 because first reg has 'this'
 
@@ -919,16 +920,34 @@ void parse_struct(Parser *parser) {
             Token first_token = consume(parser->tokens);
             DataType field_type = TYPE_UNKNOWN;
             char field_name[MAX_TOKEN];
+            int is_array = 0;
+            int array_size = 0;
             
             // Check if first token is a type (C-style: int x;)
             field_type = token_to_datatype(first_token.type);
             
             if (field_type != TYPE_UNKNOWN) {
-                // C-style declaration: type name;
+                // C-style declaration: type name; or type name[size];
                 Token name_token = consume(parser->tokens);
                 strcpy(field_name, name_token.value);
+                
+                // Check for array syntax
+                if (check(parser->tokens, TOKEN_LBRACKET)) {
+                    consume(parser->tokens);  // consume '['
+                    is_array = 1;
+                    
+                    if (check(parser->tokens, TOKEN_NUMBER)) {
+                        Token size_token = consume(parser->tokens);
+                        array_size = atoi(size_token.value);
+                    } else {
+                        parser_error(parser, "Expected array size");
+                        return;
+                    }
+                    
+                    expect(parser, TOKEN_RBRACKET, "Expected ']' after array size");
+                }
             } else if (first_token.type == TOKEN_KEYWORD_VAR) {
-                // var name:type; style
+                // var name:type; style or var name:type[size];
                 Token name_token = consume(parser->tokens);
                 strcpy(field_name, name_token.value);
                 
@@ -941,8 +960,24 @@ void parse_struct(Parser *parser) {
                     parser_error(parser, "Unknown field type");
                     return;
                 }
+                
+                // Check for array syntax
+                if (check(parser->tokens, TOKEN_LBRACKET)) {
+                    consume(parser->tokens);  // consume '['
+                    is_array = 1;
+                    
+                    if (check(parser->tokens, TOKEN_NUMBER)) {
+                        Token size_token = consume(parser->tokens);
+                        array_size = atoi(size_token.value);
+                    } else {
+                        parser_error(parser, "Expected array size");
+                        return;
+                    }
+                    
+                    expect(parser, TOKEN_RBRACKET, "Expected ']' after array size");
+                }
             } else {
-                // name:type; style
+                // name:type; style or name:type[size];
                 strcpy(field_name, first_token.value);
                 
                 expect(parser, TOKEN_COLON, "Expected ':' after field name");
@@ -953,6 +988,22 @@ void parse_struct(Parser *parser) {
                 if (field_type == TYPE_UNKNOWN) {
                     parser_error(parser, "Unknown field type");
                     return;
+                }
+                
+                // Check for array syntax
+                if (check(parser->tokens, TOKEN_LBRACKET)) {
+                    consume(parser->tokens);  // consume '['
+                    is_array = 1;
+                    
+                    if (check(parser->tokens, TOKEN_NUMBER)) {
+                        Token size_token = consume(parser->tokens);
+                        array_size = atoi(size_token.value);
+                    } else {
+                        parser_error(parser, "Expected array size");
+                        return;
+                    }
+                    
+                    expect(parser, TOKEN_RBRACKET, "Expected ']' after array size");
                 }
             }
 
@@ -966,7 +1017,16 @@ void parse_struct(Parser *parser) {
             StructField *field = &struct_def->fields[struct_def->field_count];
             strcpy(field->name, field_name);
             field->type = field_type;
-            field->size = datatype_size(field_type);
+            field->is_array = is_array;
+            field->array_size = array_size;
+            
+            if (is_array) {
+                // Array field: size is element_size * array_size
+                field->size = datatype_size(field_type) * array_size;
+            } else {
+                field->size = datatype_size(field_type);
+            }
+            
             field->offset = current_offset;
             struct_def->field_count++;
 
@@ -1483,40 +1543,89 @@ void parse_assignment(Parser *parser) {
                 }
                 
                 if (field) {
-                    // Assign to field through 'this' pointer
-                    expect(parser, TOKEN_EQUAL, "Expected '=' in field assignment");
-                    
-                    code_comment(parser, "Line %d: %s = value (field through implicit 'this')",
-                                 assign_token.line, name_token.value);
-                    
-                    // Parse the value to assign
-                    parse_expression(parser);
-                    
-                    // Load 'this' pointer
-                    code_printf(parser, "    movq %d(%%rbp), %%rbx\n", this_var->offset);
-                    
-                    // Pop value and store it in the field
-                    if (field->type == TYPE_FLOAT || field->type == TYPE_DOUBLE) {
-                        code_printf(parser, "    popq %%rax\n");
-                        code_printf(parser, "    movq %%rax, %%xmm0\n");
-                        if (field->type == TYPE_FLOAT) {
-                            code_printf(parser, "    movss %%xmm0, %d(%%rbx)\n", field->offset);
+                    // Check if this is an array field assignment
+                    if (field->is_array && check(parser->tokens, TOKEN_LBRACKET)) {
+                        consume(parser->tokens);  // consume '['
+                        
+                        code_comment(parser, "Line %d: %s[index] = value (array field through implicit 'this')",
+                                     assign_token.line, name_token.value);
+                        
+                        // Parse the index expression
+                        parse_expression(parser);
+                        
+                        expect(parser, TOKEN_RBRACKET, "Expected ']' after array index");
+                        expect(parser, TOKEN_EQUAL, "Expected '=' in array field assignment");
+                        
+                        // Parse the value to assign
+                        parse_expression(parser);
+                        
+                        // Stack has: [value, index]
+                        code_printf(parser, "    popq %%rcx\n");  // value
+                        code_printf(parser, "    popq %%rax\n");  // index
+                        
+                        // Load 'this' pointer
+                        code_printf(parser, "    movq %d(%%rbp), %%rbx\n", this_var->offset);
+                        
+                        // Calculate array element address: base + field_offset + (index * element_size)
+                        int element_size = datatype_size(field->type);
+                        code_printf(parser, "    imulq $%d, %%rax\n", element_size);  // index * element_size
+                        code_printf(parser, "    addq $%d, %%rax\n", field->offset);  // + field_offset
+                        code_printf(parser, "    addq %%rbx, %%rax\n");  // + base address
+                        
+                        // Store value at calculated address
+                        if (field->type == TYPE_FLOAT || field->type == TYPE_DOUBLE) {
+                            code_printf(parser, "    movq %%rcx, %%xmm0\n");
+                            if (field->type == TYPE_FLOAT) {
+                                code_printf(parser, "    movss %%xmm0, (%%rax)\n");
+                            } else {
+                                code_printf(parser, "    movsd %%xmm0, (%%rax)\n");
+                            }
+                        } else if (field->type == TYPE_CHAR || field->type == TYPE_BYTE || field->type == TYPE_BIT) {
+                            code_printf(parser, "    movb %%cl, (%%rax)\n");
+                        } else if (field->type == TYPE_STRING) {
+                            code_printf(parser, "    movq %%rcx, (%%rax)\n");
                         } else {
-                            code_printf(parser, "    movsd %%xmm0, %d(%%rbx)\n", field->offset);
+                            code_printf(parser, "    movl %%ecx, (%%rax)\n");
                         }
-                    } else if (field->type == TYPE_CHAR || field->type == TYPE_BYTE || field->type == TYPE_BIT) {
-                        code_printf(parser, "    popq %%rax\n");
-                        code_printf(parser, "    movb %%al, %d(%%rbx)\n", field->offset);
-                    } else if (field->type == TYPE_STRING) {
-                        code_printf(parser, "    popq %%rax\n");
-                        code_printf(parser, "    movq %%rax, %d(%%rbx)\n", field->offset);
+                        
+                        expect(parser, TOKEN_SEMICOLON, "Expected ';' after array field assignment");
+                        return;
                     } else {
-                        code_printf(parser, "    popq %%rax\n");
-                        code_printf(parser, "    movl %%eax, %d(%%rbx)\n", field->offset);
+                        // Regular field assignment
+                        expect(parser, TOKEN_EQUAL, "Expected '=' in field assignment");
+                        
+                        code_comment(parser, "Line %d: %s = value (field through implicit 'this')",
+                                     assign_token.line, name_token.value);
+                        
+                        // Parse the value to assign
+                        parse_expression(parser);
+                        
+                        // Load 'this' pointer
+                        code_printf(parser, "    movq %d(%%rbp), %%rbx\n", this_var->offset);
+                        
+                        // Pop value and store it in the field
+                        if (field->type == TYPE_FLOAT || field->type == TYPE_DOUBLE) {
+                            code_printf(parser, "    popq %%rax\n");
+                            code_printf(parser, "    movq %%rax, %%xmm0\n");
+                            if (field->type == TYPE_FLOAT) {
+                                code_printf(parser, "    movss %%xmm0, %d(%%rbx)\n", field->offset);
+                            } else {
+                                code_printf(parser, "    movsd %%xmm0, %d(%%rbx)\n", field->offset);
+                            }
+                        } else if (field->type == TYPE_CHAR || field->type == TYPE_BYTE || field->type == TYPE_BIT) {
+                            code_printf(parser, "    popq %%rax\n");
+                            code_printf(parser, "    movb %%al, %d(%%rbx)\n", field->offset);
+                        } else if (field->type == TYPE_STRING) {
+                            code_printf(parser, "    popq %%rax\n");
+                            code_printf(parser, "    movq %%rax, %d(%%rbx)\n", field->offset);
+                        } else {
+                            code_printf(parser, "    popq %%rax\n");
+                            code_printf(parser, "    movl %%eax, %d(%%rbx)\n", field->offset);
+                        }
+                        
+                        expect(parser, TOKEN_SEMICOLON, "Expected ';' after field assignment");
+                        return;
                     }
-                    
-                    expect(parser, TOKEN_SEMICOLON, "Expected ';' after field assignment");
-                    return;
                 }
             }
         }
@@ -1558,39 +1667,89 @@ void parse_assignment(Parser *parser) {
             return;
         }
         
-        expect(parser, TOKEN_EQUAL, "Expected '=' in field assignment");
-        
-        code_comment(parser, "Line %d: %s.%s = value",
-                     assign_token.line, name_token.value, field_name_token.value);
-        
-        // Parse the value to assign
-        parse_expression(parser);
-        
-        // Load struct base address into %rbx
-        code_printf(parser, "    leaq %d(%%rbp), %%rbx\n", var->offset);
-        
-        // Pop value and store it in the field using offset from base address
-        if (field->type == TYPE_FLOAT || field->type == TYPE_DOUBLE) {
-            code_printf(parser, "    popq %%rax\n");
-            code_printf(parser, "    movq %%rax, %%xmm0\n");
-            if (field->type == TYPE_FLOAT) {
-                code_printf(parser, "    movss %%xmm0, %d(%%rbx)\n", field->offset);
+        // Check if this is an array field assignment
+        if (field->is_array && check(parser->tokens, TOKEN_LBRACKET)) {
+            consume(parser->tokens);  // consume '['
+            
+            code_comment(parser, "Line %d: %s.%s[index] = value (array field)",
+                         assign_token.line, name_token.value, field_name_token.value);
+            
+            // Parse the index expression
+            parse_expression(parser);
+            
+            expect(parser, TOKEN_RBRACKET, "Expected ']' after array index");
+            expect(parser, TOKEN_EQUAL, "Expected '=' in array field assignment");
+            
+            // Parse the value to assign
+            parse_expression(parser);
+            
+            // Stack has: [value, index]
+            code_printf(parser, "    popq %%rcx\n");  // value
+            code_printf(parser, "    popq %%rax\n");  // index
+            
+            // Load struct base address into %rbx
+            code_printf(parser, "    leaq %d(%%rbp), %%rbx\n", var->offset);
+            
+            // Calculate array element address: base + field_offset + (index * element_size)
+            int element_size = datatype_size(field->type);
+            code_printf(parser, "    imulq $%d, %%rax\n", element_size);  // index * element_size
+            code_printf(parser, "    addq $%d, %%rax\n", field->offset);  // + field_offset
+            code_printf(parser, "    addq %%rbx, %%rax\n");  // + base address
+            
+            // Store value at calculated address
+            if (field->type == TYPE_FLOAT || field->type == TYPE_DOUBLE) {
+                code_printf(parser, "    movq %%rcx, %%xmm0\n");
+                if (field->type == TYPE_FLOAT) {
+                    code_printf(parser, "    movss %%xmm0, (%%rax)\n");
+                } else {
+                    code_printf(parser, "    movsd %%xmm0, (%%rax)\n");
+                }
+            } else if (field->type == TYPE_CHAR || field->type == TYPE_BYTE || field->type == TYPE_BIT) {
+                code_printf(parser, "    movb %%cl, (%%rax)\n");
+            } else if (field->type == TYPE_STRING) {
+                code_printf(parser, "    movq %%rcx, (%%rax)\n");
             } else {
-                code_printf(parser, "    movsd %%xmm0, %d(%%rbx)\n", field->offset);
+                code_printf(parser, "    movl %%ecx, (%%rax)\n");
             }
-        } else if (field->type == TYPE_CHAR || field->type == TYPE_BYTE || field->type == TYPE_BIT) {
-            code_printf(parser, "    popq %%rax\n");
-            code_printf(parser, "    movb %%al, %d(%%rbx)\n", field->offset);
-        } else if (field->type == TYPE_STRING) {
-            code_printf(parser, "    popq %%rax\n");
-            code_printf(parser, "    movq %%rax, %d(%%rbx)\n", field->offset);
+            
+            expect(parser, TOKEN_SEMICOLON, "Expected ';' after array field assignment");
+            return;
         } else {
-            code_printf(parser, "    popq %%rax\n");
-            code_printf(parser, "    movl %%eax, %d(%%rbx)\n", field->offset);
+            // Regular field assignment
+            expect(parser, TOKEN_EQUAL, "Expected '=' in field assignment");
+            
+            code_comment(parser, "Line %d: %s.%s = value",
+                         assign_token.line, name_token.value, field_name_token.value);
+            
+            // Parse the value to assign
+            parse_expression(parser);
+            
+            // Load struct base address into %rbx
+            code_printf(parser, "    leaq %d(%%rbp), %%rbx\n", var->offset);
+            
+            // Pop value and store it in the field using offset from base address
+            if (field->type == TYPE_FLOAT || field->type == TYPE_DOUBLE) {
+                code_printf(parser, "    popq %%rax\n");
+                code_printf(parser, "    movq %%rax, %%xmm0\n");
+                if (field->type == TYPE_FLOAT) {
+                    code_printf(parser, "    movss %%xmm0, %d(%%rbx)\n", field->offset);
+                } else {
+                    code_printf(parser, "    movsd %%xmm0, %d(%%rbx)\n", field->offset);
+                }
+            } else if (field->type == TYPE_CHAR || field->type == TYPE_BYTE || field->type == TYPE_BIT) {
+                code_printf(parser, "    popq %%rax\n");
+                code_printf(parser, "    movb %%al, %d(%%rbx)\n", field->offset);
+            } else if (field->type == TYPE_STRING) {
+                code_printf(parser, "    popq %%rax\n");
+                code_printf(parser, "    movq %%rax, %d(%%rbx)\n", field->offset);
+            } else {
+                code_printf(parser, "    popq %%rax\n");
+                code_printf(parser, "    movl %%eax, %d(%%rbx)\n", field->offset);
+            }
+            
+            expect(parser, TOKEN_SEMICOLON, "Expected ';' after field assignment");
+            return;
         }
-        
-        expect(parser, TOKEN_SEMICOLON, "Expected ';' after field assignment");
-        return;
     }
 
     // Check for array indexing: var[index] = value (including string character assignment)
@@ -3000,7 +3159,8 @@ void parse_function_call_statement(Parser *parser) {
         const char *arg_regs_float[] = {"%xmm0", "%xmm1", "%xmm2", "%xmm3"};
         
         // Pop arguments into registers (in reverse order)
-        for (int i = arg_count - 1; i >= 0 && i + 1 < 4; i--) {
+        int max_reg_args = get_max_reg_args();
+        for (int i = arg_count - 1; i >= 0 && i + 1 < max_reg_args; i--) {
             DataType param_type = method->param_types[i];
             int reg_idx = i + 1;  // Offset by 1 because first reg has 'this'
             
@@ -3231,7 +3391,8 @@ void parse_function_call_statement(Parser *parser) {
     if (is_method_call) {
         // This is a method call on the same struct - need to pass 'this' as first arg
         // Pop arguments into registers (offset by 1 because first reg has 'this')
-        for (int i = arg_count - 1; i >= 0 && i + 1 < 4; i--) {
+        int max_reg_args = get_max_reg_args();
+        for (int i = arg_count - 1; i >= 0 && i + 1 < max_reg_args; i--) {
             int reg_idx = i + 1;  // Offset by 1 because first reg has 'this'
             code_printf(parser, "    popq %s\n", arg_regs[reg_idx]);
         }
@@ -3749,7 +3910,8 @@ void parse_primary(Parser *parser) {
             if (is_method_call) {
                 // This is a method call on the same struct - need to pass 'this' as first arg
                 // Pop arguments into registers (offset by 1 because first reg has 'this')
-                for (int i = arg_count - 1; i >= 0 && i + 1 < 4; i--) {
+                int max_reg_args = get_max_reg_args();
+                for (int i = arg_count - 1; i >= 0 && i + 1 < max_reg_args; i--) {
                     DataType param_type = func->param_types[i];
                     int reg_idx = i + 1;  // Offset by 1 because first reg has 'this'
 
@@ -3846,37 +4008,87 @@ void parse_primary(Parser *parser) {
                         }
                         
                         if (field) {
-                            // Access field through 'this' pointer
-                            code_comment(parser, "Field access through implicit 'this': %s", name.value);
-                            
-                            // Load 'this' pointer
-                            code_printf(parser, "    movq %d(%%rbp), %%rbx\n", this_var->offset);
-                            
-                            // Load field value
-                            if (field->type == TYPE_FLOAT) {
-                                code_printf(parser, "    movss %d(%%rbx), %%xmm0\n", field->offset);
-                                code_printf(parser, "    movq %%xmm0, %%rax\n");
-                                code_printf(parser, "    pushq %%rax\n");
-                            } else if (field->type == TYPE_DOUBLE) {
-                                code_printf(parser, "    movsd %d(%%rbx), %%xmm0\n", field->offset);
-                                code_printf(parser, "    movq %%xmm0, %%rax\n");
-                                code_printf(parser, "    pushq %%rax\n");
-                            } else if (field->type == TYPE_CHAR) {
-                                code_printf(parser, "    movsbl %d(%%rbx), %%eax\n", field->offset);
-                                code_printf(parser, "    pushq %%rax\n");
-                            } else if (field->type == TYPE_BYTE) {
-                                code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", field->offset);
-                                code_printf(parser, "    pushq %%rax\n");
-                            } else if (field->type == TYPE_BIT) {
-                                code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", field->offset);
-                                code_printf(parser, "    andl $1, %%eax\n");
-                                code_printf(parser, "    pushq %%rax\n");
-                            } else if (field->type == TYPE_STRING) {
-                                code_printf(parser, "    movq %d(%%rbx), %%rax\n", field->offset);
-                                code_printf(parser, "    pushq %%rax\n");
+                            // Check if this is an array field with indexing
+                            if (field->is_array && check(parser->tokens, TOKEN_LBRACKET)) {
+                                consume(parser->tokens);  // consume '['
+                                
+                                code_comment(parser, "Array field access through implicit 'this': %s[...]", name.value);
+                                
+                                // Parse the index expression
+                                parse_expression(parser);
+                                
+                                expect(parser, TOKEN_RBRACKET, "Expected ']' after array index");
+                                
+                                // Stack has: [index]
+                                // Load 'this' pointer
+                                code_printf(parser, "    movq %d(%%rbp), %%rbx\n", this_var->offset);
+                                
+                                // Calculate array element address: base + field_offset + (index * element_size)
+                                code_printf(parser, "    popq %%rax\n");  // index
+                                int element_size = datatype_size(field->type);
+                                code_printf(parser, "    imulq $%d, %%rax\n", element_size);  // index * element_size
+                                code_printf(parser, "    addq $%d, %%rax\n", field->offset);  // + field_offset
+                                code_printf(parser, "    addq %%rbx, %%rax\n");  // + base address
+                                
+                                // Load value from calculated address
+                                if (field->type == TYPE_FLOAT) {
+                                    code_printf(parser, "    movss (%%rax), %%xmm0\n");
+                                    code_printf(parser, "    movq %%xmm0, %%rax\n");
+                                    code_printf(parser, "    pushq %%rax\n");
+                                } else if (field->type == TYPE_DOUBLE) {
+                                    code_printf(parser, "    movsd (%%rax), %%xmm0\n");
+                                    code_printf(parser, "    movq %%xmm0, %%rax\n");
+                                    code_printf(parser, "    pushq %%rax\n");
+                                } else if (field->type == TYPE_CHAR) {
+                                    code_printf(parser, "    movsbl (%%rax), %%eax\n");
+                                    code_printf(parser, "    pushq %%rax\n");
+                                } else if (field->type == TYPE_BYTE) {
+                                    code_printf(parser, "    movzbl (%%rax), %%eax\n");
+                                    code_printf(parser, "    pushq %%rax\n");
+                                } else if (field->type == TYPE_BIT) {
+                                    code_printf(parser, "    movzbl (%%rax), %%eax\n");
+                                    code_printf(parser, "    andl $1, %%eax\n");
+                                    code_printf(parser, "    pushq %%rax\n");
+                                } else if (field->type == TYPE_STRING) {
+                                    code_printf(parser, "    movq (%%rax), %%rax\n");
+                                    code_printf(parser, "    pushq %%rax\n");
+                                } else {
+                                    code_printf(parser, "    movl (%%rax), %%eax\n");
+                                    code_printf(parser, "    pushq %%rax\n");
+                                }
                             } else {
-                                code_printf(parser, "    movl %d(%%rbx), %%eax\n", field->offset);
-                                code_printf(parser, "    pushq %%rax\n");
+                                // Regular field access (not array or no indexing)
+                                code_comment(parser, "Field access through implicit 'this': %s", name.value);
+                                
+                                // Load 'this' pointer
+                                code_printf(parser, "    movq %d(%%rbp), %%rbx\n", this_var->offset);
+                                
+                                // Load field value
+                                if (field->type == TYPE_FLOAT) {
+                                    code_printf(parser, "    movss %d(%%rbx), %%xmm0\n", field->offset);
+                                    code_printf(parser, "    movq %%xmm0, %%rax\n");
+                                    code_printf(parser, "    pushq %%rax\n");
+                                } else if (field->type == TYPE_DOUBLE) {
+                                    code_printf(parser, "    movsd %d(%%rbx), %%xmm0\n", field->offset);
+                                    code_printf(parser, "    movq %%xmm0, %%rax\n");
+                                    code_printf(parser, "    pushq %%rax\n");
+                                } else if (field->type == TYPE_CHAR) {
+                                    code_printf(parser, "    movsbl %d(%%rbx), %%eax\n", field->offset);
+                                    code_printf(parser, "    pushq %%rax\n");
+                                } else if (field->type == TYPE_BYTE) {
+                                    code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", field->offset);
+                                    code_printf(parser, "    pushq %%rax\n");
+                                } else if (field->type == TYPE_BIT) {
+                                    code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", field->offset);
+                                    code_printf(parser, "    andl $1, %%eax\n");
+                                    code_printf(parser, "    pushq %%rax\n");
+                                } else if (field->type == TYPE_STRING) {
+                                    code_printf(parser, "    movq %d(%%rbx), %%rax\n", field->offset);
+                                    code_printf(parser, "    pushq %%rax\n");
+                                } else {
+                                    code_printf(parser, "    movl %d(%%rbx), %%eax\n", field->offset);
+                                    code_printf(parser, "    pushq %%rax\n");
+                                }
                             }
                             
                             return;
@@ -3952,7 +4164,8 @@ void parse_primary(Parser *parser) {
                     const char *arg_regs_float[] = {"%xmm0", "%xmm1", "%xmm2", "%xmm3"};
                     
                     // Pop arguments into registers (in reverse order)
-                    for (int i = arg_count - 1; i >= 0 && i + 1 < 4; i--) {
+                    int max_reg_args = get_max_reg_args();
+                    for (int i = arg_count - 1; i >= 0 && i + 1 < max_reg_args; i--) {
                         DataType param_type = method->param_types[i];
                         int reg_idx = i + 1;  // Offset by 1 because first reg has 'this'
                         
@@ -4011,36 +4224,87 @@ void parse_primary(Parser *parser) {
                         return;
                     }
                     
-                    code_comment(parser, "Field access: %s.%s", name.value, member_name.value);
-                    
-                    // Load struct base address into %rbx
-                    code_printf(parser, "    leaq %d(%%rbp), %%rbx\n", var->offset);
-                    
-                    // Access field using offset from base address
-                    if (field->type == TYPE_FLOAT) {
-                        code_printf(parser, "    movss %d(%%rbx), %%xmm0\n", field->offset);
-                        code_printf(parser, "    movq %%xmm0, %%rax\n");
-                        code_printf(parser, "    pushq %%rax\n");
-                    } else if (field->type == TYPE_DOUBLE) {
-                        code_printf(parser, "    movsd %d(%%rbx), %%xmm0\n", field->offset);
-                        code_printf(parser, "    movq %%xmm0, %%rax\n");
-                        code_printf(parser, "    pushq %%rax\n");
-                    } else if (field->type == TYPE_CHAR) {
-                        code_printf(parser, "    movsbl %d(%%rbx), %%eax\n", field->offset);
-                        code_printf(parser, "    pushq %%rax\n");
-                    } else if (field->type == TYPE_BYTE) {
-                        code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", field->offset);
-                        code_printf(parser, "    pushq %%rax\n");
-                    } else if (field->type == TYPE_BIT) {
-                        code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", field->offset);
-                        code_printf(parser, "    andl $1, %%eax\n");
-                        code_printf(parser, "    pushq %%rax\n");
-                    } else if (field->type == TYPE_STRING) {
-                        code_printf(parser, "    movq %d(%%rbx), %%rax\n", field->offset);
-                        code_printf(parser, "    pushq %%rax\n");
+                    // Check if this is an array field with indexing
+                    if (field->is_array && check(parser->tokens, TOKEN_LBRACKET)) {
+                        consume(parser->tokens);  // consume '['
+                        
+                        code_comment(parser, "Array field access: %s.%s[...]", name.value, member_name.value);
+                        
+                        // Parse the index expression
+                        parse_expression(parser);
+                        
+                        expect(parser, TOKEN_RBRACKET, "Expected ']' after array index");
+                        
+                        // Stack has: [index]
+                        // Load struct base address into %rbx
+                        code_printf(parser, "    leaq %d(%%rbp), %%rbx\n", var->offset);
+                        
+                        // Calculate array element address: base + field_offset + (index * element_size)
+                        code_printf(parser, "    popq %%rax\n");  // index
+                        int element_size = datatype_size(field->type);
+                        code_printf(parser, "    imulq $%d, %%rax\n", element_size);  // index * element_size
+                        code_printf(parser, "    addq $%d, %%rax\n", field->offset);  // + field_offset
+                        code_printf(parser, "    addq %%rbx, %%rax\n");  // + base address
+                        
+                        // Load value from calculated address
+                        if (field->type == TYPE_FLOAT) {
+                            code_printf(parser, "    movss (%%rax), %%xmm0\n");
+                            code_printf(parser, "    movq %%xmm0, %%rax\n");
+                            code_printf(parser, "    pushq %%rax\n");
+                        } else if (field->type == TYPE_DOUBLE) {
+                            code_printf(parser, "    movsd (%%rax), %%xmm0\n");
+                            code_printf(parser, "    movq %%xmm0, %%rax\n");
+                            code_printf(parser, "    pushq %%rax\n");
+                        } else if (field->type == TYPE_CHAR) {
+                            code_printf(parser, "    movsbl (%%rax), %%eax\n");
+                            code_printf(parser, "    pushq %%rax\n");
+                        } else if (field->type == TYPE_BYTE) {
+                            code_printf(parser, "    movzbl (%%rax), %%eax\n");
+                            code_printf(parser, "    pushq %%rax\n");
+                        } else if (field->type == TYPE_BIT) {
+                            code_printf(parser, "    movzbl (%%rax), %%eax\n");
+                            code_printf(parser, "    andl $1, %%eax\n");
+                            code_printf(parser, "    pushq %%rax\n");
+                        } else if (field->type == TYPE_STRING) {
+                            code_printf(parser, "    movq (%%rax), %%rax\n");
+                            code_printf(parser, "    pushq %%rax\n");
+                        } else {
+                            code_printf(parser, "    movl (%%rax), %%eax\n");
+                            code_printf(parser, "    pushq %%rax\n");
+                        }
                     } else {
-                        code_printf(parser, "    movl %d(%%rbx), %%eax\n", field->offset);
-                        code_printf(parser, "    pushq %%rax\n");
+                        // Regular field access (not array or no indexing)
+                        code_comment(parser, "Field access: %s.%s", name.value, member_name.value);
+                        
+                        // Load struct base address into %rbx
+                        code_printf(parser, "    leaq %d(%%rbp), %%rbx\n", var->offset);
+                        
+                        // Access field using offset from base address
+                        if (field->type == TYPE_FLOAT) {
+                            code_printf(parser, "    movss %d(%%rbx), %%xmm0\n", field->offset);
+                            code_printf(parser, "    movq %%xmm0, %%rax\n");
+                            code_printf(parser, "    pushq %%rax\n");
+                        } else if (field->type == TYPE_DOUBLE) {
+                            code_printf(parser, "    movsd %d(%%rbx), %%xmm0\n", field->offset);
+                            code_printf(parser, "    movq %%xmm0, %%rax\n");
+                            code_printf(parser, "    pushq %%rax\n");
+                        } else if (field->type == TYPE_CHAR) {
+                            code_printf(parser, "    movsbl %d(%%rbx), %%eax\n", field->offset);
+                            code_printf(parser, "    pushq %%rax\n");
+                        } else if (field->type == TYPE_BYTE) {
+                            code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", field->offset);
+                            code_printf(parser, "    pushq %%rax\n");
+                        } else if (field->type == TYPE_BIT) {
+                            code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", field->offset);
+                            code_printf(parser, "    andl $1, %%eax\n");
+                            code_printf(parser, "    pushq %%rax\n");
+                        } else if (field->type == TYPE_STRING) {
+                            code_printf(parser, "    movq %d(%%rbx), %%rax\n", field->offset);
+                            code_printf(parser, "    pushq %%rax\n");
+                        } else {
+                            code_printf(parser, "    movl %d(%%rbx), %%eax\n", field->offset);
+                            code_printf(parser, "    pushq %%rax\n");
+                        }
                     }
                     
                     return;

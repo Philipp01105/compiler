@@ -1,0 +1,25 @@
+// Simpler test for array in struct
+struct MyStruct {
+    int nums[3];
+}
+
+func main() -> void {
+    var s:MyStruct;
+    s.nums[0] = 10;
+    s.nums[1] = 20;
+    s.nums[2] = 30;
+    
+    var v0:int;
+    var v1:int;
+    var v2:int;
+    v0 = s.nums[0];
+    v1 = s.nums[1];
+    v2 = s.nums[2];
+    
+    print(v0);
+    print("\n");
+    print(v1);
+    print("\n");
+    print(v2);
+    print("\n");
+}
