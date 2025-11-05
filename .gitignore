@@ -26,3 +26,5 @@ test_*
 stdlib_demo
 calc_game
 tictactoe_game
+*_test
+!*_test.txt
