@@ -1696,40 +1696,130 @@ void parse_assignment(Parser *parser) {
             expect(parser, TOKEN_SEMICOLON, "Expected ';' after array field assignment");
             return;
         } else {
-            // Regular field assignment
-            expect(parser, TOKEN_EQUAL, "Expected '=' in field assignment");
-            
-            code_comment(parser, "Line %d: %s.%s = value",
-                         assign_token.line, name_token.value, field_name_token.value);
-            
-            // Parse the value to assign
-            parse_expression(parser);
-            
-            // Load struct base address into %rbx
-            code_printf(parser, "    leaq %d(%%rbp), %%rbx\n", var->offset);
-            
-            // Pop value and store it in the field using offset from base address
-            if (field->type == TYPE_FLOAT || field->type == TYPE_DOUBLE) {
-                code_printf(parser, "    popq %%rax\n");
-                code_printf(parser, "    movq %%rax, %%xmm0\n");
-                if (field->type == TYPE_FLOAT) {
-                    code_printf(parser, "    movss %%xmm0, %d(%%rbx)\n", field->offset);
-                } else {
-                    code_printf(parser, "    movsd %%xmm0, %d(%%rbx)\n", field->offset);
+            // Regular field assignment or chained field access
+            // Check if this is a nested struct field with more dot access
+            if (field->struct_type[0] != '\0' && check(parser->tokens, TOKEN_DOT)) {
+                // Chained field assignment (e.g., rect.topLeft.x = 10)
+                code_comment(parser, "Line %d: %s.%s. ... = value (chained)",
+                             assign_token.line, name_token.value, field_name_token.value);
+                
+                // Load struct base address and add first field offset
+                code_printf(parser, "    leaq %d(%%rbp), %%rbx\n", var->offset);
+                code_printf(parser, "    addq $%d, %%rbx\n", field->offset);
+                
+                // Continue with chained access
+                StructDefinition *nested_struct_def = find_struct(parser, field->struct_type);
+                if (!nested_struct_def) {
+                    parser_error(parser, "Nested struct type '%s' not found", field->struct_type);
+                    return;
                 }
-            } else if (field->type == TYPE_CHAR || field->type == TYPE_BYTE || field->type == TYPE_BIT) {
-                code_printf(parser, "    popq %%rax\n");
-                code_printf(parser, "    movb %%al, %d(%%rbx)\n", field->offset);
-            } else if (field->type == TYPE_STRING) {
-                code_printf(parser, "    popq %%rax\n");
-                code_printf(parser, "    movq %%rax, %d(%%rbx)\n", field->offset);
+                
+                StructField *final_field = NULL;
+                
+                // Loop to handle chained field access
+                while (check(parser->tokens, TOKEN_DOT)) {
+                    consume(parser->tokens);  // consume '.'
+                    Token next_field_name = consume(parser->tokens);
+                    
+                    // Find the field in the nested struct
+                    StructField *nested_field = NULL;
+                    for (int i = 0; i < nested_struct_def->field_count; i++) {
+                        if (strcmp(nested_struct_def->fields[i].name, next_field_name.value) == 0) {
+                            nested_field = &nested_struct_def->fields[i];
+                            break;
+                        }
+                    }
+                    
+                    if (!nested_field) {
+                        parser_error(parser, "Field '%s' not found in struct '%s'", 
+                                   next_field_name.value, nested_struct_def->name);
+                        return;
+                    }
+                    
+                    // Check if there's another dot (more chaining)
+                    if (nested_field->struct_type[0] != '\0' && check(parser->tokens, TOKEN_DOT)) {
+                        // Another nested struct - add offset and continue
+                        code_printf(parser, "    addq $%d, %%rbx\n", nested_field->offset);
+                        nested_struct_def = find_struct(parser, nested_field->struct_type);
+                        if (!nested_struct_def) {
+                            parser_error(parser, "Nested struct type '%s' not found", nested_field->struct_type);
+                            return;
+                        }
+                    } else {
+                        // This is the final field in the chain
+                        final_field = nested_field;
+                        break;
+                    }
+                }
+                
+                if (!final_field) {
+                    parser_error(parser, "Invalid chained field access");
+                    return;
+                }
+                
+                expect(parser, TOKEN_EQUAL, "Expected '=' in chained field assignment");
+                
+                // Parse the value to assign
+                parse_expression(parser);
+                
+                // Pop value and store it in the final field
+                if (final_field->type == TYPE_FLOAT || final_field->type == TYPE_DOUBLE) {
+                    code_printf(parser, "    popq %%rax\n");
+                    code_printf(parser, "    movq %%rax, %%xmm0\n");
+                    if (final_field->type == TYPE_FLOAT) {
+                        code_printf(parser, "    movss %%xmm0, %d(%%rbx)\n", final_field->offset);
+                    } else {
+                        code_printf(parser, "    movsd %%xmm0, %d(%%rbx)\n", final_field->offset);
+                    }
+                } else if (final_field->type == TYPE_CHAR || final_field->type == TYPE_BYTE || final_field->type == TYPE_BIT) {
+                    code_printf(parser, "    popq %%rax\n");
+                    code_printf(parser, "    movb %%al, %d(%%rbx)\n", final_field->offset);
+                } else if (final_field->type == TYPE_STRING) {
+                    code_printf(parser, "    popq %%rax\n");
+                    code_printf(parser, "    movq %%rax, %d(%%rbx)\n", final_field->offset);
+                } else {
+                    code_printf(parser, "    popq %%rax\n");
+                    code_printf(parser, "    movl %%eax, %d(%%rbx)\n", final_field->offset);
+                }
+                
+                expect(parser, TOKEN_SEMICOLON, "Expected ';' after chained field assignment");
+                return;
             } else {
-                code_printf(parser, "    popq %%rax\n");
-                code_printf(parser, "    movl %%eax, %d(%%rbx)\n", field->offset);
+                // Regular field assignment (no chaining)
+                expect(parser, TOKEN_EQUAL, "Expected '=' in field assignment");
+                
+                code_comment(parser, "Line %d: %s.%s = value",
+                             assign_token.line, name_token.value, field_name_token.value);
+                
+                // Parse the value to assign
+                parse_expression(parser);
+                
+                // Load struct base address into %rbx
+                code_printf(parser, "    leaq %d(%%rbp), %%rbx\n", var->offset);
+                
+                // Pop value and store it in the field using offset from base address
+                if (field->type == TYPE_FLOAT || field->type == TYPE_DOUBLE) {
+                    code_printf(parser, "    popq %%rax\n");
+                    code_printf(parser, "    movq %%rax, %%xmm0\n");
+                    if (field->type == TYPE_FLOAT) {
+                        code_printf(parser, "    movss %%xmm0, %d(%%rbx)\n", field->offset);
+                    } else {
+                        code_printf(parser, "    movsd %%xmm0, %d(%%rbx)\n", field->offset);
+                    }
+                } else if (field->type == TYPE_CHAR || field->type == TYPE_BYTE || field->type == TYPE_BIT) {
+                    code_printf(parser, "    popq %%rax\n");
+                    code_printf(parser, "    movb %%al, %d(%%rbx)\n", field->offset);
+                } else if (field->type == TYPE_STRING) {
+                    code_printf(parser, "    popq %%rax\n");
+                    code_printf(parser, "    movq %%rax, %d(%%rbx)\n", field->offset);
+                } else {
+                    code_printf(parser, "    popq %%rax\n");
+                    code_printf(parser, "    movl %%eax, %d(%%rbx)\n", field->offset);
+                }
+                
+                expect(parser, TOKEN_SEMICOLON, "Expected ';' after field assignment");
+                return;
             }
-            
-            expect(parser, TOKEN_SEMICOLON, "Expected ';' after field assignment");
-            return;
         }
     }
 
@@ -4107,31 +4197,105 @@ void parse_primary(Parser *parser) {
                                 // Load 'this' pointer
                                 code_printf(parser, "    movq %d(%%rbp), %%rbx\n", this_var->offset);
                                 
-                                // Load field value
-                                if (field->type == TYPE_FLOAT) {
-                                    code_printf(parser, "    movss %d(%%rbx), %%xmm0\n", field->offset);
-                                    code_printf(parser, "    movq %%xmm0, %%rax\n");
-                                    code_printf(parser, "    pushq %%rax\n");
-                                } else if (field->type == TYPE_DOUBLE) {
-                                    code_printf(parser, "    movsd %d(%%rbx), %%xmm0\n", field->offset);
-                                    code_printf(parser, "    movq %%xmm0, %%rax\n");
-                                    code_printf(parser, "    pushq %%rax\n");
-                                } else if (field->type == TYPE_CHAR) {
-                                    code_printf(parser, "    movsbl %d(%%rbx), %%eax\n", field->offset);
-                                    code_printf(parser, "    pushq %%rax\n");
-                                } else if (field->type == TYPE_BYTE) {
-                                    code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", field->offset);
-                                    code_printf(parser, "    pushq %%rax\n");
-                                } else if (field->type == TYPE_BIT) {
-                                    code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", field->offset);
-                                    code_printf(parser, "    andl $1, %%eax\n");
-                                    code_printf(parser, "    pushq %%rax\n");
-                                } else if (field->type == TYPE_STRING) {
-                                    code_printf(parser, "    movq %d(%%rbx), %%rax\n", field->offset);
-                                    code_printf(parser, "    pushq %%rax\n");
+                                // Check if this is a nested struct field with more dot access
+                                if (field->struct_type[0] != '\0' && check(parser->tokens, TOKEN_DOT)) {
+                                    // This is a nested struct field, and there's another dot
+                                    // Calculate address of nested struct field
+                                    code_printf(parser, "    addq $%d, %%rbx\n", field->offset);
+                                    
+                                    // Continue with chained access
+                                    StructDefinition *nested_struct_def = find_struct(parser, field->struct_type);
+                                    if (!nested_struct_def) {
+                                        parser_error(parser, "Nested struct type '%s' not found", field->struct_type);
+                                        return;
+                                    }
+                                    
+                                    // Loop to handle chained field access
+                                    while (check(parser->tokens, TOKEN_DOT)) {
+                                        consume(parser->tokens);  // consume '.'
+                                        Token next_field_name = consume(parser->tokens);
+                                        
+                                        // Find the field in the nested struct
+                                        StructField *nested_field = NULL;
+                                        for (int i = 0; i < nested_struct_def->field_count; i++) {
+                                            if (strcmp(nested_struct_def->fields[i].name, next_field_name.value) == 0) {
+                                                nested_field = &nested_struct_def->fields[i];
+                                                break;
+                                            }
+                                        }
+                                        
+                                        if (!nested_field) {
+                                            parser_error(parser, "Field '%s' not found in struct '%s'", 
+                                                       next_field_name.value, nested_struct_def->name);
+                                            return;
+                                        }
+                                        
+                                        // Check if there's another dot (more chaining)
+                                        if (nested_field->struct_type[0] != '\0' && check(parser->tokens, TOKEN_DOT)) {
+                                            // Another nested struct - add offset and continue
+                                            code_printf(parser, "    addq $%d, %%rbx\n", nested_field->offset);
+                                            nested_struct_def = find_struct(parser, nested_field->struct_type);
+                                            if (!nested_struct_def) {
+                                                parser_error(parser, "Nested struct type '%s' not found", nested_field->struct_type);
+                                                return;
+                                            }
+                                        } else {
+                                            // Final field - load its value
+                                            if (nested_field->type == TYPE_FLOAT) {
+                                                code_printf(parser, "    movss %d(%%rbx), %%xmm0\n", nested_field->offset);
+                                                code_printf(parser, "    movq %%xmm0, %%rax\n");
+                                                code_printf(parser, "    pushq %%rax\n");
+                                            } else if (nested_field->type == TYPE_DOUBLE) {
+                                                code_printf(parser, "    movsd %d(%%rbx), %%xmm0\n", nested_field->offset);
+                                                code_printf(parser, "    movq %%xmm0, %%rax\n");
+                                                code_printf(parser, "    pushq %%rax\n");
+                                            } else if (nested_field->type == TYPE_CHAR) {
+                                                code_printf(parser, "    movsbl %d(%%rbx), %%eax\n", nested_field->offset);
+                                                code_printf(parser, "    pushq %%rax\n");
+                                            } else if (nested_field->type == TYPE_BYTE) {
+                                                code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", nested_field->offset);
+                                                code_printf(parser, "    pushq %%rax\n");
+                                            } else if (nested_field->type == TYPE_BIT) {
+                                                code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", nested_field->offset);
+                                                code_printf(parser, "    andl $1, %%eax\n");
+                                                code_printf(parser, "    pushq %%rax\n");
+                                            } else if (nested_field->type == TYPE_STRING) {
+                                                code_printf(parser, "    movq %d(%%rbx), %%rax\n", nested_field->offset);
+                                                code_printf(parser, "    pushq %%rax\n");
+                                            } else {
+                                                code_printf(parser, "    movl %d(%%rbx), %%eax\n", nested_field->offset);
+                                                code_printf(parser, "    pushq %%rax\n");
+                                            }
+                                            break;
+                                        }
+                                    }
                                 } else {
-                                    code_printf(parser, "    movl %d(%%rbx), %%eax\n", field->offset);
-                                    code_printf(parser, "    pushq %%rax\n");
+                                    // Load field value (no chaining)
+                                    if (field->type == TYPE_FLOAT) {
+                                        code_printf(parser, "    movss %d(%%rbx), %%xmm0\n", field->offset);
+                                        code_printf(parser, "    movq %%xmm0, %%rax\n");
+                                        code_printf(parser, "    pushq %%rax\n");
+                                    } else if (field->type == TYPE_DOUBLE) {
+                                        code_printf(parser, "    movsd %d(%%rbx), %%xmm0\n", field->offset);
+                                        code_printf(parser, "    movq %%xmm0, %%rax\n");
+                                        code_printf(parser, "    pushq %%rax\n");
+                                    } else if (field->type == TYPE_CHAR) {
+                                        code_printf(parser, "    movsbl %d(%%rbx), %%eax\n", field->offset);
+                                        code_printf(parser, "    pushq %%rax\n");
+                                    } else if (field->type == TYPE_BYTE) {
+                                        code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", field->offset);
+                                        code_printf(parser, "    pushq %%rax\n");
+                                    } else if (field->type == TYPE_BIT) {
+                                        code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", field->offset);
+                                        code_printf(parser, "    andl $1, %%eax\n");
+                                        code_printf(parser, "    pushq %%rax\n");
+                                    } else if (field->type == TYPE_STRING) {
+                                        code_printf(parser, "    movq %d(%%rbx), %%rax\n", field->offset);
+                                        code_printf(parser, "    pushq %%rax\n");
+                                    } else {
+                                        code_printf(parser, "    movl %d(%%rbx), %%eax\n", field->offset);
+                                        code_printf(parser, "    pushq %%rax\n");
+                                    }
                                 }
                             }
                             
@@ -4323,31 +4487,105 @@ void parse_primary(Parser *parser) {
                         // Load struct base address into %rbx
                         code_printf(parser, "    leaq %d(%%rbp), %%rbx\n", var->offset);
                         
-                        // Access field using offset from base address
-                        if (field->type == TYPE_FLOAT) {
-                            code_printf(parser, "    movss %d(%%rbx), %%xmm0\n", field->offset);
-                            code_printf(parser, "    movq %%xmm0, %%rax\n");
-                            code_printf(parser, "    pushq %%rax\n");
-                        } else if (field->type == TYPE_DOUBLE) {
-                            code_printf(parser, "    movsd %d(%%rbx), %%xmm0\n", field->offset);
-                            code_printf(parser, "    movq %%xmm0, %%rax\n");
-                            code_printf(parser, "    pushq %%rax\n");
-                        } else if (field->type == TYPE_CHAR) {
-                            code_printf(parser, "    movsbl %d(%%rbx), %%eax\n", field->offset);
-                            code_printf(parser, "    pushq %%rax\n");
-                        } else if (field->type == TYPE_BYTE) {
-                            code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", field->offset);
-                            code_printf(parser, "    pushq %%rax\n");
-                        } else if (field->type == TYPE_BIT) {
-                            code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", field->offset);
-                            code_printf(parser, "    andl $1, %%eax\n");
-                            code_printf(parser, "    pushq %%rax\n");
-                        } else if (field->type == TYPE_STRING) {
-                            code_printf(parser, "    movq %d(%%rbx), %%rax\n", field->offset);
-                            code_printf(parser, "    pushq %%rax\n");
+                        // Check if this is a nested struct field with more dot access
+                        if (field->struct_type[0] != '\0' && check(parser->tokens, TOKEN_DOT)) {
+                            // This is a nested struct field, and there's another dot
+                            // Calculate address of nested struct field
+                            code_printf(parser, "    addq $%d, %%rbx\n", field->offset);
+                            
+                            // Continue with chained access
+                            StructDefinition *nested_struct_def = find_struct(parser, field->struct_type);
+                            if (!nested_struct_def) {
+                                parser_error(parser, "Nested struct type '%s' not found", field->struct_type);
+                                return;
+                            }
+                            
+                            // Loop to handle chained field access
+                            while (check(parser->tokens, TOKEN_DOT)) {
+                                consume(parser->tokens);  // consume '.'
+                                Token next_field_name = consume(parser->tokens);
+                                
+                                // Find the field in the nested struct
+                                StructField *nested_field = NULL;
+                                for (int i = 0; i < nested_struct_def->field_count; i++) {
+                                    if (strcmp(nested_struct_def->fields[i].name, next_field_name.value) == 0) {
+                                        nested_field = &nested_struct_def->fields[i];
+                                        break;
+                                    }
+                                }
+                                
+                                if (!nested_field) {
+                                    parser_error(parser, "Field '%s' not found in struct '%s'", 
+                                               next_field_name.value, nested_struct_def->name);
+                                    return;
+                                }
+                                
+                                // Check if there's another dot (more chaining)
+                                if (nested_field->struct_type[0] != '\0' && check(parser->tokens, TOKEN_DOT)) {
+                                    // Another nested struct - add offset and continue
+                                    code_printf(parser, "    addq $%d, %%rbx\n", nested_field->offset);
+                                    nested_struct_def = find_struct(parser, nested_field->struct_type);
+                                    if (!nested_struct_def) {
+                                        parser_error(parser, "Nested struct type '%s' not found", nested_field->struct_type);
+                                        return;
+                                    }
+                                } else {
+                                    // Final field - load its value
+                                    if (nested_field->type == TYPE_FLOAT) {
+                                        code_printf(parser, "    movss %d(%%rbx), %%xmm0\n", nested_field->offset);
+                                        code_printf(parser, "    movq %%xmm0, %%rax\n");
+                                        code_printf(parser, "    pushq %%rax\n");
+                                    } else if (nested_field->type == TYPE_DOUBLE) {
+                                        code_printf(parser, "    movsd %d(%%rbx), %%xmm0\n", nested_field->offset);
+                                        code_printf(parser, "    movq %%xmm0, %%rax\n");
+                                        code_printf(parser, "    pushq %%rax\n");
+                                    } else if (nested_field->type == TYPE_CHAR) {
+                                        code_printf(parser, "    movsbl %d(%%rbx), %%eax\n", nested_field->offset);
+                                        code_printf(parser, "    pushq %%rax\n");
+                                    } else if (nested_field->type == TYPE_BYTE) {
+                                        code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", nested_field->offset);
+                                        code_printf(parser, "    pushq %%rax\n");
+                                    } else if (nested_field->type == TYPE_BIT) {
+                                        code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", nested_field->offset);
+                                        code_printf(parser, "    andl $1, %%eax\n");
+                                        code_printf(parser, "    pushq %%rax\n");
+                                    } else if (nested_field->type == TYPE_STRING) {
+                                        code_printf(parser, "    movq %d(%%rbx), %%rax\n", nested_field->offset);
+                                        code_printf(parser, "    pushq %%rax\n");
+                                    } else {
+                                        code_printf(parser, "    movl %d(%%rbx), %%eax\n", nested_field->offset);
+                                        code_printf(parser, "    pushq %%rax\n");
+                                    }
+                                    break;
+                                }
+                            }
                         } else {
-                            code_printf(parser, "    movl %d(%%rbx), %%eax\n", field->offset);
-                            code_printf(parser, "    pushq %%rax\n");
+                            // Access field using offset from base address (no chaining)
+                            if (field->type == TYPE_FLOAT) {
+                                code_printf(parser, "    movss %d(%%rbx), %%xmm0\n", field->offset);
+                                code_printf(parser, "    movq %%xmm0, %%rax\n");
+                                code_printf(parser, "    pushq %%rax\n");
+                            } else if (field->type == TYPE_DOUBLE) {
+                                code_printf(parser, "    movsd %d(%%rbx), %%xmm0\n", field->offset);
+                                code_printf(parser, "    movq %%xmm0, %%rax\n");
+                                code_printf(parser, "    pushq %%rax\n");
+                            } else if (field->type == TYPE_CHAR) {
+                                code_printf(parser, "    movsbl %d(%%rbx), %%eax\n", field->offset);
+                                code_printf(parser, "    pushq %%rax\n");
+                            } else if (field->type == TYPE_BYTE) {
+                                code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", field->offset);
+                                code_printf(parser, "    pushq %%rax\n");
+                            } else if (field->type == TYPE_BIT) {
+                                code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", field->offset);
+                                code_printf(parser, "    andl $1, %%eax\n");
+                                code_printf(parser, "    pushq %%rax\n");
+                            } else if (field->type == TYPE_STRING) {
+                                code_printf(parser, "    movq %d(%%rbx), %%rax\n", field->offset);
+                                code_printf(parser, "    pushq %%rax\n");
+                            } else {
+                                code_printf(parser, "    movl %d(%%rbx), %%eax\n", field->offset);
+                                code_printf(parser, "    pushq %%rax\n");
+                            }
                         }
                     }
                     
