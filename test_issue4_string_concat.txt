@@ -2,8 +2,8 @@
 // Testing if complex string concatenation with struct fields works
 
 struct Player {
-    int score;
-    int lives;
+    var score:int;
+    var lives:int;
     
     func printStatus() -> void {
         // This should work but might cause errors

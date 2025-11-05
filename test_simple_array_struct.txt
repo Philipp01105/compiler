@@ -1,6 +1,6 @@
 // Simpler test for array in struct
 struct MyStruct {
-    int nums[3];
+    var nums:int[3];
 }
 
 func main() -> void {

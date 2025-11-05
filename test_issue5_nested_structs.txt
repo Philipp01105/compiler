@@ -2,13 +2,13 @@
 // Testing if a struct can have another struct as a field
 
 struct Point {
-    int x;
-    int y;
+    var x:int;
+    var y:int;
 }
 
 struct Rectangle {
-    Point topLeft;     // Nested struct field
-    Point bottomRight; // Nested struct field
+    var topLeft:Point;     // Nested struct field
+    var bottomRight:Point; // Nested struct field
     
     func getWidth() -> int {
         return bottomRight.x - topLeft.x;

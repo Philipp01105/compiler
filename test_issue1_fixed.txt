@@ -2,7 +2,7 @@
 // This demonstrates that methods can now call other methods from the same struct
 
 struct Calculator {
-    int result;
+    var result:int;
     
     // Helper method that adds two numbers
     func add(a:int, b:int) -> int {

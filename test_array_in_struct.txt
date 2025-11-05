@@ -1,6 +1,6 @@
 // Test Issue 3: Arrays as struct fields
 struct Board {
-    int cells[9];  // Should support array as field
+    var cells:int[9];  // Should support array as field
     
     func getCell(index:int) -> int {
         return cells[index];

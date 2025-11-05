@@ -1,6 +1,6 @@
 // Test Issue 1: Methods calling other methods
 struct Calculator {
-    int result;
+    var result:int;
     
     func add(a:int, b:int) -> int {
         return a + b;

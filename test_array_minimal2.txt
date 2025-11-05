@@ -1,6 +1,6 @@
 // Minimal test for array in struct methods
 struct Board {
-    int cells[9];
+    var cells:int[9];
     
     func setCell(index:int, value:int) -> void {
         cells[index] = value;

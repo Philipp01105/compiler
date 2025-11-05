@@ -916,95 +916,57 @@ void parse_struct(Parser *parser) {
             code_printf(parser, "\n");
 
         } else {
-            // Parse field declaration: type name; (C-style) or var name:type; or name:type;
+            // Parse field declaration: ONLY var name:type; syntax allowed
             Token first_token = consume(parser->tokens);
+            
+            // Struct fields MUST start with 'var' keyword
+            if (first_token.type != TOKEN_KEYWORD_VAR) {
+                parser_error(parser, "Struct fields must use 'var name:type' syntax");
+                return;
+            }
+            
             DataType field_type = TYPE_UNKNOWN;
             char field_name[MAX_TOKEN];
             int is_array = 0;
             int array_size = 0;
+            char field_struct_type[MAX_TOKEN] = "";
             
-            // Check if first token is a type (C-style: int x;)
-            field_type = token_to_datatype(first_token.type);
+            // var name:type; style or var name:type[size];
+            Token name_token = consume(parser->tokens);
+            strcpy(field_name, name_token.value);
             
-            if (field_type != TYPE_UNKNOWN) {
-                // C-style declaration: type name; or type name[size];
-                Token name_token = consume(parser->tokens);
-                strcpy(field_name, name_token.value);
-                
-                // Check for array syntax
-                if (check(parser->tokens, TOKEN_LBRACKET)) {
-                    consume(parser->tokens);  // consume '['
-                    is_array = 1;
-                    
-                    if (check(parser->tokens, TOKEN_NUMBER)) {
-                        Token size_token = consume(parser->tokens);
-                        array_size = atoi(size_token.value);
-                    } else {
-                        parser_error(parser, "Expected array size");
-                        return;
-                    }
-                    
-                    expect(parser, TOKEN_RBRACKET, "Expected ']' after array size");
+            expect(parser, TOKEN_COLON, "Expected ':' after field name");
+            
+            Token type_token = consume(parser->tokens);
+            field_type = token_to_datatype(type_token.type);
+            
+            if (field_type == TYPE_UNKNOWN) {
+                // Check if it's a struct type
+                StructDefinition *field_struct_def = find_struct(parser, type_token.value);
+                if (field_struct_def) {
+                    // It's a nested struct
+                    field_type = TYPE_INT;  // Use TYPE_INT as placeholder for struct types
+                    strcpy(field_struct_type, type_token.value);
+                } else {
+                    parser_error(parser, "Unknown field type '%s'", type_token.value);
+                    return;
                 }
-            } else if (first_token.type == TOKEN_KEYWORD_VAR) {
-                // var name:type; style or var name:type[size];
-                Token name_token = consume(parser->tokens);
-                strcpy(field_name, name_token.value);
+            }
+            
+            // Check for array syntax
+            if (check(parser->tokens, TOKEN_LBRACKET)) {
+                consume(parser->tokens);  // consume '['
+                is_array = 1;
                 
-                expect(parser, TOKEN_COLON, "Expected ':' after field name");
-                
-                Token type_token = consume(parser->tokens);
-                field_type = token_to_datatype(type_token.type);
-                
-                if (field_type == TYPE_UNKNOWN) {
-                    parser_error(parser, "Unknown field type");
+                if (check(parser->tokens, TOKEN_NUMBER)) {
+                    Token size_token = consume(parser->tokens);
+                    array_size = atoi(size_token.value);
+                } else {
+                    parser_error(parser, "Expected array size");
                     return;
                 }
                 
-                // Check for array syntax
-                if (check(parser->tokens, TOKEN_LBRACKET)) {
-                    consume(parser->tokens);  // consume '['
-                    is_array = 1;
-                    
-                    if (check(parser->tokens, TOKEN_NUMBER)) {
-                        Token size_token = consume(parser->tokens);
-                        array_size = atoi(size_token.value);
-                    } else {
-                        parser_error(parser, "Expected array size");
-                        return;
-                    }
-                    
-                    expect(parser, TOKEN_RBRACKET, "Expected ']' after array size");
-                }
-            } else {
-                // name:type; style or name:type[size];
-                strcpy(field_name, first_token.value);
-                
-                expect(parser, TOKEN_COLON, "Expected ':' after field name");
-                
-                Token type_token = consume(parser->tokens);
-                field_type = token_to_datatype(type_token.type);
-                
-                if (field_type == TYPE_UNKNOWN) {
-                    parser_error(parser, "Unknown field type");
-                    return;
-                }
-                
-                // Check for array syntax
-                if (check(parser->tokens, TOKEN_LBRACKET)) {
-                    consume(parser->tokens);  // consume '['
-                    is_array = 1;
-                    
-                    if (check(parser->tokens, TOKEN_NUMBER)) {
-                        Token size_token = consume(parser->tokens);
-                        array_size = atoi(size_token.value);
-                    } else {
-                        parser_error(parser, "Expected array size");
-                        return;
-                    }
-                    
-                    expect(parser, TOKEN_RBRACKET, "Expected ']' after array size");
-                }
+                expect(parser, TOKEN_RBRACKET, "Expected ']' after array size");
             }
 
             expect(parser, TOKEN_SEMICOLON, "Expected ';' after field declaration");
@@ -1019,12 +981,27 @@ void parse_struct(Parser *parser) {
             field->type = field_type;
             field->is_array = is_array;
             field->array_size = array_size;
+            strcpy(field->struct_type, field_struct_type);
+            
+            // Calculate field size
+            int element_size;
+            if (field_struct_type[0] != '\0') {
+                // Nested struct field
+                StructDefinition *nested_struct = find_struct(parser, field_struct_type);
+                if (nested_struct) {
+                    element_size = nested_struct->total_size;
+                } else {
+                    element_size = datatype_size(field_type);
+                }
+            } else {
+                element_size = datatype_size(field_type);
+            }
             
             if (is_array) {
                 // Array field: size is element_size * array_size
-                field->size = datatype_size(field_type) * array_size;
+                field->size = element_size * array_size;
             } else {
-                field->size = datatype_size(field_type);
+                field->size = element_size;
             }
             
             field->offset = current_offset;

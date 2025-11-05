@@ -2,7 +2,7 @@
 // This demonstrates that arrays can now be declared as struct fields
 
 struct TicTacToe {
-    int board[9];  // Array field - 3x3 board
+    var board:int[9];  // Array field - 3x3 board
     
     func setCell(index:int, value:int) -> void {
         board[index] = value;
@@ -26,7 +26,7 @@ struct TicTacToe {
 }
 
 struct DataStore {
-    int numbers[5];
+    var numbers:int[5];
     
     func sum() -> int {
         var total:int;
