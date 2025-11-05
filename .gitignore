@@ -26,3 +26,5 @@ test_*
 stdlib_demo
 calc_game
 tictactoe_game
+*_test
+echo ___BEGIN___COMMAND_OUTPUT_MARKER___ ; cd /home/runner/work/compiler/compiler && git rm calculator_test && git status ; EC=0 ; echo ___BEGIN___COMMAND_DONE_MARKER___0 ; }_test.txt
