@@ -14,10 +14,10 @@
 
 // Rock Paper Scissors Game struct
 struct RPSGame {
-    int player1Score;
-    int player2Score;
-    int roundsPlayed;
-    int maxRounds;
+    var player1Score:int;
+    var player2Score:int;
+    var roundsPlayed:int;
+    var maxRounds:int;
     
     // Initialize the game
     func init(rounds:int) -> void {

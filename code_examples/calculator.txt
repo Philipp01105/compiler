@@ -15,10 +15,10 @@
 
 // Calculator struct
 struct Calculator {
-    int currentValue;
-    int memory;
-    int operationCount;
-    int lastOperation;
+    var currentValue:int;
+    var memory:int;
+    var operationCount:int;
+    var lastOperation:int;
     
     // Initialize calculator
     func init() -> void {

@@ -14,12 +14,12 @@
 
 // Number Guessing Game struct
 struct GuessGame {
-    int secretNumber;
-    int guessCount;
-    int maxGuesses;
-    int gameWon;
-    int rangeLow;
-    int rangeHigh;
+    var secretNumber:int;
+    var guessCount:int;
+    var maxGuesses:int;
+    var gameWon:int;
+    var rangeLow:int;
+    var rangeHigh:int;
     
     // Initialize the game
     func init(secret:int, maxAttempts:int) -> void {
