@@ -517,8 +517,8 @@ func getConstant() -> int
 // =================================================================
 
 struct Point {
-    int x;
-    int y;
+    var x:int;
+    var y:int;
     
     func move(dx:int, dy:int) -> void {
         x = x + dx;
@@ -540,8 +540,8 @@ struct Point {
 }
 
 struct Rectangle {
-    int width;
-    int height;
+    var width:int;
+    var height:int;
     
     func area() -> int {
         return width * height;
@@ -566,7 +566,7 @@ struct Rectangle {
 }
 
 struct Counter {
-    int count;
+    var count:int;
     
     func increment() -> void {
         count = count + 1;

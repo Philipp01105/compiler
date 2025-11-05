@@ -1,7 +1,0 @@
-#import <stdlib/core.txt>
-
-func main() -> void {
-    print("Testing intAbs");
-    var x:int = intAbs(-42);
-    print("Result: " + intToString(x));
-}

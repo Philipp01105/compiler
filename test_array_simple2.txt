@@ -1,5 +1,0 @@
-func main() -> void {
-    print("Before");
-    var[10] intArr:int;
-    print("After");
-}

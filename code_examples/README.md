@@ -32,8 +32,8 @@ A demonstration of nested struct usage with geometric shapes.
 
 **How to Run:**
 ```bash
-./build/compiler code_examples/shapes.txt
-gcc -no-pie code_examples/shapes.txt.s -o shapes
+./build/compiler code_examples/shapes.dmm
+gcc -no-pie code_examples/shapes.dmm.s -o shapes
 ./shapes
 ```
 
@@ -64,8 +64,8 @@ A complete Tic Tac Toe game implementation using structs.
 
 **How to Run:**
 ```bash
-./build/compiler code_examples/tictactoe.txt
-gcc -no-pie code_examples/tictactoe.txt.s -o tictactoe
+./build/compiler code_examples/tictactoe.dmm
+gcc -no-pie code_examples/tictactoe.dmm.s -o tictactoe
 ./tictactoe
 ```
 
@@ -93,8 +93,8 @@ A number guessing game where players try to find a secret number within a limite
 
 **How to Run:**
 ```bash
-./build/compiler code_examples/guess_number.txt
-gcc -no-pie code_examples/guess_number.txt.s -o guess_number
+./build/compiler code_examples/guess_number.dmm
+gcc -no-pie code_examples/guess_number.dmm.s -o guess_number
 ./guess_number
 ```
 
@@ -123,8 +123,8 @@ Classic Rock-Paper-Scissors game implementation.
 
 **How to Run:**
 ```bash
-./build/compiler code_examples/rock_paper_scissors.txt
-gcc -no-pie code_examples/rock_paper_scissors.txt.s -o rps
+./build/compiler code_examples/rock_paper_scissors.dmm
+gcc -no-pie code_examples/rock_paper_scissors.dmm.s -o rps
 ./rps
 ```
 
@@ -152,8 +152,8 @@ A feature-rich calculator with memory functions and operation history.
 
 **How to Run:**
 ```bash
-./build/compiler code_examples/calculator.txt
-gcc -no-pie code_examples/calculator.txt.s -o calculator
+./build/compiler code_examples/calculator.dmm
+gcc -no-pie code_examples/calculator.dmm.s -o calculator
 ./calculator
 ```
 
@@ -177,8 +177,8 @@ done
 ### Compile Individual Example
 
 ```bash
-./build/compiler code_examples/tictactoe.txt
-gcc -no-pie code_examples/tictactoe.txt.s -o tictactoe_game
+./build/compiler code_examples/tictactoe.dmm
+gcc -no-pie code_examples/tictactoe.dmm.s -o tictactoe_game
 ./tictactoe_game
 ```
 

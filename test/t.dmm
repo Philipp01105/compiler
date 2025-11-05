@@ -1,0 +1,5 @@
+func main() -> void {
+    print("Before array");
+    var[10] arr:int;
+    print("After array");
+}

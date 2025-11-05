@@ -1,6 +1,0 @@
-#import <stdlib/core.txt>
-
-func main() -> void {
-    var x:int = intAbs(-5);
-    print("x = " + intToString(x));
-}
