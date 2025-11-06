@@ -7,17 +7,17 @@ The compiler standard library provides a comprehensive set of functions for comm
 ## Import Syntax
 
 ```javascript
-#import <stdlib/core.txt>
-#import <stdlib/math.txt>
-#import <stdlib/array.txt>
-#import <stdlib/strings.txt>
-#import <stdlib/utils.txt>
-#import <stdlib/io.txt>
+#import <stdlib/core.dmm>
+#import <stdlib/math.dmm>
+#import <stdlib/array.dmm>
+#import <stdlib/strings.dmm>
+#import <stdlib/utils.dmm>
+#import <stdlib/io.dmm>
 ```
 
 ## Modules
 
-### 1. I/O Module (`stdlib/io.txt`)
+### 1. I/O Module (`stdlib/io.dmm`)
 
 **Input struct** for reading user input.
 
@@ -30,7 +30,7 @@ The Input struct provides methods for reading different types of user input:
 
 **Note**: This module has compiler built-in support for scanf operations.
 
-### 2. Core Module (`stdlib/core.txt`)
+### 2. Core Module (`stdlib/core.dmm`)
 
 **30 functions** providing fundamental operations for all data types.
 
@@ -73,7 +73,7 @@ The Input struct provides methods for reading different types of user input:
 - `charIsAlnum(c:char) -> bit` - Checks if alphanumeric
 - `charIsSpace(c:char) -> bit` - Checks if whitespace
 
-### 2. Math Module (`stdlib/math.txt`)
+### 2. Math Module (`stdlib/math.dmm`)
 
 **28 functions** for mathematical operations, algorithms, and number theory.
 
@@ -110,7 +110,7 @@ The Input struct provides methods for reading different types of user input:
 - `mathAverage(a:int, b:int) -> int` - Average of 2 values
 - `mathAverage3(a:int, b:int, c:int) -> int` - Average of 3 values
 
-### 3. Array Module (`stdlib/array.txt`)
+### 3. Array Module (`stdlib/array.dmm`)
 
 **25 functions** for array manipulation and analysis.
 
@@ -146,7 +146,7 @@ The Input struct provides methods for reading different types of user input:
 #### Array Comparison
 - `arrayEqualsInt(arr1[]:int, arr2[]:int, size:int) -> bit`
 
-### 4. Strings Module (`stdlib/strings.txt`)
+### 4. Strings Module (`stdlib/strings.dmm`)
 
 **27 functions** for string manipulation and analysis.
 
@@ -178,7 +178,7 @@ The Input struct provides methods for reading different types of user input:
 - `strDigitToChar(digit:int) -> char` - Convert digit to char
 - `strParseInt(s:string) -> int` - Parse integer from string
 
-### 5. Utils Module (`stdlib/utils.txt`)
+### 5. Utils Module (`stdlib/utils.dmm`)
 
 **35 functions** for general utility operations.
 
@@ -233,8 +233,8 @@ The Input struct provides methods for reading different types of user input:
 ### Example 1: Using Core and Math Modules
 
 ```javascript
-#import <stdlib/core.txt>
-#import <stdlib/math.txt>
+#import <stdlib/core.dmm>
+#import <stdlib/math.dmm>
 
 func main() -> void {
     var num:int = -42;
@@ -251,7 +251,7 @@ func main() -> void {
 ### Example 2: Array Operations
 
 ```javascript
-#import <stdlib/array.txt>
+#import <stdlib/array.dmm>
 
 func main() -> void {
     var[10] numbers:int;
@@ -278,7 +278,7 @@ func main() -> void {
 ### Example 3: String Analysis
 
 ```javascript
-#import <stdlib/strings.txt>
+#import <stdlib/strings.dmm>
 
 func main() -> void {
     var text:string = "Hello World";
@@ -297,7 +297,7 @@ func main() -> void {
 ### Example 4: Using Utility Functions
 
 ```javascript
-#import <stdlib/utils.txt>
+#import <stdlib/utils.dmm>
 
 func main() -> void {
     printDoubleLine();
