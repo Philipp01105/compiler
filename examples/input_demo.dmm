@@ -1,0 +1,18 @@
+// Test for Input struct functionality
+#import <stdlib/io.txt>
+
+func main() -> void {
+    var input:Input;
+    input.init();
+    
+    println("Testing Input struct");
+    println("Enter an integer:");
+    var num:int = input.readInt();
+    println("You entered: " + num);
+    
+    println("Enter a character:");
+    var ch:char = input.readChar();
+    print("You entered: ");
+    print(ch);
+    println("");
+}

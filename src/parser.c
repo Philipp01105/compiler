@@ -180,6 +180,13 @@ int is_builtin_memory_function(const char *name) {
            strcmp(name, "free") == 0;
 }
 
+// Check if a function name is a built-in input function
+int is_builtin_input_function(const char *name) {
+    return strcmp(name, "scanfInt") == 0 ||
+           strcmp(name, "scanfChar") == 0 ||
+           strcmp(name, "scanfString") == 0;
+}
+
 const char *get_register_for_type(DataType type, int reg_num) {
     switch (type) {
         case TYPE_FLOAT:
@@ -1406,29 +1413,16 @@ void parse_variable_declaration(Parser *parser) {
         }
 
         if (struct_type_name[0] != '\0') {
-            // Struct variable - initialize to zero
+            // Struct variable - space already allocated in stack frame by subq
+            // No code generation needed - just track the space in offset calculation
             StructDefinition *struct_def = find_struct(parser, struct_type_name);
-            code_comment(parser, "Line %d: var %s:%s (struct, uninitialized)",
+            code_comment(parser, "Line %d: var %s:%s (struct, space reserved in stack frame)",
                          var_token.line, name_token.value, struct_type_name);
-            
-            // Allocate space for struct by pushing zeros
-            int num_pushes = (struct_def->total_size + 7) / 8;  // Round up to 8-byte chunks
-            code_printf(parser, "    xorq %%rax, %%rax\n");
-            for (int i = 0; i < num_pushes; i++) {
-                code_printf(parser, "    pushq %%rax\n");
-            }
+            // No actual code generation - the offset calculation will handle placement
         } else {
             code_comment(parser, "Line %d: var %s:%s (uninitialized)",
                          var_token.line, name_token.value, datatype_to_string(var_type));
-
-            if (var_type == TYPE_FLOAT || var_type == TYPE_DOUBLE) {
-                code_printf(parser, "    xorps %%xmm0, %%xmm0\n");
-                code_printf(parser, "    movq %%xmm0, %%rax\n");
-                code_printf(parser, "    pushq %%rax\n");
-            } else {
-                code_printf(parser, "    xorq %%rax, %%rax\n");
-                code_printf(parser, "    pushq %%rax\n");
-            }
+            // No code generation for uninitialized variables - space is in stack frame
         }
     } else {
         // Array declaration - just allocate space, no initialization
@@ -2761,13 +2755,13 @@ void parse_print_statement(Parser *parser) {
                         code_printf(parser, "    movq %%xmm0, %s\n", get_arg_registers_64()[1]);
                         code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     } else if (field->type == TYPE_CHAR) {
-                        code_printf(parser, "    movsbl %d(%%rbx), %%edx\n", field->offset);
+                        code_printf(parser, "    movsbl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
                         code_printf(parser, "    leaq .LC_char_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     } else if (field->type == TYPE_BYTE || field->type == TYPE_BIT) {
-                        code_printf(parser, "    movzbl %d(%%rbx), %%edx\n", field->offset);
+                        code_printf(parser, "    movzbl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
                         code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     } else if (field->type == TYPE_STRING) {
-                        code_printf(parser, "    movq %d(%%rbx), %%rdx\n", field->offset);
+                        code_printf(parser, "    movq %d(%%rbx), %s\n", field->offset, get_arg_registers_64()[1]);
                         code_printf(parser, "    leaq .LC_string_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     } else {  // TYPE_INT and others
                         code_printf(parser, "    movl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
@@ -2871,13 +2865,13 @@ void parse_print_statement(Parser *parser) {
                                     code_printf(parser, "    movq %%xmm0, %s\n", get_arg_registers_64()[1]);
                                     code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_registers_64()[0]);
                                 } else if (field->type == TYPE_CHAR) {
-                                    code_printf(parser, "    movsbl %d(%%rbx), %%edx\n", field->offset);
+                                    code_printf(parser, "    movsbl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
                                     code_printf(parser, "    leaq .LC_char_format(%%rip), %s\n", get_arg_registers_64()[0]);
                                 } else if (field->type == TYPE_BYTE || field->type == TYPE_BIT) {
-                                    code_printf(parser, "    movzbl %d(%%rbx), %%edx\n", field->offset);
+                                    code_printf(parser, "    movzbl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
                                     code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
                                 } else if (field->type == TYPE_STRING) {
-                                    code_printf(parser, "    movq %d(%%rbx), %%rdx\n", field->offset);
+                                    code_printf(parser, "    movq %d(%%rbx), %s\n", field->offset, get_arg_registers_64()[1]);
                                     code_printf(parser, "    leaq .LC_string_format(%%rip), %s\n", get_arg_registers_64()[0]);
                                 } else {
                                     code_printf(parser, "    movl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
@@ -2937,7 +2931,7 @@ void parse_print_statement(Parser *parser) {
                 }
             }
                 } else if (var->type == TYPE_CHAR) {
-                    code_printf(parser, "    movsbl %d(%%rbp), %%edx\n", var->offset);
+                    code_printf(parser, "    movsbl %d(%%rbp), %s\n", var->offset, get_arg_registers_32()[1]);
                     code_printf(parser, "    leaq .LC_char_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     {
                 int stack_adj_13 = get_call_stack_space();
@@ -2950,7 +2944,7 @@ void parse_print_statement(Parser *parser) {
                 }
             }
                 } else if (var->type == TYPE_BYTE || var->type == TYPE_BIT) {
-                    code_printf(parser, "    movzbl %d(%%rbp), %%edx\n", var->offset);
+                    code_printf(parser, "    movzbl %d(%%rbp), %s\n", var->offset, get_arg_registers_32()[1]);
                     code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     {
                 int stack_adj_14 = get_call_stack_space();
@@ -2963,7 +2957,7 @@ void parse_print_statement(Parser *parser) {
                 }
             }
                 } else if (var->type == TYPE_STRING) {
-                    code_printf(parser, "    movq %d(%%rbp), %%rdx\n", var->offset);
+                    code_printf(parser, "    movq %d(%%rbp), %s\n", var->offset, get_arg_registers_64()[1]);
                     code_printf(parser, "    leaq .LC_string_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     {
                 int stack_adj_15 = get_call_stack_space();
@@ -3295,13 +3289,13 @@ void parse_printline_statement(Parser *parser) {
                         code_printf(parser, "    movq %%xmm0, %s\n", get_arg_registers_64()[1]);
                         code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     } else if (field->type == TYPE_CHAR) {
-                        code_printf(parser, "    movsbl %d(%%rbx), %%edx\n", field->offset);
+                        code_printf(parser, "    movsbl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
                         code_printf(parser, "    leaq .LC_char_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     } else if (field->type == TYPE_BYTE || field->type == TYPE_BIT) {
-                        code_printf(parser, "    movzbl %d(%%rbx), %%edx\n", field->offset);
+                        code_printf(parser, "    movzbl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
                         code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     } else if (field->type == TYPE_STRING) {
-                        code_printf(parser, "    movq %d(%%rbx), %%rdx\n", field->offset);
+                        code_printf(parser, "    movq %d(%%rbx), %s\n", field->offset, get_arg_registers_64()[1]);
                         code_printf(parser, "    leaq .LC_string_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     } else {  // TYPE_INT and others
                         code_printf(parser, "    movl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
@@ -3405,13 +3399,13 @@ void parse_printline_statement(Parser *parser) {
                                     code_printf(parser, "    movq %%xmm0, %s\n", get_arg_registers_64()[1]);
                                     code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_registers_64()[0]);
                                 } else if (field->type == TYPE_CHAR) {
-                                    code_printf(parser, "    movsbl %d(%%rbx), %%edx\n", field->offset);
+                                    code_printf(parser, "    movsbl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
                                     code_printf(parser, "    leaq .LC_char_format(%%rip), %s\n", get_arg_registers_64()[0]);
                                 } else if (field->type == TYPE_BYTE || field->type == TYPE_BIT) {
-                                    code_printf(parser, "    movzbl %d(%%rbx), %%edx\n", field->offset);
+                                    code_printf(parser, "    movzbl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
                                     code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
                                 } else if (field->type == TYPE_STRING) {
-                                    code_printf(parser, "    movq %d(%%rbx), %%rdx\n", field->offset);
+                                    code_printf(parser, "    movq %d(%%rbx), %s\n", field->offset, get_arg_registers_64()[1]);
                                     code_printf(parser, "    leaq .LC_string_format(%%rip), %s\n", get_arg_registers_64()[0]);
                                 } else {
                                     code_printf(parser, "    movl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
@@ -3471,7 +3465,7 @@ void parse_printline_statement(Parser *parser) {
                 }
             }
                 } else if (var->type == TYPE_CHAR) {
-                    code_printf(parser, "    movsbl %d(%%rbp), %%edx\n", var->offset);
+                    code_printf(parser, "    movsbl %d(%%rbp), %s\n", var->offset, get_arg_registers_32()[1]);
                     code_printf(parser, "    leaq .LC_char_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     {
                 int stack_adj_13 = get_call_stack_space();
@@ -3484,7 +3478,7 @@ void parse_printline_statement(Parser *parser) {
                 }
             }
                 } else if (var->type == TYPE_BYTE || var->type == TYPE_BIT) {
-                    code_printf(parser, "    movzbl %d(%%rbp), %%edx\n", var->offset);
+                    code_printf(parser, "    movzbl %d(%%rbp), %s\n", var->offset, get_arg_registers_32()[1]);
                     code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     {
                 int stack_adj_14 = get_call_stack_space();
@@ -3497,7 +3491,7 @@ void parse_printline_statement(Parser *parser) {
                 }
             }
                 } else if (var->type == TYPE_STRING) {
-                    code_printf(parser, "    movq %d(%%rbp), %%rdx\n", var->offset);
+                    code_printf(parser, "    movq %d(%%rbp), %s\n", var->offset, get_arg_registers_64()[1]);
                     code_printf(parser, "    leaq .LC_string_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     {
                 int stack_adj_15 = get_call_stack_space();
@@ -4407,6 +4401,118 @@ void parse_primary(Parser *parser) {
                     code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_32);
                 }
             }
+                    return;
+                }
+            }
+            
+            // Check if it's a built-in input function
+            if (is_builtin_input_function(name.value)) {
+                expect(parser, TOKEN_LPAREN, "Expected '('");
+                expect(parser, TOKEN_RPAREN, "Expected ')' - input functions take no arguments");
+                
+                if (strcmp(name.value, "scanfInt") == 0) {
+                    // scanfInt() -> int (reads int from stdin, returns value)
+                    code_comment(parser, "Built-in: scanfInt()");
+                    
+                    // Allocate space on stack for the input value
+                    code_printf(parser, "    subq $16, %%rsp\n");  // Allocate 16 bytes (aligned)
+                    code_printf(parser, "    movq %%rsp, %%r15\n");  // Save stack pointer in callee-saved register
+                    
+                    const char **scanf_regs = get_arg_registers_64();
+                    code_printf(parser, "    movq %%r15, %s\n", scanf_regs[1]);  // Address on stack
+                    code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", scanf_regs[0]);  // Format string
+                    code_printf(parser, "    xor %%eax, %%eax\n");  // Clear EAX (for variadic functions)
+                    {
+                        int stack_adj_scanf = get_call_stack_space();
+                        if (stack_adj_scanf > 0) {
+                            code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_scanf);
+                        }
+                        code_printf(parser, "    call scanf\n");
+                        if (stack_adj_scanf > 0) {
+                            code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_scanf);
+                        }
+                    }
+                    // Load the value that was read
+                    code_printf(parser, "    movl (%%r15), %%eax\n");  // Load int from saved address
+                    code_printf(parser, "    addq $16, %%rsp\n");  // Deallocate stack space
+                    code_printf(parser, "    cltq\n");  // Sign extend to 64 bits
+                    code_printf(parser, "    pushq %%rax\n");  // Return value
+                    return;
+                } else if (strcmp(name.value, "scanfChar") == 0) {
+                    // scanfChar() -> char (reads char from stdin, returns value)
+                    code_comment(parser, "Built-in: scanfChar()");
+                    
+                    // Allocate space on stack for the input value
+                    code_printf(parser, "    subq $16, %%rsp\n");  // Allocate 16 bytes (aligned)
+                    code_printf(parser, "    movq %%rsp, %%r15\n");  // Save stack pointer in callee-saved register
+                    
+                    const char **scanf_regs = get_arg_registers_64();
+                    code_printf(parser, "    movq %%r15, %s\n", scanf_regs[1]);  // Address on stack
+                    code_printf(parser, "    leaq .LC_char_input_format(%%rip), %s\n", scanf_regs[0]);  // Format string
+                    code_printf(parser, "    xor %%eax, %%eax\n");  // Clear EAX (for variadic functions)
+                    {
+                        int stack_adj_scanf = get_call_stack_space();
+                        if (stack_adj_scanf > 0) {
+                            code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_scanf);
+                        }
+                        code_printf(parser, "    call scanf\n");
+                        if (stack_adj_scanf > 0) {
+                            code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_scanf);
+                        }
+                    }
+                    // Load the value that was read
+                    code_printf(parser, "    movzbl (%%r15), %%eax\n");  // Load char from saved address
+                    code_printf(parser, "    addq $16, %%rsp\n");  // Deallocate stack space
+                    code_printf(parser, "    pushq %%rax\n");  // Return value
+                    return;
+                } else if (strcmp(name.value, "scanfString") == 0) {
+                    // scanfString() -> string (reads string from stdin, returns pointer to static buffer)
+                    // Reads until newline character
+                    code_comment(parser, "Built-in: scanfString()");
+                    
+                    // Save callee-saved registers we'll use
+                    code_printf(parser, "    pushq %%r15\n");
+                    code_printf(parser, "    pushq %%r14\n");
+                    code_printf(parser, "    pushq %%r13\n");
+                    
+                    // Use a static buffer
+                    code_printf(parser, "    leaq _scanfString_buffer(%%rip), %%r15\n");  // Get address of static buffer
+                    code_printf(parser, "    movq %%r15, %%r14\n");  // Save start address
+                    code_printf(parser, "    movl $255, %%r13d\n");  // Counter (max 255 chars)
+                    
+                    // Read loop
+                    code_printf(parser, ".Lread_loop_%d:\n", parser->label_counter);
+                    {
+                        int stack_adj_getchar = get_call_stack_space();
+                        if (stack_adj_getchar > 0) {
+                            code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_getchar);
+                        }
+                        code_printf(parser, "    call getchar\n");
+                        if (stack_adj_getchar > 0) {
+                            code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_getchar);
+                        }
+                    }
+                    code_printf(parser, "    cmp $10, %%eax\n");  // Check for newline
+                    code_printf(parser, "    je .Lread_done_%d\n", parser->label_counter);
+                    code_printf(parser, "    cmp $-1, %%eax\n");  // Check for EOF
+                    code_printf(parser, "    je .Lread_done_%d\n", parser->label_counter);
+                    code_printf(parser, "    movb %%al, (%%r15)\n");  // Store character
+                    code_printf(parser, "    incq %%r15\n");  // Move to next position
+                    code_printf(parser, "    decl %%r13d\n");  // Decrement counter
+                    code_printf(parser, "    jnz .Lread_loop_%d\n", parser->label_counter);  // Continue if space left
+                    
+                    // Done reading
+                    code_printf(parser, ".Lread_done_%d:\n", parser->label_counter);
+                    code_printf(parser, "    movb $0, (%%r15)\n");  // Null terminate
+                    code_printf(parser, "    movq %%r14, %%rax\n");  // Return start address
+                    
+                    // Restore callee-saved registers
+                    code_printf(parser, "    popq %%r13\n");
+                    code_printf(parser, "    popq %%r14\n");
+                    code_printf(parser, "    popq %%r15\n");
+                    
+                    code_printf(parser, "    pushq %%rax\n");  // Push return value
+                    parser->label_counter++;
                     return;
                 }
             }
