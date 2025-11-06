@@ -1,0 +1,11 @@
+// Simple test for Input struct
+#import <stdlib/io.txt>
+
+func main() -> void {
+    var input:Input;
+    input.init();
+    
+    println("Enter an integer:");
+    var num:int = input.readInt();
+    println("You entered: " + num);
+}

@@ -186,6 +186,8 @@ int main(int argc, char *argv[]) {
     fprintf(output, "    .ascii \"%%lf\\0\"\n");
     fprintf(output, ".LC_char_format:\n");
     fprintf(output, "    .ascii \"%%c\\0\"\n");
+    fprintf(output, ".LC_char_input_format:\n");
+    fprintf(output, "    .ascii \" %%c\\0\"\n");
     fprintf(output, ".LC_string_format:\n");
     fprintf(output, "    .ascii \"%%s\\0\"\n");
     fprintf(output, ".LC_newline:\n");

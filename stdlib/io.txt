@@ -1,0 +1,53 @@
+// =================================================================
+// I/O MODULE - Input/Output Operations
+// Provides user input functionality through the Input struct
+// =================================================================
+// This module provides:
+// - Input struct for reading user input
+// - Methods for reading different data types
+// - Blocking I/O that waits for user input with newline
+// =================================================================
+
+// Note: The compiler provides built-in support for scanf calls
+// in the Input struct methods. These methods are specially handled
+// during code generation to insert proper scanf assembly instructions.
+
+// Input struct - handles user input operations
+struct Input {
+    var lastInt:int;        // Last integer read
+    var lastChar:char;      // Last character read
+    
+    // Initialize the Input struct
+    func init() -> void {
+        lastInt = 0;
+        lastChar = 0;
+    }
+    
+    // Read an integer from user input
+    // Blocks until user enters a number and presses Enter
+    // This method has special compiler support for scanf
+    func readInt() -> int {
+        // Compiler generates: scanf("%d", &this->lastInt)
+        return lastInt;
+    }
+    
+    // Read a character from user input
+    // Blocks until user enters a character and presses Enter
+    // This method has special compiler support for scanf
+    func readChar() -> char {
+        // Compiler generates: scanf(" %c", &this->lastChar)
+        return lastChar;
+    }
+    
+    // Print a prompt and read an integer
+    func promptInt(prompt:string) -> int {
+        print(prompt);
+        return readInt();
+    }
+    
+    // Print a prompt and read a character
+    func promptChar(prompt:string) -> char {
+        print(prompt);
+        return readChar();
+    }
+}

@@ -1,0 +1,18 @@
+// Test basic struct without io.txt
+struct Point {
+    var x:int;
+    var y:int;
+    
+    func init(a:int, b:int) -> void {
+        x = a;
+        y = b;
+    }
+}
+
+func main() -> void {
+    println("Before creating Point");
+    var p:Point;
+    println("After creating Point");
+    p.init(10, 20);
+    println("After init");
+}

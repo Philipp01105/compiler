@@ -1,0 +1,10 @@
+// Debug test
+#import <stdlib/io.txt>
+
+func main() -> void {
+    println("Before creating Input");
+    var input:Input;
+    println("After creating Input");
+    input.init();
+    println("After init");
+}

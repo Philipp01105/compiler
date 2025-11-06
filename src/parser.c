@@ -1309,6 +1309,7 @@ void parse_variable_declaration(Parser *parser) {
     // Check for array syntax: var[size] or var[]
     int is_array = 0;
     int array_size = 0;
+    int actual_struct_size = 0;  // Track actual allocated size for structs with padding
     
     if (check(parser->tokens, TOKEN_LBRACKET)) {
         consume(parser->tokens);
@@ -1412,7 +1413,20 @@ void parse_variable_declaration(Parser *parser) {
                          var_token.line, name_token.value, struct_type_name);
             
             // Allocate space for struct by pushing zeros
+            // Ensure alignment by pushing in 8-byte chunks
             int num_pushes = (struct_def->total_size + 7) / 8;  // Round up to 8-byte chunks
+            
+            // To maintain 16-byte alignment before function calls,
+            // we need to ensure total pushes (including this one) results in proper alignment
+            // After function prologue (pushq %rbp + subq $8192), stack is at 8 mod 16
+            // We want to keep it that way
+            if (num_pushes % 2 == 1) {
+                // Odd number of pushes would break alignment, so push one extra for padding
+                num_pushes++;
+            }
+            
+            actual_struct_size = num_pushes * 8;  // Each push is 8 bytes
+            
             code_printf(parser, "    xorq %%rax, %%rax\n");
             for (int i = 0; i < num_pushes; i++) {
                 code_printf(parser, "    pushq %%rax\n");
@@ -1454,8 +1468,13 @@ void parse_variable_declaration(Parser *parser) {
     int element_size;
     if (struct_type_name[0] != '\0') {
         // This is a struct variable
-        StructDefinition *struct_def = find_struct(parser, struct_type_name);
-        element_size = struct_def->total_size;
+        // Use actual_struct_size if it was set (accounts for alignment padding)
+        if (actual_struct_size > 0) {
+            element_size = actual_struct_size;
+        } else {
+            StructDefinition *struct_def = find_struct(parser, struct_type_name);
+            element_size = struct_def->total_size;
+        }
     } else {
         element_size = datatype_size(var_type);
     }
@@ -4865,6 +4884,78 @@ void parse_primary(Parser *parser) {
                     Function *method = find_function(parser, mangled_name);
                     if (!method) {
                         parser_error(parser, "Method '%s' not found in struct '%s'", member_name.value, var->struct_type);
+                        return;
+                    }
+                    
+                    // Special handling for Input struct methods that need scanf
+                    if (strcmp(var->struct_type, "Input") == 0 && 
+                        (strcmp(member_name.value, "readInt") == 0 || strcmp(member_name.value, "readChar") == 0)) {
+                        
+                        // These methods take no arguments
+                        expect(parser, TOKEN_RPAREN, "Expected ')' after method call");
+                        
+                        code_comment(parser, "Input.%s() - using scanf", member_name.value);
+                        
+                        // Get the address of the field to store the result
+                        // For readInt: &(this->lastInt)
+                        // For readChar: &(this->lastChar)
+                        StructDefinition *input_struct = find_struct(parser, "Input");
+                        if (!input_struct) {
+                            parser_error(parser, "Input struct not found");
+                            return;
+                        }
+                        
+                        const char *field_name = strcmp(member_name.value, "readInt") == 0 ? "lastInt" : "lastChar";
+                        StructField *field = NULL;
+                        for (int i = 0; i < input_struct->field_count; i++) {
+                            if (strcmp(input_struct->fields[i].name, field_name) == 0) {
+                                field = &input_struct->fields[i];
+                                break;
+                            }
+                        }
+                        
+                        if (!field) {
+                            parser_error(parser, "Field '%s' not found in Input struct", field_name);
+                            return;
+                        }
+                        
+                        // Calculate address: base address of struct + field offset
+                        code_printf(parser, "    leaq %d(%%rbp), %%rax\n", var->offset);  // Address of struct
+                        code_printf(parser, "    addq $%d, %%rax\n", field->offset);     // Add field offset
+                        
+                        // Move address to second argument register (first arg will be format string)
+                        const char **scanf_arg_regs_64 = get_arg_registers_64();
+                        code_printf(parser, "    movq %%rax, %s\n", scanf_arg_regs_64[1]);
+                        
+                        // Load format string into first argument register
+                        if (strcmp(member_name.value, "readInt") == 0) {
+                            code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", scanf_arg_regs_64[0]);
+                        } else {
+                            code_printf(parser, "    leaq .LC_char_input_format(%%rip), %s\n", scanf_arg_regs_64[0]);
+                        }
+                        
+                        // Call scanf
+                        code_printf(parser, "    xor %%eax, %%eax\n");  // Clear AL (for variadic functions)
+                        {
+                            int scanf_stack_adj = get_call_stack_space();
+                            if (scanf_stack_adj > 0) {
+                                code_printf(parser, "    subq $%d, %%rsp\n", scanf_stack_adj);
+                            }
+                            code_printf(parser, "    call scanf\n");
+                            if (scanf_stack_adj > 0) {
+                                code_printf(parser, "    addq $%d, %%rsp\n", scanf_stack_adj);
+                            }
+                        }
+                        
+                        // Load the value we just read and push it as the return value
+                        if (strcmp(member_name.value, "readInt") == 0) {
+                            code_printf(parser, "    movl %d(%%rbp), %%eax\n", var->offset + field->offset);
+                            code_printf(parser, "    cltq\n");  // Sign extend to 64 bits
+                        } else {
+                            code_printf(parser, "    movzbl %d(%%rbp), %%eax\n", var->offset + field->offset);
+                        }
+                        code_printf(parser, "    pushq %%rax\n");
+                        
                         return;
                     }
                     
