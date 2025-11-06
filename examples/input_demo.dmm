@@ -1,18 +1,24 @@
-// Test for Input struct functionality
+// Test for I/O functionality
 #import <stdlib/io.dmm>
 
 func main() -> void {
-    var input:Input;
-    input.init();
+    println("=== DMM I/O Demo ===");
+    println("");
     
-    println("Testing Input struct");
     println("Enter an integer:");
-    var num:int = input.readInt();
-    println("You entered: " + num);
+    var num:int = readInt();
+    print("You entered: ");
+    printlnInt(num);
+    println("");
     
     println("Enter a character:");
-    var ch:char = input.readChar();
+    var ch:char = readChar();
     print("You entered: ");
-    print(ch);
+    printlnChar(ch);
     println("");
+    
+    println("Enter a string:");
+    var text:string = readString();
+    print("You entered: ");
+    println(text);
 }
