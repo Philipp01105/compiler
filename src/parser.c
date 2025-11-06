@@ -183,7 +183,8 @@ int is_builtin_memory_function(const char *name) {
 // Check if a function name is a built-in input function
 int is_builtin_input_function(const char *name) {
     return strcmp(name, "scanfInt") == 0 ||
-           strcmp(name, "scanfChar") == 0;
+           strcmp(name, "scanfChar") == 0 ||
+           strcmp(name, "scanfString") == 0;
 }
 
 const char *get_register_for_type(DataType type, int reg_num) {
@@ -4463,6 +4464,55 @@ void parse_primary(Parser *parser) {
                     code_printf(parser, "    movzbl (%%r15), %%eax\n");  // Load char from saved address
                     code_printf(parser, "    addq $16, %%rsp\n");  // Deallocate stack space
                     code_printf(parser, "    pushq %%rax\n");  // Return value
+                    return;
+                } else if (strcmp(name.value, "scanfString") == 0) {
+                    // scanfString() -> string (reads string from stdin, returns pointer to static buffer)
+                    // Reads until newline character
+                    code_comment(parser, "Built-in: scanfString()");
+                    
+                    // Save callee-saved registers we'll use
+                    code_printf(parser, "    pushq %%r15\n");
+                    code_printf(parser, "    pushq %%r14\n");
+                    code_printf(parser, "    pushq %%r13\n");
+                    
+                    // Use a static buffer
+                    code_printf(parser, "    leaq _scanfString_buffer(%%rip), %%r15\n");  // Get address of static buffer
+                    code_printf(parser, "    movq %%r15, %%r14\n");  // Save start address
+                    code_printf(parser, "    movl $255, %%r13d\n");  // Counter (max 255 chars)
+                    
+                    // Read loop
+                    code_printf(parser, ".Lread_loop_%d:\n", parser->label_counter);
+                    {
+                        int stack_adj_getchar = get_call_stack_space();
+                        if (stack_adj_getchar > 0) {
+                            code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_getchar);
+                        }
+                        code_printf(parser, "    call getchar\n");
+                        if (stack_adj_getchar > 0) {
+                            code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_getchar);
+                        }
+                    }
+                    code_printf(parser, "    cmp $10, %%eax\n");  // Check for newline
+                    code_printf(parser, "    je .Lread_done_%d\n", parser->label_counter);
+                    code_printf(parser, "    cmp $-1, %%eax\n");  // Check for EOF
+                    code_printf(parser, "    je .Lread_done_%d\n", parser->label_counter);
+                    code_printf(parser, "    movb %%al, (%%r15)\n");  // Store character
+                    code_printf(parser, "    incq %%r15\n");  // Move to next position
+                    code_printf(parser, "    decl %%r13d\n");  // Decrement counter
+                    code_printf(parser, "    jnz .Lread_loop_%d\n", parser->label_counter);  // Continue if space left
+                    
+                    // Done reading
+                    code_printf(parser, ".Lread_done_%d:\n", parser->label_counter);
+                    code_printf(parser, "    movb $0, (%%r15)\n");  // Null terminate
+                    code_printf(parser, "    movq %%r14, %%rax\n");  // Return start address
+                    
+                    // Restore callee-saved registers
+                    code_printf(parser, "    popq %%r13\n");
+                    code_printf(parser, "    popq %%r14\n");
+                    code_printf(parser, "    popq %%r15\n");
+                    
+                    code_printf(parser, "    pushq %%rax\n");  // Push return value
+                    parser->label_counter++;
                     return;
                 }
             }
