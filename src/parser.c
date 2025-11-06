@@ -180,6 +180,12 @@ int is_builtin_memory_function(const char *name) {
            strcmp(name, "free") == 0;
 }
 
+// Check if a function name is a built-in input function
+int is_builtin_input_function(const char *name) {
+    return strcmp(name, "scanfInt") == 0 ||
+           strcmp(name, "scanfChar") == 0;
+}
+
 const char *get_register_for_type(DataType type, int reg_num) {
     switch (type) {
         case TYPE_FLOAT:
@@ -4397,6 +4403,69 @@ void parse_primary(Parser *parser) {
                     return;
                 }
             }
+            
+            // Check if it's a built-in input function
+            if (is_builtin_input_function(name.value)) {
+                expect(parser, TOKEN_LPAREN, "Expected '('");
+                expect(parser, TOKEN_RPAREN, "Expected ')' - input functions take no arguments");
+                
+                if (strcmp(name.value, "scanfInt") == 0) {
+                    // scanfInt() -> int (reads int from stdin, returns value)
+                    code_comment(parser, "Built-in: scanfInt()");
+                    
+                    // Allocate space on stack for the input value
+                    code_printf(parser, "    subq $16, %%rsp\n");  // Allocate 16 bytes (aligned)
+                    code_printf(parser, "    movq %%rsp, %%r15\n");  // Save stack pointer in callee-saved register
+                    
+                    const char **scanf_regs = get_arg_registers_64();
+                    code_printf(parser, "    movq %%r15, %s\n", scanf_regs[1]);  // Address on stack
+                    code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", scanf_regs[0]);  // Format string
+                    code_printf(parser, "    xor %%eax, %%eax\n");  // Clear EAX (for variadic functions)
+                    {
+                        int stack_adj_scanf = get_call_stack_space();
+                        if (stack_adj_scanf > 0) {
+                            code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_scanf);
+                        }
+                        code_printf(parser, "    call scanf\n");
+                        if (stack_adj_scanf > 0) {
+                            code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_scanf);
+                        }
+                    }
+                    // Load the value that was read
+                    code_printf(parser, "    movl (%%r15), %%eax\n");  // Load int from saved address
+                    code_printf(parser, "    addq $16, %%rsp\n");  // Deallocate stack space
+                    code_printf(parser, "    cltq\n");  // Sign extend to 64 bits
+                    code_printf(parser, "    pushq %%rax\n");  // Return value
+                    return;
+                } else if (strcmp(name.value, "scanfChar") == 0) {
+                    // scanfChar() -> char (reads char from stdin, returns value)
+                    code_comment(parser, "Built-in: scanfChar()");
+                    
+                    // Allocate space on stack for the input value
+                    code_printf(parser, "    subq $16, %%rsp\n");  // Allocate 16 bytes (aligned)
+                    code_printf(parser, "    movq %%rsp, %%r15\n");  // Save stack pointer in callee-saved register
+                    
+                    const char **scanf_regs = get_arg_registers_64();
+                    code_printf(parser, "    movq %%r15, %s\n", scanf_regs[1]);  // Address on stack
+                    code_printf(parser, "    leaq .LC_char_input_format(%%rip), %s\n", scanf_regs[0]);  // Format string
+                    code_printf(parser, "    xor %%eax, %%eax\n");  // Clear EAX (for variadic functions)
+                    {
+                        int stack_adj_scanf = get_call_stack_space();
+                        if (stack_adj_scanf > 0) {
+                            code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_scanf);
+                        }
+                        code_printf(parser, "    call scanf\n");
+                        if (stack_adj_scanf > 0) {
+                            code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_scanf);
+                        }
+                    }
+                    // Load the value that was read
+                    code_printf(parser, "    movzbl (%%r15), %%eax\n");  // Load char from saved address
+                    code_printf(parser, "    addq $16, %%rsp\n");  // Deallocate stack space
+                    code_printf(parser, "    pushq %%rax\n");  // Return value
+                    return;
+                }
+            }
 
             // Check if we're in a method context and this might be a method call
             int is_method_call = 0;
@@ -4852,79 +4921,6 @@ void parse_primary(Parser *parser) {
                     Function *method = find_function(parser, mangled_name);
                     if (!method) {
                         parser_error(parser, "Method '%s' not found in struct '%s'", member_name.value, var->struct_type);
-                        return;
-                    }
-                    
-                    // Special handling for Input struct methods that need scanf
-                    // Note: "Input" is hardcoded per requirement for this specific struct
-                    if (strcmp(var->struct_type, "Input") == 0 && 
-                        (strcmp(member_name.value, "readInt") == 0 || strcmp(member_name.value, "readChar") == 0)) {
-                        
-                        // These methods take no arguments
-                        expect(parser, TOKEN_RPAREN, "Expected ')' after method call");
-                        
-                        code_comment(parser, "Input.%s() - using scanf", member_name.value);
-                        
-                        // Get the address of the field to store the result
-                        // For readInt: &(this->lastInt)
-                        // For readChar: &(this->lastChar)
-                        StructDefinition *input_struct = find_struct(parser, "Input");
-                        if (!input_struct) {
-                            parser_error(parser, "Input struct not found");
-                            return;
-                        }
-                        
-                        const char *field_name = strcmp(member_name.value, "readInt") == 0 ? "lastInt" : "lastChar";
-                        StructField *field = NULL;
-                        for (int i = 0; i < input_struct->field_count; i++) {
-                            if (strcmp(input_struct->fields[i].name, field_name) == 0) {
-                                field = &input_struct->fields[i];
-                                break;
-                            }
-                        }
-                        
-                        if (!field) {
-                            parser_error(parser, "Field '%s' not found in Input struct", field_name);
-                            return;
-                        }
-                        
-                        // Calculate address: base address of struct + field offset
-                        code_printf(parser, "    leaq %d(%%rbp), %%rax\n", var->offset);  // Address of struct
-                        code_printf(parser, "    addq $%d, %%rax\n", field->offset);     // Add field offset
-                        
-                        // Move address to second argument register (first arg will be format string)
-                        const char **scanf_arg_regs_64 = get_arg_registers_64();
-                        code_printf(parser, "    movq %%rax, %s\n", scanf_arg_regs_64[1]);
-                        
-                        // Load format string into first argument register
-                        if (strcmp(member_name.value, "readInt") == 0) {
-                            code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", scanf_arg_regs_64[0]);
-                        } else {
-                            code_printf(parser, "    leaq .LC_char_input_format(%%rip), %s\n", scanf_arg_regs_64[0]);
-                        }
-                        
-                        // Call scanf
-                        code_printf(parser, "    xor %%eax, %%eax\n");  // Clear EAX (for variadic functions)
-                        {
-                            int scanf_stack_adj = get_call_stack_space();
-                            if (scanf_stack_adj > 0) {
-                                code_printf(parser, "    subq $%d, %%rsp\n", scanf_stack_adj);
-                            }
-                            code_printf(parser, "    call scanf\n");
-                            if (scanf_stack_adj > 0) {
-                                code_printf(parser, "    addq $%d, %%rsp\n", scanf_stack_adj);
-                            }
-                        }
-                        
-                        // Load the value we just read and push it as the return value
-                        if (strcmp(member_name.value, "readInt") == 0) {
-                            code_printf(parser, "    movl %d(%%rbp), %%eax\n", var->offset + field->offset);
-                            code_printf(parser, "    cltq\n");  // Sign extend to 64 bits
-                        } else {
-                            code_printf(parser, "    movzbl %d(%%rbp), %%eax\n", var->offset + field->offset);
-                        }
-                        code_printf(parser, "    pushq %%rax\n");
-                        
                         return;
                     }
                     

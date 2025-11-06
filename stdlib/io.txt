@@ -3,16 +3,12 @@
 // Provides user input functionality through the Input struct
 // =================================================================
 // This module provides:
-// - Input struct for reading user input
+// - Input struct for reading user input (like Java Scanner)
 // - Methods for reading different data types
 // - Blocking I/O that waits for user input with newline
 // =================================================================
 
-// Note: The compiler provides built-in support for scanf calls
-// in the Input struct methods. These methods are specially handled
-// during code generation to insert proper scanf assembly instructions.
-
-// Input struct - handles user input operations
+// Input struct - handles user input operations (similar to Java Scanner)
 struct Input {
     var lastInt:int;        // Last integer read
     var lastChar:char;      // Last character read
@@ -25,17 +21,17 @@ struct Input {
     
     // Read an integer from user input
     // Blocks until user enters a number and presses Enter
-    // This method has special compiler support for scanf
+    // Uses built-in scanfInt function
     func readInt() -> int {
-        // Compiler generates: scanf("%d", &this->lastInt)
+        lastInt = scanfInt();
         return lastInt;
     }
     
     // Read a character from user input
     // Blocks until user enters a character and presses Enter
-    // This method has special compiler support for scanf
+    // Uses built-in scanfChar function
     func readChar() -> char {
-        // Compiler generates: scanf(" %c", &this->lastChar)
+        lastChar = scanfChar();
         return lastChar;
     }
     
