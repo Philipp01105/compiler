@@ -191,7 +191,7 @@ int main(int argc, char *argv[]) {
     fprintf(output, ".LC_string_format:\n");
     fprintf(output, "    .ascii \"%%s\\0\"\n");
     fprintf(output, ".LC_string_input_format:\n");
-    fprintf(output, "    .ascii \"%%255s\\0\"\n");
+    fprintf(output, "    .ascii \"%%255[^\\n]\\0\"\n");
     fprintf(output, ".LC_newline:\n");
     fprintf(output, "    .ascii \"\\n\\0\"\n");
     fprintf(output, "\n");

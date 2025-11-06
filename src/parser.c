@@ -2755,13 +2755,13 @@ void parse_print_statement(Parser *parser) {
                         code_printf(parser, "    movq %%xmm0, %s\n", get_arg_registers_64()[1]);
                         code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     } else if (field->type == TYPE_CHAR) {
-                        code_printf(parser, "    movsbl %d(%%rbx), %%edx\n", field->offset);
+                        code_printf(parser, "    movsbl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
                         code_printf(parser, "    leaq .LC_char_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     } else if (field->type == TYPE_BYTE || field->type == TYPE_BIT) {
-                        code_printf(parser, "    movzbl %d(%%rbx), %%edx\n", field->offset);
+                        code_printf(parser, "    movzbl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
                         code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     } else if (field->type == TYPE_STRING) {
-                        code_printf(parser, "    movq %d(%%rbx), %%rdx\n", field->offset);
+                        code_printf(parser, "    movq %d(%%rbx), %s\n", field->offset, get_arg_registers_64()[1]);
                         code_printf(parser, "    leaq .LC_string_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     } else {  // TYPE_INT and others
                         code_printf(parser, "    movl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
@@ -2865,13 +2865,13 @@ void parse_print_statement(Parser *parser) {
                                     code_printf(parser, "    movq %%xmm0, %s\n", get_arg_registers_64()[1]);
                                     code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_registers_64()[0]);
                                 } else if (field->type == TYPE_CHAR) {
-                                    code_printf(parser, "    movsbl %d(%%rbx), %%edx\n", field->offset);
+                                    code_printf(parser, "    movsbl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
                                     code_printf(parser, "    leaq .LC_char_format(%%rip), %s\n", get_arg_registers_64()[0]);
                                 } else if (field->type == TYPE_BYTE || field->type == TYPE_BIT) {
-                                    code_printf(parser, "    movzbl %d(%%rbx), %%edx\n", field->offset);
+                                    code_printf(parser, "    movzbl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
                                     code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
                                 } else if (field->type == TYPE_STRING) {
-                                    code_printf(parser, "    movq %d(%%rbx), %%rdx\n", field->offset);
+                                    code_printf(parser, "    movq %d(%%rbx), %s\n", field->offset, get_arg_registers_64()[1]);
                                     code_printf(parser, "    leaq .LC_string_format(%%rip), %s\n", get_arg_registers_64()[0]);
                                 } else {
                                     code_printf(parser, "    movl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
@@ -2931,7 +2931,7 @@ void parse_print_statement(Parser *parser) {
                 }
             }
                 } else if (var->type == TYPE_CHAR) {
-                    code_printf(parser, "    movsbl %d(%%rbp), %%edx\n", var->offset);
+                    code_printf(parser, "    movsbl %d(%%rbp), %s\n", var->offset, get_arg_registers_32()[1]);
                     code_printf(parser, "    leaq .LC_char_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     {
                 int stack_adj_13 = get_call_stack_space();
@@ -2944,7 +2944,7 @@ void parse_print_statement(Parser *parser) {
                 }
             }
                 } else if (var->type == TYPE_BYTE || var->type == TYPE_BIT) {
-                    code_printf(parser, "    movzbl %d(%%rbp), %%edx\n", var->offset);
+                    code_printf(parser, "    movzbl %d(%%rbp), %s\n", var->offset, get_arg_registers_32()[1]);
                     code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     {
                 int stack_adj_14 = get_call_stack_space();
@@ -2957,7 +2957,7 @@ void parse_print_statement(Parser *parser) {
                 }
             }
                 } else if (var->type == TYPE_STRING) {
-                    code_printf(parser, "    movq %d(%%rbp), %%rdx\n", var->offset);
+                    code_printf(parser, "    movq %d(%%rbp), %s\n", var->offset, get_arg_registers_64()[1]);
                     code_printf(parser, "    leaq .LC_string_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     {
                 int stack_adj_15 = get_call_stack_space();
@@ -3289,13 +3289,13 @@ void parse_printline_statement(Parser *parser) {
                         code_printf(parser, "    movq %%xmm0, %s\n", get_arg_registers_64()[1]);
                         code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     } else if (field->type == TYPE_CHAR) {
-                        code_printf(parser, "    movsbl %d(%%rbx), %%edx\n", field->offset);
+                        code_printf(parser, "    movsbl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
                         code_printf(parser, "    leaq .LC_char_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     } else if (field->type == TYPE_BYTE || field->type == TYPE_BIT) {
-                        code_printf(parser, "    movzbl %d(%%rbx), %%edx\n", field->offset);
+                        code_printf(parser, "    movzbl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
                         code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     } else if (field->type == TYPE_STRING) {
-                        code_printf(parser, "    movq %d(%%rbx), %%rdx\n", field->offset);
+                        code_printf(parser, "    movq %d(%%rbx), %s\n", field->offset, get_arg_registers_64()[1]);
                         code_printf(parser, "    leaq .LC_string_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     } else {  // TYPE_INT and others
                         code_printf(parser, "    movl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
@@ -3399,13 +3399,13 @@ void parse_printline_statement(Parser *parser) {
                                     code_printf(parser, "    movq %%xmm0, %s\n", get_arg_registers_64()[1]);
                                     code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_registers_64()[0]);
                                 } else if (field->type == TYPE_CHAR) {
-                                    code_printf(parser, "    movsbl %d(%%rbx), %%edx\n", field->offset);
+                                    code_printf(parser, "    movsbl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
                                     code_printf(parser, "    leaq .LC_char_format(%%rip), %s\n", get_arg_registers_64()[0]);
                                 } else if (field->type == TYPE_BYTE || field->type == TYPE_BIT) {
-                                    code_printf(parser, "    movzbl %d(%%rbx), %%edx\n", field->offset);
+                                    code_printf(parser, "    movzbl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
                                     code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
                                 } else if (field->type == TYPE_STRING) {
-                                    code_printf(parser, "    movq %d(%%rbx), %%rdx\n", field->offset);
+                                    code_printf(parser, "    movq %d(%%rbx), %s\n", field->offset, get_arg_registers_64()[1]);
                                     code_printf(parser, "    leaq .LC_string_format(%%rip), %s\n", get_arg_registers_64()[0]);
                                 } else {
                                     code_printf(parser, "    movl %d(%%rbx), %s\n", field->offset, get_arg_registers_32()[1]);
@@ -3465,7 +3465,7 @@ void parse_printline_statement(Parser *parser) {
                 }
             }
                 } else if (var->type == TYPE_CHAR) {
-                    code_printf(parser, "    movsbl %d(%%rbp), %%edx\n", var->offset);
+                    code_printf(parser, "    movsbl %d(%%rbp), %s\n", var->offset, get_arg_registers_32()[1]);
                     code_printf(parser, "    leaq .LC_char_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     {
                 int stack_adj_13 = get_call_stack_space();
@@ -3478,7 +3478,7 @@ void parse_printline_statement(Parser *parser) {
                 }
             }
                 } else if (var->type == TYPE_BYTE || var->type == TYPE_BIT) {
-                    code_printf(parser, "    movzbl %d(%%rbp), %%edx\n", var->offset);
+                    code_printf(parser, "    movzbl %d(%%rbp), %s\n", var->offset, get_arg_registers_32()[1]);
                     code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     {
                 int stack_adj_14 = get_call_stack_space();
@@ -3491,7 +3491,7 @@ void parse_printline_statement(Parser *parser) {
                 }
             }
                 } else if (var->type == TYPE_STRING) {
-                    code_printf(parser, "    movq %d(%%rbp), %%rdx\n", var->offset);
+                    code_printf(parser, "    movq %d(%%rbp), %s\n", var->offset, get_arg_registers_64()[1]);
                     code_printf(parser, "    leaq .LC_string_format(%%rip), %s\n", get_arg_registers_64()[0]);
                     {
                 int stack_adj_15 = get_call_stack_space();
