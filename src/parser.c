@@ -4856,6 +4856,7 @@ void parse_primary(Parser *parser) {
                     }
                     
                     // Special handling for Input struct methods that need scanf
+                    // Note: "Input" is hardcoded per requirement for this specific struct
                     if (strcmp(var->struct_type, "Input") == 0 && 
                         (strcmp(member_name.value, "readInt") == 0 || strcmp(member_name.value, "readChar") == 0)) {
                         
@@ -4903,7 +4904,7 @@ void parse_primary(Parser *parser) {
                         }
                         
                         // Call scanf
-                        code_printf(parser, "    xor %%eax, %%eax\n");  // Clear AL (for variadic functions)
+                        code_printf(parser, "    xor %%eax, %%eax\n");  // Clear EAX (for variadic functions)
                         {
                             int scanf_stack_adj = get_call_stack_space();
                             if (scanf_stack_adj > 0) {
