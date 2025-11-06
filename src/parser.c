@@ -1309,7 +1309,6 @@ void parse_variable_declaration(Parser *parser) {
     // Check for array syntax: var[size] or var[]
     int is_array = 0;
     int array_size = 0;
-    int actual_struct_size = 0;  // Track actual allocated size for structs with padding
     
     if (check(parser->tokens, TOKEN_LBRACKET)) {
         consume(parser->tokens);
@@ -1407,42 +1406,16 @@ void parse_variable_declaration(Parser *parser) {
         }
 
         if (struct_type_name[0] != '\0') {
-            // Struct variable - initialize to zero
+            // Struct variable - space already allocated in stack frame by subq
+            // No code generation needed - just track the space in offset calculation
             StructDefinition *struct_def = find_struct(parser, struct_type_name);
-            code_comment(parser, "Line %d: var %s:%s (struct, uninitialized)",
+            code_comment(parser, "Line %d: var %s:%s (struct, space reserved in stack frame)",
                          var_token.line, name_token.value, struct_type_name);
-            
-            // Allocate space for struct by pushing zeros
-            // Ensure alignment by pushing in 8-byte chunks
-            int num_pushes = (struct_def->total_size + 7) / 8;  // Round up to 8-byte chunks
-            
-            // To maintain 16-byte alignment before function calls,
-            // we need to ensure total pushes (including this one) results in proper alignment
-            // After function prologue (pushq %rbp + subq $8192), stack is at 8 mod 16
-            // We want to keep it that way
-            if (num_pushes % 2 == 1) {
-                // Odd number of pushes would break alignment, so push one extra for padding
-                num_pushes++;
-            }
-            
-            actual_struct_size = num_pushes * 8;  // Each push is 8 bytes
-            
-            code_printf(parser, "    xorq %%rax, %%rax\n");
-            for (int i = 0; i < num_pushes; i++) {
-                code_printf(parser, "    pushq %%rax\n");
-            }
+            // No actual code generation - the offset calculation will handle placement
         } else {
             code_comment(parser, "Line %d: var %s:%s (uninitialized)",
                          var_token.line, name_token.value, datatype_to_string(var_type));
-
-            if (var_type == TYPE_FLOAT || var_type == TYPE_DOUBLE) {
-                code_printf(parser, "    xorps %%xmm0, %%xmm0\n");
-                code_printf(parser, "    movq %%xmm0, %%rax\n");
-                code_printf(parser, "    pushq %%rax\n");
-            } else {
-                code_printf(parser, "    xorq %%rax, %%rax\n");
-                code_printf(parser, "    pushq %%rax\n");
-            }
+            // No code generation for uninitialized variables - space is in stack frame
         }
     } else {
         // Array declaration - just allocate space, no initialization
@@ -1468,13 +1441,8 @@ void parse_variable_declaration(Parser *parser) {
     int element_size;
     if (struct_type_name[0] != '\0') {
         // This is a struct variable
-        // Use actual_struct_size if it was set (accounts for alignment padding)
-        if (actual_struct_size > 0) {
-            element_size = actual_struct_size;
-        } else {
-            StructDefinition *struct_def = find_struct(parser, struct_type_name);
-            element_size = struct_def->total_size;
-        }
+        StructDefinition *struct_def = find_struct(parser, struct_type_name);
+        element_size = struct_def->total_size;
     } else {
         element_size = datatype_size(var_type);
     }

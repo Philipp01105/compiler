@@ -12,11 +12,25 @@ The compiler standard library provides a comprehensive set of functions for comm
 #import <stdlib/array.txt>
 #import <stdlib/strings.txt>
 #import <stdlib/utils.txt>
+#import <stdlib/io.txt>
 ```
 
 ## Modules
 
-### 1. Core Module (`stdlib/core.txt`)
+### 1. I/O Module (`stdlib/io.txt`)
+
+**Input struct** for reading user input.
+
+The Input struct provides methods for reading different types of user input:
+- `init()` - Initialize the Input struct
+- `readInt() -> int` - Read an integer from stdin (blocks until Enter is pressed)
+- `readChar() -> char` - Read a character from stdin (blocks until Enter is pressed)
+- `promptInt(prompt:string) -> int` - Print a prompt and read an integer
+- `promptChar(prompt:string) -> char` - Print a prompt and read a character
+
+**Note**: This module has compiler built-in support for scanf operations.
+
+### 2. Core Module (`stdlib/core.txt`)
 
 **30 functions** providing fundamental operations for all data types.
 
