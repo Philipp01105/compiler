@@ -1,75 +1,60 @@
 // =================================================================
 // STANDARD LIBRARY - ARRAY MODULE
-// Version 1.0.0
-// Author: Compiler Standard Library
 // =================================================================
-//
-// This module provides utility functions for working with arrays.
-// Note: Arrays must be passed with their size parameter.
-//
+// Provides array manipulation and analysis functions
 // =================================================================
 
-// =================================================================
-// ARRAY INITIALIZATION
-// =================================================================
+#import <stdlib/core.dmm>
 
-// Fills an integer array with a specific value
-func arrayFillInt(arr[]:int, size:int, value:int) -> void {
-    for (var i:int = 0; i < size; i++) {
+// ============== ARRAY INITIALIZATION ==============
+
+// Fill integer array with a value
+func fillInt(arr[]:int, size:int, value:int) -> void {
+    var i:int = 0;
+    for (i = 0; i < size; i = i + 1) {
         arr[i] = value;
     }
 }
 
-// Fills a byte array with a specific value
-func arrayFillByte(arr[]:byte, size:int, value:byte) -> void {
-    for (var i:int = 0; i < size; i++) {
+// Fill byte array with a value
+func fillByte(arr[]:byte, size:int, value:byte) -> void {
+    var i:int = 0;
+    for (i = 0; i < size; i = i + 1) {
         arr[i] = value;
     }
 }
 
-// Fills a char array with a specific value
-func arrayFillChar(arr[]:char, size:int, value:char) -> void {
-    for (var i:int = 0; i < size; i++) {
+// Fill character array with a value
+func fillChar(arr[]:char, size:int, value:char) -> void {
+    var i:int = 0;
+    for (i = 0; i < size; i = i + 1) {
         arr[i] = value;
     }
 }
 
-// Fills a bit array with a specific value
-func arrayFillBit(arr[]:bit, size:int, value:bit) -> void {
-    for (var i:int = 0; i < size; i++) {
-        arr[i] = value;
-    }
-}
+// ============== ARRAY SEARCH ==============
 
-// =================================================================
-// ARRAY SEARCH
-// =================================================================
-
-// Finds the index of first occurrence of value in integer array
-// Returns -1 if not found
-func arrayIndexOfInt(arr[]:int, size:int, value:int) -> int {
-    for (var i:int = 0; i < size; i++) {
+// Find index of first occurrence of value in integer array
+func indexOfInt(arr[]:int, size:int, value:int) -> int {
+    var i:int = 0;
+    for (i = 0; i < size; i = i + 1) {
         if (arr[i] == value) {
             return i;
         }
     }
-    return -1;
+    return -1;  // Not found
 }
 
-// Checks if an integer value exists in array
-func arrayContainsInt(arr[]:int, size:int, value:int) -> bit {
-    for (var i:int = 0; i < size; i++) {
-        if (arr[i] == value) {
-            return 1;
-        }
-    }
-    return 0;
+// Check if integer array contains value
+func containsInt(arr[]:int, size:int, value:int) -> bit {
+    return indexOfInt(arr, size, value) != -1;
 }
 
-// Counts occurrences of a value in integer array
-func arrayCountInt(arr[]:int, size:int, value:int) -> int {
+// Count occurrences of value in integer array
+func countInt(arr[]:int, size:int, value:int) -> int {
     var count:int = 0;
-    for (var i:int = 0; i < size; i++) {
+    var i:int = 0;
+    for (i = 0; i < size; i = i + 1) {
         if (arr[i] == value) {
             count = count + 1;
         }
@@ -77,173 +62,198 @@ func arrayCountInt(arr[]:int, size:int, value:int) -> int {
     return count;
 }
 
-// =================================================================
-// ARRAY STATISTICS
-// =================================================================
+// ============== ARRAY STATISTICS ==============
 
-// Finds minimum value in integer array
-func arrayMinInt(arr[]:int, size:int) -> int {
-    if (size == 0) {
+// Find minimum value in integer array
+func minInt(arr[]:int, size:int) -> int {
+    if (size <= 0) {
         return 0;
     }
     
-    var min:int = arr[0];
-    for (var i:int = 1; i < size; i++) {
-        if (arr[i] < min) {
-            min = arr[i];
+    var minVal:int = arr[0];
+    var i:int = 1;
+    
+    for (i = 1; i < size; i = i + 1) {
+        if (arr[i] < minVal) {
+            minVal = arr[i];
         }
     }
-    return min;
+    
+    return minVal;
 }
 
-// Finds maximum value in integer array
-func arrayMaxInt(arr[]:int, size:int) -> int {
-    if (size == 0) {
+// Find maximum value in integer array
+func maxInt(arr[]:int, size:int) -> int {
+    if (size <= 0) {
         return 0;
     }
     
-    var max:int = arr[0];
-    for (var i:int = 1; i < size; i++) {
-        if (arr[i] > max) {
-            max = arr[i];
+    var maxVal:int = arr[0];
+    var i:int = 1;
+    
+    for (i = 1; i < size; i = i + 1) {
+        if (arr[i] > maxVal) {
+            maxVal = arr[i];
         }
     }
-    return max;
+    
+    return maxVal;
 }
 
-// Calculates sum of all elements in integer array
-func arraySumInt(arr[]:int, size:int) -> int {
+// Sum all elements in integer array
+func sumInt(arr[]:int, size:int) -> int {
     var sum:int = 0;
-    for (var i:int = 0; i < size; i++) {
+    var i:int = 0;
+    
+    for (i = 0; i < size; i = i + 1) {
         sum = sum + arr[i];
     }
+    
     return sum;
 }
 
-// Calculates average of integer array (integer division)
-func arrayAverageInt(arr[]:int, size:int) -> int {
-    if (size == 0) {
+// Calculate average of integer array (integer division)
+func averageInt(arr[]:int, size:int) -> int {
+    if (size <= 0) {
         return 0;
     }
-    
-    var sum:int = arraySumInt(arr, size);
-    return sum / size;
+    return sumInt(arr, size) / size;
 }
 
-// Finds the index of the minimum value
-func arrayIndexOfMinInt(arr[]:int, size:int) -> int {
-    if (size == 0) {
+// Find index of minimum value
+func indexOfMinInt(arr[]:int, size:int) -> int {
+    if (size <= 0) {
         return -1;
     }
     
-    var minIndex:int = 0;
-    var minValue:int = arr[0];
+    var minIdx:int = 0;
+    var i:int = 1;
     
-    for (var i:int = 1; i < size; i++) {
-        if (arr[i] < minValue) {
-            minValue = arr[i];
-            minIndex = i;
+    for (i = 1; i < size; i = i + 1) {
+        if (arr[i] < arr[minIdx]) {
+            minIdx = i;
         }
     }
     
-    return minIndex;
+    return minIdx;
 }
 
-// Finds the index of the maximum value
-func arrayIndexOfMaxInt(arr[]:int, size:int) -> int {
-    if (size == 0) {
+// Find index of maximum value
+func indexOfMaxInt(arr[]:int, size:int) -> int {
+    if (size <= 0) {
         return -1;
     }
     
-    var maxIndex:int = 0;
-    var maxValue:int = arr[0];
+    var maxIdx:int = 0;
+    var i:int = 1;
     
-    for (var i:int = 1; i < size; i++) {
-        if (arr[i] > maxValue) {
-            maxValue = arr[i];
-            maxIndex = i;
+    for (i = 1; i < size; i = i + 1) {
+        if (arr[i] > arr[maxIdx]) {
+            maxIdx = i;
         }
     }
     
-    return maxIndex;
+    return maxIdx;
 }
 
-// =================================================================
-// ARRAY MANIPULATION
-// =================================================================
+// ============== ARRAY MANIPULATION ==============
 
-// Reverses an integer array in place
-func arrayReverseInt(arr[]:int, size:int) -> void {
-    for (var i:int = 0; i < size / 2; i++) {
-        var j:int = size - 1 - i;
-        var temp:int = arr[i];
-        arr[i] = arr[j];
-        arr[j] = temp;
+// Reverse integer array in place
+func reverseInt(arr[]:int, size:int) -> void {
+    var i:int = 0;
+    var j:int = size - 1;
+    
+    for (i = 0; i < j; i = i + 1) {
+        swap(arr, i, j);
+        j = j - 1;
     }
 }
 
-// Copies source array to destination array
-func arrayCopyInt(source[]:int, dest[]:int, size:int) -> void {
-    for (var i:int = 0; i < size; i++) {
+// Copy integer array from source to destination
+func copyInt(source[]:int, dest[]:int, size:int) -> void {
+    var i:int = 0;
+    for (i = 0; i < size; i = i + 1) {
         dest[i] = source[i];
     }
 }
 
-// =================================================================
-// ARRAY COMPARISON
-// =================================================================
-
-// Checks if two integer arrays are equal
-func arrayEqualsInt(arr1[]:int, arr2[]:int, size:int) -> bit {
-    for (var i:int = 0; i < size; i++) {
-        if (arr1[i] != arr2[i]) {
-            return 0;
-        }
-    }
-    return 1;
-}
-
-// =================================================================
-// ARRAY TRANSFORMATION
-// =================================================================
-
-// Multiplies each element by a scalar
-func arrayMultiplyScalarInt(arr[]:int, size:int, scalar:int) -> void {
-    for (var i:int = 0; i < size; i++) {
+// Multiply all elements by a scalar
+func multiplyScalarInt(arr[]:int, size:int, scalar:int) -> void {
+    var i:int = 0;
+    for (i = 0; i < size; i = i + 1) {
         arr[i] = arr[i] * scalar;
     }
 }
 
-// Adds a scalar to each element
-func arrayAddScalarInt(arr[]:int, size:int, scalar:int) -> void {
-    for (var i:int = 0; i < size; i++) {
+// Add a scalar to all elements
+func addScalarInt(arr[]:int, size:int, scalar:int) -> void {
+    var i:int = 0;
+    for (i = 0; i < size; i = i + 1) {
         arr[i] = arr[i] + scalar;
     }
 }
 
-// =================================================================
-// ARRAY SORTING (Bubble Sort)
-// =================================================================
+// ============== ARRAY SORTING ==============
 
-// Sorts an integer array in ascending order using bubble sort
-func arraySortInt(arr[]:int, size:int) -> void {
-    for (var i:int = 0; i < size - 1; i++) {
-        for (var j:int = 0; j < size - i - 1; j++) {
+// Bubble sort for integer array
+func sortInt(arr[]:int, size:int) -> void {
+    var i:int = 0;
+    var j:int = 0;
+    
+    for (i = 0; i < size - 1; i = i + 1) {
+        for (j = 0; j < size - i - 1; j = j + 1) {
             if (arr[j] > arr[j + 1]) {
-                var temp:int = arr[j];
-                arr[j] = arr[j + 1];
-                arr[j + 1] = temp;
+                swap(arr, j, j + 1);
             }
         }
     }
 }
 
-// Checks if an integer array is sorted in ascending order
-func arrayIsSortedInt(arr[]:int, size:int) -> bit {
-    for (var i:int = 0; i < size - 1; i++) {
+// Check if integer array is sorted
+func isSortedInt(arr[]:int, size:int) -> bit {
+    var i:int = 0;
+    
+    for (i = 0; i < size - 1; i = i + 1) {
         if (arr[i] > arr[i + 1]) {
             return 0;
         }
     }
+    
     return 1;
+}
+
+// ============== ARRAY COMPARISON ==============
+
+// Check if two integer arrays are equal
+func equalsInt(arr1[]:int, arr2[]:int, size:int) -> bit {
+    var i:int = 0;
+    
+    for (i = 0; i < size; i = i + 1) {
+        if (arr1[i] != arr2[i]) {
+            return 0;
+        }
+    }
+    
+    return 1;
+}
+
+// ============== ARRAY PRINTING ==============
+
+// Print integer array
+func printArrayInt(arr[]:int, size:int) -> void {
+    print("[");
+    var i:int = 0;
+    for (i = 0; i < size; i = i + 1) {
+        print(arr[i]);
+        if (i < size - 1) {
+            print(", ");
+        }
+    }
+    print("]");
+}
+
+// Print integer array with newline
+func printlnArrayInt(arr[]:int, size:int) -> void {
+    printArrayInt(arr, size);
+    print("\n");
 }

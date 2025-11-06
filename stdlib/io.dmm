@@ -1,65 +1,49 @@
 // =================================================================
-// I/O MODULE - Input/Output Operations
-// Provides user input functionality through the Input struct
+// STANDARD LIBRARY - I/O MODULE
 // =================================================================
-// This module provides:
-// - Input struct for reading user input (like Java Scanner)
-// - Methods for reading different data types
-// - Blocking I/O that waits for user input with newline
+// Provides input/output operations using compiler built-ins
+// Built-in functions: scanfInt(), scanfChar(), scanfString()
 // =================================================================
 
-// Input struct - handles user input operations (similar to Java Scanner)
-struct Input {
-    var lastInt:int;        // Last integer read
-    var lastChar:char;      // Last character read
-    var lastString:string;  // Last string read
-    
-    // Initialize the Input struct
-    func init() -> void {
-        lastInt = 0;
-        lastChar = 0;
-    }
-    
-    // Read an integer from user input
-    // Blocks until user enters a number and presses Enter
-    // Uses built-in scanfInt function
-    func readInt() -> int {
-        lastInt = scanfInt();
-        return lastInt;
-    }
-    
-    // Read a character from user input
-    // Blocks until user enters a character and presses Enter
-    // Uses built-in scanfChar function
-    func readChar() -> char {
-        lastChar = scanfChar();
-        return lastChar;
-    }
-    
-    // Read a string from user input
-    // Blocks until user enters text and presses Enter
-    // Uses built-in scanfString function
-    // The newline character is automatically removed
-    func readString() -> string {
-        lastString = scanfString();
-        return lastString;
-    }
-    
-    // Print a prompt and read an integer
-    func promptInt(prompt:string) -> int {
-        print(prompt);
-        return readInt();
-    }
-    
-    // Print a prompt and read a character
-    func promptChar(prompt:string) -> char {
-        print(prompt);
-        return readChar();
-    }
-    
-    // Print a prompt and read a string
-    func promptString(prompt:string) -> string {
-        print(prompt);
-        return readString();
-    }
+// Read an integer from standard input
+func readInt() -> int {
+    return scanfInt();
+}
+
+// Read a character from standard input
+func readChar() -> char {
+    return scanfChar();
+}
+
+// Read a string from standard input
+func readString() -> string {
+    return scanfString();
+}
+
+// Print with newline
+func println(s:string) -> void {
+    print(s);
+    print("\n");
+}
+
+// Print an integer
+func printInt(n:int) -> void {
+    print(n);
+}
+
+// Print an integer with newline
+func printlnInt(n:int) -> void {
+    print(n);
+    print("\n");
+}
+
+// Print a character
+func printChar(c:char) -> void {
+    print(c);
+}
+
+// Print a character with newline
+func printlnChar(c:char) -> void {
+    print(c);
+    print("\n");
 }
