@@ -10,11 +10,11 @@
 //   - stdlib/utils.txt (33 functions)
 // =================================================================
 
-#import <stdlib/core.txt>
-#import <stdlib/math.txt>
-#import <stdlib/array.txt>
-#import <stdlib/strings.txt>
-#import <stdlib/utils.txt>
+#import <stdlib/core.dmm>
+#import <stdlib/math.dmm>
+#import <stdlib/array.dmm>
+#import <stdlib/strings.dmm>
+#import <stdlib/utils.dmm>
 
 func main() -> void {
     printDoubleLine();

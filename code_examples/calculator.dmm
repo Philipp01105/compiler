@@ -9,9 +9,9 @@
 // - Operation history tracking
 // =================================================================
 
-#import <stdlib/core.txt>
-#import <stdlib/math.txt>
-#import <stdlib/utils.txt>
+#import <stdlib/core.dmm>
+#import <stdlib/io.dmm>
+#import <stdlib/math.dmm>
 
 // Calculator struct
 struct Calculator {

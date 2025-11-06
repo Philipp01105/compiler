@@ -11,9 +11,9 @@
 // - State management
 // =================================================================
 
-#import <stdlib/core.txt>
-#import <stdlib/array.txt>
-#import <stdlib/utils.txt>
+#import <stdlib/core.dmm>
+#import <stdlib/io.dmm>
+#import <stdlib/array.dmm>
 
 // TicTacToe game struct
 struct TicTacToe {

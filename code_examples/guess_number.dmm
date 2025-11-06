@@ -9,8 +9,8 @@
 // - Range checking and validation
 // =================================================================
 
-#import <stdlib/core.txt>
-#import <stdlib/utils.txt>
+#import <stdlib/core.dmm>
+#import <stdlib/io.dmm>
 
 // Number Guessing Game struct
 struct GuessGame {

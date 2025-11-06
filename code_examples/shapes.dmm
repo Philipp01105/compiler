@@ -9,8 +9,8 @@
 // - Coordinate system with Points
 // =================================================================
 
-#import <stdlib/core.txt>
-#import <stdlib/utils.txt>
+#import <stdlib/core.dmm>
+#import <stdlib/io.dmm>
 
 // Point struct - represents a 2D coordinate
 struct Point {

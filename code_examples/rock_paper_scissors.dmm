@@ -9,8 +9,8 @@
 // - Enum-like constants (0=Rock, 1=Paper, 2=Scissors)
 // =================================================================
 
-#import <stdlib/core.txt>
-#import <stdlib/utils.txt>
+#import <stdlib/core.dmm>
+#import <stdlib/io.dmm>
 
 // Rock Paper Scissors Game struct
 struct RPSGame {
