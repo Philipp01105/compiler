@@ -46,16 +46,15 @@ func main() -> void {
 
 ### Syntax
 
-The `reserve` keyword allocates memory on the heap:
+The `reserve` function allocates memory on the heap:
 
 ```javascript
-reserve variable_name(size_in_bytes);
+var variable_name:*type = reserve(type);
 ```
 
 ### Parameters
 
-- `variable_name` - Must be a previously declared pointer variable
-- `size_in_bytes` - Expression that evaluates to the number of bytes to allocate
+- `type` - The data type to allocate (int, char, double, float, etc.)
 
 ### Behavior
 
@@ -63,29 +62,27 @@ reserve variable_name(size_in_bytes);
 - Returns a pointer to the allocated memory
 - The allocated memory is uninitialized (contains garbage values)
 - Memory remains allocated until explicitly freed or program terminates
+- Automatically calculates the size based on the type
 
 ### Example
 
 ```javascript
 func main() -> void {
-    var p:*int;
-    reserve p(4);  // Allocate 4 bytes (1 int)
+    var p:*int = reserve(int);  // Allocate memory for int
     
     println("Memory reserved successfully");
 }
 ```
 
-### Advanced Example - Allocating Arrays
+### Multiple Types Example
 
 ```javascript
 func main() -> void {
-    var arr:*int;
-    var size:int = 10;
+    var intPtr:*int = reserve(int);        // 4 bytes
+    var charPtr:*char = reserve(char);      // 1 byte
+    var doublePtr:*double = reserve(double); // 8 bytes
     
-    // Allocate space for 10 integers (40 bytes)
-    reserve arr(size * 4);
-    
-    println("Array allocated on heap");
+    println("All types allocated on heap");
 }
 ```
 
@@ -93,10 +90,10 @@ func main() -> void {
 
 ### Syntax
 
-The `free` keyword deallocates heap memory:
+The `free` function deallocates heap memory:
 
 ```javascript
-free variable_name;
+free(variable_name);
 ```
 
 ### Parameters
@@ -118,12 +115,11 @@ free variable_name;
 
 ```javascript
 func main() -> void {
-    var p:*int;
-    reserve p(4);
+    var p:*int = reserve(int);
     
     println("Memory allocated");
     
-    free p;
+    free(p);
     
     println("Memory freed");
 }
@@ -152,8 +148,7 @@ var variable_name:*type;
 ```javascript
 func main() -> void {
     @gc
-    var p:*int;
-    reserve p(4);
+    var p:*int = reserve(int);
     
     println("GC-managed memory allocated");
     // No free needed - automatically garbage collected
@@ -178,12 +173,11 @@ func main() -> void {
 
 ```javascript
 func main() -> void {
-    var num:*int;
-    reserve num(4);
+    var num:*int = reserve(int);
     
-    println("Allocated 4 bytes on heap");
+    println("Allocated memory on heap");
     
-    free num;
+    free(num);
     println("Freed memory");
 }
 ```
@@ -192,19 +186,15 @@ func main() -> void {
 
 ```javascript
 func main() -> void {
-    var a:*int;
-    var b:*char;
-    var c:*double;
-    
-    reserve a(4);      // 4 bytes for int
-    reserve b(1);      // 1 byte for char
-    reserve c(8);      // 8 bytes for double
+    var a:*int = reserve(int);
+    var b:*char = reserve(char);
+    var c:*double = reserve(double);
     
     println("Multiple allocations successful");
     
-    free a;
-    free b;
-    free c;
+    free(a);
+    free(b);
+    free(c);
     
     println("All memory freed");
 }
@@ -215,8 +205,7 @@ func main() -> void {
 ```javascript
 func processData() -> void {
     @gc
-    var buffer:*char;
-    reserve buffer(1024);  // 1KB buffer
+    var buffer:*char = reserve(char);
     
     println("Processing data...");
     // Do work with buffer
@@ -235,17 +224,15 @@ func main() -> void {
 ```javascript
 func main() -> void {
     // Manually managed pointer
-    var manualPtr:*int;
-    reserve manualPtr(4);
+    var manualPtr:*int = reserve(int);
     
     // GC-managed pointer
     @gc
-    var gcPtr:*int;
-    reserve gcPtr(4);
+    var gcPtr:*int = reserve(int);
     
     println("Both types allocated");
     
-    free manualPtr;  // Manual free required
+    free(manualPtr);  // Manual free required
     // gcPtr automatically freed at end of scope
 }
 ```
@@ -256,29 +243,22 @@ func main() -> void {
 
 The compiler will generate errors for:
 
-1. **Using reserve on non-pointer variables**
+1. **Using free on non-pointer variables**
    ```javascript
-   var x:int;
-   reserve x(4);  // ERROR: reserve can only be used with pointer variables
+   var x:int = 5;
+   free(x);  // ERROR: Variable is not a pointer
    ```
 
-2. **Using free on non-pointer variables**
-   ```javascript
-   var x:int;
-   free x;  // ERROR: free can only be used with pointer variables
-   ```
-
-3. **Using free on @gc variables**
+2. **Using free on @gc variables**
    ```javascript
    @gc
-   var p:*int;
-   reserve p(4);
-   free p;  // ERROR: Cannot manually free a variable marked with @gc
+   var p:*int = reserve(int);
+   free(p);  // ERROR: Cannot manually free a variable marked with @gc
    ```
 
-4. **Using reserve on undefined variables**
+3. **Using reserve with wrong type**
    ```javascript
-   reserve undefined_var(4);  // ERROR: Variable 'undefined_var' not found
+   var p:*int = reserve(unknown_type);  // ERROR: Unknown type 'unknown_type'
    ```
 
 ### Runtime Considerations
@@ -290,39 +270,35 @@ The compiler will generate errors for:
 
 ## Best Practices
 
-1. **Initialize pointers before use**
+1. **Initialize pointers with reserve**
    ```javascript
-   var p:*int;
-   reserve p(4);  // Initialize before using
+   var p:*int = reserve(int);  // Allocate immediately
    ```
 
 2. **Free memory when done**
    ```javascript
-   var p:*int;
-   reserve p(100);
+   var p:*int = reserve(int);
    // ... use p ...
-   free p;  // Free when done
+   free(p);  // Free when done
    ```
 
 3. **Use @gc for simple cases**
    ```javascript
    @gc
-   var temp:*int;
-   reserve temp(4);
+   var temp:*int = reserve(int);
    // Automatically cleaned up
    ```
 
 4. **Match reserve with free**
    ```javascript
-   var p:*int;
-   reserve p(4);
+   var p:*int = reserve(int);
    // ... use p ...
-   free p;  // Always pair reserve with free
+   free(p);  // Always pair reserve with free
    ```
 
 5. **Set pointers to NULL after freeing** (manual)
    ```javascript
-   free p;
+   free(p);
    // In future versions, set p = NULL here
    ```
 

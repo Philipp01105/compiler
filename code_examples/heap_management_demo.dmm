@@ -27,13 +27,12 @@ func example1_pointers() -> void {
 func example2_reserve() -> void {
     println("=== Example 2: Heap Allocation ===");
     
-    var p:*int;
-    reserve p(4);  // Allocate 4 bytes for one int
+    var p:*int = reserve(int);  // Allocate memory for int type
     
-    println("Allocated 4 bytes on heap for integer");
+    println("Allocated memory on heap for integer");
     println("Pointer is now valid and points to heap memory");
     
-    free p;
+    free(p);
     println("Memory freed");
     println("");
 }
@@ -42,24 +41,20 @@ func example2_reserve() -> void {
 func example3_multiple() -> void {
     println("=== Example 3: Multiple Allocations ===");
     
-    var a:*int;
-    var b:*char;
-    var c:*double;
+    var a:*int = reserve(int);
+    println("Allocated memory for int");
     
-    reserve a(4);
-    println("Allocated 4 bytes for int");
+    var b:*char = reserve(char);
+    println("Allocated memory for char");
     
-    reserve b(1);
-    println("Allocated 1 byte for char");
-    
-    reserve c(8);
-    println("Allocated 8 bytes for double");
+    var c:*double = reserve(double);
+    println("Allocated memory for double");
     
     println("All allocations successful");
     
-    free a;
-    free b;
-    free c;
+    free(a);
+    free(b);
+    free(c);
     
     println("All memory freed");
     println("");
@@ -70,8 +65,7 @@ func example4_gc() -> void {
     println("=== Example 4: Garbage Collection ===");
     
     @gc
-    var gcPtr:*int;
-    reserve gcPtr(4);
+    var gcPtr:*int = reserve(int);
     
     println("GC-managed pointer allocated");
     println("No manual free needed - automatically collected");
@@ -80,17 +74,14 @@ func example4_gc() -> void {
     println("");
 }
 
-// Example 5: Allocating Larger Blocks
+// Example 5: Allocating Single Block
 func example5_large_allocation() -> void {
-    println("=== Example 5: Large Allocation ===");
+    println("=== Example 5: Single Allocation ===");
     
-    var buffer:*char;
-    var size:int = 1024;
+    var buffer:*char = reserve(char);
+    println("Allocated memory for single char");
     
-    reserve buffer(size);  // Allocate 1KB
-    println("Allocated 1024 bytes (1KB) buffer");
-    
-    free buffer;
+    free(buffer);
     println("Buffer freed");
     println("");
 }
@@ -100,18 +91,16 @@ func example6_mixed() -> void {
     println("=== Example 6: Mixed Memory Management ===");
     
     // Manual memory management
-    var manual:*int;
-    reserve manual(4);
+    var manual:*int = reserve(int);
     println("Manual pointer allocated");
     
     // Garbage collected
     @gc
-    var automatic:*int;
-    reserve automatic(4);
+    var automatic:*int = reserve(int);
     println("GC pointer allocated");
     
     // Only free the manual one
-    free manual;
+    free(manual);
     println("Manual pointer freed");
     println("GC pointer will be auto-freed");
     println("");
@@ -124,8 +113,7 @@ func example7_scoped_gc() -> void {
     println("Entering scope with GC variable");
     
     @gc
-    var scopedPtr:*int;
-    reserve scopedPtr(4);
+    var scopedPtr:*int = reserve(int);
     println("  Allocated inside scope");
     
     println("Exiting scope");
@@ -133,21 +121,23 @@ func example7_scoped_gc() -> void {
     println("");
 }
 
-// Example 8: Dynamic Size Allocation
-func example8_dynamic_size() -> void {
-    println("=== Example 8: Dynamic Size Allocation ===");
+// Example 8: Different Types
+func example8_different_types() -> void {
+    println("=== Example 8: Different Types ===");
     
-    var arraySize:int = 10;
-    var elementSize:int = 4;
-    var totalSize:int = arraySize * elementSize;
+    var intPtr:*int = reserve(int);
+    println("Allocated int (4 bytes)");
     
-    var array:*int;
-    reserve array(totalSize);
+    var doublePtr:*double = reserve(double);
+    println("Allocated double (8 bytes)");
     
-    println("Allocated array for 10 integers (40 bytes)");
+    var floatPtr:*float = reserve(float);
+    println("Allocated float (4 bytes)");
     
-    free array;
-    println("Array freed");
+    free(intPtr);
+    free(doublePtr);
+    free(floatPtr);
+    println("All freed");
     println("");
 }
 
@@ -167,7 +157,7 @@ func main() -> void {
     example5_large_allocation();
     example6_mixed();
     example7_scoped_gc();
-    example8_dynamic_size();
+    example8_different_types();
     
     println("############################################");
     println("#                                          #");

@@ -1316,10 +1316,46 @@ void parse_statement(Parser *parser) {
         parse_break_statement(parser);
     } else if (check(parser->tokens, TOKEN_KEYWORD_CONTINUE)) {
         parse_continue_statement(parser);
-    } else if (check(parser->tokens, TOKEN_KEYWORD_RESERVE)) {
-        parse_reserve_statement(parser);
     } else if (check(parser->tokens, TOKEN_KEYWORD_FREE)) {
-        parse_free_statement(parser);
+        // Handle free(ptr) as a statement
+        Token free_token = consume(parser->tokens);  // consume 'free'
+        expect(parser, TOKEN_LPAREN, "Expected '(' after free");
+        
+        // Get the variable name
+        Token var_token = consume(parser->tokens);
+        if (var_token.type != TOKEN_IDENTIFIER) {
+            parser_error(parser, "Expected variable name in free()");
+            return;
+        }
+        
+        // Find the variable
+        Variable *var = find_variable(parser, var_token.value);
+        if (var == NULL) {
+            parser_error(parser, "Variable '%s' not found", var_token.value);
+            return;
+        }
+        
+        if (!var->is_pointer) {
+            parser_error(parser, "Variable '%s' is not a pointer", var_token.value);
+            return;
+        }
+        
+        expect(parser, TOKEN_RPAREN, "Expected ')' after pointer in free()");
+        expect(parser, TOKEN_SEMICOLON, "Expected ';' after free statement");
+        
+        // Generate code to call free
+        code_comment(parser, "Statement: free(%s) at line %d", var_token.value, free_token.line);
+        const char **arg_regs = get_arg_registers_64();
+        // Load the pointer value (64-bit) from the variable's stack location
+        code_printf(parser, "    movq %d(%%rbp), %s\n", var->offset, arg_regs[0]);
+        int stack_adj = get_call_stack_space();
+        if (stack_adj > 0) {
+            code_printf(parser, "    subq $%d, %%rsp\n", stack_adj);
+        }
+        code_printf(parser, "    call free\n");
+        if (stack_adj > 0) {
+            code_printf(parser, "    addq $%d, %%rsp\n", stack_adj);
+        }
     } else {
         parser_error(parser, "Unexpected statement");
     }
@@ -2387,109 +2423,6 @@ void parse_continue_statement(Parser *parser) {
     code_printf(parser, "    jmp .L_for_increment_%d\n", current_loop_id);
     
     expect(parser, TOKEN_SEMICOLON, "Expected ';' after 'continue'");
-}
-
-// ============================================================================
-// HEAP MANAGEMENT STATEMENTS (reserve and free)
-// ============================================================================
-
-void parse_reserve_statement(Parser *parser) {
-    Token reserve_token = peek(parser->tokens);
-    consume(parser->tokens);
-    
-    // Syntax: reserve variable_name(size_expr);
-    Token var_name = consume(parser->tokens);
-    
-    // Find the variable to ensure it exists
-    Variable *var = find_variable(parser, var_name.value);
-    if (var == NULL) {
-        parser_error(parser, "Variable '%s' not found", var_name.value);
-        return;
-    }
-    
-    // Check if variable is a pointer
-    if (!var->is_pointer) {
-        parser_error(parser, "reserve can only be used with pointer variables (e.g., var x:*int)");
-        return;
-    }
-    
-    expect(parser, TOKEN_LPAREN, "Expected '(' after variable name in reserve");
-    
-    // Parse the size expression
-    code_comment(parser, "Line %d: reserve %s (heap allocation)", reserve_token.line, var_name.value);
-    parse_expression(parser);  // Size in bytes
-    
-    expect(parser, TOKEN_RPAREN, "Expected ')' after size expression");
-    expect(parser, TOKEN_SEMICOLON, "Expected ';' after reserve statement");
-    
-    // Generate code to call malloc and store result in variable
-    const char **arg_regs = get_arg_registers_64();
-    code_printf(parser, "    popq %s\n", arg_regs[0]);  // size (first argument)
-    int stack_adj = get_call_stack_space();
-    if (stack_adj > 0) {
-        code_printf(parser, "    subq $%d, %%rsp\n", stack_adj);
-    }
-    code_printf(parser, "    call malloc\n");
-    if (stack_adj > 0) {
-        code_printf(parser, "    addq $%d, %%rsp\n", stack_adj);
-    }
-    
-    // Store the allocated pointer in the variable
-    code_printf(parser, "    movq %%rax, %d(%%rbp)\n", var->offset);
-    
-    // Mark variable as heap-allocated
-    var->is_heap = 1;
-    
-    // If this is a GC variable, we would register it with the GC
-    // (For now, we just track it in the variable metadata)
-    if (var->is_gc) {
-        code_comment(parser, "Variable '%s' is marked for garbage collection", var_name.value);
-    }
-}
-
-void parse_free_statement(Parser *parser) {
-    Token free_token = peek(parser->tokens);
-    consume(parser->tokens);
-    
-    // Syntax: free variable_name;
-    Token var_name = consume(parser->tokens);
-    
-    // Find the variable to ensure it exists
-    Variable *var = find_variable(parser, var_name.value);
-    if (var == NULL) {
-        parser_error(parser, "Variable '%s' not found", var_name.value);
-        return;
-    }
-    
-    // Check if variable is a pointer
-    if (!var->is_pointer) {
-        parser_error(parser, "free can only be used with pointer variables");
-        return;
-    }
-    
-    // Check if variable is marked for GC
-    if (var->is_gc) {
-        parser_error(parser, "Cannot manually free a variable marked with @gc");
-        return;
-    }
-    
-    expect(parser, TOKEN_SEMICOLON, "Expected ';' after free statement");
-    
-    // Generate code to call free
-    code_comment(parser, "Line %d: free %s (manual deallocation)", free_token.line, var_name.value);
-    const char **arg_regs = get_arg_registers_64();
-    code_printf(parser, "    movq %d(%%rbp), %s\n", var->offset, arg_regs[0]);
-    int stack_adj = get_call_stack_space();
-    if (stack_adj > 0) {
-        code_printf(parser, "    subq $%d, %%rsp\n", stack_adj);
-    }
-    code_printf(parser, "    call free\n");
-    if (stack_adj > 0) {
-        code_printf(parser, "    addq $%d, %%rsp\n", stack_adj);
-    }
-    
-    // Mark variable as no longer heap-allocated
-    var->is_heap = 0;
 }
 
 // ============================================================================
@@ -4382,6 +4315,57 @@ void parse_primary(Parser *parser) {
         return;
     }
 
+    // Handle reserve() as a special keyword function
+    if (check(parser->tokens, TOKEN_KEYWORD_RESERVE)) {
+        consume(parser->tokens);
+        expect(parser, TOKEN_LPAREN, "Expected '(' after reserve");
+        
+        // reserve(type) -> pointer
+        // Takes a type name and allocates appropriate size
+        Token type_token = consume(parser->tokens);
+        DataType type = token_to_datatype(type_token.type);
+        
+        if (type == TYPE_UNKNOWN) {
+            // Check if it's a struct type
+            StructDefinition *struct_def = find_struct(parser, type_token.value);
+            if (struct_def != NULL) {
+                // Allocate space for struct
+                int struct_size = struct_def->total_size;
+                code_comment(parser, "Built-in: reserve(%s) - allocating %d bytes for struct", 
+                           type_token.value, struct_size);
+                code_printf(parser, "    movl $%d, %%eax\n", struct_size);
+                code_printf(parser, "    pushq %%rax\n");
+            } else {
+                parser_error(parser, "Unknown type '%s' in reserve()", type_token.value);
+                return;
+            }
+        } else {
+            int size = datatype_size(type);
+            code_comment(parser, "Built-in: reserve(%s) - allocating %d bytes", 
+                       datatype_to_string(type), size);
+            code_printf(parser, "    movl $%d, %%eax\n", size);
+            code_printf(parser, "    pushq %%rax\n");
+        }
+        
+        expect(parser, TOKEN_RPAREN, "Expected ')' after type in reserve()");
+        
+        // Now call malloc with the size we pushed
+        const char **arg_regs = get_arg_registers_64();
+        code_printf(parser, "    popq %s\n", arg_regs[0]);  // size (first argument)
+        {
+            int stack_adj = get_call_stack_space();
+            if (stack_adj > 0) {
+                code_printf(parser, "    subq $%d, %%rsp\n", stack_adj);
+            }
+            code_printf(parser, "    call malloc\n");
+            if (stack_adj > 0) {
+                code_printf(parser, "    addq $%d, %%rsp\n", stack_adj);
+            }
+        }
+        code_printf(parser, "    pushq %%rax\n");  // return pointer
+        return;
+    }
+
     if (check(parser->tokens, TOKEN_IDENTIFIER)) {
         Token name = peek(parser->tokens);
         Token lookahead = peek_ahead(parser->tokens, 1);
@@ -4530,7 +4514,8 @@ void parse_primary(Parser *parser) {
                     expect(parser, TOKEN_RPAREN, "Expected ')'");
                     
                     code_comment(parser, "Built-in: free()");
-                    code_printf(parser, "    popq %%rcx\n");  // pointer
+                    const char **arg_regs = get_arg_registers_64();
+                    code_printf(parser, "    popq %s\n", arg_regs[0]);  // pointer (first argument)
                     {
                 int stack_adj_32 = get_call_stack_space();
                 if (stack_adj_32 > 0) {
