@@ -1,0 +1,9 @@
+// Test @gc annotation for garbage collection
+func main() -> void {
+    @gc
+    var p:*int;
+    reserve p(4);
+    
+    println("GC-managed memory allocated");
+    // No free needed - will be garbage collected
+}

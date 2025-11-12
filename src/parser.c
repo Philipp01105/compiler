@@ -234,6 +234,7 @@ Parser *create_parser(TokenStream *tokens) {
     parser->loop_depth = 0;
     parser->current_struct_context[0] = '\0';
     parser->import_count = 0;
+    parser->next_var_is_gc = 0;
 
     memset(parser->code_buffer, 0, CODE_BUFFER_SIZE);
     memset(parser->function_code_buffer, 0, CODE_BUFFER_SIZE);
@@ -1265,7 +1266,18 @@ void parse_function_body(Parser *parser) {
 // ============================================================================
 
 void parse_statement(Parser *parser) {
-    if (check(parser->tokens, TOKEN_KEYWORD_VAR)) {
+    if (check(parser->tokens, TOKEN_AT)) {
+        // Handle @gc annotation
+        consume(parser->tokens);
+        expect(parser, TOKEN_KEYWORD_GC, "Expected 'gc' after '@'");
+        parser->next_var_is_gc = 1;
+        if (!check(parser->tokens, TOKEN_KEYWORD_VAR)) {
+            parser_error(parser, "Expected 'var' after '@gc'");
+            return;
+        }
+        parse_variable_declaration(parser);
+        parser->next_var_is_gc = 0;  // Reset flag after declaration
+    } else if (check(parser->tokens, TOKEN_KEYWORD_VAR)) {
         parse_variable_declaration(parser);
     } else if (check(parser->tokens, TOKEN_IDENTIFIER)) {
         Token lookahead = peek_ahead(parser->tokens, 1);
@@ -1304,6 +1316,10 @@ void parse_statement(Parser *parser) {
         parse_break_statement(parser);
     } else if (check(parser->tokens, TOKEN_KEYWORD_CONTINUE)) {
         parse_continue_statement(parser);
+    } else if (check(parser->tokens, TOKEN_KEYWORD_RESERVE)) {
+        parse_reserve_statement(parser);
+    } else if (check(parser->tokens, TOKEN_KEYWORD_FREE)) {
+        parse_free_statement(parser);
     } else {
         parser_error(parser, "Unexpected statement");
     }
@@ -1340,9 +1356,17 @@ void parse_variable_declaration(Parser *parser) {
     DataType var_type = TYPE_INT;
     int has_explicit_type = 0;
     char struct_type_name[MAX_TOKEN] = "";
+    int is_pointer = 0;
+    int has_initialization = 0;
 
     if (check(parser->tokens, TOKEN_COLON)) {
         consume(parser->tokens);
+
+        // Check for pointer syntax: :*type
+        if (check(parser->tokens, TOKEN_STAR)) {
+            consume(parser->tokens);
+            is_pointer = 1;
+        }
 
         Token type_token = consume(parser->tokens);
         var_type = token_to_datatype(type_token.type);
@@ -1377,6 +1401,7 @@ void parse_variable_declaration(Parser *parser) {
 
     if (!is_array && check(parser->tokens, TOKEN_EQUAL)) {
         consume(parser->tokens);
+        has_initialization = 1;
 
         // NEW: Auto-detect type from literal if no explicit type given
         if (!has_explicit_type) {
@@ -1443,6 +1468,9 @@ void parse_variable_declaration(Parser *parser) {
     var->is_array = is_array;
     var->array_size = array_size;
     strcpy(var->struct_type, struct_type_name);
+    var->is_pointer = is_pointer;
+    var->is_gc = parser->next_var_is_gc;
+    var->is_heap = 0;  // Will be set to 1 when allocated with reserve
 
     // Calculate total size: element_size * array_count
     int element_size;
@@ -1450,6 +1478,9 @@ void parse_variable_declaration(Parser *parser) {
         // This is a struct variable
         StructDefinition *struct_def = find_struct(parser, struct_type_name);
         element_size = struct_def->total_size;
+    } else if (is_pointer) {
+        // Pointers are 8 bytes (64-bit addresses)
+        element_size = 8;
     } else {
         element_size = datatype_size(var_type);
     }
@@ -1490,31 +1521,37 @@ void parse_variable_declaration(Parser *parser) {
     var->scope = parser->current_scope;
     parser->var_count++;
 
-    // Code generation
-    if (is_array) {
-        code_comment(parser, "Array allocated at offset %d, total size %d bytes", 
-                     var->offset, var->size);
-    } else if (struct_type_name[0] != '\0') {
-        // Struct variable - space already allocated by pushes, no need to pop/move
-        code_comment(parser, "Struct variable allocated at offset %d, total size %d bytes", 
-                     var->offset, var->size);
-    } else if (var_type == TYPE_FLOAT) {
-        code_printf(parser, "    movss (%%rsp), %%xmm0\n");
-        code_printf(parser, "    addq $8, %%rsp\n");
-        code_printf(parser, "    movss %%xmm0, %d(%%rbp)\n", var->offset);
-    } else if (var_type == TYPE_DOUBLE) {
-        code_printf(parser, "    movsd (%%rsp), %%xmm0\n");
-        code_printf(parser, "    addq $8, %%rsp\n");
-        code_printf(parser, "    movsd %%xmm0, %d(%%rbp)\n", var->offset);
-    } else if (var_type == TYPE_CHAR || var_type == TYPE_BYTE || var_type == TYPE_BIT) {
-        code_printf(parser, "    popq %%rax\n");
-        code_printf(parser, "    movb %%al, %d(%%rbp)\n", var->offset);
-    } else if (var_type == TYPE_STRING) {
-        code_printf(parser, "    popq %%rax\n");
-        code_printf(parser, "    movq %%rax, %d(%%rbp)\n", var->offset);
-    } else {
-        code_printf(parser, "    popq %%rax\n");
-        code_printf(parser, "    movl %%eax, %d(%%rbp)\n", var->offset);
+    // Code generation - only if there was initialization
+    if (has_initialization) {
+        if (is_array) {
+            code_comment(parser, "Array allocated at offset %d, total size %d bytes", 
+                         var->offset, var->size);
+        } else if (struct_type_name[0] != '\0') {
+            // Struct variable - space already allocated by pushes, no need to pop/move
+            code_comment(parser, "Struct variable allocated at offset %d, total size %d bytes", 
+                         var->offset, var->size);
+        } else if (is_pointer) {
+            // Pointers are 8-byte addresses
+            code_printf(parser, "    popq %%rax\n");
+            code_printf(parser, "    movq %%rax, %d(%%rbp)\n", var->offset);
+        } else if (var_type == TYPE_FLOAT) {
+            code_printf(parser, "    movss (%%rsp), %%xmm0\n");
+            code_printf(parser, "    addq $8, %%rsp\n");
+            code_printf(parser, "    movss %%xmm0, %d(%%rbp)\n", var->offset);
+        } else if (var_type == TYPE_DOUBLE) {
+            code_printf(parser, "    movsd (%%rsp), %%xmm0\n");
+            code_printf(parser, "    addq $8, %%rsp\n");
+            code_printf(parser, "    movsd %%xmm0, %d(%%rbp)\n", var->offset);
+        } else if (var_type == TYPE_CHAR || var_type == TYPE_BYTE || var_type == TYPE_BIT) {
+            code_printf(parser, "    popq %%rax\n");
+            code_printf(parser, "    movb %%al, %d(%%rbp)\n", var->offset);
+        } else if (var_type == TYPE_STRING) {
+            code_printf(parser, "    popq %%rax\n");
+            code_printf(parser, "    movq %%rax, %d(%%rbp)\n", var->offset);
+        } else {
+            code_printf(parser, "    popq %%rax\n");
+            code_printf(parser, "    movl %%eax, %d(%%rbp)\n", var->offset);
+        }
     }
 }
 
@@ -2350,6 +2387,109 @@ void parse_continue_statement(Parser *parser) {
     code_printf(parser, "    jmp .L_for_increment_%d\n", current_loop_id);
     
     expect(parser, TOKEN_SEMICOLON, "Expected ';' after 'continue'");
+}
+
+// ============================================================================
+// HEAP MANAGEMENT STATEMENTS (reserve and free)
+// ============================================================================
+
+void parse_reserve_statement(Parser *parser) {
+    Token reserve_token = peek(parser->tokens);
+    consume(parser->tokens);
+    
+    // Syntax: reserve variable_name(size_expr);
+    Token var_name = consume(parser->tokens);
+    
+    // Find the variable to ensure it exists
+    Variable *var = find_variable(parser, var_name.value);
+    if (var == NULL) {
+        parser_error(parser, "Variable '%s' not found", var_name.value);
+        return;
+    }
+    
+    // Check if variable is a pointer
+    if (!var->is_pointer) {
+        parser_error(parser, "reserve can only be used with pointer variables (e.g., var x:*int)");
+        return;
+    }
+    
+    expect(parser, TOKEN_LPAREN, "Expected '(' after variable name in reserve");
+    
+    // Parse the size expression
+    code_comment(parser, "Line %d: reserve %s (heap allocation)", reserve_token.line, var_name.value);
+    parse_expression(parser);  // Size in bytes
+    
+    expect(parser, TOKEN_RPAREN, "Expected ')' after size expression");
+    expect(parser, TOKEN_SEMICOLON, "Expected ';' after reserve statement");
+    
+    // Generate code to call malloc and store result in variable
+    const char **arg_regs = get_arg_registers_64();
+    code_printf(parser, "    popq %s\n", arg_regs[0]);  // size (first argument)
+    int stack_adj = get_call_stack_space();
+    if (stack_adj > 0) {
+        code_printf(parser, "    subq $%d, %%rsp\n", stack_adj);
+    }
+    code_printf(parser, "    call malloc\n");
+    if (stack_adj > 0) {
+        code_printf(parser, "    addq $%d, %%rsp\n", stack_adj);
+    }
+    
+    // Store the allocated pointer in the variable
+    code_printf(parser, "    movq %%rax, %d(%%rbp)\n", var->offset);
+    
+    // Mark variable as heap-allocated
+    var->is_heap = 1;
+    
+    // If this is a GC variable, we would register it with the GC
+    // (For now, we just track it in the variable metadata)
+    if (var->is_gc) {
+        code_comment(parser, "Variable '%s' is marked for garbage collection", var_name.value);
+    }
+}
+
+void parse_free_statement(Parser *parser) {
+    Token free_token = peek(parser->tokens);
+    consume(parser->tokens);
+    
+    // Syntax: free variable_name;
+    Token var_name = consume(parser->tokens);
+    
+    // Find the variable to ensure it exists
+    Variable *var = find_variable(parser, var_name.value);
+    if (var == NULL) {
+        parser_error(parser, "Variable '%s' not found", var_name.value);
+        return;
+    }
+    
+    // Check if variable is a pointer
+    if (!var->is_pointer) {
+        parser_error(parser, "free can only be used with pointer variables");
+        return;
+    }
+    
+    // Check if variable is marked for GC
+    if (var->is_gc) {
+        parser_error(parser, "Cannot manually free a variable marked with @gc");
+        return;
+    }
+    
+    expect(parser, TOKEN_SEMICOLON, "Expected ';' after free statement");
+    
+    // Generate code to call free
+    code_comment(parser, "Line %d: free %s (manual deallocation)", free_token.line, var_name.value);
+    const char **arg_regs = get_arg_registers_64();
+    code_printf(parser, "    movq %d(%%rbp), %s\n", var->offset, arg_regs[0]);
+    int stack_adj = get_call_stack_space();
+    if (stack_adj > 0) {
+        code_printf(parser, "    subq $%d, %%rsp\n", stack_adj);
+    }
+    code_printf(parser, "    call free\n");
+    if (stack_adj > 0) {
+        code_printf(parser, "    addq $%d, %%rsp\n", stack_adj);
+    }
+    
+    // Mark variable as no longer heap-allocated
+    var->is_heap = 0;
 }
 
 // ============================================================================

@@ -45,6 +45,8 @@ void parse_print_statement(Parser *parser);
 void parse_function_call_statement(Parser *parser);
 void parse_break_statement(Parser *parser);
 void parse_continue_statement(Parser *parser);
+void parse_reserve_statement(Parser *parser);
+void parse_free_statement(Parser *parser);
 
 // Expression parsing
 void parse_expression(Parser *parser);

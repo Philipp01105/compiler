@@ -1,0 +1,7 @@
+// Test reserve keyword for heap allocation
+func main() -> void {
+    var p:*int;
+    reserve p(4);  // Allocate 4 bytes (1 int)
+    
+    println("Memory reserved successfully");
+}

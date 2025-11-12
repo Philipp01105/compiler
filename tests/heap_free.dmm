@@ -1,0 +1,11 @@
+// Test free keyword for manual deallocation
+func main() -> void {
+    var p:*int;
+    reserve p(4);
+    
+    println("Memory allocated");
+    
+    free p;
+    
+    println("Memory freed");
+}
