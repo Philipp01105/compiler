@@ -640,9 +640,11 @@ void parse_import(Parser *parser, const char *base_path) {
 // ============================================================================
 
 int parse_program(Parser *parser, const char *source_file) {
-    printf("\n================================================================\n");
-    printf("           PHASE 2: SYNTAX ANALYSIS (PARSER)\n");
-    printf("================================================================\n\n");
+    if (parser->debug_mode) {
+        printf("\n================================================================\n");
+        printf("           PHASE 2: SYNTAX ANALYSIS (PARSER)\n");
+        printf("================================================================\n\n");
+    }
 
     while (!is_at_end(parser->tokens)) {
         if (check(parser->tokens, TOKEN_HASH)) {
@@ -667,11 +669,13 @@ int parse_program(Parser *parser, const char *source_file) {
         return 0;
     }
 
-    printf("[+] Parsing successful\n");
-    printf("    - Structs: %d\n", parser->struct_count);
-    printf("    - Functions: %d\n", parser->function_count);
-    printf("    - String literals: %d\n", parser->string_literal_count);
-    printf("    - Float literals: %d\n", parser->float_literal_count);
+    if (parser->debug_mode) {
+        printf("[+] Parsing successful\n");
+        printf("    - Structs: %d\n", parser->struct_count);
+        printf("    - Functions: %d\n", parser->function_count);
+        printf("    - String literals: %d\n", parser->string_literal_count);
+        printf("    - Float literals: %d\n", parser->float_literal_count);
+    }
 
     return 1;
 }
