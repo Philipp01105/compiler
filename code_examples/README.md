@@ -161,6 +161,38 @@ gcc -no-pie code_examples/calculator.dmm.s -o calculator
 
 ---
 
+### 6. Heap Management Demo (`heap_management_demo.dmm`)
+
+A comprehensive demonstration of heap memory management features.
+
+**Features Demonstrated:**
+- Pointer type declarations (`var p:*int`)
+- Heap allocation with `reserve` keyword
+- Manual deallocation with `free` keyword
+- Garbage collection with `@gc` annotation
+- Mixed manual and automatic memory management
+- Dynamic size allocation
+
+**Key Language Features:**
+- Pointer types for all data types
+- `reserve variable(size)` for heap allocation
+- `free variable` for manual deallocation
+- `@gc` annotation for automatic garbage collection
+- Platform-independent calling conventions
+
+**How to Run:**
+```bash
+./build/compiler code_examples/heap_management_demo.dmm
+gcc -no-pie code_examples/heap_management_demo.dmm.s -o heap_demo
+./heap_demo
+```
+
+**Output:** Eight examples demonstrating pointer declarations, heap allocation, manual memory management, garbage collection, and advanced memory patterns.
+
+**Documentation:** See `examples/HEAP_MANAGEMENT_DOCUMENTATION.md` for detailed documentation on heap management features.
+
+---
+
 ## Compilation Instructions
 
 ### Compile All Examples

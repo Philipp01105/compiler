@@ -1,0 +1,177 @@
+// ============================================================================
+// HEAP MANAGEMENT DEMONSTRATION
+// ============================================================================
+// This file demonstrates all heap management features:
+// - Pointer type declarations
+// - Heap allocation with reserve
+// - Manual deallocation with free
+// - Garbage collection with @gc
+// ============================================================================
+
+// Example 1: Basic Pointer Declarations
+func example1_pointers() -> void {
+    println("=== Example 1: Pointer Declarations ===");
+    
+    var intPtr:*int;
+    var charPtr:*char;
+    var strPtr:*string;
+    
+    println("Three pointer variables declared:");
+    println("  - intPtr (pointer to int)");
+    println("  - charPtr (pointer to char)");
+    println("  - strPtr (pointer to string)");
+    println("");
+}
+
+// Example 2: Basic Heap Allocation with reserve
+func example2_reserve() -> void {
+    println("=== Example 2: Heap Allocation ===");
+    
+    var p:*int;
+    reserve p(4);  // Allocate 4 bytes for one int
+    
+    println("Allocated 4 bytes on heap for integer");
+    println("Pointer is now valid and points to heap memory");
+    
+    free p;
+    println("Memory freed");
+    println("");
+}
+
+// Example 3: Multiple Allocations
+func example3_multiple() -> void {
+    println("=== Example 3: Multiple Allocations ===");
+    
+    var a:*int;
+    var b:*char;
+    var c:*double;
+    
+    reserve a(4);
+    println("Allocated 4 bytes for int");
+    
+    reserve b(1);
+    println("Allocated 1 byte for char");
+    
+    reserve c(8);
+    println("Allocated 8 bytes for double");
+    
+    println("All allocations successful");
+    
+    free a;
+    free b;
+    free c;
+    
+    println("All memory freed");
+    println("");
+}
+
+// Example 4: Garbage Collected Variable
+func example4_gc() -> void {
+    println("=== Example 4: Garbage Collection ===");
+    
+    @gc
+    var gcPtr:*int;
+    reserve gcPtr(4);
+    
+    println("GC-managed pointer allocated");
+    println("No manual free needed - automatically collected");
+    
+    // No free statement - garbage collector handles it
+    println("");
+}
+
+// Example 5: Allocating Larger Blocks
+func example5_large_allocation() -> void {
+    println("=== Example 5: Large Allocation ===");
+    
+    var buffer:*char;
+    var size:int = 1024;
+    
+    reserve buffer(size);  // Allocate 1KB
+    println("Allocated 1024 bytes (1KB) buffer");
+    
+    free buffer;
+    println("Buffer freed");
+    println("");
+}
+
+// Example 6: Mixed Manual and GC Memory
+func example6_mixed() -> void {
+    println("=== Example 6: Mixed Memory Management ===");
+    
+    // Manual memory management
+    var manual:*int;
+    reserve manual(4);
+    println("Manual pointer allocated");
+    
+    // Garbage collected
+    @gc
+    var automatic:*int;
+    reserve automatic(4);
+    println("GC pointer allocated");
+    
+    // Only free the manual one
+    free manual;
+    println("Manual pointer freed");
+    println("GC pointer will be auto-freed");
+    println("");
+}
+
+// Example 7: Scoped GC Variables
+func example7_scoped_gc() -> void {
+    println("=== Example 7: Scoped GC Variables ===");
+    
+    println("Entering scope with GC variable");
+    
+    @gc
+    var scopedPtr:*int;
+    reserve scopedPtr(4);
+    println("  Allocated inside scope");
+    
+    println("Exiting scope");
+    println("  GC will clean up automatically");
+    println("");
+}
+
+// Example 8: Dynamic Size Allocation
+func example8_dynamic_size() -> void {
+    println("=== Example 8: Dynamic Size Allocation ===");
+    
+    var arraySize:int = 10;
+    var elementSize:int = 4;
+    var totalSize:int = arraySize * elementSize;
+    
+    var array:*int;
+    reserve array(totalSize);
+    
+    println("Allocated array for 10 integers (40 bytes)");
+    
+    free array;
+    println("Array freed");
+    println("");
+}
+
+// Main function - runs all examples
+func main() -> void {
+    println("############################################");
+    println("#                                          #");
+    println("#     HEAP MANAGEMENT DEMONSTRATION        #");
+    println("#                                          #");
+    println("############################################");
+    println("");
+    
+    example1_pointers();
+    example2_reserve();
+    example3_multiple();
+    example4_gc();
+    example5_large_allocation();
+    example6_mixed();
+    example7_scoped_gc();
+    example8_dynamic_size();
+    
+    println("############################################");
+    println("#                                          #");
+    println("#     ALL EXAMPLES COMPLETED               #");
+    println("#                                          #");
+    println("############################################");
+}
