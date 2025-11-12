@@ -3,12 +3,22 @@
 // ============================================================================
 // This file tests all heap management features including:
 // - Pointer type declarations for all data types
-// - reserve() function with different types
+// - reserve() function with different types (primitives and structs)
 // - free() function for manual memory management
 // - @gc annotation for automatic garbage collection
 // - Mixed manual and GC memory management
 // - Error cases and edge cases
 // ============================================================================
+
+// Test structs
+struct Point {
+    var x:int;
+    var y:int;
+}
+
+struct Data {
+    var value:int;
+}
 
 // Test 1: Pointer declarations for all types
 func test1_pointer_declarations() -> void {
@@ -340,6 +350,47 @@ func test20_alternating() -> void {
     println("  [OK] Manual pointers freed");
 }
 
+// Test 21: Struct allocation
+func test21_struct_allocation() -> void {
+    println("[TEST 21] Struct allocation");
+    
+    var p:*Point = reserve(Point);
+    println("  [OK] Struct allocated");
+    
+    free(p);
+    println("  [OK] Struct freed");
+}
+
+// Test 22: Multiple struct allocations
+func test22_multiple_structs() -> void {
+    println("[TEST 22] Multiple struct allocations");
+    
+    var p1:*Point = reserve(Point);
+    var p2:*Point = reserve(Point);
+    var d:*Data = reserve(Data);
+    
+    println("  [OK] Multiple structs allocated");
+    
+    free(p1);
+    free(p2);
+    free(d);
+    
+    println("  [OK] Multiple structs freed");
+}
+
+// Test 23: GC with structs
+func test23_gc_structs() -> void {
+    println("[TEST 23] GC with structs");
+    
+    @gc
+    var p:*Point = reserve(Point);
+    
+    @gc
+    var d:*Data = reserve(Data);
+    
+    println("  [OK] GC structs allocated (auto-freed)");
+}
+
 // Main test runner
 func main() -> void {
     println("============================================");
@@ -367,6 +418,9 @@ func main() -> void {
     test18_all_types_together();
     test19_gc_all_types();
     test20_alternating();
+    test21_struct_allocation();
+    test22_multiple_structs();
+    test23_gc_structs();
     
     println("");
     println("============================================");

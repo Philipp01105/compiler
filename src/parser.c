@@ -1566,14 +1566,14 @@ void parse_variable_declaration(Parser *parser) {
         if (is_array) {
             code_comment(parser, "Array allocated at offset %d, total size %d bytes", 
                          var->offset, var->size);
-        } else if (struct_type_name[0] != '\0') {
-            // Struct variable - space already allocated by pushes, no need to pop/move
-            code_comment(parser, "Struct variable allocated at offset %d, total size %d bytes", 
-                         var->offset, var->size);
         } else if (is_pointer) {
-            // Pointers are 8-byte addresses
+            // Pointers are 8-byte addresses (including pointers to structs)
             code_printf(parser, "    popq %%rax\n");
             code_printf(parser, "    movq %%rax, %d(%%rbp)\n", var->offset);
+        } else if (struct_type_name[0] != '\0') {
+            // Struct variable (not pointer) - space already allocated by pushes, no need to pop/move
+            code_comment(parser, "Struct variable allocated at offset %d, total size %d bytes", 
+                         var->offset, var->size);
         } else if (var_type == TYPE_FLOAT) {
             code_printf(parser, "    movss (%%rsp), %%xmm0\n");
             code_printf(parser, "    addq $8, %%rsp\n");
@@ -3062,7 +3062,21 @@ void parse_print_statement(Parser *parser) {
                 }
             }
         } else {
-            parser_error(parser, "Unexpected token in print statement");
+            // Default: parse as expression (handles operators like *, &, etc.)
+            parse_expression(parser);
+            
+            code_printf(parser, "    popq %s\n", get_arg_registers_64()[1]);
+            code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
+            {
+                int stack_adj_fallback = get_call_stack_space();
+                if (stack_adj_fallback > 0) {
+                    code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_fallback);
+                }
+                code_printf(parser, "    call printf\n");
+                if (stack_adj_fallback > 0) {
+                    code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_fallback);
+                }
+            }
         }
 
 print_next_item:
@@ -3596,7 +3610,21 @@ void parse_printline_statement(Parser *parser) {
                 }
             }
         } else {
-            parser_error(parser, "Unexpected token in print statement");
+            // Default: parse as expression (handles operators like *, &, etc.)
+            parse_expression(parser);
+            
+            code_printf(parser, "    popq %s\n", get_arg_registers_64()[1]);
+            code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
+            {
+                int stack_adj_fallback = get_call_stack_space();
+                if (stack_adj_fallback > 0) {
+                    code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_fallback);
+                }
+                code_printf(parser, "    call printf\n");
+                if (stack_adj_fallback > 0) {
+                    code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_fallback);
+                }
+            }
         }
 
 print_next_item:
@@ -4237,6 +4265,36 @@ void parse_unary(Parser *parser) {
         parse_unary(parser);
         code_printf(parser, "    popq %%rax\n");
         code_printf(parser, "    negl %%eax\n");
+        code_printf(parser, "    pushq %%rax\n");
+        return;
+    }
+
+    // Dereference operator: *pointer
+    if (match(parser->tokens, TOKEN_STAR)) {
+        code_comment(parser, "Dereference operator (*)");
+        parse_unary(parser);  // Parse the pointer expression
+        code_printf(parser, "    popq %%rax\n");  // Get the pointer address (64-bit)
+        code_printf(parser, "    movl (%%rax), %%eax\n");  // Dereference: load value at address (32-bit for now)
+        code_printf(parser, "    pushq %%rax\n");  // Push the dereferenced value
+        return;
+    }
+
+    // Address-of operator: &variable
+    if (match(parser->tokens, TOKEN_AMPERSAND)) {
+        code_comment(parser, "Address-of operator (&)");
+        // Must be followed by a variable
+        if (!check(parser->tokens, TOKEN_IDENTIFIER)) {
+            parser_error(parser, "Expected variable name after '&'");
+            return;
+        }
+        Token var_token = consume(parser->tokens);
+        Variable *var = find_variable(parser, var_token.value);
+        if (var == NULL) {
+            parser_error(parser, "Variable '%s' not found", var_token.value);
+            return;
+        }
+        // Calculate the address of the variable (rbp + offset)
+        code_printf(parser, "    leaq %d(%%rbp), %%rax\n", var->offset);
         code_printf(parser, "    pushq %%rax\n");
         return;
     }
@@ -5436,6 +5494,10 @@ void parse_primary(Parser *parser) {
                 } else if (var->type == TYPE_BIT) {
                     code_printf(parser, "    movzbl %d(%%rbp), %%eax\n", var->offset);
                     code_printf(parser, "    andl $1, %%eax\n");
+                    code_printf(parser, "    pushq %%rax\n");
+                } else if (var->is_pointer) {
+                    // Pointers are 64-bit addresses
+                    code_printf(parser, "    movq %d(%%rbp), %%rax\n", var->offset);
                     code_printf(parser, "    pushq %%rax\n");
                 } else if (var->type == TYPE_STRING) {
                     code_printf(parser, "    movq %d(%%rbp), %%rax\n", var->offset);

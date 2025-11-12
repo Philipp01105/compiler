@@ -73,6 +73,7 @@ typedef enum {
     TOKEN_AMP_AMP,
     TOKEN_PIPE_PIPE,
     TOKEN_BANG,
+    TOKEN_AMPERSAND,  // & (address-of operator)
 
     // Operators (Assignment)
     TOKEN_PLUS_EQUAL,

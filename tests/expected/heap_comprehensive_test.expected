@@ -65,6 +65,14 @@
 [TEST 20] Alternating manual and GC
   [OK] Alternating allocations
   [OK] Manual pointers freed
+[TEST 21] Struct allocation
+  [OK] Struct allocated
+  [OK] Struct freed
+[TEST 22] Multiple struct allocations
+  [OK] Multiple structs allocated
+  [OK] Multiple structs freed
+[TEST 23] GC with structs
+  [OK] GC structs allocated (auto-freed)
 
 ============================================
   ALL TESTS PASSED!

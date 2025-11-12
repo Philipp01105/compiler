@@ -423,6 +423,7 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
             case '.': type = TOKEN_DOT; break;
             case '#': type = TOKEN_HASH; break;
             case '@': type = TOKEN_AT; break;
+            case '&': type = TOKEN_AMPERSAND; break;
         }
 
         if (type != TOKEN_ERROR) {
@@ -525,6 +526,7 @@ const char *token_type_to_string(TokenType type) {
         case TOKEN_AMP_AMP: return "AMP_AMP";
         case TOKEN_PIPE_PIPE: return "PIPE_PIPE";
         case TOKEN_BANG: return "BANG";
+        case TOKEN_AMPERSAND: return "AMPERSAND";
 
         case TOKEN_PLUS_EQUAL: return "PLUS_EQUAL";
         case TOKEN_MINUS_EQUAL: return "MINUS_EQUAL";
