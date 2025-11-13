@@ -1,0 +1,17 @@
+func test(z:*int) -> void
+{
+    *z = 20;
+}
+
+func main() -> int
+{
+    print("test\n");
+    var x:*int = reserve(int);
+    *x = 15;
+    print("number: ");
+    println(*x);
+    test(x);
+    print("number: ");
+    println(*x);
+    return 10;
+}
