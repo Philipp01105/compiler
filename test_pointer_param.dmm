@@ -1,15 +1,21 @@
+// Original test from issue - corrected syntax
+// Note: To modify the value at a pointer address, use *ptr = value
+// (not ptr = value, which would change the pointer itself)
+
 func test(z:*int) -> void
 {
-    z = 20;
+    *z = 20;  // Dereference z to modify the value at the address
 }
 
 func main() -> int
 {
     print("test\n");
     var x:*int = reserve(int);
-    x = 15;
-    print("number: " + x);
+    *x = 15;  // Dereference x to set the value at the address
+    print("number: ");
+    println(*x);  // Dereference x to read the value
     test(x);
-    print("number: " + x);
+    print("number: ");
+    println(*x);  // Dereference x to read the updated value
     return 10;
 }
