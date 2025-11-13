@@ -1109,6 +1109,13 @@ void parse_function(Parser *parser) {
 
         expect(parser, TOKEN_COLON, "Expected ':' after parameter");
 
+        // Check for pointer parameter: :*type
+        int is_pointer_param = 0;
+        if (check(parser->tokens, TOKEN_STAR)) {
+            consume(parser->tokens);
+            is_pointer_param = 1;
+        }
+
         Token type_token = consume(parser->tokens);
         DataType param_type = token_to_datatype(type_token.type);
 
@@ -1119,6 +1126,7 @@ void parse_function(Parser *parser) {
 
         func->param_types[func->param_count] = param_type;
         func->param_is_array[func->param_count] = is_array_param;
+        func->param_is_pointer[func->param_count] = is_pointer_param;
 
         if (parser->var_count >= MAX_VARS) {
             parser_error(parser, "Too many variables");
@@ -1129,10 +1137,11 @@ void parse_function(Parser *parser) {
         strcpy(var->name, param_token.value);
         var->type = param_type;
         var->is_array = is_array_param;
+        var->is_pointer = is_pointer_param;
         var->array_size = 0;  // Unknown size for array parameters
         
-        // Array parameters are passed as pointers (8 bytes)
-        if (is_array_param) {
+        // Array parameters and pointer parameters are passed as pointers (8 bytes)
+        if (is_array_param || is_pointer_param) {
             var->size = 8;
         } else {
             var->size = datatype_size(param_type);
@@ -1217,8 +1226,8 @@ void parse_function(Parser *parser) {
     for (int i = 0; i < func->param_count && i < 4; i++) {
         Variable *var = &parser->vars[saved_var_count + i];
 
-        // Array parameters are passed as pointers (8 bytes)
-        if (var->is_array) {
+        // Array parameters and pointer parameters are passed as pointers (8 bytes)
+        if (var->is_array || var->is_pointer) {
             code_printf(parser, "    movq %s, %d(%%rbp)\n", param_regs_64[i], var->offset);
         } else if (var->type == TYPE_FLOAT || var->type == TYPE_DOUBLE) {
             if (var->type == TYPE_FLOAT) {
@@ -1359,6 +1368,57 @@ void parse_statement(Parser *parser) {
         code_printf(parser, "    call free\n");
         if (stack_adj > 0) {
             code_printf(parser, "    addq $%d, %%rsp\n", stack_adj);
+        }
+    } else if (check(parser->tokens, TOKEN_STAR)) {
+        // Handle pointer dereference assignment: *ptr = value
+        Token star_token = consume(parser->tokens);  // consume '*'
+        
+        if (!check(parser->tokens, TOKEN_IDENTIFIER)) {
+            parser_error(parser, "Expected identifier after '*' in assignment");
+            return;
+        }
+        
+        Token ptr_token = consume(parser->tokens);
+        Variable *ptr_var = find_variable(parser, ptr_token.value);
+        
+        if (!ptr_var) {
+            parser_error(parser, "Variable '%s' not found", ptr_token.value);
+            return;
+        }
+        
+        if (!ptr_var->is_pointer) {
+            parser_error(parser, "Variable '%s' is not a pointer", ptr_token.value);
+            return;
+        }
+        
+        expect(parser, TOKEN_EQUAL, "Expected '=' after pointer dereference");
+        
+        code_comment(parser, "Line %d: *%s = value (pointer dereference assignment)",
+                     star_token.line, ptr_token.value);
+        
+        // Parse the value expression
+        parse_expression(parser);
+        
+        expect(parser, TOKEN_SEMICOLON, "Expected ';' after pointer dereference assignment");
+        
+        // Stack has: [value]
+        // Load the pointer address
+        code_printf(parser, "    movq %d(%%rbp), %%rbx\n", ptr_var->offset);  // Load pointer address
+        code_printf(parser, "    popq %%rax\n");  // Get value to store
+        
+        // Store value at the address pointed to by the pointer
+        if (ptr_var->type == TYPE_FLOAT) {
+            code_printf(parser, "    movq %%rax, %%xmm0\n");
+            code_printf(parser, "    movss %%xmm0, (%%rbx)\n");
+        } else if (ptr_var->type == TYPE_DOUBLE) {
+            code_printf(parser, "    movq %%rax, %%xmm0\n");
+            code_printf(parser, "    movsd %%xmm0, (%%rbx)\n");
+        } else if (ptr_var->type == TYPE_CHAR || ptr_var->type == TYPE_BYTE || ptr_var->type == TYPE_BIT) {
+            code_printf(parser, "    movb %%al, (%%rbx)\n");
+        } else if (ptr_var->type == TYPE_STRING) {
+            code_printf(parser, "    movq %%rax, (%%rbx)\n");
+        } else {  // TYPE_INT
+            code_printf(parser, "    movl %%eax, (%%rbx)\n");
         }
     } else {
         parser_error(parser, "Unexpected statement");
