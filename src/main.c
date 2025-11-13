@@ -5,19 +5,22 @@
 #include <sys/stat.h>
 #include "lexer.h"
 #include "parser.h"
+#include "errorHandler.h"
 
 void print_usage(const char *program_name) {
     printf("Usage: %s [OPTIONS] <source_file>\n", program_name);
     printf("\n");
     printf("Options:\n");
-    printf("  --tokens    Show generated token stream\n");
-    printf("  --debug     Enable debug output during parsing\n");
-    printf("  --help      Show this help message\n");
+    printf("  --tokens       Show generated token stream\n");
+    printf("  --debug        Enable debug output during parsing\n");
+    printf("  --formatError  Output errors in JSON format\n");
+    printf("  --help         Show this help message\n");
     printf("\n");
     printf("Examples:\n");
     printf("  %s program.txt\n", program_name);
     printf("  %s --tokens program.txt\n", program_name);
     printf("  %s --debug program.txt\n", program_name);
+    printf("  %s --formatError program.txt\n", program_name);
     printf("  %s --tokens --debug program.txt\n", program_name);
     printf("\n");
 }
@@ -79,28 +82,49 @@ void write_escaped_string(FILE *out, const char *str) {
 int main(int argc, char *argv[]) {
     int show_tokens = 0;
     int debug_mode = 0;
+    int format_error = 0;
     const char *source_file = NULL;
+
+    // Initialize the error handler
+    ErrorHandler *error_handler = error_handler_init();
+    if (error_handler) {
+        error_handler_set_global(error_handler);
+    }
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--tokens") == 0) {
             show_tokens = 1;
         } else if (strcmp(argv[i], "--debug") == 0) {
             debug_mode = 1;
+        } else if (strcmp(argv[i], "--formatError") == 0) {
+            format_error = 1;
+            if (error_handler) {
+                error_handler_set_json_output(error_handler, 1);
+            }
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             print_usage(argv[0]);
+            error_handler_free(error_handler);
             return 0;
         } else if (argv[i][0] != '-') {
             source_file = argv[i];
         } else {
-            fprintf(stderr, "Unknown option: %s\n", argv[i]);
+            error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                        ERR_COMP_INVALID_OPTION, NULL,
+                        "Unknown option: %s", argv[i]);
+            error_handler_flush(error_handler);
             print_usage(argv[0]);
+            error_handler_free(error_handler);
             return 1;
         }
     }
 
     if (!source_file) {
-        fprintf(stderr, "Error: No source file specified\n\n");
+        error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                    ERR_COMP_NO_SOURCE_FILE, NULL,
+                    "No source file specified");
+        error_handler_flush(error_handler);
         print_usage(argv[0]);
+        error_handler_free(error_handler);
         return 1;
     }
 
@@ -133,9 +157,13 @@ int main(int argc, char *argv[]) {
     parser->debug_mode = debug_mode;
 
     if (!parse_program(parser, source_file)) {
-        fprintf(stderr, "\n[ERROR] Compilation failed!\n\n");
+        error_handler_flush(error_handler);
+        if (!format_error) {
+            fprintf(stderr, "\n[ERROR] Compilation failed!\n\n");
+        }
         free_parser(parser);
         free_token_stream(tokens);
+        error_handler_free(error_handler);
         return 1;
     }
 
@@ -271,6 +299,12 @@ int main(int argc, char *argv[]) {
 
     free_parser(parser);
     free_token_stream(tokens);
+    
+    // Flush any buffered errors and clean up
+    if (error_handler) {
+        error_handler_flush(error_handler);
+        error_handler_free(error_handler);
+    }
 
     return 0;
 }

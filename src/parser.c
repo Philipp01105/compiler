@@ -1,4 +1,5 @@
 #include "parser.h"
+#include "errorHandler.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -298,16 +299,47 @@ void parser_error(Parser *parser, const char *format, ...) {
     parser->has_error = 1;
 
     Token current = peek(parser->tokens);
-    fprintf(stderr, "Error (Line %d, Col %d): ", current.line, current.column);
-
+    
+    // Format the error message
+    char message[1024];
     va_list args;
     va_start(args, format);
-    vfprintf(stderr, format, args);
+    vsnprintf(message, sizeof(message), format, args);
     va_end(args);
-
-    fprintf(stderr, "\n");
-    fprintf(stderr, "  At token: %s '%s'\n",
-            token_type_to_string(current.type), current.value);
+    
+    // Use the new error handler if available
+    if (global_error_handler) {
+        ErrorContext *ctx = error_context_create(
+            SEVERITY_ERROR,
+            current.line,
+            current.column,
+            ERROR_CATEGORY_PARSER,
+            ERR_PARSE_UNEXPECTED_TOKEN,
+            NULL,  // filename will be set by the caller if needed
+            message
+        );
+        
+        if (ctx) {
+            // Add token information
+            char token_info[256];
+            snprintf(token_info, sizeof(token_info), "%s '%s'",
+                    token_type_to_string(current.type), current.value);
+            error_context_set_token(ctx, token_info);
+            
+            // Report the error
+            error_report_context(global_error_handler, ctx);
+            
+            // Free the context only if not buffered
+            if (!global_error_handler->buffered) {
+                error_context_free(ctx);
+            }
+        }
+    } else {
+        // Fallback to old error reporting if error handler not initialized
+        fprintf(stderr, "[ERROR] Line %d, Col %d: %s\n", current.line, current.column, message);
+        fprintf(stderr, "  At token: %s '%s'\n",
+                token_type_to_string(current.type), current.value);
+    }
 
     if (!is_at_end(parser->tokens)) {
         consume(parser->tokens);
@@ -665,7 +697,13 @@ int parse_program(Parser *parser, const char *source_file) {
 
     Function *main_func = find_function(parser, "main");
     if (!main_func) {
-        fprintf(stderr, "Error: No main() function found\n");
+        if (global_error_handler) {
+            error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                        ERR_COMP_NO_MAIN_FUNCTION, source_file,
+                        "No main() function found");
+        } else {
+            fprintf(stderr, "Error: No main() function found\n");
+        }
         return 0;
     }
 

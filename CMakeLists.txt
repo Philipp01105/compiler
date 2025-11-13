@@ -10,4 +10,6 @@ add_executable(compiler
         src/main.c
         src/parser.c
         src/parser.h
+        src/errorHandler.c
+        src/errorHandler.h
 )
