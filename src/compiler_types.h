@@ -32,6 +32,9 @@ typedef enum {
     TOKEN_KEYWORD_STRUCT,
     TOKEN_KEYWORD_IMPORT,
     TOKEN_KEYWORD_STATIC,
+    TOKEN_KEYWORD_RESERVE,
+    TOKEN_KEYWORD_FREE,
+    TOKEN_KEYWORD_GC,
 
     // Data Types (ERWEITERT!)
     TOKEN_TYPE_INT,
@@ -70,6 +73,7 @@ typedef enum {
     TOKEN_AMP_AMP,
     TOKEN_PIPE_PIPE,
     TOKEN_BANG,
+    TOKEN_AMPERSAND,  // & (address-of operator)
 
     // Operators (Assignment)
     TOKEN_PLUS_EQUAL,
@@ -92,6 +96,7 @@ typedef enum {
     TOKEN_ARROW,
     TOKEN_DOT,
     TOKEN_HASH,
+    TOKEN_AT,
 
     // Special
     TOKEN_COMMENT,
@@ -143,6 +148,9 @@ typedef struct {
     int is_array;         // 1 if this is an array, 0 otherwise
     int array_size;       // Number of elements (0 for non-arrays or unknown size)
     char struct_type[MAX_TOKEN];  // If type is struct, this holds the struct name (empty for primitives)
+    int is_pointer;       // 1 if this is a pointer type, 0 otherwise
+    int is_gc;            // 1 if this variable is garbage collected, 0 for manual management
+    int is_heap;          // 1 if this variable is heap-allocated, 0 for stack
 } Variable;
 
 typedef struct {
@@ -226,6 +234,9 @@ typedef struct {
     // Import tracking to prevent duplicate imports
     char imported_files[MAX_IMPORTS][MAX_PATH];
     int import_count;
+    
+    // Heap management state
+    int next_var_is_gc;  // 1 if next variable declaration should be garbage collected
 } Parser;
 
 #endif

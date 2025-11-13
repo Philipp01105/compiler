@@ -104,12 +104,15 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    print_header(source_file);
+    // Only show verbose output in debug mode
+    if (debug_mode || show_tokens) {
+        print_header(source_file);
 
-    printf("================================================================\n");
-    printf("           PHASE 1: LEXICAL ANALYSIS (LEXER)\n");
-    printf("================================================================\n");
-    printf("\n");
+        printf("================================================================\n");
+        printf("           PHASE 1: LEXICAL ANALYSIS (LEXER)\n");
+        printf("================================================================\n");
+        printf("\n");
+    }
 
     TokenStream *tokens = tokenize_file(source_file, debug_mode);
     if (!tokens) {
@@ -117,8 +120,10 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    printf("  [+] %d Tokens generated\n", tokens->count);
-    printf("\n");
+    if (debug_mode || show_tokens) {
+        printf("  [+] %d Tokens generated\n", tokens->count);
+        printf("\n");
+    }
 
     if (show_tokens) {
         print_tokens(tokens);
@@ -134,11 +139,13 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    printf("\n");
-    printf("================================================================\n");
-    printf("           PHASE 3: CODE GENERATION\n");
-    printf("================================================================\n");
-    printf("\n");
+    if (debug_mode) {
+        printf("\n");
+        printf("================================================================\n");
+        printf("           PHASE 3: CODE GENERATION\n");
+        printf("================================================================\n");
+        printf("\n");
+    }
 
     char output_filename[512];
     snprintf(output_filename, sizeof(output_filename), "%s.s", source_file);
@@ -244,21 +251,23 @@ int main(int argc, char *argv[]) {
 
     fclose(output);
 
-    printf("  [+] Assembly code generated: %s\n", output_filename);
-    printf("      - Code size: %d Bytes\n", parser->function_code_pos);
-    printf("      - String literals: %d\n", parser->string_literal_count);
-    printf("      - Float literals: %d\n", parser->float_literal_count);
-    printf("\n");
-    printf("################################################################\n");
-    printf("#                                                              #\n");
-    printf("#            [SUCCESS] COMPILATION COMPLETED!                 #\n");
-    printf("#                                                              #\n");
-    printf("################################################################\n");
-    printf("\n");
-    printf("Next steps:\n");
-    printf("  [1] Assemble: gcc -no-pie %s -o program\n", output_filename);
-    printf("  [2] Execute:  ./program\n");
-    printf("\n");
+    if (debug_mode) {
+        printf("  [+] Assembly code generated: %s\n", output_filename);
+        printf("      - Code size: %d Bytes\n", parser->function_code_pos);
+        printf("      - String literals: %d\n", parser->string_literal_count);
+        printf("      - Float literals: %d\n", parser->float_literal_count);
+        printf("\n");
+        printf("################################################################\n");
+        printf("#                                                              #\n");
+        printf("#            [SUCCESS] COMPILATION COMPLETED!                 #\n");
+        printf("#                                                              #\n");
+        printf("################################################################\n");
+        printf("\n");
+        printf("Next steps:\n");
+        printf("  [1] Assemble: gcc -no-pie %s -o program\n", output_filename);
+        printf("  [2] Execute:  ./program\n");
+        printf("\n");
+    }
 
     free_parser(parser);
     free_token_stream(tokens);
