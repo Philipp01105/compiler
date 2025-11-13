@@ -236,6 +236,10 @@ Parser *create_parser(TokenStream *tokens) {
     parser->current_struct_context[0] = '\0';
     parser->import_count = 0;
     parser->next_var_is_gc = 0;
+    parser->source_content = NULL;
+    parser->source_lines = NULL;
+    parser->source_line_count = 0;
+    parser->source_filename = NULL;
 
     memset(parser->code_buffer, 0, CODE_BUFFER_SIZE);
     memset(parser->function_code_buffer, 0, CODE_BUFFER_SIZE);
@@ -245,8 +249,75 @@ Parser *create_parser(TokenStream *tokens) {
 
 void free_parser(Parser *parser) {
     if (parser) {
+        if (parser->source_content) {
+            free(parser->source_content);
+        }
+        if (parser->source_lines) {
+            free(parser->source_lines);
+        }
         free(parser);
     }
+}
+
+// Load source file for error reporting
+void parser_load_source(Parser *parser, const char *filename) {
+    FILE *file = fopen(filename, "r");
+    if (!file) {
+        return;
+    }
+    
+    // Get file size
+    fseek(file, 0, SEEK_END);
+    long size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    
+    // Read file content
+    parser->source_content = malloc(size + 1);
+    if (!parser->source_content) {
+        fclose(file);
+        return;
+    }
+    
+    size_t bytes_read = fread(parser->source_content, 1, size, file);
+    parser->source_content[bytes_read] = '\0';
+    fclose(file);
+    
+    // Count lines
+    int line_count = 1;
+    for (size_t i = 0; i < bytes_read; i++) {
+        if (parser->source_content[i] == '\n') {
+            line_count++;
+        }
+    }
+    
+    // Allocate line pointer array
+    parser->source_lines = malloc(sizeof(char*) * line_count);
+    if (!parser->source_lines) {
+        return;
+    }
+    
+    // Build line pointer array
+    parser->source_lines[0] = parser->source_content;
+    parser->source_line_count = 1;
+    
+    for (size_t i = 0; i < bytes_read; i++) {
+        if (parser->source_content[i] == '\n') {
+            parser->source_content[i] = '\0';  // Null terminate each line
+            if (i + 1 < bytes_read) {
+                parser->source_lines[parser->source_line_count++] = &parser->source_content[i + 1];
+            }
+        }
+    }
+    
+    parser->source_filename = filename;
+}
+
+// Get source line by line number (1-indexed)
+const char *parser_get_source_line(Parser *parser, int line) {
+    if (!parser->source_lines || line < 1 || line > parser->source_line_count) {
+        return NULL;
+    }
+    return parser->source_lines[line - 1];
 }
 
 // ============================================================================
@@ -315,13 +386,19 @@ void parser_error_code(Parser *parser, int error_code, const char *format, ...) 
             current.column,
             ERROR_CATEGORY_PARSER,
             error_code,
-            NULL,  // filename will be set by the caller if needed
+            parser->source_filename,
             message
         );
         
         if (ctx) {
+            // Add source line context
+            const char *source_line = parser_get_source_line(parser, current.line);
+            if (source_line) {
+                error_context_set_source_line(ctx, source_line);
+            }
+            
             // Add token information
-            char token_info[256];
+            char token_info[512];
             snprintf(token_info, sizeof(token_info), "%s '%s'",
                     token_type_to_string(current.type), current.value);
             error_context_set_token(ctx, token_info);
@@ -352,7 +429,7 @@ void parser_error(Parser *parser, const char *format, ...) {
 
     Token current = peek(parser->tokens);
     
-    // Format the error message
+    // Format the error message  
     char message[1024];
     va_list args;
     va_start(args, format);
@@ -367,13 +444,19 @@ void parser_error(Parser *parser, const char *format, ...) {
             current.column,
             ERROR_CATEGORY_PARSER,
             ERR_PARSE_UNEXPECTED_TOKEN,
-            NULL,  // filename will be set by the caller if needed
+            parser->source_filename,
             message
         );
         
         if (ctx) {
+            // Add source line context
+            const char *source_line = parser_get_source_line(parser, current.line);
+            if (source_line) {
+                error_context_set_source_line(ctx, source_line);
+            }
+            
             // Add token information
-            char token_info[256];
+            char token_info[512];
             snprintf(token_info, sizeof(token_info), "%s '%s'",
                     token_type_to_string(current.type), current.value);
             error_context_set_token(ctx, token_info);
@@ -439,11 +522,17 @@ void semantic_error(Parser *parser, int error_code, const char *format, ...) {
             current.column,
             ERROR_CATEGORY_SEMANTIC,
             error_code,
-            NULL,
+            parser->source_filename,
             message
         );
         
         if (ctx) {
+            // Add source line context
+            const char *source_line = parser_get_source_line(parser, current.line);
+            if (source_line) {
+                error_context_set_source_line(ctx, source_line);
+            }
+            
             // Report the error
             error_report_context(global_error_handler, ctx);
             
@@ -456,9 +545,8 @@ void semantic_error(Parser *parser, int error_code, const char *format, ...) {
         fprintf(stderr, "[ERROR] Line %d, Col %d: %s\n", current.line, current.column, message);
     }
 
-    if (!is_at_end(parser->tokens)) {
-        consume(parser->tokens);
-    }
+    // Note: semantic errors don't consume tokens - they're not syntax errors
+    // The parser can continue normally
 }
 
 // ============================================================================
@@ -779,6 +867,9 @@ void parse_import(Parser *parser, const char *base_path) {
 // ============================================================================
 
 int parse_program(Parser *parser, const char *source_file) {
+    // Load source file for error reporting
+    parser_load_source(parser, source_file);
+    
     if (parser->debug_mode) {
         printf("\n================================================================\n");
         printf("           PHASE 2: SYNTAX ANALYSIS (PARSER)\n");
@@ -1458,7 +1549,7 @@ void parse_statement(Parser *parser) {
         } else if (lookahead.type == TOKEN_LPAREN) {
             parse_function_call_statement(parser);
         } else {
-            parser_error(parser, "Unexpected token after identifier");
+            parser_error_code(parser, ERR_PARSE_INVALID_SYNTAX, "Unexpected token: expected operator, semicolon, or end of statement");
         }
     } else if (check(parser->tokens, TOKEN_KEYWORD_FOR)) {
         parse_for_loop(parser);
@@ -1566,7 +1657,7 @@ void parse_statement(Parser *parser) {
             code_printf(parser, "    movl %%eax, (%%rbx)\n");
         }
     } else {
-        parser_error(parser, "Unexpected statement");
+        parser_error_code(parser, ERR_PARSE_INVALID_SYNTAX, "Unexpected statement: expected expression or statement keyword");
     }
 }
 
@@ -4206,6 +4297,25 @@ void parse_function_call_statement(Parser *parser) {
     
     if (!func) {
         semantic_error(parser, ERR_SEM_UNDEFINED_FUNCTION, "Function '%s' not found", name.value);
+        
+        // Error recovery: skip the function call to avoid cascading errors
+        // We still parse the arguments to catch any errors in them
+        expect(parser, TOKEN_LPAREN, "Expected '(' after function name");
+        
+        int arg_count = 0;
+        while (!check(parser->tokens, TOKEN_RPAREN) && !is_at_end(parser->tokens)) {
+            parse_expression(parser);  // Parse arguments to check for errors in them
+            arg_count++;
+            if (check(parser->tokens, TOKEN_COMMA)) {
+                consume(parser->tokens);
+            }
+        }
+        
+        expect(parser, TOKEN_RPAREN, "Expected ')' after function arguments");
+        
+        // Push a dummy value so expression parsing can continue
+        code_printf(parser, "    xorq %%rax, %%rax  # Error recovery: undefined function\n");
+        code_printf(parser, "    pushq %%rax\n");
         return;
     }
 
