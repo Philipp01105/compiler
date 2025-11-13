@@ -274,35 +274,55 @@ static void print_source_context(
     }
     
     FILE *out = handler->output_stream;
-    const char *color = handler->use_colors ? COLOR_DIM : "";
+    const char *color_blue = handler->use_colors ? COLOR_BLUE : "";
     const char *reset = handler->use_colors ? COLOR_RESET : "";
     const char *error_color = handler->use_colors ? get_severity_color(ctx->severity) : "";
     
-    // Print indent
+    // Print line number with --> pointer (Rust style)
     for (int i = 0; i < indent_level; i++) {
-        fprintf(out, "  ");
+        fprintf(out, " ");
+    }
+    fprintf(out, " %s-->%s ", color_blue, reset);
+    if (ctx->filename) {
+        fprintf(out, "%s:%d:%d\n", ctx->filename, ctx->line, ctx->column);
+    } else {
+        fprintf(out, "line %d:%d\n", ctx->line, ctx->column);
     }
     
-    // Print line number and source line
-    fprintf(out, "%s%5d | %s%s%s\n", color, ctx->line, reset, ctx->source_line, reset);
+    // Print empty line with vertical bar
+    for (int i = 0; i < indent_level; i++) {
+        fprintf(out, " ");
+    }
+    fprintf(out, "  %s|%s\n", color_blue, reset);
     
-    // Print caret (^) pointing to the error column
+    // Print line number and source line
+    for (int i = 0; i < indent_level; i++) {
+        fprintf(out, " ");
+    }
+    fprintf(out, "%s%d |%s %s\n", color_blue, ctx->line, reset, ctx->source_line);
+    
+    // Print squiggly underline (Rust style)
     if (ctx->column > 0) {
         for (int i = 0; i < indent_level; i++) {
-            fprintf(out, "  ");
+            fprintf(out, " ");
         }
-        fprintf(out, "%s      | ", color);
+        fprintf(out, "  %s|%s ", color_blue, reset);
+        
+        // Spaces before the underline
         for (int i = 1; i < ctx->column; i++) {
             fprintf(out, " ");
         }
-        fprintf(out, "%s^", error_color);
         
-        // Add wavy underline if we have a token
+        // Squiggly underline
+        fprintf(out, "%s", error_color);
+        int underline_len = 1;
         if (ctx->token_value) {
-            int token_len = strlen(ctx->token_value);
-            for (int i = 1; i < token_len && i < 20; i++) {
-                fprintf(out, "~");
-            }
+            underline_len = strlen(ctx->token_value);
+            if (underline_len > 20) underline_len = 20;
+            if (underline_len < 1) underline_len = 1;
+        }
+        for (int i = 0; i < underline_len; i++) {
+            fprintf(out, "^");
         }
         fprintf(out, "%s\n", reset);
     }
@@ -322,57 +342,57 @@ static void print_error_context_recursive(
     const char *reset = handler->use_colors ? COLOR_RESET : "";
     const char *bold = handler->use_colors ? COLOR_BOLD : "";
     
-    // Print indent
-    for (int i = 0; i < indent_level; i++) {
-        fprintf(out, "  ");
-    }
-    
-    // Format and print error code
+    // Format error code
     char error_code_str[16];
     format_error_code(error_code_str, sizeof(error_code_str), ctx->error_category, ctx->error_code);
     
-    // Print severity label with error code
-    fprintf(out, "%s%s%s [%s] ", severity_color, get_severity_label(ctx->severity), reset, error_code_str);
-    
-    // Print location
-    if (ctx->filename) {
-        fprintf(out, "%s%s:%d:%d:%s ", bold, ctx->filename, ctx->line, ctx->column, reset);
-    } else if (ctx->line > 0) {
-        fprintf(out, "%sLine %d, Col %d:%s ", bold, ctx->line, ctx->column, reset);
+    // Print severity label with error code (Rust style: "error[E0123]: message")
+    for (int i = 0; i < indent_level; i++) {
+        fprintf(out, " ");
     }
     
-    // Print message
-    fprintf(out, "%s\n", ctx->message);
+    // Convert severity to lowercase for Rust style
+    const char *severity_label = get_severity_label(ctx->severity);
+    char lowercase_severity[32] = {0};
+    for (int i = 0; severity_label[i] && i < 31; i++) {
+        if (severity_label[i] == '[' || severity_label[i] == ']') continue;
+        lowercase_severity[strlen(lowercase_severity)] = 
+            (severity_label[i] >= 'A' && severity_label[i] <= 'Z') ? 
+            severity_label[i] + 32 : severity_label[i];
+    }
+    
+    fprintf(out, "%s%s%s", severity_color, bold, lowercase_severity);
+    fprintf(out, "[%s]%s: %s\n", error_code_str, reset, ctx->message);
     
     // Print source context
     if (handler->show_source_context && ctx->source_line) {
         print_source_context(handler, ctx, indent_level);
     }
     
-    // Print token info if available
-    if (ctx->token_value) {
-        for (int i = 0; i < indent_level; i++) {
-            fprintf(out, "  ");
-        }
-        fprintf(out, "  %sAt token:%s '%s'\n", 
-                handler->use_colors ? COLOR_DIM : "", reset, ctx->token_value);
-    }
-    
-    // Print suggestion if available
+    // Print suggestion if available (Rust style with "help:" prefix)
     if (handler->show_suggestions && ctx->suggestion) {
         for (int i = 0; i < indent_level; i++) {
-            fprintf(out, "  ");
+            fprintf(out, " ");
         }
-        fprintf(out, "  %sHelp:%s %s\n", 
-                handler->use_colors ? COLOR_CYAN : "", reset, ctx->suggestion);
+        const char *color_cyan = handler->use_colors ? COLOR_CYAN : "";
+        const char *color_blue = handler->use_colors ? COLOR_BLUE : "";
+        fprintf(out, "  %s|%s\n", color_blue, reset);
+        for (int i = 0; i < indent_level; i++) {
+            fprintf(out, " ");
+        }
+        fprintf(out, "  %s= %shelp:%s %s\n", 
+                color_blue, color_cyan, reset, ctx->suggestion);
     }
     
     // Print child errors (cascading errors)
     if (ctx->child_count > 0) {
         for (int i = 0; i < indent_level; i++) {
-            fprintf(out, "  ");
+            fprintf(out, " ");
         }
-        fprintf(out, "  %sCaused by:%s\n", handler->use_colors ? COLOR_DIM : "", reset);
+        const char *color_cyan = handler->use_colors ? COLOR_CYAN : "";
+        const char *color_blue = handler->use_colors ? COLOR_BLUE : "";
+        fprintf(out, "  %s= %snote:%s caused by:\n", 
+                color_blue, color_cyan, reset);
         
         for (int i = 0; i < ctx->child_count; i++) {
             print_error_context_recursive(handler, ctx->children[i], indent_level + 1);
@@ -625,36 +645,33 @@ void error_handler_flush(ErrorHandler *handler) {
         fprintf(out, "  }\n");
         fprintf(out, "}\n");
     } else {
-        // Print summary header
+        // Print all buffered errors (no header, Rust style)
+        for (int i = 0; i < handler->buffer_count; i++) {
+            print_error_context_recursive(handler, handler->buffer[i], 0);
+        }
+        
+        // Print summary (Rust style - compact)
         const char *color_red = handler->use_colors ? COLOR_RED : "";
         const char *color_yellow = handler->use_colors ? COLOR_YELLOW : "";
         const char *color_reset = handler->use_colors ? COLOR_RESET : "";
         const char *color_bold = handler->use_colors ? COLOR_BOLD : "";
         
-        fprintf(out, "\n");
-        fprintf(out, "%s════════════════════════════════════════════════════════════════%s\n", color_bold, color_reset);
-        fprintf(out, "%s                    COMPILATION ERRORS                          %s\n", color_bold, color_reset);
-        fprintf(out, "%s════════════════════════════════════════════════════════════════%s\n", color_bold, color_reset);
-        fprintf(out, "\n");
-        
-        // Print all buffered errors
-        for (int i = 0; i < handler->buffer_count; i++) {
-            print_error_context_recursive(handler, handler->buffer[i], 0);
-        }
-        
-        // Print summary
-        fprintf(out, "%s════════════════════════════════════════════════════════════════%s\n", color_bold, color_reset);
-        fprintf(out, "%sSummary:%s ", color_bold, color_reset);
         if (handler->error_count > 0) {
-            fprintf(out, "%s%d error(s)%s", color_red, handler->error_count, color_reset);
+            fprintf(out, "%serror%s: could not compile due to ", color_red, color_reset);
+            fprintf(out, "%s%d error%s%s", color_bold, handler->error_count, 
+                    handler->error_count != 1 ? "s" : "", color_reset);
+            if (handler->warning_count > 0) {
+                fprintf(out, "; %s%d warning%s emitted%s", 
+                        color_yellow, handler->warning_count,
+                        handler->warning_count != 1 ? "s" : "", color_reset);
+            }
+            fprintf(out, "\n\n");
+        } else if (handler->warning_count > 0) {
+            fprintf(out, "%swarning%s: %s%d warning%s emitted%s\n\n",
+                    color_yellow, color_reset, color_bold,
+                    handler->warning_count,
+                    handler->warning_count != 1 ? "s" : "", color_reset);
         }
-        if (handler->warning_count > 0) {
-            if (handler->error_count > 0) fprintf(out, ", ");
-            fprintf(out, "%s%d warning(s)%s", color_yellow, handler->warning_count, color_reset);
-        }
-        fprintf(out, "\n");
-        fprintf(out, "%s════════════════════════════════════════════════════════════════%s\n", color_bold, color_reset);
-        fprintf(out, "\n");
     }
 }
 
