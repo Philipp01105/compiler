@@ -14,6 +14,7 @@ void code_comment(Parser *parser, const char *format, ...);
 
 // Error handling
 void parser_error(Parser *parser, const char *format, ...);
+void parser_error_code(Parser *parser, int error_code, const char *format, ...);
 void expect(Parser *parser, TokenType type, const char *message);
 
 // Variable & function management

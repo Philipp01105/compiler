@@ -1,4 +1,5 @@
 #include "parser.h"
+#include "errorHandler.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -235,6 +236,10 @@ Parser *create_parser(TokenStream *tokens) {
     parser->current_struct_context[0] = '\0';
     parser->import_count = 0;
     parser->next_var_is_gc = 0;
+    parser->source_content = NULL;
+    parser->source_lines = NULL;
+    parser->source_line_count = 0;
+    parser->source_filename = NULL;
 
     memset(parser->code_buffer, 0, CODE_BUFFER_SIZE);
     memset(parser->function_code_buffer, 0, CODE_BUFFER_SIZE);
@@ -244,8 +249,75 @@ Parser *create_parser(TokenStream *tokens) {
 
 void free_parser(Parser *parser) {
     if (parser) {
+        if (parser->source_content) {
+            free(parser->source_content);
+        }
+        if (parser->source_lines) {
+            free(parser->source_lines);
+        }
         free(parser);
     }
+}
+
+// Load source file for error reporting
+void parser_load_source(Parser *parser, const char *filename) {
+    FILE *file = fopen(filename, "r");
+    if (!file) {
+        return;
+    }
+    
+    // Get file size
+    fseek(file, 0, SEEK_END);
+    long size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    
+    // Read file content
+    parser->source_content = malloc(size + 1);
+    if (!parser->source_content) {
+        fclose(file);
+        return;
+    }
+    
+    size_t bytes_read = fread(parser->source_content, 1, size, file);
+    parser->source_content[bytes_read] = '\0';
+    fclose(file);
+    
+    // Count lines
+    int line_count = 1;
+    for (size_t i = 0; i < bytes_read; i++) {
+        if (parser->source_content[i] == '\n') {
+            line_count++;
+        }
+    }
+    
+    // Allocate line pointer array
+    parser->source_lines = malloc(sizeof(char*) * line_count);
+    if (!parser->source_lines) {
+        return;
+    }
+    
+    // Build line pointer array
+    parser->source_lines[0] = parser->source_content;
+    parser->source_line_count = 1;
+    
+    for (size_t i = 0; i < bytes_read; i++) {
+        if (parser->source_content[i] == '\n') {
+            parser->source_content[i] = '\0';  // Null terminate each line
+            if (i + 1 < bytes_read) {
+                parser->source_lines[parser->source_line_count++] = &parser->source_content[i + 1];
+            }
+        }
+    }
+    
+    parser->source_filename = filename;
+}
+
+// Get source line by line number (1-indexed)
+const char *parser_get_source_line(Parser *parser, int line) {
+    if (!parser->source_lines || line < 1 || line > parser->source_line_count) {
+        return NULL;
+    }
+    return parser->source_lines[line - 1];
 }
 
 // ============================================================================
@@ -294,20 +366,115 @@ void parse_printline_statement(Parser *parser);
 // ERROR HANDLING
 // ============================================================================
 
+void parser_error_code(Parser *parser, int error_code, const char *format, ...) {
+    parser->has_error = 1;
+
+    Token current = peek(parser->tokens);
+    
+    // Format the error message
+    char message[1024];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(message, sizeof(message), format, args);
+    va_end(args);
+    
+    // Use the new error handler if available
+    if (global_error_handler) {
+        ErrorContext *ctx = error_context_create(
+            SEVERITY_ERROR,
+            current.line,
+            current.column,
+            ERROR_CATEGORY_PARSER,
+            error_code,
+            parser->source_filename,
+            message
+        );
+        
+        if (ctx) {
+            // Add source line context
+            const char *source_line = parser_get_source_line(parser, current.line);
+            if (source_line) {
+                error_context_set_source_line(ctx, source_line);
+            }
+            
+            // Add token information
+            char token_info[512];
+            snprintf(token_info, sizeof(token_info), "%s '%s'",
+                    token_type_to_string(current.type), current.value);
+            error_context_set_token(ctx, token_info);
+            
+            // Report the error
+            error_report_context(global_error_handler, ctx);
+            
+            // Free the context only if not buffered
+            if (!global_error_handler->buffered) {
+                error_context_free(ctx);
+            }
+        }
+    } else {
+        // Fallback to old error reporting if error handler not initialized
+        fprintf(stderr, "[ERROR] Line %d, Col %d: %s\n", current.line, current.column, message);
+        fprintf(stderr, "  At token: %s '%s'\n",
+                token_type_to_string(current.type), current.value);
+    }
+
+    if (!is_at_end(parser->tokens)) {
+        consume(parser->tokens);
+    }
+}
+
+// Default parser_error uses UNEXPECTED_TOKEN code
 void parser_error(Parser *parser, const char *format, ...) {
     parser->has_error = 1;
 
     Token current = peek(parser->tokens);
-    fprintf(stderr, "Error (Line %d, Col %d): ", current.line, current.column);
-
+    
+    // Format the error message  
+    char message[1024];
     va_list args;
     va_start(args, format);
-    vfprintf(stderr, format, args);
+    vsnprintf(message, sizeof(message), format, args);
     va_end(args);
-
-    fprintf(stderr, "\n");
-    fprintf(stderr, "  At token: %s '%s'\n",
-            token_type_to_string(current.type), current.value);
+    
+    // Use the new error handler if available
+    if (global_error_handler) {
+        ErrorContext *ctx = error_context_create(
+            SEVERITY_ERROR,
+            current.line,
+            current.column,
+            ERROR_CATEGORY_PARSER,
+            ERR_PARSE_UNEXPECTED_TOKEN,
+            parser->source_filename,
+            message
+        );
+        
+        if (ctx) {
+            // Add source line context
+            const char *source_line = parser_get_source_line(parser, current.line);
+            if (source_line) {
+                error_context_set_source_line(ctx, source_line);
+            }
+            
+            // Add token information
+            char token_info[512];
+            snprintf(token_info, sizeof(token_info), "%s '%s'",
+                    token_type_to_string(current.type), current.value);
+            error_context_set_token(ctx, token_info);
+            
+            // Report the error
+            error_report_context(global_error_handler, ctx);
+            
+            // Free the context only if not buffered
+            if (!global_error_handler->buffered) {
+                error_context_free(ctx);
+            }
+        }
+    } else {
+        // Fallback to old error reporting if error handler not initialized
+        fprintf(stderr, "[ERROR] Line %d, Col %d: %s\n", current.line, current.column, message);
+        fprintf(stderr, "  At token: %s '%s'\n",
+                token_type_to_string(current.type), current.value);
+    }
 
     if (!is_at_end(parser->tokens)) {
         consume(parser->tokens);
@@ -316,10 +483,70 @@ void parser_error(Parser *parser, const char *format, ...) {
 
 void expect(Parser *parser, TokenType type, const char *message) {
     if (!check(parser->tokens, type)) {
-        parser_error(parser, "%s", message);
+        // Determine error code based on expected token type
+        int error_code = ERR_PARSE_EXPECTED_TOKEN;
+        if (type == TOKEN_SEMICOLON) {
+            error_code = ERR_PARSE_MISSING_SEMICOLON;
+        } else if (type == TOKEN_LBRACE || type == TOKEN_RBRACE) {
+            error_code = ERR_PARSE_MISSING_BRACE;
+        } else if (type == TOKEN_LPAREN || type == TOKEN_RPAREN) {
+            error_code = ERR_PARSE_MISSING_PAREN;
+        }
+        parser_error_code(parser, error_code, "%s", message);
         return;
     }
     consume(parser->tokens);
+}
+
+// ============================================================================
+// SEMANTIC ERROR HELPERS
+// ============================================================================
+
+void semantic_error(Parser *parser, int error_code, const char *format, ...) {
+    parser->has_error = 1;
+
+    Token current = peek(parser->tokens);
+    
+    // Format the error message
+    char message[1024];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(message, sizeof(message), format, args);
+    va_end(args);
+    
+    // Use the new error handler if available
+    if (global_error_handler) {
+        ErrorContext *ctx = error_context_create(
+            SEVERITY_ERROR,
+            current.line,
+            current.column,
+            ERROR_CATEGORY_SEMANTIC,
+            error_code,
+            parser->source_filename,
+            message
+        );
+        
+        if (ctx) {
+            // Add source line context
+            const char *source_line = parser_get_source_line(parser, current.line);
+            if (source_line) {
+                error_context_set_source_line(ctx, source_line);
+            }
+            
+            // Report the error
+            error_report_context(global_error_handler, ctx);
+            
+            // Free the context only if not buffered
+            if (!global_error_handler->buffered) {
+                error_context_free(ctx);
+            }
+        }
+    } else {
+        fprintf(stderr, "[ERROR] Line %d, Col %d: %s\n", current.line, current.column, message);
+    }
+
+    // Note: semantic errors don't consume tokens - they're not syntax errors
+    // The parser can continue normally
 }
 
 // ============================================================================
@@ -640,6 +867,9 @@ void parse_import(Parser *parser, const char *base_path) {
 // ============================================================================
 
 int parse_program(Parser *parser, const char *source_file) {
+    // Load source file for error reporting
+    parser_load_source(parser, source_file);
+    
     if (parser->debug_mode) {
         printf("\n================================================================\n");
         printf("           PHASE 2: SYNTAX ANALYSIS (PARSER)\n");
@@ -665,7 +895,13 @@ int parse_program(Parser *parser, const char *source_file) {
 
     Function *main_func = find_function(parser, "main");
     if (!main_func) {
-        fprintf(stderr, "Error: No main() function found\n");
+        if (global_error_handler) {
+            error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                        ERR_COMP_NO_MAIN_FUNCTION, source_file,
+                        "No main() function found");
+        } else {
+            fprintf(stderr, "Error: No main() function found\n");
+        }
         return 0;
     }
 
@@ -699,7 +935,7 @@ void parse_struct(Parser *parser) {
 
     // Check if struct already exists
     if (find_struct(parser, struct_name) != NULL) {
-        parser_error(parser, "Struct '%s' already defined", struct_name);
+        parser_error_code(parser, ERR_PARSE_DUPLICATE_DEFINITION, "Struct '%s' already defined", struct_name);
         return;
     }
 
@@ -770,7 +1006,7 @@ void parse_struct(Parser *parser) {
             if (!is_static) {
                 // First implicit parameter is 'this' pointer to struct instance
                 if (parser->var_count >= MAX_VARS) {
-                    parser_error(parser, "Too many variables");
+                    parser_error_code(parser, ERR_CODEGEN_TOO_MANY_VARIABLES, "Too many variables");
                     return;
                 }
 
@@ -819,7 +1055,7 @@ void parse_struct(Parser *parser) {
                 func->param_is_array[func->param_count] = is_array_param;
 
                 if (parser->var_count >= MAX_VARS) {
-                    parser_error(parser, "Too many variables");
+                    parser_error_code(parser, ERR_CODEGEN_TOO_MANY_VARIABLES, "Too many variables");
                     return;
                 }
 
@@ -1129,7 +1365,7 @@ void parse_function(Parser *parser) {
         func->param_is_pointer[func->param_count] = is_pointer_param;
 
         if (parser->var_count >= MAX_VARS) {
-            parser_error(parser, "Too many variables");
+            parser_error_code(parser, ERR_CODEGEN_TOO_MANY_VARIABLES, "Too many variables");
             return;
         }
 
@@ -1313,7 +1549,7 @@ void parse_statement(Parser *parser) {
         } else if (lookahead.type == TOKEN_LPAREN) {
             parse_function_call_statement(parser);
         } else {
-            parser_error(parser, "Unexpected token after identifier");
+            parser_error_code(parser, ERR_PARSE_INVALID_SYNTAX, "Unexpected token: expected operator, semicolon, or end of statement");
         }
     } else if (check(parser->tokens, TOKEN_KEYWORD_FOR)) {
         parse_for_loop(parser);
@@ -1344,7 +1580,7 @@ void parse_statement(Parser *parser) {
         // Find the variable
         Variable *var = find_variable(parser, var_token.value);
         if (var == NULL) {
-            parser_error(parser, "Variable '%s' not found", var_token.value);
+            semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", var_token.value);
             return;
         }
         
@@ -1382,7 +1618,7 @@ void parse_statement(Parser *parser) {
         Variable *ptr_var = find_variable(parser, ptr_token.value);
         
         if (!ptr_var) {
-            parser_error(parser, "Variable '%s' not found", ptr_token.value);
+            semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", ptr_token.value);
             return;
         }
         
@@ -1421,7 +1657,7 @@ void parse_statement(Parser *parser) {
             code_printf(parser, "    movl %%eax, (%%rbx)\n");
         }
     } else {
-        parser_error(parser, "Unexpected statement");
+        parser_error_code(parser, ERR_PARSE_INVALID_SYNTAX, "Unexpected statement: expected expression or statement keyword");
     }
 }
 
@@ -1766,7 +2002,7 @@ void parse_assignment(Parser *parser) {
     }
 
     if (!var) {
-        parser_error(parser, "Variable '%s' not found", name_token.value);
+        semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", name_token.value);
         return;
     }
 
@@ -1781,7 +2017,7 @@ void parse_assignment(Parser *parser) {
         
         StructDefinition *struct_def = find_struct(parser, var->struct_type);
         if (!struct_def) {
-            parser_error(parser, "Struct type '%s' not found", var->struct_type);
+            semantic_error(parser, ERR_SEM_UNDEFINED_STRUCT, "Struct type '%s' not found", var->struct_type);
             return;
         }
         
@@ -2079,7 +2315,7 @@ void parse_assignment(Parser *parser) {
 
                 Function *func = find_function(parser, src_name.value);
                 if (!func) {
-                    parser_error(parser, "Function '%s' not found", src_name.value);
+                    semantic_error(parser, ERR_SEM_UNDEFINED_FUNCTION, "Function '%s' not found", src_name.value);
                     return;
                 }
 
@@ -2371,7 +2607,7 @@ void parse_for_loop(Parser *parser) {
         Variable *var = find_variable(parser, name.value);
 
         if (!var) {
-            parser_error(parser, "Variable '%s' not found", name.value);
+            semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", name.value);
             while (!check(parser->tokens, TOKEN_RPAREN) && !is_at_end(parser->tokens)) {
                 consume(parser->tokens);
             }
@@ -2698,7 +2934,7 @@ void parse_print_statement(Parser *parser) {
 
                 Function *func = find_function(parser, name.value);
                 if (!func) {
-                    parser_error(parser, "Function '%s' not found", name.value);
+                    semantic_error(parser, ERR_SEM_UNDEFINED_FUNCTION, "Function '%s' not found", name.value);
                     return;
                 }
 
@@ -2766,7 +3002,7 @@ void parse_print_statement(Parser *parser) {
                 
                 Variable *var = find_variable(parser, name.value);
                 if (!var) {
-                    parser_error(parser, "Variable '%s' not found", name.value);
+                    semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", name.value);
                     return;
                 }
                 
@@ -2777,7 +3013,7 @@ void parse_print_statement(Parser *parser) {
                 
                 StructDefinition *struct_def = find_struct(parser, var->struct_type);
                 if (!struct_def) {
-                    parser_error(parser, "Struct type '%s' not found", var->struct_type);
+                    semantic_error(parser, ERR_SEM_UNDEFINED_STRUCT, "Struct type '%s' not found", var->struct_type);
                     return;
                 }
                 
@@ -2922,7 +3158,7 @@ void parse_print_statement(Parser *parser) {
                 
                 Variable *var = find_variable(parser, name.value);
                 if (!var) {
-                    parser_error(parser, "Variable '%s' not found", name.value);
+                    semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", name.value);
                     return;
                 }
                 
@@ -3034,7 +3270,7 @@ void parse_print_statement(Parser *parser) {
                 }
                 
                 if (!var) {
-                    parser_error(parser, "Variable '%s' not found", name.value);
+                    semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", name.value);
                     return;
                 }
 
@@ -3246,7 +3482,7 @@ void parse_printline_statement(Parser *parser) {
 
                 Function *func = find_function(parser, name.value);
                 if (!func) {
-                    parser_error(parser, "Function '%s' not found", name.value);
+                    semantic_error(parser, ERR_SEM_UNDEFINED_FUNCTION, "Function '%s' not found", name.value);
                     return;
                 }
 
@@ -3314,7 +3550,7 @@ void parse_printline_statement(Parser *parser) {
                 
                 Variable *var = find_variable(parser, name.value);
                 if (!var) {
-                    parser_error(parser, "Variable '%s' not found", name.value);
+                    semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", name.value);
                     return;
                 }
                 
@@ -3325,7 +3561,7 @@ void parse_printline_statement(Parser *parser) {
                 
                 StructDefinition *struct_def = find_struct(parser, var->struct_type);
                 if (!struct_def) {
-                    parser_error(parser, "Struct type '%s' not found", var->struct_type);
+                    semantic_error(parser, ERR_SEM_UNDEFINED_STRUCT, "Struct type '%s' not found", var->struct_type);
                     return;
                 }
                 
@@ -3470,7 +3706,7 @@ void parse_printline_statement(Parser *parser) {
                 
                 Variable *var = find_variable(parser, name.value);
                 if (!var) {
-                    parser_error(parser, "Variable '%s' not found", name.value);
+                    semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", name.value);
                     return;
                 }
                 
@@ -3582,7 +3818,7 @@ void parse_printline_statement(Parser *parser) {
                 }
                 
                 if (!var) {
-                    parser_error(parser, "Variable '%s' not found", name.value);
+                    semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", name.value);
                     return;
                 }
 
@@ -3825,7 +4061,7 @@ void parse_function_call_statement(Parser *parser) {
         
         StructDefinition *struct_def = find_struct(parser, var->struct_type);
         if (!struct_def) {
-            parser_error(parser, "Struct type '%s' not found", var->struct_type);
+            semantic_error(parser, ERR_SEM_UNDEFINED_STRUCT, "Struct type '%s' not found", var->struct_type);
             return;
         }
         
@@ -4060,7 +4296,26 @@ void parse_function_call_statement(Parser *parser) {
     }
     
     if (!func) {
-        parser_error(parser, "Function '%s' not found", name.value);
+        semantic_error(parser, ERR_SEM_UNDEFINED_FUNCTION, "Function '%s' not found", name.value);
+        
+        // Error recovery: skip the function call to avoid cascading errors
+        // We still parse the arguments to catch any errors in them
+        expect(parser, TOKEN_LPAREN, "Expected '(' after function name");
+        
+        int arg_count = 0;
+        while (!check(parser->tokens, TOKEN_RPAREN) && !is_at_end(parser->tokens)) {
+            parse_expression(parser);  // Parse arguments to check for errors in them
+            arg_count++;
+            if (check(parser->tokens, TOKEN_COMMA)) {
+                consume(parser->tokens);
+            }
+        }
+        
+        expect(parser, TOKEN_RPAREN, "Expected ')' after function arguments");
+        
+        // Push a dummy value so expression parsing can continue
+        code_printf(parser, "    xorq %%rax, %%rax  # Error recovery: undefined function\n");
+        code_printf(parser, "    pushq %%rax\n");
         return;
     }
 
@@ -4350,7 +4605,7 @@ void parse_unary(Parser *parser) {
         Token var_token = consume(parser->tokens);
         Variable *var = find_variable(parser, var_token.value);
         if (var == NULL) {
-            parser_error(parser, "Variable '%s' not found", var_token.value);
+            semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", var_token.value);
             return;
         }
         // Calculate the address of the variable (rbp + offset)
@@ -4780,7 +5035,7 @@ void parse_primary(Parser *parser) {
             }
             
             if (!func) {
-                parser_error(parser, "Function '%s' not found", name.value);
+                semantic_error(parser, ERR_SEM_UNDEFINED_FUNCTION, "Function '%s' not found", name.value);
                 return;
             }
 
@@ -5186,7 +5441,7 @@ void parse_primary(Parser *parser) {
                     return;
                 }
                 
-                parser_error(parser, "Variable '%s' not found", name.value);
+                semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", name.value);
                 return;
             }
 
@@ -5201,7 +5456,7 @@ void parse_primary(Parser *parser) {
                 
                 StructDefinition *struct_def = find_struct(parser, var->struct_type);
                 if (!struct_def) {
-                    parser_error(parser, "Struct type '%s' not found", var->struct_type);
+                    semantic_error(parser, ERR_SEM_UNDEFINED_STRUCT, "Struct type '%s' not found", var->struct_type);
                     return;
                 }
                 
