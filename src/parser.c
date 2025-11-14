@@ -188,6 +188,118 @@ int is_builtin_input_function(const char *name) {
            strcmp(name, "scanfString") == 0;
 }
 
+// Check if a function name is a syscall I/O function
+int is_syscall_io_function(const char *name) {
+    return strcmp(name, "sys_write") == 0 ||
+           strcmp(name, "sys_read") == 0 ||
+           strcmp(name, "sys_open") == 0 ||
+           strcmp(name, "sys_close") == 0 ||
+           strcmp(name, "io_strlen") == 0 ||
+           strcmp(name, "io_int_to_str") == 0 ||
+           strcmp(name, "io_str_to_int") == 0;
+}
+
+// ============================================================================
+// SYSCALL-BASED I/O HELPER FUNCTIONS
+// ============================================================================
+
+// Generate syscall for writing a string to stdout
+// Uses: write(1, buffer, length) - syscall number 1
+static void generate_write_syscall(Parser *parser, const char *buffer_reg, const char *length_reg) {
+    code_comment(parser, "syscall: write(stdout, buffer, length)");
+    code_printf(parser, "    movq $1, %%rax\n");      // syscall number: write
+    code_printf(parser, "    movq $1, %%rdi\n");      // file descriptor: stdout
+    code_printf(parser, "    movq %s, %%rsi\n", buffer_reg);  // buffer pointer
+    code_printf(parser, "    movq %s, %%rdx\n", length_reg);  // byte count
+    code_printf(parser, "    syscall\n");
+}
+
+// Generate syscall for reading from stdin
+// Uses: read(0, buffer, length) - syscall number 0
+static void generate_read_syscall(Parser *parser, const char *buffer_reg, const char *length_reg) {
+    code_comment(parser, "syscall: read(stdin, buffer, length)");
+    code_printf(parser, "    movq $0, %%rax\n");      // syscall number: read
+    code_printf(parser, "    movq $0, %%rdi\n");      // file descriptor: stdin
+    code_printf(parser, "    movq %s, %%rsi\n", buffer_reg);  // buffer pointer
+    code_printf(parser, "    movq %s, %%rdx\n", length_reg);  // byte count
+    code_printf(parser, "    syscall\n");
+}
+
+// Calculate string length at runtime
+static void generate_strlen_code(Parser *parser, const char *str_ptr_reg, const char *result_reg) {
+    code_comment(parser, "Calculate string length");
+    code_printf(parser, "    xorq %s, %s\n", result_reg, result_reg);  // result = 0
+    code_printf(parser, ".Lstrlen_loop_%d:\n", parser->label_counter);
+    code_printf(parser, "    movb (%s,%s,1), %%cl\n", str_ptr_reg, result_reg);  // Use %cl instead of %al
+    code_printf(parser, "    testb %%cl, %%cl\n");
+    code_printf(parser, "    je .Lstrlen_done_%d\n", parser->label_counter);
+    code_printf(parser, "    incq %s\n", result_reg);
+    code_printf(parser, "    jmp .Lstrlen_loop_%d\n", parser->label_counter);
+    code_printf(parser, ".Lstrlen_done_%d:\n", parser->label_counter);
+    parser->label_counter++;
+}
+
+// Convert integer to string (for printing integers)
+static void generate_int_to_str_code(Parser *parser, const char *value_reg, const char *buffer_reg) {
+    code_comment(parser, "Convert integer to string");
+    int label_num = parser->label_counter++;
+    
+    // Handle zero specially
+    code_printf(parser, "    testq %s, %s\n", value_reg, value_reg);
+    code_printf(parser, "    jne .Lint2str_nonzero_%d\n", label_num);
+    code_printf(parser, "    movb $48, (%s)\n", buffer_reg);  // '0'
+    code_printf(parser, "    movb $0, 1(%s)\n", buffer_reg);
+    code_printf(parser, "    jmp .Lint2str_done_%d\n", label_num);
+    
+    code_printf(parser, ".Lint2str_nonzero_%d:\n", label_num);
+    // Check for negative
+    code_printf(parser, "    movq %s, %%r10\n", value_reg);  // r10 = value
+    code_printf(parser, "    xorq %%r11, %%r11\n");  // r11 = is_negative flag
+    code_printf(parser, "    testq %%r10, %%r10\n");
+    code_printf(parser, "    jge .Lint2str_positive_%d\n", label_num);
+    code_printf(parser, "    negq %%r10\n");  // make positive
+    code_printf(parser, "    movq $1, %%r11\n");  // set negative flag
+    
+    code_printf(parser, ".Lint2str_positive_%d:\n", label_num);
+    // Convert digits (right to left)
+    code_printf(parser, "    movq %s, %%r12\n", buffer_reg);  // r12 = buffer pointer
+    code_printf(parser, "    addq $20, %%r12\n");  // point to end of buffer
+    code_printf(parser, "    movb $0, (%%r12)\n");  // null terminator
+    
+    code_printf(parser, ".Lint2str_loop_%d:\n", label_num);
+    code_printf(parser, "    xorq %%rdx, %%rdx\n");
+    code_printf(parser, "    movq %%r10, %%rax\n");
+    code_printf(parser, "    movq $10, %%rcx\n");
+    code_printf(parser, "    divq %%rcx\n");  // rax = quotient, rdx = remainder
+    code_printf(parser, "    addb $48, %%dl\n");  // convert to ASCII
+    code_printf(parser, "    decq %%r12\n");
+    code_printf(parser, "    movb %%dl, (%%r12)\n");
+    code_printf(parser, "    movq %%rax, %%r10\n");
+    code_printf(parser, "    testq %%r10, %%r10\n");
+    code_printf(parser, "    jne .Lint2str_loop_%d\n", label_num);
+    
+    // Add minus sign if negative
+    code_printf(parser, "    testq %%r11, %%r11\n");
+    code_printf(parser, "    je .Lint2str_no_sign_%d\n", label_num);
+    code_printf(parser, "    decq %%r12\n");
+    code_printf(parser, "    movb $45, (%%r12)\n");  // '-'
+    
+    code_printf(parser, ".Lint2str_no_sign_%d:\n", label_num);
+    // Move result to beginning of buffer
+    code_printf(parser, "    movq %s, %%rdi\n", buffer_reg);
+    code_printf(parser, "    movq %%r12, %%rsi\n");
+    code_printf(parser, ".Lint2str_copy_%d:\n", label_num);
+    code_printf(parser, "    movb (%%rsi), %%al\n");
+    code_printf(parser, "    movb %%al, (%%rdi)\n");
+    code_printf(parser, "    testb %%al, %%al\n");
+    code_printf(parser, "    je .Lint2str_done_%d\n", label_num);
+    code_printf(parser, "    incq %%rsi\n");
+    code_printf(parser, "    incq %%rdi\n");
+    code_printf(parser, "    jmp .Lint2str_copy_%d\n", label_num);
+    
+    code_printf(parser, ".Lint2str_done_%d:\n", label_num);
+}
+
 const char *get_register_for_type(DataType type, int reg_num) {
     switch (type) {
         case TYPE_FLOAT:
@@ -4555,6 +4667,86 @@ void parse_function_call_statement(Parser *parser) {
         return;
     }
 
+    // Check if it's a syscall I/O function (as statement)
+    if (is_syscall_io_function(name.value)) {
+        expect(parser, TOKEN_LPAREN, "Expected '('");
+        
+        if (strcmp(name.value, "sys_write") == 0) {
+            // sys_write(fd, buffer, count) -> int
+            code_comment(parser, "Line %d: sys_write(fd, buffer, count)", call_token.line);
+            
+            parse_expression(parser);  // fd
+            expect(parser, TOKEN_COMMA, "Expected ','");
+            parse_expression(parser);  // buffer
+            expect(parser, TOKEN_COMMA, "Expected ','");
+            parse_expression(parser);  // count
+            expect(parser, TOKEN_RPAREN, "Expected ')'");
+            expect(parser, TOKEN_SEMICOLON, "Expected ';'");
+            
+            // Arguments are on stack (top to bottom: count, buffer, fd)
+            code_printf(parser, "    popq %%rdx\n");  // count
+            code_printf(parser, "    popq %%rsi\n");  // buffer
+            code_printf(parser, "    popq %%rdi\n");  // fd
+            code_printf(parser, "    movq $1, %%rax\n");  // syscall number: write
+            code_printf(parser, "    syscall\n");
+            return;
+            
+        } else if (strcmp(name.value, "sys_read") == 0) {
+            // sys_read(fd, buffer, count) -> int
+            code_comment(parser, "Line %d: sys_read(fd, buffer, count)", call_token.line);
+            
+            parse_expression(parser);  // fd
+            expect(parser, TOKEN_COMMA, "Expected ','");
+            parse_expression(parser);  // buffer
+            expect(parser, TOKEN_COMMA, "Expected ','");
+            parse_expression(parser);  // count
+            expect(parser, TOKEN_RPAREN, "Expected ')'");
+            expect(parser, TOKEN_SEMICOLON, "Expected ';'");
+            
+            // Arguments are on stack
+            code_printf(parser, "    popq %%rdx\n");  // count
+            code_printf(parser, "    popq %%rsi\n");  // buffer
+            code_printf(parser, "    popq %%rdi\n");  // fd
+            code_printf(parser, "    movq $0, %%rax\n");  // syscall number: read
+            code_printf(parser, "    syscall\n");
+            return;
+            
+        } else if (strcmp(name.value, "sys_open") == 0) {
+            // sys_open(pathname, flags, mode) -> int
+            code_comment(parser, "Line %d: sys_open(pathname, flags, mode)", call_token.line);
+            
+            parse_expression(parser);  // pathname
+            expect(parser, TOKEN_COMMA, "Expected ','");
+            parse_expression(parser);  // flags
+            expect(parser, TOKEN_COMMA, "Expected ','");
+            parse_expression(parser);  // mode
+            expect(parser, TOKEN_RPAREN, "Expected ')'");
+            expect(parser, TOKEN_SEMICOLON, "Expected ';'");
+            
+            // Arguments are on stack
+            code_printf(parser, "    popq %%rdx\n");  // mode
+            code_printf(parser, "    popq %%rsi\n");  // flags
+            code_printf(parser, "    popq %%rdi\n");  // pathname
+            code_printf(parser, "    movq $2, %%rax\n");  // syscall number: open
+            code_printf(parser, "    syscall\n");
+            return;
+            
+        } else if (strcmp(name.value, "sys_close") == 0) {
+            // sys_close(fd) -> int
+            code_comment(parser, "Line %d: sys_close(fd)", call_token.line);
+            
+            parse_expression(parser);  // fd
+            expect(parser, TOKEN_RPAREN, "Expected ')'");
+            expect(parser, TOKEN_SEMICOLON, "Expected ';'");
+            
+            // Argument is on stack
+            code_printf(parser, "    popq %%rdi\n");  // fd
+            code_printf(parser, "    movq $3, %%rax\n");  // syscall number: close
+            code_printf(parser, "    syscall\n");
+            return;
+        }
+    }
+
     // Check if it's a built-in string function
     if (is_builtin_string_function(name.value)) {
         expect(parser, TOKEN_LPAREN, "Expected '(' after function name");
@@ -5418,6 +5610,164 @@ void parse_primary(Parser *parser) {
                     
                     code_printf(parser, "    pushq %%rax\n");  // Push return value
                     parser->label_counter++;
+                    return;
+                }
+            }
+
+            // Check if it's a syscall I/O function
+            if (is_syscall_io_function(name.value)) {
+                expect(parser, TOKEN_LPAREN, "Expected '('");
+                
+                if (strcmp(name.value, "sys_write") == 0) {
+                    // sys_write(fd, buffer, count) -> int
+                    code_comment(parser, "Built-in syscall: sys_write(fd, buffer, count)");
+                    
+                    // Parse arguments: fd, buffer, count
+                    parse_expression(parser);  // fd
+                    expect(parser, TOKEN_COMMA, "Expected ','");
+                    parse_expression(parser);  // buffer
+                    expect(parser, TOKEN_COMMA, "Expected ','");
+                    parse_expression(parser);  // count
+                    expect(parser, TOKEN_RPAREN, "Expected ')'");
+                    
+                    // Arguments are on stack (top to bottom: count, buffer, fd)
+                    code_printf(parser, "    popq %%rdx\n");  // count
+                    code_printf(parser, "    popq %%rsi\n");  // buffer
+                    code_printf(parser, "    popq %%rdi\n");  // fd
+                    code_printf(parser, "    movq $1, %%rax\n");  // syscall number: write
+                    code_printf(parser, "    syscall\n");
+                    code_printf(parser, "    pushq %%rax\n");  // return bytes written
+                    return;
+                    
+                } else if (strcmp(name.value, "sys_read") == 0) {
+                    // sys_read(fd, buffer, count) -> int
+                    code_comment(parser, "Built-in syscall: sys_read(fd, buffer, count)");
+                    
+                    // Parse arguments: fd, buffer, count
+                    parse_expression(parser);  // fd
+                    expect(parser, TOKEN_COMMA, "Expected ','");
+                    parse_expression(parser);  // buffer
+                    expect(parser, TOKEN_COMMA, "Expected ','");
+                    parse_expression(parser);  // count
+                    expect(parser, TOKEN_RPAREN, "Expected ')'");
+                    
+                    // Arguments are on stack (top to bottom: count, buffer, fd)
+                    code_printf(parser, "    popq %%rdx\n");  // count
+                    code_printf(parser, "    popq %%rsi\n");  // buffer
+                    code_printf(parser, "    popq %%rdi\n");  // fd
+                    code_printf(parser, "    movq $0, %%rax\n");  // syscall number: read
+                    code_printf(parser, "    syscall\n");
+                    code_printf(parser, "    pushq %%rax\n");  // return bytes read
+                    return;
+                    
+                } else if (strcmp(name.value, "sys_open") == 0) {
+                    // sys_open(pathname, flags, mode) -> int
+                    code_comment(parser, "Built-in syscall: sys_open(pathname, flags, mode)");
+                    
+                    // Parse arguments: pathname, flags, mode
+                    parse_expression(parser);  // pathname
+                    expect(parser, TOKEN_COMMA, "Expected ','");
+                    parse_expression(parser);  // flags
+                    expect(parser, TOKEN_COMMA, "Expected ','");
+                    parse_expression(parser);  // mode
+                    expect(parser, TOKEN_RPAREN, "Expected ')'");
+                    
+                    // Arguments are on stack (top to bottom: mode, flags, pathname)
+                    code_printf(parser, "    popq %%rdx\n");  // mode
+                    code_printf(parser, "    popq %%rsi\n");  // flags
+                    code_printf(parser, "    popq %%rdi\n");  // pathname
+                    code_printf(parser, "    movq $2, %%rax\n");  // syscall number: open
+                    code_printf(parser, "    syscall\n");
+                    code_printf(parser, "    pushq %%rax\n");  // return fd
+                    return;
+                    
+                } else if (strcmp(name.value, "sys_close") == 0) {
+                    // sys_close(fd) -> int
+                    code_comment(parser, "Built-in syscall: sys_close(fd)");
+                    
+                    // Parse argument: fd
+                    parse_expression(parser);  // fd
+                    expect(parser, TOKEN_RPAREN, "Expected ')'");
+                    
+                    // Argument is on stack
+                    code_printf(parser, "    popq %%rdi\n");  // fd
+                    code_printf(parser, "    movq $3, %%rax\n");  // syscall number: close
+                    code_printf(parser, "    syscall\n");
+                    code_printf(parser, "    pushq %%rax\n");  // return status
+                    return;
+                    
+                } else if (strcmp(name.value, "io_strlen") == 0) {
+                    // io_strlen(s) -> int
+                    code_comment(parser, "Built-in: io_strlen(s)");
+                    
+                    // Parse argument: string
+                    parse_expression(parser);  // string pointer
+                    expect(parser, TOKEN_RPAREN, "Expected ')'");
+                    
+                    // String pointer is on stack
+                    code_printf(parser, "    popq %%rdi\n");  // string pointer
+                    generate_strlen_code(parser, "%rdi", "%rax");
+                    code_printf(parser, "    pushq %%rax\n");  // return length
+                    return;
+                    
+                } else if (strcmp(name.value, "io_int_to_str") == 0) {
+                    // io_int_to_str(value, buffer, buffer_size) -> int
+                    code_comment(parser, "Built-in: io_int_to_str(value, buffer, buffer_size)");
+                    
+                    // Parse arguments
+                    parse_expression(parser);  // value
+                    expect(parser, TOKEN_COMMA, "Expected ','");
+                    parse_expression(parser);  // buffer
+                    expect(parser, TOKEN_COMMA, "Expected ','");
+                    parse_expression(parser);  // buffer_size
+                    expect(parser, TOKEN_RPAREN, "Expected ')'");
+                    
+                    // Arguments on stack: buffer_size, buffer, value
+                    code_printf(parser, "    popq %%rdx\n");  // buffer_size (unused for now)
+                    code_printf(parser, "    popq %%rdi\n");  // buffer
+                    code_printf(parser, "    popq %%rsi\n");  // value
+                    generate_int_to_str_code(parser, "%rsi", "%rdi");
+                    // Calculate and return length
+                    generate_strlen_code(parser, "%rdi", "%rax");
+                    code_printf(parser, "    pushq %%rax\n");  // return length
+                    return;
+                    
+                } else if (strcmp(name.value, "io_str_to_int") == 0) {
+                    // io_str_to_int(s) -> int
+                    code_comment(parser, "Built-in: io_str_to_int(s)");
+                    
+                    // Parse argument: string
+                    parse_expression(parser);  // string
+                    expect(parser, TOKEN_RPAREN, "Expected ')'");
+                    
+                    // Simple ASCII to integer conversion
+                    int label_num = parser->label_counter++;
+                    code_printf(parser, "    popq %%rdi\n");  // string pointer
+                    code_printf(parser, "    xorq %%rax, %%rax\n");  // result = 0
+                    code_printf(parser, "    xorq %%rcx, %%rcx\n");  // sign = 0
+                    code_printf(parser, "    movzbl (%%rdi), %%edx\n");  // first char
+                    code_printf(parser, "    cmpb $45, %%dl\n");  // check for '-'
+                    code_printf(parser, "    jne .Lstr2int_loop_%d\n", label_num);
+                    code_printf(parser, "    movq $1, %%rcx\n");  // sign = 1
+                    code_printf(parser, "    incq %%rdi\n");  // skip '-'
+                    code_printf(parser, ".Lstr2int_loop_%d:\n", label_num);
+                    code_printf(parser, "    movzbl (%%rdi), %%edx\n");  // get char
+                    code_printf(parser, "    testb %%dl, %%dl\n");  // check for null
+                    code_printf(parser, "    je .Lstr2int_done_%d\n", label_num);
+                    code_printf(parser, "    subb $48, %%dl\n");  // convert to digit
+                    code_printf(parser, "    cmpb $9, %%dl\n");  // check valid digit
+                    code_printf(parser, "    ja .Lstr2int_done_%d\n", label_num);
+                    code_printf(parser, "    imulq $10, %%rax\n");  // result *= 10
+                    code_printf(parser, "    movzbl %%dl, %%edx\n");
+                    code_printf(parser, "    addq %%rdx, %%rax\n");  // result += digit
+                    code_printf(parser, "    incq %%rdi\n");  // next char
+                    code_printf(parser, "    jmp .Lstr2int_loop_%d\n", label_num);
+                    code_printf(parser, ".Lstr2int_done_%d:\n", label_num);
+                    code_printf(parser, "    testq %%rcx, %%rcx\n");  // check sign
+                    code_printf(parser, "    je .Lstr2int_positive_%d\n", label_num);
+                    code_printf(parser, "    negq %%rax\n");  // negate if needed
+                    code_printf(parser, ".Lstr2int_positive_%d:\n", label_num);
+                    code_printf(parser, "    pushq %%rax\n");  // return value
                     return;
                 }
             }
