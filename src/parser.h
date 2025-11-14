@@ -16,6 +16,7 @@ void code_comment(Parser *parser, const char *format, ...);
 void parser_error(Parser *parser, const char *format, ...);
 void parser_error_code(Parser *parser, int error_code, const char *format, ...);
 void expect(Parser *parser, TokenType type, const char *message);
+void semantic_error_at_token(Parser *parser, Token token, int error_code, const char *format, ...);
 
 // Variable & function management
 Variable *find_variable(Parser *parser, const char *name);

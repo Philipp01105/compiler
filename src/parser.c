@@ -549,6 +549,55 @@ void semantic_error(Parser *parser, int error_code, const char *format, ...) {
     // The parser can continue normally
 }
 
+// Semantic error with specific token (for better error position)
+void semantic_error_at_token(Parser *parser, Token token, int error_code, const char *format, ...) {
+    parser->has_error = 1;
+    
+    // Format the error message
+    char message[1024];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(message, sizeof(message), format, args);
+    va_end(args);
+    
+    // Use the new error handler if available
+    if (global_error_handler) {
+        ErrorContext *ctx = error_context_create(
+            SEVERITY_ERROR,
+            token.line,
+            token.column,
+            ERROR_CATEGORY_SEMANTIC,
+            error_code,
+            parser->source_filename,
+            message
+        );
+        
+        if (ctx) {
+            // Add source line context
+            const char *source_line = parser_get_source_line(parser, token.line);
+            if (source_line) {
+                error_context_set_source_line(ctx, source_line);
+            }
+            
+            // Add token value for better underlining
+            error_context_set_token(ctx, token.value);
+            
+            // Report the error
+            error_report_context(global_error_handler, ctx);
+            
+            // Free the context only if not buffered
+            if (!global_error_handler->buffered) {
+                error_context_free(ctx);
+            }
+        }
+    } else {
+        fprintf(stderr, "[ERROR] Line %d, Col %d: %s\n", token.line, token.column, message);
+    }
+
+    // Note: semantic errors don't consume tokens - they're not syntax errors
+    // The parser can continue normally
+}
+
 // ============================================================================
 // ERROR RECOVERY / SYNCHRONIZATION
 // ============================================================================
@@ -1620,7 +1669,7 @@ void parse_statement(Parser *parser) {
         // Find the variable
         Variable *var = find_variable(parser, var_token.value);
         if (var == NULL) {
-            semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", var_token.value);
+            semantic_error_at_token(parser, var_token, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", var_token.value);
             synchronize(parser);  // Skip to statement boundary
             return;
         }
@@ -1661,7 +1710,7 @@ void parse_statement(Parser *parser) {
         Variable *ptr_var = find_variable(parser, ptr_token.value);
         
         if (!ptr_var) {
-            semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", ptr_token.value);
+            semantic_error_at_token(parser, ptr_token, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", ptr_token.value);
             synchronize(parser);  // Skip to statement boundary
             return;
         }
@@ -2048,7 +2097,7 @@ void parse_assignment(Parser *parser) {
     }
 
     if (!var) {
-        semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", name_token.value);
+        semantic_error_at_token(parser, name_token, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", name_token.value);
         synchronize(parser);  // Skip to statement boundary
         return;
     }
