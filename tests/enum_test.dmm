@@ -1,0 +1,26 @@
+enum test(id:int, name:string) {
+    In(1, "test"),
+    Out(2, "test2")
+}
+
+func main() -> void {
+    print("In id: ");
+    var x:int = test.In.id;
+    print(x);
+    println("");
+    
+    print("Out id: ");
+    var y:int = test.Out.id;
+    print(y);
+    println("");
+    
+    print("In name: ");
+    var name1:string = test.In.name;
+    print(name1);
+    println("");
+    
+    print("Out name: ");
+    var name2:string = test.Out.name;
+    print(name2);
+    println("");
+}

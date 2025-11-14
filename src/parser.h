@@ -22,6 +22,7 @@ void semantic_error_at_token(Parser *parser, Token token, int error_code, const 
 Variable *find_variable(Parser *parser, const char *name);
 Function *find_function(Parser *parser, const char *name);
 StructDefinition *find_struct(Parser *parser, const char *name);
+EnumDefinition *find_enum(Parser *parser, const char *name);
 int add_string_literal(Parser *parser, const char *text);
 int add_float_literal(Parser *parser, const char *value);
 void cleanup_scope(Parser *parser, int scope);
@@ -35,6 +36,7 @@ DataType token_to_datatype(TokenType token);
 int parse_program(Parser *parser, const char *source_file);
 void parse_import(Parser *parser, const char *base_path);
 void parse_struct(Parser *parser);
+void parse_enum(Parser *parser);
 void parse_function(Parser *parser);
 void parse_function_body(Parser *parser);
 void parse_statement(Parser *parser);
