@@ -3343,25 +3343,81 @@ void parse_print_statement(Parser *parser) {
             }
             } else if (lookahead.type == TOKEN_DOT) {
                 // Field access or method call in print: p.x or p.getX()
-                consume(parser->tokens);  // consume identifier
-                consume(parser->tokens);  // consume '.'
+                // Could also be enum access: EnumName.ValueName.field
                 
-                Variable *var = find_variable(parser, name.value);
-                if (!var) {
-                    semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", name.value);
-                    return;
-                }
-                
-                if (var->struct_type[0] == '\0') {
-                    parser_error(parser, "Variable '%s' is not a struct", name.value);
-                    return;
-                }
-                
-                StructDefinition *struct_def = find_struct(parser, var->struct_type);
-                if (!struct_def) {
-                    semantic_error(parser, ERR_SEM_UNDEFINED_STRUCT, "Struct type '%s' not found", var->struct_type);
-                    return;
-                }
+                // First check if it's an enum - if so, use parse_expression to handle it
+                EnumDefinition *enum_def = find_enum(parser, name.value);
+                if (enum_def) {
+                    // Peek ahead to determine the field type for proper formatting
+                    // Format: EnumName.ValueName.field
+                    Token dot1 = peek_ahead(parser->tokens, 1);  // Should be '.'
+                    Token value_name = peek_ahead(parser->tokens, 2);  // ValueName
+                    Token dot2 = peek_ahead(parser->tokens, 3);  // Should be '.'
+                    Token field_name = peek_ahead(parser->tokens, 4);  // field
+                    
+                    // Find the field type
+                    DataType field_type = TYPE_INT;  // Default
+                    if (dot1.type == TOKEN_DOT && dot2.type == TOKEN_DOT) {
+                        for (int i = 0; i < enum_def->field_count; i++) {
+                            if (strcmp(enum_def->fields[i].name, field_name.value) == 0) {
+                                field_type = enum_def->fields[i].type;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Now use parse_expression to handle the full access
+                    parse_expression(parser);
+                    
+                    // The expression result is now on the stack - format based on field type
+                    if (field_type == TYPE_STRING) {
+                        code_printf(parser, "    popq %s\n", get_arg_registers_64()[1]);
+                        code_printf(parser, "    leaq .LC_string_format(%%rip), %s\n", get_arg_registers_64()[0]);
+                    } else if (field_type == TYPE_FLOAT || field_type == TYPE_DOUBLE) {
+                        code_printf(parser, "    popq %%rax\n");
+                        code_printf(parser, "    movq %%rax, %s\n", get_arg_registers_64()[1]);
+                        code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_registers_64()[0]);
+                    } else if (field_type == TYPE_CHAR) {
+                        code_printf(parser, "    popq %%rax\n");
+                        code_printf(parser, "    movb %%al, %%dl\n");
+                        code_printf(parser, "    leaq .LC_char_format(%%rip), %s\n", get_arg_registers_64()[0]);
+                    } else {
+                        // TYPE_INT, TYPE_BYTE, TYPE_BIT and others
+                        code_printf(parser, "    popq %s\n", get_arg_registers_64()[1]);
+                        code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
+                    }
+                    
+                    {
+                        int stack_adj = get_call_stack_space();
+                        if (stack_adj > 0) {
+                            code_printf(parser, "    subq $%d, %%rsp\n", stack_adj);
+                        }
+                        code_printf(parser, "    call printf\n");
+                        if (stack_adj > 0) {
+                            code_printf(parser, "    addq $%d, %%rsp\n", stack_adj);
+                        }
+                    }
+                } else {
+                    // Not an enum, treat as variable
+                    consume(parser->tokens);  // consume identifier
+                    consume(parser->tokens);  // consume '.'
+                    
+                    Variable *var = find_variable(parser, name.value);
+                    if (!var) {
+                        semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", name.value);
+                        return;
+                    }
+                    
+                    if (var->struct_type[0] == '\0') {
+                        parser_error(parser, "Variable '%s' is not a struct", name.value);
+                        return;
+                    }
+                    
+                    StructDefinition *struct_def = find_struct(parser, var->struct_type);
+                    if (!struct_def) {
+                        semantic_error(parser, ERR_SEM_UNDEFINED_STRUCT, "Struct type '%s' not found", var->struct_type);
+                        return;
+                    }
                 
                 Token member_name = consume(parser->tokens);
                 Token next_token = peek(parser->tokens);
@@ -3497,6 +3553,7 @@ void parse_print_statement(Parser *parser) {
                 }
             }
                 }
+                }  // Close the else block for non-enum variables
             } else if (lookahead.type == TOKEN_LBRACKET) {
                 // Array access in print: arr[index]
                 consume(parser->tokens);  // consume identifier

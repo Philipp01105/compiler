@@ -5,22 +5,18 @@ enum test(id:int, name:string) {
 
 func main() -> void {
     print("In id: ");
-    var x:int = test.In.id;
-    print(x);
+    print(test.In.id);
     println("");
     
     print("Out id: ");
-    var y:int = test.Out.id;
-    print(y);
+    print(test.Out.id);
     println("");
     
     print("In name: ");
-    var name1:string = test.In.name;
-    print(name1);
+    print(test.In.name);
     println("");
     
     print("Out name: ");
-    var name2:string = test.Out.name;
-    print(name2);
+    print(test.Out.name);
     println("");
 }
