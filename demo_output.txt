@@ -1,2 +1,3 @@
-This file was created using pure syscalls!
+This file was created using pure Linux syscalls!
 No C library functions were used.
+Direct kernel I/O operations only.
