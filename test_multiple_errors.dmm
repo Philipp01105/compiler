@@ -1,0 +1,8 @@
+func main() -> void {
+    var x:int = 10;
+    *undefinedPtr = 5;   // Error 1: undefinedPtr not found
+    y = 20;              // Error 2: y not found
+    z.field = 30;        // Error 3: z not found
+    var w:int = 40;
+    print(w);
+}

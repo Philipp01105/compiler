@@ -1,0 +1,5 @@
+func main() -> void {
+    var x:int = 10;
+    y = 20;  // Error: y not defined
+    var z:int = 30;
+}
