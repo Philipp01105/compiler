@@ -1,0 +1,7 @@
+=== DMM Syscall I/O System Demo ===
+
+1. String length test: Hello
+2. File I/O test: Writing to file...
+   File written successfully!
+
+All tests completed successfully!

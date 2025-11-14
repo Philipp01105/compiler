@@ -4671,7 +4671,26 @@ void parse_function_call_statement(Parser *parser) {
     if (is_syscall_io_function(name.value)) {
         expect(parser, TOKEN_LPAREN, "Expected '('");
         
-        if (strcmp(name.value, "sys_write") == 0) {
+        if (strcmp(name.value, "io_int_to_str") == 0) {
+            // io_int_to_str(value, buffer, buffer_size) as statement (discard return value)
+            code_comment(parser, "Line %d: io_int_to_str(value, buffer, buffer_size)", call_token.line);
+            
+            parse_expression(parser);  // value
+            expect(parser, TOKEN_COMMA, "Expected ','");
+            parse_expression(parser);  // buffer
+            expect(parser, TOKEN_COMMA, "Expected ','");
+            parse_expression(parser);  // buffer_size
+            expect(parser, TOKEN_RPAREN, "Expected ')'");
+            expect(parser, TOKEN_SEMICOLON, "Expected ';'");
+            
+            // Arguments on stack: buffer_size, buffer, value
+            code_printf(parser, "    popq %%rdx\n");  // buffer_size (unused)
+            code_printf(parser, "    popq %%rdi\n");  // buffer
+            code_printf(parser, "    popq %%rsi\n");  // value
+            generate_int_to_str_code(parser, "%rsi", "%rdi");
+            return;
+            
+        } else if (strcmp(name.value, "sys_write") == 0) {
             // sys_write(fd, buffer, count) -> int
             code_comment(parser, "Line %d: sys_write(fd, buffer, count)", call_token.line);
             
