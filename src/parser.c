@@ -222,6 +222,7 @@ Parser *create_parser(TokenStream *tokens) {
     parser->var_count = 0;
     parser->function_count = 0;
     parser->struct_count = 0;
+    parser->enum_count = 0;
     parser->string_literal_count = 0;
     parser->float_literal_count = 0;
     parser->code_pos = 0;
@@ -335,6 +336,22 @@ void code_printf(Parser *parser, const char *format, ...) {
     if (parser->function_code_pos + len < CODE_BUFFER_SIZE) {
         strcpy(parser->function_code_buffer + parser->function_code_pos, buffer);
         parser->function_code_pos += len;
+    }
+
+    va_end(args);
+}
+
+void data_printf(Parser *parser, const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+
+    char buffer[1024];
+    vsnprintf(buffer, sizeof(buffer), format, args);
+
+    int len = strlen(buffer);
+    if (parser->code_pos + len < CODE_BUFFER_SIZE) {
+        strcpy(parser->code_buffer + parser->code_pos, buffer);
+        parser->code_pos += len;
     }
 
     va_end(args);
@@ -668,6 +685,15 @@ StructDefinition *find_struct(Parser *parser, const char *name) {
     return NULL;
 }
 
+EnumDefinition *find_enum(Parser *parser, const char *name) {
+    for (int i = 0; i < parser->enum_count; i++) {
+        if (strcmp(parser->enums[i].name, name) == 0) {
+            return &parser->enums[i];
+        }
+    }
+    return NULL;
+}
+
 int add_string_literal(Parser *parser, const char *text) {
     for (int i = 0; i < parser->string_literal_count; i++) {
         if (strcmp(parser->string_literals[i].text, text) == 0) {
@@ -880,10 +906,12 @@ void parse_import(Parser *parser, const char *base_path) {
                 parse_import(parser, resolved_path);
             } else if (check(parser->tokens, TOKEN_KEYWORD_STRUCT)) {
                 parse_struct(parser);
+            } else if (check(parser->tokens, TOKEN_KEYWORD_ENUM)) {
+                parse_enum(parser);
             } else if (check(parser->tokens, TOKEN_KEYWORD_FUNC)) {
                 parse_function(parser);
             } else {
-                parser_error(parser, "Only imports, structs and functions allowed in imported files");
+                parser_error(parser, "Only imports, structs, enums and functions allowed in imported files");
                 consume(parser->tokens);
             }
         }
@@ -930,10 +958,12 @@ void parse_import(Parser *parser, const char *base_path) {
                 parse_import(parser, resolved_path);
             } else if (check(parser->tokens, TOKEN_KEYWORD_STRUCT)) {
                 parse_struct(parser);
+            } else if (check(parser->tokens, TOKEN_KEYWORD_ENUM)) {
+                parse_enum(parser);
             } else if (check(parser->tokens, TOKEN_KEYWORD_FUNC)) {
                 parse_function(parser);
             } else {
-                parser_error(parser, "Only imports, structs and functions allowed in imported files");
+                parser_error(parser, "Only imports, structs, enums and functions allowed in imported files");
                 consume(parser->tokens);
             }
         }
@@ -968,10 +998,12 @@ int parse_program(Parser *parser, const char *source_file) {
             parse_import(parser, source_file);
         } else if (check(parser->tokens, TOKEN_KEYWORD_STRUCT)) {
             parse_struct(parser);
+        } else if (check(parser->tokens, TOKEN_KEYWORD_ENUM)) {
+            parse_enum(parser);
         } else if (check(parser->tokens, TOKEN_KEYWORD_FUNC)) {
             parse_function(parser);
         } else {
-            parser_error(parser, "Only imports, structs and functions allowed at top level");
+            parser_error(parser, "Only imports, structs, enums and functions allowed at top level");
             consume(parser->tokens);
         }
     }
@@ -1383,6 +1415,217 @@ void parse_struct(Parser *parser) {
     code_comment(parser, "End of struct %s (size: %d bytes, fields: %d, methods: %d)",
                  struct_name, struct_def->total_size, struct_def->field_count, struct_def->method_count);
     code_printf(parser, "\n");
+}
+
+// ============================================================================
+// ENUM PARSING
+// ============================================================================
+
+void parse_enum(Parser *parser) {
+    Token enum_token = peek(parser->tokens);
+    consume(parser->tokens);  // consume 'enum'
+    
+    Token name_token = consume(parser->tokens);
+    char enum_name[MAX_TOKEN];
+    strcpy(enum_name, name_token.value);
+    
+    if (parser->enum_count >= 50) {
+        parser_error(parser, "Too many enums (max 50)");
+        return;
+    }
+    
+    // Check if enum already exists
+    if (find_enum(parser, enum_name) != NULL) {
+        parser_error_code(parser, ERR_PARSE_DUPLICATE_DEFINITION, "Enum '%s' already defined", enum_name);
+        return;
+    }
+    
+    EnumDefinition *enum_def = &parser->enums[parser->enum_count];
+    strcpy(enum_def->name, enum_name);
+    enum_def->field_count = 0;
+    enum_def->value_count = 0;
+    parser->enum_count++;
+    
+    expect(parser, TOKEN_LPAREN, "Expected '(' after enum name");
+    
+    // Parse field definitions (id:int, name:string)
+    int current_offset = 0;
+    while (!check(parser->tokens, TOKEN_RPAREN) && !is_at_end(parser->tokens)) {
+        Token field_name_token = consume(parser->tokens);
+        
+        if (enum_def->field_count >= 50) {
+            parser_error(parser, "Too many fields in enum (max 50)");
+            return;
+        }
+        
+        StructField *field = &enum_def->fields[enum_def->field_count];
+        strcpy(field->name, field_name_token.value);
+        
+        expect(parser, TOKEN_COLON, "Expected ':' after field name");
+        
+        Token type_token = consume(parser->tokens);
+        DataType field_type = token_to_datatype(type_token.type);
+        
+        if (field_type == TYPE_UNKNOWN) {
+            // Check if it's a struct type
+            StructDefinition *struct_def = find_struct(parser, type_token.value);
+            if (struct_def != NULL) {
+                field_type = TYPE_INT;  // Structs stored as data
+                strcpy(field->struct_type, type_token.value);
+            } else {
+                parser_error(parser, "Unknown field type '%s'", type_token.value);
+                return;
+            }
+        }
+        
+        field->type = field_type;
+        field->is_array = 0;
+        field->array_size = 0;
+        field->offset = current_offset;
+        // For enums, all fields are stored as 8-byte values (quads) for consistency
+        field->size = 8;
+        
+        current_offset += field->size;
+        enum_def->field_count++;
+        
+        if (check(parser->tokens, TOKEN_COMMA)) {
+            consume(parser->tokens);
+        }
+    }
+    
+    expect(parser, TOKEN_RPAREN, "Expected ')' after enum fields");
+    expect(parser, TOKEN_LBRACE, "Expected '{' after enum declaration");
+    
+    // Now create a struct for this enum type
+    if (parser->struct_count >= 50) {
+        parser_error(parser, "Too many structs (max 50)");
+        return;
+    }
+    
+    StructDefinition *backing_struct = &parser->structs[parser->struct_count];
+    strcpy(backing_struct->name, enum_name);
+    backing_struct->field_count = enum_def->field_count;
+    backing_struct->method_count = 0;
+    backing_struct->total_size = current_offset;
+    
+    // Copy fields from enum to struct
+    for (int i = 0; i < enum_def->field_count; i++) {
+        backing_struct->fields[i] = enum_def->fields[i];
+    }
+    
+    // Align total size to 8 bytes
+    if (backing_struct->total_size % 8 != 0) {
+        backing_struct->total_size = ((backing_struct->total_size + 7) / 8) * 8;
+    }
+    
+    enum_def->struct_index = parser->struct_count;
+    parser->struct_count++;
+    
+    // Parse enum values (In(1, "test"), Out(2, "test2"))
+    while (!check(parser->tokens, TOKEN_RBRACE) && !is_at_end(parser->tokens)) {
+        Token value_name_token = consume(parser->tokens);
+        
+        if (enum_def->value_count >= 50) {
+            parser_error(parser, "Too many enum values (max 50)");
+            return;
+        }
+        
+        EnumValue *enum_value = &enum_def->values[enum_def->value_count];
+        strcpy(enum_value->name, value_name_token.value);
+        enum_value->field_count = 0;
+        
+        expect(parser, TOKEN_LPAREN, "Expected '(' after enum value name");
+        
+        // Parse value arguments
+        while (!check(parser->tokens, TOKEN_RPAREN) && !is_at_end(parser->tokens)) {
+            Token value_token = peek(parser->tokens);
+            
+            if (enum_value->field_count >= 50) {
+                parser_error(parser, "Too many fields in enum value");
+                return;
+            }
+            
+            // Store the value as a string for later initialization
+            strcpy(enum_value->values[enum_value->field_count], value_token.value);
+            enum_value->field_count++;
+            
+            consume(parser->tokens);
+            
+            if (check(parser->tokens, TOKEN_COMMA)) {
+                consume(parser->tokens);
+            }
+        }
+        
+        expect(parser, TOKEN_RPAREN, "Expected ')' after enum value arguments");
+        
+        if (enum_value->field_count != enum_def->field_count) {
+            parser_error(parser, "Enum value '%s' has %d fields, expected %d",
+                        enum_value->name, enum_value->field_count, enum_def->field_count);
+            return;
+        }
+        
+        enum_def->value_count++;
+        
+        if (check(parser->tokens, TOKEN_COMMA)) {
+            consume(parser->tokens);
+        }
+    }
+    
+    expect(parser, TOKEN_RBRACE, "Expected '}' after enum values");
+    
+    // Generate assembly for enum value instances
+    for (int i = 0; i < enum_def->value_count; i++) {
+        EnumValue *enum_value = &enum_def->values[i];
+        char global_name[MAX_TOKEN * 2];
+        snprintf(global_name, sizeof(global_name), "%s_%s", enum_name, enum_value->name);
+        
+        // Create a global variable for this enum value
+        if (parser->var_count >= MAX_VARS) {
+            parser_error_code(parser, ERR_CODEGEN_TOO_MANY_VARIABLES, "Too many variables");
+            return;
+        }
+        
+        Variable *var = &parser->vars[parser->var_count];
+        strcpy(var->name, global_name);
+        strcpy(var->struct_type, enum_name);
+        var->type = TYPE_INT;  // It's a struct type
+        var->size = backing_struct->total_size;
+        var->offset = 0;  // Global variable
+        var->is_array = 0;
+        var->array_size = 0;
+        var->scope = 0;  // Global scope
+        parser->var_count++;
+        
+        // Generate data section for this global
+        data_printf(parser, "    .data\n");
+        data_printf(parser, "    .align 8\n");
+        data_printf(parser, "%s:\n", global_name);
+        
+        // Initialize each field
+        for (int j = 0; j < enum_def->field_count; j++) {
+            StructField *field = &enum_def->fields[j];
+            const char *value_str = enum_value->values[j];
+            
+            if (field->type == TYPE_INT) {
+                data_printf(parser, "    .quad %s\n", value_str);
+            } else if (field->type == TYPE_STRING) {
+                // Add string literal
+                int str_id = add_string_literal(parser, value_str);
+                data_printf(parser, "    .quad .LC%d\n", str_id);
+            } else if (field->type == TYPE_FLOAT || field->type == TYPE_DOUBLE) {
+                int float_id = add_float_literal(parser, value_str);
+                data_printf(parser, "    .quad .LC_float_%d\n", float_id);
+            } else {
+                data_printf(parser, "    .quad %s\n", value_str);
+            }
+        }
+        
+        data_printf(parser, "\n");
+    }
+    
+    // Comments for enum go to code section for documentation
+    code_comment(parser, "Enum %s defined with %d values", enum_name, enum_def->value_count);
+    data_printf(parser, "\n");
 }
 
 // ============================================================================
@@ -3100,25 +3343,81 @@ void parse_print_statement(Parser *parser) {
             }
             } else if (lookahead.type == TOKEN_DOT) {
                 // Field access or method call in print: p.x or p.getX()
-                consume(parser->tokens);  // consume identifier
-                consume(parser->tokens);  // consume '.'
+                // Could also be enum access: EnumName.ValueName.field
                 
-                Variable *var = find_variable(parser, name.value);
-                if (!var) {
-                    semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", name.value);
-                    return;
-                }
-                
-                if (var->struct_type[0] == '\0') {
-                    parser_error(parser, "Variable '%s' is not a struct", name.value);
-                    return;
-                }
-                
-                StructDefinition *struct_def = find_struct(parser, var->struct_type);
-                if (!struct_def) {
-                    semantic_error(parser, ERR_SEM_UNDEFINED_STRUCT, "Struct type '%s' not found", var->struct_type);
-                    return;
-                }
+                // First check if it's an enum - if so, use parse_expression to handle it
+                EnumDefinition *enum_def = find_enum(parser, name.value);
+                if (enum_def) {
+                    // Peek ahead to determine the field type for proper formatting
+                    // Format: EnumName.ValueName.field
+                    Token dot1 = peek_ahead(parser->tokens, 1);  // Should be '.'
+                    Token value_name = peek_ahead(parser->tokens, 2);  // ValueName
+                    Token dot2 = peek_ahead(parser->tokens, 3);  // Should be '.'
+                    Token field_name = peek_ahead(parser->tokens, 4);  // field
+                    
+                    // Find the field type
+                    DataType field_type = TYPE_INT;  // Default
+                    if (dot1.type == TOKEN_DOT && dot2.type == TOKEN_DOT) {
+                        for (int i = 0; i < enum_def->field_count; i++) {
+                            if (strcmp(enum_def->fields[i].name, field_name.value) == 0) {
+                                field_type = enum_def->fields[i].type;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Now use parse_expression to handle the full access
+                    parse_expression(parser);
+                    
+                    // The expression result is now on the stack - format based on field type
+                    if (field_type == TYPE_STRING) {
+                        code_printf(parser, "    popq %s\n", get_arg_registers_64()[1]);
+                        code_printf(parser, "    leaq .LC_string_format(%%rip), %s\n", get_arg_registers_64()[0]);
+                    } else if (field_type == TYPE_FLOAT || field_type == TYPE_DOUBLE) {
+                        code_printf(parser, "    popq %%rax\n");
+                        code_printf(parser, "    movq %%rax, %s\n", get_arg_registers_64()[1]);
+                        code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_registers_64()[0]);
+                    } else if (field_type == TYPE_CHAR) {
+                        code_printf(parser, "    popq %%rax\n");
+                        code_printf(parser, "    movb %%al, %%dl\n");
+                        code_printf(parser, "    leaq .LC_char_format(%%rip), %s\n", get_arg_registers_64()[0]);
+                    } else {
+                        // TYPE_INT, TYPE_BYTE, TYPE_BIT and others
+                        code_printf(parser, "    popq %s\n", get_arg_registers_64()[1]);
+                        code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
+                    }
+                    
+                    {
+                        int stack_adj = get_call_stack_space();
+                        if (stack_adj > 0) {
+                            code_printf(parser, "    subq $%d, %%rsp\n", stack_adj);
+                        }
+                        code_printf(parser, "    call printf\n");
+                        if (stack_adj > 0) {
+                            code_printf(parser, "    addq $%d, %%rsp\n", stack_adj);
+                        }
+                    }
+                } else {
+                    // Not an enum, treat as variable
+                    consume(parser->tokens);  // consume identifier
+                    consume(parser->tokens);  // consume '.'
+                    
+                    Variable *var = find_variable(parser, name.value);
+                    if (!var) {
+                        semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", name.value);
+                        return;
+                    }
+                    
+                    if (var->struct_type[0] == '\0') {
+                        parser_error(parser, "Variable '%s' is not a struct", name.value);
+                        return;
+                    }
+                    
+                    StructDefinition *struct_def = find_struct(parser, var->struct_type);
+                    if (!struct_def) {
+                        semantic_error(parser, ERR_SEM_UNDEFINED_STRUCT, "Struct type '%s' not found", var->struct_type);
+                        return;
+                    }
                 
                 Token member_name = consume(parser->tokens);
                 Token next_token = peek(parser->tokens);
@@ -3254,6 +3553,7 @@ void parse_print_statement(Parser *parser) {
                 }
             }
                 }
+                }  // Close the else block for non-enum variables
             } else if (lookahead.type == TOKEN_LBRACKET) {
                 // Array access in print: arr[index]
                 consume(parser->tokens);  // consume identifier
@@ -5441,8 +5741,94 @@ void parse_primary(Parser *parser) {
                 }
             }
             
-            // If variable not found, check if it's a struct type (for static methods)
+            // If variable not found, check if it's an enum type (for enum value access)
             if (!var) {
+                EnumDefinition *enum_def = find_enum(parser, name.value);
+                if (enum_def && check(parser->tokens, TOKEN_DOT)) {
+                    // This is enum value access: EnumName.ValueName.field
+                    consume(parser->tokens);  // consume '.'
+                    Token value_name_token = consume(parser->tokens);
+                    
+                    // Find the enum value
+                    EnumValue *enum_value = NULL;
+                    for (int i = 0; i < enum_def->value_count; i++) {
+                        if (strcmp(enum_def->values[i].name, value_name_token.value) == 0) {
+                            enum_value = &enum_def->values[i];
+                            break;
+                        }
+                    }
+                    
+                    if (!enum_value) {
+                        parser_error(parser, "Enum value '%s' not found in enum '%s'", 
+                                    value_name_token.value, name.value);
+                        return;
+                    }
+                    
+                    // Now we need to access a field on this enum value
+                    if (!check(parser->tokens, TOKEN_DOT)) {
+                        parser_error(parser, "Expected '.' after enum value '%s'", value_name_token.value);
+                        return;
+                    }
+                    
+                    consume(parser->tokens);  // consume '.'
+                    Token field_name_token = consume(parser->tokens);
+                    
+                    // Find the field in the enum definition
+                    StructField *field = NULL;
+                    for (int i = 0; i < enum_def->field_count; i++) {
+                        if (strcmp(enum_def->fields[i].name, field_name_token.value) == 0) {
+                            field = &enum_def->fields[i];
+                            break;
+                        }
+                    }
+                    
+                    if (!field) {
+                        parser_error(parser, "Field '%s' not found in enum '%s'", 
+                                    field_name_token.value, name.value);
+                        return;
+                    }
+                    
+                    // Generate code to load the field from the global enum value variable
+                    char global_name[MAX_TOKEN * 2];
+                    snprintf(global_name, sizeof(global_name), "%s_%s", name.value, value_name_token.value);
+                    
+                    code_comment(parser, "Access enum field: %s.%s.%s", 
+                                name.value, value_name_token.value, field_name_token.value);
+                    code_printf(parser, "    leaq %s(%%rip), %%rbx\n", global_name);
+                    
+                    // Load the field value
+                    if (field->type == TYPE_INT) {
+                        code_printf(parser, "    movq %d(%%rbx), %%rax\n", field->offset);
+                        code_printf(parser, "    pushq %%rax\n");
+                    } else if (field->type == TYPE_FLOAT) {
+                        code_printf(parser, "    movss %d(%%rbx), %%xmm0\n", field->offset);
+                        code_printf(parser, "    movq %%xmm0, %%rax\n");
+                        code_printf(parser, "    pushq %%rax\n");
+                    } else if (field->type == TYPE_DOUBLE) {
+                        code_printf(parser, "    movsd %d(%%rbx), %%xmm0\n", field->offset);
+                        code_printf(parser, "    movq %%xmm0, %%rax\n");
+                        code_printf(parser, "    pushq %%rax\n");
+                    } else if (field->type == TYPE_CHAR) {
+                        code_printf(parser, "    movsbl %d(%%rbx), %%eax\n", field->offset);
+                        code_printf(parser, "    pushq %%rax\n");
+                    } else if (field->type == TYPE_BYTE) {
+                        code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", field->offset);
+                        code_printf(parser, "    pushq %%rax\n");
+                    } else if (field->type == TYPE_BIT) {
+                        code_printf(parser, "    movzbl %d(%%rbx), %%eax\n", field->offset);
+                        code_printf(parser, "    andl $1, %%eax\n");
+                        code_printf(parser, "    pushq %%rax\n");
+                    } else if (field->type == TYPE_STRING) {
+                        code_printf(parser, "    movq %d(%%rbx), %%rax\n", field->offset);
+                        code_printf(parser, "    pushq %%rax\n");
+                    } else {
+                        code_printf(parser, "    movl %d(%%rbx), %%eax\n", field->offset);
+                        code_printf(parser, "    pushq %%rax\n");
+                    }
+                    
+                    return;
+                }
+                
                 StructDefinition *struct_def = find_struct(parser, name.value);
                 if (struct_def && check(parser->tokens, TOKEN_DOT)) {
                     // This is a static method call in an expression: StructName.methodName()

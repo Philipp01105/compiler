@@ -115,6 +115,7 @@ static TokenType get_keyword_type(const char *str) {
     if (strcmp(str, "break") == 0) return TOKEN_KEYWORD_BREAK;
     if (strcmp(str, "continue") == 0) return TOKEN_KEYWORD_CONTINUE;
     if (strcmp(str, "struct") == 0) return TOKEN_KEYWORD_STRUCT;
+    if (strcmp(str, "enum") == 0) return TOKEN_KEYWORD_ENUM;
     if (strcmp(str, "import") == 0) return TOKEN_KEYWORD_IMPORT;
     if (strcmp(str, "static") == 0) return TOKEN_KEYWORD_STATIC;
     if (strcmp(str, "reserve") == 0) return TOKEN_KEYWORD_RESERVE;
@@ -487,6 +488,7 @@ const char *token_type_to_string(TokenType type) {
         case TOKEN_KEYWORD_WHILE: return "KEYWORD_WHILE";
         case TOKEN_KEYWORD_PRINT: return "KEYWORD_PRINT";
         case TOKEN_KEYWORD_STRUCT: return "KEYWORD_STRUCT";
+        case TOKEN_KEYWORD_ENUM: return "KEYWORD_ENUM";
         case TOKEN_KEYWORD_BREAK: return "KEYWORD_BREAK";
         case TOKEN_KEYWORD_CONTINUE: return "KEYWORD_CONTINUE";
         case TOKEN_KEYWORD_IMPORT: return "KEYWORD_IMPORT";

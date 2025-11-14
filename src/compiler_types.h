@@ -30,6 +30,7 @@ typedef enum {
     TOKEN_KEYWORD_BREAK,
     TOKEN_KEYWORD_CONTINUE,
     TOKEN_KEYWORD_STRUCT,
+    TOKEN_KEYWORD_ENUM,
     TOKEN_KEYWORD_IMPORT,
     TOKEN_KEYWORD_STATIC,
     TOKEN_KEYWORD_RESERVE,
@@ -185,6 +186,23 @@ typedef struct {
     int total_size;           // Total size of struct in bytes
 } StructDefinition;
 
+// Enum value - represents one enum instance with its field values
+typedef struct {
+    char name[MAX_TOKEN];     // Value name (e.g., "In", "Out")
+    char values[50][MAX_TOKEN]; // String representation of each field value
+    int field_count;          // Number of fields in this value
+} EnumValue;
+
+// Enum definition - similar to struct but with predefined constant instances
+typedef struct {
+    char name[MAX_TOKEN];     // Enum name (e.g., "test")
+    StructField fields[50];   // Field definitions (same as struct)
+    int field_count;
+    EnumValue values[50];     // Enum values/instances
+    int value_count;
+    int struct_index;         // Index of generated struct in parser->structs
+} EnumDefinition;
+
 typedef struct {
     int id;
     char text[MAX_LINE];
@@ -205,6 +223,7 @@ typedef struct {
     Variable vars[MAX_VARS];
     Function functions[MAX_FUNCTIONS];
     StructDefinition structs[50];  // Support up to 50 struct definitions
+    EnumDefinition enums[50];      // Support up to 50 enum definitions
     StringLiteral string_literals[MAX_STRING_LITERALS];
     FloatLiteral float_literals[MAX_FLOAT_LITERALS];
 
@@ -214,6 +233,7 @@ typedef struct {
     int var_count;
     int function_count;
     int struct_count;
+    int enum_count;
     int string_literal_count;
     int float_literal_count;
     int code_pos;
