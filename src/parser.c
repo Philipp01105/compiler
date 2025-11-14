@@ -196,7 +196,8 @@ int is_syscall_io_function(const char *name) {
            strcmp(name, "sys_close") == 0 ||
            strcmp(name, "io_strlen") == 0 ||
            strcmp(name, "io_int_to_str") == 0 ||
-           strcmp(name, "io_str_to_int") == 0;
+           strcmp(name, "io_str_to_int") == 0 ||
+           strcmp(name, "read") == 0;
 }
 
 // ============================================================================
@@ -5788,6 +5789,111 @@ void parse_primary(Parser *parser) {
                     code_printf(parser, ".Lstr2int_positive_%d:\n", label_num);
                     code_printf(parser, "    pushq %%rax\n");  // return value
                     return;
+                    
+                } else if (strcmp(name.value, "read") == 0) {
+                    // read(stream, format) -> int|char|string based on format
+                    code_comment(parser, "Built-in: read(stream, format)");
+                    
+                    // Parse arguments: stream (fd), format string
+                    parse_expression(parser);  // stream (file descriptor or System.in.fd)
+                    expect(parser, TOKEN_COMMA, "Expected ','");
+                    
+                    // Get format string
+                    if (!check(parser->tokens, TOKEN_STRING_LITERAL)) {
+                        parser_error(parser, "Format specifier must be a string literal");
+                        return;
+                    }
+                    Token format_token = consume(parser->tokens);
+                    expect(parser, TOKEN_RPAREN, "Expected ')'");
+                    
+                    // Determine format type
+                    const char *format = format_token.value;
+                    
+                    if (strcmp(format, "%i") == 0 || strcmp(format, "%d") == 0) {
+                        // Read integer
+                        code_comment(parser, "Read integer from stream");
+                        
+                        // Allocate buffer on stack
+                        code_printf(parser, "    subq $32, %%rsp\n");  // 32 byte buffer
+                        code_printf(parser, "    movq %%rsp, %%r15\n");  // Save buffer pointer
+                        
+                        // Pop stream fd
+                        code_printf(parser, "    popq %%rdi\n");  // fd
+                        
+                        // Read from stream
+                        code_printf(parser, "    movq %%r15, %%rsi\n");  // buffer
+                        code_printf(parser, "    movq $31, %%rdx\n");  // count
+                        code_printf(parser, "    movq $0, %%rax\n");  // syscall: read
+                        code_printf(parser, "    syscall\n");
+                        
+                        // Null-terminate the buffer
+                        code_printf(parser, "    movb $0, (%%r15,%%rax,1)\n");
+                        
+                        // Convert string to integer (reuse io_str_to_int logic)
+                        int label_num = parser->label_counter++;
+                        code_printf(parser, "    movq %%r15, %%rdi\n");  // buffer pointer
+                        code_printf(parser, "    xorq %%rax, %%rax\n");  // result = 0
+                        code_printf(parser, "    xorq %%rcx, %%rcx\n");  // sign = 0
+                        code_printf(parser, "    movzbl (%%rdi), %%edx\n");  // first char
+                        code_printf(parser, "    cmpb $45, %%dl\n");  // check for '-'
+                        code_printf(parser, "    jne .Lread_int_loop_%d\n", label_num);
+                        code_printf(parser, "    movq $1, %%rcx\n");  // sign = 1
+                        code_printf(parser, "    incq %%rdi\n");  // skip '-'
+                        code_printf(parser, ".Lread_int_loop_%d:\n", label_num);
+                        code_printf(parser, "    movzbl (%%rdi), %%edx\n");  // get char
+                        code_printf(parser, "    testb %%dl, %%dl\n");  // check for null
+                        code_printf(parser, "    je .Lread_int_done_%d\n", label_num);
+                        code_printf(parser, "    cmpb $10, %%dl\n");  // check for newline
+                        code_printf(parser, "    je .Lread_int_done_%d\n", label_num);
+                        code_printf(parser, "    subb $48, %%dl\n");  // convert to digit
+                        code_printf(parser, "    cmpb $9, %%dl\n");  // check valid digit
+                        code_printf(parser, "    ja .Lread_int_done_%d\n", label_num);
+                        code_printf(parser, "    imulq $10, %%rax\n");  // result *= 10
+                        code_printf(parser, "    movzbl %%dl, %%edx\n");
+                        code_printf(parser, "    addq %%rdx, %%rax\n");  // result += digit
+                        code_printf(parser, "    incq %%rdi\n");  // next char
+                        code_printf(parser, "    jmp .Lread_int_loop_%d\n", label_num);
+                        code_printf(parser, ".Lread_int_done_%d:\n", label_num);
+                        code_printf(parser, "    testq %%rcx, %%rcx\n");  // check sign
+                        code_printf(parser, "    je .Lread_int_positive_%d\n", label_num);
+                        code_printf(parser, "    negq %%rax\n");  // negate if needed
+                        code_printf(parser, ".Lread_int_positive_%d:\n", label_num);
+                        
+                        // Clean up stack and push result
+                        code_printf(parser, "    addq $32, %%rsp\n");  // deallocate buffer
+                        code_printf(parser, "    pushq %%rax\n");  // return integer value
+                        return;
+                        
+                    } else if (strcmp(format, "%c") == 0) {
+                        // Read character
+                        code_comment(parser, "Read character from stream");
+                        
+                        // Pop stream fd
+                        code_printf(parser, "    popq %%rdi\n");  // fd
+                        
+                        // Allocate 1 byte on stack
+                        code_printf(parser, "    subq $16, %%rsp\n");
+                        code_printf(parser, "    movq %%rsp, %%rsi\n");  // buffer
+                        
+                        // Read 1 byte
+                        code_printf(parser, "    movq $1, %%rdx\n");  // count = 1
+                        code_printf(parser, "    movq $0, %%rax\n");  // syscall: read
+                        code_printf(parser, "    syscall\n");
+                        
+                        // Load character and clean up
+                        code_printf(parser, "    movzbl (%%rsp), %%eax\n");  // load char
+                        code_printf(parser, "    addq $16, %%rsp\n");  // deallocate
+                        code_printf(parser, "    pushq %%rax\n");  // return char value
+                        return;
+                        
+                    } else if (strcmp(format, "%s") == 0) {
+                        // Read string - not directly supported, user should use read_string()
+                        parser_error(parser, "Use read_string() function for string input instead of read()");
+                        return;
+                    } else {
+                        parser_error(parser, "Unsupported format specifier '%s'. Use %%i, %%d, or %%c", format);
+                        return;
+                    }
                 }
             }
 

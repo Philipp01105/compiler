@@ -5,8 +5,8 @@
 // Uses Linux syscalls directly (inspired by Java and Go)
 // 
 // This module provides:
+//   - Unified read() function with format specifiers
 //   - File operations (write_file, read_file, append_file)
-//   - Input reading utilities
 //   - File stream operations
 //
 // Built-in syscalls: sys_write, sys_read, sys_open, sys_close
@@ -17,28 +17,47 @@
 // =================================================================
 
 // =================================================================
-// INPUT FUNCTIONS
+// SYSTEM STREAM CONSTANTS
 // =================================================================
 
-// Read from stdin into buffer
+// System I/O streams (file descriptors)
+enum System(fd:int) {
+    in(0),     // stdin
+    out(1),    // stdout
+    err(2)     // stderr
+}
+
+// =================================================================
+// UNIFIED INPUT FUNCTION (Built-in)
+// =================================================================
+
+// read(stream, format) - Compiler built-in function
+// 
+// Read from input stream with format specifier (like scanf/Java Scanner)
+// Parameters:
+//   - stream: Input stream - use System.in.fd for stdin, or file descriptor
+//   - format: Format specifier string literal:
+//             "%i" or "%d" - read integer
+//             "%c" - read single character
+//
+// Returns: Value based on format specifier (int or char)
+//
+// Usage examples:
+//   var num:int = read(System.in.fd, "%i");
+//   var c:char = read(System.in.fd, "%c");
+//   var fd:int = open_read("input.txt");
+//   var value:int = read(fd, "%i");
+//
+// Note: This is a compiler built-in that generates efficient syscall code
+
+// =================================================================
+// STRING INPUT HELPER
+// =================================================================
+
+// Read a line of text from stream into buffer
 // Returns: number of bytes read
-func read_line(buffer:string, max_size:int) -> int {
-    return sys_read(0, buffer, max_size);
-}
-
-// Read an integer from stdin
-// Returns: parsed integer
-func read_int() -> int {
-    var[32] buffer:char;
-    sys_read(0, &buffer, 31);
-    return io_str_to_int(&buffer);
-}
-
-// Read a single character from stdin
-func read_char() -> char {
-    var c:char = 0;
-    sys_read(0, &c, 1);
-    return c;
+func read_string(stream:int, buffer:string, max_size:int) -> int {
+    return sys_read(stream, buffer, max_size);
 }
 
 // =================================================================
