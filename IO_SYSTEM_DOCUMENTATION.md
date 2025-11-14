@@ -43,6 +43,17 @@ These functions are recognized by the compiler and generate direct syscall assem
   - Parses ASCII string to integer
   - Returns: integer value
 
+- **`read(stream:int, format:string) -> int|char`** ⭐ NEW
+  - Unified input function with format specifiers (like scanf/Java Scanner)
+  - Parameters:
+    - `stream`: File descriptor (0 for stdin, or use `System.in.fd`)
+    - `format`: Format specifier - `"%i"` or `"%d"` for int, `"%c"` for char
+  - Returns: Value based on format specifier
+  - Examples:
+    - `var num:int = read(System.in.fd, "%i");`
+    - `var c:char = read(0, "%c");`
+    - `var fd:int = open_read("input.txt"); var value:int = read(fd, "%i");`
+
 ### 2. Standard Library (High Level)
 Location: `stdlib/io.txt`
 
@@ -62,10 +73,14 @@ Import with: `#import <stdlib/io.txt>`
 - `read_from(fd:int, buffer:string, count:int) -> int` - Read from stream
 - `close_file(fd:int) -> int` - Close stream
 
+**System Stream Constants:**
+- `System.in.fd` - stdin (file descriptor 0)
+- `System.out.fd` - stdout (file descriptor 1)
+- `System.err.fd` - stderr (file descriptor 2)
+
 **Input Operations:**
-- `read_line(buffer:string, max_size:int) -> int` - Read line from stdin
-- `read_int() -> int` - Read integer from stdin
-- `read_char() -> char` - Read single character from stdin
+- `read(stream:int, format:string) -> int|char` - Unified input with format specifiers ⭐
+- `read_string(stream:int, buffer:string, max_size:int) -> int` - Read string/line
 
 **Utility Functions:**
 - `strlen(s:string) -> int` - Get string length
@@ -77,7 +92,20 @@ The compiler provides built-in `print()` and `println()` functions that work wit
 
 ## Usage Examples
 
-### Example 1: Direct Syscalls
+### Example 1: Using read() Function (NEW)
+```javascript
+#import <stdlib/io.txt>
+
+func main() -> void {
+    println("Enter a number:");
+    var num:int = read(System.in.fd, "%i");
+    
+    print("You entered: ");
+    println(num);
+}
+```
+
+### Example 2: Direct Syscalls
 ```javascript
 func main() -> void {
     var msg:string = "Hello, syscalls!\n";
@@ -86,7 +114,24 @@ func main() -> void {
 }
 ```
 
-### Example 2: High-Level File Operations
+### Example 3: Reading from Files with read()
+```javascript
+#import <stdlib/io.txt>
+
+func main() -> void {
+    // Write number to file
+    write_file("data.txt", "42\n");
+    
+    // Open and read using read()
+    var fd:int = open_read("data.txt");
+    var value:int = read(fd, "%i");
+    close_file(fd);
+    
+    println(value);  // Prints: 42
+}
+```
+
+### Example 4: High-Level File Operations
 ```javascript
 #import <stdlib/io.txt>
 
@@ -105,7 +150,7 @@ func main() -> void {
 }
 ```
 
-### Example 3: Stream-Based I/O
+### Example 5: Stream-Based I/O
 ```javascript
 #import <stdlib/io.txt>
 
@@ -117,17 +162,19 @@ func main() -> void {
 }
 ```
 
-### Example 4: User Input
+### Example 6: Calculator with read()
 ```javascript
 #import <stdlib/io.txt>
 
 func main() -> void {
-    println("Enter a number:");
-    var num:int = read_int();
+    println("Enter first number:");
+    var a:int = read(System.in.fd, "%i");
     
-    var[256] buffer:char;
-    println("Enter your name:");
-    read_line(&buffer, 255);
+    println("Enter second number:");
+    var b:int = read(System.in.fd, "%i");
+    
+    print("Sum: ");
+    println(a + b);
 }
 ```
 
