@@ -1,0 +1,6 @@
+func main() -> void {
+    var x:int = 10;
+    undefinedVar = x + 5;
+    var y:int = 20;
+    print(y);
+}

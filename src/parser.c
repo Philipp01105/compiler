@@ -549,6 +549,93 @@ void semantic_error(Parser *parser, int error_code, const char *format, ...) {
     // The parser can continue normally
 }
 
+// Semantic error with specific token (for better error position)
+void semantic_error_at_token(Parser *parser, Token token, int error_code, const char *format, ...) {
+    parser->has_error = 1;
+    
+    // Format the error message
+    char message[1024];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(message, sizeof(message), format, args);
+    va_end(args);
+    
+    // Use the new error handler if available
+    if (global_error_handler) {
+        ErrorContext *ctx = error_context_create(
+            SEVERITY_ERROR,
+            token.line,
+            token.column,
+            ERROR_CATEGORY_SEMANTIC,
+            error_code,
+            parser->source_filename,
+            message
+        );
+        
+        if (ctx) {
+            // Add source line context
+            const char *source_line = parser_get_source_line(parser, token.line);
+            if (source_line) {
+                error_context_set_source_line(ctx, source_line);
+            }
+            
+            // Add token value for better underlining
+            error_context_set_token(ctx, token.value);
+            
+            // Report the error
+            error_report_context(global_error_handler, ctx);
+            
+            // Free the context only if not buffered
+            if (!global_error_handler->buffered) {
+                error_context_free(ctx);
+            }
+        }
+    } else {
+        fprintf(stderr, "[ERROR] Line %d, Col %d: %s\n", token.line, token.column, message);
+    }
+
+    // Note: semantic errors don't consume tokens - they're not syntax errors
+    // The parser can continue normally
+}
+
+// ============================================================================
+// ERROR RECOVERY / SYNCHRONIZATION
+// ============================================================================
+
+// Synchronize to recover from errors (panic mode error recovery)
+// This function skips tokens until we reach a statement boundary or safe recovery point
+static void synchronize(Parser *parser) {
+    // Skip tokens until we find a safe recovery point
+    while (!is_at_end(parser->tokens)) {
+        Token current = peek(parser->tokens);
+        
+        // If we're at a semicolon, consume it and we're done
+        if (current.type == TOKEN_SEMICOLON) {
+            consume(parser->tokens);
+            return;
+        }
+        
+        // If we're at a statement keyword or closing brace, stop (don't consume)
+        // These are good recovery points
+        if (current.type == TOKEN_KEYWORD_VAR ||
+            current.type == TOKEN_KEYWORD_IF ||
+            current.type == TOKEN_KEYWORD_FOR ||
+            current.type == TOKEN_KEYWORD_WHILE ||
+            current.type == TOKEN_KEYWORD_RETURN ||
+            current.type == TOKEN_KEYWORD_PRINT ||
+            current.type == TOKEN_KEYWORD_PRINTLINE ||
+            current.type == TOKEN_KEYWORD_BREAK ||
+            current.type == TOKEN_KEYWORD_CONTINUE ||
+            current.type == TOKEN_KEYWORD_FREE ||
+            current.type == TOKEN_RBRACE) {
+            return;
+        }
+        
+        // Otherwise, skip this token and continue
+        consume(parser->tokens);
+    }
+}
+
 // ============================================================================
 // VARIABLE & FUNCTION MANAGEMENT
 // ============================================================================
@@ -1550,6 +1637,7 @@ void parse_statement(Parser *parser) {
             parse_function_call_statement(parser);
         } else {
             parser_error_code(parser, ERR_PARSE_INVALID_SYNTAX, "Unexpected token: expected operator, semicolon, or end of statement");
+            synchronize(parser);  // Skip to statement boundary
         }
     } else if (check(parser->tokens, TOKEN_KEYWORD_FOR)) {
         parse_for_loop(parser);
@@ -1574,18 +1662,21 @@ void parse_statement(Parser *parser) {
         Token var_token = consume(parser->tokens);
         if (var_token.type != TOKEN_IDENTIFIER) {
             parser_error(parser, "Expected variable name in free()");
+            synchronize(parser);  // Skip to statement boundary
             return;
         }
         
         // Find the variable
         Variable *var = find_variable(parser, var_token.value);
         if (var == NULL) {
-            semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", var_token.value);
+            semantic_error_at_token(parser, var_token, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", var_token.value);
+            synchronize(parser);  // Skip to statement boundary
             return;
         }
         
         if (!var->is_pointer) {
             parser_error(parser, "Variable '%s' is not a pointer", var_token.value);
+            synchronize(parser);  // Skip to statement boundary
             return;
         }
         
@@ -1611,6 +1702,7 @@ void parse_statement(Parser *parser) {
         
         if (!check(parser->tokens, TOKEN_IDENTIFIER)) {
             parser_error(parser, "Expected identifier after '*' in assignment");
+            synchronize(parser);  // Skip to statement boundary
             return;
         }
         
@@ -1618,12 +1710,14 @@ void parse_statement(Parser *parser) {
         Variable *ptr_var = find_variable(parser, ptr_token.value);
         
         if (!ptr_var) {
-            semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", ptr_token.value);
+            semantic_error_at_token(parser, ptr_token, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", ptr_token.value);
+            synchronize(parser);  // Skip to statement boundary
             return;
         }
         
         if (!ptr_var->is_pointer) {
             parser_error(parser, "Variable '%s' is not a pointer", ptr_token.value);
+            synchronize(parser);  // Skip to statement boundary
             return;
         }
         
@@ -1658,6 +1752,7 @@ void parse_statement(Parser *parser) {
         }
     } else {
         parser_error_code(parser, ERR_PARSE_INVALID_SYNTAX, "Unexpected statement: expected expression or statement keyword");
+        synchronize(parser);  // Skip to statement boundary
     }
 }
 
@@ -2002,7 +2097,8 @@ void parse_assignment(Parser *parser) {
     }
 
     if (!var) {
-        semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", name_token.value);
+        semantic_error_at_token(parser, name_token, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", name_token.value);
+        synchronize(parser);  // Skip to statement boundary
         return;
     }
 
@@ -2012,12 +2108,14 @@ void parse_assignment(Parser *parser) {
         
         if (var->struct_type[0] == '\0') {
             parser_error(parser, "Variable '%s' is not a struct", name_token.value);
+            synchronize(parser);  // Skip to statement boundary
             return;
         }
         
         StructDefinition *struct_def = find_struct(parser, var->struct_type);
         if (!struct_def) {
             semantic_error(parser, ERR_SEM_UNDEFINED_STRUCT, "Struct type '%s' not found", var->struct_type);
+            synchronize(parser);  // Skip to statement boundary
             return;
         }
         
@@ -2034,6 +2132,7 @@ void parse_assignment(Parser *parser) {
         
         if (!field) {
             parser_error(parser, "Field '%s' not found in struct '%s'", field_name_token.value, var->struct_type);
+            synchronize(parser);  // Skip to statement boundary
             return;
         }
         
@@ -2100,6 +2199,7 @@ void parse_assignment(Parser *parser) {
                 StructDefinition *nested_struct_def = find_struct(parser, field->struct_type);
                 if (!nested_struct_def) {
                     parser_error(parser, "Nested struct type '%s' not found", field->struct_type);
+                    synchronize(parser);  // Skip to statement boundary
                     return;
                 }
                 
@@ -2122,6 +2222,7 @@ void parse_assignment(Parser *parser) {
                     if (!nested_field) {
                         parser_error(parser, "Field '%s' not found in struct '%s'", 
                                    next_field_name.value, nested_struct_def->name);
+                        synchronize(parser);  // Skip to statement boundary
                         return;
                     }
                     
@@ -2132,6 +2233,7 @@ void parse_assignment(Parser *parser) {
                         nested_struct_def = find_struct(parser, nested_field->struct_type);
                         if (!nested_struct_def) {
                             parser_error(parser, "Nested struct type '%s' not found", nested_field->struct_type);
+                            synchronize(parser);  // Skip to statement boundary
                             return;
                         }
                     } else {
@@ -2143,6 +2245,7 @@ void parse_assignment(Parser *parser) {
                 
                 if (!final_field) {
                     parser_error(parser, "Invalid chained field access");
+                    synchronize(parser);  // Skip to statement boundary
                     return;
                 }
                 
