@@ -12,12 +12,7 @@
 #define MAX_IMPORTS 100
 #define MAX_PATH 512
 
-// ============================================================================
-// TOKEN TYPES
-// ============================================================================
-
 typedef enum {
-    // Keywords
     TOKEN_KEYWORD_FUNC,
     TOKEN_KEYWORD_VAR,
     TOKEN_KEYWORD_RETURN,
@@ -37,31 +32,27 @@ typedef enum {
     TOKEN_KEYWORD_FREE,
     TOKEN_KEYWORD_GC,
 
-    // Data Types (ERWEITERT!)
     TOKEN_TYPE_INT,
-    TOKEN_TYPE_CHAR,        // NEU
-    TOKEN_TYPE_BYTE,        // NEU
-    TOKEN_TYPE_BIT,         // NEU
-    TOKEN_TYPE_FLOAT,       // NEU
-    TOKEN_TYPE_DOUBLE,      // NEU
+    TOKEN_TYPE_CHAR,         
+    TOKEN_TYPE_BYTE,         
+    TOKEN_TYPE_BIT,          
+    TOKEN_TYPE_FLOAT,        
+    TOKEN_TYPE_DOUBLE,       
     TOKEN_TYPE_STRING,
     TOKEN_TYPE_VOID,
 
-    // Literals
     TOKEN_IDENTIFIER,
     TOKEN_NUMBER,
-    TOKEN_FLOAT_LITERAL,    // NEU: 3.14
-    TOKEN_CHAR_LITERAL,     // NEU: 'A'
+    TOKEN_FLOAT_LITERAL,     
+    TOKEN_CHAR_LITERAL,      
     TOKEN_STRING_LITERAL,
 
-    // Operators (Arithmetic)
     TOKEN_PLUS,
     TOKEN_MINUS,
     TOKEN_STAR,
     TOKEN_SLASH,
     TOKEN_PERCENT,
 
-    // Operators (Comparison)
     TOKEN_EQUAL,
     TOKEN_EQUAL_EQUAL,
     TOKEN_BANG_EQUAL,
@@ -70,13 +61,11 @@ typedef enum {
     TOKEN_GREATER,
     TOKEN_GREATER_EQUAL,
 
-    // Operators (Logical)
     TOKEN_AMP_AMP,
     TOKEN_PIPE_PIPE,
     TOKEN_BANG,
-    TOKEN_AMPERSAND,  // & (address-of operator)
+    TOKEN_AMPERSAND,   
 
-    // Operators (Assignment)
     TOKEN_PLUS_EQUAL,
     TOKEN_MINUS_EQUAL,
     TOKEN_STAR_EQUAL,
@@ -84,7 +73,6 @@ typedef enum {
     TOKEN_PLUS_PLUS,
     TOKEN_MINUS_MINUS,
 
-    // Delimiters
     TOKEN_LPAREN,
     TOKEN_RPAREN,
     TOKEN_LBRACE,
@@ -99,32 +87,23 @@ typedef enum {
     TOKEN_HASH,
     TOKEN_AT,
 
-    // Special
     TOKEN_COMMENT,
     TOKEN_NEWLINE,
     TOKEN_EOF,
     TOKEN_ERROR
 } TokenType;
 
-// ============================================================================
-// DATA TYPES (ERWEITERT!)
-// ============================================================================
-
 typedef enum {
-    TYPE_INT,       // 32-bit signed integer
-    TYPE_CHAR,      // 8-bit signed character (-128 to 127)
-    TYPE_BYTE,      // 8-bit unsigned (0 to 255)
-    TYPE_BIT,       // Boolean (0 or 1)
-    TYPE_FLOAT,     // 32-bit floating point
-    TYPE_DOUBLE,    // 64-bit floating point
-    TYPE_STRING,    // String (not yet fully implemented)
-    TYPE_VOID,      // No return value
+    TYPE_INT,        
+    TYPE_CHAR,       
+    TYPE_BYTE,       
+    TYPE_BIT,        
+    TYPE_FLOAT,      
+    TYPE_DOUBLE,     
+    TYPE_STRING,     
+    TYPE_VOID,       
     TYPE_UNKNOWN
 } DataType;
-
-// ============================================================================
-// STRUCTURES
-// ============================================================================
 
 typedef struct {
     TokenType type;
@@ -142,65 +121,63 @@ typedef struct {
 
 typedef struct {
     char name[MAX_TOKEN];
-    int offset;           // Stack offset
-    int scope;            // Scope level
-    DataType type;        // Variable type (ERWEITERT!)
-    int size;             // Size in bytes (NEU!)
-    int is_array;         // 1 if this is an array, 0 otherwise
-    int array_size;       // Number of elements (0 for non-arrays or unknown size)
-    char struct_type[MAX_TOKEN];  // If type is struct, this holds the struct name (empty for primitives)
-    int is_pointer;       // 1 if this is a pointer type, 0 otherwise
-    int is_gc;            // 1 if this variable is garbage collected, 0 for manual management
-    int is_heap;          // 1 if this variable is heap-allocated, 0 for stack
+    int offset;            
+    int scope;             
+    DataType type;         
+    int size;              
+    int is_array;          
+    int array_size;        
+    char struct_type[MAX_TOKEN];   
+    int is_pointer;        
+    int is_gc;             
+    int is_heap;           
 } Variable;
 
 typedef struct {
     char name[MAX_TOKEN];
     char params[10][MAX_TOKEN];
-    DataType param_types[10];  // ERWEITERT!
-    int param_is_array[10];    // 1 if parameter is an array
-    int param_is_pointer[10];  // 1 if parameter is a pointer
+    DataType param_types[10];   
+    int param_is_array[10];     
+    int param_is_pointer[10];   
     int param_count;
-    DataType return_type;      // ERWEITERT!
-    int return_is_array;       // 1 if return type is an array
-    char struct_name[MAX_TOKEN];  // If this is a method, the struct it belongs to (empty for regular functions)
-    int is_static;             // 1 if this is a static method (no implicit 'this')
+    DataType return_type;       
+    int return_is_array;        
+    char struct_name[MAX_TOKEN];   
+    int is_static;              
 } Function;
 
 typedef struct {
-    char name[MAX_TOKEN];     // Field name
-    DataType type;            // Field type
-    int offset;               // Offset within struct
-    int size;                 // Size in bytes
-    int is_array;             // 1 if this is an array field
-    int array_size;           // Number of elements if array
-    char struct_type[MAX_TOKEN];  // If field is a struct type, store struct name
+    char name[MAX_TOKEN];      
+    DataType type;             
+    int offset;                
+    int size;                  
+    int is_array;              
+    int array_size;            
+    char struct_type[MAX_TOKEN];   
 } StructField;
 
 typedef struct {
-    char name[MAX_TOKEN];     // Struct name
-    StructField fields[50];   // Struct fields
+    char name[MAX_TOKEN];      
+    StructField fields[50];    
     int field_count;
-    int methods[MAX_FUNCTIONS];  // Indices of methods in parser->functions array
+    int methods[MAX_FUNCTIONS];   
     int method_count;
-    int total_size;           // Total size of struct in bytes
+    int total_size;            
 } StructDefinition;
 
-// Enum value - represents one enum instance with its field values
 typedef struct {
-    char name[MAX_TOKEN];     // Value name (e.g., "In", "Out")
-    char values[50][MAX_TOKEN]; // String representation of each field value
-    int field_count;          // Number of fields in this value
+    char name[MAX_TOKEN];      
+    char values[50][MAX_TOKEN];  
+    int field_count;           
 } EnumValue;
 
-// Enum definition - similar to struct but with predefined constant instances
 typedef struct {
-    char name[MAX_TOKEN];     // Enum name (e.g., "test")
-    StructField fields[50];   // Field definitions (same as struct)
+    char name[MAX_TOKEN];      
+    StructField fields[50];    
     int field_count;
-    EnumValue values[50];     // Enum values/instances
+    EnumValue values[50];      
     int value_count;
-    int struct_index;         // Index of generated struct in parser->structs
+    int struct_index;          
 } EnumDefinition;
 
 typedef struct {
@@ -210,11 +187,11 @@ typedef struct {
 
 typedef struct {
     int id;
-    char value[MAX_TOKEN];  // "3.14", "2.5e10", etc.
+    char value[MAX_TOKEN];   
 } FloatLiteral;
 
 typedef struct {
-    int loop_id;  // The ID of this loop
+    int loop_id;   
 } LoopContext;
 
 typedef struct {
@@ -222,8 +199,8 @@ typedef struct {
 
     Variable vars[MAX_VARS];
     Function functions[MAX_FUNCTIONS];
-    StructDefinition structs[50];  // Support up to 50 struct definitions
-    EnumDefinition enums[50];      // Support up to 50 enum definitions
+    StructDefinition structs[50];   
+    EnumDefinition enums[50];       
     StringLiteral string_literals[MAX_STRING_LITERALS];
     FloatLiteral float_literals[MAX_FLOAT_LITERALS];
 
@@ -245,25 +222,20 @@ typedef struct {
     int label_counter;
     int loop_counter;
     
-    // Loop context stack for break/continue
     LoopContext loop_stack[MAX_LOOP_DEPTH];
     int loop_depth;
     
-    // Current method context (for accessing fields without 'this.')
-    char current_struct_context[MAX_TOKEN];  // Empty if not in a method
+    char current_struct_context[MAX_TOKEN];   
     
-    // Import tracking to prevent duplicate imports
     char imported_files[MAX_IMPORTS][MAX_PATH];
     int import_count;
     
-    // Heap management state
-    int next_var_is_gc;  // 1 if next variable declaration should be garbage collected
+    int next_var_is_gc;   
     
-    // Source file content for error reporting
-    char *source_content;  // Full source file content
-    char **source_lines;   // Array of pointers to each line
-    int source_line_count; // Number of lines in source
-    const char *source_filename; // Current source file name
+    char *source_content;   
+    char **source_lines;    
+    int source_line_count;  
+    const char *source_filename;  
 } Parser;
 
 #endif

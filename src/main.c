@@ -85,7 +85,6 @@ int main(int argc, char *argv[]) {
     int format_error = 0;
     const char *source_file = NULL;
 
-    // Initialize the error handler
     ErrorHandler *error_handler = error_handler_init();
     if (error_handler) {
         error_handler_set_global(error_handler);
@@ -128,7 +127,6 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // Only show verbose output in debug mode
     if (debug_mode || show_tokens) {
         print_header(source_file);
 
@@ -191,7 +189,6 @@ int main(int argc, char *argv[]) {
     char datetime[64];
     strftime(datetime, sizeof(datetime), "%Y-%m-%d %H:%M:%S", t);
 
-    // Detect platform: Windows uses COFF format, Linux/Unix use ELF format
     int is_windows = 0;
 #if defined(_WIN32) || defined(_WIN64) || defined(__CYGWIN__)
     is_windows = 1;
@@ -203,13 +200,12 @@ int main(int argc, char *argv[]) {
     fprintf(output, "# Platform: %s\n", is_windows ? "Windows (COFF)" : "Linux/Unix (ELF)");
     fprintf(output, "    .text\n");
     
-    // Windows-specific directives
     if (is_windows) {
         fprintf(output, "    .def    printf; .scl    2; .type   32; .endef\n");
         fprintf(output, "    .def    putchar; .scl    2; .type   32; .endef\n");
         fprintf(output, "    .section .rdata,\"dr\"\n");
     } else {
-        // Linux/Unix ELF format
+         
         fprintf(output, "    .section .rodata\n");
     }
 
@@ -267,14 +263,12 @@ int main(int argc, char *argv[]) {
         fprintf(output, "\n");
     }
 
-    // Add static buffer for scanfString
     fprintf(output, "    .bss\n");
     fprintf(output, "    .align 8\n");
     fprintf(output, "_scanfString_buffer:\n");
     fprintf(output, "    .space 256\n");
     fprintf(output, "\n");
     
-    // Output enum data from code_buffer (contains enum global data)
     if (parser->code_pos > 0) {
         fprintf(output, "%s", parser->code_buffer);
     }
@@ -305,7 +299,6 @@ int main(int argc, char *argv[]) {
     free_parser(parser);
     free_token_stream(tokens);
     
-    // Flush any buffered errors and clean up
     if (error_handler) {
         error_handler_flush(error_handler);
         error_handler_free(error_handler);
