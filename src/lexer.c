@@ -7,10 +7,11 @@
 
 #define INITIAL_CAPACITY 1000
 
-// ============================================================================
-// TOKEN STREAM MANAGEMENT
-// ============================================================================
-
+/*
+ * create_token_stream - Allocate new token stream
+ *
+ * Returns dynamically allocated token stream with initial capacity.
+ */
 TokenStream *create_token_stream(void) {
     TokenStream *stream = malloc(sizeof(TokenStream));
     stream->capacity = INITIAL_CAPACITY;
@@ -47,10 +48,6 @@ void add_token(TokenStream *stream, TokenType type, const char *value, int line,
 
     stream->count++;
 }
-
-// ============================================================================
-// TOKEN STREAM NAVIGATION
-// ============================================================================
 
 Token peek(TokenStream *stream) {
     if (stream->current < stream->count) {
@@ -97,12 +94,8 @@ int is_at_end(TokenStream *stream) {
            stream->tokens[stream->current].type == TOKEN_EOF;
 }
 
-// ============================================================================
-// KEYWORD RECOGNITION
-// ============================================================================
-
 static TokenType get_keyword_type(const char *str) {
-    // Keywords
+     
     if (strcmp(str, "func") == 0) return TOKEN_KEYWORD_FUNC;
     if (strcmp(str, "var") == 0) return TOKEN_KEYWORD_VAR;
     if (strcmp(str, "return") == 0) return TOKEN_KEYWORD_RETURN;
@@ -122,7 +115,6 @@ static TokenType get_keyword_type(const char *str) {
     if (strcmp(str, "free") == 0) return TOKEN_KEYWORD_FREE;
     if (strcmp(str, "gc") == 0) return TOKEN_KEYWORD_GC;
 
-    // Data Types (ERWEITERT!)
     if (strcmp(str, "int") == 0) return TOKEN_TYPE_INT;
     if (strcmp(str, "char") == 0) return TOKEN_TYPE_CHAR;
     if (strcmp(str, "byte") == 0) return TOKEN_TYPE_BYTE;
@@ -134,10 +126,6 @@ static TokenType get_keyword_type(const char *str) {
 
     return TOKEN_IDENTIFIER;
 }
-
-// ============================================================================
-// TOKENIZATION
-// ============================================================================
 
 TokenStream *tokenize_file(const char *filename, int debug_mode) {
     FILE *file = fopen(filename, "rb");
@@ -165,14 +153,12 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
     while (i < length) {
         char c = source[i];
 
-        // Skip whitespace
         if (c == ' ' || c == '\t' || c == '\r') {
             i++;
             column++;
             continue;
         }
 
-        // Newline
         if (c == '\n') {
             i++;
             line++;
@@ -180,7 +166,6 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
             continue;
         }
 
-        // Comments
         if (c == '/' && i + 1 < length && source[i + 1] == '/') {
             while (i < length && source[i] != '\n') {
                 i++;
@@ -188,7 +173,6 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
             continue;
         }
 
-        // String literals
         if (c == '"') {
             int start_col = column;
             int start_line = line;
@@ -249,7 +233,6 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
             continue;
         }
 
-        // Character Literals - 'A', 'b', '\n', etc.
         if (c == '\'') {
             int start_col = column;
             int start_line = line;
@@ -299,7 +282,6 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
             continue;
         }
 
-        // Numbers (Integer and Float)
         if (isdigit(c) || (c == '-' && i + 1 < length && isdigit((unsigned char)source[i + 1]))) {
             int start_col = column;
             char num[MAX_TOKEN];
@@ -324,7 +306,6 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
                 column++;
             }
 
-            // Scientific notation
             if (i < length && (source[i] == 'e' || source[i] == 'E')) {
                 num[j++] = source[i++];
                 column++;
@@ -339,7 +320,7 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
                     column++;
                 }
 
-                has_dot = 1;  // Scientific notation means float
+                has_dot = 1;   
             }
 
             num[j] = '\0';
@@ -353,7 +334,6 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
             continue;
         }
 
-        // Identifiers and keywords
         if (isalpha(c) || c == '_') {
             int start_col = column;
             char ident[MAX_TOKEN];
@@ -372,7 +352,6 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
             continue;
         }
 
-        // Two-character operators
         if (i + 1 < length) {
             char next = source[i + 1];
             TokenType type = TOKEN_ERROR;
@@ -400,7 +379,6 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
             }
         }
 
-        // Single-character operators and delimiters
         TokenType type = TOKEN_ERROR;
         switch (c) {
             case '+': type = TOKEN_PLUS; break;
@@ -441,7 +419,6 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
         column++;
     }
 
-    // Cleanup: Remove any garbage tokens after last valid token
     int last_valid = stream->count - 1;
     while (last_valid >= 0) {
         Token *t = &stream->tokens[last_valid];
@@ -472,10 +449,6 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
     free(source);
     return stream;
 }
-
-// ============================================================================
-// TOKEN PRINTING
-// ============================================================================
 
 const char *token_type_to_string(TokenType type) {
     switch (type) {
