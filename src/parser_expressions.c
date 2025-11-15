@@ -316,14 +316,9 @@ void parse_primary(Parser *parser) {
         const char **arg_regs = get_arg_registers_64();
         code_printf(parser, "    popq %s\n", arg_regs[0]);   
         {
-            int stack_adj = get_call_stack_space();
-            if (stack_adj > 0) {
-                code_printf(parser, "    subq $%d, %%rsp\n", stack_adj);
-            }
+            generate_stack_align(parser);
             code_printf(parser, "    call malloc\n");
-            if (stack_adj > 0) {
-                code_printf(parser, "    addq $%d, %%rsp\n", stack_adj);
-            }
+            generate_stack_restore(parser);
         }
         code_printf(parser, "    pushq %%rax\n");   
         return;
@@ -347,14 +342,9 @@ void parse_primary(Parser *parser) {
                     code_comment(parser, "Built-in: strlen()");
                     code_printf(parser, "    popq %%rcx\n");   
                     {
-                int stack_adj_26 = get_call_stack_space();
-                if (stack_adj_26 > 0) {
-                    code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_26);
-                }
+                generate_stack_align(parser);
                 code_printf(parser, "    call strlen\n");
-                if (stack_adj_26 > 0) {
-                    code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_26);
-                }
+                generate_stack_restore(parser);
             }
                     code_printf(parser, "    pushq %%rax\n");   
                     return;
@@ -366,17 +356,12 @@ void parse_primary(Parser *parser) {
                     expect(parser, TOKEN_RPAREN, "Expected ')'");
                     
                     code_comment(parser, "Built-in: strcmp()");
-                    code_printf(parser, "    popq %s\n", get_arg_registers_64()[1]);   
+                    code_printf(parser, "    popq %s\n", get_arg_reg_64(1));   
                     code_printf(parser, "    popq %%rcx\n");   
                     {
-                int stack_adj_27 = get_call_stack_space();
-                if (stack_adj_27 > 0) {
-                    code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_27);
-                }
+                generate_stack_align(parser);
                 code_printf(parser, "    call strcmp\n");
-                if (stack_adj_27 > 0) {
-                    code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_27);
-                }
+                generate_stack_restore(parser);
             }
                     code_printf(parser, "    pushq %%rax\n");   
                     return;
@@ -388,17 +373,12 @@ void parse_primary(Parser *parser) {
                     expect(parser, TOKEN_RPAREN, "Expected ')'");
                     
                     code_comment(parser, "Built-in: strcpy()");
-                    code_printf(parser, "    popq %s\n", get_arg_registers_64()[1]);   
+                    code_printf(parser, "    popq %s\n", get_arg_reg_64(1));   
                     code_printf(parser, "    popq %%rcx\n");   
                     {
-                int stack_adj_28 = get_call_stack_space();
-                if (stack_adj_28 > 0) {
-                    code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_28);
-                }
+                generate_stack_align(parser);
                 code_printf(parser, "    call strcpy\n");
-                if (stack_adj_28 > 0) {
-                    code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_28);
-                }
+                generate_stack_restore(parser);
             }
                     code_printf(parser, "    pushq %%rax\n");   
                     return;
@@ -410,17 +390,12 @@ void parse_primary(Parser *parser) {
                     expect(parser, TOKEN_RPAREN, "Expected ')'");
                     
                     code_comment(parser, "Built-in: strcat()");
-                    code_printf(parser, "    popq %s\n", get_arg_registers_64()[1]);   
+                    code_printf(parser, "    popq %s\n", get_arg_reg_64(1));   
                     code_printf(parser, "    popq %%rcx\n");   
                     {
-                int stack_adj_29 = get_call_stack_space();
-                if (stack_adj_29 > 0) {
-                    code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_29);
-                }
+                generate_stack_align(parser);
                 code_printf(parser, "    call strcat\n");
-                if (stack_adj_29 > 0) {
-                    code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_29);
-                }
+                generate_stack_restore(parser);
             }
                     code_printf(parser, "    pushq %%rax\n");   
                     return;
@@ -432,14 +407,9 @@ void parse_primary(Parser *parser) {
                     code_comment(parser, "Built-in: strdup()");
                     code_printf(parser, "    popq %%rcx\n");   
                     {
-                int stack_adj_30 = get_call_stack_space();
-                if (stack_adj_30 > 0) {
-                    code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_30);
-                }
+                generate_stack_align(parser);
                 code_printf(parser, "    call strdup\n");
-                if (stack_adj_30 > 0) {
-                    code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_30);
-                }
+                generate_stack_restore(parser);
             }
                     code_printf(parser, "    pushq %%rax\n");   
                     return;
@@ -457,14 +427,9 @@ void parse_primary(Parser *parser) {
                     code_comment(parser, "Built-in: malloc()");
                     code_printf(parser, "    popq %%rcx\n");   
                     {
-                int stack_adj_31 = get_call_stack_space();
-                if (stack_adj_31 > 0) {
-                    code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_31);
-                }
+                generate_stack_align(parser);
                 code_printf(parser, "    call malloc\n");
-                if (stack_adj_31 > 0) {
-                    code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_31);
-                }
+                generate_stack_restore(parser);
             }
                     code_printf(parser, "    pushq %%rax\n");   
                     return;
@@ -477,14 +442,9 @@ void parse_primary(Parser *parser) {
                     const char **arg_regs = get_arg_registers_64();
                     code_printf(parser, "    popq %s\n", arg_regs[0]);   
                     {
-                int stack_adj_32 = get_call_stack_space();
-                if (stack_adj_32 > 0) {
-                    code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_32);
-                }
+                generate_stack_align(parser);
                 code_printf(parser, "    call free\n");
-                if (stack_adj_32 > 0) {
-                    code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_32);
-                }
+                generate_stack_restore(parser);
             }
                     return;
                 }
@@ -1395,14 +1355,9 @@ void parse_primary(Parser *parser) {
                     code_printf(parser, "    leaq %d(%%rbp), %s\n", var->offset, this_regs2_64[0]);   
                     
                     {
-                int stack_adj_33 = get_call_stack_space();
-                if (stack_adj_33 > 0) {
-                    code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_33);
-                }
+                generate_stack_align(parser);
                 code_printf(parser, "    call %s\n", mangled_name);
-                if (stack_adj_33 > 0) {
-                    code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_33);
-                }
+                generate_stack_restore(parser);
             }
                     
                     if (method->return_type == TYPE_FLOAT || method->return_type == TYPE_DOUBLE) {

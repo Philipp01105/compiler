@@ -20,7 +20,13 @@ void generate_write_syscall(Parser *parser, const char *buffer_reg, const char *
 void generate_read_syscall(Parser *parser, const char *buffer_reg, const char *length_reg);
 void generate_strlen_code(Parser *parser, const char *str_ptr_reg, const char *result_reg);
 void generate_int_to_str_code(Parser *parser, const char *value_reg, const char *buffer_reg);
+void generate_stack_align(Parser *parser);
+void generate_stack_restore(Parser *parser);
+const char *get_arg_reg_64(int index);
+const char *get_arg_reg_32(int index);
+const char *get_arg_reg_8(int index);
 Parser *create_parser(TokenStream *tokens);
+void parser_load_source(Parser *parser, const char *filename);
 const char *parser_get_source_line(Parser *parser, int line);
 void synchronize(Parser *parser);
 void data_printf(Parser *parser, const char *format, ...);

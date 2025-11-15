@@ -120,3 +120,29 @@ const char *get_register_for_type(DataType type, int reg_num) {
     }
 }
 
+void generate_stack_align(Parser *parser) {
+    int stack_adj = get_call_stack_space();
+    if (stack_adj > 0) {
+        code_printf(parser, "    subq $%d, %%rsp\n", stack_adj);
+    }
+}
+
+void generate_stack_restore(Parser *parser) {
+    int stack_adj = get_call_stack_space();
+    if (stack_adj > 0) {
+        code_printf(parser, "    addq $%d, %%rsp\n", stack_adj);
+    }
+}
+
+const char *get_arg_reg_64(int index) {
+    return get_arg_registers_64()[index];
+}
+
+const char *get_arg_reg_32(int index) {
+    return get_arg_registers_32()[index];
+}
+
+const char *get_arg_reg_8(int index) {
+    return get_arg_registers_8()[index];
+}
+
