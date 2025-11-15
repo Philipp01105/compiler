@@ -8,6 +8,13 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+/*
+ * create_parser - Initialize parser with token stream
+ * @tokens: Lexical token stream
+ *
+ * Allocates and initializes parser state including symbol tables,
+ * code buffers, and compilation context.
+ */
 Parser *create_parser(TokenStream *tokens) {
     Parser *parser = malloc(sizeof(Parser));
 

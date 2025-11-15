@@ -8,6 +8,14 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+/*
+ * generate_write_syscall - Emit write syscall assembly
+ * @parser: Parser state
+ * @buffer_reg: Register containing buffer address
+ * @length_reg: Register containing length
+ *
+ * Generates assembly code for write(stdout, buffer, length).
+ */
 void generate_write_syscall(Parser *parser, const char *buffer_reg, const char *length_reg) {
     code_comment(parser, "syscall: write(stdout, buffer, length)");
     code_printf(parser, "    movq $1, %%rax\n");       
@@ -17,6 +25,14 @@ void generate_write_syscall(Parser *parser, const char *buffer_reg, const char *
     code_printf(parser, "    syscall\n");
 }
 
+/*
+ * generate_read_syscall - Emit read syscall assembly
+ * @parser: Parser state
+ * @buffer_reg: Register containing buffer address
+ * @length_reg: Register containing max length
+ *
+ * Generates assembly code for read(stdin, buffer, length).
+ */
 void generate_read_syscall(Parser *parser, const char *buffer_reg, const char *length_reg) {
     code_comment(parser, "syscall: read(stdin, buffer, length)");
     code_printf(parser, "    movq $0, %%rax\n");       

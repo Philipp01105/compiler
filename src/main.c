@@ -7,6 +7,10 @@
 #include "parser.h"
 #include "errorHandler.h"
 
+/*
+ * print_usage - Display command line usage information
+ * @program_name: Name of the program
+ */
 void print_usage(const char *program_name) {
     printf("Usage: %s [OPTIONS] <source_file>\n", program_name);
     printf("\n");

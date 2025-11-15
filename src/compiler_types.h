@@ -1,17 +1,23 @@
 #ifndef COMPILER_TYPES_H
 #define COMPILER_TYPES_H
 
-#define MAX_TOKEN 512
-#define MAX_LINE 1024
-#define MAX_VARS 400
-#define MAX_FUNCTIONS 200
-#define MAX_STRING_LITERALS 5000
-#define MAX_FLOAT_LITERALS 5000
-#define CODE_BUFFER_SIZE 524288
-#define MAX_LOOP_DEPTH 100
-#define MAX_IMPORTS 100
-#define MAX_PATH 512
+/*
+ * Maximum sizes for compiler data structures
+ */
+#define MAX_TOKEN 512               /* Maximum token length */
+#define MAX_LINE 1024               /* Maximum line length */
+#define MAX_VARS 400                /* Maximum variables per scope */
+#define MAX_FUNCTIONS 200           /* Maximum functions in program */
+#define MAX_STRING_LITERALS 5000    /* Maximum string literals */
+#define MAX_FLOAT_LITERALS 5000     /* Maximum float literals */
+#define CODE_BUFFER_SIZE 524288     /* Assembly code buffer size */
+#define MAX_LOOP_DEPTH 100          /* Maximum nested loop depth */
+#define MAX_IMPORTS 100             /* Maximum import statements */
+#define MAX_PATH 512                /* Maximum file path length */
 
+/*
+ * Token types for lexical analysis
+ */
 typedef enum {
     TOKEN_KEYWORD_FUNC,
     TOKEN_KEYWORD_VAR,
@@ -93,18 +99,24 @@ typedef enum {
     TOKEN_ERROR
 } TokenType;
 
+/*
+ * Data types supported by the compiler
+ */
 typedef enum {
-    TYPE_INT,        
-    TYPE_CHAR,       
-    TYPE_BYTE,       
-    TYPE_BIT,        
-    TYPE_FLOAT,      
-    TYPE_DOUBLE,     
-    TYPE_STRING,     
-    TYPE_VOID,       
+    TYPE_INT,           /* 32-bit signed integer */
+    TYPE_CHAR,          /* 8-bit signed character */
+    TYPE_BYTE,          /* 8-bit unsigned */
+    TYPE_BIT,           /* Boolean (0 or 1) */
+    TYPE_FLOAT,         /* 32-bit floating point */
+    TYPE_DOUBLE,        /* 64-bit floating point */
+    TYPE_STRING,        /* String type */
+    TYPE_VOID,          /* No return value */       
     TYPE_UNKNOWN
 } DataType;
 
+/*
+ * Lexical token with position information
+ */
 typedef struct {
     TokenType type;
     char value[MAX_TOKEN];
@@ -112,95 +124,128 @@ typedef struct {
     int column;
 } Token;
 
+/*
+ * Token stream for parser consumption
+ */
 typedef struct {
     Token *tokens;
-    int count;
-    int current;
-    int capacity;
+    int count;          /* Total number of tokens */
+    int current;        /* Current position in stream */
+    int capacity;       /* Allocated capacity */
 } TokenStream;
 
+/*
+ * Variable with type and scope information
+ */
 typedef struct {
     char name[MAX_TOKEN];
-    int offset;            
-    int scope;             
-    DataType type;         
-    int size;              
-    int is_array;          
-    int array_size;        
-    char struct_type[MAX_TOKEN];   
-    int is_pointer;        
-    int is_gc;             
-    int is_heap;           
+    int offset;                     /* Stack offset */
+    int scope;                      /* Scope level */
+    DataType type;                  /* Variable type */
+    int size;                       /* Size in bytes */
+    int is_array;                   /* Array flag */
+    int array_size;                 /* Number of elements */
+    char struct_type[MAX_TOKEN];    /* Struct type name */
+    int is_pointer;                 /* Pointer flag */
+    int is_gc;                      /* Garbage collected flag */
+    int is_heap;                    /* Heap allocated flag */
 } Variable;
 
+/*
+ * Function signature and metadata
+ */
 typedef struct {
     char name[MAX_TOKEN];
     char params[10][MAX_TOKEN];
-    DataType param_types[10];   
-    int param_is_array[10];     
-    int param_is_pointer[10];   
+    DataType param_types[10];       /* Parameter types */
+    int param_is_array[10];         /* Array parameter flags */
+    int param_is_pointer[10];       /* Pointer parameter flags */
     int param_count;
-    DataType return_type;       
-    int return_is_array;        
-    char struct_name[MAX_TOKEN];   
-    int is_static;              
+    DataType return_type;           /* Return value type */
+    int return_is_array;            /* Array return flag */
+    char struct_name[MAX_TOKEN];    /* Struct for methods */
+    int is_static;                  /* Static method flag */
 } Function;
 
+/*
+ * Struct field definition
+ */
 typedef struct {
-    char name[MAX_TOKEN];      
-    DataType type;             
-    int offset;                
-    int size;                  
-    int is_array;              
-    int array_size;            
-    char struct_type[MAX_TOKEN];   
+    char name[MAX_TOKEN];
+    DataType type;
+    int offset;                     /* Offset within struct */
+    int size;                       /* Size in bytes */
+    int is_array;                   /* Array field flag */
+    int array_size;                 /* Number of elements */
+    char struct_type[MAX_TOKEN];    /* Nested struct type */
 } StructField;
 
+/*
+ * Struct definition with fields and methods
+ */
 typedef struct {
-    char name[MAX_TOKEN];      
-    StructField fields[50];    
+    char name[MAX_TOKEN];
+    StructField fields[50];
     int field_count;
-    int methods[MAX_FUNCTIONS];   
+    int methods[MAX_FUNCTIONS];     /* Method indices */
     int method_count;
-    int total_size;            
+    int total_size;                 /* Total size in bytes */
 } StructDefinition;
 
+/*
+ * Enum value instance
+ */
 typedef struct {
-    char name[MAX_TOKEN];      
-    char values[50][MAX_TOKEN];  
-    int field_count;           
+    char name[MAX_TOKEN];
+    char values[50][MAX_TOKEN];     /* Field values */
+    int field_count;
 } EnumValue;
 
+/*
+ * Enum definition with values
+ */
 typedef struct {
-    char name[MAX_TOKEN];      
-    StructField fields[50];    
+    char name[MAX_TOKEN];
+    StructField fields[50];
     int field_count;
-    EnumValue values[50];      
+    EnumValue values[50];
     int value_count;
-    int struct_index;          
+    int struct_index;               /* Generated struct index */
 } EnumDefinition;
 
+/*
+ * String literal in code section
+ */
 typedef struct {
     int id;
     char text[MAX_LINE];
 } StringLiteral;
 
+/*
+ * Float literal in data section
+ */
 typedef struct {
     int id;
-    char value[MAX_TOKEN];   
+    char value[MAX_TOKEN];
 } FloatLiteral;
 
+/*
+ * Loop context for break/continue
+ */
 typedef struct {
-    int loop_id;   
+    int loop_id;
 } LoopContext;
 
+/*
+ * Parser state and symbol tables
+ */
 typedef struct {
     TokenStream *tokens;
 
     Variable vars[MAX_VARS];
     Function functions[MAX_FUNCTIONS];
-    StructDefinition structs[50];   
-    EnumDefinition enums[50];       
+    StructDefinition structs[50];
+    EnumDefinition enums[50];
     StringLiteral string_literals[MAX_STRING_LITERALS];
     FloatLiteral float_literals[MAX_FLOAT_LITERALS];
 
@@ -221,21 +266,21 @@ typedef struct {
     int debug_mode;
     int label_counter;
     int loop_counter;
-    
+
     LoopContext loop_stack[MAX_LOOP_DEPTH];
     int loop_depth;
-    
-    char current_struct_context[MAX_TOKEN];   
-    
+
+    char current_struct_context[MAX_TOKEN];     /* Current method context */
+
     char imported_files[MAX_IMPORTS][MAX_PATH];
     int import_count;
-    
-    int next_var_is_gc;   
-    
-    char *source_content;   
-    char **source_lines;    
-    int source_line_count;  
-    const char *source_filename;  
+
+    int next_var_is_gc;                         /* Next var GC flag */
+
+    char *source_content;                       /* Full source file */
+    char **source_lines;                        /* Line pointers */
+    int source_line_count;                      /* Number of lines */
+    const char *source_filename;                /* Source file name */
 } Parser;
 
 #endif

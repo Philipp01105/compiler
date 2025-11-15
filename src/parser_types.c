@@ -8,15 +8,12 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "parser.h"
-#include "errorHandler.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdarg.h>
-#include <sys/stat.h>
-#include <unistd.h>
-
+/*
+ * escape_char_for_comment - Convert character to printable escape sequence
+ * @ch_value: Character to escape
+ *
+ * Returns escape sequence string for assembly comments.
+ */
 const char *escape_char_for_comment(const char *ch_value) {
     static char buffer[32];
      
@@ -43,6 +40,14 @@ const char *escape_char_for_comment(const char *ch_value) {
     }
 }
 
+/*
+ * escape_string_for_comment - Escape string for assembly comments
+ * @str: Input string to escape
+ * @output: Output buffer for escaped string
+ * @output_size: Size of output buffer
+ *
+ * Converts special characters to escape sequences for safe comment generation.
+ */
 void escape_string_for_comment(const char *str, char *output, size_t output_size) {
     size_t out_pos = 0;
     for (size_t i = 0; str[i] != '\0' && out_pos < output_size - 5; i++) {
@@ -73,6 +78,9 @@ void escape_string_for_comment(const char *str, char *output, size_t output_size
     output[out_pos] = '\0';
 }
 
+/*
+ * Platform detection for calling convention differences
+ */
 static int is_windows_platform() {
 #if defined(_WIN32) || defined(_WIN64) || defined(__CYGWIN__)
     return 1;
@@ -81,6 +89,13 @@ static int is_windows_platform() {
 #endif
 }
 
+/*
+ * get_arg_registers_64 - Get 64-bit argument registers for platform
+ *
+ * Returns platform-specific argument passing registers.
+ * Windows x64: RCX, RDX, R8, R9
+ * Linux x64: RDI, RSI, RDX, RCX, R8, R9
+ */
 const char **get_arg_registers_64() {
     static const char *windows_regs[] = {"%rcx", "%rdx", "%r8", "%r9"};
     static const char *linux_regs[] = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};

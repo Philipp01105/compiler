@@ -7,6 +7,11 @@
 
 #define INITIAL_CAPACITY 1000
 
+/*
+ * create_token_stream - Allocate new token stream
+ *
+ * Returns dynamically allocated token stream with initial capacity.
+ */
 TokenStream *create_token_stream(void) {
     TokenStream *stream = malloc(sizeof(TokenStream));
     stream->capacity = INITIAL_CAPACITY;

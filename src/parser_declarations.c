@@ -8,6 +8,14 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+/*
+ * parse_program - Parse entire program
+ * @parser: Parser state
+ * @source_file: Source file path
+ *
+ * Top-level parser entry point. Parses imports, structs, enums,
+ * and functions. Returns 1 on success, 0 on error.
+ */
 int parse_program(Parser *parser, const char *source_file) {
      
     parser_load_source(parser, source_file);
