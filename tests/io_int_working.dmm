@@ -1,0 +1,27 @@
+// Working integer conversion test
+func main() -> void {
+    var msg:string = "Testing integer conversion:\n";
+    var len:int = io_strlen(msg);
+    sys_write(1, msg, len);
+    
+    // Test 42
+    var[32] buffer:char;
+    var str_len:int = io_int_to_str(42, &buffer, 32);
+    sys_write(1, &buffer, str_len);
+    var newline:string = "\n";
+    sys_write(1, newline, 1);
+    
+    // Test -17
+    var str_len2:int = io_int_to_str(-17, &buffer, 32);
+    sys_write(1, &buffer, str_len2);
+    sys_write(1, newline, 1);
+    
+    // Test 0
+    var str_len3:int = io_int_to_str(0, &buffer, 32);
+    sys_write(1, &buffer, str_len3);
+    sys_write(1, newline, 1);
+    
+    var done:string = "Done!\n";
+    var done_len:int = io_strlen(done);
+    sys_write(1, done, done_len);
+}

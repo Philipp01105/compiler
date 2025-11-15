@@ -1,0 +1,5 @@
+// Test syscall-based I/O system
+func main() -> void {
+    println("Testing syscall-based I/O");
+    println("Hello from syscalls!");
+}

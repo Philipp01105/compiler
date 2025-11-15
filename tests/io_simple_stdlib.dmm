@@ -1,0 +1,20 @@
+// Simple stdlib I/O test
+#import <stdlib/io.txt>
+
+func main() -> void {
+    println("Testing stdlib I/O");
+    
+    // Write file
+    write_file("simple.txt", "Hello!\n");
+    
+    // Read file
+    var[100] buf:char;
+    read_file("simple.txt", &buf, 99);
+    
+    // Stream write
+    var fd:int = open_write("stream.txt");
+    write_str_to(fd, "Stream data\n");
+    close_file(fd);
+    
+    println("Done!");
+}
