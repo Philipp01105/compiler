@@ -181,9 +181,99 @@ void parse_unary(Parser *parser) {
 
     if (match(parser->tokens, TOKEN_STAR)) {
         code_comment(parser, "Dereference operator (*)");
+        
+        // Check if we're dereferencing a pointer-to-struct with field access: *p.field
+        if (check(parser->tokens, TOKEN_IDENTIFIER)) {
+            Token var_token = peek(parser->tokens);
+            Variable *var = find_variable(parser, var_token.value);
+            
+            if (var && var->is_pointer && var->struct_type[0] != '\0') {
+                // Check if next token is DOT for field access
+                Token lookahead = peek_ahead(parser->tokens, 1);
+                if (lookahead.type == TOKEN_DOT) {
+                    // This is *p.field syntax - pointer to struct field access
+                    consume(parser->tokens);  // consume identifier
+                    consume(parser->tokens);  // consume dot
+                    
+                    StructDefinition *struct_def = find_struct(parser, var->struct_type);
+                    if (!struct_def) {
+                        semantic_error(parser, ERR_SEM_UNDEFINED_STRUCT, "Struct type '%s' not found", var->struct_type);
+                        return;
+                    }
+                    
+                    Token field_name = consume(parser->tokens);
+                    StructField *field = NULL;
+                    for (int i = 0; i < struct_def->field_count; i++) {
+                        if (strcmp(struct_def->fields[i].name, field_name.value) == 0) {
+                            field = &struct_def->fields[i];
+                            break;
+                        }
+                    }
+                    
+                    if (!field) {
+                        parser_error(parser, "Field '%s' not found in struct '%s'", field_name.value, var->struct_type);
+                        return;
+                    }
+                    
+                    code_comment(parser, "Pointer-to-struct field access: *%s.%s", var->name, field_name.value);
+                    
+                    // Load pointer value and add field offset
+                    code_printf(parser, "    movq %d(%%rbp), %%rax\n", var->offset);
+                    code_printf(parser, "    addq $%d, %%rax\n", field->offset);
+                    
+                    // Load the field value based on type
+                    if (field->type == TYPE_CHAR) {
+                        code_printf(parser, "    movsbl (%%rax), %%eax\n");
+                    } else if (field->type == TYPE_BYTE || field->type == TYPE_BIT) {
+                        code_printf(parser, "    movzbl (%%rax), %%eax\n");
+                    } else if (field->type == TYPE_FLOAT) {
+                        code_printf(parser, "    movss (%%rax), %%xmm0\n");
+                        code_printf(parser, "    movq %%xmm0, %%rax\n");
+                    } else if (field->type == TYPE_DOUBLE) {
+                        code_printf(parser, "    movsd (%%rax), %%xmm0\n");
+                        code_printf(parser, "    movq %%xmm0, %%rax\n");
+                    } else if (field->type == TYPE_STRING) {
+                        code_printf(parser, "    movq (%%rax), %%rax\n");
+                    } else {
+                        code_printf(parser, "    movl (%%rax), %%eax\n");
+                    }
+                    
+                    code_printf(parser, "    pushq %%rax\n");
+                    return;
+                }
+            }
+        }
+        
+        // Regular pointer dereference
+        DataType pointed_type = TYPE_INT; // Default to int
+        if (check(parser->tokens, TOKEN_IDENTIFIER)) {
+            Token var_token = peek(parser->tokens);
+            Variable *var = find_variable(parser, var_token.value);
+            if (var && var->is_pointer) {
+                pointed_type = var->type;
+            }
+        }
+        
         parse_unary(parser);   
         code_printf(parser, "    popq %%rax\n");   
-        code_printf(parser, "    movl (%%rax), %%eax\n");   
+        
+        // Load based on the pointed-to type
+        if (pointed_type == TYPE_CHAR) {
+            code_printf(parser, "    movsbl (%%rax), %%eax\n");   
+        } else if (pointed_type == TYPE_BYTE || pointed_type == TYPE_BIT) {
+            code_printf(parser, "    movzbl (%%rax), %%eax\n");   
+        } else if (pointed_type == TYPE_FLOAT) {
+            code_printf(parser, "    movss (%%rax), %%xmm0\n");
+            code_printf(parser, "    movq %%xmm0, %%rax\n");
+        } else if (pointed_type == TYPE_DOUBLE) {
+            code_printf(parser, "    movsd (%%rax), %%xmm0\n");
+            code_printf(parser, "    movq %%xmm0, %%rax\n");
+        } else if (pointed_type == TYPE_STRING) {
+            code_printf(parser, "    movq (%%rax), %%rax\n");   
+        } else {
+            code_printf(parser, "    movl (%%rax), %%eax\n");   
+        }
+        
         code_printf(parser, "    pushq %%rax\n");   
         return;
     }
@@ -1598,6 +1688,10 @@ void parse_primary(Parser *parser) {
                     code_printf(parser, "    movsd %d(%%rbp), %%xmm0\n", var->offset);
                     code_printf(parser, "    movq %%xmm0, %%rax\n");
                     code_printf(parser, "    pushq %%rax\n");
+                } else if (var->is_pointer) {
+                    // Check is_pointer BEFORE checking type, since pointers are always 8 bytes
+                    code_printf(parser, "    movq %d(%%rbp), %%rax\n", var->offset);
+                    code_printf(parser, "    pushq %%rax\n");
                 } else if (var->type == TYPE_CHAR) {
                     code_printf(parser, "    movsbl %d(%%rbp), %%eax\n", var->offset);
                     code_printf(parser, "    pushq %%rax\n");
@@ -1607,10 +1701,6 @@ void parse_primary(Parser *parser) {
                 } else if (var->type == TYPE_BIT) {
                     code_printf(parser, "    movzbl %d(%%rbp), %%eax\n", var->offset);
                     code_printf(parser, "    andl $1, %%eax\n");
-                    code_printf(parser, "    pushq %%rax\n");
-                } else if (var->is_pointer) {
-                     
-                    code_printf(parser, "    movq %d(%%rbp), %%rax\n", var->offset);
                     code_printf(parser, "    pushq %%rax\n");
                 } else if (var->type == TYPE_STRING) {
                     code_printf(parser, "    movq %d(%%rbp), %%rax\n", var->offset);
