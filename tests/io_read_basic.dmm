@@ -1,6 +1,0 @@
-// Most basic test
-func main() -> void {
-    println("Enter number:");
-    var x:int = read(0, "%i");
-    println(x);
-}
