@@ -1,5 +1,9 @@
+
 func main() -> int {
-    @gc
-    var x:*int = reserve(int);
+    var a:int = 8;
+    var x:*int;
+    var y:*int = &a;
+    x = y;
+    print(*x);
     return 10;
 }

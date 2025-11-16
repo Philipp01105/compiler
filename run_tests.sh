@@ -33,7 +33,7 @@ OUTPUT_DIR="${SCRIPT_DIR}/test_output"
 EXPECTED_DIR="${SCRIPT_DIR}/tests/expected"
 
 # Compiler and tools
-COMPILER="${BUILD_DIR}/dmm_compiler.exe"
+COMPILER="${BUILD_DIR}/compiler.exe"
 GCC="gcc"
 GCC_FLAGS="-no-pie"
 
