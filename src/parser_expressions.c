@@ -181,9 +181,37 @@ void parse_unary(Parser *parser) {
 
     if (match(parser->tokens, TOKEN_STAR)) {
         code_comment(parser, "Dereference operator (*)");
+        
+        // Check if we're dereferencing a simple identifier to get type info
+        DataType pointed_type = TYPE_INT; // Default to int
+        if (check(parser->tokens, TOKEN_IDENTIFIER)) {
+            Token var_token = peek(parser->tokens);
+            Variable *var = find_variable(parser, var_token.value);
+            if (var && var->is_pointer) {
+                pointed_type = var->type;
+            }
+        }
+        
         parse_unary(parser);   
         code_printf(parser, "    popq %%rax\n");   
-        code_printf(parser, "    movl (%%rax), %%eax\n");   
+        
+        // Load based on the pointed-to type
+        if (pointed_type == TYPE_CHAR) {
+            code_printf(parser, "    movsbl (%%rax), %%eax\n");   
+        } else if (pointed_type == TYPE_BYTE || pointed_type == TYPE_BIT) {
+            code_printf(parser, "    movzbl (%%rax), %%eax\n");   
+        } else if (pointed_type == TYPE_FLOAT) {
+            code_printf(parser, "    movss (%%rax), %%xmm0\n");
+            code_printf(parser, "    movq %%xmm0, %%rax\n");
+        } else if (pointed_type == TYPE_DOUBLE) {
+            code_printf(parser, "    movsd (%%rax), %%xmm0\n");
+            code_printf(parser, "    movq %%xmm0, %%rax\n");
+        } else if (pointed_type == TYPE_STRING) {
+            code_printf(parser, "    movq (%%rax), %%rax\n");   
+        } else {
+            code_printf(parser, "    movl (%%rax), %%eax\n");   
+        }
+        
         code_printf(parser, "    pushq %%rax\n");   
         return;
     }
@@ -1598,6 +1626,10 @@ void parse_primary(Parser *parser) {
                     code_printf(parser, "    movsd %d(%%rbp), %%xmm0\n", var->offset);
                     code_printf(parser, "    movq %%xmm0, %%rax\n");
                     code_printf(parser, "    pushq %%rax\n");
+                } else if (var->is_pointer) {
+                    // Check is_pointer BEFORE checking type, since pointers are always 8 bytes
+                    code_printf(parser, "    movq %d(%%rbp), %%rax\n", var->offset);
+                    code_printf(parser, "    pushq %%rax\n");
                 } else if (var->type == TYPE_CHAR) {
                     code_printf(parser, "    movsbl %d(%%rbp), %%eax\n", var->offset);
                     code_printf(parser, "    pushq %%rax\n");
@@ -1607,10 +1639,6 @@ void parse_primary(Parser *parser) {
                 } else if (var->type == TYPE_BIT) {
                     code_printf(parser, "    movzbl %d(%%rbp), %%eax\n", var->offset);
                     code_printf(parser, "    andl $1, %%eax\n");
-                    code_printf(parser, "    pushq %%rax\n");
-                } else if (var->is_pointer) {
-                     
-                    code_printf(parser, "    movq %d(%%rbp), %%rax\n", var->offset);
                     code_printf(parser, "    pushq %%rax\n");
                 } else if (var->type == TYPE_STRING) {
                     code_printf(parser, "    movq %d(%%rbp), %%rax\n", var->offset);
