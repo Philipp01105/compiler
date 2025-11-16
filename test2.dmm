@@ -1,5 +1,5 @@
-func main() -> void {
-    var x:int = 10;
-    y = 20;  // Error: y not defined
-    var z:int = 30;
+func main() -> int {
+    @gc
+    var x:*int = reserve(int);
+    return 10;
 }
