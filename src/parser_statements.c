@@ -120,30 +120,93 @@ void parse_statement(Parser *parser) {
             return;
         }
         
-        expect(parser, TOKEN_EQUAL, "Expected '=' after pointer dereference");
-        
-        code_comment(parser, "Line %d: *%s = value (pointer dereference assignment)",
-                     star_token.line, ptr_token.value);
-        
-        parse_expression(parser);
-        
-        expect(parser, TOKEN_SEMICOLON, "Expected ';' after pointer dereference assignment");
-        
-        code_printf(parser, "    movq %d(%%rbp), %%rbx\n", ptr_var->offset);   
-        code_printf(parser, "    popq %%rax\n");   
-        
-        if (ptr_var->type == TYPE_FLOAT) {
-            code_printf(parser, "    movq %%rax, %%xmm0\n");
-            code_printf(parser, "    movss %%xmm0, (%%rbx)\n");
-        } else if (ptr_var->type == TYPE_DOUBLE) {
-            code_printf(parser, "    movq %%rax, %%xmm0\n");
-            code_printf(parser, "    movsd %%xmm0, (%%rbx)\n");
-        } else if (ptr_var->type == TYPE_CHAR || ptr_var->type == TYPE_BYTE || ptr_var->type == TYPE_BIT) {
-            code_printf(parser, "    movb %%al, (%%rbx)\n");
-        } else if (ptr_var->type == TYPE_STRING) {
-            code_printf(parser, "    movq %%rax, (%%rbx)\n");
-        } else {   
-            code_printf(parser, "    movl %%eax, (%%rbx)\n");
+        // Check for *p.field syntax
+        if (check(parser->tokens, TOKEN_DOT)) {
+            consume(parser->tokens);  // consume dot
+            
+            if (ptr_var->struct_type[0] == '\0') {
+                parser_error(parser, "Variable '%s' is not a pointer to struct", ptr_token.value);
+                synchronize(parser);
+                return;
+            }
+            
+            StructDefinition *struct_def = find_struct(parser, ptr_var->struct_type);
+            if (!struct_def) {
+                semantic_error(parser, ERR_SEM_UNDEFINED_STRUCT, "Struct type '%s' not found", ptr_var->struct_type);
+                synchronize(parser);
+                return;
+            }
+            
+            Token field_name = consume(parser->tokens);
+            StructField *field = NULL;
+            for (int i = 0; i < struct_def->field_count; i++) {
+                if (strcmp(struct_def->fields[i].name, field_name.value) == 0) {
+                    field = &struct_def->fields[i];
+                    break;
+                }
+            }
+            
+            if (!field) {
+                parser_error(parser, "Field '%s' not found in struct '%s'", field_name.value, ptr_var->struct_type);
+                synchronize(parser);
+                return;
+            }
+            
+            expect(parser, TOKEN_EQUAL, "Expected '=' after *p.field");
+            
+            code_comment(parser, "Line %d: *%s.%s = value (pointer-to-struct field assignment)",
+                         star_token.line, ptr_token.value, field_name.value);
+            
+            parse_expression(parser);
+            
+            expect(parser, TOKEN_SEMICOLON, "Expected ';' after *p.field assignment");
+            
+            // Load pointer and add field offset
+            code_printf(parser, "    movq %d(%%rbp), %%rbx\n", ptr_var->offset);
+            code_printf(parser, "    addq $%d, %%rbx\n", field->offset);
+            code_printf(parser, "    popq %%rax\n");
+            
+            // Store based on field type
+            if (field->type == TYPE_FLOAT) {
+                code_printf(parser, "    movq %%rax, %%xmm0\n");
+                code_printf(parser, "    movss %%xmm0, (%%rbx)\n");
+            } else if (field->type == TYPE_DOUBLE) {
+                code_printf(parser, "    movq %%rax, %%xmm0\n");
+                code_printf(parser, "    movsd %%xmm0, (%%rbx)\n");
+            } else if (field->type == TYPE_CHAR || field->type == TYPE_BYTE || field->type == TYPE_BIT) {
+                code_printf(parser, "    movb %%al, (%%rbx)\n");
+            } else if (field->type == TYPE_STRING) {
+                code_printf(parser, "    movq %%rax, (%%rbx)\n");
+            } else {
+                code_printf(parser, "    movl %%eax, (%%rbx)\n");
+            }
+        } else {
+            // Regular pointer dereference assignment
+            expect(parser, TOKEN_EQUAL, "Expected '=' after pointer dereference");
+            
+            code_comment(parser, "Line %d: *%s = value (pointer dereference assignment)",
+                         star_token.line, ptr_token.value);
+            
+            parse_expression(parser);
+            
+            expect(parser, TOKEN_SEMICOLON, "Expected ';' after pointer dereference assignment");
+            
+            code_printf(parser, "    movq %d(%%rbp), %%rbx\n", ptr_var->offset);   
+            code_printf(parser, "    popq %%rax\n");   
+            
+            if (ptr_var->type == TYPE_FLOAT) {
+                code_printf(parser, "    movq %%rax, %%xmm0\n");
+                code_printf(parser, "    movss %%xmm0, (%%rbx)\n");
+            } else if (ptr_var->type == TYPE_DOUBLE) {
+                code_printf(parser, "    movq %%rax, %%xmm0\n");
+                code_printf(parser, "    movsd %%xmm0, (%%rbx)\n");
+            } else if (ptr_var->type == TYPE_CHAR || ptr_var->type == TYPE_BYTE || ptr_var->type == TYPE_BIT) {
+                code_printf(parser, "    movb %%al, (%%rbx)\n");
+            } else if (ptr_var->type == TYPE_STRING) {
+                code_printf(parser, "    movq %%rax, (%%rbx)\n");
+            } else {   
+                code_printf(parser, "    movl %%eax, (%%rbx)\n");
+            }
         }
     } else {
         parser_error_code(parser, ERR_PARSE_INVALID_SYNTAX, "Unexpected statement: expected expression or statement keyword");
