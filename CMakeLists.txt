@@ -20,4 +20,6 @@ add_executable(compiler
         src/errorHandler.h
         src/asm_optimizer.c
         src/asm_optimizer.h
+        src/instruction_builder.c
+        src/instruction_builder.h
 )

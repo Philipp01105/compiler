@@ -41,6 +41,8 @@ Parser *create_parser(TokenStream *tokens) {
     parser->source_lines = NULL;
     parser->source_line_count = 0;
     parser->source_filename = NULL;
+    parser->target_format = TARGET_ELF;  /* Default, will be set by main */
+    parser->syntax_mode = SYNTAX_INTEL;  /* Default, will be set by main */
 
     memset(parser->code_buffer, 0, CODE_BUFFER_SIZE);
     memset(parser->function_code_buffer, 0, CODE_BUFFER_SIZE);
