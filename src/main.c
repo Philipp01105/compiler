@@ -207,6 +207,9 @@ int main(int argc, char *argv[]) {
     parser->debug_mode = debug_mode;
     parser->target_format = target_format;
     parser->syntax_mode = syntax_mode;
+    
+    /* Set instruction builder syntax mode */
+    set_syntax_mode(syntax_mode);
 
     if (!parse_program(parser, source_file)) {
         error_handler_flush(error_handler);

@@ -1,6 +1,7 @@
 #include "parser.h"
 #include "parser_internal.h"
 #include "errorHandler.h"
+#include "syntax_converter.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -122,10 +123,19 @@ void code_printf(Parser *parser, const char *format, ...) {
 
     char buffer[1024];
     vsnprintf(buffer, sizeof(buffer), format, args);
+    
+    /* Convert syntax if needed */
+    char final_buffer[1024];
+    if (parser->syntax_mode == SYNTAX_INTEL) {
+        convert_att_to_intel(buffer, final_buffer, sizeof(final_buffer));
+    } else {
+        strncpy(final_buffer, buffer, sizeof(final_buffer) - 1);
+        final_buffer[sizeof(final_buffer) - 1] = '\0';
+    }
 
-    int len = strlen(buffer);
+    int len = strlen(final_buffer);
     if (parser->function_code_pos + len < CODE_BUFFER_SIZE) {
-        strcpy(parser->function_code_buffer + parser->function_code_pos, buffer);
+        strcpy(parser->function_code_buffer + parser->function_code_pos, final_buffer);
         parser->function_code_pos += len;
     }
 

@@ -1,6 +1,7 @@
 #include "parser.h"
 #include "parser_internal.h"
 #include "errorHandler.h"
+#include "instruction_builder.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -262,9 +263,9 @@ void parse_struct(Parser *parser) {
             code_printf(parser, "%s:\n", mangled_name);
 
             code_comment(parser, "Function prologue");
-            code_printf(parser, "    pushq %%rbp\n");
-            code_printf(parser, "    movq %%rsp, %%rbp\n");
-            code_printf(parser, "    subq $8192, %%rsp\n");
+            emit_push(parser, "rbp");
+            emit_mov_reg_reg(parser, "rbp", "rsp");
+            emit_sub_reg_imm(parser, "rsp", 8192);
 
             const char **param_regs_64 = get_arg_registers_64();
             const char **param_regs_32 = get_arg_registers_32();
@@ -767,9 +768,9 @@ void parse_function(Parser *parser) {
     }
 
     code_comment(parser, "Function prologue");
-    code_printf(parser, "    pushq %%rbp\n");
-    code_printf(parser, "    movq %%rsp, %%rbp\n");
-    code_printf(parser, "    subq $8192, %%rsp\n");
+    emit_push(parser, "rbp");
+    emit_mov_reg_reg(parser, "rbp", "rsp");
+    emit_sub_reg_imm(parser, "rsp", 8192);
 
     if (func->param_count > 0) {
         code_comment(parser, "Save parameters to stack");

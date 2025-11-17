@@ -22,4 +22,6 @@ add_executable(compiler
         src/asm_optimizer.h
         src/instruction_builder.c
         src/instruction_builder.h
+        src/syntax_converter.c
+        src/syntax_converter.h
 )
