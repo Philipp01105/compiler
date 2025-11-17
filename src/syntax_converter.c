@@ -154,14 +154,91 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
             strcpy(final, new_result);
             paren = final + prefix_len + strlen(replacement);
         } else {
-            /* Regular memory operand: offset(reg) -> [reg+offset] or (reg) -> [reg] */
-            /* Find register inside parentheses */
+            /* Regular memory operand: offset(reg) -> [reg+offset] or (base,index,scale) -> [base+index*scale] */
             char *close_paren = strchr(paren + 1, ')');
             if (close_paren) {
+                /* Extract content inside parentheses */
+                size_t content_len = close_paren - paren - 1;
+                char content[256];
+                strncpy(content, paren + 1, content_len);
+                content[content_len] = '\0';
+                
+                /* Check if this is indexed addressing (has commas) */
+                char *comma1 = strchr(content, ',');
+                if (comma1) {
+                    /* Indexed addressing: (base,index,scale) */
+                    char base[32], index[32], scale[32] = "1";
+                    
+                    /* Extract base */
+                    size_t base_len = comma1 - content;
+                    strncpy(base, content, base_len);
+                    base[base_len] = '\0';
+                    
+                    /* Extract index */
+                    char *comma2 = strchr(comma1 + 1, ',');
+                    if (comma2) {
+                        /* Has scale */
+                        size_t index_len = comma2 - comma1 - 1;
+                        strncpy(index, comma1 + 1, index_len);
+                        index[index_len] = '\0';
+                        
+                        /* Extract scale */
+                        strcpy(scale, comma2 + 1);
+                    } else {
+                        /* No scale, just base and index */
+                        strcpy(index, comma1 + 1);
+                    }
+                    
+                    /* Find offset before parenthesis */
+                    char *offset_end = paren;
+                    char *offset_start = offset_end - 1;
+                    while (offset_start > result && (isdigit(*offset_start) || *offset_start == '-')) {
+                        offset_start--;
+                    }
+                    offset_start++;
+                    
+                    char offset[32] = "";
+                    if (offset_start < offset_end) {
+                        size_t offset_len = offset_end - offset_start;
+                        strncpy(offset, offset_start, offset_len);
+                        offset[offset_len] = '\0';
+                    }
+                    
+                    /* Build Intel syntax: [base+index*scale+offset] or [base+index*scale] */
+                    char replacement[256];
+                    strcpy(replacement, "[");
+                    strcat(replacement, base);
+                    strcat(replacement, "+");
+                    strcat(replacement, index);
+                    if (strcmp(scale, "1") != 0) {
+                        strcat(replacement, "*");
+                        strcat(replacement, scale);
+                    }
+                    if (offset[0]) {
+                        int offset_val = atoi(offset);
+                        if (offset_val >= 0) {
+                            strcat(replacement, "+");
+                        }
+                        strcat(replacement, offset);
+                    }
+                    strcat(replacement, "]");
+                    
+                    /* Build new string */
+                    size_t prefix_len = offset_start - result;
+                    char new_result[1024];
+                    strncpy(new_result, result, prefix_len);
+                    new_result[prefix_len] = '\0';
+                    strcat(new_result, replacement);
+                    strcat(new_result, close_paren + 1);
+                    
+                    strcpy(final, new_result);
+                    paren = final + prefix_len + strlen(replacement);
+                    continue;
+                }
+                
+                /* Simple addressing: (reg) or offset(reg) */
                 char reg[32];
-                size_t reg_len = close_paren - paren - 1;
-                strncpy(reg, paren + 1, reg_len);
-                reg[reg_len] = '\0';
+                strcpy(reg, content);
                 
                 /* Find offset before parenthesis */
                 char *offset_end = paren;

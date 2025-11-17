@@ -259,6 +259,11 @@ void parse_struct(Parser *parser) {
                          datatype_to_string(func->return_type));
             code_comment(parser, "========================================");
 
+            /* Add COFF function definition block for Windows */
+            if (parser->target_format == TARGET_COFF) {
+                code_printf(parser, "    .def    %s; .scl    2; .type   32; .endef\n", mangled_name);
+            }
+
             code_printf(parser, ".globl %s\n", mangled_name);
             code_printf(parser, "%s:\n", mangled_name);
 
@@ -266,6 +271,13 @@ void parse_struct(Parser *parser) {
             emit_push(parser, "rbp");
             emit_mov_reg_reg(parser, "rbp", "rsp");
             emit_sub_reg_imm(parser, "rsp", 8192);
+            
+            /* Windows ABI: Save non-volatile registers RDI and RSI */
+            if (parser->target_format == TARGET_COFF) {
+                code_comment(parser, "Save Windows non-volatile registers");
+                emit_push(parser, "rdi");
+                emit_push(parser, "rsi");
+            }
 
             const char **param_regs_64 = get_arg_registers_64();
             const char **param_regs_32 = get_arg_registers_32();
@@ -319,6 +331,13 @@ void parse_struct(Parser *parser) {
 
             if (func->return_type == TYPE_VOID) {
                 code_comment(parser, "Function epilogue (void return)");
+                
+                /* Windows ABI: Restore non-volatile registers */
+                if (parser->target_format == TARGET_COFF) {
+                    emit_pop(parser, "rsi");
+                    emit_pop(parser, "rdi");
+                }
+                
                 code_printf(parser, "    leave\n");
                 code_printf(parser, "    ret\n");
             }
@@ -759,6 +778,12 @@ void parse_function(Parser *parser) {
                  datatype_to_string(func->return_type));
     code_comment(parser, "========================================");
 
+    /* Add COFF function definition block for Windows */
+    if (parser->target_format == TARGET_COFF) {
+        code_printf(parser, "    .def    %s; .scl    2; .type   32; .endef\n", 
+                    strcmp(func_name, "main") == 0 ? "main" : func_name);
+    }
+    
     if (strcmp(func_name, "main") == 0) {
         code_printf(parser, ".globl main\n");
         code_printf(parser, "main:\n");
@@ -771,6 +796,13 @@ void parse_function(Parser *parser) {
     emit_push(parser, "rbp");
     emit_mov_reg_reg(parser, "rbp", "rsp");
     emit_sub_reg_imm(parser, "rsp", 8192);
+    
+    /* Windows ABI: Save non-volatile registers RDI and RSI */
+    if (parser->target_format == TARGET_COFF) {
+        code_comment(parser, "Save Windows non-volatile registers");
+        emit_push(parser, "rdi");
+        emit_push(parser, "rsi");
+    }
 
     if (func->param_count > 0) {
         code_comment(parser, "Save parameters to stack");
@@ -814,6 +846,13 @@ void parse_function(Parser *parser) {
     if (func->return_type == TYPE_VOID) {
         code_comment(parser, "Function epilogue (void return)");
         code_printf(parser, "    xorl %%eax, %%eax\n");  // Return 0 for void functions
+        
+        /* Windows ABI: Restore non-volatile registers */
+        if (parser->target_format == TARGET_COFF) {
+            emit_pop(parser, "rsi");
+            emit_pop(parser, "rdi");
+        }
+        
         code_printf(parser, "    leave\n");
         code_printf(parser, "    ret\n");
     }
