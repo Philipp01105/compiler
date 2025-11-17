@@ -3,6 +3,138 @@
 #include <string.h>
 
 /*
+ * Helper function to trim leading whitespace from a string
+ */
+static char *trim_leading_whitespace(char *str) {
+    while (*str == ' ' || *str == '\t') {
+        str++;
+    }
+    return str;
+}
+
+/*
+ * Helper function to check if two instructions form a useless push/pop pair
+ * Returns 1 if they match (useless), 0 otherwise
+ */
+static int is_useless_push_pop(const char *line1, const char *line2) {
+    char *trimmed1 = trim_leading_whitespace((char *)line1);
+    char *trimmed2 = trim_leading_whitespace((char *)line2);
+    
+    // Check for pattern: pushq %reg followed by popq %reg
+    if (strncmp(trimmed1, "pushq ", 6) == 0 && strncmp(trimmed2, "popq ", 5) == 0) {
+        // Extract the register from both instructions
+        const char *reg1 = trimmed1 + 6;
+        const char *reg2 = trimmed2 + 5;
+        
+        // Compare registers (they should be the same)
+        return strcmp(reg1, reg2) == 0;
+    }
+    
+    return 0;
+}
+
+/*
+ * remove_useless_push_pop - Remove useless push/pop pairs from assembly
+ * @filename: Path to the assembly file to clean up
+ *
+ * This function removes patterns like:
+ *   pushq %rax
+ *   popq %rax
+ * which are no-ops and waste cycles.
+ *
+ * Returns: 0 on success, -1 on error
+ */
+static int remove_useless_push_pop(const char *filename) {
+    FILE *input = fopen(filename, "r");
+    if (!input) {
+        return -1;
+    }
+
+    // Read entire file into memory
+    fseek(input, 0, SEEK_END);
+    long file_size = ftell(input);
+    fseek(input, 0, SEEK_SET);
+
+    char *content = malloc(file_size + 1);
+    if (!content) {
+        fclose(input);
+        return -1;
+    }
+
+    size_t bytes_read = fread(content, 1, file_size, input);
+    content[bytes_read] = '\0';
+    fclose(input);
+
+    // Store lines in an array for easier processing
+    char **lines = malloc(sizeof(char*) * 10000);  // Assume max 10000 lines
+    int line_count = 0;
+    
+    char *line_start = content;
+    char *line_end;
+    
+    while ((line_end = strchr(line_start, '\n')) != NULL) {
+        *line_end = '\0';
+        lines[line_count] = strdup(line_start);
+        line_count++;
+        line_start = line_end + 1;
+    }
+    
+    // Handle last line if no newline at end
+    if (*line_start != '\0') {
+        lines[line_count] = strdup(line_start);
+        line_count++;
+    }
+
+    free(content);
+
+    // Create temporary file for cleaned output
+    char temp_filename[520];
+    snprintf(temp_filename, sizeof(temp_filename), "%s.tmp2", filename);
+    
+    FILE *output = fopen(temp_filename, "w");
+    if (!output) {
+        for (int i = 0; i < line_count; i++) {
+            free(lines[i]);
+        }
+        free(lines);
+        return -1;
+    }
+
+    // Process lines, removing useless push/pop pairs
+    int i = 0;
+    while (i < line_count) {
+        // Check if current and next line form a useless push/pop pair
+        if (i + 1 < line_count && is_useless_push_pop(lines[i], lines[i + 1])) {
+            // Skip both lines (the useless pair)
+            i += 2;
+        } else {
+            // Write the line
+            fprintf(output, "%s\n", lines[i]);
+            i++;
+        }
+    }
+
+    // Clean up
+    for (int i = 0; i < line_count; i++) {
+        free(lines[i]);
+    }
+    free(lines);
+    fclose(output);
+
+    // Replace original file
+    if (remove(filename) != 0) {
+        remove(temp_filename);
+        return -1;
+    }
+
+    if (rename(temp_filename, filename) != 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
+/*
  * cleanup_assembly_file - Remove unreachable code from generated assembly
  * @filename: Path to the assembly file to clean up
  *
@@ -135,6 +267,11 @@ int cleanup_assembly_file(const char *filename) {
     if (removed_lines > 0) {
         // Only print if we're in debug mode or similar
         // For now, silent cleanup
+    }
+
+    // Second pass: Remove useless push/pop pairs
+    if (remove_useless_push_pop(filename) != 0) {
+        fprintf(stderr, "Warning: Failed to remove useless push/pop pairs\n");
     }
 
     return 0;
