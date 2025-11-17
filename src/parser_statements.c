@@ -1330,6 +1330,9 @@ void parse_return_statement(Parser *parser) {
 
     expect(parser, TOKEN_SEMICOLON, "Expected ';' after return");
 
+    // Clean up @gc variables before returning
+    cleanup_scope(parser, parser->current_scope);
+
     code_printf(parser, "    leave\n");
     code_printf(parser, "    ret\n");
 }
