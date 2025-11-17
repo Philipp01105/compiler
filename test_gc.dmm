@@ -1,0 +1,14 @@
+func test() -> void {
+    @gc
+    var t:*int = reserve(int);
+    *t = 10;
+    return;
+}
+
+
+func main() -> int {
+    var x = 10;
+    var y:int = 10;
+    test();
+    return x+y;
+}
