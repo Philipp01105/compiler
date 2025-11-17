@@ -13,6 +13,9 @@ Makefile
 # Test artifacts
 test_output/
 tests/*.s
+tests/*_test
+tests/heap_*
+!tests/heap_*.dmm
 
 # Compiled binaries
 /compiler
