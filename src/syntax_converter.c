@@ -18,6 +18,8 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
     /* Check for AT&T instruction patterns */
     int is_att = 0;
     if (strstr(p, "movq") || strstr(p, "movl") || strstr(p, "movw") || strstr(p, "movb") ||
+        strstr(p, "movzbl") || strstr(p, "movzwl") || strstr(p, "movzlq") ||
+        strstr(p, "movsbl") || strstr(p, "movswl") || strstr(p, "movslq") ||
         strstr(p, "pushq") || strstr(p, "popq") ||
         strstr(p, "addq") || strstr(p, "addl") ||
         strstr(p, "subq") || strstr(p, "subl") ||
@@ -30,7 +32,9 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
         strstr(p, "negl") || strstr(p, "negq") ||
         strstr(p, "incq") || strstr(p, "decq") ||
         strstr(p, "andl") || strstr(p, "andq") ||
-        strstr(p, "orl") || strstr(p, "orq")) {
+        strstr(p, "orl") || strstr(p, "orq") ||
+        strstr(p, "sete") || strstr(p, "setne") || strstr(p, "setl") || 
+        strstr(p, "setle") || strstr(p, "setg") || strstr(p, "setge")) {
         is_att = 1;
     }
     
@@ -75,37 +79,44 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
     char *insn_start = final;
     while (*insn_start == ' ' || *insn_start == '\t') insn_start++;
     
-    if (strncmp(insn_start, "movq ", 5) == 0) memcpy(insn_start, "mov  ", 5);
-    else if (strncmp(insn_start, "movl ", 5) == 0) memcpy(insn_start, "mov  ", 5);
-    else if (strncmp(insn_start, "movw ", 5) == 0) memcpy(insn_start, "mov  ", 5);
-    else if (strncmp(insn_start, "movb ", 5) == 0) memcpy(insn_start, "mov  ", 5);
-    else if (strncmp(insn_start, "pushq ", 6) == 0) memcpy(insn_start, "push  ", 6);
-    else if (strncmp(insn_start, "popq ", 5) == 0) memcpy(insn_start, "pop  ", 5);
-    else if (strncmp(insn_start, "addq ", 5) == 0) memcpy(insn_start, "add  ", 5);
-    else if (strncmp(insn_start, "addl ", 5) == 0) memcpy(insn_start, "add  ", 5);
-    else if (strncmp(insn_start, "subq ", 5) == 0) memcpy(insn_start, "sub  ", 5);
-    else if (strncmp(insn_start, "subl ", 5) == 0) memcpy(insn_start, "sub  ", 5);
-    else if (strncmp(insn_start, "leaq ", 5) == 0) memcpy(insn_start, "lea  ", 5);
-    else if (strncmp(insn_start, "leal ", 5) == 0) memcpy(insn_start, "lea  ", 5);
-    else if (strncmp(insn_start, "xorl ", 5) == 0) memcpy(insn_start, "xor  ", 5);
-    else if (strncmp(insn_start, "xorq ", 5) == 0) memcpy(insn_start, "xor  ", 5);
-    else if (strncmp(insn_start, "cmpl ", 5) == 0) memcpy(insn_start, "cmp  ", 5);
-    else if (strncmp(insn_start, "cmpq ", 5) == 0) memcpy(insn_start, "cmp  ", 5);
-    else if (strncmp(insn_start, "testb ", 6) == 0) memcpy(insn_start, "test  ", 6);
-    else if (strncmp(insn_start, "testl ", 6) == 0) memcpy(insn_start, "test  ", 6);
-    else if (strncmp(insn_start, "testq ", 6) == 0) memcpy(insn_start, "test  ", 6);
-    else if (strncmp(insn_start, "imull ", 6) == 0) memcpy(insn_start, "imul  ", 6);
-    else if (strncmp(insn_start, "imulq ", 6) == 0) memcpy(insn_start, "imul  ", 6);
-    else if (strncmp(insn_start, "idivl ", 6) == 0) memcpy(insn_start, "idiv  ", 6);
-    else if (strncmp(insn_start, "idivq ", 6) == 0) memcpy(insn_start, "idiv  ", 6);
-    else if (strncmp(insn_start, "negl ", 5) == 0) memcpy(insn_start, "neg  ", 5);
-    else if (strncmp(insn_start, "negq ", 5) == 0) memcpy(insn_start, "neg  ", 5);
-    else if (strncmp(insn_start, "incq ", 5) == 0) memcpy(insn_start, "inc  ", 5);
-    else if (strncmp(insn_start, "decq ", 5) == 0) memcpy(insn_start, "dec  ", 5);
-    else if (strncmp(insn_start, "andl ", 5) == 0) memcpy(insn_start, "and  ", 5);
-    else if (strncmp(insn_start, "andq ", 5) == 0) memcpy(insn_start, "and  ", 5);
-    else if (strncmp(insn_start, "orl ", 4) == 0) memcpy(insn_start, "or  ", 4);
-    else if (strncmp(insn_start, "orq ", 4) == 0) memcpy(insn_start, "or  ", 4);
+    if (strncmp(insn_start, "movq ", 5) == 0) memcpy(insn_start, "mov ", 4);
+    else if (strncmp(insn_start, "movl ", 5) == 0) memcpy(insn_start, "mov ", 4);
+    else if (strncmp(insn_start, "movw ", 5) == 0) memcpy(insn_start, "mov ", 4);
+    else if (strncmp(insn_start, "movb ", 5) == 0) memcpy(insn_start, "mov ", 4);
+    else if (strncmp(insn_start, "movzbl ", 7) == 0) memcpy(insn_start, "movzx ", 6);
+    else if (strncmp(insn_start, "movzwl ", 7) == 0) memcpy(insn_start, "movzx ", 6);
+    else if (strncmp(insn_start, "movzlq ", 7) == 0) memcpy(insn_start, "movzx ", 6);
+    else if (strncmp(insn_start, "movsbl ", 7) == 0) memcpy(insn_start, "movsx ", 6);
+    else if (strncmp(insn_start, "movswl ", 7) == 0) memcpy(insn_start, "movsx ", 6);
+    else if (strncmp(insn_start, "movslq ", 7) == 0) memcpy(insn_start, "movsx ", 6);
+    else if (strncmp(insn_start, "movss ", 6) == 0) memcpy(insn_start, "movss ", 6); /* Keep movss */
+    else if (strncmp(insn_start, "pushq ", 6) == 0) memcpy(insn_start, "push ", 5);
+    else if (strncmp(insn_start, "popq ", 5) == 0) memcpy(insn_start, "pop ", 4);
+    else if (strncmp(insn_start, "addq ", 5) == 0) memcpy(insn_start, "add ", 4);
+    else if (strncmp(insn_start, "addl ", 5) == 0) memcpy(insn_start, "add ", 4);
+    else if (strncmp(insn_start, "subq ", 5) == 0) memcpy(insn_start, "sub ", 4);
+    else if (strncmp(insn_start, "subl ", 5) == 0) memcpy(insn_start, "sub ", 4);
+    else if (strncmp(insn_start, "leaq ", 5) == 0) memcpy(insn_start, "lea ", 4);
+    else if (strncmp(insn_start, "leal ", 5) == 0) memcpy(insn_start, "lea ", 4);
+    else if (strncmp(insn_start, "xorl ", 5) == 0) memcpy(insn_start, "xor ", 4);
+    else if (strncmp(insn_start, "xorq ", 5) == 0) memcpy(insn_start, "xor ", 4);
+    else if (strncmp(insn_start, "cmpl ", 5) == 0) memcpy(insn_start, "cmp ", 4);
+    else if (strncmp(insn_start, "cmpq ", 5) == 0) memcpy(insn_start, "cmp ", 4);
+    else if (strncmp(insn_start, "testb ", 6) == 0) memcpy(insn_start, "test ", 5);
+    else if (strncmp(insn_start, "testl ", 6) == 0) memcpy(insn_start, "test ", 5);
+    else if (strncmp(insn_start, "testq ", 6) == 0) memcpy(insn_start, "test ", 5);
+    else if (strncmp(insn_start, "imull ", 6) == 0) memcpy(insn_start, "imul ", 5);
+    else if (strncmp(insn_start, "imulq ", 6) == 0) memcpy(insn_start, "imul ", 5);
+    else if (strncmp(insn_start, "idivl ", 6) == 0) memcpy(insn_start, "idiv ", 5);
+    else if (strncmp(insn_start, "idivq ", 6) == 0) memcpy(insn_start, "idiv ", 5);
+    else if (strncmp(insn_start, "negl ", 5) == 0) memcpy(insn_start, "neg ", 4);
+    else if (strncmp(insn_start, "negq ", 5) == 0) memcpy(insn_start, "neg ", 4);
+    else if (strncmp(insn_start, "incq ", 5) == 0) memcpy(insn_start, "inc ", 4);
+    else if (strncmp(insn_start, "decq ", 5) == 0) memcpy(insn_start, "dec ", 4);
+    else if (strncmp(insn_start, "andl ", 5) == 0) memcpy(insn_start, "and ", 4);
+    else if (strncmp(insn_start, "andq ", 5) == 0) memcpy(insn_start, "and ", 4);
+    else if (strncmp(insn_start, "orl ", 4) == 0) memcpy(insn_start, "or ", 3);
+    else if (strncmp(insn_start, "orq ", 4) == 0) memcpy(insn_start, "or ", 3);
     
     /* Handle memory addressing: (reg) -> [reg],  offset(reg) -> [reg+offset] */
     /* Handle RIP-relative: label(rip) -> [rel label] */
@@ -128,9 +139,9 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
             strncpy(label, label_start, label_len);
             label[label_len] = '\0';
             
-            /* Replace with [rel label] */
+            /* Replace with [rip + label] for GAS Intel syntax */
             char replacement[512];
-            snprintf(replacement, sizeof(replacement), "[rel %s]", label);
+            snprintf(replacement, sizeof(replacement), "[rip + %s]", label);
             
             /* Build new string */
             size_t prefix_len = label_start - result;
@@ -143,9 +154,100 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
             strcpy(final, new_result);
             paren = final + prefix_len + strlen(replacement);
         } else {
-            /* Regular memory operand */
-            paren++;
+            /* Regular memory operand: offset(reg) -> [reg+offset] or (reg) -> [reg] */
+            /* Find register inside parentheses */
+            char *close_paren = strchr(paren + 1, ')');
+            if (close_paren) {
+                char reg[32];
+                size_t reg_len = close_paren - paren - 1;
+                strncpy(reg, paren + 1, reg_len);
+                reg[reg_len] = '\0';
+                
+                /* Find offset before parenthesis */
+                char *offset_end = paren;
+                char *offset_start = offset_end - 1;
+                while (offset_start > result && (isdigit(*offset_start) || *offset_start == '-')) {
+                    offset_start--;
+                }
+                offset_start++;
+                
+                char offset[32] = "";
+                if (offset_start < offset_end) {
+                    size_t offset_len = offset_end - offset_start;
+                    strncpy(offset, offset_start, offset_len);
+                    offset[offset_len] = '\0';
+                }
+                
+                /* Build [reg+offset] or [reg-offset] or [reg] */
+                char replacement[256];
+                if (offset[0]) {
+                    int offset_val = atoi(offset);
+                    if (offset_val >= 0) {
+                        snprintf(replacement, sizeof(replacement), "[%s+%s]", reg, offset);
+                    } else {
+                        snprintf(replacement, sizeof(replacement), "[%s%s]", reg, offset);
+                    }
+                } else {
+                    snprintf(replacement, sizeof(replacement), "[%s]", reg);
+                }
+                
+                /* Build new string */
+                size_t prefix_len = offset_start - result;
+                char new_result[1024];
+                strncpy(new_result, result, prefix_len);
+                new_result[prefix_len] = '\0';
+                strcat(new_result, replacement);
+                strcat(new_result, close_paren + 1);  /* Skip ) */
+                
+                strcpy(final, new_result);
+                paren = final + prefix_len + strlen(replacement);
+            } else {
+                paren++;
+            }
         }
+    }
+    
+    /* Reverse operands for 2-operand instructions (AT&T: src, dest -> Intel: dest, src) */
+    char *operand_start = insn_start;
+    while (*operand_start && *operand_start != ' ' && *operand_start != '\t') operand_start++;
+    while (*operand_start == ' ' || *operand_start == '\t') operand_start++;
+    
+    /* Find comma separating operands */
+    char *comma = strchr(operand_start, ',');
+    if (comma && *operand_start) {
+        /* Extract first operand (source in AT&T) */
+        char op1[256];
+        size_t op1_len = comma - operand_start;
+        while (op1_len > 0 && (operand_start[op1_len-1] == ' ' || operand_start[op1_len-1] == '\t')) op1_len--;
+        strncpy(op1, operand_start, op1_len);
+        op1[op1_len] = '\0';
+        
+        /* Extract second operand (dest in AT&T) */
+        char op2[256];
+        char *op2_start = comma + 1;
+        while (*op2_start == ' ' || *op2_start == '\t') op2_start++;
+        char *op2_end = op2_start;
+        while (*op2_end && *op2_end != '\n' && *op2_end != '#' && *op2_end != ';') op2_end++;
+        while (op2_end > op2_start && (op2_end[-1] == ' ' || op2_end[-1] == '\t' || op2_end[-1] == '\n')) op2_end--;
+        size_t op2_len = op2_end - op2_start;
+        strncpy(op2, op2_start, op2_len);
+        op2[op2_len] = '\0';
+        
+        /* Rebuild instruction with reversed operands */
+        char reversed[1024];
+        size_t prefix_len = operand_start - final;
+        strncpy(reversed, final, prefix_len);
+        reversed[prefix_len] = '\0';
+        
+        /* Add reversed operands: dest, src */
+        snprintf(reversed + prefix_len, sizeof(reversed) - prefix_len, "%s, %s", op2, op1);
+        
+        /* Add any trailing content (comments, newlines) */
+        if (*op2_end) {
+            strcat(reversed, op2_end);
+        }
+        
+        strcpy(final, reversed);
     }
     
     /* Copy final result */
