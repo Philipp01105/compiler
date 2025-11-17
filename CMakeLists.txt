@@ -18,4 +18,6 @@ add_executable(compiler
         src/parser_internal.h
         src/errorHandler.c
         src/errorHandler.h
+        src/asm_optimizer.c
+        src/asm_optimizer.h
 )

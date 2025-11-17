@@ -6,6 +6,7 @@
 #include "lexer.h"
 #include "parser.h"
 #include "errorHandler.h"
+#include "asm_optimizer.h"
 
 /*
  * print_usage - Display command line usage information
@@ -282,11 +283,17 @@ int main(int argc, char *argv[]) {
 
     fclose(output);
 
+    // Post-process: Clean up unreachable code from assembly
+    if (cleanup_assembly_file(output_filename) != 0) {
+        fprintf(stderr, "Warning: Assembly cleanup pass failed\n");
+    }
+
     if (debug_mode) {
         printf("  [+] Assembly code generated: %s\n", output_filename);
         printf("      - Code size: %d Bytes\n", parser->function_code_pos);
         printf("      - String literals: %d\n", parser->string_literal_count);
         printf("      - Float literals: %d\n", parser->float_literal_count);
+        printf("      - Assembly optimized (dead code removed)\n");
         printf("\n");
         printf("################################################################\n");
         printf("#                                                              #\n");
