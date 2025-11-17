@@ -1,0 +1,16 @@
+// Test @gc annotation with explicit return statement
+func test() -> void {
+    @gc
+    var t:*int = reserve(int);
+    *t = 10;
+    println("Inside test function");
+    return;
+}
+
+func main() -> int {
+    var x = 10;
+    var y:int = 10;
+    test();
+    println("Back in main");
+    return 0;
+}
