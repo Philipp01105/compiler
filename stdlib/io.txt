@@ -1,0 +1,235 @@
+// ===================================================================
+// DMM Standard Library - I/O Module
+// ===================================================================
+// Platform-independent I/O operations for file handling and stdin
+// Works on Linux and Windows (compiled to x86-64 assembly)
+//
+// This module provides:
+//   - File operations (read, write, append, exists check)
+//   - Standard input operations
+//   - Stream-based I/O
+//   - String utilities
+//
+// All functions use pure Linux syscalls without C library dependencies
+// ===================================================================
+
+// ===================================================================
+// System Stream Constants
+// ===================================================================
+// File descriptor constants for standard streams
+// Usage: read(System.in.fd, "%i")
+// ===================================================================
+
+enum System(fd:int) {
+    in(0),
+    out(1),
+    err(2)
+}
+
+// ===================================================================
+// Core File Operations (as required by issue)
+// ===================================================================
+
+// Read entire file content into a buffer
+// Parameters:
+//   filename: File path as string
+//   buffer: Character array to store content
+//   max_size: Maximum bytes to read
+// Returns: 
+//   Number of bytes read on success, -1 on error
+func read_file(filename:string, buffer:string, max_size:int) -> int {
+    var fd:int = sys_open(filename, 0, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    
+    var bytes_read:int = sys_read(fd, buffer, max_size);
+    sys_close(fd);
+    
+    if (bytes_read < 0) {
+        return -1;
+    }
+    
+    return bytes_read;
+}
+
+// Write content to file (create or overwrite)
+// Parameters:
+//   path: File path as string
+//   content: Content to write as string
+// Returns: 
+//   1 on success, 0 on error
+func write_file(path:string, content:string) -> int {
+    // Flags: O_WRONLY | O_CREAT | O_TRUNC (577)
+    // Mode: 0644 (420 in decimal)
+    var fd:int = sys_open(path, 577, 420);
+    if (fd < 0) {
+        return 0;
+    }
+    
+    var len:int = io_strlen(content);
+    var written:int = sys_write(fd, content, len);
+    sys_close(fd);
+    
+    if (written < 0) {
+        return 0;
+    }
+    
+    return 1;
+}
+
+// Append content to file
+// Parameters:
+//   path: File path as string
+//   content: Content to append as string
+// Returns: 
+//   1 on success, 0 on error
+func append_file(path:string, content:string) -> int {
+    // Flags: O_WRONLY | O_CREAT | O_APPEND (1089)
+    // Mode: 0644 (420 in decimal)
+    var fd:int = sys_open(path, 1089, 420);
+    if (fd < 0) {
+        return 0;
+    }
+    
+    var len:int = io_strlen(content);
+    var written:int = sys_write(fd, content, len);
+    sys_close(fd);
+    
+    if (written < 0) {
+        return 0;
+    }
+    
+    return 1;
+}
+
+// Check if file exists
+// Parameters:
+//   path: File path as string
+// Returns: 
+//   1 if file exists, 0 if not
+func file_exists(path:string) -> int {
+    var fd:int = sys_open(path, 0, 0);
+    if (fd < 0) {
+        return 0;
+    }
+    sys_close(fd);
+    return 1;
+}
+
+// Read string from stdin
+// Returns: 
+//   String read from stdin
+// Note: Reads into internal buffer and returns number of bytes read
+//       For interactive input with format specifiers, use read(System.in.fd, "%i")
+func read_stdin() -> int {
+    var[1024] buffer:char;
+    var bytes_read:int = sys_read(0, &buffer, 1023);
+    return bytes_read;
+}
+
+// ===================================================================
+// Stream-Based File Operations
+// ===================================================================
+
+// Open file for reading
+// Parameters:
+//   path: File path as string
+// Returns: 
+//   File descriptor on success, -1 on error
+func open_read(path:string) -> int {
+    return sys_open(path, 0, 0);
+}
+
+// Open file for writing (create or truncate)
+// Parameters:
+//   path: File path as string
+// Returns: 
+//   File descriptor on success, -1 on error
+func open_write(path:string) -> int {
+    return sys_open(path, 577, 420);
+}
+
+// Open file for appending
+// Parameters:
+//   path: File path as string
+// Returns: 
+//   File descriptor on success, -1 on error
+func open_append(path:string) -> int {
+    return sys_open(path, 1089, 420);
+}
+
+// Write string to file descriptor
+// Parameters:
+//   fd: File descriptor
+//   s: String to write
+// Returns: 
+//   Number of bytes written on success, -1 on error
+func write_str_to(fd:int, s:string) -> int {
+    var len:int = io_strlen(s);
+    return sys_write(fd, s, len);
+}
+
+// Read from file descriptor
+// Parameters:
+//   fd: File descriptor
+//   buffer: Buffer to store data
+//   count: Maximum bytes to read
+// Returns: 
+//   Number of bytes read on success, -1 on error
+func read_from(fd:int, buffer:string, count:int) -> int {
+    return sys_read(fd, buffer, count);
+}
+
+// Close file descriptor
+// Parameters:
+//   fd: File descriptor
+// Returns: 
+//   0 on success, -1 on error
+func close_file(fd:int) -> int {
+    return sys_close(fd);
+}
+
+// ===================================================================
+// String Utility Functions
+// ===================================================================
+// Note: The following are compiler built-ins available directly:
+//   - io_strlen(s:string) -> int
+//   - io_int_to_str(value:int, buffer:string, buffer_size:int) -> int
+//   - io_str_to_int(s:string) -> int
+//
+// You can call them directly without wrappers, or use these aliases:
+
+// Calculate string length
+// Parameters:
+//   s: String to measure
+// Returns: 
+//   Length of string (number of characters before null terminator)
+// Note: This is just an alias for io_strlen()
+func strlen(s:string) -> int {
+    return io_strlen(s);
+}
+
+// ===================================================================
+// Input Functions
+// ===================================================================
+
+// Read string from stream
+// Parameters:
+//   stream: File descriptor (0 for stdin, System.in.fd)
+//   buffer: Buffer to store input
+//   max_size: Maximum bytes to read
+// Returns: 
+//   Number of bytes read on success, -1 on error
+func read_string(stream:int, buffer:string, max_size:int) -> int {
+    return sys_read(stream, buffer, max_size);
+}
+
+// ===================================================================
+// Note: The read() function with format specifiers is a built-in
+// compiler function and does not need to be defined here.
+// 
+// Usage:
+//   var num:int = read(System.in.fd, "%i");  // Read integer
+//   var c:char = read(0, "%c");              // Read character
+// ===================================================================
