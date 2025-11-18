@@ -1,6 +1,7 @@
 #include "parser.h"
 #include "parser_internal.h"
 #include "errorHandler.h"
+#include "syntax_converter.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,6 +42,8 @@ Parser *create_parser(TokenStream *tokens) {
     parser->source_lines = NULL;
     parser->source_line_count = 0;
     parser->source_filename = NULL;
+    parser->target_format = TARGET_ELF;  /* Default, will be set by main */
+    parser->syntax_mode = SYNTAX_INTEL;  /* Default, will be set by main */
 
     memset(parser->code_buffer, 0, CODE_BUFFER_SIZE);
     memset(parser->function_code_buffer, 0, CODE_BUFFER_SIZE);
@@ -120,10 +123,19 @@ void code_printf(Parser *parser, const char *format, ...) {
 
     char buffer[1024];
     vsnprintf(buffer, sizeof(buffer), format, args);
+    
+    /* Convert syntax if needed */
+    char final_buffer[1024];
+    if (parser->syntax_mode == SYNTAX_INTEL) {
+        convert_att_to_intel(buffer, final_buffer, sizeof(final_buffer));
+    } else {
+        strncpy(final_buffer, buffer, sizeof(final_buffer) - 1);
+        final_buffer[sizeof(final_buffer) - 1] = '\0';
+    }
 
-    int len = strlen(buffer);
+    int len = strlen(final_buffer);
     if (parser->function_code_pos + len < CODE_BUFFER_SIZE) {
-        strcpy(parser->function_code_buffer + parser->function_code_pos, buffer);
+        strcpy(parser->function_code_buffer + parser->function_code_pos, final_buffer);
         parser->function_code_pos += len;
     }
 
