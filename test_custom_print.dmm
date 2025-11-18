@@ -1,0 +1,21 @@
+// Test custom print implementation (no C library)
+// This demonstrates printing without using printf
+
+func main() -> int {
+    println("=== Custom Print Test ===");
+    println("");
+    
+    print("String: ");
+    println("Hello!");
+    
+    print("Integer: ");
+    println(42);
+    
+    print("Negative: ");
+    println(-99);
+    
+    println("");
+    println("All tests completed successfully!");
+    
+    return 0;
+}
