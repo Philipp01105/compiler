@@ -190,9 +190,9 @@ void generate_print_helpers(FILE *output, TargetFormat target_format, int print_
     fprintf(output, "    mov rbp, rsp\n");
     fprintf(output, "    sub rsp, 16\n");
     fprintf(output, "    # rdi = char value\n");
-    fprintf(output, "    mov byte ptr [rbp - 1], dil\n");
-    fprintf(output, "    mov byte ptr [rbp], 0\n");
-    fprintf(output, "    lea rdi, [rbp - 1]\n");
+    fprintf(output, "    mov byte ptr [rbp - 2], dil  # char\n");
+    fprintf(output, "    mov byte ptr [rbp - 1], 0    # null terminator\n");
+    fprintf(output, "    lea rdi, [rbp - 2]\n");
     fprintf(output, "    call __print_string\n");
     fprintf(output, "    leave\n");
     fprintf(output, "    ret\n");
@@ -203,9 +203,9 @@ void generate_print_helpers(FILE *output, TargetFormat target_format, int print_
     fprintf(output, "    push rbp\n");
     fprintf(output, "    mov rbp, rsp\n");
     fprintf(output, "    sub rsp, 16\n");
-    fprintf(output, "    mov byte ptr [rbp - 1], 10  # newline character\n");
-    fprintf(output, "    mov byte ptr [rbp], 0\n");
-    fprintf(output, "    lea rdi, [rbp - 1]\n");
+    fprintf(output, "    mov byte ptr [rbp - 2], 10  # newline character\n");
+    fprintf(output, "    mov byte ptr [rbp - 1], 0   # null terminator\n");
+    fprintf(output, "    lea rdi, [rbp - 2]\n");
     fprintf(output, "    call __print_string\n");
     fprintf(output, "    leave\n");
     fprintf(output, "    ret\n");
