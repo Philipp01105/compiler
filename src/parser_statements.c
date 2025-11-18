@@ -1380,7 +1380,7 @@ void parse_print_statement(Parser *parser) {
             }
         } else if (check(parser->tokens, TOKEN_NUMBER)) {
             Token num = consume(parser->tokens);
-            code_printf(parser, "    movl $%s, %s\n", get_arg_reg_32(1), num.value);
+            code_printf(parser, "    movl $%s, %s\n", num.value, get_arg_reg_32(1));
             code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_reg_64(0));
             {
                 generate_stack_align(parser);
@@ -1874,7 +1874,7 @@ void parse_printline_statement(Parser *parser) {
             }
         } else if (check(parser->tokens, TOKEN_NUMBER)) {
             Token num = consume(parser->tokens);
-            code_printf(parser, "    movl $%s, %s\n", get_arg_reg_32(1), num.value);
+            code_printf(parser, "    movl $%s, %s\n", num.value, get_arg_reg_32(1));
             code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_reg_64(0));
             {
                 generate_stack_align(parser);
