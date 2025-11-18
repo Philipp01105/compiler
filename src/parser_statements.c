@@ -1348,6 +1348,8 @@ void parse_print_statement(Parser *parser) {
     Token print_token = peek(parser->tokens);
     code_comment(parser, "Line %d: print(...)", print_token.line);
 
+    parser->print_call_count++;  /* Track print call for helper generation */
+
     consume(parser->tokens);
     expect(parser, TOKEN_LPAREN, "Expected '(' after 'print'");
 
@@ -1371,20 +1373,18 @@ void parse_print_statement(Parser *parser) {
             parse_expression(parser);
             expect(parser, TOKEN_RPAREN, "Expected ')' after expression");
 
-            code_printf(parser, "    popq %s\n", get_arg_reg_64(1));
-            code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_reg_64(0));
+            code_printf(parser, "    popq %s\n", get_arg_reg_64(0));
             {
                 generate_stack_align(parser);
-                code_printf(parser, "    call printf\n");
+                code_printf(parser, "    call __print_int\n");
                 generate_stack_restore(parser);
             }
         } else if (check(parser->tokens, TOKEN_NUMBER)) {
             Token num = consume(parser->tokens);
-            code_printf(parser, "    movl $%s, %s\n", num.value, get_arg_reg_32(1));
-            code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_reg_64(0));
+            code_printf(parser, "    movl $%s, %s\n", num.value, get_arg_reg_32(0));
             {
                 generate_stack_align(parser);
-                code_printf(parser, "    call printf\n");
+                code_printf(parser, "    call __print_int\n");
                 generate_stack_restore(parser);
             }
         } else if (check(parser->tokens, TOKEN_FLOAT_LITERAL)) {
@@ -1403,11 +1403,10 @@ void parse_print_statement(Parser *parser) {
         } else if (check(parser->tokens, TOKEN_CHAR_LITERAL)) {
             Token ch = consume(parser->tokens);
             int char_value = (unsigned char) ch.value[0];
-            code_printf(parser, "    movb $%d, %%dl\n", char_value);
-            code_printf(parser, "    leaq .LC_char_format(%%rip), %s\n", get_arg_reg_64(0));
+            code_printf(parser, "    movl $%d, %s\n", char_value, get_arg_reg_32(0));
             {
                 generate_stack_align(parser);
-                code_printf(parser, "    call printf\n");
+                code_printf(parser, "    call __print_char\n");
                 generate_stack_restore(parser);
             }
         } else if (check(parser->tokens, TOKEN_IDENTIFIER)) {
@@ -1842,6 +1841,8 @@ void parse_printline_statement(Parser *parser) {
     Token print_token = peek(parser->tokens);
     code_comment(parser, "Line %d: println(...)", print_token.line);
 
+    parser->print_call_count++;  /* Track print call for helper generation */
+
     consume(parser->tokens);
     expect(parser, TOKEN_LPAREN, "Expected '(' after 'println'");
 
@@ -1865,20 +1866,18 @@ void parse_printline_statement(Parser *parser) {
             parse_expression(parser);
             expect(parser, TOKEN_RPAREN, "Expected ')' after expression");
 
-            code_printf(parser, "    popq %s\n", get_arg_reg_64(1));
-            code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_reg_64(0));
+            code_printf(parser, "    popq %s\n", get_arg_reg_64(0));
             {
                 generate_stack_align(parser);
-                code_printf(parser, "    call printf\n");
+                code_printf(parser, "    call __print_int\n");
                 generate_stack_restore(parser);
             }
         } else if (check(parser->tokens, TOKEN_NUMBER)) {
             Token num = consume(parser->tokens);
-            code_printf(parser, "    movl $%s, %s\n", num.value, get_arg_reg_32(1));
-            code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_reg_64(0));
+            code_printf(parser, "    movl $%s, %s\n", num.value, get_arg_reg_32(0));
             {
                 generate_stack_align(parser);
-                code_printf(parser, "    call printf\n");
+                code_printf(parser, "    call __print_int\n");
                 generate_stack_restore(parser);
             }
         } else if (check(parser->tokens, TOKEN_FLOAT_LITERAL)) {
@@ -1897,11 +1896,10 @@ void parse_printline_statement(Parser *parser) {
         } else if (check(parser->tokens, TOKEN_CHAR_LITERAL)) {
             Token ch = consume(parser->tokens);
             int char_value = (unsigned char) ch.value[0];
-            code_printf(parser, "    movb $%d, %%dl\n", char_value);
-            code_printf(parser, "    leaq .LC_char_format(%%rip), %s\n", get_arg_reg_64(0));
+            code_printf(parser, "    movl $%d, %s\n", char_value, get_arg_reg_32(0));
             {
                 generate_stack_align(parser);
-                code_printf(parser, "    call printf\n");
+                code_printf(parser, "    call __print_char\n");
                 generate_stack_restore(parser);
             }
         } else if (check(parser->tokens, TOKEN_IDENTIFIER)) {
@@ -2285,13 +2283,12 @@ print_next_item:
 
     expect(parser, TOKEN_RPAREN, "Expected ')' after print arguments");
 
-    code_printf(parser, "    leaq .LC_newline(%%rip), %s\n", get_arg_reg_64(0));
     {
         int stack_adj_nl = get_call_stack_space();
         if (stack_adj_nl > 0) {
             code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_nl);
         }
-        code_printf(parser, "    call printf\n");
+        code_printf(parser, "    call __print_newline\n");
         if (stack_adj_nl > 0) {
             code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_nl);
         }

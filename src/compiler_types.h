@@ -300,6 +300,8 @@ typedef struct {
 
     TargetFormat target_format;                 /* ELF or COFF output */
     SyntaxMode syntax_mode;                     /* AT&T or Intel syntax */
+    
+    int print_call_count;                       /* Number of print/println calls */
 } Parser;
 
 #endif
