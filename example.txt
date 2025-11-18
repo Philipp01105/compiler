@@ -1,2 +1,0 @@
-Hello from DMM compiler!
-Additional line
