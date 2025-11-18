@@ -1,0 +1,67 @@
+// Simple example demonstrating stdlib/io module usage
+#import <stdlib/io.txt>
+
+func main() -> void {
+    println("=== Basic I/O Module Example ===");
+    println("");
+    
+    // 1. Write to a file
+    println("1. Writing to file 'example.txt'...");
+    var write_result:int = write_file("example.txt", "Hello from DMM compiler!\n");
+    
+    if (write_result == 1) {
+        println("   ✓ File written successfully");
+    } else {
+        println("   ✗ Failed to write file");
+    }
+    println("");
+    
+    // 2. Check if file exists
+    println("2. Checking if file exists...");
+    var exists:int = file_exists("example.txt");
+    
+    if (exists == 1) {
+        println("   ✓ File exists");
+    } else {
+        println("   ✗ File does not exist");
+    }
+    println("");
+    
+    // 3. Read from the file
+    println("3. Reading from file...");
+    var[256] buffer:char;
+    var bytes_read:int = read_file("example.txt", &buffer, 255);
+    
+    if (bytes_read > 0) {
+        println("   ✓ File read successfully");
+        print("   Content: ");
+        sys_write(1, &buffer, bytes_read);
+    } else {
+        println("   ✗ Failed to read file");
+    }
+    println("");
+    
+    // 4. Append to the file
+    println("4. Appending to file...");
+    var append_result:int = append_file("example.txt", "Additional line\n");
+    
+    if (append_result == 1) {
+        println("   ✓ Content appended successfully");
+    } else {
+        println("   ✗ Failed to append");
+    }
+    println("");
+    
+    // 5. Read again to see the appended content
+    println("5. Reading updated file...");
+    var bytes_read2:int = read_file("example.txt", &buffer, 255);
+    
+    if (bytes_read2 > 0) {
+        println("   ✓ File read successfully");
+        print("   Content: ");
+        sys_write(1, &buffer, bytes_read2);
+    }
+    println("");
+    
+    println("=== Example Complete ===");
+}
