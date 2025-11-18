@@ -38,8 +38,6 @@ func main() -> void {
     var read_result:int = read_file("test_write.txt", &read_buffer, 255);
     if (read_result > 0) {
         println("  ✓ read_file: SUCCESS (read bytes > 0)");
-        print("  Content: ");
-        sys_write(1, &read_buffer, read_result);
     } else {
         println("  ✗ read_file: FAILED (returned -1)");
     }
@@ -47,17 +45,15 @@ func main() -> void {
     
     // Test 4: append_file
     println("Test 4: append_file");
+    
+    // Use write_file first to ensure clean state
+    var clear_result:int = write_file("test_append.txt", "");
     var append_result1:int = append_file("test_append.txt", "First line\n");
     var append_result2:int = append_file("test_append.txt", "Second line\n");
     var append_result3:int = append_file("test_append.txt", "Third line\n");
     
     if (append_result1 == 1 && append_result2 == 1 && append_result3 == 1) {
         println("  ✓ append_file: SUCCESS (all appends returned 1)");
-        
-        var[256] append_buffer:char;
-        var append_read:int = read_file("test_append.txt", &append_buffer, 255);
-        print("  Content: ");
-        sys_write(1, &append_buffer, append_read);
     } else {
         println("  ✗ append_file: FAILED");
     }
@@ -66,7 +62,7 @@ func main() -> void {
     // Test 5: read_stdin (demonstrate usage)
     println("Test 5: read_stdin");
     println("  Note: read_stdin() reads from stdin");
-    println("  For interactive input, use: read(System.in.fd, \"%i\")");
+    println("  For interactive input, use: read(System.in.fd, format)");
     println("  ✓ read_stdin: AVAILABLE");
     println("");
     

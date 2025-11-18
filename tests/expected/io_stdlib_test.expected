@@ -1,0 +1,32 @@
+=== Testing IO Module ===
+
+Test 1: write_file
+  ✓ write_file: SUCCESS (returned 1)
+
+Test 2: file_exists
+  ✓ file_exists: SUCCESS (file exists, returned 1)
+  ✓ file_exists: SUCCESS (file doesn't exist, returned 0)
+
+Test 3: read_file
+  ✓ read_file: SUCCESS (read bytes > 0)
+
+Test 4: append_file
+  ✓ append_file: SUCCESS (all appends returned 1)
+
+Test 5: read_stdin
+  Note: read_stdin() reads from stdin
+  For interactive input, use: read(System.in.fd, format)
+  ✓ read_stdin: AVAILABLE
+
+Test 6: System stream constants
+  System.in.fd = 0
+  System.out.fd = 1
+  System.err.fd = 2
+  ✓ System constants: SUCCESS
+
+Test 7: Helper functions
+  ✓ strlen: AVAILABLE
+  ✓ int_to_string: AVAILABLE (compiler built-in)
+  ✓ string_to_int: AVAILABLE (compiler built-in)
+
+=== All Tests Complete ===
