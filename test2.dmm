@@ -1,6 +1,10 @@
 
 func main() -> int {
-    var x:int = -5;
-    println(x);
+    var x:*int = reserve(int);
+    println("Speicheradresse von x: " + x);
+    free(x);
+    var x:*char = reserve(char);
+    x = 'c';
+    println("x is now: " + x);
     return 10;
 }
