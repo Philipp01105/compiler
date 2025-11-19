@@ -17,19 +17,19 @@ static char *trim_leading_whitespace(char *str) {
  * Returns 1 if they match (useless), 0 otherwise
  */
 static int is_useless_push_pop(const char *line1, const char *line2) {
-    char *trimmed1 = trim_leading_whitespace((char *)line1);
-    char *trimmed2 = trim_leading_whitespace((char *)line2);
-    
+    char *trimmed1 = trim_leading_whitespace((char *) line1);
+    char *trimmed2 = trim_leading_whitespace((char *) line2);
+
     // Check for pattern: pushq %reg followed by popq %reg
     if (strncmp(trimmed1, "pushq ", 6) == 0 && strncmp(trimmed2, "popq ", 5) == 0) {
         // Extract the register from both instructions
         const char *reg1 = trimmed1 + 6;
         const char *reg2 = trimmed2 + 5;
-        
+
         // Compare registers (they should be the same)
         return strcmp(reg1, reg2) == 0;
     }
-    
+
     return 0;
 }
 
@@ -66,19 +66,19 @@ static int remove_useless_push_pop(const char *filename) {
     fclose(input);
 
     // Store lines in an array for easier processing
-    char **lines = malloc(sizeof(char*) * 10000);  // Assume max 10000 lines
+    char **lines = malloc(sizeof(char *) * 10000); // Assume max 10000 lines
     int line_count = 0;
-    
+
     char *line_start = content;
     char *line_end;
-    
+
     while ((line_end = strchr(line_start, '\n')) != NULL) {
         *line_end = '\0';
         lines[line_count] = strdup(line_start);
         line_count++;
         line_start = line_end + 1;
     }
-    
+
     // Handle last line if no newline at end
     if (*line_start != '\0') {
         lines[line_count] = strdup(line_start);
@@ -90,7 +90,7 @@ static int remove_useless_push_pop(const char *filename) {
     // Create temporary file for cleaned output
     char temp_filename[520];
     snprintf(temp_filename, sizeof(temp_filename), "%s.tmp2", filename);
-    
+
     FILE *output = fopen(temp_filename, "w");
     if (!output) {
         for (int i = 0; i < line_count; i++) {
@@ -169,7 +169,7 @@ int cleanup_assembly_file(const char *filename) {
     // Create temporary file for cleaned output
     char temp_filename[520];
     snprintf(temp_filename, sizeof(temp_filename), "%s.tmp", filename);
-    
+
     FILE *output = fopen(temp_filename, "w");
     if (!output) {
         free(content);
@@ -184,18 +184,18 @@ int cleanup_assembly_file(const char *filename) {
     int removed_lines = 0;
 
     while ((line_end = strchr(line_start, '\n')) != NULL) {
-        *line_end = '\0';  // Temporarily terminate the line
-        
+        *line_end = '\0'; // Temporarily terminate the line
+
         char *line = line_start;
-        
+
         // Skip leading whitespace for analysis
         while (*line == ' ' || *line == '\t') {
             line++;
         }
 
         // Detect function start (labels that are global or local function labels)
-        if (strstr(line_start, ".globl ") != NULL || 
-            (line[0] != '.' && line[0] != '#' && line[0] != ' ' && line[0] != '\t' && 
+        if (strstr(line_start, ".globl ") != NULL ||
+            (line[0] != '.' && line[0] != '#' && line[0] != ' ' && line[0] != '\t' &&
              strchr(line, ':') != NULL && strstr(line, ".LC") == NULL)) {
             // Reset state for new function
             in_function = 1;
@@ -220,13 +220,14 @@ int cleanup_assembly_file(const char *filename) {
         if (found_ret && in_function) {
             // Check if this is the start of a new function or section
             if (strstr(line_start, ".globl ") != NULL ||
-                (line[0] != ' ' && line[0] != '\t' && line[0] != '#' && 
+                (line[0] != ' ' && line[0] != '\t' && line[0] != '#' &&
                  strchr(line, ':') != NULL && strstr(line, ".LC") == NULL) ||
                 strstr(line, ".text") != NULL ||
                 strstr(line, ".data") != NULL ||
                 strstr(line, ".bss") != NULL ||
                 strstr(line, ".section") != NULL ||
-                line[0] == '\0') {  // Empty line often marks section boundary
+                line[0] == '\0') {
+                // Empty line often marks section boundary
                 // End of unreachable code section
                 found_ret = 0;
                 in_function = 0;

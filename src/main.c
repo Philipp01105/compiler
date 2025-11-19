@@ -57,7 +57,7 @@ void print_header(const char *source_file) {
 
 void write_escaped_string(FILE *out, const char *str) {
     for (int i = 0; str[i] != '\0'; i++) {
-        unsigned char c = (unsigned char)str[i];
+        unsigned char c = (unsigned char) str[i];
         switch (c) {
             case '\n':
                 fprintf(out, "\\n");
@@ -92,9 +92,9 @@ int main(int argc, char *argv[]) {
     int debug_mode = 0;
     int format_error = 0;
     const char *source_file = NULL;
-    SyntaxMode syntax_mode = SYNTAX_INTEL;  /* Default to Intel syntax */
+    SyntaxMode syntax_mode = SYNTAX_INTEL; /* Default to Intel syntax */
     TargetFormat target_format = TARGET_ELF; /* Auto-detect later */
-    int target_format_explicit = 0;  /* Whether user specified target */
+    int target_format_explicit = 0; /* Whether user specified target */
 
     ErrorHandler *error_handler = error_handler_init();
     if (error_handler) {
@@ -119,8 +119,8 @@ int main(int argc, char *argv[]) {
                 syntax_mode = SYNTAX_ATT;
             } else {
                 error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
-                            ERR_COMP_INVALID_OPTION, NULL,
-                            "Invalid syntax mode: %s (use 'intel' or 'att')", mode);
+                             ERR_COMP_INVALID_OPTION, NULL,
+                             "Invalid syntax mode: %s (use 'intel' or 'att')", mode);
                 error_handler_flush(error_handler);
                 print_usage(argv[0]);
                 error_handler_free(error_handler);
@@ -136,8 +136,8 @@ int main(int argc, char *argv[]) {
                 target_format_explicit = 1;
             } else {
                 error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
-                            ERR_COMP_INVALID_OPTION, NULL,
-                            "Invalid target format: %s (use 'elf' or 'coff')", fmt);
+                             ERR_COMP_INVALID_OPTION, NULL,
+                             "Invalid target format: %s (use 'elf' or 'coff')", fmt);
                 error_handler_flush(error_handler);
                 print_usage(argv[0]);
                 error_handler_free(error_handler);
@@ -151,15 +151,15 @@ int main(int argc, char *argv[]) {
             source_file = argv[i];
         } else {
             error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
-                        ERR_COMP_INVALID_OPTION, NULL,
-                        "Unknown option: %s", argv[i]);
+                         ERR_COMP_INVALID_OPTION, NULL,
+                         "Unknown option: %s", argv[i]);
             error_handler_flush(error_handler);
             print_usage(argv[0]);
             error_handler_free(error_handler);
             return 1;
         }
     }
-    
+
     /* Auto-detect target format if not explicitly set */
     if (!target_format_explicit) {
 #if defined(_WIN32) || defined(_WIN64) || defined(__CYGWIN__)
@@ -171,8 +171,8 @@ int main(int argc, char *argv[]) {
 
     if (!source_file) {
         error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
-                    ERR_COMP_NO_SOURCE_FILE, NULL,
-                    "No source file specified");
+                     ERR_COMP_NO_SOURCE_FILE, NULL,
+                     "No source file specified");
         error_handler_flush(error_handler);
         print_usage(argv[0]);
         error_handler_free(error_handler);
@@ -207,7 +207,7 @@ int main(int argc, char *argv[]) {
     parser->debug_mode = debug_mode;
     parser->target_format = target_format;
     parser->syntax_mode = syntax_mode;
-    
+
     /* Set instruction builder syntax mode */
     set_syntax_mode(syntax_mode);
 
@@ -255,14 +255,14 @@ int main(int argc, char *argv[]) {
     fprintf(output, "# Date: %s\n", datetime);
     fprintf(output, "# Target Format: %s\n", format_name);
     fprintf(output, "# Syntax: %s\n", syntax_name);
-    
+
     /* Add Intel syntax directive if using Intel syntax */
     if (syntax_mode == SYNTAX_INTEL) {
         fprintf(output, "    .intel_syntax noprefix\n");
     }
-    
+
     fprintf(output, "    .text\n");
-    
+
     if (target_format == TARGET_COFF) {
         fprintf(output, "    .def    printf; .scl    2; .type   32; .endef\n");
         fprintf(output, "    .def    putchar; .scl    2; .type   32; .endef\n");
@@ -308,16 +308,16 @@ int main(int argc, char *argv[]) {
             fprintf(output, ".LC_float_%d:\n", parser->float_literals[i].id);
 
             int is_double = (strchr(parser->float_literals[i].value, '.') != NULL &&
-                           strlen(strchr(parser->float_literals[i].value, '.')) > 8);
+                             strlen(strchr(parser->float_literals[i].value, '.')) > 8);
 
             if (is_double) {
                 double dval = strtod(parser->float_literals[i].value, NULL);
-                unsigned long long *double_bits = (unsigned long long*)&dval;
+                unsigned long long *double_bits = (unsigned long long *) &dval;
                 fprintf(output, "    .quad 0x%016llx    # double %s\n",
                         *double_bits, parser->float_literals[i].value);
             } else {
                 float fval = strtof(parser->float_literals[i].value, NULL);
-                unsigned int *float_bits = (unsigned int*)&fval;
+                unsigned int *float_bits = (unsigned int *) &fval;
                 fprintf(output, "    .long 0x%08x    # float %s\n",
                         *float_bits, parser->float_literals[i].value);
             }
@@ -330,11 +330,11 @@ int main(int argc, char *argv[]) {
     fprintf(output, "_scanfString_buffer:\n");
     fprintf(output, "    .space 256\n");
     fprintf(output, "\n");
-    
+
     if (parser->code_pos > 0) {
         fprintf(output, "%s", parser->code_buffer);
     }
-    
+
     fprintf(output, "    .text\n");
     fprintf(output, "%s", parser->function_code_buffer);
 
@@ -366,7 +366,7 @@ int main(int argc, char *argv[]) {
 
     free_parser(parser);
     free_token_stream(tokens);
-    
+
     if (error_handler) {
         error_handler_flush(error_handler);
         error_handler_free(error_handler);

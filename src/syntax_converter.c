@@ -3,7 +3,6 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <regex.h>
 
 /*
  * Simple pattern-based converter using string substitution
@@ -11,10 +10,10 @@
 int convert_att_to_intel(const char *input, char *output, size_t output_size) {
     /* Check if this looks like an AT&T instruction */
     const char *p = input;
-    
+
     /* Skip whitespace */
     while (*p == ' ' || *p == '\t') p++;
-    
+
     /* Check for AT&T instruction patterns */
     int is_att = 0;
     if (strstr(p, "movq") || strstr(p, "movl") || strstr(p, "movw") || strstr(p, "movb") ||
@@ -33,28 +32,28 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
         strstr(p, "incq") || strstr(p, "decq") ||
         strstr(p, "andl") || strstr(p, "andq") ||
         strstr(p, "orl") || strstr(p, "orq") ||
-        strstr(p, "sete") || strstr(p, "setne") || strstr(p, "setl") || 
+        strstr(p, "sete") || strstr(p, "setne") || strstr(p, "setl") ||
         strstr(p, "setle") || strstr(p, "setg") || strstr(p, "setge")) {
         is_att = 1;
     }
-    
+
     if (!is_att) {
         /* Not AT&T syntax, copy as-is */
         strncpy(output, input, output_size - 1);
         output[output_size - 1] = '\0';
         return 0;
     }
-    
+
     /* Simple conversion: Handle common patterns */
     char temp[1024];
     strncpy(temp, input, sizeof(temp) - 1);
     temp[sizeof(temp) - 1] = '\0';
-    
+
     /* Remove % from registers */
     char *src = temp;
     char *dst = output;
     size_t remaining = output_size;
-    
+
     while (*src && remaining > 1) {
         if (*src == '%' && (isalpha(src[1]) || src[1] == 'r' || src[1] == 'e')) {
             /* Skip % before register names */
@@ -68,17 +67,17 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
         }
     }
     *dst = '\0';
-    
+
     /* Now handle instruction suffixes and operand reversal */
     /* This is a simplified version - just remove suffixes for now */
     char final[1024];
     strncpy(final, output, sizeof(final) - 1);
     final[sizeof(final) - 1] = '\0';
-    
+
     /* Remove instruction suffixes (q, l, w, b) */
     char *insn_start = final;
     while (*insn_start == ' ' || *insn_start == '\t') insn_start++;
-    
+
     if (strncmp(insn_start, "movq ", 5) == 0) memcpy(insn_start, "mov ", 4);
     else if (strncmp(insn_start, "movl ", 5) == 0) memcpy(insn_start, "mov ", 4);
     else if (strncmp(insn_start, "movw ", 5) == 0) memcpy(insn_start, "mov ", 4);
@@ -117,7 +116,7 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
     else if (strncmp(insn_start, "andq ", 5) == 0) memcpy(insn_start, "and ", 4);
     else if (strncmp(insn_start, "orl ", 4) == 0) memcpy(insn_start, "or ", 3);
     else if (strncmp(insn_start, "orq ", 4) == 0) memcpy(insn_start, "or ", 3);
-    
+
     /* Handle memory addressing: (reg) -> [reg],  offset(reg) -> [reg+offset] */
     /* Handle RIP-relative: label(rip) -> [rel label] */
     char *result = final;
@@ -128,29 +127,30 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
             /* Find the label before ( */
             char *label_end = paren;
             char *label_start = label_end - 1;
-            while (label_start > result && (isalnum(*label_start) || *label_start == '_' || *label_start == '.' || *label_start == '-')) {
+            while (label_start > result && (isalnum(*label_start) || *label_start == '_' || *label_start == '.' || *
+                                            label_start == '-')) {
                 label_start--;
             }
             label_start++;
-            
+
             /* Extract label */
             size_t label_len = label_end - label_start;
             char label[256];
             strncpy(label, label_start, label_len);
             label[label_len] = '\0';
-            
+
             /* Replace with [rip + label] for GAS Intel syntax */
             char replacement[512];
             snprintf(replacement, sizeof(replacement), "[rip + %s]", label);
-            
+
             /* Build new string */
             size_t prefix_len = label_start - result;
             char new_result[1024];
             strncpy(new_result, result, prefix_len);
             new_result[prefix_len] = '\0';
             strcat(new_result, replacement);
-            strcat(new_result, paren + 5);  /* Skip (rip) */
-            
+            strcat(new_result, paren + 5); /* Skip (rip) */
+
             strcpy(final, new_result);
             paren = final + prefix_len + strlen(replacement);
         } else {
@@ -162,18 +162,18 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
                 char content[256];
                 strncpy(content, paren + 1, content_len);
                 content[content_len] = '\0';
-                
+
                 /* Check if this is indexed addressing (has commas) */
                 char *comma1 = strchr(content, ',');
                 if (comma1) {
                     /* Indexed addressing: (base,index,scale) */
                     char base[32], index[32], scale[32] = "1";
-                    
+
                     /* Extract base */
                     size_t base_len = comma1 - content;
                     strncpy(base, content, base_len);
                     base[base_len] = '\0';
-                    
+
                     /* Extract index */
                     char *comma2 = strchr(comma1 + 1, ',');
                     if (comma2) {
@@ -181,14 +181,14 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
                         size_t index_len = comma2 - comma1 - 1;
                         strncpy(index, comma1 + 1, index_len);
                         index[index_len] = '\0';
-                        
+
                         /* Extract scale */
                         strcpy(scale, comma2 + 1);
                     } else {
                         /* No scale, just base and index */
                         strcpy(index, comma1 + 1);
                     }
-                    
+
                     /* Find offset before parenthesis */
                     char *offset_end = paren;
                     char *offset_start = offset_end - 1;
@@ -196,14 +196,14 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
                         offset_start--;
                     }
                     offset_start++;
-                    
+
                     char offset[32] = "";
                     if (offset_start < offset_end) {
                         size_t offset_len = offset_end - offset_start;
                         strncpy(offset, offset_start, offset_len);
                         offset[offset_len] = '\0';
                     }
-                    
+
                     /* Build Intel syntax: [base+index*scale+offset] or [base+index*scale] */
                     char replacement[256];
                     strcpy(replacement, "[");
@@ -222,7 +222,7 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
                         strcat(replacement, offset);
                     }
                     strcat(replacement, "]");
-                    
+
                     /* Build new string */
                     size_t prefix_len = offset_start - result;
                     char new_result[1024];
@@ -230,16 +230,16 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
                     new_result[prefix_len] = '\0';
                     strcat(new_result, replacement);
                     strcat(new_result, close_paren + 1);
-                    
+
                     strcpy(final, new_result);
                     paren = final + prefix_len + strlen(replacement);
                     continue;
                 }
-                
+
                 /* Simple addressing: (reg) or offset(reg) */
                 char reg[32];
                 strcpy(reg, content);
-                
+
                 /* Find offset before parenthesis */
                 char *offset_end = paren;
                 char *offset_start = offset_end - 1;
@@ -247,14 +247,14 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
                     offset_start--;
                 }
                 offset_start++;
-                
+
                 char offset[32] = "";
                 if (offset_start < offset_end) {
                     size_t offset_len = offset_end - offset_start;
                     strncpy(offset, offset_start, offset_len);
                     offset[offset_len] = '\0';
                 }
-                
+
                 /* Build [reg+offset] or [reg-offset] or [reg] */
                 char replacement[256];
                 if (offset[0]) {
@@ -267,15 +267,15 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
                 } else {
                     snprintf(replacement, sizeof(replacement), "[%s]", reg);
                 }
-                
+
                 /* Build new string */
                 size_t prefix_len = offset_start - result;
                 char new_result[1024];
                 strncpy(new_result, result, prefix_len);
                 new_result[prefix_len] = '\0';
                 strcat(new_result, replacement);
-                strcat(new_result, close_paren + 1);  /* Skip ) */
-                
+                strcat(new_result, close_paren + 1); /* Skip ) */
+
                 strcpy(final, new_result);
                 paren = final + prefix_len + strlen(replacement);
             } else {
@@ -283,22 +283,22 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
             }
         }
     }
-    
+
     /* Reverse operands for 2-operand instructions (AT&T: src, dest -> Intel: dest, src) */
     char *operand_start = insn_start;
     while (*operand_start && *operand_start != ' ' && *operand_start != '\t') operand_start++;
     while (*operand_start == ' ' || *operand_start == '\t') operand_start++;
-    
+
     /* Find comma separating operands */
     char *comma = strchr(operand_start, ',');
     if (comma && *operand_start) {
         /* Extract first operand (source in AT&T) */
         char op1[256];
         size_t op1_len = comma - operand_start;
-        while (op1_len > 0 && (operand_start[op1_len-1] == ' ' || operand_start[op1_len-1] == '\t')) op1_len--;
+        while (op1_len > 0 && (operand_start[op1_len - 1] == ' ' || operand_start[op1_len - 1] == '\t')) op1_len--;
         strncpy(op1, operand_start, op1_len);
         op1[op1_len] = '\0';
-        
+
         /* Extract second operand (dest in AT&T) */
         char op2[256];
         char *op2_start = comma + 1;
@@ -309,27 +309,27 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
         size_t op2_len = op2_end - op2_start;
         strncpy(op2, op2_start, op2_len);
         op2[op2_len] = '\0';
-        
+
         /* Rebuild instruction with reversed operands */
         char reversed[1024];
         size_t prefix_len = operand_start - final;
         strncpy(reversed, final, prefix_len);
         reversed[prefix_len] = '\0';
-        
+
         /* Add reversed operands: dest, src */
         snprintf(reversed + prefix_len, sizeof(reversed) - prefix_len, "%s, %s", op2, op1);
-        
+
         /* Add any trailing content (comments, newlines) */
         if (*op2_end) {
             strcat(reversed, op2_end);
         }
-        
+
         strcpy(final, reversed);
     }
-    
+
     /* Copy final result */
     strncpy(output, final, output_size - 1);
     output[output_size - 1] = '\0';
-    
+
     return 1;
 }

@@ -22,51 +22,50 @@ static int is_terminal(FILE *stream) {
 
 static const char *get_severity_label(ErrorSeverity severity) {
     switch (severity) {
-        case SEVERITY_DEBUG:   return "[DEBUG]";
-        case SEVERITY_INFO:    return "[INFO]";
+        case SEVERITY_DEBUG: return "[DEBUG]";
+        case SEVERITY_INFO: return "[INFO]";
         case SEVERITY_WARNING: return "[WARNING]";
-        case SEVERITY_ERROR:   return "[ERROR]";
-        case SEVERITY_FATAL:   return "[FATAL]";
-        default:               return "[UNKNOWN]";
+        case SEVERITY_ERROR: return "[ERROR]";
+        case SEVERITY_FATAL: return "[FATAL]";
+        default: return "[UNKNOWN]";
     }
 }
 
 static const char *get_severity_color(ErrorSeverity severity) {
     switch (severity) {
-        case SEVERITY_DEBUG:   return COLOR_CYAN;
-        case SEVERITY_INFO:    return COLOR_GREEN;
+        case SEVERITY_DEBUG: return COLOR_CYAN;
+        case SEVERITY_INFO: return COLOR_GREEN;
         case SEVERITY_WARNING: return COLOR_YELLOW;
-        case SEVERITY_ERROR:   return COLOR_RED;
-        case SEVERITY_FATAL:   return COLOR_MAGENTA;
-        default:               return COLOR_RESET;
+        case SEVERITY_ERROR: return COLOR_RED;
+        case SEVERITY_FATAL: return COLOR_MAGENTA;
+        default: return COLOR_RESET;
     }
 }
 
 ErrorHandler *error_handler_init(void) {
-    ErrorHandler *handler = (ErrorHandler *)malloc(sizeof(ErrorHandler));
+    ErrorHandler *handler = (ErrorHandler *) malloc(sizeof(ErrorHandler));
     if (!handler) {
         return NULL;
     }
-    
+
     handler->output_stream = stderr;
     handler->use_colors = is_terminal(handler->output_stream);
     handler->show_source_context = 1;
     handler->show_suggestions = 1;
-    handler->max_errors = 10;   
+    handler->max_errors = 10;
     handler->error_count = 0;
     handler->warning_count = 0;
     handler->json_output = 0;
-    handler->buffered = 1;   
+    handler->buffered = 1;
     handler->buffer = NULL;
     handler->buffer_count = 0;
     handler->buffer_capacity = 0;
-    
+
     return handler;
 }
 
 void error_handler_free(ErrorHandler *handler) {
     if (handler) {
-         
         for (int i = 0; i < handler->buffer_count; i++) {
             error_context_free(handler->buffer[i]);
         }
@@ -95,7 +94,7 @@ void error_handler_set_json_output(ErrorHandler *handler, int enabled) {
     if (handler) {
         handler->json_output = enabled;
         if (enabled) {
-            handler->use_colors = 0;   
+            handler->use_colors = 0;
         }
     }
 }
@@ -115,11 +114,11 @@ ErrorContext *error_context_create(
     const char *filename,
     const char *message
 ) {
-    ErrorContext *ctx = (ErrorContext *)malloc(sizeof(ErrorContext));
+    ErrorContext *ctx = (ErrorContext *) malloc(sizeof(ErrorContext));
     if (!ctx) {
         return NULL;
     }
-    
+
     ctx->severity = severity;
     ctx->line = line;
     ctx->column = column;
@@ -134,7 +133,7 @@ ErrorContext *error_context_create(
     ctx->children = NULL;
     ctx->child_count = 0;
     ctx->child_capacity = 0;
-    
+
     return ctx;
 }
 
@@ -142,20 +141,20 @@ void error_context_add_child(ErrorContext *parent, ErrorContext *child) {
     if (!parent || !child) {
         return;
     }
-    
+
     if (parent->child_count >= parent->child_capacity) {
         int new_capacity = parent->child_capacity == 0 ? 4 : parent->child_capacity * 2;
-        ErrorContext **new_children = (ErrorContext **)realloc(
+        ErrorContext **new_children = (ErrorContext **) realloc(
             parent->children,
             sizeof(ErrorContext *) * new_capacity
         );
         if (!new_children) {
-            return;   
+            return;
         }
         parent->children = new_children;
         parent->child_capacity = new_capacity;
     }
-    
+
     parent->children[parent->child_count++] = child;
     child->parent = parent;
 }
@@ -191,11 +190,11 @@ void error_context_free(ErrorContext *ctx) {
     if (!ctx) {
         return;
     }
-    
+
     for (int i = 0; i < ctx->child_count; i++) {
         error_context_free(ctx->children[i]);
     }
-    
+
     free(ctx->filename);
     free(ctx->message);
     free(ctx->source_line);
@@ -210,20 +209,27 @@ static void json_escape_string(FILE *out, const char *str) {
         fprintf(out, "null");
         return;
     }
-    
+
     fprintf(out, "\"");
     for (const char *p = str; *p; p++) {
         switch (*p) {
-            case '"':  fprintf(out, "\\\""); break;
-            case '\\': fprintf(out, "\\\\"); break;
-            case '\b': fprintf(out, "\\b"); break;
-            case '\f': fprintf(out, "\\f"); break;
-            case '\n': fprintf(out, "\\n"); break;
-            case '\r': fprintf(out, "\\r"); break;
-            case '\t': fprintf(out, "\\t"); break;
+            case '"': fprintf(out, "\\\"");
+                break;
+            case '\\': fprintf(out, "\\\\");
+                break;
+            case '\b': fprintf(out, "\\b");
+                break;
+            case '\f': fprintf(out, "\\f");
+                break;
+            case '\n': fprintf(out, "\\n");
+                break;
+            case '\r': fprintf(out, "\\r");
+                break;
+            case '\t': fprintf(out, "\\t");
+                break;
             default:
                 if (*p < 32) {
-                    fprintf(out, "\\u%04x", (unsigned char)*p);
+                    fprintf(out, "\\u%04x", (unsigned char) *p);
                 } else {
                     fputc(*p, out);
                 }
@@ -244,12 +250,12 @@ static void print_source_context(
     if (!handler->show_source_context || !ctx->source_line) {
         return;
     }
-    
+
     FILE *out = handler->output_stream;
     const char *color_blue = handler->use_colors ? COLOR_BLUE : "";
     const char *reset = handler->use_colors ? COLOR_RESET : "";
     const char *error_color = handler->use_colors ? get_severity_color(ctx->severity) : "";
-    
+
     for (int i = 0; i < indent_level; i++) {
         fprintf(out, " ");
     }
@@ -259,27 +265,27 @@ static void print_source_context(
     } else {
         fprintf(out, "line %d:%d\n", ctx->line, ctx->column);
     }
-    
+
     for (int i = 0; i < indent_level; i++) {
         fprintf(out, " ");
     }
     fprintf(out, "  %s|%s\n", color_blue, reset);
-    
+
     for (int i = 0; i < indent_level; i++) {
         fprintf(out, " ");
     }
     fprintf(out, "%s%d |%s %s\n", color_blue, ctx->line, reset, ctx->source_line);
-    
+
     if (ctx->column > 0) {
         for (int i = 0; i < indent_level; i++) {
             fprintf(out, " ");
         }
         fprintf(out, "  %s|%s ", color_blue, reset);
-        
+
         for (int i = 1; i < ctx->column; i++) {
             fprintf(out, " ");
         }
-        
+
         fprintf(out, "%s", error_color);
         int underline_len = 1;
         if (ctx->token_value) {
@@ -302,35 +308,34 @@ static void print_error_context_recursive(
     if (!ctx) {
         return;
     }
-    
+
     FILE *out = handler->output_stream;
     const char *severity_color = handler->use_colors ? get_severity_color(ctx->severity) : "";
     const char *reset = handler->use_colors ? COLOR_RESET : "";
     const char *bold = handler->use_colors ? COLOR_BOLD : "";
-    
+
     char error_code_str[16];
     format_error_code(error_code_str, sizeof(error_code_str), ctx->error_category, ctx->error_code);
-    
+
     for (int i = 0; i < indent_level; i++) {
         fprintf(out, " ");
     }
-    
+
     const char *severity_label = get_severity_label(ctx->severity);
     char lowercase_severity[32] = {0};
     for (int i = 0; severity_label[i] && i < 31; i++) {
         if (severity_label[i] == '[' || severity_label[i] == ']') continue;
-        lowercase_severity[strlen(lowercase_severity)] = 
-            (severity_label[i] >= 'A' && severity_label[i] <= 'Z') ? 
-            severity_label[i] + 32 : severity_label[i];
+        lowercase_severity[strlen(lowercase_severity)] =
+                (severity_label[i] >= 'A' && severity_label[i] <= 'Z') ? severity_label[i] + 32 : severity_label[i];
     }
-    
+
     fprintf(out, "%s%s%s", severity_color, bold, lowercase_severity);
     fprintf(out, "[%s]%s: %s\n", error_code_str, reset, ctx->message);
-    
+
     if (handler->show_source_context && ctx->source_line) {
         print_source_context(handler, ctx, indent_level);
     }
-    
+
     if (handler->show_suggestions && ctx->suggestion) {
         for (int i = 0; i < indent_level; i++) {
             fprintf(out, " ");
@@ -341,24 +346,24 @@ static void print_error_context_recursive(
         for (int i = 0; i < indent_level; i++) {
             fprintf(out, " ");
         }
-        fprintf(out, "  %s= %shelp:%s %s\n", 
+        fprintf(out, "  %s= %shelp:%s %s\n",
                 color_blue, color_cyan, reset, ctx->suggestion);
     }
-    
+
     if (ctx->child_count > 0) {
         for (int i = 0; i < indent_level; i++) {
             fprintf(out, " ");
         }
         const char *color_cyan = handler->use_colors ? COLOR_CYAN : "";
         const char *color_blue = handler->use_colors ? COLOR_BLUE : "";
-        fprintf(out, "  %s= %snote:%s caused by:\n", 
+        fprintf(out, "  %s= %snote:%s caused by:\n",
                 color_blue, color_cyan, reset);
-        
+
         for (int i = 0; i < ctx->child_count; i++) {
             print_error_context_recursive(handler, ctx->children[i], indent_level + 1);
         }
     }
-    
+
     fprintf(out, "\n");
 }
 
@@ -371,53 +376,53 @@ static void print_error_context_json(
     if (!ctx) {
         return;
     }
-    
+
     FILE *out = handler->output_stream;
     char error_code_str[16];
     format_error_code(error_code_str, sizeof(error_code_str), ctx->error_category, ctx->error_code);
-    
+
     for (int i = 0; i < indent_level; i++) {
         fprintf(out, "  ");
     }
-    
+
     fprintf(out, "{\n");
-    
+
     for (int i = 0; i < indent_level + 1; i++) fprintf(out, "  ");
     fprintf(out, "\"severity\": \"%s\",\n", get_severity_label(ctx->severity));
-    
+
     for (int i = 0; i < indent_level + 1; i++) fprintf(out, "  ");
     fprintf(out, "\"errorCode\": \"%s\",\n", error_code_str);
-    
+
     for (int i = 0; i < indent_level + 1; i++) fprintf(out, "  ");
     fprintf(out, "\"line\": %d,\n", ctx->line);
-    
+
     for (int i = 0; i < indent_level + 1; i++) fprintf(out, "  ");
     fprintf(out, "\"column\": %d,\n", ctx->column);
-    
+
     for (int i = 0; i < indent_level + 1; i++) fprintf(out, "  ");
     fprintf(out, "\"filename\": ");
     json_escape_string(out, ctx->filename);
     fprintf(out, ",\n");
-    
+
     for (int i = 0; i < indent_level + 1; i++) fprintf(out, "  ");
     fprintf(out, "\"message\": ");
     json_escape_string(out, ctx->message);
     fprintf(out, ",\n");
-    
+
     for (int i = 0; i < indent_level + 1; i++) fprintf(out, "  ");
     fprintf(out, "\"sourceLine\": ");
     json_escape_string(out, ctx->source_line);
     fprintf(out, ",\n");
-    
+
     for (int i = 0; i < indent_level + 1; i++) fprintf(out, "  ");
     fprintf(out, "\"token\": ");
     json_escape_string(out, ctx->token_value);
     fprintf(out, ",\n");
-    
+
     for (int i = 0; i < indent_level + 1; i++) fprintf(out, "  ");
     fprintf(out, "\"suggestion\": ");
     json_escape_string(out, ctx->suggestion);
-    
+
     if (ctx->child_count > 0) {
         fprintf(out, ",\n");
         for (int i = 0; i < indent_level + 1; i++) fprintf(out, "  ");
@@ -430,7 +435,7 @@ static void print_error_context_json(
     } else {
         fprintf(out, "\n");
     }
-    
+
     for (int i = 0; i < indent_level; i++) {
         fprintf(out, "  ");
     }
@@ -441,42 +446,41 @@ void error_report_context(ErrorHandler *handler, ErrorContext *ctx) {
     if (!handler || !ctx) {
         return;
     }
-    
+
     if (ctx->severity == SEVERITY_ERROR || ctx->severity == SEVERITY_FATAL) {
         handler->error_count++;
     } else if (ctx->severity == SEVERITY_WARNING) {
         handler->warning_count++;
     }
-    
+
     if (handler->buffered) {
-         
         if (handler->buffer_count >= handler->buffer_capacity) {
             int new_capacity = handler->buffer_capacity == 0 ? 16 : handler->buffer_capacity * 2;
-            ErrorContext **new_buffer = (ErrorContext **)realloc(
+            ErrorContext **new_buffer = (ErrorContext **) realloc(
                 handler->buffer,
                 sizeof(ErrorContext *) * new_capacity
             );
             if (!new_buffer) {
-                return;   
+                return;
             }
             handler->buffer = new_buffer;
             handler->buffer_capacity = new_capacity;
         }
-        
+
         handler->buffer[handler->buffer_count++] = ctx;
-        
+
         if (ctx->severity == SEVERITY_FATAL || error_handler_should_stop(handler)) {
             error_handler_flush(handler);
         }
         return;
     }
-    
+
     if (handler->json_output) {
         print_error_context_json(handler, ctx, 0, 1);
     } else {
         print_error_context_recursive(handler, ctx, 0);
     }
-    
+
     if (ctx->severity == SEVERITY_FATAL || error_handler_should_stop(handler)) {
         fprintf(handler->output_stream, "\n%s[FATAL]%s Too many errors, stopping compilation.\n\n",
                 handler->use_colors ? COLOR_MAGENTA : "",
@@ -501,20 +505,20 @@ void error_report(
     if (!handler) {
         return;
     }
-    
+
     char message[1024];
     va_list args;
     va_start(args, format);
     vsnprintf(message, sizeof(message), format, args);
     va_end(args);
-    
+
     ErrorContext *ctx = error_context_create(severity, line, column, error_category, error_code, filename, message);
     if (!ctx) {
         return;
     }
-    
+
     error_report_context(handler, ctx);
-    
+
     if (!handler->buffered) {
         error_context_free(ctx);
     }
@@ -538,22 +542,22 @@ void error_report_with_suggestion(
     if (!handler) {
         return;
     }
-    
+
     char message[1024];
     va_list args;
     va_start(args, format);
     vsnprintf(message, sizeof(message), format, args);
     va_end(args);
-    
+
     ErrorContext *ctx = error_context_create(severity, line, column, error_category, error_code, filename, message);
     if (!ctx) {
         return;
     }
-    
+
     error_context_set_suggestion(ctx, suggestion);
-    
+
     error_report_context(handler, ctx);
-    
+
     if (!handler->buffered) {
         error_context_free(ctx);
     }
@@ -563,11 +567,10 @@ void error_handler_flush(ErrorHandler *handler) {
     if (!handler || handler->buffer_count == 0) {
         return;
     }
-    
+
     FILE *out = handler->output_stream;
-    
+
     if (handler->json_output) {
-         
         fprintf(out, "{\n");
         fprintf(out, "  \"errors\": [\n");
         for (int i = 0; i < handler->buffer_count; i++) {
@@ -580,22 +583,21 @@ void error_handler_flush(ErrorHandler *handler) {
         fprintf(out, "  }\n");
         fprintf(out, "}\n");
     } else {
-         
         for (int i = 0; i < handler->buffer_count; i++) {
             print_error_context_recursive(handler, handler->buffer[i], 0);
         }
-        
+
         const char *color_red = handler->use_colors ? COLOR_RED : "";
         const char *color_yellow = handler->use_colors ? COLOR_YELLOW : "";
         const char *color_reset = handler->use_colors ? COLOR_RESET : "";
         const char *color_bold = handler->use_colors ? COLOR_BOLD : "";
-        
+
         if (handler->error_count > 0) {
             fprintf(out, "%serror%s: could not compile due to ", color_red, color_reset);
-            fprintf(out, "%s%d error%s%s", color_bold, handler->error_count, 
+            fprintf(out, "%s%d error%s%s", color_bold, handler->error_count,
                     handler->error_count != 1 ? "s" : "", color_reset);
             if (handler->warning_count > 0) {
-                fprintf(out, "; %s%d warning%s emitted%s", 
+                fprintf(out, "; %s%d warning%s emitted%s",
                         color_yellow, handler->warning_count,
                         handler->warning_count != 1 ? "s" : "", color_reset);
             }
