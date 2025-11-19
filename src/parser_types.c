@@ -1,12 +1,8 @@
 #include "parser.h"
 #include "parser_internal.h"
-#include "errorHandler.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdarg.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
 /*
  * escape_char_for_comment - Convert character to printable escape sequence

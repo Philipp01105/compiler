@@ -1,12 +1,5 @@
 #include "parser.h"
 #include "parser_internal.h"
-#include "errorHandler.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdarg.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
 /*
  * generate_write_syscall - Emit write syscall assembly

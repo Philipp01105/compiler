@@ -13,7 +13,7 @@
 #define COLOR_BOLD    "\033[1m"
 #define COLOR_DIM     "\033[2m"
 
-ErrorHandler *global_error_handler = NULL;
+ErrorHandler *global_error_handler = nullptr;
 
 static int is_terminal(FILE *stream) {
     int fd = fileno(stream);
@@ -45,7 +45,7 @@ static const char *get_severity_color(ErrorSeverity severity) {
 ErrorHandler *error_handler_init(void) {
     ErrorHandler *handler = (ErrorHandler *) malloc(sizeof(ErrorHandler));
     if (!handler) {
-        return NULL;
+        return nullptr;
     }
 
     handler->output_stream = stderr;
@@ -57,7 +57,7 @@ ErrorHandler *error_handler_init(void) {
     handler->warning_count = 0;
     handler->json_output = 0;
     handler->buffered = 1;
-    handler->buffer = NULL;
+    handler->buffer = nullptr;
     handler->buffer_count = 0;
     handler->buffer_capacity = 0;
 
@@ -116,7 +116,7 @@ ErrorContext *error_context_create(
 ) {
     ErrorContext *ctx = (ErrorContext *) malloc(sizeof(ErrorContext));
     if (!ctx) {
-        return NULL;
+        return nullptr;
     }
 
     ctx->severity = severity;
@@ -124,13 +124,13 @@ ErrorContext *error_context_create(
     ctx->column = column;
     ctx->error_category = error_category;
     ctx->error_code = error_code;
-    ctx->filename = filename ? strdup(filename) : NULL;
-    ctx->message = message ? strdup(message) : NULL;
-    ctx->source_line = NULL;
-    ctx->token_value = NULL;
-    ctx->suggestion = NULL;
-    ctx->parent = NULL;
-    ctx->children = NULL;
+    ctx->filename = filename ? strdup(filename) : nullptr;
+    ctx->message = message ? strdup(message) : nullptr;
+    ctx->source_line = nullptr;
+    ctx->token_value = nullptr;
+    ctx->suggestion = nullptr;
+    ctx->parent = nullptr;
+    ctx->children = nullptr;
     ctx->child_count = 0;
     ctx->child_capacity = 0;
 
@@ -243,8 +243,8 @@ static void format_error_code(char *buffer, size_t size, char category, int code
 }
 
 static void print_source_context(
-    ErrorHandler *handler,
-    ErrorContext *ctx,
+    const ErrorHandler *handler,
+    const ErrorContext *ctx,
     int indent_level
 ) {
     if (!handler->show_source_context || !ctx->source_line) {
@@ -611,11 +611,11 @@ void error_handler_flush(ErrorHandler *handler) {
     }
 }
 
-int error_handler_get_error_count(ErrorHandler *handler) {
+int error_handler_get_error_count(const ErrorHandler *handler) {
     return handler ? handler->error_count : 0;
 }
 
-int error_handler_get_warning_count(ErrorHandler *handler) {
+int error_handler_get_warning_count(const ErrorHandler *handler) {
     return handler ? handler->warning_count : 0;
 }
 

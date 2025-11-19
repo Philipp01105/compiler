@@ -5,9 +5,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdarg.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
 /*
  * parse_program - Parse entire program

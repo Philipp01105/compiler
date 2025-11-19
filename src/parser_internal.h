@@ -7,7 +7,6 @@
 
 #include <stddef.h>
 #include "compiler_types.h"
-#include "lexer.h"
 
 /* Type system helpers */
 const char *datatype_to_string(DataType type);

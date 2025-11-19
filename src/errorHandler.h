@@ -165,9 +165,9 @@ void error_report_with_suggestion(
 
 void error_handler_flush(ErrorHandler *handler);
 
-int error_handler_get_error_count(ErrorHandler *handler);
+int error_handler_get_error_count(const ErrorHandler *handler);
 
-int error_handler_get_warning_count(ErrorHandler *handler);
+int error_handler_get_warning_count(const ErrorHandler *handler);
 
 int error_handler_should_stop(ErrorHandler *handler);
 

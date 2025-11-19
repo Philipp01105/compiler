@@ -1,7 +1,6 @@
 #include "instruction_builder.h"
 #include "parser_internal.h"
 #include <stdio.h>
-#include <string.h>
 
 /* Global syntax mode - defaults to Intel for the rewrite */
 static SyntaxMode current_syntax = SYNTAX_INTEL;
@@ -47,8 +46,6 @@ const char *format_memory_ref(const char *base, int offset, char *buffer, size_t
     if (current_syntax == SYNTAX_ATT) {
         if (offset == 0) {
             snprintf(buffer, size, "(%%%s)", base);
-        } else if (offset > 0) {
-            snprintf(buffer, size, "%d(%%%s)", offset, base);
         } else {
             snprintf(buffer, size, "%d(%%%s)", offset, base);
         }
