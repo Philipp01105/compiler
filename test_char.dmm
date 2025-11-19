@@ -1,0 +1,24 @@
+func test() -> void {
+    var x:int = 10;
+    println(20);
+    return;
+}
+
+func main() -> int {
+    test();
+    var[20] t:int;
+    for(var i = 0; i<20; i++){
+        t[i] = i;
+    }
+    for(var i = 0; i<30; i++){
+
+    }
+
+    var x:*int = reserve(int);
+    println("Speicheradresse von x: " + x);
+    free(x);
+    var x:*char = reserve(char);
+    x = 'c';
+    println("x is now: " + x);
+    return 10;
+}
