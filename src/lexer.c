@@ -114,6 +114,7 @@ static TokenType get_keyword_type(const char *str) {
     if (strcmp(str, "break") == 0) return TOKEN_KEYWORD_BREAK;
     if (strcmp(str, "continue") == 0) return TOKEN_KEYWORD_CONTINUE;
     if (strcmp(str, "struct") == 0) return TOKEN_KEYWORD_STRUCT;
+    if (strcmp(str, "import") == 0) return TOKEN_KEYWORD_IMPORT;
 
     // Data Types (ERWEITERT!)
     if (strcmp(str, "int") == 0) return TOKEN_TYPE_INT;
@@ -415,6 +416,7 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
             case ',': type = TOKEN_COMMA; break;
             case ':': type = TOKEN_COLON; break;
             case '.': type = TOKEN_DOT; break;
+            case '#': type = TOKEN_HASH; break;
         }
 
         if (type != TOKEN_ERROR) {
@@ -480,6 +482,7 @@ const char *token_type_to_string(TokenType type) {
         case TOKEN_KEYWORD_STRUCT: return "KEYWORD_STRUCT";
         case TOKEN_KEYWORD_BREAK: return "KEYWORD_BREAK";
         case TOKEN_KEYWORD_CONTINUE: return "KEYWORD_CONTINUE";
+        case TOKEN_KEYWORD_IMPORT: return "KEYWORD_IMPORT";
 
         case TOKEN_TYPE_INT: return "TYPE_INT";
         case TOKEN_TYPE_CHAR: return "TYPE_CHAR";
@@ -532,6 +535,7 @@ const char *token_type_to_string(TokenType type) {
         case TOKEN_COLON: return "COLON";
         case TOKEN_ARROW: return "ARROW";
         case TOKEN_DOT: return "DOT";
+        case TOKEN_HASH: return "HASH";
 
         case TOKEN_EOF: return "EOF";
         case TOKEN_ERROR: return "ERROR";

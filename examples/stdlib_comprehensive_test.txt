@@ -1,0 +1,213 @@
+// =================================================================
+// COMPREHENSIVE STANDARD LIBRARY TEST
+// Tests all modules: core, math, array, strings, utils
+// =================================================================
+
+#import <stdlib/core.txt>
+#import <stdlib/math.txt>
+#import <stdlib/array.txt>
+#import <stdlib/strings.txt>
+#import <stdlib/utils.txt>
+
+func main() -> void {
+    printDoubleLine();
+    print("    COMPREHENSIVE STANDARD LIBRARY TEST");
+    printDoubleLine();
+    print("");
+    
+    // ===== CORE MODULE TESTS =====
+    printLine();
+    print("CORE MODULE - Integer Operations");
+    printLine();
+    printLabeled("intAbs(-42)", intAbs(-42));
+    printLabeled("intMin(10, 20)", intMin(10, 20));
+    printLabeled("intMax(10, 20)", intMax(10, 20));
+    printLabeled("intClamp(100, 0, 50)", intClamp(100, 0, 50));
+    printLabeledBool("intIsEven(42)", intIsEven(42));
+    printLabeledBool("intIsOdd(43)", intIsOdd(43));
+    print("");
+    
+    printLine();
+    print("CORE MODULE - String Operations");
+    printLine();
+    printLabeledBool("strEquals('test', 'test')", strEquals("test", "test"));
+    printLabeledBool("strIsEmpty('')", strIsEmpty(""));
+    printLabeledBool("strIsNotEmpty('text')", strIsNotEmpty("text"));
+    print("");
+    
+    printLine();
+    print("CORE MODULE - Boolean Operations");
+    printLine();
+    printLabeledBool("boolAnd(1, 1)", boolAnd(1, 1));
+    printLabeledBool("boolOr(1, 0)", boolOr(1, 0));
+    printLabeledBool("boolXor(1, 0)", boolXor(1, 0));
+    print("");
+    
+    printLine();
+    print("CORE MODULE - Character Operations");
+    printLine();
+    printLabeledBool("charIsUpper('A')", charIsUpper('A'));
+    printLabeledBool("charIsLower('a')", charIsLower('a'));
+    printLabeledBool("charIsDigit('5')", charIsDigit('5'));
+    printLabeledBool("charIsAlpha('Z')", charIsAlpha('Z'));
+    print("");
+    
+    // ===== MATH MODULE TESTS =====
+    printLine();
+    print("MATH MODULE - Basic Operations");
+    printLine();
+    printLabeled("mathPow(2, 10)", mathPow(2, 10));
+    printLabeled("mathSquare(12)", mathSquare(12));
+    printLabeled("mathCube(5)", mathCube(5));
+    printLabeled("mathFactorial(6)", mathFactorial(6));
+    printLabeled("mathFibonacci(12)", mathFibonacci(12));
+    print("");
+    
+    printLine();
+    print("MATH MODULE - Summation");
+    printLine();
+    printLabeled("mathSum(100)", mathSum(100));
+    printLabeled("mathSumRange(10, 20)", mathSumRange(10, 20));
+    printLabeled("mathSumSquares(10)", mathSumSquares(10));
+    print("");
+    
+    printLine();
+    print("MATH MODULE - Number Theory");
+    printLine();
+    printLabeled("mathGCD(48, 18)", mathGCD(48, 18));
+    printLabeled("mathLCM(12, 18)", mathLCM(12, 18));
+    printLabeledBool("mathIsPrime(17)", mathIsPrime(17));
+    printLabeledBool("mathIsPrime(18)", mathIsPrime(18));
+    printLabeled("mathNthPrime(10)", mathNthPrime(10));
+    print("");
+    
+    printLine();
+    print("MATH MODULE - Digit Operations");
+    printLine();
+    var testNum:int = 12345;
+    printLabeled("Number", testNum);
+    printLabeled("mathDigitCount", mathDigitCount(testNum));
+    printLabeled("mathDigitSum", mathDigitSum(testNum));
+    printLabeled("mathDigitReverse", mathDigitReverse(testNum));
+    print("");
+    
+    // ===== ARRAY MODULE TESTS =====
+    printLine();
+    print("ARRAY MODULE - Initialization and Search");
+    printLine();
+    var[10] testArr:int;
+    
+    // Fill with pattern
+    for (var i:int = 0; i < 10; i++) {
+        testArr[i] = i * 10;
+    }
+    
+    print("Array contents: [0, 10, 20, 30, 40, 50, 60, 70, 80, 90]");
+    printLabeled("arrayIndexOfInt(arr, 10, 50)", arrayIndexOfInt(testArr, 10, 50));
+    printLabeledBool("arrayContainsInt(arr, 10, 50)", arrayContainsInt(testArr, 10, 50));
+    printLabeledBool("arrayContainsInt(arr, 10, 25)", arrayContainsInt(testArr, 10, 25));
+    print("");
+    
+    printLine();
+    print("ARRAY MODULE - Statistics");
+    printLine();
+    printLabeled("arrayMinInt", arrayMinInt(testArr, 10));
+    printLabeled("arrayMaxInt", arrayMaxInt(testArr, 10));
+    printLabeled("arraySumInt", arraySumInt(testArr, 10));
+    printLabeled("arrayAverageInt", arrayAverageInt(testArr, 10));
+    printLabeled("arrayIndexOfMinInt", arrayIndexOfMinInt(testArr, 10));
+    printLabeled("arrayIndexOfMaxInt", arrayIndexOfMaxInt(testArr, 10));
+    print("");
+    
+    // ===== STRINGS MODULE TESTS =====
+    printLine();
+    print("STRINGS MODULE - Analysis");
+    printLine();
+    var testStr:string = "Hello";
+    print("Test string: 'Hello'");
+    printLabeled("strLength", strLength(testStr));
+    printLabeled("strIndexOf('l')", strIndexOf(testStr, 'l'));
+    printLabeled("strLastIndexOf('l')", strLastIndexOf(testStr, 'l'));
+    printLabeled("strCountChar('l')", strCountChar(testStr, 'l'));
+    print("");
+    
+    printLine();
+    print("STRINGS MODULE - Classification");
+    printLine();
+    printLabeledBool("strIsAlpha('Hello')", strIsAlpha("Hello"));
+    printLabeledBool("strIsDigit('12345')", strIsDigit("12345"));
+    printLabeledBool("strIsUpper('HELLO')", strIsUpper("HELLO"));
+    printLabeledBool("strIsLower('hello')", strIsLower("hello"));
+    print("");
+    
+    printLine();
+    print("STRINGS MODULE - Utilities");
+    printLine();
+    var sentence:string = "The quick brown fox";
+    print("Sentence: 'The quick brown fox'");
+    printLabeled("strCountWords", strCountWords(sentence));
+    printLabeled("strParseInt('12345')", strParseInt("12345"));
+    print("");
+    
+    // ===== UTILS MODULE TESTS =====
+    printLine();
+    print("UTILS MODULE - Comparison");
+    printLine();
+    printLabeled("min(5, 10)", min(5, 10));
+    printLabeled("max(5, 10)", max(5, 10));
+    printLabeled("min3(5, 3, 8)", min3(5, 3, 8));
+    printLabeled("max3(5, 3, 8)", max3(5, 3, 8));
+    print("");
+    
+    printLine();
+    print("UTILS MODULE - Range and Boundary");
+    printLine();
+    printLabeled("clamp(100, 0, 50)", clamp(100, 0, 50));
+    printLabeledBool("inRange(25, 0, 50)", inRange(25, 0, 50));
+    printLabeledBool("inRange(75, 0, 50)", inRange(75, 0, 50));
+    print("");
+    
+    printLine();
+    print("UTILS MODULE - Sign and Selection");
+    printLine();
+    printLabeled("sign(-42)", sign(-42));
+    printLabeled("sign(42)", sign(42));
+    printLabeled("sign(0)", sign(0));
+    printLabeled("selectInt(1, 10, 20)", selectInt(1, 10, 20));
+    printLabeled("selectInt(0, 10, 20)", selectInt(0, 10, 20));
+    print("");
+    
+    printLine();
+    print("UTILS MODULE - Bit Operations");
+    printLine();
+    var bitTest:int = 7;
+    printLabeled("Test value", bitTest);
+    printLabeled("countBits(7)", countBits(bitTest));
+    printLabeledBool("isBitSet(7, 0)", isBitSet(bitTest, 0));
+    printLabeledBool("isBitSet(7, 1)", isBitSet(bitTest, 1));
+    printLabeledBool("isBitSet(7, 3)", isBitSet(bitTest, 3));
+    print("");
+    
+    printLine();
+    print("UTILS MODULE - Safe Math");
+    printLine();
+    printLabeled("safeDivide(100, 10)", safeDivide(100, 10));
+    printLabeled("safeDivide(100, 0)", safeDivide(100, 0));
+    printLabeled("safeModulo(17, 5)", safeModulo(17, 5));
+    print("");
+    
+    // ===== FINAL SUMMARY =====
+    printDoubleLine();
+    print("    ALL STANDARD LIBRARY TESTS COMPLETED!");
+    printDoubleLine();
+    print("");
+    print("Modules tested:");
+    print("  - stdlib/core.txt (30 functions)");
+    print("  - stdlib/math.txt (28 functions)");
+    print("  - stdlib/array.txt (25 functions)");
+    print("  - stdlib/strings.txt (27 functions)");
+    print("  - stdlib/utils.txt (35 functions)");
+    print("");
+    print("Total: 145 standard library functions available!");
+    printDoubleLine();
+}

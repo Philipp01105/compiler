@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 // ============================================================================
 // TYPE HELPER FUNCTIONS
@@ -110,6 +112,7 @@ Parser *create_parser(TokenStream *tokens) {
     parser->loop_counter = 0;
     parser->loop_depth = 0;
     parser->current_struct_context[0] = '\0';
+    parser->import_count = 0;
 
     memset(parser->code_buffer, 0, CODE_BUFFER_SIZE);
     memset(parser->function_code_buffer, 0, CODE_BUFFER_SIZE);
@@ -282,21 +285,246 @@ void cleanup_scope(Parser *parser, int scope) {
 }
 
 // ============================================================================
+// IMPORT HANDLING
+// ============================================================================
+
+static int is_already_imported(Parser *parser, const char *filepath) {
+    for (int i = 0; i < parser->import_count; i++) {
+        if (strcmp(parser->imported_files[i], filepath) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void add_imported_file(Parser *parser, const char *filepath) {
+    if (parser->import_count >= MAX_IMPORTS) {
+        parser_error(parser, "Too many imports (max %d)", MAX_IMPORTS);
+        return;
+    }
+    strncpy(parser->imported_files[parser->import_count], filepath, MAX_PATH - 1);
+    parser->imported_files[parser->import_count][MAX_PATH - 1] = '\0';
+    parser->import_count++;
+}
+
+static int file_exists(const char *path) {
+    struct stat st;
+    return (stat(path, &st) == 0 && S_ISREG(st.st_mode));
+}
+
+static char *resolve_import_path(const char *base_path, const char *import_file) {
+    static char resolved_path[MAX_PATH];
+    static char temp_path[MAX_PATH];
+    
+    // If import_file is an absolute path, use it directly
+    if (import_file[0] == '/' || (import_file[0] != '\0' && import_file[1] == ':')) {
+        strncpy(resolved_path, import_file, MAX_PATH - 1);
+        resolved_path[MAX_PATH - 1] = '\0';
+        return resolved_path;
+    }
+    
+    // Try 1: Relative to current working directory (project root)
+    strncpy(temp_path, import_file, MAX_PATH - 1);
+    temp_path[MAX_PATH - 1] = '\0';
+    if (file_exists(temp_path)) {
+        strncpy(resolved_path, temp_path, MAX_PATH - 1);
+        resolved_path[MAX_PATH - 1] = '\0';
+        return resolved_path;
+    }
+    
+    // Try 2: Relative to the source file's directory
+    if (base_path && base_path[0] != '\0') {
+        // Find the directory part of base_path
+        const char *last_slash = strrchr(base_path, '/');
+        const char *last_backslash = strrchr(base_path, '\\');
+        const char *separator = last_slash > last_backslash ? last_slash : last_backslash;
+        
+        if (separator) {
+            int dir_len = separator - base_path + 1;
+            if (dir_len < MAX_PATH) {
+                strncpy(temp_path, base_path, dir_len);
+                temp_path[dir_len] = '\0';
+                strncat(temp_path, import_file, MAX_PATH - dir_len - 1);
+                
+                if (file_exists(temp_path)) {
+                    strncpy(resolved_path, temp_path, MAX_PATH - 1);
+                    resolved_path[MAX_PATH - 1] = '\0';
+                    return resolved_path;
+                }
+            }
+        }
+    }
+    
+    // Fallback: use import_file as-is
+    strncpy(resolved_path, import_file, MAX_PATH - 1);
+    resolved_path[MAX_PATH - 1] = '\0';
+    return resolved_path;
+}
+
+void parse_import(Parser *parser, const char *base_path) {
+    Token import_token = consume(parser->tokens);  // consume '#'
+    
+    if (!match(parser->tokens, TOKEN_KEYWORD_IMPORT)) {
+        parser_error(parser, "Expected 'import' after '#'");
+        return;
+    }
+    
+    Token filename_token = peek(parser->tokens);
+    if (filename_token.type == TOKEN_LESS) {
+        // #import <filename>
+        consume(parser->tokens);  // consume '<'
+        
+        // Build the full path from tokens until we hit '>'
+        char import_filename[MAX_PATH] = {0};
+        
+        while (!is_at_end(parser->tokens) && !check(parser->tokens, TOKEN_GREATER)) {
+            Token token = consume(parser->tokens);
+            
+            if (token.type == TOKEN_IDENTIFIER || token.type == TOKEN_NUMBER) {
+                strncat(import_filename, token.value, MAX_PATH - strlen(import_filename) - 1);
+            } else if (token.type == TOKEN_DOT) {
+                strncat(import_filename, ".", MAX_PATH - strlen(import_filename) - 1);
+            } else if (token.type == TOKEN_SLASH) {
+                strncat(import_filename, "/", MAX_PATH - strlen(import_filename) - 1);
+            } else if (token.type == TOKEN_MINUS) {
+                strncat(import_filename, "-", MAX_PATH - strlen(import_filename) - 1);
+            } else {
+                parser_error(parser, "Unexpected token in import path: %s", token.value);
+                return;
+            }
+        }
+        
+        if (!match(parser->tokens, TOKEN_GREATER)) {
+            parser_error(parser, "Expected '>' after filename");
+            return;
+        }
+        
+        // Resolve the path
+        char *resolved_path = resolve_import_path(base_path, import_filename);
+        
+        // Check for duplicate imports
+        if (is_already_imported(parser, resolved_path)) {
+            if (parser->debug_mode) {
+                printf("[INFO] Skipping already imported file: %s\n", resolved_path);
+            }
+            return;
+        }
+        
+        // Add to imported files
+        add_imported_file(parser, resolved_path);
+        
+        if (parser->debug_mode) {
+            printf("[INFO] Importing file: %s\n", resolved_path);
+        }
+        
+        // Tokenize and parse the imported file
+        TokenStream *imported_stream = tokenize_file(resolved_path, parser->debug_mode);
+        if (!imported_stream) {
+            parser_error(parser, "Failed to open import file: %s", resolved_path);
+            return;
+        }
+        
+        // Save current token stream
+        TokenStream *original_stream = parser->tokens;
+        int original_pos = parser->tokens->current;
+        
+        // Switch to imported file's token stream
+        parser->tokens = imported_stream;
+        
+        // Parse imported file (only functions and structs, no main required)
+        while (!is_at_end(parser->tokens)) {
+            if (check(parser->tokens, TOKEN_HASH)) {
+                // Handle nested imports
+                parse_import(parser, resolved_path);
+            } else if (check(parser->tokens, TOKEN_KEYWORD_STRUCT)) {
+                parse_struct(parser);
+            } else if (check(parser->tokens, TOKEN_KEYWORD_FUNC)) {
+                parse_function(parser);
+            } else {
+                parser_error(parser, "Only imports, structs and functions allowed in imported files");
+                consume(parser->tokens);
+            }
+        }
+        
+        // Restore original token stream
+        free_token_stream(imported_stream);
+        parser->tokens = original_stream;
+        
+        if (parser->debug_mode) {
+            printf("[INFO] Import complete: %s\n", resolved_path);
+        }
+    } else if (filename_token.type == TOKEN_STRING_LITERAL) {
+        // #import "filename" - alternative syntax
+        Token name_token = consume(parser->tokens);
+        
+        char *resolved_path = resolve_import_path(base_path, name_token.value);
+        
+        if (is_already_imported(parser, resolved_path)) {
+            if (parser->debug_mode) {
+                printf("[INFO] Skipping already imported file: %s\n", resolved_path);
+            }
+            return;
+        }
+        
+        add_imported_file(parser, resolved_path);
+        
+        if (parser->debug_mode) {
+            printf("[INFO] Importing file: %s\n", resolved_path);
+        }
+        
+        TokenStream *imported_stream = tokenize_file(resolved_path, parser->debug_mode);
+        if (!imported_stream) {
+            parser_error(parser, "Failed to open import file: %s", resolved_path);
+            return;
+        }
+        
+        TokenStream *original_stream = parser->tokens;
+        int original_pos = parser->tokens->current;
+        
+        parser->tokens = imported_stream;
+        
+        while (!is_at_end(parser->tokens)) {
+            if (check(parser->tokens, TOKEN_HASH)) {
+                parse_import(parser, resolved_path);
+            } else if (check(parser->tokens, TOKEN_KEYWORD_STRUCT)) {
+                parse_struct(parser);
+            } else if (check(parser->tokens, TOKEN_KEYWORD_FUNC)) {
+                parse_function(parser);
+            } else {
+                parser_error(parser, "Only imports, structs and functions allowed in imported files");
+                consume(parser->tokens);
+            }
+        }
+        
+        free_token_stream(imported_stream);
+        parser->tokens = original_stream;
+        
+        if (parser->debug_mode) {
+            printf("[INFO] Import complete: %s\n", resolved_path);
+        }
+    } else {
+        parser_error(parser, "Expected '<' or string literal after 'import'");
+    }
+}
+
+// ============================================================================
 // PROGRAM PARSING
 // ============================================================================
 
-int parse_program(Parser *parser) {
+int parse_program(Parser *parser, const char *source_file) {
     printf("\n================================================================\n");
     printf("           PHASE 2: SYNTAX ANALYSIS (PARSER)\n");
     printf("================================================================\n\n");
 
     while (!is_at_end(parser->tokens)) {
-        if (check(parser->tokens, TOKEN_KEYWORD_STRUCT)) {
+        if (check(parser->tokens, TOKEN_HASH)) {
+            parse_import(parser, source_file);
+        } else if (check(parser->tokens, TOKEN_KEYWORD_STRUCT)) {
             parse_struct(parser);
         } else if (check(parser->tokens, TOKEN_KEYWORD_FUNC)) {
             parse_function(parser);
         } else {
-            parser_error(parser, "Only structs and functions allowed at top level");
+            parser_error(parser, "Only imports, structs and functions allowed at top level");
             consume(parser->tokens);
         }
     }
