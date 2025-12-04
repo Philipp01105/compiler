@@ -567,7 +567,7 @@ make
 ./compiler --help
 
 # Compile test program
-cat > ../test.txt << 'EOF'
+cat > ../test.dmm << 'EOF'
 func main() -> void {
     var name:string = "Philipp";
     var age:int = 42;
@@ -587,8 +587,8 @@ func main() -> void {
 }
 EOF
 
-./compiler ../test.txt
-gcc -no-pie ../test.txt.s -o test
+./compiler ../test.dmm
+gcc -no-pie ../test.dmm.s -o test
 ./test
 ```
 
