@@ -22,3 +22,7 @@ test_*
 # OS files
 .DS_Store
 *.swp
+*_game
+stdlib_demo
+calc_game
+tictactoe_game
