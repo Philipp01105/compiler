@@ -1,0 +1,32 @@
+// Test Issue 7: Static methods and fields
+// Testing if structs can have static methods and fields
+
+struct MathUtils {
+    static int PI_TIMES_100;  // Static field
+    
+    static func max(a:int, b:int) -> int {
+        if (a > b) {
+            return a;
+        }
+        return b;
+    }
+    
+    static func min(a:int, b:int) -> int {
+        if (a < b) {
+            return a;
+        }
+        return b;
+    }
+}
+
+func main() -> void {
+    // Access static field
+    var pi:int;
+    pi = MathUtils.PI_TIMES_100;
+    
+    // Call static method without instance
+    var result1:int;
+    var result2:int;
+    result1 = MathUtils.max(10, 20);  // Should be 20
+    result2 = MathUtils.min(10, 20);  // Should be 10
+}

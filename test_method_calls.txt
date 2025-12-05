@@ -1,0 +1,27 @@
+// Test Issue 1: Methods calling other methods
+struct Calculator {
+    var result:int;
+    
+    func add(a:int, b:int) -> int {
+        return a + b;
+    }
+    
+    func addAndStore(a:int, b:int) -> void {
+        result = add(a, b);  // Method calling another method
+    }
+    
+    func getResult() -> int {
+        return result;
+    }
+}
+
+func main() -> void {
+    var calc:Calculator;
+    calc.result = 0;
+    
+    print("Testing method calling method:\n");
+    calc.addAndStore(5, 3);
+    print("Result: ");
+    print(calc.getResult());
+    print("\n");
+}

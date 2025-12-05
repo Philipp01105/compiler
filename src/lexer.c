@@ -116,6 +116,7 @@ static TokenType get_keyword_type(const char *str) {
     if (strcmp(str, "continue") == 0) return TOKEN_KEYWORD_CONTINUE;
     if (strcmp(str, "struct") == 0) return TOKEN_KEYWORD_STRUCT;
     if (strcmp(str, "import") == 0) return TOKEN_KEYWORD_IMPORT;
+    if (strcmp(str, "static") == 0) return TOKEN_KEYWORD_STATIC;
 
     // Data Types (ERWEITERT!)
     if (strcmp(str, "int") == 0) return TOKEN_TYPE_INT;

@@ -1,0 +1,24 @@
+// Test static methods
+struct MathUtils {
+    static func max(a:int, b:int) -> int {
+        if (a > b) {
+            return a;
+        }
+        return b;
+    }
+    
+    static func min(a:int, b:int) -> int {
+        if (a < b) {
+            return a;
+        }
+        return b;
+    }
+}
+
+func main() -> void {
+    // Call static methods without an instance
+    var result1:int;
+    var result2:int;
+    result1 = MathUtils.max(10, 20);  // Should be 20
+    result2 = MathUtils.min(10, 20);  // Should be 10
+}
