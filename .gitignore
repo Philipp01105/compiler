@@ -9,6 +9,11 @@ _codeql_detected_source_root
 # Compiled binaries
 /compiler
 /program
+*_prog
+*_program
+test_*
+!test_*.txt
+!test_*.dmm
 
 # IDE files
 .vscode/

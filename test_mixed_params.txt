@@ -1,0 +1,10 @@
+func testFunc(label:string, value:bit) -> void {
+    print("Label: ");
+    print(label);
+    print(", Value: ");
+    print(value);
+}
+
+func main() -> void {
+    testFunc("hello", 1);
+}

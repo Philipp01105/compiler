@@ -1,0 +1,5 @@
+#import <stdlib/utils.txt>
+
+func main() -> void {
+    printDoubleLine();
+}
