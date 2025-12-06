@@ -12,7 +12,38 @@ These examples serve as:
 
 ## Games and Examples
 
-### 1. TicTacToe (`tictactoe.txt`)
+### 1. Shapes - Nested Structs (`shapes.txt`)
+
+A demonstration of nested struct usage with geometric shapes.
+
+**Features Demonstrated:**
+- Nested struct composition (Rectangle contains two Point structs)
+- Accessing nested struct fields
+- Struct field manipulation
+- Geometric calculations
+- Multiple demonstrations of the same concept
+
+**Key Language Features:**
+- Nested structs (struct fields of another struct type)
+- Direct field access on nested structs (e.g., `rect.topLeft.x`)
+- Struct instances without methods (current limitation)
+- Calculations using nested struct fields
+- State manipulation through field updates
+
+**How to Run:**
+```bash
+./build/compiler code_examples/shapes.txt
+gcc -no-pie code_examples/shapes.txt.s -o shapes
+./shapes
+```
+
+**Output:** Shows various rectangle and square demonstrations including point manipulation and resizing.
+
+**Note:** This example demonstrates the current state of nested struct support. Methods cannot yet access nested struct fields, so all calculations are done in external functions.
+
+---
+
+### 2. TicTacToe (`tictactoe.txt`)
 
 A complete Tic Tac Toe game implementation using structs.
 
@@ -42,7 +73,7 @@ gcc -no-pie code_examples/tictactoe.txt.s -o tictactoe
 
 ---
 
-### 2. Number Guessing Game (`guess_number.txt`)
+### 3. Number Guessing Game (`guess_number.txt`)
 
 A number guessing game where players try to find a secret number within a limited number of guesses.
 
@@ -71,7 +102,7 @@ gcc -no-pie code_examples/guess_number.txt.s -o guess_number
 
 ---
 
-### 3. Rock Paper Scissors (`rock_paper_scissors.txt`)
+### 4. Rock Paper Scissors (`rock_paper_scissors.txt`)
 
 Classic Rock-Paper-Scissors game implementation.
 
@@ -101,7 +132,7 @@ gcc -no-pie code_examples/rock_paper_scissors.txt.s -o rps
 
 ---
 
-### 4. Calculator (`calculator.txt`)
+### 5. Calculator (`calculator.txt`)
 
 A feature-rich calculator with memory functions and operation history.
 

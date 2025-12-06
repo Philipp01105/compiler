@@ -19,21 +19,21 @@
 struct TicTacToe {
     // Game board: 9 cells (0-8)
     // 0 = empty, 1 = Player X, 2 = Player O
-    int board0;
-    int board1;
-    int board2;
-    int board3;
-    int board4;
-    int board5;
-    int board6;
-    int board7;
-    int board8;
+    var board0:int;
+    var board1:int;
+    var board2:int;
+    var board3:int;
+    var board4:int;
+    var board5:int;
+    var board6:int;
+    var board7:int;
+    var board8:int;
     
     // Current player (1 = X, 2 = O)
-    int currentPlayer;
+    var currentPlayer:int;
     
     // Game state (0 = ongoing, 1 = X wins, 2 = O wins, 3 = draw)
-    int gameState;
+    var gameState:int;
 
     // Initialize the game board
     func init() -> void {

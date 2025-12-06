@@ -1,0 +1,229 @@
+// =================================================================
+// SHAPES - Nested Structs Example
+// A demonstration of nested structs with geometric shapes
+// =================================================================
+// This example demonstrates:
+// - Nested struct usage (struct within struct)
+// - Methods accessing nested struct fields
+// - Struct composition for complex data structures
+// - Coordinate system with Points
+// =================================================================
+
+#import <stdlib/core.txt>
+#import <stdlib/utils.txt>
+
+// Point struct - represents a 2D coordinate
+struct Point {
+    var x:int;
+    var y:int;
+    
+    // Initialize point with coordinates
+    func init(xVal:int, yVal:int) -> void {
+        x = xVal;
+        y = yVal;
+    }
+    
+    // Print point coordinates
+    func print() -> void {
+        printLabeled("X", x);
+        printLabeled("Y", y);
+    }
+}
+
+// Rectangle struct - uses two Point structs
+struct Rectangle {
+    var topLeft:Point;
+    var bottomRight:Point;
+    
+    // Note: Due to current compiler limitations, nested struct field
+    // initialization must be done outside the struct methods
+    // See main() for initialization examples
+    
+    // Note: Methods accessing nested struct fields are not yet supported
+    // Calculations must be done in main() or external functions
+}
+
+// Demonstrate simple rectangle
+func demonstrateSimpleRectangle() -> void {
+    printDoubleLine();
+    print("         NESTED STRUCTS - SIMPLE RECTANGLE");
+    printDoubleLine();
+    print("");
+    
+    var rect:Rectangle;
+    rect.topLeft.x = 0;
+    rect.topLeft.y = 0;
+    rect.bottomRight.x = 10;
+    rect.bottomRight.y = 5;
+    
+    printLine();
+    print("Rectangle:");
+    print("  Top-Left Corner:");
+    printLabeled("    X", rect.topLeft.x);
+    printLabeled("    Y", rect.topLeft.y);
+    print("  Bottom-Right Corner:");
+    printLabeled("    X", rect.bottomRight.x);
+    printLabeled("    Y", rect.bottomRight.y);
+    
+    var width:int = rect.bottomRight.x - rect.topLeft.x;
+    var height:int = rect.bottomRight.y - rect.topLeft.y;
+    var area:int = width * height;
+    var perimeter:int = (width + height) * 2;
+    
+    printLabeled("  Width", width);
+    printLabeled("  Height", height);
+    printLabeled("  Area", area);
+    printLabeled("  Perimeter", perimeter);
+    printLine();
+}
+
+// Demonstrate rectangle with offset
+func demonstrateOffsetRectangle() -> void {
+    printDoubleLine();
+    print("         NESTED STRUCTS - OFFSET RECTANGLE");
+    printDoubleLine();
+    print("");
+    
+    var rect:Rectangle;
+    rect.topLeft.x = 100;
+    rect.topLeft.y = 200;
+    rect.bottomRight.x = 150;
+    rect.bottomRight.y = 280;
+    
+    printLine();
+    print("Rectangle:");
+    print("  Top-Left Corner:");
+    printLabeled("    X", rect.topLeft.x);
+    printLabeled("    Y", rect.topLeft.y);
+    print("  Bottom-Right Corner:");
+    printLabeled("    X", rect.bottomRight.x);
+    printLabeled("    Y", rect.bottomRight.y);
+    
+    var width:int = rect.bottomRight.x - rect.topLeft.x;
+    var height:int = rect.bottomRight.y - rect.topLeft.y;
+    var area:int = width * height;
+    var perimeter:int = (width + height) * 2;
+    
+    printLabeled("  Width", width);
+    printLabeled("  Height", height);
+    printLabeled("  Area", area);
+    printLabeled("  Perimeter", perimeter);
+    printLine();
+}
+
+// Demonstrate square (special case of rectangle)
+func demonstrateSquare() -> void {
+    printDoubleLine();
+    print("         NESTED STRUCTS - SQUARE");
+    printDoubleLine();
+    print("");
+    
+    var square:Rectangle;
+    square.topLeft.x = 10;
+    square.topLeft.y = 10;
+    square.bottomRight.x = 30;
+    square.bottomRight.y = 30;
+    
+    printLine();
+    print("Square:");
+    print("  Top-Left Corner:");
+    printLabeled("    X", square.topLeft.x);
+    printLabeled("    Y", square.topLeft.y);
+    print("  Bottom-Right Corner:");
+    printLabeled("    X", square.bottomRight.x);
+    printLabeled("    Y", square.bottomRight.y);
+    
+    var width:int = square.bottomRight.x - square.topLeft.x;
+    var height:int = square.bottomRight.y - square.topLeft.y;
+    
+    printLabeled("  Width", width);
+    printLabeled("  Height", height);
+    
+    print("Verification:");
+    if (width == height) {
+        print("  This is a SQUARE (width == height)");
+    } else {
+        print("  This is a RECTANGLE (width != height)");
+    }
+    printLine();
+}
+
+// Demonstrate point manipulation
+func demonstratePointManipulation() -> void {
+    printDoubleLine();
+    print("         NESTED STRUCTS - POINT MANIPULATION");
+    printDoubleLine();
+    print("");
+    
+    var rect:Rectangle;
+    
+    // Initialize with one set of points
+    rect.topLeft.x = 5;
+    rect.topLeft.y = 10;
+    rect.bottomRight.x = 15;
+    rect.bottomRight.y = 25;
+    
+    printLine();
+    print("Initial Rectangle:");
+    print("  Top-Left:");
+    printLabeled("    X", rect.topLeft.x);
+    printLabeled("    Y", rect.topLeft.y);
+    print("  Bottom-Right:");
+    printLabeled("    X", rect.bottomRight.x);
+    printLabeled("    Y", rect.bottomRight.y);
+    printLine();
+    
+    // Move rectangle by changing points
+    print("Moving rectangle right by 10 units...");
+    rect.topLeft.x = rect.topLeft.x + 10;
+    rect.bottomRight.x = rect.bottomRight.x + 10;
+    
+    printLine();
+    print("After moving:");
+    print("  Top-Left:");
+    printLabeled("    X", rect.topLeft.x);
+    printLabeled("    Y", rect.topLeft.y);
+    print("  Bottom-Right:");
+    printLabeled("    X", rect.bottomRight.x);
+    printLabeled("    Y", rect.bottomRight.y);
+    printLine();
+    
+    // Resize rectangle
+    print("Doubling rectangle size...");
+    var originalWidth:int = rect.bottomRight.x - rect.topLeft.x;
+    var originalHeight:int = rect.bottomRight.y - rect.topLeft.y;
+    rect.bottomRight.x = rect.topLeft.x + (originalWidth * 2);
+    rect.bottomRight.y = rect.topLeft.y + (originalHeight * 2);
+    
+    printLine();
+    print("After resizing:");
+    print("  Top-Left:");
+    printLabeled("    X", rect.topLeft.x);
+    printLabeled("    Y", rect.topLeft.y);
+    print("  Bottom-Right:");
+    printLabeled("    X", rect.bottomRight.x);
+    printLabeled("    Y", rect.bottomRight.y);
+    var newWidth:int = rect.bottomRight.x - rect.topLeft.x;
+    var newHeight:int = rect.bottomRight.y - rect.topLeft.y;
+    printLabeled("  Width", newWidth);
+    printLabeled("  Height", newHeight);
+    printLine();
+}
+
+func main() -> void {
+    demonstrateSimpleRectangle();
+    print("");
+    
+    demonstrateOffsetRectangle();
+    print("");
+    
+    demonstrateSquare();
+    print("");
+    
+    demonstratePointManipulation();
+    
+    print("");
+    printDoubleLine();
+    print("NESTED STRUCTS DEMONSTRATION COMPLETE");
+    printDoubleLine();
+}
