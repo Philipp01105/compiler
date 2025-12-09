@@ -1,7 +1,0 @@
-func printMsg() -> void {
-    // Empty function
-}
-
-func main() -> void {
-    printMsg();
-}
