@@ -100,7 +100,7 @@ struct TicTacToe {
     // Print the game board
     func printBoard() -> void {
         printLine();
-        print("Current Board:");
+        println("Current Board:");
         printLine();
         
         // Row 0
@@ -110,8 +110,8 @@ struct TicTacToe {
         if (board1 == 0) { print("1"); } else if (board1 == 1) { print("X"); } else { print("O"); }
         print(" | ");
         if (board2 == 0) { print("2"); } else if (board2 == 1) { print("X"); } else { print("O"); }
-        print("");
-        print(" -----------");
+        println("");
+        println(" -----------");
         
         // Row 1
         print("  ");
@@ -120,8 +120,8 @@ struct TicTacToe {
         if (board4 == 0) { print("4"); } else if (board4 == 1) { print("X"); } else { print("O"); }
         print(" | ");
         if (board5 == 0) { print("5"); } else if (board5 == 1) { print("X"); } else { print("O"); }
-        print("");
-        print(" -----------");
+        println("");
+        println(" -----------");
         
         // Row 2
         print("  ");
@@ -130,7 +130,7 @@ struct TicTacToe {
         if (board7 == 0) { print("7"); } else if (board7 == 1) { print("X"); } else { print("O"); }
         print(" | ");
         if (board8 == 0) { print("8"); } else if (board8 == 1) { print("X"); } else { print("O"); }
-        print("");
+        println("");
         printLine();
     }
 
@@ -344,10 +344,10 @@ struct TicTacToe {
 // Simulate a game with predetermined moves
 func simulateGame() -> void {
     printDoubleLine();
-    print("         TIC TAC TOE GAME SIMULATION");
+    println("         TIC TAC TOE GAME SIMULATION");
     printDoubleLine();
-    print("           (Using Structs)");
-    print("");
+    println("           (Using Structs)");
+    println("");
     
     var game:TicTacToe;
     game.init();
@@ -371,8 +371,8 @@ func simulateGame() -> void {
             playerName = "O";
         }
         
-        print("Player " + playerName + " plays at position " + move);
-        print("");
+        println("Player " + playerName + " plays at position " + move);
+        println("");
         
         if (game.makeMove(move) == 1) {
             moveCount = moveCount + 1;
@@ -381,16 +381,16 @@ func simulateGame() -> void {
             if (winner != 0) {
                 game.printBoard();
                 if (winner == 1) {
-                    print("PLAYER X WINS!");
+                    println("PLAYER X WINS!");
                 } else {
-                    print("PLAYER O WINS!");
+                    println("PLAYER O WINS!");
                 }
                 return;
             }
             
             if (game.isBoardFull() == 1) {
                 game.printBoard();
-                print("IT'S A DRAW!");
+                println("IT'S A DRAW!");
                 return;
             }
             
@@ -399,16 +399,16 @@ func simulateGame() -> void {
     }
     
     game.printBoard();
-    print("Game simulation completed!");
+    println("Game simulation completed!");
 }
 
 // Simulate AI vs AI game
 func simulateAIGame() -> void {
     printDoubleLine();
-    print("         TIC TAC TOE - AI VS AI");
+    println("         TIC TAC TOE - AI VS AI");
     printDoubleLine();
-    print("           (Using Structs)");
-    print("");
+    println("           (Using Structs)");
+    println("");
     
     var game:TicTacToe;
     game.init();
@@ -424,24 +424,24 @@ func simulateAIGame() -> void {
             playerName = "O";
         }
         
-        print("Player " + playerName + " (AI) plays at position " + move);
-        print("");
+        println("Player " + playerName + " (AI) plays at position " + move);
+        println("");
         
         if (game.makeMove(move) == 1) {
             var winner:int = game.checkWinner();
             if (winner != 0) {
                 game.printBoard();
                 if (winner == 1) {
-                    print("PLAYER X (AI) WINS!");
+                    println("PLAYER X (AI) WINS!");
                 } else {
-                    print("PLAYER O (AI) WINS!");
+                    println("PLAYER O (AI) WINS!");
                 }
                 return;
             }
             
             if (game.isBoardFull() == 1) {
                 game.printBoard();
-                print("IT'S A DRAW!");
+                println("IT'S A DRAW!");
                 return;
             }
             
@@ -454,14 +454,14 @@ func main() -> void {
     // Run predefined game simulation
     simulateGame();
     
-    print("");
-    print("");
+    println("");
+    println("");
     
     // Run AI vs AI simulation
     simulateAIGame();
     
-    print("");
+    println("");
     printDoubleLine();
-    print("TIC TAC TOE DEMONSTRATION COMPLETE");
+    println("TIC TAC TOE DEMONSTRATION COMPLETE");
     printDoubleLine();
 }

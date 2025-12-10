@@ -107,16 +107,16 @@ func getMoveName(move:int) -> string {
 // Simulate a game
 func simulateGame() -> void {
     printDoubleLine();
-    print("         ROCK PAPER SCISSORS");
+    println("         ROCK PAPER SCISSORS");
     printDoubleLine();
-    print("");
+    println("");
     
     var game:RPSGame;
     game.init(5);
     
-    print("Best of 5 rounds!");
-    print("0 = Rock, 1 = Paper, 2 = Scissors");
-    print("");
+    println("Best of 5 rounds!");
+    println("0 = Rock, 1 = Paper, 2 = Scissors");
+    println("");
     
     // Predefined moves for simulation
     var[5] p1Moves:int;
@@ -137,47 +137,47 @@ func simulateGame() -> void {
         var p1Move:int = p1Moves[i];
         var p2Move:int = p2Moves[i];
         
-        print("Round " + (i + 1) + ":");
-        print("  Player 1: " + getMoveName(p1Move));
-        print("  Player 2: " + getMoveName(p2Move));
+        println("Round " + (i + 1) + ":");
+        println("  Player 1: " + getMoveName(p1Move));
+        println("  Player 2: " + getMoveName(p2Move));
         
         var result:int = game.playRound(p1Move, p2Move);
         
         if (result == 0) {
-            print("  Result: TIE!");
+            println("  Result: TIE!");
         } else if (result == 1) {
-            print("  Result: Player 1 wins this round!");
+            println("  Result: Player 1 wins this round!");
         } else {
-            print("  Result: Player 2 wins this round!");
+            println("  Result: Player 2 wins this round!");
         }
         
         game.printScore();
     }
     
     var winner:int = game.getFinalWinner();
-    print("");
+    println("");
     if (winner == 0) {
-        print("FINAL RESULT: IT'S A TIE!");
+        println("FINAL RESULT: IT'S A TIE!");
     } else if (winner == 1) {
-        print("FINAL RESULT: PLAYER 1 WINS!");
+        println("FINAL RESULT: PLAYER 1 WINS!");
     } else {
-        print("FINAL RESULT: PLAYER 2 WINS!");
+        println("FINAL RESULT: PLAYER 2 WINS!");
     }
-    print("Final Score - P1: " + game.player1Score + " | P2: " + game.player2Score);
+    println("Final Score - P1: " + game.player1Score + " | P2: " + game.player2Score);
 }
 
 // Simulate a tournament
 func simulateTournament() -> void {
     printDoubleLine();
-    print("         RPS TOURNAMENT");
+    println("         RPS TOURNAMENT");
     printDoubleLine();
-    print("");
+    println("");
     
     var game:RPSGame;
     game.init(10);
     
-    print("10-round tournament with pattern strategy");
-    print("");
+    println("10-round tournament with pattern strategy");
+    println("");
     
     for (var i:int = 0; i < 10; i++) {
         // Player 1 uses cycling pattern
@@ -186,42 +186,42 @@ func simulateTournament() -> void {
         // Player 2 uses counter pattern (tries to beat P1)
         var p2Move:int = (i + 1) % 3;
         
-        print("Round " + (i + 1) + ": " + getMoveName(p1Move) + " vs " + getMoveName(p2Move));
+        println("Round " + (i + 1) + ": " + getMoveName(p1Move) + " vs " + getMoveName(p2Move));
         
         var result:int = game.playRound(p1Move, p2Move);
         
         if (result == 0) {
-            print("  TIE");
+            println("  TIE");
         } else if (result == 1) {
-            print("  P1 wins");
+            println("  P1 wins");
         } else {
-            print("  P2 wins");
+            println("  P2 wins");
         }
     }
     
     game.printScore();
     
     var winner:int = game.getFinalWinner();
-    print("");
+    println("");
     if (winner == 1) {
-        print("Player 1 wins the tournament!");
+        println("Player 1 wins the tournament!");
     } else if (winner == 2) {
-        print("Player 2 wins the tournament!");
+        println("Player 2 wins the tournament!");
     } else {
-        print("Tournament ends in a tie!");
+        println("Tournament ends in a tie!");
     }
 }
 
 func main() -> void {
     simulateGame();
     
-    print("");
-    print("");
+    println("");
+    println("");
     
     simulateTournament();
     
-    print("");
+    println("");
     printDoubleLine();
-    print("ROCK PAPER SCISSORS DEMONSTRATION COMPLETE");
+    println("ROCK PAPER SCISSORS DEMONSTRATION COMPLETE");
     printDoubleLine();
 }

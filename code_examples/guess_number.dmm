@@ -65,7 +65,7 @@ struct GuessGame {
     // Print game status
     func printStatus() -> void {
         printLine();
-        print("Guess Number Game");
+        println("Guess Number Game");
         printLabeled("Range Low", rangeLow);
         printLabeled("Range High", rangeHigh);
         printLabeled("Guesses used", guessCount);
@@ -77,16 +77,16 @@ struct GuessGame {
 // Simulate a game
 func simulateGame() -> void {
     printDoubleLine();
-    print("         NUMBER GUESSING GAME");
+    println("         NUMBER GUESSING GAME");
     printDoubleLine();
-    print("");
+    println("");
     
     var game:GuessGame;
     game.init(42, 7);
     
-    print("Secret number is between 1 and 100");
-    print("You have 7 guesses to find it!");
-    print("");
+    println("Secret number is between 1 and 100");
+    println("You have 7 guesses to find it!");
+    println("");
     
     // Array of guesses to simulate
     var[7] guesses:int;
@@ -104,42 +104,42 @@ func simulateGame() -> void {
         }
         
         var guess:int = guesses[i];
-        print("Guess #" + (i + 1) + ": " + guess);
+        println("Guess #" + (i + 1) + ": " + guess);
         
         var result:int = game.makeGuess(guess);
         
         if (result == 0) {
-            print("CORRECT! You found the number!");
+            println("CORRECT! You found the number!");
             break;
         } else if (result < 0) {
-            print("Too low! Try higher.");
+            println("Too low! Try higher.");
         } else {
-            print("Too high! Try lower.");
+            println("Too high! Try lower.");
         }
         
         game.printStatus();
     }
     
-    print("");
+    println("");
     if (game.gameWon == 1) {
-        print("YOU WON in " + game.guessCount + " guesses!");
+        println("YOU WON in " + game.guessCount + " guesses!");
     } else {
-        print("GAME OVER! The number was " + game.secretNumber);
+        println("GAME OVER! The number was " + game.secretNumber);
     }
 }
 
 // Simulate an optimal strategy game
 func simulateBinarySearch() -> void {
     printDoubleLine();
-    print("         BINARY SEARCH STRATEGY");
+    println("         BINARY SEARCH STRATEGY");
     printDoubleLine();
-    print("");
+    println("");
     
     var game:GuessGame;
     game.init(73, 10);
     
-    print("Using binary search to find the number!");
-    print("");
+    println("Using binary search to find the number!");
+    println("");
     
     var low:int = 1;
     var high:int = 100;
@@ -150,36 +150,36 @@ func simulateBinarySearch() -> void {
         }
         
         var guess:int = (low + high) / 2;
-        print("Guess #" + (i + 1) + ": " + guess + " (searching " + low + "-" + high + ")");
+        println("Guess #" + (i + 1) + ": " + guess + " (searching " + low + "-" + high + ")");
         
         var result:int = game.makeGuess(guess);
         
         if (result == 0) {
-            print("FOUND IT!");
+            println("FOUND IT!");
             break;
         } else if (result < 0) {
-            print("Too low, adjusting range...");
+            println("Too low, adjusting range...");
             low = guess + 1;
         } else {
-            print("Too high, adjusting range...");
+            println("Too high, adjusting range...");
             high = guess - 1;
         }
-        print("");
+        println("");
     }
     
-    print("Binary search found the number in " + game.guessCount + " guesses!");
+    println("Binary search found the number in " + game.guessCount + " guesses!");
 }
 
 func main() -> void {
     simulateGame();
     
-    print("");
-    print("");
+    println("");
+    println("");
     
     simulateBinarySearch();
     
-    print("");
+    println("");
     printDoubleLine();
-    print("NUMBER GUESSING GAME DEMONSTRATION COMPLETE");
+    println("NUMBER GUESSING GAME DEMONSTRATION COMPLETE");
     printDoubleLine();
 }
