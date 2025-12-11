@@ -5,6 +5,10 @@ _codeql_detected_source_root
 *.o
 *.s
 *.out
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
 
 # Test artifacts
 test_output/

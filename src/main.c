@@ -186,8 +186,12 @@ int main(int argc, char *argv[]) {
     fprintf(output, "    .ascii \"%%lf\\0\"\n");
     fprintf(output, ".LC_char_format:\n");
     fprintf(output, "    .ascii \"%%c\\0\"\n");
+    fprintf(output, ".LC_char_input_format:\n");
+    fprintf(output, "    .ascii \" %%c\\0\"\n");
     fprintf(output, ".LC_string_format:\n");
     fprintf(output, "    .ascii \"%%s\\0\"\n");
+    fprintf(output, ".LC_string_input_format:\n");
+    fprintf(output, "    .ascii \"%%255[^\\n]\\0\"\n");
     fprintf(output, ".LC_newline:\n");
     fprintf(output, "    .ascii \"\\n\\0\"\n");
     fprintf(output, "\n");
@@ -228,6 +232,13 @@ int main(int argc, char *argv[]) {
         fprintf(output, "\n");
     }
 
+    // Add static buffer for scanfString
+    fprintf(output, "    .bss\n");
+    fprintf(output, "    .align 8\n");
+    fprintf(output, "_scanfString_buffer:\n");
+    fprintf(output, "    .space 256\n");
+    fprintf(output, "\n");
+    
     fprintf(output, "    .text\n");
     fprintf(output, "%s", parser->function_code_buffer);
 
