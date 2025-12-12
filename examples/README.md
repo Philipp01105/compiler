@@ -131,7 +131,7 @@ Failed:       0
    ./run_tests.sh
    ```
 
-See [tests/README.md](tests/README.md) for detailed testing documentation.
+See [tests/README.md](../tests/README.md) for detailed testing documentation.
 
 ## Language Examples
 
@@ -250,7 +250,7 @@ The `code_examples/` directory contains complete working programs:
 - **rock_paper_scissors.dmm**: Rock-paper-scissors tournament
 - **shapes.dmm**: Nested structs demonstration
 
-See [code_examples/README.md](code_examples/README.md) for details.
+See [code_examples/README.md](../code_examples/README.md) for details.
 
 ## Testing Your Changes
 

@@ -499,15 +499,15 @@ valgrind --leak-check=full /tmp/test
 ## Resources
 
 - Main README: [README.md](README.md)
-- Test README: [tests/README.md](tests/README.md)
+- Test README: [tests/README.md](../tests/README.md)
 - Example programs: [code_examples/](code_examples/)
-- Language docs: [examples/LANGUAGE_DOCUMENTATION.md](examples/LANGUAGE_DOCUMENTATION.md)
+- Language docs: [examples/LANGUAGE_DOCUMENTATION.md](LANGUAGE_DOCUMENTATION.md)
 
 ## Getting Help
 
 If you have questions:
 1. Check this document
-2. Check [tests/README.md](tests/README.md)
+2. Check [tests/README.md](../tests/README.md)
 3. Look at existing tests for examples
 4. Open an issue on GitHub
 
