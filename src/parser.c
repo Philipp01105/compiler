@@ -234,6 +234,7 @@ Parser *create_parser(TokenStream *tokens) {
     parser->loop_depth = 0;
     parser->current_struct_context[0] = '\0';
     parser->import_count = 0;
+    parser->next_var_is_gc = 0;
 
     memset(parser->code_buffer, 0, CODE_BUFFER_SIZE);
     memset(parser->function_code_buffer, 0, CODE_BUFFER_SIZE);
@@ -639,9 +640,11 @@ void parse_import(Parser *parser, const char *base_path) {
 // ============================================================================
 
 int parse_program(Parser *parser, const char *source_file) {
-    printf("\n================================================================\n");
-    printf("           PHASE 2: SYNTAX ANALYSIS (PARSER)\n");
-    printf("================================================================\n\n");
+    if (parser->debug_mode) {
+        printf("\n================================================================\n");
+        printf("           PHASE 2: SYNTAX ANALYSIS (PARSER)\n");
+        printf("================================================================\n\n");
+    }
 
     while (!is_at_end(parser->tokens)) {
         if (check(parser->tokens, TOKEN_HASH)) {
@@ -666,11 +669,13 @@ int parse_program(Parser *parser, const char *source_file) {
         return 0;
     }
 
-    printf("[+] Parsing successful\n");
-    printf("    - Structs: %d\n", parser->struct_count);
-    printf("    - Functions: %d\n", parser->function_count);
-    printf("    - String literals: %d\n", parser->string_literal_count);
-    printf("    - Float literals: %d\n", parser->float_literal_count);
+    if (parser->debug_mode) {
+        printf("[+] Parsing successful\n");
+        printf("    - Structs: %d\n", parser->struct_count);
+        printf("    - Functions: %d\n", parser->function_count);
+        printf("    - String literals: %d\n", parser->string_literal_count);
+        printf("    - Float literals: %d\n", parser->float_literal_count);
+    }
 
     return 1;
 }
@@ -1265,7 +1270,18 @@ void parse_function_body(Parser *parser) {
 // ============================================================================
 
 void parse_statement(Parser *parser) {
-    if (check(parser->tokens, TOKEN_KEYWORD_VAR)) {
+    if (check(parser->tokens, TOKEN_AT)) {
+        // Handle @gc annotation
+        consume(parser->tokens);
+        expect(parser, TOKEN_KEYWORD_GC, "Expected 'gc' after '@'");
+        parser->next_var_is_gc = 1;
+        if (!check(parser->tokens, TOKEN_KEYWORD_VAR)) {
+            parser_error(parser, "Expected 'var' after '@gc'");
+            return;
+        }
+        parse_variable_declaration(parser);
+        parser->next_var_is_gc = 0;  // Reset flag after declaration
+    } else if (check(parser->tokens, TOKEN_KEYWORD_VAR)) {
         parse_variable_declaration(parser);
     } else if (check(parser->tokens, TOKEN_IDENTIFIER)) {
         Token lookahead = peek_ahead(parser->tokens, 1);
@@ -1304,6 +1320,46 @@ void parse_statement(Parser *parser) {
         parse_break_statement(parser);
     } else if (check(parser->tokens, TOKEN_KEYWORD_CONTINUE)) {
         parse_continue_statement(parser);
+    } else if (check(parser->tokens, TOKEN_KEYWORD_FREE)) {
+        // Handle free(ptr) as a statement
+        Token free_token = consume(parser->tokens);  // consume 'free'
+        expect(parser, TOKEN_LPAREN, "Expected '(' after free");
+        
+        // Get the variable name
+        Token var_token = consume(parser->tokens);
+        if (var_token.type != TOKEN_IDENTIFIER) {
+            parser_error(parser, "Expected variable name in free()");
+            return;
+        }
+        
+        // Find the variable
+        Variable *var = find_variable(parser, var_token.value);
+        if (var == NULL) {
+            parser_error(parser, "Variable '%s' not found", var_token.value);
+            return;
+        }
+        
+        if (!var->is_pointer) {
+            parser_error(parser, "Variable '%s' is not a pointer", var_token.value);
+            return;
+        }
+        
+        expect(parser, TOKEN_RPAREN, "Expected ')' after pointer in free()");
+        expect(parser, TOKEN_SEMICOLON, "Expected ';' after free statement");
+        
+        // Generate code to call free
+        code_comment(parser, "Statement: free(%s) at line %d", var_token.value, free_token.line);
+        const char **arg_regs = get_arg_registers_64();
+        // Load the pointer value (64-bit) from the variable's stack location
+        code_printf(parser, "    movq %d(%%rbp), %s\n", var->offset, arg_regs[0]);
+        int stack_adj = get_call_stack_space();
+        if (stack_adj > 0) {
+            code_printf(parser, "    subq $%d, %%rsp\n", stack_adj);
+        }
+        code_printf(parser, "    call free\n");
+        if (stack_adj > 0) {
+            code_printf(parser, "    addq $%d, %%rsp\n", stack_adj);
+        }
     } else {
         parser_error(parser, "Unexpected statement");
     }
@@ -1340,9 +1396,17 @@ void parse_variable_declaration(Parser *parser) {
     DataType var_type = TYPE_INT;
     int has_explicit_type = 0;
     char struct_type_name[MAX_TOKEN] = "";
+    int is_pointer = 0;
+    int has_initialization = 0;
 
     if (check(parser->tokens, TOKEN_COLON)) {
         consume(parser->tokens);
+
+        // Check for pointer syntax: :*type
+        if (check(parser->tokens, TOKEN_STAR)) {
+            consume(parser->tokens);
+            is_pointer = 1;
+        }
 
         Token type_token = consume(parser->tokens);
         var_type = token_to_datatype(type_token.type);
@@ -1377,6 +1441,7 @@ void parse_variable_declaration(Parser *parser) {
 
     if (!is_array && check(parser->tokens, TOKEN_EQUAL)) {
         consume(parser->tokens);
+        has_initialization = 1;
 
         // NEW: Auto-detect type from literal if no explicit type given
         if (!has_explicit_type) {
@@ -1443,6 +1508,9 @@ void parse_variable_declaration(Parser *parser) {
     var->is_array = is_array;
     var->array_size = array_size;
     strcpy(var->struct_type, struct_type_name);
+    var->is_pointer = is_pointer;
+    var->is_gc = parser->next_var_is_gc;
+    var->is_heap = 0;  // Will be set to 1 when allocated with reserve
 
     // Calculate total size: element_size * array_count
     int element_size;
@@ -1450,6 +1518,9 @@ void parse_variable_declaration(Parser *parser) {
         // This is a struct variable
         StructDefinition *struct_def = find_struct(parser, struct_type_name);
         element_size = struct_def->total_size;
+    } else if (is_pointer) {
+        // Pointers are 8 bytes (64-bit addresses)
+        element_size = 8;
     } else {
         element_size = datatype_size(var_type);
     }
@@ -1490,31 +1561,37 @@ void parse_variable_declaration(Parser *parser) {
     var->scope = parser->current_scope;
     parser->var_count++;
 
-    // Code generation
-    if (is_array) {
-        code_comment(parser, "Array allocated at offset %d, total size %d bytes", 
-                     var->offset, var->size);
-    } else if (struct_type_name[0] != '\0') {
-        // Struct variable - space already allocated by pushes, no need to pop/move
-        code_comment(parser, "Struct variable allocated at offset %d, total size %d bytes", 
-                     var->offset, var->size);
-    } else if (var_type == TYPE_FLOAT) {
-        code_printf(parser, "    movss (%%rsp), %%xmm0\n");
-        code_printf(parser, "    addq $8, %%rsp\n");
-        code_printf(parser, "    movss %%xmm0, %d(%%rbp)\n", var->offset);
-    } else if (var_type == TYPE_DOUBLE) {
-        code_printf(parser, "    movsd (%%rsp), %%xmm0\n");
-        code_printf(parser, "    addq $8, %%rsp\n");
-        code_printf(parser, "    movsd %%xmm0, %d(%%rbp)\n", var->offset);
-    } else if (var_type == TYPE_CHAR || var_type == TYPE_BYTE || var_type == TYPE_BIT) {
-        code_printf(parser, "    popq %%rax\n");
-        code_printf(parser, "    movb %%al, %d(%%rbp)\n", var->offset);
-    } else if (var_type == TYPE_STRING) {
-        code_printf(parser, "    popq %%rax\n");
-        code_printf(parser, "    movq %%rax, %d(%%rbp)\n", var->offset);
-    } else {
-        code_printf(parser, "    popq %%rax\n");
-        code_printf(parser, "    movl %%eax, %d(%%rbp)\n", var->offset);
+    // Code generation - only if there was initialization
+    if (has_initialization) {
+        if (is_array) {
+            code_comment(parser, "Array allocated at offset %d, total size %d bytes", 
+                         var->offset, var->size);
+        } else if (is_pointer) {
+            // Pointers are 8-byte addresses (including pointers to structs)
+            code_printf(parser, "    popq %%rax\n");
+            code_printf(parser, "    movq %%rax, %d(%%rbp)\n", var->offset);
+        } else if (struct_type_name[0] != '\0') {
+            // Struct variable (not pointer) - space already allocated by pushes, no need to pop/move
+            code_comment(parser, "Struct variable allocated at offset %d, total size %d bytes", 
+                         var->offset, var->size);
+        } else if (var_type == TYPE_FLOAT) {
+            code_printf(parser, "    movss (%%rsp), %%xmm0\n");
+            code_printf(parser, "    addq $8, %%rsp\n");
+            code_printf(parser, "    movss %%xmm0, %d(%%rbp)\n", var->offset);
+        } else if (var_type == TYPE_DOUBLE) {
+            code_printf(parser, "    movsd (%%rsp), %%xmm0\n");
+            code_printf(parser, "    addq $8, %%rsp\n");
+            code_printf(parser, "    movsd %%xmm0, %d(%%rbp)\n", var->offset);
+        } else if (var_type == TYPE_CHAR || var_type == TYPE_BYTE || var_type == TYPE_BIT) {
+            code_printf(parser, "    popq %%rax\n");
+            code_printf(parser, "    movb %%al, %d(%%rbp)\n", var->offset);
+        } else if (var_type == TYPE_STRING) {
+            code_printf(parser, "    popq %%rax\n");
+            code_printf(parser, "    movq %%rax, %d(%%rbp)\n", var->offset);
+        } else {
+            code_printf(parser, "    popq %%rax\n");
+            code_printf(parser, "    movl %%eax, %d(%%rbp)\n", var->offset);
+        }
     }
 }
 
@@ -2985,7 +3062,21 @@ void parse_print_statement(Parser *parser) {
                 }
             }
         } else {
-            parser_error(parser, "Unexpected token in print statement");
+            // Default: parse as expression (handles operators like *, &, etc.)
+            parse_expression(parser);
+            
+            code_printf(parser, "    popq %s\n", get_arg_registers_64()[1]);
+            code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
+            {
+                int stack_adj_fallback = get_call_stack_space();
+                if (stack_adj_fallback > 0) {
+                    code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_fallback);
+                }
+                code_printf(parser, "    call printf\n");
+                if (stack_adj_fallback > 0) {
+                    code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_fallback);
+                }
+            }
         }
 
 print_next_item:
@@ -3519,7 +3610,21 @@ void parse_printline_statement(Parser *parser) {
                 }
             }
         } else {
-            parser_error(parser, "Unexpected token in print statement");
+            // Default: parse as expression (handles operators like *, &, etc.)
+            parse_expression(parser);
+            
+            code_printf(parser, "    popq %s\n", get_arg_registers_64()[1]);
+            code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_registers_64()[0]);
+            {
+                int stack_adj_fallback = get_call_stack_space();
+                if (stack_adj_fallback > 0) {
+                    code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_fallback);
+                }
+                code_printf(parser, "    call printf\n");
+                if (stack_adj_fallback > 0) {
+                    code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_fallback);
+                }
+            }
         }
 
 print_next_item:
@@ -4164,6 +4269,36 @@ void parse_unary(Parser *parser) {
         return;
     }
 
+    // Dereference operator: *pointer
+    if (match(parser->tokens, TOKEN_STAR)) {
+        code_comment(parser, "Dereference operator (*)");
+        parse_unary(parser);  // Parse the pointer expression
+        code_printf(parser, "    popq %%rax\n");  // Get the pointer address (64-bit)
+        code_printf(parser, "    movl (%%rax), %%eax\n");  // Dereference: load value at address (32-bit for now)
+        code_printf(parser, "    pushq %%rax\n");  // Push the dereferenced value
+        return;
+    }
+
+    // Address-of operator: &variable
+    if (match(parser->tokens, TOKEN_AMPERSAND)) {
+        code_comment(parser, "Address-of operator (&)");
+        // Must be followed by a variable
+        if (!check(parser->tokens, TOKEN_IDENTIFIER)) {
+            parser_error(parser, "Expected variable name after '&'");
+            return;
+        }
+        Token var_token = consume(parser->tokens);
+        Variable *var = find_variable(parser, var_token.value);
+        if (var == NULL) {
+            parser_error(parser, "Variable '%s' not found", var_token.value);
+            return;
+        }
+        // Calculate the address of the variable (rbp + offset)
+        code_printf(parser, "    leaq %d(%%rbp), %%rax\n", var->offset);
+        code_printf(parser, "    pushq %%rax\n");
+        return;
+    }
+
     parse_primary(parser);
 }
 
@@ -4239,6 +4374,57 @@ void parse_primary(Parser *parser) {
             code_printf(parser, "    leaq .LC%d(%%rip), %%rax\n", str_id);
             code_printf(parser, "    pushq %%rax\n");
         }
+        return;
+    }
+
+    // Handle reserve() as a special keyword function
+    if (check(parser->tokens, TOKEN_KEYWORD_RESERVE)) {
+        consume(parser->tokens);
+        expect(parser, TOKEN_LPAREN, "Expected '(' after reserve");
+        
+        // reserve(type) -> pointer
+        // Takes a type name and allocates appropriate size
+        Token type_token = consume(parser->tokens);
+        DataType type = token_to_datatype(type_token.type);
+        
+        if (type == TYPE_UNKNOWN) {
+            // Check if it's a struct type
+            StructDefinition *struct_def = find_struct(parser, type_token.value);
+            if (struct_def != NULL) {
+                // Allocate space for struct
+                int struct_size = struct_def->total_size;
+                code_comment(parser, "Built-in: reserve(%s) - allocating %d bytes for struct", 
+                           type_token.value, struct_size);
+                code_printf(parser, "    movl $%d, %%eax\n", struct_size);
+                code_printf(parser, "    pushq %%rax\n");
+            } else {
+                parser_error(parser, "Unknown type '%s' in reserve()", type_token.value);
+                return;
+            }
+        } else {
+            int size = datatype_size(type);
+            code_comment(parser, "Built-in: reserve(%s) - allocating %d bytes", 
+                       datatype_to_string(type), size);
+            code_printf(parser, "    movl $%d, %%eax\n", size);
+            code_printf(parser, "    pushq %%rax\n");
+        }
+        
+        expect(parser, TOKEN_RPAREN, "Expected ')' after type in reserve()");
+        
+        // Now call malloc with the size we pushed
+        const char **arg_regs = get_arg_registers_64();
+        code_printf(parser, "    popq %s\n", arg_regs[0]);  // size (first argument)
+        {
+            int stack_adj = get_call_stack_space();
+            if (stack_adj > 0) {
+                code_printf(parser, "    subq $%d, %%rsp\n", stack_adj);
+            }
+            code_printf(parser, "    call malloc\n");
+            if (stack_adj > 0) {
+                code_printf(parser, "    addq $%d, %%rsp\n", stack_adj);
+            }
+        }
+        code_printf(parser, "    pushq %%rax\n");  // return pointer
         return;
     }
 
@@ -4390,7 +4576,8 @@ void parse_primary(Parser *parser) {
                     expect(parser, TOKEN_RPAREN, "Expected ')'");
                     
                     code_comment(parser, "Built-in: free()");
-                    code_printf(parser, "    popq %%rcx\n");  // pointer
+                    const char **arg_regs = get_arg_registers_64();
+                    code_printf(parser, "    popq %s\n", arg_regs[0]);  // pointer (first argument)
                     {
                 int stack_adj_32 = get_call_stack_space();
                 if (stack_adj_32 > 0) {
@@ -5307,6 +5494,10 @@ void parse_primary(Parser *parser) {
                 } else if (var->type == TYPE_BIT) {
                     code_printf(parser, "    movzbl %d(%%rbp), %%eax\n", var->offset);
                     code_printf(parser, "    andl $1, %%eax\n");
+                    code_printf(parser, "    pushq %%rax\n");
+                } else if (var->is_pointer) {
+                    // Pointers are 64-bit addresses
+                    code_printf(parser, "    movq %d(%%rbp), %%rax\n", var->offset);
                     code_printf(parser, "    pushq %%rax\n");
                 } else if (var->type == TYPE_STRING) {
                     code_printf(parser, "    movq %d(%%rbp), %%rax\n", var->offset);

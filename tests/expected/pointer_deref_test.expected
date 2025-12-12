@@ -1,0 +1,19 @@
+============================================
+  POINTER DEREFERENCE TEST
+============================================
+
+[TEST 1] Basic pointer dereference
+Original value: 42
+Value through pointer: 42
+  [OK] Basic dereference works
+[TEST 2] Multiple int pointers
+First value: 100
+Second value: 200
+  [OK] Multiple pointers work
+[TEST 3] Heap allocated pointer dereference
+  [OK] Heap pointer allocated
+  [OK] Heap pointer freed
+
+============================================
+  ALL TESTS PASSED!
+============================================
