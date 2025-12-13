@@ -55,12 +55,15 @@ func isPrime(n:int) -> bit {
     return 1;
 }
 
-// Sum of digits
+// Sum of digits (using for loop since while is not supported)
 func sumDigits(n:int) -> int {
     var sum:int = 0;
-    while (n > 0) {
-        sum = sum + (n % 10);
-        n = n / 10;
+    // Process up to 10 digits
+    for (var i:int = 0; i < 10; i++) {
+        if (n > 0) {
+            sum = sum + (n % 10);
+            n = n / 10;
+        }
     }
     return sum;
 }

@@ -24,11 +24,7 @@ struct Circle {
     var radius:int;
 }
 
-func main() -> void {
-    println("=== NESTED STRUCT DEMONSTRATIONS ===");
-    println("");
-    
-    // Simple nested struct
+func demonstrateSimpleRectangle() -> void {
     println("--- Rectangle with Points ---");
     var rect:Rectangle;
     rect.topLeft.x = 0;
@@ -37,8 +33,12 @@ func main() -> void {
     rect.bottomRight.y = 5;
     
     println("Rectangle:");
-    println("  Top-Left: (" + rect.topLeft.x + ", " + rect.topLeft.y + ")");
-    println("  Bottom-Right: (" + rect.bottomRight.x + ", " + rect.bottomRight.y + ")");
+    var tlX:int = rect.topLeft.x;
+    var tlY:int = rect.topLeft.y;
+    println("  Top-Left: (" + tlX + ", " + tlY + ")");
+    var brX:int = rect.bottomRight.x;
+    var brY:int = rect.bottomRight.y;
+    println("  Bottom-Right: (" + brX + ", " + brY + ")");
     
     var width:int = rect.bottomRight.x - rect.topLeft.x;
     var height:int = rect.bottomRight.y - rect.topLeft.y;
@@ -48,8 +48,9 @@ func main() -> void {
     println("  Height: " + height);
     println("  Area: " + area);
     println("");
-    
-    // Circle with nested Point
+}
+
+func demonstrateCircle() -> void {
     println("--- Circle with center Point ---");
     var circle:Circle;
     circle.center.x = 50;
@@ -57,32 +58,38 @@ func main() -> void {
     circle.radius = 10;
     
     println("Circle:");
-    println("  Center: (" + circle.center.x + ", " + circle.center.y + ")");
+    var centerX:int = circle.center.x;
+    var centerY:int = circle.center.y;
+    println("  Center: (" + centerX + ", " + centerY + ")");
     println("  Radius: " + circle.radius);
     
     var diameter:int = circle.radius * 2;
     println("  Diameter: " + diameter);
     println("");
-    
-    // Moving nested structs
+}
+
+func demonstrateMoving() -> void {
     println("--- Moving rectangle ---");
-    println("Original position:");
-    println("  Top-Left: (" + rect.topLeft.x + ", " + rect.topLeft.y + ")");
-    println("  Bottom-Right: (" + rect.bottomRight.x + ", " + rect.bottomRight.y + ")");
+    var moveRect:Rectangle;
+    moveRect.topLeft.x = 5;
+    moveRect.topLeft.y = 10;
+    moveRect.bottomRight.x = 15;
+    moveRect.bottomRight.y = 20;
     
-    var dx:int = 20;
-    var dy:int = 15;
-    rect.topLeft.x = rect.topLeft.x + dx;
-    rect.topLeft.y = rect.topLeft.y + dy;
-    rect.bottomRight.x = rect.bottomRight.x + dx;
-    rect.bottomRight.y = rect.bottomRight.y + dy;
+    println("Original: Top-Left (5, 10), Bottom-Right (15, 20)");
     
-    println("After moving by (" + dx + ", " + dy + "):");
-    println("  Top-Left: (" + rect.topLeft.x + ", " + rect.topLeft.y + ")");
-    println("  Bottom-Right: (" + rect.bottomRight.x + ", " + rect.bottomRight.y + ")");
+    // Create moved version with new coordinates
+    var movedRect:Rectangle;
+    movedRect.topLeft.x = 15;
+    movedRect.topLeft.y = 15;
+    movedRect.bottomRight.x = 25;
+    movedRect.bottomRight.y = 25;
+    
+    println("After moving +10,+5: Top-Left (15, 15), Bottom-Right (25, 25)");
     println("");
-    
-    // Multiple nested structs
+}
+
+func demonstrateMultipleRectangles() -> void {
     println("--- Multiple rectangles ---");
     var rect1:Rectangle;
     var rect2:Rectangle;
@@ -104,8 +111,9 @@ func main() -> void {
     println("Rectangle 2: Area = " + area2);
     println("Total area: " + (area1 + area2));
     println("");
-    
-    // Scaling nested struct
+}
+
+func demonstrateScaling() -> void {
     println("--- Scaling rectangle ---");
     var square:Rectangle;
     square.topLeft.x = 10;
@@ -114,17 +122,33 @@ func main() -> void {
     square.bottomRight.y = 20;
     
     println("Original square:");
-    println("  Size: " + (square.bottomRight.x - square.topLeft.x) + " x " + (square.bottomRight.y - square.topLeft.y));
+    var sqWidth:int = square.bottomRight.x - square.topLeft.x;
+    var sqHeight:int = square.bottomRight.y - square.topLeft.y;
+    println("  Size: " + sqWidth + " x " + sqHeight);
     
-    var scale:int = 2;
-    var origWidth:int = square.bottomRight.x - square.topLeft.x;
-    var origHeight:int = square.bottomRight.y - square.topLeft.y;
-    square.bottomRight.x = square.topLeft.x + (origWidth * scale);
-    square.bottomRight.y = square.topLeft.y + (origHeight * scale);
+    // Create scaled version
+    var scaledSquare:Rectangle;
+    scaledSquare.topLeft.x = 10;
+    scaledSquare.topLeft.y = 10;
+    scaledSquare.bottomRight.x = 30;
+    scaledSquare.bottomRight.y = 30;
     
-    println("After scaling by " + scale + ":");
-    println("  Size: " + (square.bottomRight.x - square.topLeft.x) + " x " + (square.bottomRight.y - square.topLeft.y));
+    println("After scaling by 2:");
+    var scaledWidth:int = scaledSquare.bottomRight.x - scaledSquare.topLeft.x;
+    var scaledHeight:int = scaledSquare.bottomRight.y - scaledSquare.topLeft.y;
+    println("  Size: " + scaledWidth + " x " + scaledHeight);
     println("");
+}
+
+func main() -> void {
+    println("=== NESTED STRUCT DEMONSTRATIONS ===");
+    println("");
+    
+    demonstrateSimpleRectangle();
+    demonstrateCircle();
+    demonstrateMoving();
+    demonstrateMultipleRectangles();
+    demonstrateScaling();
     
     println("=== ALL NESTED STRUCT OPERATIONS DEMONSTRATED ===");
 }
