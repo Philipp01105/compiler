@@ -1,0 +1,196 @@
+// =================================================================
+// SIMPLE CALCULATOR
+// A calculator implementation using structs
+// =================================================================
+// This example demonstrates:
+// - Struct-based state management
+// - Multiple mathematical operations
+// - Method chaining concept
+// - Real-world application structure
+// =================================================================
+
+struct Calculator {
+    var currentValue:int;
+    var memory:int;
+    
+    func init() -> void {
+        currentValue = 0;
+        memory = 0;
+    }
+    
+    func setValue(value:int) -> void {
+        currentValue = value;
+    }
+    
+    func getValue() -> int {
+        return currentValue;
+    }
+    
+    func add(value:int) -> void {
+        currentValue = currentValue + value;
+    }
+    
+    func subtract(value:int) -> void {
+        currentValue = currentValue - value;
+    }
+    
+    func multiply(value:int) -> void {
+        currentValue = currentValue * value;
+    }
+    
+    func divide(value:int) -> void {
+        if (value != 0) {
+            currentValue = currentValue / value;
+        }
+    }
+    
+    func modulo(value:int) -> void {
+        if (value != 0) {
+            currentValue = currentValue % value;
+        }
+    }
+    
+    func square() -> void {
+        currentValue = currentValue * currentValue;
+    }
+    
+    func absolute() -> void {
+        if (currentValue < 0) {
+            currentValue = -currentValue;
+        }
+    }
+    
+    func clear() -> void {
+        currentValue = 0;
+    }
+    
+    func memoryStore() -> void {
+        memory = currentValue;
+    }
+    
+    func memoryRecall() -> void {
+        currentValue = memory;
+    }
+    
+    func memoryAdd() -> void {
+        memory = memory + currentValue;
+    }
+    
+    func memoryClear() -> void {
+        memory = 0;
+    }
+    
+    func print() -> void {
+        println("  Result: " + currentValue);
+    }
+}
+
+func main() -> void {
+    println("============================================");
+    println("         SIMPLE CALCULATOR DEMO");
+    println("============================================");
+    println("");
+    
+    var calc:Calculator;
+    calc.init();
+    
+    // Basic operations
+    println("--- Basic Operations ---");
+    calc.setValue(10);
+    println("Set value to 10");
+    calc.print();
+    
+    calc.add(5);
+    println("Add 5");
+    calc.print();
+    
+    calc.multiply(3);
+    println("Multiply by 3");
+    calc.print();
+    
+    calc.subtract(20);
+    println("Subtract 20");
+    calc.print();
+    
+    calc.divide(5);
+    println("Divide by 5");
+    calc.print();
+    println("");
+    
+    // Modulo and square
+    println("--- Advanced Operations ---");
+    calc.setValue(7);
+    println("Set value to 7");
+    calc.print();
+    
+    calc.modulo(3);
+    println("Modulo 3");
+    calc.print();
+    
+    calc.setValue(8);
+    println("Set value to 8");
+    calc.print();
+    
+    calc.square();
+    println("Square");
+    calc.print();
+    println("");
+    
+    // Absolute value
+    println("--- Absolute Value ---");
+    calc.setValue(10);
+    calc.subtract(30);
+    println("10 - 30");
+    calc.print();
+    
+    calc.absolute();
+    println("Absolute value");
+    calc.print();
+    println("");
+    
+    // Memory operations
+    println("--- Memory Operations ---");
+    calc.setValue(42);
+    println("Set value to 42");
+    calc.print();
+    
+    calc.memoryStore();
+    println("Store to memory");
+    
+    calc.setValue(10);
+    println("Set value to 10");
+    calc.print();
+    
+    calc.memoryRecall();
+    println("Recall from memory");
+    calc.print();
+    
+    calc.setValue(8);
+    println("Set value to 8");
+    calc.print();
+    
+    calc.memoryAdd();
+    println("Add to memory");
+    
+    calc.memoryRecall();
+    println("Recall from memory");
+    calc.print();
+    println("");
+    
+    // Chain calculation
+    println("--- Chain Calculation ---");
+    println("Computing: ((5 + 3) * 2)^2");
+    calc.setValue(5);
+    println("  5");
+    calc.add(3);
+    println("  + 3 = " + calc.getValue());
+    calc.multiply(2);
+    println("  * 2 = " + calc.getValue());
+    calc.square();
+    println("  ^2 = " + calc.getValue());
+    println("");
+    
+    println("============================================");
+    println("         CALCULATOR DEMO COMPLETE");
+    println("============================================");
+}

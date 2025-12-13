@@ -1,313 +1,289 @@
-# Code Examples and Game Demonstrations
+# DMM Language Code Examples
 
-This directory contains example programs and games that demonstrate the features and capabilities of the compiler. Each example is written in the custom language and showcases different aspects of the language syntax and standard library.
+This directory contains comprehensive examples demonstrating all features of the DMM programming language. Each example is self-contained and focuses on specific language features.
 
-## Overview
+## 📚 Example Index
 
-These examples serve as:
-- **Tests** - Validation that the compiler works correctly with real-world programs
-- **Demonstrations** - Showcasing language features and capabilities
-- **Learning Resources** - Examples for new users to understand the language
-- **Benchmarks** - Complex programs to test compiler performance
+### Basic Examples
 
-## Games and Examples
+1. **[01_hello_world.dmm](01_hello_world.dmm)** - Hello World
+   - Basic program structure
+   - `println()` function
+   - String literals
 
-### 1. Shapes - Nested Structs (`shapes.txt`)
+2. **[02_variables_and_types.dmm](02_variables_and_types.dmm)** - Variables and Data Types
+   - All 5 data types: `int`, `char`, `byte`, `bit`, `string`
+   - Variable declaration and initialization
+   - Type inference
+   - Printing different types
 
-A demonstration of nested struct usage with geometric shapes.
+3. **[03_operators.dmm](03_operators.dmm)** - Operators
+   - Arithmetic operators: `+`, `-`, `*`, `/`, `%`
+   - Comparison operators: `<`, `<=`, `>`, `>=`, `==`, `!=`
+   - Logical operators: `&&`, `||`, `!`
+   - Operator precedence
+   - Complex expressions
 
-**Features Demonstrated:**
-- Nested struct composition (Rectangle contains two Point structs)
-- Accessing nested struct fields
-- Struct field manipulation
-- Geometric calculations
-- Multiple demonstrations of the same concept
+4. **[04_control_flow.dmm](04_control_flow.dmm)** - Control Flow
+   - `if` / `else` statements
+   - `else if` chains
+   - Nested conditionals
+   - `for` loops
+   - Nested loops
+   - Loop conditions
 
-**Key Language Features:**
-- Nested structs (struct fields of another struct type)
-- Direct field access on nested structs (e.g., `rect.topLeft.x`)
-- Struct instances without methods (current limitation)
-- Calculations using nested struct fields
-- State manipulation through field updates
+5. **[05_functions.dmm](05_functions.dmm)** - Functions
+   - Function parameters
+   - Return values (all types)
+   - Multiple parameters
+   - Recursion (factorial, fibonacci)
+   - Function calls
+   - Nested function calls
 
-**How to Run:**
+6. **[06_strings.dmm](06_strings.dmm)** - String Operations
+   - String variables
+   - String concatenation
+   - String comparison (`==`, `!=`)
+   - Strings with numbers
+   - String parameters and return values
+   - Strings in control flow
+
+### Intermediate Examples
+
+7. **[07_arrays.dmm](07_arrays.dmm)** - Arrays
+   - Array declaration with size
+   - Array element access and assignment
+   - Iterating through arrays
+   - Array calculations
+   - Finding max/min in arrays
+   - Arrays in functions
+
+8. **[08_structs_basic.dmm](08_structs_basic.dmm)** - Basic Structs
+   - Struct definition with fields
+   - Field access and assignment
+   - Multiple struct instances
+   - Structs with different types
+   - Modifying struct fields
+
+9. **[09_structs_methods.dmm](09_structs_methods.dmm)** - Structs with Methods
+   - Struct methods accessing fields
+   - Methods with parameters
+   - Methods with return values
+   - Methods modifying state
+   - Object-oriented style programming
+
+10. **[10_structs_nested.dmm](10_structs_nested.dmm)** - Nested Structs
+    - Structs containing other structs
+    - Accessing nested fields
+    - Calculations with nested structs
+    - Moving and transforming nested structures
+
+### Advanced Examples
+
+11. **[11_algorithms.dmm](11_algorithms.dmm)** - Common Algorithms
+    - Factorial (recursion)
+    - Fibonacci (recursion)
+    - GCD (Euclidean algorithm)
+    - Prime number checking
+    - Power function
+    - Mathematical utilities (abs, max, min)
+    - Sum of digits
+
+12. **[12_simple_calculator.dmm](12_simple_calculator.dmm)** - Calculator Application
+    - Struct-based state management
+    - Multiple mathematical operations
+    - Memory functions
+    - Chain calculations
+    - Real-world application structure
+
+### Game Examples
+
+13. **[tictactoe.dmm](tictactoe.dmm)** - Tic-Tac-Toe Game *(existing)*
+14. **[guess_number.dmm](guess_number.dmm)** - Number Guessing Game *(existing)*
+15. **[rock_paper_scissors.dmm](rock_paper_scissors.dmm)** - Rock Paper Scissors *(existing)*
+16. **[calculator.dmm](calculator.dmm)** - Advanced Calculator *(existing)*
+17. **[shapes.dmm](shapes.dmm)** - Geometric Shapes *(existing)*
+
+## 🚀 How to Compile and Run
+
+### Step 1: Build the Compiler
+
 ```bash
-./build/compiler code_examples/shapes.dmm
-gcc -no-pie code_examples/shapes.dmm.s -o shapes
-./shapes
+cd /path/to/compiler
+mkdir build && cd build
+cmake ..
+make
 ```
 
-**Output:** Shows various rectangle and square demonstrations including point manipulation and resizing.
+### Step 2: Compile an Example
 
-**Note:** This example demonstrates the current state of nested struct support. Methods cannot yet access nested struct fields, so all calculations are done in external functions.
-
----
-
-### 2. TicTacToe (`tictactoe.txt`)
-
-A complete Tic Tac Toe game implementation using structs.
-
-**Features Demonstrated:**
-- Struct usage with methods
-- Game board representation using individual fields
-- Win condition checking (rows, columns, diagonals)
-- AI opponent with simple strategy
-- Turn-based gameplay
-- State management
-
-**Key Language Features:**
-- Struct definition with multiple fields
-- Methods accessing struct fields directly
-- Control flow (if-else chains, for loops)
-- Boolean logic for win detection
-- Method calls on struct instances
-
-**How to Run:**
 ```bash
-./build/compiler code_examples/tictactoe.dmm
-gcc -no-pie code_examples/tictactoe.dmm.s -o tictactoe
-./tictactoe
+./build/compiler code_examples/01_hello_world.dmm
 ```
 
-**Output:** Shows two game simulations - one with predetermined moves and one with AI vs AI.
+This generates `code_examples/01_hello_world.dmm.s` (assembly file).
 
----
+### Step 3: Assemble and Link
 
-### 3. Number Guessing Game (`guess_number.txt`)
-
-A number guessing game where players try to find a secret number within a limited number of guesses.
-
-**Features Demonstrated:**
-- Struct-based game state management
-- Range narrowing logic
-- Guess validation and feedback
-- Binary search strategy demonstration
-- Array usage for storing guesses
-
-**Key Language Features:**
-- Struct methods with parameters and return values
-- Conditional logic (if-else if chains)
-- Array manipulation
-- Game state tracking
-- Mathematical operations (division for binary search)
-
-**How to Run:**
 ```bash
-./build/compiler code_examples/guess_number.dmm
-gcc -no-pie code_examples/guess_number.dmm.s -o guess_number
-./guess_number
+gcc -no-pie code_examples/01_hello_world.dmm.s -o hello
 ```
 
-**Output:** Two simulations - manual guessing and optimized binary search strategy.
+### Step 4: Run the Program
 
----
-
-### 4. Rock Paper Scissors (`rock_paper_scissors.txt`)
-
-Classic Rock-Paper-Scissors game implementation.
-
-**Features Demonstrated:**
-- Multi-round tournament system
-- Score tracking across rounds
-- Game outcome determination
-- Enum-like constants (0=Rock, 1=Paper, 2=Scissors)
-- Pattern-based strategies
-
-**Key Language Features:**
-- Struct methods for game logic
-- Complex conditional logic for determining winners
-- Score accumulation
-- Array usage for move sequences
-- String handling for move names
-- Helper functions outside structs
-
-**How to Run:**
 ```bash
-./build/compiler code_examples/rock_paper_scissors.dmm
-gcc -no-pie code_examples/rock_paper_scissors.dmm.s -o rps
-./rps
+./hello
 ```
 
-**Output:** Best-of-5 game and a 10-round tournament with different strategies.
-
----
-
-### 5. Calculator (`calculator.txt`)
-
-A feature-rich calculator with memory functions and operation history.
-
-**Features Demonstrated:**
-- Multiple mathematical operations
-- Memory storage and recall
-- Operation chaining
-- State persistence
-- Absolute value computation
-
-**Key Language Features:**
-- Struct with many methods
-- Method composition (performing operations in sequence)
-- Memory management (store, recall, add to memory)
-- Conditional operations (division by zero check)
-- Mathematical operations (+, -, *, /, %, square, abs)
-
-**How to Run:**
-```bash
-./build/compiler code_examples/calculator.dmm
-gcc -no-pie code_examples/calculator.dmm.s -o calculator
-./calculator
-```
-
-**Output:** Multiple demonstrations of calculator features including basic ops, memory functions, and chained calculations.
-
----
-
-### 6. Heap Management Demo (`heap_management_demo.dmm`)
-
-A comprehensive demonstration of heap memory management features.
-
-**Features Demonstrated:**
-- Pointer type declarations (`var p:*int`)
-- Heap allocation with `reserve` keyword
-- Manual deallocation with `free` keyword
-- Garbage collection with `@gc` annotation
-- Mixed manual and automatic memory management
-- Dynamic size allocation
-
-**Key Language Features:**
-- Pointer types for all data types
-- `reserve variable(size)` for heap allocation
-- `free variable` for manual deallocation
-- `@gc` annotation for automatic garbage collection
-- Platform-independent calling conventions
-
-**How to Run:**
-```bash
-./build/compiler code_examples/heap_management_demo.dmm
-gcc -no-pie code_examples/heap_management_demo.dmm.s -o heap_demo
-./heap_demo
-```
-
-**Output:** Eight examples demonstrating pointer declarations, heap allocation, manual memory management, garbage collection, and advanced memory patterns.
-
-**Documentation:** See `examples/HEAP_MANAGEMENT_DOCUMENTATION.md` for detailed documentation on heap management features.
-
----
-
-## Compilation Instructions
-
-### Compile All Examples
+### Complete Example
 
 ```bash
-cd /home/runner/work/compiler/compiler
-for game in code_examples/*.txt; do
-    echo "Compiling $(basename $game)..."
-    ./build/compiler "$game"
-    gcc -no-pie "$game.s" -o "$(basename $game .txt)"
+# Compile all examples
+for example in code_examples/*.dmm; do
+    ./build/compiler "$example"
+    gcc -no-pie "${example}.s" -o "${example%.dmm}"
 done
+
+# Run an example
+./code_examples/01_hello_world
 ```
 
-### Compile Individual Example
+## 📖 Language Features Covered
 
-```bash
-./build/compiler code_examples/tictactoe.dmm
-gcc -no-pie code_examples/tictactoe.dmm.s -o tictactoe_game
-./tictactoe_game
-```
+### Data Types (5 types)
 
-## Language Features Showcased
-
-### Structs
-All examples use structs extensively to organize game state and methods:
 ```javascript
-struct GameName {
-    int field1;
-    int field2;
-    
-    func methodName() -> void {
-        // Access fields directly
-        field1 = field1 + 1;
+var age:int = 25;              // 32-bit signed integer
+var initial:char = 'A';        // 8-bit character
+var pixel:byte = 255;          // 8-bit unsigned
+var flag:bit = 1;              // Boolean (0 or 1)
+var name:string = "Alice";     // String pointer
+```
+
+### Control Structures
+
+```javascript
+// if/else
+if (x > 10) {
+    println("Greater");
+} else {
+    println("Not greater");
+}
+
+// else if chains
+if (score >= 90) {
+    println("A");
+} else if (score >= 80) {
+    println("B");
+} else {
+    println("C");
+}
+
+// for loops
+for (var i:int = 0; i < 10; i++) {
+    println(i);
+}
+```
+
+### Functions
+
+```javascript
+// Function with parameters and return value
+func add(a:int, b:int) -> int {
+    return a + b;
+}
+
+// Recursive function
+func factorial(n:int) -> int {
+    if (n <= 1) {
+        return 1;
     }
+    return n * factorial(n - 1);
 }
 ```
 
 ### Arrays
-Used for storing game moves, board states, and sequences:
+
 ```javascript
-var[10] moves:int;
-moves[0] = 5;
+// Array declaration
+var[10] numbers:int;
+
+// Array access
+numbers[0] = 42;
+println(numbers[0]);
+
+// Array iteration
+for (var i:int = 0; i < 10; i++) {
+    numbers[i] = i * 2;
+}
 ```
 
-### Control Flow
-- **if-else if chains**: Complex decision making
-- **for loops**: Iterating through moves and rounds
-- **while logic**: Game loop conditions
+### Structs
 
-### Functions and Methods
-- Methods with parameters and return values
-- Helper functions for utility operations
-- Method calls on struct instances
-
-### Standard Library Usage
-All examples import and use functions from:
-- `stdlib/core.txt` - Basic operations
-- `stdlib/utils.txt` - Utility functions (printLine, printLabeled, etc.)
-- `stdlib/math.txt` - Mathematical operations
-
-## Known Limitations
-
-### Struct Method Limitations
-Currently, methods within a struct **cannot call other methods** from the same struct. This is a known limitation documented in `ISSUE_STRUCT_METHOD_CALLS.md`.
-
-**Workaround:** Inline the logic or use external helper functions.
-
-Example:
 ```javascript
-// This does NOT work:
-struct Game {
-    func helper() -> int { return 5; }
+// Struct definition
+struct Point {
+    var x:int;
+    var y:int;
     
-    func main() -> void {
-        var x:int = helper();  // ERROR: Function 'helper' not found
+    func init(xVal:int, yVal:int) -> void {
+        x = xVal;
+        y = yVal;
+    }
+    
+    func print() -> void {
+        println("Point(" + x + ", " + y + ")");
     }
 }
 
-// Workaround - inline the logic:
-struct Game {
-    func main() -> void {
-        var x:int = 5;  // Inline the helper logic
-    }
+// Struct usage
+func main() -> void {
+    var p:Point;
+    p.init(10, 20);
+    p.print();
 }
 ```
 
-### String Concatenation in Struct Methods
-Complex string concatenation with multiple struct fields in a single print statement may cause issues. 
-
-**Workaround:** Use `printLabeled()` from stdlib/utils.txt or separate print statements.
+### Nested Structs
 
 ```javascript
-// Instead of:
-print("Score: " + field1 + " | Round: " + field2);
+struct Point {
+    var x:int;
+    var y:int;
+}
 
-// Use:
-printLabeled("Score", field1);
-printLabeled("Round", field2);
+struct Rectangle {
+    var topLeft:Point;
+    var bottomRight:Point;
+}
+
+func main() -> void {
+    var rect:Rectangle;
+    rect.topLeft.x = 0;
+    rect.topLeft.y = 0;
+    rect.bottomRight.x = 10;
+    rect.bottomRight.y = 5;
+}
 ```
 
-## Adding New Examples
+## 🎯 Learning Path
 
-When creating new example programs:
+### Beginners
+Start with examples 01-06 to learn basic syntax, data types, and control flow.
 
-1. **Use structs** to organize state and behavior
-2. **Import standard library** modules as needed
-3. **Add documentation** at the top explaining what the example demonstrates
-4. **Test compilation** before committing
-5. **Update this README** with the new example
+### Intermediate
+Continue with examples 07-10 to understand arrays and structs.
 
-### Template
+### Advanced
+Explore examples 11-12 and the game examples for complex patterns and algorithms.
+
+## 📝 Example Template
+
+When creating new examples, follow this template:
 
 ```javascript
 // =================================================================
-// EXAMPLE NAME
+// EXAMPLE TITLE
 // Brief description
 // =================================================================
 // This example demonstrates:
@@ -316,76 +292,115 @@ When creating new example programs:
 // - Feature 3
 // =================================================================
 
-#import <stdlib/core.txt>
-#import <stdlib/utils.txt>
-
-struct ExampleStruct {
-    int field1;
-    
-    func init() -> void {
-        field1 = 0;
-    }
-    
-    func doSomething() -> void {
-        // Implementation
-    }
-}
-
 func main() -> void {
-    var example:ExampleStruct;
-    example.init();
-    example.doSomething();
+    println("=== EXAMPLE DEMONSTRATION ===");
+    println("");
+    
+    // Your code here
+    
+    println("=== DEMONSTRATION COMPLETE ===");
 }
 ```
 
-## Testing
+## 🔍 Built-in Functions
+
+The language provides two built-in I/O functions:
+
+- **`print(expr)`** - Print without newline
+- **`println(expr)`** - Print with newline
+
+Both support string concatenation with all data types:
+
+```javascript
+var x:int = 42;
+var name:string = "Alice";
+println("Name: " + name + ", Value: " + x);
+```
+
+## ⚙️ Compilation Details
+
+### Assembly Output
+
+The compiler generates x86-64 AT&T syntax assembly:
+- Linux syscalls for I/O
+- Stack-based variable storage
+- Register-based expression evaluation
+
+### Compiler Flags
+
+```bash
+./build/compiler [options] <input.dmm>
+
+Options:
+  --debug      Print detailed compilation information
+  --tokens     Show token stream
+```
+
+## 🧪 Testing Examples
 
 To verify all examples compile correctly:
 
 ```bash
-cd /home/runner/work/compiler/compiler
-./test_examples.sh  # If test script exists
-# Or manually:
-for game in code_examples/*.txt; do
-    ./build/compiler "$game" || echo "FAILED: $game"
+#!/bin/bash
+for example in code_examples/*.dmm; do
+    echo "Testing $example..."
+    ./build/compiler "$example" > /dev/null 2>&1
+    if [ $? -eq 0 ]; then
+        echo "  ✓ OK"
+    else
+        echo "  ✗ FAILED"
+    fi
 done
 ```
 
-## Performance Notes
+## 💡 Tips and Best Practices
 
-- **TicTacToe**: ~126 KB assembly, demonstrates struct methods
-- **Calculator**: Most complex struct with ~20 methods
-- **Guess Number**: Demonstrates algorithm optimization (binary search)
-- **Rock Paper Scissors**: Simple game logic with multiple scenarios
+1. **Variable Initialization**: Always initialize variables before use
+2. **Type Safety**: Use explicit types (`:int`, `:string`, etc.) for clarity
+3. **Function Size**: Keep functions focused on a single task
+4. **Struct Methods**: Use methods to encapsulate behavior with data
+5. **Comments**: Add clear comments to explain complex logic
+6. **Testing**: Test edge cases (division by zero, array bounds, etc.)
 
-## Future Examples
+## 🐛 Common Pitfalls
 
-Potential examples to add:
-- **Hangman** - String manipulation and character guessing
-- **Maze Solver** - Path finding algorithms
-- **Card Game** - Deck shuffling and card dealing
-- **Quiz Game** - Question/answer system
-- **Math Puzzles** - Sudoku, equations, etc.
+1. **Division by Zero**: Always check divisor before division
+2. **Array Bounds**: Ensure array indices are within declared size
+3. **Uninitialized Variables**: Variables default to 0 but should be explicitly set
+4. **String Comparison**: Use `==` for comparison, not assignment `=`
+5. **Recursion Depth**: Deep recursion can cause stack overflow
 
-## Contributing
+## 📊 Performance Notes
 
-When adding new examples:
-1. Follow the existing code style
-2. Add comprehensive comments
-3. Test thoroughly
-4. Document any language features used
-5. Update this README
+- **Recursion**: Can be slow for large inputs (e.g., fibonacci)
+- **String Concat**: Efficient for simple concatenation
+- **Loops**: Prefer iteration over recursion for better performance
+- **Struct Methods**: No overhead compared to regular functions
 
-## License
+## 🔗 Additional Resources
 
-These examples are part of the compiler project and follow the same license as the main repository.
+- **Language Documentation**: See `examples/LANGUAGE_DOCUMENTATION.md`
+- **Compiler Architecture**: See main `README.md`
+- **Test Suite**: See `tests/` directory for more examples
+- **Issue Tracker**: GitHub issues for bug reports and feature requests
 
-## Version
+## 📜 License
 
-Examples Version: 1.0.0  
-Compatible with Compiler Version: 4.0.1+  
-Date: November 2025
+These examples are part of the DMM compiler project.
+
+## ✨ Contributing
+
+To add new examples:
+1. Follow the template structure
+2. Add clear comments explaining features
+3. Test compilation and execution
+4. Update this README with the new example
+5. Ensure no dependencies on external libraries
 
 ---
 
-**Note:** All examples are fully functional and tested. They demonstrate real-world usage of the language and serve as both tests and learning resources.
+**Version**: 1.0.0  
+**Last Updated**: December 2025  
+**Compiler Version**: 5.1.0+
+
+All examples are self-contained and use only built-in language features.

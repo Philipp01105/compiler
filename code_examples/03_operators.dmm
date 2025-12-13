@@ -1,0 +1,67 @@
+// =================================================================
+// OPERATORS
+// Demonstrates arithmetic, comparison, and logical operators
+// =================================================================
+// This example demonstrates:
+// - Arithmetic operators (+, -, *, /, %)
+// - Comparison operators (<, <=, >, >=, ==, !=)
+// - Logical operators (&&, ||, !)
+// - Operator precedence
+// - Unary operators
+// =================================================================
+
+func main() -> void {
+    println("=== OPERATOR DEMONSTRATIONS ===");
+    println("");
+    
+    // Arithmetic Operators
+    println("--- Arithmetic Operators ---");
+    var a:int = 20;
+    var b:int = 3;
+    println("a = " + a + ", b = " + b);
+    println("  a + b = " + (a + b));
+    println("  a - b = " + (a - b));
+    println("  a * b = " + (a * b));
+    println("  a / b = " + (a / b));
+    println("  a % b = " + (a % b));
+    println("  -a = " + (-a));
+    println("");
+    
+    // Comparison Operators
+    println("--- Comparison Operators ---");
+    var x:int = 10;
+    var y:int = 20;
+    println("x = " + x + ", y = " + y);
+    println("  x < y  = " + (x < y));
+    println("  x <= y = " + (x <= y));
+    println("  x > y  = " + (x > y));
+    println("  x >= y = " + (x >= y));
+    println("  x == y = " + (x == y));
+    println("  x != y = " + (x != y));
+    println("");
+    
+    // Logical Operators
+    println("--- Logical Operators ---");
+    var p:bit = 1;
+    var q:bit = 0;
+    println("p = " + p + ", q = " + q);
+    println("  p && q = " + (p && q));
+    println("  p || q = " + (p || q));
+    println("  !p = " + (!p));
+    println("  !q = " + (!q));
+    println("");
+    
+    // Complex expressions
+    println("--- Complex Expressions ---");
+    var result1:bit = (x > 5) && (y < 30);
+    println("  (x > 5) && (y < 30) = " + result1);
+    
+    var result2:bit = (x == 10) || (y == 10);
+    println("  (x == 10) || (y == 10) = " + result2);
+    
+    var result3:int = (a + b) * 2 - 5;
+    println("  (a + b) * 2 - 5 = " + result3);
+    println("");
+    
+    println("=== ALL OPERATORS DEMONSTRATED ===");
+}

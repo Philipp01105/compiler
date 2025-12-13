@@ -11,9 +11,14 @@
 // - State management
 // =================================================================
 
-#import <stdlib/core.txt>
-#import <stdlib/array.txt>
-#import <stdlib/utils.txt>
+// Helper functions
+func printLine() -> void {
+    println("--------------------------------");
+}
+
+func printDoubleLine() -> void {
+    println("================================");
+}
 
 // TicTacToe game struct
 struct TicTacToe {
