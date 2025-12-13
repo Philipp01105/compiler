@@ -9,8 +9,18 @@
 // - Coordinate system with Points
 // =================================================================
 
-#import <stdlib/core.txt>
-#import <stdlib/utils.txt>
+// Helper functions
+func printLine() -> void {
+    println("--------------------------------");
+}
+
+func printDoubleLine() -> void {
+    println("================================");
+}
+
+func printLabeled(label:string, value:int) -> void {
+    println(label + ": " + value);
+}
 
 // Point struct - represents a 2D coordinate
 struct Point {

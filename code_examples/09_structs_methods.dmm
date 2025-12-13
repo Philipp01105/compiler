@@ -1,0 +1,159 @@
+// =================================================================
+// STRUCTS WITH METHODS
+// Demonstrates struct methods for encapsulated behavior
+// =================================================================
+// This example demonstrates:
+// - Struct methods that access fields directly
+// - Methods with parameters
+// - Methods with return values
+// - Methods modifying struct state
+// - Object-oriented style programming
+// =================================================================
+
+struct Counter {
+    var value:int;
+    
+    func init() -> void {
+        value = 0;
+    }
+    
+    func increment() -> void {
+        value = value + 1;
+    }
+    
+    func decrement() -> void {
+        value = value - 1;
+    }
+    
+    func add(amount:int) -> void {
+        value = value + amount;
+    }
+    
+    func getValue() -> int {
+        return value;
+    }
+    
+    func reset() -> void {
+        value = 0;
+    }
+}
+
+struct Point {
+    var x:int;
+    var y:int;
+    
+    func init(xVal:int, yVal:int) -> void {
+        x = xVal;
+        y = yVal;
+    }
+    
+    func move(dx:int, dy:int) -> void {
+        x = x + dx;
+        y = y + dy;
+    }
+    
+    func print() -> void {
+        println("Point(" + x + ", " + y + ")");
+    }
+    
+    func distanceFromOrigin() -> int {
+        return x * x + y * y;
+    }
+}
+
+struct Rectangle {
+    var width:int;
+    var height:int;
+    
+    func init(w:int, h:int) -> void {
+        width = w;
+        height = h;
+    }
+    
+    func area() -> int {
+        return width * height;
+    }
+    
+    func perimeter() -> int {
+        return (width + height) * 2;
+    }
+    
+    func scale(factor:int) -> void {
+        width = width * factor;
+        height = height * factor;
+    }
+    
+    func print() -> void {
+        println("Rectangle: " + width + " x " + height);
+    }
+}
+
+func main() -> void {
+    println("=== STRUCT METHODS DEMONSTRATIONS ===");
+    println("");
+    
+    // Counter struct
+    println("--- Counter struct ---");
+    var counter:Counter;
+    counter.init();
+    println("Initial value: " + counter.getValue());
+    
+    counter.increment();
+    println("After increment: " + counter.getValue());
+    
+    counter.add(5);
+    println("After add(5): " + counter.getValue());
+    
+    counter.decrement();
+    println("After decrement: " + counter.getValue());
+    
+    counter.reset();
+    println("After reset: " + counter.getValue());
+    println("");
+    
+    // Point struct
+    println("--- Point struct ---");
+    var p:Point;
+    p.init(10, 20);
+    p.print();
+    
+    p.move(5, -3);
+    println("After move(5, -3):");
+    p.print();
+    
+    var dist:int = p.distanceFromOrigin();
+    println("Distance^2 from origin: " + dist);
+    println("");
+    
+    // Rectangle struct
+    println("--- Rectangle struct ---");
+    var rect:Rectangle;
+    rect.init(10, 5);
+    rect.print();
+    println("Area: " + rect.area());
+    println("Perimeter: " + rect.perimeter());
+    
+    rect.scale(2);
+    println("After scale(2):");
+    rect.print();
+    println("New area: " + rect.area());
+    println("New perimeter: " + rect.perimeter());
+    println("");
+    
+    // Multiple instances
+    println("--- Multiple instances ---");
+    var c1:Counter;
+    var c2:Counter;
+    
+    c1.init();
+    c2.init();
+    
+    c1.add(10);
+    c2.add(20);
+    
+    println("Counter 1: " + c1.getValue());
+    println("Counter 2: " + c2.getValue());
+    println("");
+    
+    println("=== ALL STRUCT METHODS DEMONSTRATED ===");
+}

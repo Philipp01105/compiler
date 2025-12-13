@@ -1,0 +1,130 @@
+// =================================================================
+// NESTED STRUCTS
+// Demonstrates structs containing other structs
+// =================================================================
+// This example demonstrates:
+// - Nested struct composition (struct within struct)
+// - Accessing nested struct fields
+// - Calculations with nested structs
+// - Real-world usage of nested structures
+// =================================================================
+
+struct Point {
+    var x:int;
+    var y:int;
+}
+
+struct Rectangle {
+    var topLeft:Point;
+    var bottomRight:Point;
+}
+
+struct Circle {
+    var center:Point;
+    var radius:int;
+}
+
+func main() -> void {
+    println("=== NESTED STRUCT DEMONSTRATIONS ===");
+    println("");
+    
+    // Simple nested struct
+    println("--- Rectangle with Points ---");
+    var rect:Rectangle;
+    rect.topLeft.x = 0;
+    rect.topLeft.y = 0;
+    rect.bottomRight.x = 10;
+    rect.bottomRight.y = 5;
+    
+    println("Rectangle:");
+    println("  Top-Left: (" + rect.topLeft.x + ", " + rect.topLeft.y + ")");
+    println("  Bottom-Right: (" + rect.bottomRight.x + ", " + rect.bottomRight.y + ")");
+    
+    var width:int = rect.bottomRight.x - rect.topLeft.x;
+    var height:int = rect.bottomRight.y - rect.topLeft.y;
+    var area:int = width * height;
+    
+    println("  Width: " + width);
+    println("  Height: " + height);
+    println("  Area: " + area);
+    println("");
+    
+    // Circle with nested Point
+    println("--- Circle with center Point ---");
+    var circle:Circle;
+    circle.center.x = 50;
+    circle.center.y = 50;
+    circle.radius = 10;
+    
+    println("Circle:");
+    println("  Center: (" + circle.center.x + ", " + circle.center.y + ")");
+    println("  Radius: " + circle.radius);
+    
+    var diameter:int = circle.radius * 2;
+    println("  Diameter: " + diameter);
+    println("");
+    
+    // Moving nested structs
+    println("--- Moving rectangle ---");
+    println("Original position:");
+    println("  Top-Left: (" + rect.topLeft.x + ", " + rect.topLeft.y + ")");
+    println("  Bottom-Right: (" + rect.bottomRight.x + ", " + rect.bottomRight.y + ")");
+    
+    var dx:int = 20;
+    var dy:int = 15;
+    rect.topLeft.x = rect.topLeft.x + dx;
+    rect.topLeft.y = rect.topLeft.y + dy;
+    rect.bottomRight.x = rect.bottomRight.x + dx;
+    rect.bottomRight.y = rect.bottomRight.y + dy;
+    
+    println("After moving by (" + dx + ", " + dy + "):");
+    println("  Top-Left: (" + rect.topLeft.x + ", " + rect.topLeft.y + ")");
+    println("  Bottom-Right: (" + rect.bottomRight.x + ", " + rect.bottomRight.y + ")");
+    println("");
+    
+    // Multiple nested structs
+    println("--- Multiple rectangles ---");
+    var rect1:Rectangle;
+    var rect2:Rectangle;
+    
+    rect1.topLeft.x = 0;
+    rect1.topLeft.y = 0;
+    rect1.bottomRight.x = 5;
+    rect1.bottomRight.y = 5;
+    
+    rect2.topLeft.x = 10;
+    rect2.topLeft.y = 10;
+    rect2.bottomRight.x = 20;
+    rect2.bottomRight.y = 15;
+    
+    var area1:int = (rect1.bottomRight.x - rect1.topLeft.x) * (rect1.bottomRight.y - rect1.topLeft.y);
+    var area2:int = (rect2.bottomRight.x - rect2.topLeft.x) * (rect2.bottomRight.y - rect2.topLeft.y);
+    
+    println("Rectangle 1: Area = " + area1);
+    println("Rectangle 2: Area = " + area2);
+    println("Total area: " + (area1 + area2));
+    println("");
+    
+    // Scaling nested struct
+    println("--- Scaling rectangle ---");
+    var square:Rectangle;
+    square.topLeft.x = 10;
+    square.topLeft.y = 10;
+    square.bottomRight.x = 20;
+    square.bottomRight.y = 20;
+    
+    println("Original square:");
+    println("  Size: " + (square.bottomRight.x - square.topLeft.x) + " x " + (square.bottomRight.y - square.topLeft.y));
+    
+    var scale:int = 2;
+    var origWidth:int = square.bottomRight.x - square.topLeft.x;
+    var origHeight:int = square.bottomRight.y - square.topLeft.y;
+    square.bottomRight.x = square.topLeft.x + (origWidth * scale);
+    square.bottomRight.y = square.topLeft.y + (origHeight * scale);
+    
+    println("After scaling by " + scale + ":");
+    println("  Size: " + (square.bottomRight.x - square.topLeft.x) + " x " + (square.bottomRight.y - square.topLeft.y));
+    println("");
+    
+    println("=== ALL NESTED STRUCT OPERATIONS DEMONSTRATED ===");
+}

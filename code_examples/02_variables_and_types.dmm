@@ -1,0 +1,63 @@
+// =================================================================
+// VARIABLES AND DATA TYPES
+// Demonstrates all supported data types
+// =================================================================
+// This example demonstrates:
+// - All 7 primitive data types (int, char, byte, bit, float, double, string)
+// - Variable declaration and initialization
+// - Printing different types
+// - Type inference
+// =================================================================
+
+func main() -> void {
+    println("=== DATA TYPES DEMONSTRATION ===");
+    println("");
+    
+    // Integer (32-bit signed)
+    var age:int = 25;
+    var negative:int = -42;
+    println("Integer examples:");
+    println("  age = " + age);
+    println("  negative = " + negative);
+    println("");
+    
+    // Character (8-bit signed, ASCII)
+    var initial:char = 'A';
+    var grade:char = 'B';
+    println("Character examples:");
+    println("  initial = " + initial);
+    println("  grade = " + grade);
+    println("");
+    
+    // Byte (8-bit unsigned, 0-255)
+    var pixelValue:byte = 255;
+    var counter:byte = 128;
+    println("Byte examples:");
+    println("  pixelValue = " + pixelValue);
+    println("  counter = " + counter);
+    println("");
+    
+    // Bit (Boolean, 0 or 1)
+    var isValid:bit = 1;
+    var hasError:bit = 0;
+    println("Bit (boolean) examples:");
+    println("  isValid = " + isValid);
+    println("  hasError = " + hasError);
+    println("");
+    
+    // String (pointer to string literal)
+    var name:string = "Alice";
+    var greeting:string = "Hello World";
+    println("String examples:");
+    println("  name = " + name);
+    println("  greeting = " + greeting);
+    println("");
+    
+    // Type inference (old syntax)
+    var inferredInt = 100;
+    println("Type inference:");
+    println("  inferredInt = " + inferredInt);
+    println("");
+    
+    println("=== ALL DATA TYPES DEMONSTRATED ===");
+}

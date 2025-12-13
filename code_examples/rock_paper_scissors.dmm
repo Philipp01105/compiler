@@ -9,8 +9,18 @@
 // - Enum-like constants (0=Rock, 1=Paper, 2=Scissors)
 // =================================================================
 
-#import <stdlib/core.txt>
-#import <stdlib/utils.txt>
+// Helper functions
+func printLine() -> void {
+    println("--------------------------------");
+}
+
+func printDoubleLine() -> void {
+    println("================================");
+}
+
+func printLabeled(label:string, value:int) -> void {
+    println(label + ": " + value);
+}
 
 // Rock Paper Scissors Game struct
 struct RPSGame {

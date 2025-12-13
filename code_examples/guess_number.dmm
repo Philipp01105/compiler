@@ -9,8 +9,18 @@
 // - Range checking and validation
 // =================================================================
 
-#import <stdlib/core.txt>
-#import <stdlib/utils.txt>
+// Helper functions
+func printLine() -> void {
+    println("--------------------------------");
+}
+
+func printDoubleLine() -> void {
+    println("================================");
+}
+
+func printLabeled(label:string, value:int) -> void {
+    println(label + ": " + value);
+}
 
 // Number Guessing Game struct
 struct GuessGame {

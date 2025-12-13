@@ -9,9 +9,18 @@
 // - Operation history tracking
 // =================================================================
 
-#import <stdlib/core.txt>
-#import <stdlib/math.txt>
-#import <stdlib/utils.txt>
+// Helper functions to replace stdlib utilities
+func printLine() -> void {
+    println("--------------------------------");
+}
+
+func printDoubleLine() -> void {
+    println("================================");
+}
+
+func printLabeled(label:string, value:int) -> void {
+    println(label + ": " + value);
+}
 
 // Calculator struct
 struct Calculator {

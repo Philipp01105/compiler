@@ -1,0 +1,109 @@
+// =================================================================
+// STRING OPERATIONS
+// Demonstrates string variables, concatenation, and comparison
+// =================================================================
+// This example demonstrates:
+// - String variables and literals
+// - String concatenation with +
+// - String comparison (==, !=)
+// - String parameters and return values
+// - String in control flow
+// =================================================================
+
+func greetUser(name:string, title:string) -> void {
+    println("Welcome, " + title + " " + name + "!");
+}
+
+func getRole(username:string) -> string {
+    if (username == "admin") {
+        return "Administrator";
+    } else if (username == "user") {
+        return "Regular User";
+    }
+    return "Guest";
+}
+
+func main() -> void {
+    println("=== STRING DEMONSTRATIONS ===");
+    println("");
+    
+    // String variables
+    println("--- String variables ---");
+    var firstName:string = "Alice";
+    var lastName:string = "Smith";
+    var fullName:string = "Alice Smith";
+    println("First name: " + firstName);
+    println("Last name: " + lastName);
+    println("Full name: " + fullName);
+    println("");
+    
+    // String concatenation
+    println("--- String concatenation ---");
+    var greeting:string = "Hello";
+    var target:string = "World";
+    println(greeting + ", " + target + "!");
+    println("");
+    
+    // String with numbers
+    println("--- Strings with numbers ---");
+    var name:string = "User";
+    var id:int = 12345;
+    var age:int = 25;
+    println("Name: " + name);
+    println("ID: " + id);
+    println("Age: " + age);
+    println("Combined: " + name + " (ID: " + id + ", Age: " + age + ")");
+    println("");
+    
+    // String comparison
+    println("--- String comparison ---");
+    var username:string = "admin";
+    var password:string = "admin";
+    var input:string = "admin";
+    
+    if (username == input) {
+        println("Username matches!");
+    }
+    
+    if (password == input) {
+        println("Password matches!");
+    }
+    
+    var wrongInput:string = "user";
+    if (username != wrongInput) {
+        println("Username does NOT match 'user'");
+    }
+    println("");
+    
+    // String in control flow
+    println("--- String in control flow ---");
+    var role:string = "admin";
+    println("Checking role: " + role);
+    
+    if (role == "admin") {
+        println("  Access granted: Full permissions");
+    } else if (role == "user") {
+        println("  Access granted: Limited permissions");
+    } else {
+        println("  Access denied");
+    }
+    println("");
+    
+    // String functions
+    println("--- String functions ---");
+    greetUser("Bob", "Mr.");
+    greetUser("Alice", "Dr.");
+    println("");
+    
+    println("--- String return values ---");
+    var user1:string = "admin";
+    var user2:string = "user";
+    var user3:string = "guest";
+    
+    println(user1 + " is a " + getRole(user1));
+    println(user2 + " is a " + getRole(user2));
+    println(user3 + " is a " + getRole(user3));
+    println("");
+    
+    println("=== ALL STRING OPERATIONS DEMONSTRATED ===");
+}

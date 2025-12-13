@@ -4,13 +4,14 @@ A compiler for the DMM programming language that compiles to x86-64 assembly.
 
 ## Features
 
-- **Data Types**: int, char, byte, bit, string, arrays, structs
+- **Data Types**: int, char, byte, bit, string, arrays, structs, pointers
 - **Control Flow**: if/else, else if chains, for loops
 - **Functions**: User-defined functions with parameters and return values
 - **Operators**: Arithmetic (+, -, *, /, %), comparison, logical operators
-- **Standard Library**: Math, string manipulation, array operations, I/O utilities
+- **Built-in I/O**: print() and println() functions with string concatenation
 - **Structs**: Object-oriented features with methods and fields
 - **Arrays**: Static arrays with compile-time size specification
+- **Heap Management**: Pointers, reserve, free, and garbage collection
 
 ## Building the Compiler
 
@@ -135,6 +136,8 @@ See [tests/README.md](../tests/README.md) for detailed testing documentation.
 
 ## Language Examples
 
+For comprehensive examples showcasing all language features, see the `code_examples/` directory and its [README](../code_examples/README.md).
+
 ### Hello World
 
 ```javascript
@@ -197,18 +200,35 @@ func main() -> void {
 }
 ```
 
+### Arrays
+
+```javascript
+func main() -> void {
+    var[5] numbers:int;
+    
+    // Fill array
+    for (var i:int = 0; i < 5; i++) {
+        numbers[i] = i * 10;
+    }
+    
+    // Print array
+    for (var i:int = 0; i < 5; i++) {
+        println("numbers[" + i + "] = " + numbers[i]);
+    }
+}
+```
+
 ## Project Structure
 
 ```
 .
 ├── build/              # Build artifacts (generated)
-├── code_examples/      # Example programs and games
-├── examples/           # Language documentation and examples
+├── code_examples/      # Example programs demonstrating all features
+├── examples/           # Language documentation
 ├── src/                # Compiler source code
 │   ├── lexer.c         # Lexical analysis
-│   ├── parser.c        # Syntax analysis and code generation
+│   ├── parser_*.c      # Syntax analysis and code generation
 │   └── main.c          # Compiler entry point
-├── stdlib/             # Standard library modules
 ├── tests/              # Test suite
 │   ├── expected/       # Expected test outputs
 │   ├── *.dmm           # Test programs
@@ -218,39 +238,54 @@ func main() -> void {
 └── README.md           # This file
 ```
 
-## Standard Library
+## Built-in Functions
 
-The compiler includes a comprehensive standard library:
+The language provides two built-in I/O functions:
 
-- **core.txt**: Basic I/O, integer operations, type conversions
-- **math.txt**: Mathematical functions (abs, min, max, power, etc.)
-- **array.txt**: Array manipulation utilities
-- **strings.txt**: String operations
-- **utils.txt**: Utility functions for formatted output
+- **`print(expr)`** - Print expression without newline
+- **`println(expr)`** - Print expression with newline
 
-To use the standard library:
+Both functions support string concatenation with all data types using the `+` operator:
 
 ```javascript
-#import <stdlib/core.txt>
-#import <stdlib/math.txt>
-
 func main() -> void {
-    var x:int = intAbs(-42);
-    println("Absolute value: " + x);
+    var name:string = "Alice";
+    var age:int = 25;
+    println("Name: " + name + ", Age: " + age);
 }
 ```
 
 ## Example Programs
 
-The `code_examples/` directory contains complete working programs:
+The `code_examples/` directory contains comprehensive working examples:
 
-- **calculator.dmm**: Feature-rich calculator with memory functions
-- **tictactoe.dmm**: Tic-tac-toe game with AI
+### Basic Examples (01-06)
+- **01_hello_world.dmm**: Basic program structure
+- **02_variables_and_types.dmm**: All 7 data types
+- **03_operators.dmm**: Arithmetic, comparison, logical
+- **04_control_flow.dmm**: if/else, loops
+- **05_functions.dmm**: Parameters, return values, recursion
+- **06_strings.dmm**: String operations and concatenation
+
+### Intermediate Examples (07-10)
+- **07_arrays.dmm**: Array declaration and manipulation
+- **08_structs_basic.dmm**: Struct fields and instances
+- **09_structs_methods.dmm**: Methods and encapsulation
+- **10_structs_nested.dmm**: Nested struct composition
+
+### Advanced Examples (11-12)
+- **11_algorithms.dmm**: Factorial, Fibonacci, GCD, primes
+- **12_simple_calculator.dmm**: Calculator with memory
+
+### Game Examples
+- **calculator.dmm**: Advanced calculator with operations
+- **tictactoe.dmm**: Tic-tac-toe with AI
 - **guess_number.dmm**: Number guessing game
 - **rock_paper_scissors.dmm**: Rock-paper-scissors tournament
-- **shapes.dmm**: Nested structs demonstration
+- **shapes.dmm**: Geometric shapes with nested structs
+- **heap_management_demo.dmm**: Pointer and heap management
 
-See [code_examples/README.md](../code_examples/README.md) for details.
+See [code_examples/README.md](../code_examples/README.md) for comprehensive details on all examples.
 
 ## Testing Your Changes
 
@@ -296,13 +331,16 @@ Example GitHub Actions usage:
 ## Language Features
 
 ### Data Types
-- `int`: 32-bit integer
-- `char`: Single character
-- `byte`: 8-bit unsigned integer
+- `int`: 32-bit signed integer
+- `char`: 8-bit signed character (ASCII)
+- `byte`: 8-bit unsigned integer (0-255)
 - `bit`: Boolean (0 or 1)
-- `string`: String type
-- Arrays: `var[10] arr:int`
-- Structs: Custom data types with methods
+- `float`: 32-bit floating point
+- `double`: 64-bit floating point
+- `string`: String pointer type
+- Arrays: `var[10] arr:int` (static size)
+- Structs: Custom data types with fields and methods
+- Pointers: `var p:*int` (heap memory)
 
 ### Operators
 - Arithmetic: `+`, `-`, `*`, `/`, `%`
