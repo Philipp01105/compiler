@@ -3,7 +3,7 @@
 // Demonstrates all supported data types
 // =================================================================
 // This example demonstrates:
-// - All 7 primitive data types (int, char, byte, bit, float, double, string)
+// - All 5 primitive data types (int, char, byte, bit, string)
 // - Variable declaration and initialization
 // - Printing different types
 // - Type inference

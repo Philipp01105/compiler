@@ -4,7 +4,7 @@ A compiler for the DMM programming language that compiles to x86-64 assembly.
 
 ## Features
 
-- **Data Types**: int, char, byte, bit, string, arrays, structs, pointers
+- **Data Types**: int, char, byte, bit, string, arrays, structs
 - **Control Flow**: if/else, else if chains, for loops
 - **Functions**: User-defined functions with parameters and return values
 - **Operators**: Arithmetic (+, -, *, /, %), comparison, logical operators
@@ -335,12 +335,10 @@ Example GitHub Actions usage:
 - `char`: 8-bit signed character (ASCII)
 - `byte`: 8-bit unsigned integer (0-255)
 - `bit`: Boolean (0 or 1)
-- `float`: 32-bit floating point
-- `double`: 64-bit floating point
 - `string`: String pointer type
 - Arrays: `var[10] arr:int` (static size)
 - Structs: Custom data types with fields and methods
-- Pointers: `var p:*int` (heap memory)
+- Pointers: `var p:*int` (for heap management)
 
 ### Operators
 - Arithmetic: `+`, `-`, `*`, `/`, `%`

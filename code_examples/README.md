@@ -12,7 +12,7 @@ This directory contains comprehensive examples demonstrating all features of the
    - String literals
 
 2. **[02_variables_and_types.dmm](02_variables_and_types.dmm)** - Variables and Data Types
-   - All 7 data types: `int`, `char`, `byte`, `bit`, `float`, `double`, `string`
+   - All 5 data types: `int`, `char`, `byte`, `bit`, `string`
    - Variable declaration and initialization
    - Type inference
    - Printing different types
@@ -150,15 +150,13 @@ done
 
 ## 📖 Language Features Covered
 
-### Data Types (7 types)
+### Data Types (5 types)
 
 ```javascript
 var age:int = 25;              // 32-bit signed integer
 var initial:char = 'A';        // 8-bit character
 var pixel:byte = 255;          // 8-bit unsigned
 var flag:bit = 1;              // Boolean (0 or 1)
-var pi:float = 3.14;           // 32-bit float
-var e:double = 2.718;          // 64-bit double
 var name:string = "Alice";     // String pointer
 ```
 
