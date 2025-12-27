@@ -1,7 +1,7 @@
 
 func main() -> int {
     var x:*int = reserve(int);
-    println("Speicheradresse von x: " + x);
+    println("memory address of x: " + x);
     free(x);
     var x:*char = reserve(char);
     x = 'c';
