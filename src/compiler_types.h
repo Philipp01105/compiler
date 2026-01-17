@@ -158,6 +158,7 @@ typedef struct {
     char params[10][MAX_TOKEN];
     DataType param_types[10];  // ERWEITERT!
     int param_is_array[10];    // 1 if parameter is an array
+    int param_is_pointer[10];  // 1 if parameter is a pointer
     int param_count;
     DataType return_type;      // ERWEITERT!
     int return_is_array;       // 1 if return type is an array

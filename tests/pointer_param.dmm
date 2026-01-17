@@ -1,0 +1,48 @@
+// Test pointer parameters in functions
+func modify_value(p:*int) -> void {
+    *p = 42;
+}
+
+func swap_values(a:*int, b:*int) -> void {
+    var temp:int = *a;
+    *a = *b;
+    *b = temp;
+}
+
+func main() -> void {
+    println("=== Pointer Parameter Test ===");
+    
+    // Test 1: Modify value through pointer parameter
+    println("");
+    println("Test 1: Modify value through pointer");
+    var x:*int = reserve(int);
+    *x = 10;
+    print("Before: ");
+    println(*x);
+    modify_value(x);
+    print("After:  ");
+    println(*x);
+    free(x);
+    
+    // Test 2: Swap two values using pointer parameters
+    println("");
+    println("Test 2: Swap two values");
+    var a:*int = reserve(int);
+    var b:*int = reserve(int);
+    *a = 100;
+    *b = 200;
+    print("Before swap: a=");
+    print(*a);
+    print(", b=");
+    println(*b);
+    swap_values(a, b);
+    print("After swap:  a=");
+    print(*a);
+    print(", b=");
+    println(*b);
+    free(a);
+    free(b);
+    
+    println("");
+    println("=== All Tests Passed ===");
+}

@@ -1,0 +1,11 @@
+=== Pointer Parameter Test ===
+
+Test 1: Modify value through pointer
+Before: 10
+After:  42
+
+Test 2: Swap two values
+Before swap: a=100, b=200
+After swap:  a=200, b=100
+
+=== All Tests Passed ===
