@@ -274,6 +274,11 @@ int main(int argc, char *argv[]) {
     fprintf(output, "    .space 256\n");
     fprintf(output, "\n");
     
+    // Output enum data from code_buffer (contains enum global data)
+    if (parser->code_pos > 0) {
+        fprintf(output, "%s", parser->code_buffer);
+    }
+    
     fprintf(output, "    .text\n");
     fprintf(output, "%s", parser->function_code_buffer);
 
