@@ -238,6 +238,12 @@ typedef struct {
     
     // Heap management state
     int next_var_is_gc;  // 1 if next variable declaration should be garbage collected
+    
+    // Source file content for error reporting
+    char *source_content;  // Full source file content
+    char **source_lines;   // Array of pointers to each line
+    int source_line_count; // Number of lines in source
+    const char *source_filename; // Current source file name
 } Parser;
 
 #endif
