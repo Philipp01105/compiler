@@ -1,0 +1,9 @@
+// Test simple syscall-based I/O
+#import <stdlib/io.txt>
+
+func main() -> void {
+    // Test sys_write directly
+    var msg:string = "Hello from syscalls!\n";
+    var len:int = io_strlen(msg);
+    sys_write(1, msg, len);
+}

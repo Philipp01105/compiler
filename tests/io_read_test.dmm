@@ -1,0 +1,16 @@
+// Test reading from stdin using syscalls
+func main() -> void {
+    var prompt:string = "Enter your name: ";
+    var len:int = io_strlen(prompt);
+    sys_write(1, prompt, len);
+    
+    // Read from stdin
+    var[100] buffer:char;
+    var bytes_read:int = sys_read(0, &buffer, 99);
+    
+    // Write back what was read
+    var msg:string = "You entered: ";
+    var msg_len:int = io_strlen(msg);
+    sys_write(1, msg, msg_len);
+    sys_write(1, &buffer, bytes_read);
+}

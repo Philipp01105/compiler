@@ -1,0 +1,104 @@
+// ===================================================================
+// Complete Guide to the read() Function
+// ===================================================================
+// The read() function provides a scanf-like interface for reading
+// formatted input from streams.
+//
+// Syntax:
+//   var value:type = read(stream, "format");
+//
+// Parameters:
+//   - stream: file descriptor (0 for stdin, System.in.fd, or file fd)
+//   - format: format specifier string literal
+//
+// Format Specifiers:
+//   "%i" or "%d" - read integer
+//   "%c" - read character
+//
+// Inspired by:
+//   - C's scanf()
+//   - Java's Scanner class
+//   - Go's fmt.Scan()
+// ===================================================================
+
+#import <stdlib/io.txt>
+
+func main() -> void {
+    println("╔═══════════════════════════════════════════════╗");
+    println("║   Complete Guide to read() Function          ║");
+    println("╚═══════════════════════════════════════════════╝");
+    println("");
+    
+    // ===============================================================
+    // Method 1: Using stdin directly (file descriptor 0)
+    // ===============================================================
+    println("【Method 1: Direct stdin】");
+    println("Enter an integer:");
+    var num1:int = read(0, "%i");
+    print("Read: ");
+    println(num1);
+    println("");
+    
+    // ===============================================================
+    // Method 2: Using System.in enum for readability
+    // ===============================================================
+    println("【Method 2: System.in】");
+    println("Enter another integer:");
+    var num2:int = read(System.in.fd, "%i");
+    print("Read: ");
+    println(num2);
+    println("");
+    
+    // ===============================================================
+    // Method 3: Reading from a file
+    // ===============================================================
+    println("【Method 3: File Input】");
+    
+    // Create a file with test data
+    write_file("test_numbers.txt", "100\n200\n300\n");
+    println("Created test file");
+    
+    // Open the file
+    var fd:int = open_read("test_numbers.txt");
+    
+    if (fd >= 0) {
+        // Read three numbers from file
+        var n1:int = read(fd, "%i");
+        var n2:int = read(fd, "%i");
+        var n3:int = read(fd, "%i");
+        
+        close_file(fd);
+        
+        print("Numbers from file: ");
+        print(n1);
+        print(", ");
+        print(n2);
+        print(", ");
+        println(n3);
+    }
+    
+    println("");
+    
+    // ===============================================================
+    // Practical Example: Simple Calculator
+    // ===============================================================
+    println("【Practical Example: Calculator】");
+    println("Enter two numbers to add:");
+    println("First number:");
+    var a:int = read(System.in.fd, "%i");
+    println("Second number:");
+    var b:int = read(System.in.fd, "%i");
+    
+    var result:int = a + b;
+    print("Result: ");
+    print(a);
+    print(" + ");
+    print(b);
+    print(" = ");
+    println(result);
+    
+    println("");
+    println("╔═══════════════════════════════════════════════╗");
+    println("║              Guide Complete!                  ║");
+    println("╚═══════════════════════════════════════════════╝");
+}

@@ -1,0 +1,226 @@
+// =================================================================
+// DMM Standard Library - I/O Module (stdlib/io.txt)
+// =================================================================
+// High-level I/O abstraction without using any C library functions
+// Uses Linux syscalls directly (inspired by Java and Go)
+// 
+// This module provides:
+//   - Unified read() function with format specifiers
+//   - File operations (write_file, read_file, append_file)
+//   - File stream operations
+//
+// Built-in syscalls: sys_write, sys_read, sys_open, sys_close
+// Built-in helpers: io_strlen, io_int_to_str, io_str_to_int
+//
+// NOTE: print() and println() are already built into the compiler.
+//       No need to redefine them here.
+// =================================================================
+
+// =================================================================
+// SYSTEM STREAM CONSTANTS
+// =================================================================
+
+// System I/O streams (file descriptors)
+enum System(fd:int) {
+    in(0),     // stdin
+    out(1),    // stdout
+    err(2)     // stderr
+}
+
+// =================================================================
+// UNIFIED INPUT FUNCTION (Built-in)
+// =================================================================
+
+// read(stream, format) - Compiler built-in function
+// 
+// Read from input stream with format specifier (like scanf/Java Scanner)
+// Parameters:
+//   - stream: Input stream - use System.in.fd for stdin, or file descriptor
+//   - format: Format specifier string literal:
+//             "%i" or "%d" - read integer
+//             "%c" - read single character
+//
+// Returns: Value based on format specifier (int or char)
+//
+// Usage examples:
+//   var num:int = read(System.in.fd, "%i");
+//   var c:char = read(System.in.fd, "%c");
+//   var fd:int = open_read("input.txt");
+//   var value:int = read(fd, "%i");
+//
+// Note: This is a compiler built-in that generates efficient syscall code
+
+// =================================================================
+// STRING INPUT HELPER
+// =================================================================
+
+// Read a line of text from stream into buffer
+// Returns: number of bytes read
+func read_string(stream:int, buffer:string, max_size:int) -> int {
+    return sys_read(stream, buffer, max_size);
+}
+
+// =================================================================
+// FILE OPERATIONS (High-Level)
+// =================================================================
+
+// Write a string to a file (creates/truncates)
+// Returns: 0 on success, -1 on error
+func write_file(filename:string, content:string) -> int {
+    var fd:int = sys_open(filename, 577, 420);
+    if (fd < 0) {
+        return -1;
+    }
+    
+    var len:int = io_strlen(content);
+    var written:int = sys_write(fd, content, len);
+    sys_close(fd);
+    
+    if (written == len) {
+        return 0;
+    }
+    return -1;
+}
+
+// Append a string to a file
+// Returns: 0 on success, -1 on error
+func append_file(filename:string, content:string) -> int {
+    var fd:int = sys_open(filename, 1089, 420);
+    if (fd < 0) {
+        return -1;
+    }
+    
+    var len:int = io_strlen(content);
+    var written:int = sys_write(fd, content, len);
+    sys_close(fd);
+    
+    if (written == len) {
+        return 0;
+    }
+    return -1;
+}
+
+// Read entire file into buffer
+// Returns: number of bytes read, or -1 on error
+func read_file(filename:string, buffer:string, max_size:int) -> int {
+    var fd:int = sys_open(filename, 0, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    
+    var bytes_read:int = sys_read(fd, buffer, max_size);
+    sys_close(fd);
+    return bytes_read;
+}
+
+// Check if file exists
+// Returns: 1 if exists, 0 if not
+func file_exists(filename:string) -> int {
+    var fd:int = sys_open(filename, 0, 0);
+    if (fd < 0) {
+        return 0;
+    }
+    sys_close(fd);
+    return 1;
+}
+
+// =================================================================
+// FILE STREAM OPERATIONS (Medium-Level)
+// =================================================================
+
+// Open file for reading
+// Returns: file descriptor or -1 on error
+func open_read(path:string) -> int {
+    return sys_open(path, 0, 0);
+}
+
+// Open file for writing (creates/truncates)
+// Returns: file descriptor or -1 on error
+func open_write(path:string) -> int {
+    return sys_open(path, 577, 420);
+}
+
+// Open file for appending
+// Returns: file descriptor or -1 on error
+func open_append(path:string) -> int {
+    return sys_open(path, 1089, 420);
+}
+
+// Write bytes to a file descriptor
+// Returns: number of bytes written
+func write_to(fd:int, data:string, count:int) -> int {
+    return sys_write(fd, data, count);
+}
+
+// Write string to a file descriptor
+// Returns: number of bytes written
+func write_str_to(fd:int, s:string) -> int {
+    var len:int = io_strlen(s);
+    return sys_write(fd, s, len);
+}
+
+// Read bytes from a file descriptor
+// Returns: number of bytes read
+func read_from(fd:int, buffer:string, count:int) -> int {
+    return sys_read(fd, buffer, count);
+}
+
+// Close a file descriptor
+// Returns: 0 on success, -1 on error
+func close_file(fd:int) -> int {
+    return sys_close(fd);
+}
+
+// =================================================================
+// UTILITY FUNCTIONS
+// =================================================================
+
+// Get string length
+func strlen(s:string) -> int {
+    return io_strlen(s);
+}
+
+// Convert integer to string
+// Returns: length of string
+func int_to_string(value:int, buffer:string, buffer_size:int) -> int {
+    return io_int_to_str(value, buffer, buffer_size);
+}
+
+// Convert string to integer
+func string_to_int(s:string) -> int {
+    return io_str_to_int(s);
+}
+
+// =================================================================
+// USAGE EXAMPLES
+// =================================================================
+//
+// Example 1: File operations (simple)
+//   #import <stdlib/io.txt>
+//   func main() -> void {
+//       write_file("output.txt", "Hello, file!\n");
+//       
+//       var[1024] content:char;
+//       var size:int = read_file("output.txt", &content, 1023);
+//       println("File content:");
+//       // Use built-in println with the buffer
+//   }
+//
+// Example 2: File operations (stream-based)
+//   #import <stdlib/io.txt>
+//   func main() -> void {
+//       var fd:int = open_write("log.txt");
+//       write_str_to(fd, "Log entry 1\n");
+//       write_str_to(fd, "Log entry 2\n");
+//       close_file(fd);
+//   }
+//
+// Example 3: User input
+//   #import <stdlib/io.txt>
+//   func main() -> void {
+//       println("Enter a number:");
+//       var num:int = read_int();
+//       // Process num...
+//   }
+//
+// =================================================================
