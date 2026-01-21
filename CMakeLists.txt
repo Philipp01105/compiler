@@ -8,8 +8,14 @@ add_executable(compiler
         src/lexer.h
         src/compiler_types.h
         src/main.c
-        src/parser.c
+        src/parser_types.c
+        src/parser_codegen.c
+        src/parser_core.c
+        src/parser_declarations.c
+        src/parser_statements.c
+        src/parser_expressions.c
         src/parser.h
+        src/parser_internal.h
         src/errorHandler.c
         src/errorHandler.h
 )
