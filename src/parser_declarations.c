@@ -812,6 +812,7 @@ void parse_function(Parser *parser) {
 
     if (func->return_type == TYPE_VOID) {
         code_comment(parser, "Function epilogue (void return)");
+        code_printf(parser, "    xorl %%eax, %%eax\n");  // Return 0 for void functions
         code_printf(parser, "    leave\n");
         code_printf(parser, "    ret\n");
     }

@@ -475,6 +475,30 @@ int add_float_literal(Parser *parser, const char *value) {
 }
 
 void cleanup_scope(Parser *parser, int scope) {
+    // First pass: generate free() calls for @gc variables
+    int gc_count = 0;
+    for (int i = parser->var_count - 1; i >= 0; i--) {
+        if (parser->vars[i].scope == scope) {
+            Variable *var = &parser->vars[i];
+            // Free @gc variables that are heap-allocated pointers
+            if (var->is_gc && var->is_pointer) {
+                if (gc_count == 0) {
+                    code_comment(parser, "GC: Freeing garbage-collected variables");
+                }
+                code_comment(parser, "GC: free(%s)", var->name);
+                const char **arg_regs = get_arg_registers_64();
+                code_printf(parser, "    movq %d(%%rbp), %s\n", var->offset, arg_regs[0]);
+                generate_stack_align(parser);
+                code_printf(parser, "    call free\n");
+                generate_stack_restore(parser);
+                gc_count++;
+            }
+        } else {
+            break;
+        }
+    }
+
+    // Second pass: mark variables as removed from scope
     int removed = 0;
     for (int i = parser->var_count - 1; i >= 0; i--) {
         if (parser->vars[i].scope == scope) {
@@ -486,7 +510,7 @@ void cleanup_scope(Parser *parser, int scope) {
     }
 
     if (parser->debug_mode && removed > 0) {
-        code_comment(parser, "Cleanup: %d variable(s) from scope %d", removed, scope);
+        code_comment(parser, "Cleanup: %d variable(s) from scope %d (GC freed: %d)", removed, scope, gc_count);
     }
 }
 
