@@ -1040,7 +1040,11 @@ void parse_assignment(Parser *parser) {
     } else {
         if (op == TOKEN_EQUAL) {
             code_printf(parser, "    popq %%rax\n");
-            code_printf(parser, "    movl %%eax, %d(%%rbp)\n", var->offset);
+            if (var->is_pointer) {
+                code_printf(parser, "    movq %%rax, %d(%%rbp)\n", var->offset);
+            } else {
+                code_printf(parser, "    movl %%eax, %d(%%rbp)\n", var->offset);
+            }
         } else {
             code_printf(parser, "    popq %%rbx\n");
             code_printf(parser, "    movl %d(%%rbp), %%eax\n", var->offset);
