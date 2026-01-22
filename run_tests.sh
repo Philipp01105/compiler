@@ -27,13 +27,13 @@ FAILED_TESTS=0
 
 # Directories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD_DIR="${SCRIPT_DIR}/build"
+BUILD_DIR="${SCRIPT_DIR}"
 TEST_DIR="${SCRIPT_DIR}/tests"
 OUTPUT_DIR="${SCRIPT_DIR}/test_output"
 EXPECTED_DIR="${SCRIPT_DIR}/tests/expected"
 
 # Compiler and tools
-COMPILER="${BUILD_DIR}/compiler"
+COMPILER="${BUILD_DIR}/dmm_compiler.exe"
 GCC="gcc"
 GCC_FLAGS="-no-pie"
 

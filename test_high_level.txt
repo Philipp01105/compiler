@@ -1,1 +1,0 @@
-Hello from high-level I/O!

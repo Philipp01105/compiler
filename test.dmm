@@ -1,3 +1,0 @@
-func main() -> void {
-    *xx = 20;
-}
