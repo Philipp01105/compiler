@@ -1,6 +1,7 @@
 #include "parser.h"
 #include "parser_internal.h"
 #include "errorHandler.h"
+#include "instruction_builder.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1332,6 +1333,12 @@ void parse_return_statement(Parser *parser) {
 
     // Clean up @gc variables before returning
     cleanup_scope(parser, parser->current_scope);
+
+    /* Windows ABI: Restore non-volatile registers before return */
+    if (parser->target_format == TARGET_COFF) {
+        emit_pop(parser, "rsi");
+        emit_pop(parser, "rdi");
+    }
 
     code_printf(parser, "    leave\n");
     code_printf(parser, "    ret\n");

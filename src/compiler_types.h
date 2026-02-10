@@ -115,6 +115,22 @@ typedef enum {
 } DataType;
 
 /*
+ * Target format for assembly output
+ */
+typedef enum {
+    TARGET_ELF,         /* Linux/Unix ELF format (default) */
+    TARGET_COFF         /* Windows COFF format */
+} TargetFormat;
+
+/*
+ * Assembly syntax mode
+ */
+typedef enum {
+    SYNTAX_ATT,         /* AT&T syntax (legacy) */
+    SYNTAX_INTEL        /* Intel syntax (default) */
+} SyntaxMode;
+
+/*
  * Lexical token with position information
  */
 typedef struct {
@@ -281,6 +297,9 @@ typedef struct {
     char **source_lines;                        /* Line pointers */
     int source_line_count;                      /* Number of lines */
     const char *source_filename;                /* Source file name */
+
+    TargetFormat target_format;                 /* ELF or COFF output */
+    SyntaxMode syntax_mode;                     /* AT&T or Intel syntax */
 } Parser;
 
 #endif
