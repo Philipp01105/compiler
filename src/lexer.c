@@ -3,7 +3,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <time.h>
 
 #define INITIAL_CAPACITY 1000
 
@@ -29,6 +28,9 @@ void free_token_stream(TokenStream *stream) {
 }
 
 void add_token(TokenStream *stream, TokenType type, const char *value, int line, int column) {
+
+    if (stream == NULL) return;
+
     if (stream->count >= stream->capacity) {
         stream->capacity *= 2;
         stream->tokens = realloc(stream->tokens, sizeof(Token) * stream->capacity);
@@ -49,15 +51,15 @@ void add_token(TokenStream *stream, TokenType type, const char *value, int line,
     stream->count++;
 }
 
-Token peek(TokenStream *stream) {
+Token peek(const TokenStream *stream) {
     if (stream->current < stream->count) {
         return stream->tokens[stream->current];
     }
-    Token eof = {TOKEN_EOF, "", 0, 0};
+    const Token eof = {TOKEN_EOF, "", 0, 0};
     return eof;
 }
 
-Token peek_ahead(TokenStream *stream, int offset) {
+Token peek_ahead(const TokenStream *stream, int offset) {
     int pos = stream->current + offset;
     if (pos < stream->count) {
         return stream->tokens[pos];
@@ -74,7 +76,7 @@ Token consume(TokenStream *stream) {
     return eof;
 }
 
-int check(TokenStream *stream, TokenType type) {
+int check(const TokenStream *stream, TokenType type) {
     if (stream->current >= stream->count) {
         return 0;
     }
@@ -89,7 +91,7 @@ int match(TokenStream *stream, TokenType type) {
     return 0;
 }
 
-int is_at_end(TokenStream *stream) {
+int is_at_end(const TokenStream *stream) {
     return stream->current >= stream->count ||
            stream->tokens[stream->current].type == TOKEN_EOF;
 }
@@ -131,7 +133,7 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
     FILE *file = fopen(filename, "rb");
     if (!file) {
         fprintf(stderr, "Fehler: Datei '%s' konnte nicht geöffnet werden\n", filename);
-        return NULL;
+        return nullptr;
     }
 
     fseek(file, 0, SEEK_END);
@@ -530,7 +532,7 @@ const char *token_type_to_string(TokenType type) {
     }
 }
 
-void print_tokens(TokenStream *stream) {
+void print_tokens(const TokenStream *stream) {
     printf("\n");
     printf("================================================================\n");
     printf("                        TOKEN STREAM\n");

@@ -2,7 +2,6 @@
 #define SYNTAX_CONVERTER_H
 
 #include <stddef.h>
-#include "compiler_types.h"
 
 /*
  * Syntax Converter - Automatic AT&T to Intel Syntax Conversion
