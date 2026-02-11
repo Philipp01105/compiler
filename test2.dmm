@@ -1,9 +1,16 @@
 
+func test() -> void {
+    var x:int = 10;
+    println(20);
+    return;
+}
+
 func main() -> int {
-    var a:int = 8;
-    var x:*int;
-    var y:*int = &a;
-    x = y;
-    print(*x);
+    test();
+    var x = read(System.in.fd, "%i");
+    println(x);
+    var x:*int = reserve(int);
+    println("Speicheradresse von x: " + x);
     return 10;
 }
+

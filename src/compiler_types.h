@@ -39,18 +39,18 @@ typedef enum {
     TOKEN_KEYWORD_GC,
 
     TOKEN_TYPE_INT,
-    TOKEN_TYPE_CHAR,         
-    TOKEN_TYPE_BYTE,         
-    TOKEN_TYPE_BIT,          
-    TOKEN_TYPE_FLOAT,        
-    TOKEN_TYPE_DOUBLE,       
+    TOKEN_TYPE_CHAR,
+    TOKEN_TYPE_BYTE,
+    TOKEN_TYPE_BIT,
+    TOKEN_TYPE_FLOAT,
+    TOKEN_TYPE_DOUBLE,
     TOKEN_TYPE_STRING,
     TOKEN_TYPE_VOID,
 
     TOKEN_IDENTIFIER,
     TOKEN_NUMBER,
-    TOKEN_FLOAT_LITERAL,     
-    TOKEN_CHAR_LITERAL,      
+    TOKEN_FLOAT_LITERAL,
+    TOKEN_CHAR_LITERAL,
     TOKEN_STRING_LITERAL,
 
     TOKEN_PLUS,
@@ -70,7 +70,7 @@ typedef enum {
     TOKEN_AMP_AMP,
     TOKEN_PIPE_PIPE,
     TOKEN_BANG,
-    TOKEN_AMPERSAND,   
+    TOKEN_AMPERSAND,
 
     TOKEN_PLUS_EQUAL,
     TOKEN_MINUS_EQUAL,
@@ -103,14 +103,14 @@ typedef enum {
  * Data types supported by the compiler
  */
 typedef enum {
-    TYPE_INT,           /* 32-bit signed integer */
-    TYPE_CHAR,          /* 8-bit signed character */
-    TYPE_BYTE,          /* 8-bit unsigned */
-    TYPE_BIT,           /* Boolean (0 or 1) */
-    TYPE_FLOAT,         /* 32-bit floating point */
-    TYPE_DOUBLE,        /* 64-bit floating point */
-    TYPE_STRING,        /* String type */
-    TYPE_VOID,          /* No return value */       
+    TYPE_INT, /* 32-bit signed integer */
+    TYPE_CHAR, /* 8-bit signed character */
+    TYPE_BYTE, /* 8-bit unsigned */
+    TYPE_BIT, /* Boolean (0 or 1) */
+    TYPE_FLOAT, /* 32-bit floating point */
+    TYPE_DOUBLE, /* 64-bit floating point */
+    TYPE_STRING, /* String type */
+    TYPE_VOID, /* No return value */
     TYPE_UNKNOWN
 } DataType;
 
@@ -118,16 +118,16 @@ typedef enum {
  * Target format for assembly output
  */
 typedef enum {
-    TARGET_ELF,         /* Linux/Unix ELF format (default) */
-    TARGET_COFF         /* Windows COFF format */
+    TARGET_ELF, /* Linux/Unix ELF format (default) */
+    TARGET_COFF /* Windows COFF format */
 } TargetFormat;
 
 /*
  * Assembly syntax mode
  */
 typedef enum {
-    SYNTAX_ATT,         /* AT&T syntax (legacy) */
-    SYNTAX_INTEL        /* Intel syntax (default) */
+    SYNTAX_ATT, /* AT&T syntax (legacy) */
+    SYNTAX_INTEL /* Intel syntax (default) */
 } SyntaxMode;
 
 /*
@@ -145,9 +145,9 @@ typedef struct {
  */
 typedef struct {
     Token *tokens;
-    int count;          /* Total number of tokens */
-    int current;        /* Current position in stream */
-    int capacity;       /* Allocated capacity */
+    int count; /* Total number of tokens */
+    int current; /* Current position in stream */
+    int capacity; /* Allocated capacity */
 } TokenStream;
 
 /*
@@ -155,16 +155,16 @@ typedef struct {
  */
 typedef struct {
     char name[MAX_TOKEN];
-    int offset;                     /* Stack offset */
-    int scope;                      /* Scope level */
-    DataType type;                  /* Variable type */
-    int size;                       /* Size in bytes */
-    int is_array;                   /* Array flag */
-    int array_size;                 /* Number of elements */
-    char struct_type[MAX_TOKEN];    /* Struct type name */
-    int is_pointer;                 /* Pointer flag */
-    int is_gc;                      /* Garbage collected flag */
-    int is_heap;                    /* Heap allocated flag */
+    int offset; /* Stack offset */
+    int scope; /* Scope level */
+    DataType type; /* Variable type */
+    int size; /* Size in bytes */
+    int is_array; /* Array flag */
+    int array_size; /* Number of elements */
+    char struct_type[MAX_TOKEN]; /* Struct type name */
+    int is_pointer; /* Pointer flag */
+    int is_gc; /* Garbage collected flag */
+    int is_heap; /* Heap allocated flag */
 } Variable;
 
 /*
@@ -173,14 +173,14 @@ typedef struct {
 typedef struct {
     char name[MAX_TOKEN];
     char params[10][MAX_TOKEN];
-    DataType param_types[10];       /* Parameter types */
-    int param_is_array[10];         /* Array parameter flags */
-    int param_is_pointer[10];       /* Pointer parameter flags */
+    DataType param_types[10]; /* Parameter types */
+    int param_is_array[10]; /* Array parameter flags */
+    int param_is_pointer[10]; /* Pointer parameter flags */
     int param_count;
-    DataType return_type;           /* Return value type */
-    int return_is_array;            /* Array return flag */
-    char struct_name[MAX_TOKEN];    /* Struct for methods */
-    int is_static;                  /* Static method flag */
+    DataType return_type; /* Return value type */
+    int return_is_array; /* Array return flag */
+    char struct_name[MAX_TOKEN]; /* Struct for methods */
+    int is_static; /* Static method flag */
 } Function;
 
 /*
@@ -189,11 +189,11 @@ typedef struct {
 typedef struct {
     char name[MAX_TOKEN];
     DataType type;
-    int offset;                     /* Offset within struct */
-    int size;                       /* Size in bytes */
-    int is_array;                   /* Array field flag */
-    int array_size;                 /* Number of elements */
-    char struct_type[MAX_TOKEN];    /* Nested struct type */
+    int offset; /* Offset within struct */
+    int size; /* Size in bytes */
+    int is_array; /* Array field flag */
+    int array_size; /* Number of elements */
+    char struct_type[MAX_TOKEN]; /* Nested struct type */
 } StructField;
 
 /*
@@ -203,9 +203,9 @@ typedef struct {
     char name[MAX_TOKEN];
     StructField fields[50];
     int field_count;
-    int methods[MAX_FUNCTIONS];     /* Method indices */
+    int methods[MAX_FUNCTIONS]; /* Method indices */
     int method_count;
-    int total_size;                 /* Total size in bytes */
+    int total_size; /* Total size in bytes */
 } StructDefinition;
 
 /*
@@ -213,7 +213,7 @@ typedef struct {
  */
 typedef struct {
     char name[MAX_TOKEN];
-    char values[50][MAX_TOKEN];     /* Field values */
+    char values[50][MAX_TOKEN]; /* Field values */
     int field_count;
 } EnumValue;
 
@@ -226,7 +226,7 @@ typedef struct {
     int field_count;
     EnumValue values[50];
     int value_count;
-    int struct_index;               /* Generated struct index */
+    int struct_index; /* Generated struct index */
 } EnumDefinition;
 
 /*
@@ -286,20 +286,20 @@ typedef struct {
     LoopContext loop_stack[MAX_LOOP_DEPTH];
     int loop_depth;
 
-    char current_struct_context[MAX_TOKEN];     /* Current method context */
+    char current_struct_context[MAX_TOKEN]; /* Current method context */
 
     char imported_files[MAX_IMPORTS][MAX_PATH];
     int import_count;
 
-    int next_var_is_gc;                         /* Next var GC flag */
+    int next_var_is_gc; /* Next var GC flag */
 
-    char *source_content;                       /* Full source file */
-    char **source_lines;                        /* Line pointers */
-    int source_line_count;                      /* Number of lines */
-    const char *source_filename;                /* Source file name */
+    char *source_content; /* Full source file */
+    char **source_lines; /* Line pointers */
+    int source_line_count; /* Number of lines */
+    const char *source_filename; /* Source file name */
 
-    TargetFormat target_format;                 /* ELF or COFF output */
-    SyntaxMode syntax_mode;                     /* AT&T or Intel syntax */
+    TargetFormat target_format; /* ELF or COFF output */
+    SyntaxMode syntax_mode; /* AT&T or Intel syntax */
 } Parser;
 
 #endif

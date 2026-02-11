@@ -16,7 +16,7 @@
  */
 const char *escape_char_for_comment(const char *ch_value) {
     static char buffer[32];
-     
+
     if (ch_value[0] == '\n') {
         return "\\n";
     } else if (ch_value[0] == '\t') {
@@ -30,12 +30,10 @@ const char *escape_char_for_comment(const char *ch_value) {
     } else if (ch_value[0] == '\'') {
         return "\\'";
     } else if (ch_value[0] >= 32 && ch_value[0] < 127) {
-         
         snprintf(buffer, sizeof(buffer), "%c", ch_value[0]);
         return buffer;
     } else {
-         
-        snprintf(buffer, sizeof(buffer), "\\x%02x", (unsigned char)ch_value[0]);
+        snprintf(buffer, sizeof(buffer), "\\x%02x", (unsigned char) ch_value[0]);
         return buffer;
     }
 }
@@ -51,7 +49,7 @@ const char *escape_char_for_comment(const char *ch_value) {
 void escape_string_for_comment(const char *str, char *output, size_t output_size) {
     size_t out_pos = 0;
     for (size_t i = 0; str[i] != '\0' && out_pos < output_size - 5; i++) {
-        unsigned char c = (unsigned char)str[i];
+        unsigned char c = (unsigned char) str[i];
         if (c == '\n') {
             output[out_pos++] = '\\';
             output[out_pos++] = 'n';
@@ -70,7 +68,6 @@ void escape_string_for_comment(const char *str, char *output, size_t output_size
         } else if (c >= 32 && c < 127) {
             output[out_pos++] = c;
         } else {
-             
             int written = snprintf(&output[out_pos], output_size - out_pos, "\\x%02x", c);
             if (written > 0) out_pos += written;
         }
@@ -119,18 +116,18 @@ int get_max_reg_args() {
 }
 
 int get_stack_alignment() {
-    return 16;   
+    return 16;
 }
 
 int get_shadow_space() {
     return is_windows_platform() ? 32 : 0;
 }
- 
+
 int get_call_stack_space() {
     if (is_windows_platform()) {
         return 40;
     } else {
-        return 0;   
+        return 0;
     }
 }
 
@@ -204,4 +201,3 @@ int is_syscall_io_function(const char *name) {
            strcmp(name, "io_str_to_int") == 0 ||
            strcmp(name, "read") == 0;
 }
-

@@ -42,8 +42,8 @@ Parser *create_parser(TokenStream *tokens) {
     parser->source_lines = NULL;
     parser->source_line_count = 0;
     parser->source_filename = NULL;
-    parser->target_format = TARGET_ELF;  /* Default, will be set by main */
-    parser->syntax_mode = SYNTAX_INTEL;  /* Default, will be set by main */
+    parser->target_format = TARGET_ELF; /* Default, will be set by main */
+    parser->syntax_mode = SYNTAX_INTEL; /* Default, will be set by main */
 
     memset(parser->code_buffer, 0, CODE_BUFFER_SIZE);
     memset(parser->function_code_buffer, 0, CODE_BUFFER_SIZE);
@@ -68,45 +68,45 @@ void parser_load_source(Parser *parser, const char *filename) {
     if (!file) {
         return;
     }
-    
+
     fseek(file, 0, SEEK_END);
     long size = ftell(file);
     fseek(file, 0, SEEK_SET);
-    
+
     parser->source_content = malloc(size + 1);
     if (!parser->source_content) {
         fclose(file);
         return;
     }
-    
+
     size_t bytes_read = fread(parser->source_content, 1, size, file);
     parser->source_content[bytes_read] = '\0';
     fclose(file);
-    
+
     int line_count = 1;
     for (size_t i = 0; i < bytes_read; i++) {
         if (parser->source_content[i] == '\n') {
             line_count++;
         }
     }
-    
-    parser->source_lines = malloc(sizeof(char*) * line_count);
+
+    parser->source_lines = malloc(sizeof(char *) * line_count);
     if (!parser->source_lines) {
         return;
     }
-    
+
     parser->source_lines[0] = parser->source_content;
     parser->source_line_count = 1;
-    
+
     for (size_t i = 0; i < bytes_read; i++) {
         if (parser->source_content[i] == '\n') {
-            parser->source_content[i] = '\0';   
+            parser->source_content[i] = '\0';
             if (i + 1 < bytes_read) {
                 parser->source_lines[parser->source_line_count++] = &parser->source_content[i + 1];
             }
         }
     }
-    
+
     parser->source_filename = filename;
 }
 
@@ -123,7 +123,7 @@ void code_printf(Parser *parser, const char *format, ...) {
 
     char buffer[1024];
     vsnprintf(buffer, sizeof(buffer), format, args);
-    
+
     /* Convert syntax if needed */
     char final_buffer[1024];
     if (parser->syntax_mode == SYNTAX_INTEL) {
@@ -180,13 +180,13 @@ void parser_error_code(Parser *parser, int error_code, const char *format, ...) 
     parser->has_error = 1;
 
     Token current = peek(parser->tokens);
-    
+
     char message[1024];
     va_list args;
     va_start(args, format);
     vsnprintf(message, sizeof(message), format, args);
     va_end(args);
-    
+
     if (global_error_handler) {
         ErrorContext *ctx = error_context_create(
             SEVERITY_ERROR,
@@ -197,27 +197,25 @@ void parser_error_code(Parser *parser, int error_code, const char *format, ...) 
             parser->source_filename,
             message
         );
-        
+
         if (ctx) {
-             
             const char *source_line = parser_get_source_line(parser, current.line);
             if (source_line) {
                 error_context_set_source_line(ctx, source_line);
             }
-            
+
             char token_info[512];
             snprintf(token_info, sizeof(token_info), "%s '%s'",
-                    token_type_to_string(current.type), current.value);
+                     token_type_to_string(current.type), current.value);
             error_context_set_token(ctx, token_info);
-            
+
             error_report_context(global_error_handler, ctx);
-            
+
             if (!global_error_handler->buffered) {
                 error_context_free(ctx);
             }
         }
     } else {
-         
         fprintf(stderr, "[ERROR] Line %d, Col %d: %s\n", current.line, current.column, message);
         fprintf(stderr, "  At token: %s '%s'\n",
                 token_type_to_string(current.type), current.value);
@@ -232,13 +230,13 @@ void parser_error(Parser *parser, const char *format, ...) {
     parser->has_error = 1;
 
     Token current = peek(parser->tokens);
-    
+
     char message[1024];
     va_list args;
     va_start(args, format);
     vsnprintf(message, sizeof(message), format, args);
     va_end(args);
-    
+
     if (global_error_handler) {
         ErrorContext *ctx = error_context_create(
             SEVERITY_ERROR,
@@ -249,27 +247,25 @@ void parser_error(Parser *parser, const char *format, ...) {
             parser->source_filename,
             message
         );
-        
+
         if (ctx) {
-             
             const char *source_line = parser_get_source_line(parser, current.line);
             if (source_line) {
                 error_context_set_source_line(ctx, source_line);
             }
-            
+
             char token_info[512];
             snprintf(token_info, sizeof(token_info), "%s '%s'",
-                    token_type_to_string(current.type), current.value);
+                     token_type_to_string(current.type), current.value);
             error_context_set_token(ctx, token_info);
-            
+
             error_report_context(global_error_handler, ctx);
-            
+
             if (!global_error_handler->buffered) {
                 error_context_free(ctx);
             }
         }
     } else {
-         
         fprintf(stderr, "[ERROR] Line %d, Col %d: %s\n", current.line, current.column, message);
         fprintf(stderr, "  At token: %s '%s'\n",
                 token_type_to_string(current.type), current.value);
@@ -282,7 +278,6 @@ void parser_error(Parser *parser, const char *format, ...) {
 
 void expect(Parser *parser, TokenType type, const char *message) {
     if (!check(parser->tokens, type)) {
-         
         int error_code = ERR_PARSE_EXPECTED_TOKEN;
         if (type == TOKEN_SEMICOLON) {
             error_code = ERR_PARSE_MISSING_SEMICOLON;
@@ -301,13 +296,13 @@ void semantic_error(Parser *parser, int error_code, const char *format, ...) {
     parser->has_error = 1;
 
     Token current = peek(parser->tokens);
-    
+
     char message[1024];
     va_list args;
     va_start(args, format);
     vsnprintf(message, sizeof(message), format, args);
     va_end(args);
-    
+
     if (global_error_handler) {
         ErrorContext *ctx = error_context_create(
             SEVERITY_ERROR,
@@ -318,16 +313,15 @@ void semantic_error(Parser *parser, int error_code, const char *format, ...) {
             parser->source_filename,
             message
         );
-        
+
         if (ctx) {
-             
             const char *source_line = parser_get_source_line(parser, current.line);
             if (source_line) {
                 error_context_set_source_line(ctx, source_line);
             }
-            
+
             error_report_context(global_error_handler, ctx);
-            
+
             if (!global_error_handler->buffered) {
                 error_context_free(ctx);
             }
@@ -335,18 +329,17 @@ void semantic_error(Parser *parser, int error_code, const char *format, ...) {
     } else {
         fprintf(stderr, "[ERROR] Line %d, Col %d: %s\n", current.line, current.column, message);
     }
-
 }
 
 void semantic_error_at_token(Parser *parser, Token token, int error_code, const char *format, ...) {
     parser->has_error = 1;
-    
+
     char message[1024];
     va_list args;
     va_start(args, format);
     vsnprintf(message, sizeof(message), format, args);
     va_end(args);
-    
+
     if (global_error_handler) {
         ErrorContext *ctx = error_context_create(
             SEVERITY_ERROR,
@@ -357,18 +350,17 @@ void semantic_error_at_token(Parser *parser, Token token, int error_code, const 
             parser->source_filename,
             message
         );
-        
+
         if (ctx) {
-             
             const char *source_line = parser_get_source_line(parser, token.line);
             if (source_line) {
                 error_context_set_source_line(ctx, source_line);
             }
-            
+
             error_context_set_token(ctx, token.value);
-            
+
             error_report_context(global_error_handler, ctx);
-            
+
             if (!global_error_handler->buffered) {
                 error_context_free(ctx);
             }
@@ -376,19 +368,17 @@ void semantic_error_at_token(Parser *parser, Token token, int error_code, const 
     } else {
         fprintf(stderr, "[ERROR] Line %d, Col %d: %s\n", token.line, token.column, message);
     }
-
 }
 
 void synchronize(Parser *parser) {
-     
     while (!is_at_end(parser->tokens)) {
         Token current = peek(parser->tokens);
-        
+
         if (current.type == TOKEN_SEMICOLON) {
             consume(parser->tokens);
             return;
         }
-        
+
         if (current.type == TOKEN_KEYWORD_VAR ||
             current.type == TOKEN_KEYWORD_IF ||
             current.type == TOKEN_KEYWORD_FOR ||
@@ -402,7 +392,7 @@ void synchronize(Parser *parser) {
             current.type == TOKEN_RBRACE) {
             return;
         }
-        
+
         consume(parser->tokens);
     }
 }
@@ -553,13 +543,13 @@ static int file_exists(const char *path) {
 static char *resolve_import_path(const char *base_path, const char *import_file) {
     static char resolved_path[MAX_PATH];
     static char temp_path[MAX_PATH];
-    
+
     if (import_file[0] == '/' || (import_file[0] != '\0' && import_file[1] == ':')) {
         strncpy(resolved_path, import_file, MAX_PATH - 1);
         resolved_path[MAX_PATH - 1] = '\0';
         return resolved_path;
     }
-    
+
     strncpy(temp_path, import_file, MAX_PATH - 1);
     temp_path[MAX_PATH - 1] = '\0';
     if (file_exists(temp_path)) {
@@ -567,20 +557,19 @@ static char *resolve_import_path(const char *base_path, const char *import_file)
         resolved_path[MAX_PATH - 1] = '\0';
         return resolved_path;
     }
-    
+
     if (base_path && base_path[0] != '\0') {
-         
         const char *last_slash = strrchr(base_path, '/');
         const char *last_backslash = strrchr(base_path, '\\');
         const char *separator = last_slash > last_backslash ? last_slash : last_backslash;
-        
+
         if (separator) {
             int dir_len = separator - base_path + 1;
             if (dir_len < MAX_PATH) {
                 strncpy(temp_path, base_path, dir_len);
                 temp_path[dir_len] = '\0';
                 strncat(temp_path, import_file, MAX_PATH - dir_len - 1);
-                
+
                 if (file_exists(temp_path)) {
                     strncpy(resolved_path, temp_path, MAX_PATH - 1);
                     resolved_path[MAX_PATH - 1] = '\0';
@@ -589,30 +578,29 @@ static char *resolve_import_path(const char *base_path, const char *import_file)
             }
         }
     }
-    
+
     strncpy(resolved_path, import_file, MAX_PATH - 1);
     resolved_path[MAX_PATH - 1] = '\0';
     return resolved_path;
 }
 
 void parse_import(Parser *parser, const char *base_path) {
-    Token import_token = consume(parser->tokens);   
-    
+    Token import_token = consume(parser->tokens);
+
     if (!match(parser->tokens, TOKEN_KEYWORD_IMPORT)) {
         parser_error(parser, "Expected 'import' after '#'");
         return;
     }
-    
+
     Token filename_token = peek(parser->tokens);
     if (filename_token.type == TOKEN_LESS) {
-         
-        consume(parser->tokens);   
-        
+        consume(parser->tokens);
+
         char import_filename[MAX_PATH] = {0};
-        
+
         while (!is_at_end(parser->tokens) && !check(parser->tokens, TOKEN_GREATER)) {
             Token token = consume(parser->tokens);
-            
+
             if (token.type == TOKEN_IDENTIFIER || token.type == TOKEN_NUMBER) {
                 strncat(import_filename, token.value, MAX_PATH - strlen(import_filename) - 1);
             } else if (token.type == TOKEN_DOT) {
@@ -626,41 +614,40 @@ void parse_import(Parser *parser, const char *base_path) {
                 return;
             }
         }
-        
+
         if (!match(parser->tokens, TOKEN_GREATER)) {
             parser_error(parser, "Expected '>' after filename");
             return;
         }
-        
+
         char *resolved_path = resolve_import_path(base_path, import_filename);
-        
+
         if (is_already_imported(parser, resolved_path)) {
             if (parser->debug_mode) {
                 printf("[INFO] Skipping already imported file: %s\n", resolved_path);
             }
             return;
         }
-        
+
         add_imported_file(parser, resolved_path);
-        
+
         if (parser->debug_mode) {
             printf("[INFO] Importing file: %s\n", resolved_path);
         }
-        
+
         TokenStream *imported_stream = tokenize_file(resolved_path, parser->debug_mode);
         if (!imported_stream) {
             parser_error(parser, "Failed to open import file: %s", resolved_path);
             return;
         }
-        
+
         TokenStream *original_stream = parser->tokens;
         int original_pos = parser->tokens->current;
-        
+
         parser->tokens = imported_stream;
-        
+
         while (!is_at_end(parser->tokens)) {
             if (check(parser->tokens, TOKEN_HASH)) {
-                 
                 parse_import(parser, resolved_path);
             } else if (check(parser->tokens, TOKEN_KEYWORD_STRUCT)) {
                 parse_struct(parser);
@@ -673,43 +660,42 @@ void parse_import(Parser *parser, const char *base_path) {
                 consume(parser->tokens);
             }
         }
-        
+
         free_token_stream(imported_stream);
         parser->tokens = original_stream;
-        
+
         if (parser->debug_mode) {
             printf("[INFO] Import complete: %s\n", resolved_path);
         }
     } else if (filename_token.type == TOKEN_STRING_LITERAL) {
-         
         Token name_token = consume(parser->tokens);
-        
+
         char *resolved_path = resolve_import_path(base_path, name_token.value);
-        
+
         if (is_already_imported(parser, resolved_path)) {
             if (parser->debug_mode) {
                 printf("[INFO] Skipping already imported file: %s\n", resolved_path);
             }
             return;
         }
-        
+
         add_imported_file(parser, resolved_path);
-        
+
         if (parser->debug_mode) {
             printf("[INFO] Importing file: %s\n", resolved_path);
         }
-        
+
         TokenStream *imported_stream = tokenize_file(resolved_path, parser->debug_mode);
         if (!imported_stream) {
             parser_error(parser, "Failed to open import file: %s", resolved_path);
             return;
         }
-        
+
         TokenStream *original_stream = parser->tokens;
         int original_pos = parser->tokens->current;
-        
+
         parser->tokens = imported_stream;
-        
+
         while (!is_at_end(parser->tokens)) {
             if (check(parser->tokens, TOKEN_HASH)) {
                 parse_import(parser, resolved_path);
@@ -724,10 +710,10 @@ void parse_import(Parser *parser, const char *base_path) {
                 consume(parser->tokens);
             }
         }
-        
+
         free_token_stream(imported_stream);
         parser->tokens = original_stream;
-        
+
         if (parser->debug_mode) {
             printf("[INFO] Import complete: %s\n", resolved_path);
         }
@@ -735,4 +721,3 @@ void parse_import(Parser *parser, const char *base_path) {
         parser_error(parser, "Expected '<' or string literal after 'import'");
     }
 }
-

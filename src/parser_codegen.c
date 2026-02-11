@@ -18,10 +18,10 @@
  */
 void generate_write_syscall(Parser *parser, const char *buffer_reg, const char *length_reg) {
     code_comment(parser, "syscall: write(stdout, buffer, length)");
-    code_printf(parser, "    movq $1, %%rax\n");       
-    code_printf(parser, "    movq $1, %%rdi\n");       
-    code_printf(parser, "    movq %s, %%rsi\n", buffer_reg);   
-    code_printf(parser, "    movq %s, %%rdx\n", length_reg);   
+    code_printf(parser, "    movq $1, %%rax\n");
+    code_printf(parser, "    movq $1, %%rdi\n");
+    code_printf(parser, "    movq %s, %%rsi\n", buffer_reg);
+    code_printf(parser, "    movq %s, %%rdx\n", length_reg);
     code_printf(parser, "    syscall\n");
 }
 
@@ -35,18 +35,18 @@ void generate_write_syscall(Parser *parser, const char *buffer_reg, const char *
  */
 void generate_read_syscall(Parser *parser, const char *buffer_reg, const char *length_reg) {
     code_comment(parser, "syscall: read(stdin, buffer, length)");
-    code_printf(parser, "    movq $0, %%rax\n");       
-    code_printf(parser, "    movq $0, %%rdi\n");       
-    code_printf(parser, "    movq %s, %%rsi\n", buffer_reg);   
-    code_printf(parser, "    movq %s, %%rdx\n", length_reg);   
+    code_printf(parser, "    movq $0, %%rax\n");
+    code_printf(parser, "    movq $0, %%rdi\n");
+    code_printf(parser, "    movq %s, %%rsi\n", buffer_reg);
+    code_printf(parser, "    movq %s, %%rdx\n", length_reg);
     code_printf(parser, "    syscall\n");
 }
 
 void generate_strlen_code(Parser *parser, const char *str_ptr_reg, const char *result_reg) {
     code_comment(parser, "Calculate string length");
-    code_printf(parser, "    xorq %s, %s\n", result_reg, result_reg);   
+    code_printf(parser, "    xorq %s, %s\n", result_reg, result_reg);
     code_printf(parser, ".Lstrlen_loop_%d:\n", parser->label_counter);
-    code_printf(parser, "    movb (%s,%s,1), %%cl\n", str_ptr_reg, result_reg);   
+    code_printf(parser, "    movb (%s,%s,1), %%cl\n", str_ptr_reg, result_reg);
     code_printf(parser, "    testb %%cl, %%cl\n");
     code_printf(parser, "    je .Lstrlen_done_%d\n", parser->label_counter);
     code_printf(parser, "    incq %s\n", result_reg);
@@ -58,47 +58,47 @@ void generate_strlen_code(Parser *parser, const char *str_ptr_reg, const char *r
 void generate_int_to_str_code(Parser *parser, const char *value_reg, const char *buffer_reg) {
     code_comment(parser, "Convert integer to string");
     int label_num = parser->label_counter++;
-    
+
     code_printf(parser, "    testq %s, %s\n", value_reg, value_reg);
     code_printf(parser, "    jne .Lint2str_nonzero_%d\n", label_num);
-    code_printf(parser, "    movb $48, (%s)\n", buffer_reg);   
+    code_printf(parser, "    movb $48, (%s)\n", buffer_reg);
     code_printf(parser, "    movb $0, 1(%s)\n", buffer_reg);
     code_printf(parser, "    jmp .Lint2str_done_%d\n", label_num);
-    
+
     code_printf(parser, ".Lint2str_nonzero_%d:\n", label_num);
-     
-    code_printf(parser, "    movq %s, %%r10\n", value_reg);   
-    code_printf(parser, "    xorq %%r11, %%r11\n");   
+
+    code_printf(parser, "    movq %s, %%r10\n", value_reg);
+    code_printf(parser, "    xorq %%r11, %%r11\n");
     code_printf(parser, "    testq %%r10, %%r10\n");
     code_printf(parser, "    jge .Lint2str_positive_%d\n", label_num);
-    code_printf(parser, "    negq %%r10\n");   
-    code_printf(parser, "    movq $1, %%r11\n");   
-    
+    code_printf(parser, "    negq %%r10\n");
+    code_printf(parser, "    movq $1, %%r11\n");
+
     code_printf(parser, ".Lint2str_positive_%d:\n", label_num);
-     
-    code_printf(parser, "    movq %s, %%r12\n", buffer_reg);   
-    code_printf(parser, "    addq $20, %%r12\n");   
-    code_printf(parser, "    movb $0, (%%r12)\n");   
-    
+
+    code_printf(parser, "    movq %s, %%r12\n", buffer_reg);
+    code_printf(parser, "    addq $20, %%r12\n");
+    code_printf(parser, "    movb $0, (%%r12)\n");
+
     code_printf(parser, ".Lint2str_loop_%d:\n", label_num);
     code_printf(parser, "    xorq %%rdx, %%rdx\n");
     code_printf(parser, "    movq %%r10, %%rax\n");
     code_printf(parser, "    movq $10, %%rcx\n");
-    code_printf(parser, "    divq %%rcx\n");   
-    code_printf(parser, "    addb $48, %%dl\n");   
+    code_printf(parser, "    divq %%rcx\n");
+    code_printf(parser, "    addb $48, %%dl\n");
     code_printf(parser, "    decq %%r12\n");
     code_printf(parser, "    movb %%dl, (%%r12)\n");
     code_printf(parser, "    movq %%rax, %%r10\n");
     code_printf(parser, "    testq %%r10, %%r10\n");
     code_printf(parser, "    jne .Lint2str_loop_%d\n", label_num);
-    
+
     code_printf(parser, "    testq %%r11, %%r11\n");
     code_printf(parser, "    je .Lint2str_no_sign_%d\n", label_num);
     code_printf(parser, "    decq %%r12\n");
-    code_printf(parser, "    movb $45, (%%r12)\n");   
-    
+    code_printf(parser, "    movb $45, (%%r12)\n");
+
     code_printf(parser, ".Lint2str_no_sign_%d:\n", label_num);
-     
+
     code_printf(parser, "    movq %s, %%rdi\n", buffer_reg);
     code_printf(parser, "    movq %%r12, %%rsi\n");
     code_printf(parser, ".Lint2str_copy_%d:\n", label_num);
@@ -109,7 +109,7 @@ void generate_int_to_str_code(Parser *parser, const char *value_reg, const char 
     code_printf(parser, "    incq %%rsi\n");
     code_printf(parser, "    incq %%rdi\n");
     code_printf(parser, "    jmp .Lint2str_copy_%d\n", label_num);
-    
+
     code_printf(parser, ".Lint2str_done_%d:\n", label_num);
 }
 
@@ -161,4 +161,3 @@ const char *get_arg_reg_32(int index) {
 const char *get_arg_reg_8(int index) {
     return get_arg_registers_8()[index];
 }
-
