@@ -2206,6 +2206,14 @@ void parse_printline_statement(Parser *parser) {
                         code_printf(parser, "    call printf\n");
                         generate_stack_restore(parser);
                     }
+                } else if (var->is_pointer == 1) {
+                    code_printf(parser, "    movq %d(%%rbp), %s\n", var->offset, get_arg_reg_64(1));
+                    code_printf(parser, "    leaq .LC_pointer_format(%%rip), %s\n", get_arg_reg_64(0));
+                    {
+                        generate_stack_align(parser);
+                        code_printf(parser, "    call printf\n");
+                        generate_stack_restore(parser);
+                    }
                 } else {
                     code_printf(parser, "    movl %d(%%rbp), %s\n", var->offset, get_arg_reg_32(1));
                     code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_reg_64(0));

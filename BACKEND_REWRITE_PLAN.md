@@ -7,7 +7,6 @@ This document outlines the effort required to rewrite the compiler backend to:
 2. **Implement proper Windows x64 ABI** (calling conventions)
 3. **Switch from AT&T syntax to Intel syntax**
 
-**Estimated Time:** 3-4 weeks for a single experienced developer
 **Complexity:** Medium-High
 **Risk Level:** Medium (requires careful testing across platforms)
 
@@ -75,7 +74,6 @@ The compiler has **partial** Windows support:
 
 ### 1. Syntax Conversion: AT&T → Intel
 
-**Effort:** 1-1.5 weeks
 **Complexity:** Medium
 **Lines affected:** ~922 assembly generation statements
 
@@ -127,7 +125,6 @@ void emit_add_reg_reg(Parser *parser, const char *dest, const char *src);
 
 ### 2. COFF Format Support
 
-**Effort:** 1 week
 **Complexity:** Medium
 **Lines affected:** ~200 lines
 
@@ -181,7 +178,6 @@ main:
 
 ### 3. Windows x64 ABI Implementation
 
-**Effort:** 1-1.5 weeks
 **Complexity:** High
 **Lines affected:** ~300 lines
 
@@ -252,7 +248,6 @@ emit_add_reg_imm(parser, "rsp", 32);  // Clean up shadow space
 
 ### 4. Testing Strategy
 
-**Effort:** 0.5-1 week
 **Complexity:** Medium
 
 #### Test Plan
