@@ -36,6 +36,7 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
         strstr(p, "setle") || strstr(p, "setg") || strstr(p, "setge")) {
         is_att = 1;
     }
+    if (strchr(p, '%') != NULL) is_att = 1;
 
     if (!is_att) {
         /* Not AT&T syntax, copy as-is */
@@ -58,7 +59,8 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
         if (*src == '%' && (isalpha(src[1]) || src[1] == 'r' || src[1] == 'e')) {
             /* Skip % before register names */
             src++;
-        } else if (*src == '$' && (isdigit(src[1]) || src[1] == '-')) {
+        } else if (*src == '$' && (isalnum((unsigned char) src[1]) || src[1] == '-' ||
+                                    src[1] == '.' || src[1] == '_')) {
             /* Skip $ before immediates */
             src++;
         } else {
@@ -80,7 +82,9 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
     char *insn_start = final;
     while (*insn_start == ' ' || *insn_start == '\t') insn_start++;
 
-    if (strncmp(insn_start, "movq ", 5) == 0) memcpy(insn_start, "mov ", 4);
+    if (strncmp(insn_start, "movq ", 5) == 0 && strstr(insn_start, "xmm") == NULL) {
+        memcpy(insn_start, "mov ", 4);
+    }
     else if (strncmp(insn_start, "movl ", 5) == 0) memcpy(insn_start, "mov ", 4);
     else if (strncmp(insn_start, "movw ", 5) == 0) memcpy(insn_start, "mov ", 4);
     else if (strncmp(insn_start, "movb ", 5) == 0) memcpy(insn_start, "mov ", 4);

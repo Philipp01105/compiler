@@ -13,10 +13,16 @@
  */
 TokenStream *create_token_stream(void) {
     TokenStream *stream = malloc(sizeof(TokenStream));
+    if (!stream) return NULL;
     stream->capacity = INITIAL_CAPACITY;
     stream->count = 0;
     stream->current = 0;
     stream->tokens = malloc(sizeof(Token) * stream->capacity);
+    stream->has_error = stream->tokens == NULL;
+    if (!stream->tokens) {
+        free(stream);
+        return NULL;
+    }
     return stream;
 }
 
@@ -32,8 +38,14 @@ void add_token(TokenStream *stream, TokenType type, const char *value, int line,
     if (stream == NULL) return;
 
     if (stream->count >= stream->capacity) {
-        stream->capacity *= 2;
-        stream->tokens = realloc(stream->tokens, sizeof(Token) * stream->capacity);
+        int new_capacity = stream->capacity * 2;
+        Token *new_tokens = realloc(stream->tokens, sizeof(Token) * new_capacity);
+        if (!new_tokens) {
+            stream->has_error = 1;
+            return;
+        }
+        stream->capacity = new_capacity;
+        stream->tokens = new_tokens;
     }
 
     Token *token = &stream->tokens[stream->count];
@@ -140,12 +152,24 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
     long file_size = ftell(file);
     fseek(file, 0, SEEK_SET);
 
-    char *source = malloc(file_size + 1);
+    if (file_size < 0) {
+        fclose(file);
+        return NULL;
+    }
+    char *source = malloc((size_t) file_size + 1);
+    if (!source) {
+        fclose(file);
+        return NULL;
+    }
     size_t bytes_read = fread(source, 1, file_size, file);
     source[bytes_read] = '\0';
     fclose(file);
 
     TokenStream *stream = create_token_stream();
+    if (!stream) {
+        free(source);
+        return NULL;
+    }
 
     int line = 1;
     int column = 1;
@@ -205,11 +229,11 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
                     unsigned char byte = (unsigned char)source[i];
                     if (byte >= 0x80) {
                         str[j++] = source[i++];
-                        if (i < length && (source[i] & 0xC0) == 0x80) {
+                        int continuation_count = 0;
+                        while (i < length && continuation_count < 3 &&
+                               ((unsigned char) source[i] & 0xC0) == 0x80 && j < MAX_LINE - 1) {
                             str[j++] = source[i++];
-                        }
-                        if (i < length && (source[i] & 0xC0) == 0x80) {
-                            str[j++] = source[i++];
+                            continuation_count++;
                         }
                         column++;
                         continue;
@@ -230,6 +254,7 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
             } else {
                 fprintf(stderr, "Fehler (Zeile %d, Spalte %d): Ungeschlossenes String-Literal\n",
                         start_line, start_col);
+                stream->has_error = 1;
             }
 
             continue;
@@ -279,26 +304,17 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
             } else {
                 fprintf(stderr, "Fehler (Zeile %d, Spalte %d): Ungeschlossenes Character-Literal\n",
                         start_line, start_col);
+                stream->has_error = 1;
             }
 
             continue;
         }
 
-        if (isdigit(c) || (c == '-' && i + 1 < length && isdigit((unsigned char)source[i + 1]))) {
+        if (isdigit((unsigned char)c)) {
             int start_col = column;
             char num[MAX_TOKEN];
             int j = 0;
             int has_dot = 0;
-            int is_negative = 0;
-
-            if (c == '-') {
-                num[j++] = c;
-                is_negative = 1;
-                i++;
-                column++;
-                c = source[i];
-            }
-
             while (i < length && (isdigit((unsigned char)source[i]) || source[i] == '.') && j < MAX_TOKEN - 1) {
                 if (source[i] == '.') {
                     if (has_dot) break;
@@ -327,6 +343,12 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
 
             num[j] = '\0';
 
+            if (i < length && (isdigit((unsigned char) source[i]) || source[i] == '.')) {
+                fprintf(stderr, "Fehler (Zeile %d, Spalte %d): Zahlenliteral ist zu lang\n", line, start_col);
+                stream->has_error = 1;
+                while (i < length && (isdigit((unsigned char) source[i]) || source[i] == '.')) { i++; column++; }
+            }
+
             if (has_dot) {
                 add_token(stream, TOKEN_FLOAT_LITERAL, num, line, start_col);
             } else {
@@ -347,6 +369,12 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
             }
 
             ident[j] = '\0';
+
+            if (i < length && (isalnum((unsigned char) source[i]) || source[i] == '_')) {
+                fprintf(stderr, "Fehler (Zeile %d, Spalte %d): Bezeichner ist zu lang\n", line, start_col);
+                stream->has_error = 1;
+                while (i < length && (isalnum((unsigned char) source[i]) || source[i] == '_')) { i++; column++; }
+            }
 
             TokenType type = get_keyword_type(ident);
             add_token(stream, type, ident, line, start_col);
@@ -417,6 +445,7 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
 
         fprintf(stderr, "Warnung (Zeile %d, Spalte %d): Unbekanntes Zeichen '%c' (0x%02X)\n",
                 line, column, c, (unsigned char)c);
+        stream->has_error = 1;
         i++;
         column++;
     }

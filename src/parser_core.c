@@ -43,6 +43,8 @@ Parser *create_parser(TokenStream *tokens) {
     parser->source_filename = NULL;
     parser->target_format = TARGET_ELF; /* Default, will be set by main */
     parser->syntax_mode = SYNTAX_INTEL; /* Default, will be set by main */
+    parser->expression_type = TYPE_UNKNOWN;
+    parser->current_return_type = TYPE_VOID;
 
     memset(parser->code_buffer, 0, CODE_BUFFER_SIZE);
     memset(parser->function_code_buffer, 0, CODE_BUFFER_SIZE);
@@ -52,6 +54,12 @@ Parser *create_parser(TokenStream *tokens) {
 
 void free_parser(Parser *parser) {
     if (parser) {
+        for (int i = 0; i < parser->function_count; i++) {
+            free(parser->functions[i].params);
+            free(parser->functions[i].param_types);
+            free(parser->functions[i].param_is_array);
+            free(parser->functions[i].param_is_pointer);
+        }
         if (parser->source_content) {
             free(parser->source_content);
         }
@@ -136,6 +144,11 @@ void code_printf(Parser *parser, const char *format, ...) {
     if (parser->function_code_pos + len < CODE_BUFFER_SIZE) {
         strcpy(parser->function_code_buffer + parser->function_code_pos, final_buffer);
         parser->function_code_pos += len;
+    } else if (!parser->has_error) {
+        parser->has_error = 1;
+        error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_CODEGEN,
+                     ERR_CODEGEN_OUTPUT_FAILED, parser->source_filename,
+                     "Generated assembly exceeds the %d-byte code buffer", CODE_BUFFER_SIZE);
     }
 
     va_end(args);
@@ -152,6 +165,11 @@ void data_printf(Parser *parser, const char *format, ...) {
     if (parser->code_pos + len < CODE_BUFFER_SIZE) {
         strcpy(parser->code_buffer + parser->code_pos, buffer);
         parser->code_pos += len;
+    } else if (!parser->has_error) {
+        parser->has_error = 1;
+        error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_CODEGEN,
+                     ERR_CODEGEN_OUTPUT_FAILED, parser->source_filename,
+                     "Generated data exceeds the %d-byte data buffer", CODE_BUFFER_SIZE);
     }
 
     va_end(args);

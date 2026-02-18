@@ -5,6 +5,30 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int is_floating(DataType type) {
+    return type == TYPE_FLOAT || type == TYPE_DOUBLE;
+}
+
+static DataType common_numeric_type(DataType left, DataType right) {
+    if (left == TYPE_DOUBLE || right == TYPE_DOUBLE) return TYPE_DOUBLE;
+    if (left == TYPE_FLOAT || right == TYPE_FLOAT) return TYPE_FLOAT;
+    return TYPE_INT;
+}
+
+static void load_numeric_operand(Parser *parser, const char *gpr, const char *xmm, DataType from, DataType to) {
+    const char *gpr32 = strcmp(gpr, "rax") == 0 ? "eax" : "ebx";
+    if (to == TYPE_DOUBLE) {
+        if (from == TYPE_DOUBLE) code_printf(parser, "    movq %%%s, %%%s\n", gpr, xmm);
+        else if (from == TYPE_FLOAT) {
+            code_printf(parser, "    movd %%%s, %%%s\n", gpr32, xmm);
+            code_printf(parser, "    cvtss2sd %%%s, %%%s\n", xmm, xmm);
+        } else code_printf(parser, "    cvtsi2sd %%%s, %%%s\n", gpr32, xmm);
+    } else {
+        if (from == TYPE_FLOAT) code_printf(parser, "    movd %%%s, %%%s\n", gpr32, xmm);
+        else code_printf(parser, "    cvtsi2ss %%%s, %%%s\n", gpr32, xmm);
+    }
+}
+
 void parse_expression(Parser *parser) {
     parse_logical_or(parser);
 }
@@ -33,6 +57,7 @@ void parse_logical_or(Parser *parser) {
 
         code_printf(parser, ".L_or_end_%d:\n", label_id);
         code_printf(parser, "    pushq %%rax\n");
+        parser->expression_type = TYPE_BIT;
     }
 }
 
@@ -60,11 +85,13 @@ void parse_logical_and(Parser *parser) {
 
         code_printf(parser, ".L_and_end_%d:\n", label_id);
         code_printf(parser, "    pushq %%rax\n");
+        parser->expression_type = TYPE_BIT;
     }
 }
 
 void parse_comparison(Parser *parser) {
     parse_term(parser);
+    DataType left_type = parser->expression_type;
 
     while (1) {
         TokenType op = peek(parser->tokens).type;
@@ -77,11 +104,36 @@ void parse_comparison(Parser *parser) {
 
         consume(parser->tokens);
         parse_term(parser);
+        DataType right_type = parser->expression_type;
 
         code_printf(parser, "    popq %%rbx\n");
         code_printf(parser, "    popq %%rax\n");
 
-        if (op == TOKEN_EQUAL_EQUAL || op == TOKEN_BANG_EQUAL) {
+        if (is_floating(left_type) || is_floating(right_type)) {
+            DataType type = common_numeric_type(left_type, right_type);
+            load_numeric_operand(parser, "rbx", "xmm1", right_type, type);
+            load_numeric_operand(parser, "rax", "xmm0", left_type, type);
+            code_printf(parser, "    ucomis%s %%xmm1, %%xmm0\n", type == TYPE_DOUBLE ? "d" : "s");
+            if (op == TOKEN_EQUAL_EQUAL) {
+                code_printf(parser, "    sete %%al\n");
+                code_printf(parser, "    setnp %%dl\n");
+                code_printf(parser, "    andb %%dl, %%al\n");
+            } else if (op == TOKEN_BANG_EQUAL) {
+                code_printf(parser, "    setne %%al\n");
+                code_printf(parser, "    setp %%dl\n");
+                code_printf(parser, "    orb %%dl, %%al\n");
+            } else if (op == TOKEN_LESS) {
+                code_printf(parser, "    setb %%al\n");
+                code_printf(parser, "    setnp %%dl\n");
+                code_printf(parser, "    andb %%dl, %%al\n");
+            } else if (op == TOKEN_LESS_EQUAL) {
+                code_printf(parser, "    setbe %%al\n");
+                code_printf(parser, "    setnp %%dl\n");
+                code_printf(parser, "    andb %%dl, %%al\n");
+            }
+            else if (op == TOKEN_GREATER) code_printf(parser, "    seta %%al\n");
+            else code_printf(parser, "    setae %%al\n");
+        } else if (op == TOKEN_EQUAL_EQUAL || op == TOKEN_BANG_EQUAL) {
             code_printf(parser, "    cmpq %%rbx, %%rax\n");
 
             if (op == TOKEN_EQUAL_EQUAL) {
@@ -103,33 +155,47 @@ void parse_comparison(Parser *parser) {
 
         code_printf(parser, "    movzbl %%al, %%eax\n");
         code_printf(parser, "    pushq %%rax\n");
+        parser->expression_type = TYPE_BIT;
+        left_type = TYPE_BIT;
     }
 }
 
 void parse_term(Parser *parser) {
     parse_factor(parser);
+    DataType left_type = parser->expression_type;
 
     while (check(parser->tokens, TOKEN_PLUS) || check(parser->tokens, TOKEN_MINUS)) {
         TokenType op = peek(parser->tokens).type;
         consume(parser->tokens);
 
         parse_factor(parser);
+        DataType right_type = parser->expression_type;
 
         code_printf(parser, "    popq %%rbx\n");
         code_printf(parser, "    popq %%rax\n");
 
-        if (op == TOKEN_PLUS) {
+        DataType result_type = common_numeric_type(left_type, right_type);
+        if (is_floating(result_type)) {
+            load_numeric_operand(parser, "rbx", "xmm1", right_type, result_type);
+            load_numeric_operand(parser, "rax", "xmm0", left_type, result_type);
+            code_printf(parser, "    %s%s %%xmm1, %%xmm0\n",
+                        op == TOKEN_PLUS ? "add" : "sub", result_type == TYPE_DOUBLE ? "sd" : "ss");
+            code_printf(parser, "    movq %%xmm0, %%rax\n");
+        } else if (op == TOKEN_PLUS) {
             code_printf(parser, "    addl %%ebx, %%eax\n");
         } else {
             code_printf(parser, "    subl %%ebx, %%eax\n");
         }
 
         code_printf(parser, "    pushq %%rax\n");
+        parser->expression_type = result_type;
+        left_type = result_type;
     }
 }
 
 void parse_factor(Parser *parser) {
     parse_unary(parser);
+    DataType left_type = parser->expression_type;
 
     while (check(parser->tokens, TOKEN_STAR) || check(parser->tokens, TOKEN_SLASH) || check(
                parser->tokens, TOKEN_PERCENT)) {
@@ -137,11 +203,23 @@ void parse_factor(Parser *parser) {
         consume(parser->tokens);
 
         parse_unary(parser);
+        DataType right_type = parser->expression_type;
 
         code_printf(parser, "    popq %%rbx\n");
         code_printf(parser, "    popq %%rax\n");
 
-        if (op == TOKEN_STAR) {
+        DataType result_type = common_numeric_type(left_type, right_type);
+        if (is_floating(result_type)) {
+            if (op == TOKEN_PERCENT) {
+                parser_error(parser, "Remainder is not supported for floating-point values");
+                return;
+            }
+            load_numeric_operand(parser, "rbx", "xmm1", right_type, result_type);
+            load_numeric_operand(parser, "rax", "xmm0", left_type, result_type);
+            code_printf(parser, "    %s%s %%xmm1, %%xmm0\n",
+                        op == TOKEN_STAR ? "mul" : "div", result_type == TYPE_DOUBLE ? "sd" : "ss");
+            code_printf(parser, "    movq %%xmm0, %%rax\n");
+        } else if (op == TOKEN_STAR) {
             code_printf(parser, "    imull %%ebx, %%eax\n");
         } else if (op == TOKEN_SLASH) {
             code_printf(parser, "    cltd\n");
@@ -153,6 +231,8 @@ void parse_factor(Parser *parser) {
         }
 
         code_printf(parser, "    pushq %%rax\n");
+        parser->expression_type = result_type;
+        left_type = result_type;
     }
 }
 
@@ -165,14 +245,20 @@ void parse_unary(Parser *parser) {
         code_printf(parser, "    sete %%al\n");
         code_printf(parser, "    movzbl %%al, %%eax\n");
         code_printf(parser, "    pushq %%rax\n");
+        parser->expression_type = TYPE_BIT;
         return;
     }
 
     if (match(parser->tokens, TOKEN_MINUS)) {
         code_comment(parser, "Unary minus (-)");
         parse_unary(parser);
+        DataType type = parser->expression_type;
         code_printf(parser, "    popq %%rax\n");
-        code_printf(parser, "    negl %%eax\n");
+        if (type == TYPE_DOUBLE) {
+            code_printf(parser, "    movq $0x8000000000000000, %%rbx\n");
+            code_printf(parser, "    xorq %%rbx, %%rax\n");
+        } else if (type == TYPE_FLOAT) code_printf(parser, "    xorl $0x80000000, %%eax\n");
+        else code_printf(parser, "    negl %%eax\n");
         code_printf(parser, "    pushq %%rax\n");
         return;
     }
@@ -304,6 +390,7 @@ void parse_primary(Parser *parser) {
         Token num = consume(parser->tokens);
         code_printf(parser, "    movl $%s, %%eax\n", num.value);
         code_printf(parser, "    pushq %%rax\n");
+        parser->expression_type = TYPE_INT;
         return;
     }
 
@@ -315,6 +402,7 @@ void parse_primary(Parser *parser) {
         code_printf(parser, "    movss .LC_float_%d(%%rip), %%xmm0\n", float_id);
         code_printf(parser, "    movq %%xmm0, %%rax\n");
         code_printf(parser, "    pushq %%rax\n");
+        parser->expression_type = TYPE_FLOAT;
         return;
     }
 
@@ -347,6 +435,7 @@ void parse_primary(Parser *parser) {
         code_comment(parser, "Character literal: '%s' (ASCII %d)", escaped_char, char_value);
         code_printf(parser, "    movl $%d, %%eax\n", char_value);
         code_printf(parser, "    pushq %%rax\n");
+        parser->expression_type = TYPE_CHAR;
         return;
     }
 
@@ -370,10 +459,12 @@ void parse_primary(Parser *parser) {
             code_printf(parser, "    leaq .LC%d(%%rip), %%rbx\n", str_id);
             code_printf(parser, "    movzbl (%%rbx, %%rax, 1), %%eax\n");
             code_printf(parser, "    pushq %%rax\n");
+            parser->expression_type = TYPE_CHAR;
         } else {
             code_comment(parser, "String literal: \"%s\"", escaped_str);
             code_printf(parser, "    leaq .LC%d(%%rip), %%rax\n", str_id);
             code_printf(parser, "    pushq %%rax\n");
+            parser->expression_type = TYPE_STRING;
         }
         return;
     }
@@ -418,9 +509,38 @@ void parse_primary(Parser *parser) {
         return;
     }
 
+    TokenType cast_token = peek(parser->tokens).type;
+    DataType cast_type = token_to_datatype(cast_token);
+    if (cast_type != TYPE_UNKNOWN && cast_type != TYPE_VOID &&
+        peek_ahead(parser->tokens, 1).type == TOKEN_LPAREN) {
+        consume(parser->tokens);
+        consume(parser->tokens);
+        parse_expression(parser);
+        expect(parser, TOKEN_RPAREN, "Expected ')' after conversion expression");
+        convert_stack_value(parser, parser->expression_type, cast_type);
+        if (cast_type == TYPE_BIT) {
+            code_printf(parser, "    popq %%rax\n");
+            code_printf(parser, "    testl %%eax, %%eax\n");
+            code_printf(parser, "    setne %%al\n");
+            code_printf(parser, "    movzbl %%al, %%eax\n");
+            code_printf(parser, "    pushq %%rax\n");
+        }
+        parser->expression_type = cast_type;
+        return;
+    }
+
     if (check(parser->tokens, TOKEN_IDENTIFIER)) {
         Token name = peek(parser->tokens);
         Token lookahead = peek_ahead(parser->tokens, 1);
+
+        if ((strcmp(name.value, "true") == 0 || strcmp(name.value, "false") == 0) &&
+            lookahead.type != TOKEN_LPAREN) {
+            consume(parser->tokens);
+            code_printf(parser, "    movl $%d, %%eax\n", strcmp(name.value, "true") == 0);
+            code_printf(parser, "    pushq %%rax\n");
+            parser->expression_type = TYPE_BIT;
+            return;
+        }
 
         if (lookahead.type == TOKEN_LPAREN) {
             consume(parser->tokens);
@@ -650,12 +770,7 @@ void parse_primary(Parser *parser) {
                     parse_expression(parser);
                     expect(parser, TOKEN_RPAREN, "Expected ')'");
 
-                    code_printf(parser, "    popq %%rdx\n");
-                    code_printf(parser, "    popq %%rsi\n");
-                    code_printf(parser, "    popq %%rdi\n");
-                    code_printf(parser, "    movq $1, %%rax\n");
-                    code_printf(parser, "    syscall\n");
-                    code_printf(parser, "    pushq %%rax\n");
+                    generate_system_io_call(parser, "write", 1);
                     return;
                 } else if (strcmp(name.value, "sys_read") == 0) {
                     code_comment(parser, "Built-in syscall: sys_read(fd, buffer, count)");
@@ -667,12 +782,7 @@ void parse_primary(Parser *parser) {
                     parse_expression(parser);
                     expect(parser, TOKEN_RPAREN, "Expected ')'");
 
-                    code_printf(parser, "    popq %%rdx\n");
-                    code_printf(parser, "    popq %%rsi\n");
-                    code_printf(parser, "    popq %%rdi\n");
-                    code_printf(parser, "    movq $0, %%rax\n");
-                    code_printf(parser, "    syscall\n");
-                    code_printf(parser, "    pushq %%rax\n");
+                    generate_system_io_call(parser, "read", 1);
                     return;
                 } else if (strcmp(name.value, "sys_open") == 0) {
                     code_comment(parser, "Built-in syscall: sys_open(pathname, flags, mode)");
@@ -684,12 +794,7 @@ void parse_primary(Parser *parser) {
                     parse_expression(parser);
                     expect(parser, TOKEN_RPAREN, "Expected ')'");
 
-                    code_printf(parser, "    popq %%rdx\n");
-                    code_printf(parser, "    popq %%rsi\n");
-                    code_printf(parser, "    popq %%rdi\n");
-                    code_printf(parser, "    movq $2, %%rax\n");
-                    code_printf(parser, "    syscall\n");
-                    code_printf(parser, "    pushq %%rax\n");
+                    generate_system_io_call(parser, "open", 1);
                     return;
                 } else if (strcmp(name.value, "sys_close") == 0) {
                     code_comment(parser, "Built-in syscall: sys_close(fd)");
@@ -697,10 +802,7 @@ void parse_primary(Parser *parser) {
                     parse_expression(parser);
                     expect(parser, TOKEN_RPAREN, "Expected ')'");
 
-                    code_printf(parser, "    popq %%rdi\n");
-                    code_printf(parser, "    movq $3, %%rax\n");
-                    code_printf(parser, "    syscall\n");
-                    code_printf(parser, "    pushq %%rax\n");
+                    generate_system_io_call(parser, "close", 1);
                     return;
                 } else if (strcmp(name.value, "io_strlen") == 0) {
                     code_comment(parser, "Built-in: io_strlen(s)");
@@ -883,8 +985,13 @@ void parse_primary(Parser *parser) {
                     code_comment(parser, "String arg: \"%s\"", escaped_str);
                     code_printf(parser, "    leaq .LC%d(%%rip), %%rax\n", str_id);
                     code_printf(parser, "    pushq %%rax\n");
+                    parser->expression_type = TYPE_STRING;
                 } else {
                     parse_expression(parser);
+                }
+
+                if (arg_count < func->param_count) {
+                    convert_stack_value(parser, parser->expression_type, func->param_types[arg_count]);
                 }
 
                 arg_count++;
@@ -942,36 +1049,7 @@ void parse_primary(Parser *parser) {
                     code_printf(parser, "    addq $%d, %%rsp\n", method_stack_adjust);
                 }
             } else {
-                for (int i = arg_count - 1; i >= 0 && i < 4; i--) {
-                    DataType param_type = func->param_types[i];
-
-                    if (param_type == TYPE_FLOAT || param_type == TYPE_DOUBLE) {
-                        code_printf(parser, "    popq %%rax\n");
-                        code_printf(parser, "    movq %%rax, %s\n", arg_regs_float[i]);
-                    } else if (param_type == TYPE_STRING) {
-                        code_printf(parser, "    popq %s\n", arg_regs_64[i]);
-                    } else if (param_type == TYPE_CHAR || param_type == TYPE_BYTE || param_type == TYPE_BIT) {
-                        const char **expr_arg_regs_8 = get_arg_registers_8();
-                        code_printf(parser, "    popq %%rax\n");
-                        code_printf(parser, "    movb %%al, %s\n", expr_arg_regs_8[i]);
-                    } else {
-                        const char **expr_arg_regs_32 = get_arg_registers_32();
-                        int expr_max_reg_args_32 = get_max_reg_args();
-                        code_printf(parser, "    popq %%rax\n");
-                        if (i < expr_max_reg_args_32) {
-                            code_printf(parser, "    movl %%eax, %s\n", expr_arg_regs_32[i]);
-                        }
-                    }
-                }
-
-                int expr_stack_adjust = get_call_stack_space();
-                if (expr_stack_adjust > 0) {
-                    code_printf(parser, "    subq $%d, %%rsp\n", expr_stack_adjust);
-                }
-                code_printf(parser, "    call %s\n", name.value);
-                if (expr_stack_adjust > 0) {
-                    code_printf(parser, "    addq $%d, %%rsp\n", expr_stack_adjust);
-                }
+                generate_function_call(parser, func, name.value, arg_count);
             }
 
             if (func->return_type == TYPE_FLOAT || func->return_type == TYPE_DOUBLE) {
@@ -980,6 +1058,7 @@ void parse_primary(Parser *parser) {
             } else {
                 code_printf(parser, "    pushq %%rax\n");
             }
+            parser->expression_type = func->return_type;
         } else {
             consume(parser->tokens);
 
@@ -1625,6 +1704,9 @@ void parse_primary(Parser *parser) {
                 } else if (var->type == TYPE_BYTE || var->type == TYPE_BIT) {
                     code_printf(parser, "    movzbl (%%rbx, %%rax, %d), %%eax\n", element_size);
                     code_printf(parser, "    pushq %%rax\n");
+                } else if (var->type == TYPE_STRING && var->is_array) {
+                    code_printf(parser, "    movq (%%rbx, %%rax, %d), %%rax\n", element_size);
+                    code_printf(parser, "    pushq %%rax\n");
                 } else if (var->type == TYPE_STRING) {
                     code_printf(parser, "    movq %d(%%rbp), %%rbx\n", var->offset);
                     code_printf(parser, "    movzbl (%%rbx, %%rax, 1), %%eax\n");
@@ -1672,6 +1754,7 @@ void parse_primary(Parser *parser) {
                     code_printf(parser, "    pushq %%rax\n");
                 }
             }
+            parser->expression_type = var->is_array || var->is_pointer ? TYPE_INT : var->type;
         }
         return;
     }

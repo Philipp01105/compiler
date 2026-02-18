@@ -6,8 +6,54 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int binary_operator(TokenType type) {
+    return type == TOKEN_PLUS || type == TOKEN_MINUS || type == TOKEN_STAR ||
+           type == TOKEN_SLASH || type == TOKEN_PERCENT || type == TOKEN_EQUAL_EQUAL ||
+           type == TOKEN_BANG_EQUAL || type == TOKEN_LESS || type == TOKEN_LESS_EQUAL ||
+           type == TOKEN_GREATER || type == TOKEN_GREATER_EQUAL ||
+           type == TOKEN_AMP_AMP || type == TOKEN_PIPE_PIPE;
+}
+
+static int comparison_operator(TokenType type) {
+    return type == TOKEN_EQUAL_EQUAL || type == TOKEN_BANG_EQUAL ||
+           type == TOKEN_LESS || type == TOKEN_LESS_EQUAL ||
+           type == TOKEN_GREATER || type == TOKEN_GREATER_EQUAL ||
+           type == TOKEN_AMP_AMP || type == TOKEN_PIPE_PIPE;
+}
+
+static void emit_printed_expression(Parser *parser) {
+    if (parser->expression_type == TYPE_FLOAT || parser->expression_type == TYPE_DOUBLE) {
+        code_printf(parser, "    popq %%rax\n");
+        code_printf(parser, "    movq %%rax, %%xmm0\n");
+        if (parser->expression_type == TYPE_FLOAT) code_printf(parser, "    cvtss2sd %%xmm0, %%xmm0\n");
+        code_printf(parser, "    movq %%xmm0, %s\n", get_arg_reg_64(1));
+        code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_reg_64(0));
+    } else if (parser->expression_type == TYPE_STRING) {
+        code_printf(parser, "    popq %s\n", get_arg_reg_64(1));
+        code_printf(parser, "    leaq .LC_string_format(%%rip), %s\n", get_arg_reg_64(0));
+    } else {
+        code_printf(parser, "    popq %s\n", get_arg_reg_64(1));
+        code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_reg_64(0));
+    }
+    generate_stack_align(parser);
+    code_printf(parser, "    call printf\n");
+    generate_stack_restore(parser);
+}
+
 void parse_statement(Parser *parser) {
-    if (check(parser->tokens, TOKEN_AT)) {
+    if (check(parser->tokens, TOKEN_LBRACE)) {
+        consume(parser->tokens);
+        int saved_scope = parser->current_scope;
+        parser->current_scope++;
+        parser->scope_depth++;
+        while (!check(parser->tokens, TOKEN_RBRACE) && !is_at_end(parser->tokens)) {
+            parse_statement(parser);
+        }
+        expect(parser, TOKEN_RBRACE, "Expected '}' after block");
+        cleanup_scope(parser, parser->current_scope);
+        parser->current_scope = saved_scope;
+        parser->scope_depth--;
+    } else if (check(parser->tokens, TOKEN_AT)) {
         consume(parser->tokens);
         expect(parser, TOKEN_KEYWORD_GC, "Expected 'gc' after '@'");
         parser->next_var_is_gc = 1;
@@ -43,6 +89,8 @@ void parse_statement(Parser *parser) {
         }
     } else if (check(parser->tokens, TOKEN_KEYWORD_FOR)) {
         parse_for_loop(parser);
+    } else if (check(parser->tokens, TOKEN_KEYWORD_WHILE)) {
+        parse_while_loop(parser);
     } else if (check(parser->tokens, TOKEN_KEYWORD_IF)) {
         parse_if_statement(parser);
     } else if (check(parser->tokens, TOKEN_KEYWORD_RETURN)) {
@@ -177,7 +225,14 @@ void parse_statement(Parser *parser) {
             }
         } else {
             // Regular pointer dereference assignment
-            expect(parser, TOKEN_EQUAL, "Expected '=' after pointer dereference");
+            TokenType pointer_op = peek(parser->tokens).type;
+            if (pointer_op != TOKEN_EQUAL && pointer_op != TOKEN_PLUS_EQUAL &&
+                pointer_op != TOKEN_MINUS_EQUAL && pointer_op != TOKEN_STAR_EQUAL &&
+                pointer_op != TOKEN_SLASH_EQUAL) {
+                parser_error(parser, "Expected assignment operator after pointer dereference");
+                return;
+            }
+            consume(parser->tokens);
 
             code_comment(parser, "Line %d: *%s = value (pointer dereference assignment)",
                          star_token.line, ptr_token.value);
@@ -188,6 +243,18 @@ void parse_statement(Parser *parser) {
 
             code_printf(parser, "    movq %d(%%rbp), %%rbx\n", ptr_var->offset);
             code_printf(parser, "    popq %%rax\n");
+
+            if (pointer_op != TOKEN_EQUAL && ptr_var->type != TYPE_FLOAT && ptr_var->type != TYPE_DOUBLE) {
+                code_printf(parser, "    movl %%eax, %%ecx\n");
+                code_printf(parser, "    movl (%%rbx), %%eax\n");
+                if (pointer_op == TOKEN_PLUS_EQUAL) code_printf(parser, "    addl %%ecx, %%eax\n");
+                else if (pointer_op == TOKEN_MINUS_EQUAL) code_printf(parser, "    subl %%ecx, %%eax\n");
+                else if (pointer_op == TOKEN_STAR_EQUAL) code_printf(parser, "    imull %%ecx, %%eax\n");
+                else {
+                    code_printf(parser, "    cltd\n");
+                    code_printf(parser, "    idivl %%ecx\n");
+                }
+            }
 
             if (ptr_var->type == TYPE_FLOAT) {
                 code_printf(parser, "    movq %%rax, %%xmm0\n");
@@ -307,6 +374,7 @@ void parse_variable_declaration(Parser *parser) {
             code_comment(parser, "Line %d: var %s:%s = ...",
                          var_token.line, name_token.value, datatype_to_string(var_type));
             parse_expression(parser);
+            convert_stack_value(parser, parser->expression_type, var_type);
         }
     } else if (!is_array) {
         if (!has_explicit_type) {
@@ -417,6 +485,11 @@ void parse_variable_declaration(Parser *parser) {
             code_printf(parser, "    popq %%rax\n");
             code_printf(parser, "    movl %%eax, %d(%%rbp)\n", var->offset);
         }
+    } else if (var->size > 0) {
+        code_printf(parser, "    leaq %d(%%rbp), %%rdi\n", var->offset);
+        code_printf(parser, "    movl $%d, %%ecx\n", var->size);
+        code_printf(parser, "    xorl %%eax, %%eax\n");
+        code_printf(parser, "    rep stosb\n");
     }
 }
 
@@ -733,7 +806,13 @@ void parse_assignment(Parser *parser) {
         parse_expression(parser);
 
         expect(parser, TOKEN_RBRACKET, "Expected ']' after array index");
-        expect(parser, TOKEN_EQUAL, "Expected '=' in array assignment");
+        TokenType array_op = peek(parser->tokens).type;
+        if (array_op != TOKEN_EQUAL && array_op != TOKEN_PLUS_EQUAL && array_op != TOKEN_MINUS_EQUAL &&
+            array_op != TOKEN_STAR_EQUAL && array_op != TOKEN_SLASH_EQUAL) {
+            parser_error(parser, "Expected assignment operator after array index");
+            return;
+        }
+        consume(parser->tokens);
 
         parse_expression(parser);
 
@@ -750,6 +829,26 @@ void parse_assignment(Parser *parser) {
                 code_printf(parser, "    movq %d(%%rbp), %%rbx\n", var->offset);
             } else {
                 code_printf(parser, "    leaq %d(%%rbp), %%rbx\n", var->offset);
+            }
+
+            if (array_op != TOKEN_EQUAL && var->type != TYPE_FLOAT && var->type != TYPE_DOUBLE) {
+                if (var->type == TYPE_CHAR || var->type == TYPE_BYTE || var->type == TYPE_BIT) {
+                    code_printf(parser, "    movzbl (%%rbx, %%rax, %d), %%edx\n", element_size);
+                } else {
+                    code_printf(parser, "    movl (%%rbx, %%rax, %d), %%edx\n", element_size);
+                }
+                if (array_op == TOKEN_PLUS_EQUAL) code_printf(parser, "    addl %%ecx, %%edx\n");
+                else if (array_op == TOKEN_MINUS_EQUAL) code_printf(parser, "    subl %%ecx, %%edx\n");
+                else if (array_op == TOKEN_STAR_EQUAL) code_printf(parser, "    imull %%ecx, %%edx\n");
+                else {
+                    code_printf(parser, "    pushq %%rax\n");
+                    code_printf(parser, "    movl %%edx, %%eax\n");
+                    code_printf(parser, "    cltd\n");
+                    code_printf(parser, "    idivl %%ecx\n");
+                    code_printf(parser, "    movl %%eax, %%edx\n");
+                    code_printf(parser, "    popq %%rax\n");
+                }
+                code_printf(parser, "    movl %%edx, %%ecx\n");
             }
 
             if (var->type == TYPE_FLOAT || var->type == TYPE_DOUBLE) {
@@ -944,6 +1043,8 @@ void parse_assignment(Parser *parser) {
 
     consume(parser->tokens);
     parse_expression(parser);
+    DataType assigned_type = parser->expression_type;
+    convert_stack_value(parser, assigned_type, var->type);
     expect(parser, TOKEN_SEMICOLON, "Expected ';'");
 
     if (var->type == TYPE_FLOAT) {
@@ -1168,6 +1269,39 @@ void parse_for_loop(Parser *parser) {
     parser->loop_depth--;
 }
 
+void parse_while_loop(Parser *parser) {
+    consume(parser->tokens);
+    expect(parser, TOKEN_LPAREN, "Expected '(' after 'while'");
+    int loop_id = parser->loop_counter++;
+    if (parser->loop_depth >= MAX_LOOP_DEPTH) {
+        parser_error(parser, "Maximum loop nesting depth (%d) exceeded", MAX_LOOP_DEPTH);
+        return;
+    }
+    parser->loop_stack[parser->loop_depth++].loop_id = loop_id;
+
+    code_printf(parser, ".L_for_increment_%d:\n", loop_id);
+    parse_expression(parser);
+    expect(parser, TOKEN_RPAREN, "Expected ')' after while condition");
+    code_printf(parser, "    popq %%rax\n");
+    code_printf(parser, "    testl %%eax, %%eax\n");
+    code_printf(parser, "    je .L_for_end_%d\n", loop_id);
+    expect(parser, TOKEN_LBRACE, "Expected '{' after while condition");
+
+    int saved_scope = parser->current_scope;
+    parser->current_scope++;
+    parser->scope_depth++;
+    while (!check(parser->tokens, TOKEN_RBRACE) && !is_at_end(parser->tokens)) {
+        parse_statement(parser);
+    }
+    expect(parser, TOKEN_RBRACE, "Expected '}' after while body");
+    cleanup_scope(parser, parser->current_scope);
+    parser->current_scope = saved_scope;
+    parser->scope_depth--;
+    code_printf(parser, "    jmp .L_for_increment_%d\n", loop_id);
+    code_printf(parser, ".L_for_end_%d:\n", loop_id);
+    parser->loop_depth--;
+}
+
 void parse_break_statement(Parser *parser) {
     Token break_token = peek(parser->tokens);
     consume(parser->tokens);
@@ -1293,7 +1427,11 @@ void parse_return_statement(Parser *parser) {
             code_printf(parser, "    leaq .LC%d(%%rip), %%rax\n", str_id);
         } else {
             parse_expression(parser);
+            convert_stack_value(parser, parser->expression_type, parser->current_return_type);
             code_printf(parser, "    popq %%rax\n");
+            if (parser->current_return_type == TYPE_FLOAT || parser->current_return_type == TYPE_DOUBLE) {
+                code_printf(parser, "    movq %%rax, %%xmm0\n");
+            }
         }
     } else {
         code_comment(parser, "Line %d: return (void)", return_token.line);
@@ -1327,7 +1465,8 @@ void parse_print_statement(Parser *parser) {
             int str_id = add_string_literal(parser, str_token.value);
 
             const char **print_regs = get_arg_registers_64();
-            code_printf(parser, "    leaq .LC%d(%%rip), %s\n", str_id, print_regs[0]);
+            code_printf(parser, "    leaq .LC%d(%%rip), %s\n", str_id, print_regs[1]);
+            code_printf(parser, "    leaq .LC_string_format(%%rip), %s\n", print_regs[0]);
             int print_stack_adjust = get_call_stack_space();
             if (print_stack_adjust > 0) {
                 code_printf(parser, "    subq $%d, %%rsp\n", print_stack_adjust);
@@ -1341,16 +1480,34 @@ void parse_print_statement(Parser *parser) {
             parse_expression(parser);
             expect(parser, TOKEN_RPAREN, "Expected ')' after expression");
 
-            code_printf(parser, "    popq %s\n", get_arg_reg_64(1));
-            code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_reg_64(0));
+            if (parser->expression_type == TYPE_FLOAT || parser->expression_type == TYPE_DOUBLE) {
+                code_printf(parser, "    popq %%rax\n");
+                code_printf(parser, "    movq %%rax, %%xmm0\n");
+                if (parser->expression_type == TYPE_FLOAT) code_printf(parser, "    cvtss2sd %%xmm0, %%xmm0\n");
+                code_printf(parser, "    movq %%xmm0, %s\n", get_arg_reg_64(1));
+                code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_reg_64(0));
+            } else {
+                code_printf(parser, "    popq %s\n", get_arg_reg_64(1));
+                code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_reg_64(0));
+            }
             {
                 generate_stack_align(parser);
                 code_printf(parser, "    call printf\n");
                 generate_stack_restore(parser);
             }
         } else if (check(parser->tokens, TOKEN_NUMBER)) {
-            Token num = consume(parser->tokens);
-            code_printf(parser, "    movl $%s, %s\n", num.value, get_arg_reg_32(1));
+            Token num = peek(parser->tokens);
+            TokenType next = peek_ahead(parser->tokens, 1).type;
+            if (next == TOKEN_PLUS || next == TOKEN_MINUS || next == TOKEN_STAR ||
+                next == TOKEN_SLASH || next == TOKEN_PERCENT || next == TOKEN_EQUAL_EQUAL ||
+                next == TOKEN_BANG_EQUAL || next == TOKEN_LESS || next == TOKEN_LESS_EQUAL ||
+                next == TOKEN_GREATER || next == TOKEN_GREATER_EQUAL) {
+                parse_expression(parser);
+                code_printf(parser, "    popq %s\n", get_arg_reg_64(1));
+            } else {
+                consume(parser->tokens);
+                code_printf(parser, "    movl $%s, %s\n", num.value, get_arg_reg_32(1));
+            }
             code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_reg_64(0));
             {
                 generate_stack_align(parser);
@@ -1384,7 +1541,10 @@ void parse_print_statement(Parser *parser) {
             Token name = peek(parser->tokens);
             Token lookahead = peek_ahead(parser->tokens, 1);
 
-            if (lookahead.type == TOKEN_LPAREN) {
+            if (comparison_operator(lookahead.type)) {
+                parse_expression(parser);
+                emit_printed_expression(parser);
+            } else if (lookahead.type == TOKEN_LPAREN) {
                 consume(parser->tokens);
 
                 Function *func = find_function(parser, name.value);
@@ -1398,6 +1558,9 @@ void parse_print_statement(Parser *parser) {
                 int arg_count = 0;
                 while (!check(parser->tokens, TOKEN_RPAREN) && !is_at_end(parser->tokens)) {
                     parse_expression(parser);
+                    if (arg_count < func->param_count) {
+                        convert_stack_value(parser, parser->expression_type, func->param_types[arg_count]);
+                    }
                     arg_count++;
 
                     if (check(parser->tokens, TOKEN_COMMA)) {
@@ -1413,18 +1576,10 @@ void parse_print_statement(Parser *parser) {
                     return;
                 }
 
-                const char **arg_regs = get_arg_registers_64();
-                for (int i = arg_count - 1; i >= 0 && i < 4; i--) {
-                    code_printf(parser, "    popq %s\n", arg_regs[i]);
-                }
-
-                {
-                    generate_stack_align(parser);
-                    code_printf(parser, "    call %s\n", name.value);
-                    generate_stack_restore(parser);
-                }
+                generate_function_call(parser, func, name.value, arg_count);
 
                 if (func->return_type == TYPE_FLOAT || func->return_type == TYPE_DOUBLE) {
+                    if (func->return_type == TYPE_FLOAT) code_printf(parser, "    cvtss2sd %%xmm0, %%xmm0\n");
                     code_printf(parser, "    movq %%xmm0, %s\n", get_arg_reg_64(1));
                     code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_reg_64(0));
                 } else if (func->return_type == TYPE_STRING) {
@@ -1814,7 +1969,8 @@ void parse_printline_statement(Parser *parser) {
             int str_id = add_string_literal(parser, str_token.value);
 
             const char **print_regs = get_arg_registers_64();
-            code_printf(parser, "    leaq .LC%d(%%rip), %s\n", str_id, print_regs[0]);
+            code_printf(parser, "    leaq .LC%d(%%rip), %s\n", str_id, print_regs[1]);
+            code_printf(parser, "    leaq .LC_string_format(%%rip), %s\n", print_regs[0]);
             int print_stack_adjust = get_call_stack_space();
             if (print_stack_adjust > 0) {
                 code_printf(parser, "    subq $%d, %%rsp\n", print_stack_adjust);
@@ -1828,16 +1984,34 @@ void parse_printline_statement(Parser *parser) {
             parse_expression(parser);
             expect(parser, TOKEN_RPAREN, "Expected ')' after expression");
 
-            code_printf(parser, "    popq %s\n", get_arg_reg_64(1));
-            code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_reg_64(0));
+            if (parser->expression_type == TYPE_FLOAT || parser->expression_type == TYPE_DOUBLE) {
+                code_printf(parser, "    popq %%rax\n");
+                code_printf(parser, "    movq %%rax, %%xmm0\n");
+                if (parser->expression_type == TYPE_FLOAT) code_printf(parser, "    cvtss2sd %%xmm0, %%xmm0\n");
+                code_printf(parser, "    movq %%xmm0, %s\n", get_arg_reg_64(1));
+                code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_reg_64(0));
+            } else {
+                code_printf(parser, "    popq %s\n", get_arg_reg_64(1));
+                code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_reg_64(0));
+            }
             {
                 generate_stack_align(parser);
                 code_printf(parser, "    call printf\n");
                 generate_stack_restore(parser);
             }
         } else if (check(parser->tokens, TOKEN_NUMBER)) {
-            Token num = consume(parser->tokens);
-            code_printf(parser, "    movl $%s, %s\n", num.value, get_arg_reg_32(1));
+            Token num = peek(parser->tokens);
+            TokenType next = peek_ahead(parser->tokens, 1).type;
+            if (next == TOKEN_PLUS || next == TOKEN_MINUS || next == TOKEN_STAR ||
+                next == TOKEN_SLASH || next == TOKEN_PERCENT || next == TOKEN_EQUAL_EQUAL ||
+                next == TOKEN_BANG_EQUAL || next == TOKEN_LESS || next == TOKEN_LESS_EQUAL ||
+                next == TOKEN_GREATER || next == TOKEN_GREATER_EQUAL) {
+                parse_expression(parser);
+                code_printf(parser, "    popq %s\n", get_arg_reg_64(1));
+            } else {
+                consume(parser->tokens);
+                code_printf(parser, "    movl $%s, %s\n", num.value, get_arg_reg_32(1));
+            }
             code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_reg_64(0));
             {
                 generate_stack_align(parser);
@@ -1871,7 +2045,10 @@ void parse_printline_statement(Parser *parser) {
             Token name = peek(parser->tokens);
             Token lookahead = peek_ahead(parser->tokens, 1);
 
-            if (lookahead.type == TOKEN_LPAREN) {
+            if (comparison_operator(lookahead.type)) {
+                parse_expression(parser);
+                emit_printed_expression(parser);
+            } else if (lookahead.type == TOKEN_LPAREN) {
                 consume(parser->tokens);
 
                 Function *func = find_function(parser, name.value);
@@ -1885,6 +2062,9 @@ void parse_printline_statement(Parser *parser) {
                 int arg_count = 0;
                 while (!check(parser->tokens, TOKEN_RPAREN) && !is_at_end(parser->tokens)) {
                     parse_expression(parser);
+                    if (arg_count < func->param_count) {
+                        convert_stack_value(parser, parser->expression_type, func->param_types[arg_count]);
+                    }
                     arg_count++;
 
                     if (check(parser->tokens, TOKEN_COMMA)) {
@@ -1900,18 +2080,10 @@ void parse_printline_statement(Parser *parser) {
                     return;
                 }
 
-                const char **arg_regs = get_arg_registers_64();
-                for (int i = arg_count - 1; i >= 0 && i < 4; i--) {
-                    code_printf(parser, "    popq %s\n", arg_regs[i]);
-                }
-
-                {
-                    generate_stack_align(parser);
-                    code_printf(parser, "    call %s\n", name.value);
-                    generate_stack_restore(parser);
-                }
+                generate_function_call(parser, func, name.value, arg_count);
 
                 if (func->return_type == TYPE_FLOAT || func->return_type == TYPE_DOUBLE) {
+                    if (func->return_type == TYPE_FLOAT) code_printf(parser, "    cvtss2sd %%xmm0, %%xmm0\n");
                     code_printf(parser, "    movq %%xmm0, %s\n", get_arg_reg_64(1));
                     code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_reg_64(0));
                 } else if (func->return_type == TYPE_STRING) {
@@ -2483,11 +2655,7 @@ void parse_function_call_statement(Parser *parser) {
             expect(parser, TOKEN_RPAREN, "Expected ')'");
             expect(parser, TOKEN_SEMICOLON, "Expected ';'");
 
-            code_printf(parser, "    popq %%rdx\n");
-            code_printf(parser, "    popq %%rsi\n");
-            code_printf(parser, "    popq %%rdi\n");
-            code_printf(parser, "    movq $1, %%rax\n");
-            code_printf(parser, "    syscall\n");
+            generate_system_io_call(parser, "write", 0);
             return;
         } else if (strcmp(name.value, "sys_read") == 0) {
             code_comment(parser, "Line %d: sys_read(fd, buffer, count)", call_token.line);
@@ -2500,11 +2668,7 @@ void parse_function_call_statement(Parser *parser) {
             expect(parser, TOKEN_RPAREN, "Expected ')'");
             expect(parser, TOKEN_SEMICOLON, "Expected ';'");
 
-            code_printf(parser, "    popq %%rdx\n");
-            code_printf(parser, "    popq %%rsi\n");
-            code_printf(parser, "    popq %%rdi\n");
-            code_printf(parser, "    movq $0, %%rax\n");
-            code_printf(parser, "    syscall\n");
+            generate_system_io_call(parser, "read", 0);
             return;
         } else if (strcmp(name.value, "sys_open") == 0) {
             code_comment(parser, "Line %d: sys_open(pathname, flags, mode)", call_token.line);
@@ -2517,11 +2681,7 @@ void parse_function_call_statement(Parser *parser) {
             expect(parser, TOKEN_RPAREN, "Expected ')'");
             expect(parser, TOKEN_SEMICOLON, "Expected ';'");
 
-            code_printf(parser, "    popq %%rdx\n");
-            code_printf(parser, "    popq %%rsi\n");
-            code_printf(parser, "    popq %%rdi\n");
-            code_printf(parser, "    movq $2, %%rax\n");
-            code_printf(parser, "    syscall\n");
+            generate_system_io_call(parser, "open", 0);
             return;
         } else if (strcmp(name.value, "sys_close") == 0) {
             code_comment(parser, "Line %d: sys_close(fd)", call_token.line);
@@ -2530,9 +2690,7 @@ void parse_function_call_statement(Parser *parser) {
             expect(parser, TOKEN_RPAREN, "Expected ')'");
             expect(parser, TOKEN_SEMICOLON, "Expected ';'");
 
-            code_printf(parser, "    popq %%rdi\n");
-            code_printf(parser, "    movq $3, %%rax\n");
-            code_printf(parser, "    syscall\n");
+            generate_system_io_call(parser, "close", 0);
             return;
         }
     }
@@ -2727,15 +2885,7 @@ void parse_function_call_statement(Parser *parser) {
             generate_stack_restore(parser);
         }
     } else {
-        for (int i = arg_count - 1; i >= 0 && i < 4; i--) {
-            code_printf(parser, "    popq %s\n", arg_regs[i]);
-        }
-
-        {
-            generate_stack_align(parser);
-            code_printf(parser, "    call %s\n", name.value);
-            generate_stack_restore(parser);
-        }
+        generate_function_call(parser, func, name.value, arg_count);
     }
 
     if (func->return_type != TYPE_VOID) {
