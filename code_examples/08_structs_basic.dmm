@@ -1,0 +1,110 @@
+// =================================================================
+// STRUCTS - BASIC
+// Demonstrates struct definition, fields, and basic usage
+// =================================================================
+// This example demonstrates:
+// - Struct definition with fields
+// - Struct instantiation
+// - Field access and assignment
+// - Structs with different types
+// - Multiple struct instances
+// =================================================================
+
+struct Point {
+    var x:int;
+    var y:int;
+}
+
+struct Person {
+    var age:int;
+    var initial:char;
+}
+
+struct Rectangle {
+    var width:int;
+    var height:int;
+}
+
+func main() -> void {
+    println("=== BASIC STRUCT DEMONSTRATIONS ===");
+    println("");
+    
+    // Simple struct usage
+    println("--- Simple Point struct ---");
+    var p:Point;
+    p.x = 10;
+    p.y = 20;
+    println("Point coordinates:");
+    println("  x = " + p.x);
+    println("  y = " + p.y);
+    println("");
+    
+    // Multiple instances
+    println("--- Multiple Point instances ---");
+    var p1:Point;
+    var p2:Point;
+    
+    p1.x = 5;
+    p1.y = 10;
+    p2.x = 15;
+    p2.y = 25;
+    
+    println("Point 1: (" + p1.x + ", " + p1.y + ")");
+    println("Point 2: (" + p2.x + ", " + p2.y + ")");
+    println("");
+    
+    // Struct with different types
+    println("--- Person struct (mixed types) ---");
+    var person:Person;
+    person.age = 30;
+    person.initial = 'J';
+    println("Person info:");
+    println("  Age: " + person.age);
+    println("  Initial: " + person.initial);
+    println("");
+    
+    // Rectangle struct with calculations
+    println("--- Rectangle struct ---");
+    var rect:Rectangle;
+    rect.width = 10;
+    rect.height = 5;
+    
+    var area:int = rect.width * rect.height;
+    var perimeter:int = (rect.width + rect.height) * 2;
+    
+    println("Rectangle dimensions:");
+    println("  Width: " + rect.width);
+    println("  Height: " + rect.height);
+    println("  Area: " + area);
+    println("  Perimeter: " + perimeter);
+    println("");
+    
+    // Modifying struct fields
+    println("--- Modifying struct fields ---");
+    println("Original point: (" + p.x + ", " + p.y + ")");
+    p.x = p.x + 5;
+    p.y = p.y + 10;
+    println("After modification: (" + p.x + ", " + p.y + ")");
+    println("");
+    
+    // Struct in loop
+    println("--- Multiple structs in loop ---");
+    var point1:Point;
+    var point2:Point;
+    var point3:Point;
+    
+    point1.x = 1;
+    point1.y = 1;
+    point2.x = 2;
+    point2.y = 4;
+    point3.x = 3;
+    point3.y = 9;
+    
+    println("Points on curve y = x^2:");
+    println("  Point 1: (" + point1.x + ", " + point1.y + ")");
+    println("  Point 2: (" + point2.x + ", " + point2.y + ")");
+    println("  Point 3: (" + point3.x + ", " + point3.y + ")");
+    println("");
+    
+    println("=== ALL BASIC STRUCT OPERATIONS DEMONSTRATED ===");
+}

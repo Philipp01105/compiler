@@ -1,0 +1,14 @@
+// =================================================================
+// HELLO WORLD - Basic Program
+// The simplest possible program
+// =================================================================
+// This example demonstrates:
+// - Basic program structure with main function
+// - println() function for output
+// - String literals
+// =================================================================
+
+func main() -> void {
+    println("Hello, World!");
+    println("Welcome to the DMM programming language!");
+}
