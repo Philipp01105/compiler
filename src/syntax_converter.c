@@ -75,6 +75,8 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
     final[sizeof(final) - 1] = '\0';
 
     /* Remove instruction suffixes (q, l, w, b) */
+    /* Track the source operand size for movsx/movzx instructions */
+    const char *src_size_qualifier = NULL;
     char *insn_start = final;
     while (*insn_start == ' ' || *insn_start == '\t') insn_start++;
 
@@ -82,12 +84,12 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
     else if (strncmp(insn_start, "movl ", 5) == 0) memcpy(insn_start, "mov ", 4);
     else if (strncmp(insn_start, "movw ", 5) == 0) memcpy(insn_start, "mov ", 4);
     else if (strncmp(insn_start, "movb ", 5) == 0) memcpy(insn_start, "mov ", 4);
-    else if (strncmp(insn_start, "movzbl ", 7) == 0) memcpy(insn_start, "movzx ", 6);
-    else if (strncmp(insn_start, "movzwl ", 7) == 0) memcpy(insn_start, "movzx ", 6);
-    else if (strncmp(insn_start, "movzlq ", 7) == 0) memcpy(insn_start, "movzx ", 6);
-    else if (strncmp(insn_start, "movsbl ", 7) == 0) memcpy(insn_start, "movsx ", 6);
-    else if (strncmp(insn_start, "movswl ", 7) == 0) memcpy(insn_start, "movsx ", 6);
-    else if (strncmp(insn_start, "movslq ", 7) == 0) memcpy(insn_start, "movsx ", 6);
+    else if (strncmp(insn_start, "movzbl ", 7) == 0) { memcpy(insn_start, "movzx ", 6); src_size_qualifier = "BYTE PTR "; }
+    else if (strncmp(insn_start, "movzwl ", 7) == 0) { memcpy(insn_start, "movzx ", 6); src_size_qualifier = "WORD PTR "; }
+    else if (strncmp(insn_start, "movzlq ", 7) == 0) { memcpy(insn_start, "movzx ", 6); src_size_qualifier = "DWORD PTR "; }
+    else if (strncmp(insn_start, "movsbl ", 7) == 0) { memcpy(insn_start, "movsx ", 6); src_size_qualifier = "BYTE PTR "; }
+    else if (strncmp(insn_start, "movswl ", 7) == 0) { memcpy(insn_start, "movsx ", 6); src_size_qualifier = "WORD PTR "; }
+    else if (strncmp(insn_start, "movslq ", 7) == 0) { memcpy(insn_start, "movsx ", 6); src_size_qualifier = "DWORD PTR "; }
     else if (strncmp(insn_start, "movss ", 6) == 0) memcpy(insn_start, "movss ", 6); /* Keep movss */
     else if (strncmp(insn_start, "pushq ", 6) == 0) memcpy(insn_start, "push ", 5);
     else if (strncmp(insn_start, "popq ", 5) == 0) memcpy(insn_start, "pop ", 4);
@@ -317,7 +319,13 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
         reversed[prefix_len] = '\0';
 
         /* Add reversed operands: dest, src */
-        snprintf(reversed + prefix_len, sizeof(reversed) - prefix_len, "%s, %s", op2, op1);
+        /* For movsx/movzx with memory operands, add size qualifier */
+        if (src_size_qualifier != NULL && op1[0] == '[') {
+            /* op1 is a memory reference, add size qualifier */
+            snprintf(reversed + prefix_len, sizeof(reversed) - prefix_len, "%s, %s%s", op2, src_size_qualifier, op1);
+        } else {
+            snprintf(reversed + prefix_len, sizeof(reversed) - prefix_len, "%s, %s", op2, op1);
+        }
 
         /* Add any trailing content (comments, newlines) */
         if (*op2_end) {
