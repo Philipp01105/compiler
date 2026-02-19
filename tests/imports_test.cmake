@@ -1,0 +1,35 @@
+cmake_minimum_required(VERSION 3.21)
+if(NOT DEFINED COMPILER OR NOT DEFINED ASSEMBLER OR NOT DEFINED OUTPUT_DIR)
+    message(FATAL_ERROR "COMPILER, ASSEMBLER, and OUTPUT_DIR are required")
+endif()
+file(MAKE_DIRECTORY "${OUTPUT_DIR}")
+file(WRITE "${OUTPUT_DIR}/math.dmm" "func square(n:int) -> int { return n * n; }\n")
+file(WRITE "${OUTPUT_DIR}/main.dmm"
+    "#import \"math.dmm\"\n#import \"math.dmm\"\nfunc main() -> void { println(square(6)); }\n")
+
+foreach(syntax intel att)
+    set(assembly "${OUTPUT_DIR}/main_${syntax}.s")
+    set(program "${OUTPUT_DIR}/main_${syntax}.exe")
+    execute_process(COMMAND "${COMPILER}" --deterministic "--syntax=${syntax}" -o "${assembly}" "${OUTPUT_DIR}/main.dmm"
+        RESULT_VARIABLE result ERROR_VARIABLE errors)
+    if(NOT result EQUAL 0)
+        message(FATAL_ERROR "Import compile failed (${syntax}): ${errors}")
+    endif()
+    execute_process(COMMAND "${ASSEMBLER}" -no-pie "${assembly}" -o "${program}"
+        RESULT_VARIABLE result ERROR_VARIABLE errors)
+    if(NOT result EQUAL 0)
+        message(FATAL_ERROR "Import assembly failed (${syntax}): ${errors}")
+    endif()
+    execute_process(COMMAND "${program}" RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE errors)
+    string(REPLACE "\r\n" "\n" output "${output}")
+    if(NOT result EQUAL 0 OR NOT output STREQUAL "36\n")
+        message(FATAL_ERROR "Imported function produced '${output}' (${syntax}): ${errors}")
+    endif()
+endforeach()
+
+file(WRITE "${OUTPUT_DIR}/missing.dmm" "#import \"does-not-exist.dmm\"\nfunc main() -> void {}\n")
+execute_process(COMMAND "${COMPILER}" --formatError "${OUTPUT_DIR}/missing.dmm"
+    RESULT_VARIABLE result ERROR_VARIABLE diagnostics)
+if(result EQUAL 0 OR NOT diagnostics MATCHES "Failed to open import file")
+    message(FATAL_ERROR "Missing import was not diagnosed: ${diagnostics}")
+endif()

@@ -14,6 +14,9 @@
 #define MAX_LOOP_DEPTH 100          /* Maximum nested loop depth */
 #define MAX_IMPORTS 100             /* Maximum import statements */
 #define MAX_PATH 512                /* Maximum file path length */
+#define MAX_LOCAL_STORAGE (8 * 1024 * 1024) /* Maximum stack storage per function */
+#define MAX_OBJECT_SIZE (8 * 1024 * 1024)   /* Maximum size of one array/struct */
+#define MAX_EXPRESSION_TOKENS 512    /* Maximum tokens in one expression */
 
 /*
  * Token types for lexical analysis
@@ -183,6 +186,7 @@ typedef struct {
     int return_is_array; /* Array return flag */
     char struct_name[MAX_TOKEN]; /* Struct for methods */
     int is_static; /* Static method flag */
+    int is_defined; /* Function body has been parsed */
 } Function;
 
 /*

@@ -62,10 +62,10 @@ void escape_string_for_comment(const char *str, char *output, size_t output_size
             output[out_pos++] = '\\';
             output[out_pos++] = '"';
         } else if (c >= 32 && c < 127) {
-            output[out_pos++] = c;
+            output[out_pos++] = (char) c;
         } else {
             int written = snprintf(&output[out_pos], output_size - out_pos, "\\x%02x", c);
-            if (written > 0) out_pos += written;
+            if (written > 0) out_pos += (size_t) written;
         }
     }
     output[out_pos] = '\0';

@@ -1,5 +1,0 @@
-func main() -> int {
-    print(42);
-    println(99);
-    return 0;
-}

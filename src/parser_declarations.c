@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <errno.h>
 
 static int ensure_param_capacity(Parser *parser, Function *func, int needed) {
     if (needed <= func->param_capacity) return 1;
@@ -94,6 +95,67 @@ static int function_frame_size(Parser *parser, int first_var) {
     return (required + 15) & ~15;
 }
 
+static void skip_balanced(const TokenStream *tokens, int *position,
+                          TokenType open, TokenType close) {
+    if (*position >= tokens->count || tokens->tokens[*position].type != open) return;
+    int depth = 0;
+    do {
+        TokenType type = tokens->tokens[(*position)++].type;
+        if (type == open) depth++;
+        else if (type == close) depth--;
+    } while (*position < tokens->count && depth > 0);
+}
+
+static int statement_guarantees_return(const TokenStream *tokens, int *position);
+
+static int block_guarantees_return(const TokenStream *tokens, int *position) {
+    if (*position >= tokens->count || tokens->tokens[*position].type != TOKEN_LBRACE) return 0;
+    (*position)++;
+    int guaranteed = 0;
+    while (*position < tokens->count && tokens->tokens[*position].type != TOKEN_RBRACE) {
+        int statement_returns = statement_guarantees_return(tokens, position);
+        if (statement_returns) guaranteed = 1;
+    }
+    if (*position < tokens->count && tokens->tokens[*position].type == TOKEN_RBRACE) (*position)++;
+    return guaranteed;
+}
+
+static int statement_guarantees_return(const TokenStream *tokens, int *position) {
+    if (*position >= tokens->count) return 0;
+    TokenType type = tokens->tokens[*position].type;
+    if (type == TOKEN_KEYWORD_RETURN) {
+        while (*position < tokens->count && tokens->tokens[*position].type != TOKEN_SEMICOLON &&
+               tokens->tokens[*position].type != TOKEN_RBRACE) (*position)++;
+        if (*position < tokens->count && tokens->tokens[*position].type == TOKEN_SEMICOLON) (*position)++;
+        return 1;
+    }
+    if (type == TOKEN_KEYWORD_IF) {
+        (*position)++;
+        skip_balanced(tokens, position, TOKEN_LPAREN, TOKEN_RPAREN);
+        int then_returns = block_guarantees_return(tokens, position);
+        if (*position >= tokens->count || tokens->tokens[*position].type != TOKEN_KEYWORD_ELSE) {
+            return 0;
+        }
+        (*position)++;
+        int else_returns = tokens->tokens[*position].type == TOKEN_KEYWORD_IF
+            ? statement_guarantees_return(tokens, position)
+            : block_guarantees_return(tokens, position);
+        return then_returns && else_returns;
+    }
+    if (type == TOKEN_LBRACE) return block_guarantees_return(tokens, position);
+
+    while (*position < tokens->count && tokens->tokens[*position].type != TOKEN_SEMICOLON &&
+           tokens->tokens[*position].type != TOKEN_RBRACE) {
+        if (tokens->tokens[*position].type == TOKEN_LBRACE) {
+            (void) block_guarantees_return(tokens, position);
+            return 0;
+        }
+        (*position)++;
+    }
+    if (*position < tokens->count && tokens->tokens[*position].type == TOKEN_SEMICOLON) (*position)++;
+    return 0;
+}
+
 static void collect_function_signatures(Parser *parser) {
     TokenStream *tokens = parser->tokens;
     int depth = 0;
@@ -115,6 +177,9 @@ static void collect_function_signatures(Parser *parser) {
             if (!ensure_param_capacity(parser, func, func->param_count + 1)) return;
             Token param = tokens->tokens[++i];
             strncpy(func->params[func->param_count], param.value, MAX_TOKEN - 1);
+            func->params[func->param_count][MAX_TOKEN - 1] = '\0';
+            func->param_is_array[func->param_count] = 0;
+            func->param_is_pointer[func->param_count] = 0;
             if (i + 1 < tokens->count && tokens->tokens[i + 1].type == TOKEN_LBRACKET) {
                 func->param_is_array[func->param_count] = 1;
                 i += 2;
@@ -145,8 +210,40 @@ static void collect_function_signatures(Parser *parser) {
  * and functions. Returns 1 on success, 0 on error.
  */
 int parse_program(Parser *parser, const char *source_file) {
-    parser_load_source(parser, source_file);
+    if (!parser_load_source(parser, source_file)) return 0;
     collect_function_signatures(parser);
+
+    for (int i = 1; i + 1 < parser->tokens->count; i++) {
+        if (parser->tokens->tokens[i].type == TOKEN_PERCENT &&
+            (parser->tokens->tokens[i - 1].type == TOKEN_FLOAT_LITERAL ||
+             parser->tokens->tokens[i + 1].type == TOKEN_FLOAT_LITERAL)) {
+            semantic_error_at_token(parser, parser->tokens->tokens[i],
+                                    ERR_TYPE_INVALID_OPERATION,
+                                    "Remainder requires integer operands");
+        }
+    }
+    for (int i = 0; i + 4 < parser->tokens->count; i++) {
+        if (parser->tokens->tokens[i].type != TOKEN_KEYWORD_VAR ||
+            parser->tokens->tokens[i + 1].type != TOKEN_LBRACKET ||
+            parser->tokens->tokens[i + 2].type != TOKEN_NUMBER ||
+            parser->tokens->tokens[i + 3].type != TOKEN_RBRACKET ||
+            parser->tokens->tokens[i + 4].type != TOKEN_IDENTIFIER) continue;
+        unsigned long length = strtoul(parser->tokens->tokens[i + 2].value, NULL, 10);
+        const char *array_name = parser->tokens->tokens[i + 4].value;
+        for (int j = i + 5; j + 2 < parser->tokens->count; j++) {
+            if (parser->tokens->tokens[j].type == TOKEN_IDENTIFIER &&
+                strcmp(parser->tokens->tokens[j].value, array_name) == 0 &&
+                parser->tokens->tokens[j + 1].type == TOKEN_LBRACKET &&
+                parser->tokens->tokens[j + 2].type == TOKEN_NUMBER) {
+                unsigned long index = strtoul(parser->tokens->tokens[j + 2].value, NULL, 10);
+                if (index >= length) {
+                    semantic_error_at_token(parser, parser->tokens->tokens[j + 2], ERR_SEM_NOT_ARRAY,
+                                            "Array index %lu is outside declared bounds [0, %lu)",
+                                            index, length);
+                }
+            }
+        }
+    }
 
     if (parser->debug_mode) {
         printf("\n================================================================\n");
@@ -165,7 +262,7 @@ int parse_program(Parser *parser, const char *source_file) {
         } else if (check(parser->tokens, TOKEN_KEYWORD_FUNC)) {
             parse_function(parser);
         } else {
-            parser_error(parser, "Only imports, structs, enums and functions allowed at top level");
+            parser_error(parser, "Expected function declaration, struct, enum, or import at top level");
             consume(parser->tokens);
         }
     }
@@ -489,8 +586,8 @@ void parse_struct(Parser *parser) {
             int array_size = 0;
             char field_struct_type[MAX_TOKEN] = "";
 
-            Token name_token = consume(parser->tokens);
-            strcpy(field_name, name_token.value);
+            Token field_name_token = consume(parser->tokens);
+            strcpy(field_name, field_name_token.value);
 
             expect(parser, TOKEN_COLON, "Expected ':' after field name");
 
@@ -514,7 +611,15 @@ void parse_struct(Parser *parser) {
 
                 if (check(parser->tokens, TOKEN_NUMBER)) {
                     Token size_token = consume(parser->tokens);
-                    array_size = atoi(size_token.value);
+                    errno = 0;
+                    char *end = NULL;
+                    unsigned long parsed_size = strtoul(size_token.value, &end, 10);
+                    if (errno == ERANGE || end == size_token.value || *end != '\0' ||
+                        parsed_size == 0 || parsed_size > INT_MAX) {
+                        parser_error(parser, "Array length must be between 1 and %d", INT_MAX);
+                        return;
+                    }
+                    array_size = (int) parsed_size;
                 } else {
                     parser_error(parser, "Expected array size");
                     return;
@@ -550,9 +655,19 @@ void parse_struct(Parser *parser) {
             }
 
             if (is_array) {
+                if (element_size <= 0 || array_size > MAX_OBJECT_SIZE / element_size) {
+                    parser_error(parser, "Array length produces an object larger than %d bytes",
+                                 MAX_OBJECT_SIZE);
+                    return;
+                }
                 field->size = element_size * array_size;
             } else {
                 field->size = element_size;
+            }
+
+            if (field->size < 0 || current_offset > MAX_OBJECT_SIZE - field->size) {
+                parser_error(parser, "Struct storage exceeds %d bytes", MAX_OBJECT_SIZE);
+                return;
             }
 
             field->offset = current_offset;
@@ -580,7 +695,6 @@ void parse_struct(Parser *parser) {
 }
 
 void parse_enum(Parser *parser) {
-    Token enum_token = peek(parser->tokens);
     consume(parser->tokens);
 
     Token name_token = consume(parser->tokens);
@@ -789,7 +903,12 @@ void parse_function(Parser *parser) {
         func = &parser->functions[parser->function_count++];
         memset(func, 0, sizeof(*func));
         strcpy(func->name, func_name);
+    } else if (func->is_defined) {
+        parser_error_code(parser, ERR_PARSE_DUPLICATE_DEFINITION,
+                          "Duplicate function '%s'", func_name);
+        return;
     }
+    func->is_defined = 1;
     func->param_count = 0;
 
     expect(parser, TOKEN_LPAREN, "Expected '(' after function name");
@@ -940,6 +1059,13 @@ void parse_function(Parser *parser) {
     parser->current_scope = 1;
     parser->scope_depth = 1;
     parser->current_return_type = func->return_type;
+
+    if (func->return_type != TYPE_VOID) {
+        int body_position = parser->tokens->current;
+        if (!block_guarantees_return(parser->tokens, &body_position)) {
+            parser_error(parser, "Function '%s' does not return on all paths", func_name);
+        }
+    }
 
     parse_function_body(parser);
 

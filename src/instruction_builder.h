@@ -18,11 +18,6 @@
  * - Register and immediate operand support
  */
 
-/* Get/Set current syntax mode (SyntaxMode defined in compiler_types.h) */
-void set_syntax_mode(SyntaxMode mode);
-
-SyntaxMode get_syntax_mode(void);
-
 /* Data movement instructions */
 void emit_mov_reg_reg(Parser *parser, const char *dest, const char *src);
 
@@ -113,12 +108,5 @@ void emit_jle(Parser *parser, const char *label);
 void emit_syscall(Parser *parser);
 
 void emit_nop(Parser *parser);
-
-/* Helper functions for register names */
-const char *format_register(const char *reg);
-
-const char *format_memory_ref(const char *base, int offset, char *buffer, size_t size);
-
-const char *format_indexed_memory(const char *base, const char *index, int scale, char *buffer, size_t size);
 
 #endif /* INSTRUCTION_BUILDER_H */

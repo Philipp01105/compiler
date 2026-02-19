@@ -40,6 +40,9 @@ void set_target_format(TargetFormat target);
 void generate_function_call(Parser *parser, Function *func, const char *name, int arg_count);
 
 void convert_stack_value(Parser *parser, DataType from, DataType to);
+void convert_stack_value_explicit(Parser *parser, DataType from, DataType to);
+void emit_static_array_bounds_check(Parser *parser, const Variable *var);
+int can_implicitly_convert(DataType from, DataType to);
 
 void generate_system_io_call(Parser *parser, const char *operation, int keep_result);
 
@@ -63,7 +66,7 @@ void generate_stack_restore(Parser *parser);
 /* Parser core functions */
 Parser *create_parser(TokenStream *tokens);
 
-void parser_load_source(Parser *parser, const char *filename);
+int parser_load_source(Parser *parser, const char *filename);
 
 const char *parser_get_source_line(Parser *parser, int line);
 

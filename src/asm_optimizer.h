@@ -5,12 +5,11 @@
  * Assembly Optimizer
  * 
  * This module provides post-processing optimization for generated assembly code.
- * It removes dead/unreachable code and performs other optimizations to improve
- * code quality and reduce binary size.
+ * It performs conservative peephole optimizations on generated assembly.
  */
 
 /*
- * cleanup_assembly_file - Remove unreachable code from generated assembly
+ * cleanup_assembly_file - Safely optimize a generated assembly file
  * @filename: Path to the assembly file to clean up
  *
  * Returns: 0 on success, -1 on error

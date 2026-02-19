@@ -5,14 +5,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-static int binary_operator(TokenType type) {
-    return type == TOKEN_PLUS || type == TOKEN_MINUS || type == TOKEN_STAR ||
-           type == TOKEN_SLASH || type == TOKEN_PERCENT || type == TOKEN_EQUAL_EQUAL ||
-           type == TOKEN_BANG_EQUAL || type == TOKEN_LESS || type == TOKEN_LESS_EQUAL ||
-           type == TOKEN_GREATER || type == TOKEN_GREATER_EQUAL ||
-           type == TOKEN_AMP_AMP || type == TOKEN_PIPE_PIPE;
-}
+#include <errno.h>
+#include <limits.h>
 
 static int comparison_operator(TokenType type) {
     return type == TOKEN_EQUAL_EQUAL || type == TOKEN_BANG_EQUAL ||
@@ -68,7 +62,6 @@ void parse_statement(Parser *parser) {
     } else if (check(parser->tokens, TOKEN_IDENTIFIER)) {
         Token lookahead = peek_ahead(parser->tokens, 1);
         if (lookahead.type == TOKEN_DOT) {
-            Token lookahead2 = peek_ahead(parser->tokens, 2);
             Token lookahead3 = peek_ahead(parser->tokens, 3);
             if (lookahead3.type == TOKEN_LPAREN) {
                 parse_function_call_statement(parser);
@@ -116,7 +109,7 @@ void parse_statement(Parser *parser) {
 
         Variable *var = find_variable(parser, var_token.value);
         if (var == NULL) {
-            semantic_error_at_token(parser, var_token, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found",
+            semantic_error_at_token(parser, var_token, ERR_SEM_UNDEFINED_VARIABLE, "Undefined variable '%s'",
                                     var_token.value);
             synchronize(parser);
             return;
@@ -151,7 +144,7 @@ void parse_statement(Parser *parser) {
         Variable *ptr_var = find_variable(parser, ptr_token.value);
 
         if (!ptr_var) {
-            semantic_error_at_token(parser, ptr_token, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found",
+            semantic_error_at_token(parser, ptr_token, ERR_SEM_UNDEFINED_VARIABLE, "Undefined variable '%s'",
                                     ptr_token.value);
             synchronize(parser);
             return;
@@ -271,8 +264,17 @@ void parse_statement(Parser *parser) {
             }
         }
     } else {
-        parser_error_code(parser, ERR_PARSE_INVALID_SYNTAX,
-                          "Unexpected statement: expected expression or statement keyword");
+        if (peek_ahead(parser->tokens, 1).type == TOKEN_EQUAL ||
+            peek_ahead(parser->tokens, 1).type == TOKEN_PLUS_EQUAL ||
+            peek_ahead(parser->tokens, 1).type == TOKEN_MINUS_EQUAL ||
+            peek_ahead(parser->tokens, 1).type == TOKEN_STAR_EQUAL ||
+            peek_ahead(parser->tokens, 1).type == TOKEN_SLASH_EQUAL) {
+            parser_error_code(parser, ERR_PARSE_INVALID_SYNTAX,
+                              "Assignment requires a writable variable, field, array element, or pointer target");
+        } else {
+            parser_error_code(parser, ERR_PARSE_INVALID_SYNTAX,
+                              "Unexpected statement: expected expression or statement keyword");
+        }
         synchronize(parser);
     }
 }
@@ -290,18 +292,35 @@ void parse_variable_declaration(Parser *parser) {
 
         if (check(parser->tokens, TOKEN_NUMBER)) {
             Token size_token = consume(parser->tokens);
-            array_size = atoi(size_token.value);
-
-            if (array_size <= 0) {
-                parser_error(parser, "Array size must be positive");
+            errno = 0;
+            char *end = NULL;
+            unsigned long parsed_size = strtoul(size_token.value, &end, 10);
+            if (errno == ERANGE || end == size_token.value || *end != '\0' ||
+                parsed_size == 0 || parsed_size > INT_MAX) {
+                parser_error(parser, "Array length must be between 1 and %d", INT_MAX);
                 return;
             }
+            array_size = (int) parsed_size;
         }
 
         expect(parser, TOKEN_RBRACKET, "Expected ']' after array size");
     }
 
     Token name_token = consume(parser->tokens);
+
+    if (name_token.type != TOKEN_IDENTIFIER ||
+        strcmp(name_token.value, "true") == 0 || strcmp(name_token.value, "false") == 0) {
+        parser_error(parser, "Name '%s' cannot be declared as a variable", name_token.value);
+        return;
+    }
+    for (int i = parser->var_count - 1; i >= 0; i--) {
+        if (parser->vars[i].scope < parser->current_scope) break;
+        if (parser->vars[i].scope == parser->current_scope &&
+            strcmp(parser->vars[i].name, name_token.value) == 0) {
+            parser_error(parser, "Duplicate variable '%s' in the same scope", name_token.value);
+            return;
+        }
+    }
 
     DataType var_type = TYPE_INT;
     int has_explicit_type = 0;
@@ -373,6 +392,15 @@ void parse_variable_declaration(Parser *parser) {
         } else {
             code_comment(parser, "Line %d: var %s:%s = ...",
                          var_token.line, name_token.value, datatype_to_string(var_type));
+            if (is_pointer && check(parser->tokens, TOKEN_AMPERSAND) &&
+                peek_ahead(parser->tokens, 1).type == TOKEN_IDENTIFIER) {
+                Token pointee_token = peek_ahead(parser->tokens, 1);
+                Variable *pointee = find_variable(parser, pointee_token.value);
+                if (pointee && pointee->type != var_type) {
+                    parser_error(parser, "Cannot implicitly convert pointer to %s into pointer to %s",
+                                 datatype_to_string(pointee->type), datatype_to_string(var_type));
+                }
+            }
             parse_expression(parser);
             convert_stack_value(parser, parser->expression_type, var_type);
         }
@@ -383,7 +411,6 @@ void parse_variable_declaration(Parser *parser) {
         }
 
         if (struct_type_name[0] != '\0') {
-            StructDefinition *struct_def = find_struct(parser, struct_type_name);
             code_comment(parser, "Line %d: var %s:%s (struct, space reserved in stack frame)",
                          var_token.line, name_token.value, struct_type_name);
         } else {
@@ -424,6 +451,11 @@ void parse_variable_declaration(Parser *parser) {
 
     if (is_array) {
         if (array_size > 0) {
+            if (element_size <= 0 || array_size > MAX_OBJECT_SIZE / element_size) {
+                parser_error(parser, "Array length produces an object larger than %d bytes",
+                             MAX_OBJECT_SIZE);
+                return;
+            }
             var->size = element_size * array_size;
         } else {
             var->size = 8;
@@ -443,6 +475,12 @@ void parse_variable_declaration(Parser *parser) {
                 smallest_offset = var_end;
             }
         }
+    }
+
+    int used_storage = -smallest_offset;
+    if (used_storage < 0 || var->size < 0 || var->size > MAX_LOCAL_STORAGE - used_storage) {
+        parser_error(parser, "Function local storage exceeds %d bytes", MAX_LOCAL_STORAGE);
+        return;
     }
 
     int new_offset = smallest_offset;
@@ -590,7 +628,7 @@ void parse_assignment(Parser *parser) {
     }
 
     if (!var) {
-        semantic_error_at_token(parser, name_token, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found",
+        semantic_error_at_token(parser, name_token, ERR_SEM_UNDEFINED_VARIABLE, "Undefined variable '%s'",
                                 name_token.value);
         synchronize(parser);
         return;
@@ -785,10 +823,8 @@ void parse_assignment(Parser *parser) {
         }
     }
 
-    int is_array_access = 0;
     if (check(parser->tokens, TOKEN_LBRACKET)) {
         consume(parser->tokens);
-        is_array_access = 1;
 
         if (!var->is_array && var->type != TYPE_STRING) {
             parser_error(parser, "Variable '%s' is not an array or string", name_token.value);
@@ -818,6 +854,7 @@ void parse_assignment(Parser *parser) {
 
         code_printf(parser, "    popq %%rcx\n");
         code_printf(parser, "    popq %%rax\n");
+        emit_static_array_bounds_check(parser, var);
 
         if (var->type == TYPE_STRING) {
             code_printf(parser, "    movq %d(%%rbp), %%rbx\n", var->offset);
@@ -940,8 +977,6 @@ void parse_assignment(Parser *parser) {
                 }
 
                 const char **arg_regs_64 = get_arg_registers_64();
-                const char **arg_regs_32 = get_arg_registers_32();
-
                 for (int i = arg_count - 1; i >= 0 && i < 4; i--) {
                     DataType param_type = func->param_types[i];
 
@@ -1004,8 +1039,14 @@ void parse_assignment(Parser *parser) {
     if (op == TOKEN_PLUS_PLUS || op == TOKEN_MINUS_MINUS) {
         code_comment(parser, "Line %d: %s%s", assign_token.line, name_token.value,
                      op == TOKEN_PLUS_PLUS ? "++" : "--");
-        consume(parser->tokens);
+        Token operator_token = consume(parser->tokens);
         expect(parser, TOKEN_SEMICOLON, "Expected ';'");
+
+        if (var->type == TYPE_BIT) {
+            semantic_error_at_token(parser, operator_token, ERR_TYPE_INVALID_OPERATION,
+                                    "Boolean values do not support increment or decrement");
+            return;
+        }
 
         if (var->type == TYPE_FLOAT || var->type == TYPE_DOUBLE) {
             parser_error(parser, "++ and -- not allowed for floating point types");
@@ -1196,7 +1237,7 @@ void parse_for_loop(Parser *parser) {
         Variable *var = find_variable(parser, name.value);
 
         if (!var) {
-            semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", name.value);
+            semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Undefined variable '%s'", name.value);
             while (!check(parser->tokens, TOKEN_RPAREN) && !is_at_end(parser->tokens)) {
                 consume(parser->tokens);
             }
@@ -1307,7 +1348,8 @@ void parse_break_statement(Parser *parser) {
     consume(parser->tokens);
 
     if (parser->loop_depth == 0) {
-        parser_error(parser, "'break' statement not within a loop");
+        semantic_error_at_token(parser, break_token, ERR_SEM_BREAK_OUTSIDE_LOOP,
+                                "'break' statement outside a loop");
         expect(parser, TOKEN_SEMICOLON, "Expected ';' after 'break'");
         return;
     }
@@ -1325,7 +1367,8 @@ void parse_continue_statement(Parser *parser) {
     consume(parser->tokens);
 
     if (parser->loop_depth == 0) {
-        parser_error(parser, "'continue' statement not within a loop");
+        semantic_error_at_token(parser, continue_token, ERR_SEM_CONTINUE_OUTSIDE_LOOP,
+                                "'continue' statement outside a loop");
         expect(parser, TOKEN_SEMICOLON, "Expected ';' after 'continue'");
         return;
     }
@@ -1419,8 +1462,17 @@ void parse_return_statement(Parser *parser) {
     if (!check(parser->tokens, TOKEN_SEMICOLON)) {
         code_comment(parser, "Line %d: return <expression>", return_token.line);
 
+        if (parser->current_return_type == TYPE_VOID) {
+            parser_error(parser, "Void function cannot return a value");
+        }
+
         if (check(parser->tokens, TOKEN_STRING_LITERAL)) {
             Token str_token = consume(parser->tokens);
+            if (!can_implicitly_convert(TYPE_STRING, parser->current_return_type)) {
+                parser_error(parser, "Cannot implicitly convert %s to %s",
+                             datatype_to_string(TYPE_STRING),
+                             datatype_to_string(parser->current_return_type));
+            }
             int str_id = add_string_literal(parser, str_token.value);
 
             code_comment(parser, "Return string literal: \"%s\"", str_token.value);
@@ -1435,6 +1487,9 @@ void parse_return_statement(Parser *parser) {
         }
     } else {
         code_comment(parser, "Line %d: return (void)", return_token.line);
+        if (parser->current_return_type != TYPE_VOID) {
+            parser_error(parser, "Non-void function must return a value");
+        }
     }
 
     expect(parser, TOKEN_SEMICOLON, "Expected ';' after return");
@@ -1460,6 +1515,14 @@ void parse_print_statement(Parser *parser) {
     expect(parser, TOKEN_LPAREN, "Expected '(' after 'print'");
 
     while (!check(parser->tokens, TOKEN_RPAREN) && !is_at_end(parser->tokens)) {
+        if (check(parser->tokens, TOKEN_FLOAT_LITERAL) &&
+            peek_ahead(parser->tokens, 1).type == TOKEN_PERCENT) {
+            Token operand = peek(parser->tokens);
+            semantic_error_at_token(parser, operand, ERR_TYPE_INVALID_OPERATION,
+                                    "Remainder requires integer operands");
+            synchronize(parser);
+            return;
+        }
         if (check(parser->tokens, TOKEN_STRING_LITERAL)) {
             Token str_token = consume(parser->tokens);
             int str_id = add_string_literal(parser, str_token.value);
@@ -1515,14 +1578,24 @@ void parse_print_statement(Parser *parser) {
                 generate_stack_restore(parser);
             }
         } else if (check(parser->tokens, TOKEN_FLOAT_LITERAL)) {
-            Token num = consume(parser->tokens);
-            int float_id = add_float_literal(parser, num.value);
+            TokenType next = peek_ahead(parser->tokens, 1).type;
+            if (next == TOKEN_PERCENT) {
+                parser_error(parser, "Remainder requires integer operands");
+                synchronize(parser);
+                return;
+            }
+            if (next == TOKEN_PLUS || next == TOKEN_MINUS || next == TOKEN_STAR ||
+                next == TOKEN_SLASH || next == TOKEN_PERCENT || comparison_operator(next)) {
+                parse_expression(parser);
+                emit_printed_expression(parser);
+            } else {
+                Token num = consume(parser->tokens);
+                int float_id = add_float_literal(parser, num.value);
 
-            code_printf(parser, "    movss .LC_float_%d(%%rip), %%xmm0\n", float_id);
-            code_printf(parser, "    cvtss2sd %%xmm0, %%xmm0\n");
-            code_printf(parser, "    movq %%xmm0, %s\n", get_arg_reg_64(1));
-            code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_reg_64(0));
-            {
+                code_printf(parser, "    movss .LC_float_%d(%%rip), %%xmm0\n", float_id);
+                code_printf(parser, "    cvtss2sd %%xmm0, %%xmm0\n");
+                code_printf(parser, "    movq %%xmm0, %s\n", get_arg_reg_64(1));
+                code_printf(parser, "    leaq .LC_float_format(%%rip), %s\n", get_arg_reg_64(0));
                 generate_stack_align(parser);
                 code_printf(parser, "    call printf\n");
                 generate_stack_restore(parser);
@@ -1598,7 +1671,6 @@ void parse_print_statement(Parser *parser) {
                 EnumDefinition *enum_def = find_enum(parser, name.value);
                 if (enum_def) {
                     Token dot1 = peek_ahead(parser->tokens, 1);
-                    Token value_name = peek_ahead(parser->tokens, 2);
                     Token dot2 = peek_ahead(parser->tokens, 3);
                     Token field_name = peek_ahead(parser->tokens, 4);
 
@@ -1641,7 +1713,7 @@ void parse_print_statement(Parser *parser) {
 
                     Variable *var = find_variable(parser, name.value);
                     if (!var) {
-                        semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", name.value);
+                        semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Undefined variable '%s'", name.value);
                         return;
                     }
 
@@ -1772,8 +1844,19 @@ void parse_print_statement(Parser *parser) {
 
                 Variable *var = find_variable(parser, name.value);
                 if (!var) {
-                    semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", name.value);
+                    semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Undefined variable '%s'", name.value);
                     return;
+                }
+
+                if (var->is_array && var->array_size > 0 &&
+                    check(parser->tokens, TOKEN_NUMBER)) {
+                    unsigned long index = strtoul(peek(parser->tokens).value, NULL, 10);
+                    if (index >= (unsigned long) var->array_size) {
+                        semantic_error_at_token(parser, peek(parser->tokens), ERR_SEM_NOT_ARRAY,
+                                                "Array index %lu is outside declared bounds [0, %d)",
+                                                index, var->array_size);
+                        return;
+                    }
                 }
 
                 parse_expression(parser);
@@ -1782,6 +1865,7 @@ void parse_print_statement(Parser *parser) {
 
                 int element_size = datatype_size(var->type);
                 code_printf(parser, "    popq %%rax\n");
+                emit_static_array_bounds_check(parser, var);
 
                 if (var->is_array && var->array_size == 0) {
                     code_printf(parser, "    movq %d(%%rbp), %%rbx\n", var->offset);
@@ -1870,7 +1954,7 @@ void parse_print_statement(Parser *parser) {
                 }
 
                 if (!var) {
-                    semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", name.value);
+                    semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Undefined variable '%s'", name.value);
                     return;
                 }
 
@@ -2104,7 +2188,7 @@ void parse_printline_statement(Parser *parser) {
 
                 Variable *var = find_variable(parser, name.value);
                 if (!var) {
-                    semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", name.value);
+                    semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Undefined variable '%s'", name.value);
                     return;
                 }
 
@@ -2233,7 +2317,7 @@ void parse_printline_statement(Parser *parser) {
 
                 Variable *var = find_variable(parser, name.value);
                 if (!var) {
-                    semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", name.value);
+                    semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Undefined variable '%s'", name.value);
                     return;
                 }
 
@@ -2243,6 +2327,7 @@ void parse_printline_statement(Parser *parser) {
 
                 int element_size = datatype_size(var->type);
                 code_printf(parser, "    popq %%rax\n");
+                emit_static_array_bounds_check(parser, var);
 
                 if (var->is_array && var->array_size == 0) {
                     code_printf(parser, "    movq %d(%%rbp), %%rbx\n", var->offset);
@@ -2331,7 +2416,7 @@ void parse_printline_statement(Parser *parser) {
                 }
 
                 if (!var) {
-                    semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", name.value);
+                    semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Undefined variable '%s'", name.value);
                     return;
                 }
 
