@@ -1,0 +1,13 @@
+func echo(value:string) -> string { return value; }
+
+func main() -> void {
+    println("" == "");
+    println(echo("hello"));
+    println(int('\n'));
+    println(int('\t'));
+    println(int('\r'));
+    println(int('\0'));
+    println(int('\\'));
+    println(int('\"'));
+    println(int('\''));
+}

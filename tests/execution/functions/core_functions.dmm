@@ -1,0 +1,29 @@
+func main() -> void {
+    println("nested=" + add(1, multiply(2, add(3, 4))));
+    println("factorial=" + factorial(6));
+    println("mutual=" + even(12));
+    println("ten=" + sum10(1,2,3,4,5,6,7,8,9,10));
+    println("mixed=" + mixed(1,2.5,3,4.5,5,6.5,7,8.5,9,10.5));
+    println("float=" + float_add(1.25,2.5));
+    println("order=" + add(mark(1), mark(2)));
+}
+func add(a:int, b:int) -> int { return a+b; }
+func multiply(a:int, b:int) -> int { return a*b; }
+func factorial(n:int) -> int {
+    if (n<=1) { return 1; } else { return n*factorial(n-1); }
+}
+func even(n:int) -> bit {
+    if (n==0) { return true; } else { return odd(n-1); }
+}
+func odd(n:int) -> bit {
+    if (n==0) { return false; } else { return even(n-1); }
+}
+func sum10(a:int,b:int,c:int,d:int,e:int,f:int,g:int,h:int,i:int,j:int) -> int {
+    return a+b+c+d+e+f+g+h+i+j;
+}
+func mixed(a:int,b:double,c:int,d:double,e:int,f:double,g:int,h:double,i:int,j:double) -> double {
+    return a+b+c+d+e+f+g+h+i+j;
+}
+func float_add(a:float,b:float) -> float { return a+b; }
+func mark(x:int) -> int { println(x); return x; }
+// Category: execution/functions

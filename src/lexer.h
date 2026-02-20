@@ -1,6 +1,7 @@
 #ifndef LEXER_H
 #define LEXER_H
 
+#include <stddef.h>
 #include "compiler_types.h"
 
 /* Token stream management */
@@ -25,6 +26,9 @@ int is_at_end(const TokenStream *stream);
 
 /* Tokenization */
 TokenStream *tokenize_file(const char *filename, int debug_mode);
+
+/* Tokenize an in-memory byte sequence. The buffer need not be NUL-terminated. */
+TokenStream *tokenize_source(const char *source, size_t length, const char *filename);
 
 void print_tokens(const TokenStream *stream);
 

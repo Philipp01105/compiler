@@ -10,7 +10,7 @@ Imports use `#import "relative/path.dmm"` or `#import <relative/path.dmm>`. A re
 
 ## Types
 
-The primitive types are `int`, `char`, `byte`, `bit`, `float`, `double`, `string`, and `void`. Arrays use `var [length] name:type;`; pointers use `var name:type*`. Array lengths must be positive compile-time integers and local objects are subject to implementation limits.
+The primitive types are `int`, `char`, `byte`, `bit`, `float`, `double`, `string`, and `void`. Arrays use `var [length] name:type;`; pointers use `var name:*type`. Array lengths must be positive compile-time integers and local objects are subject to implementation limits.
 
 Implicit conversions preserve their source domain: integral types may convert among themselves or widen to floating point, and `float` may widen to `double`. Narrowing floating conversions require an explicit cast.
 
@@ -22,10 +22,16 @@ Operator precedence, from low to high, is logical OR, logical AND, comparisons, 
 
 Static array accesses are checked at compile time when the index is a literal and at runtime otherwise. An out-of-bounds runtime access traps.
 
+Address-of accepts variables and array elements. Dereference requires a pointer.
+Pointer arithmetic is not part of DMM and is rejected.
+
+Enum member names must be unique within an enum. Unknown enum members are a
+compile error.
+
 ## Implementation limits
 
 Tokens are at most 511 bytes, an expression is at most 512 tokens, and a local object or function stack frame is at most 8 MiB. Exceeding a limit is a compilation error, never silent truncation.
 
 ## Diagnostics and output
 
-Normal diagnostics are human-readable. `--formatError` emits a single JSON document with `errors` and `summary`. The compiler produces GNU x86-64 assembly for ELF/System V or COFF/Windows in Intel or AT&T syntax.
+Normal diagnostics are human-readable. `--formatError` emits a single JSON document with `errors` and `summary`; each error records its category, code, line, and column. JSON mode emits no ANSI escapes or unrelated output. The compiler produces GNU x86-64 assembly for ELF/System V or COFF/Windows in Intel or AT&T syntax.

@@ -1,0 +1,22 @@
+func main() -> void {
+    var [2] chars:char;
+    var [2] bytes:byte;
+    var [2] bits:bit;
+    var [2] floats:float;
+    var [2] doubles:double;
+    chars[1] = 'Z';
+    bytes[1] = 255;
+    bits[1] = true;
+    floats[1] = 1.25;
+    doubles[1] = 2.5;
+    var c:char = chars[1];
+    var b:byte = bytes[1];
+    var flag:bit = bits[1];
+    var f:float = floats[1];
+    var d:double = doubles[1];
+    println(c);
+    println(b);
+    println(flag);
+    println(f);
+    println(d);
+}

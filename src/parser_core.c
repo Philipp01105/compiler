@@ -47,6 +47,7 @@ Parser *create_parser(TokenStream *tokens) {
     parser->target_format = TARGET_ELF; /* Default, will be set by main */
     parser->syntax_mode = SYNTAX_INTEL; /* Default, will be set by main */
     parser->expression_type = TYPE_UNKNOWN;
+    parser->expression_is_pointer = 0;
     parser->current_return_type = TYPE_VOID;
 
     return parser;

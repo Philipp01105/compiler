@@ -1,0 +1,5 @@
+func main() -> void {
+    var [3] values:int;
+    var index:int = 3;
+    println(values[index]);
+}

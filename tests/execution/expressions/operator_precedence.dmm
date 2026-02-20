@@ -1,0 +1,11 @@
+func main() -> void {
+    var grouped:int = (1 + 2) * 3;
+    println(1 + 2 * 3);
+    println(grouped);
+    println(1 + 2 * 3 == 7);
+    println(1 + 2 < 4 && 5 > 3);
+    println(true || false && false);
+    println(!(1 == 2));
+    println(20 / 5 * 2 + 3 % 2);
+    println(-2 * 3 + 10);
+}

@@ -1,0 +1,13 @@
+struct Point {
+    var x:int;
+    var y:int;
+}
+
+func main() -> void {
+    var point:Point;
+    point.x = 6;
+    point.y = 7;
+    var area:int = point.x * point.y;
+    var label:string = "area";
+    println(label + "=" + area);
+}

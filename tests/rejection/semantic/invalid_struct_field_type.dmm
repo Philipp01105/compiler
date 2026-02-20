@@ -1,0 +1,2 @@
+struct Broken { var field:Missing; }
+func main() -> void {}

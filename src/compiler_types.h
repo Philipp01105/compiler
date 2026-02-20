@@ -307,6 +307,7 @@ typedef struct {
     TargetFormat target_format; /* ELF or COFF output */
     SyntaxMode syntax_mode; /* AT&T or Intel syntax */
     DataType expression_type; /* Type of the most recently parsed expression */
+    int expression_is_pointer; /* Most recent expression denotes an address value */
     DataType current_return_type; /* Return type of the function being generated */
 } Parser;
 

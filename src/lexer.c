@@ -193,9 +193,14 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
     source[bytes_read] = '\0';
     fclose(file);
 
+    TokenStream *stream = tokenize_source(source, bytes_read, filename);
+    free(source);
+    return stream;
+}
+
+TokenStream *tokenize_source(const char *source, size_t length, const char *filename) {
     TokenStream *stream = create_token_stream();
     if (!stream) {
-        free(source);
         error_report(global_error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_LEXER,
                      ERR_LEX_FILE_READ_ERROR, filename, "Out of memory while creating token stream");
         return NULL;
@@ -204,8 +209,6 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
     int line = 1;
     int column = 1;
     size_t i = 0;
-    size_t length = bytes_read;
-
     while (i < length) {
         char c = source[i];
 
@@ -253,7 +256,13 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
                         case '0': str[j++] = '\0'; break;
                         case '\\': str[j++] = '\\'; break;
                         case '"': str[j++] = '"'; break;
-                        default: str[j++] = source[i]; break;
+                        default:
+                            error_report(global_error_handler, SEVERITY_ERROR, line, column,
+                                         ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_ESCAPE, filename,
+                                         "Unknown escape sequence '\\%c'", source[i]);
+                            stream->has_error = 1;
+                            str[j++] = source[i];
+                            break;
                     }
                 } else {
                     unsigned char byte = (unsigned char)source[i];
@@ -321,9 +330,10 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
                         case '\\': ch[j++] = '\\'; break;
                         case '\'': ch[j++] = '\''; break;
                         default:
-                            error_report(global_error_handler, SEVERITY_WARNING, line, column,
+                            error_report(global_error_handler, SEVERITY_ERROR, line, column,
                                          ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_ESCAPE, filename,
                                          "Unknown escape sequence '\\%c'", esc);
+                            stream->has_error = 1;
                             ch[j++] = esc;
                     }
                     i++;
@@ -524,7 +534,6 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
 
     add_token(stream, TOKEN_EOF, "", line, column);
 
-    free(source);
     return stream;
 }
 

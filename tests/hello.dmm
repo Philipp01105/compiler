@@ -1,4 +1,0 @@
-// Simple hello world test
-func main() -> void {
-    println("Hello, World!");
-}
