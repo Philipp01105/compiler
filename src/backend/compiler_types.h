@@ -11,7 +11,7 @@
 #define MAX_FUNCTIONS 200           /* Maximum functions in program */
 #define MAX_STRING_LITERALS 5000    /* Maximum string literals */
 #define MAX_FLOAT_LITERALS 5000     /* Maximum float literals */
-#define CODE_BUFFER_SIZE 524288     /* Assembly code buffer size */
+#define CODE_BUFFER_SIZE (1024 * 1024) /* Assembly code buffer size */
 #define MAX_LOOP_DEPTH 100          /* Maximum nested loop depth */
 #define MAX_IMPORTS 100             /* Maximum import statements */
 #define MAX_PATH 512                /* Maximum file path length */

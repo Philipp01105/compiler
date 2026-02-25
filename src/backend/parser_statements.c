@@ -1026,14 +1026,9 @@ void parse_assignment(Parser *parser) {
                     }
                 }
 
-                int assign_stack_adjust = get_call_stack_space();
-                if (assign_stack_adjust > 0) {
-                    code_printf(parser, "    subq $%d, %%rsp\n", assign_stack_adjust);
-                }
+                generate_stack_align(parser);
                 code_printf(parser, "    call %s\n", src_name.value);
-                if (assign_stack_adjust > 0) {
-                    code_printf(parser, "    addq $%d, %%rsp\n", assign_stack_adjust);
-                }
+                generate_stack_restore(parser);
 
                 code_printf(parser, "    movq %%rax, %d(%%rbp)\n", var->offset);
             } else {
@@ -1571,14 +1566,9 @@ void parse_print_statement(Parser *parser) {
             const char **print_regs = get_arg_registers_64();
             code_printf(parser, "    leaq .LC%d(%%rip), %s\n", str_id, print_regs[1]);
             code_printf(parser, "    leaq .LC_string_format(%%rip), %s\n", print_regs[0]);
-            int print_stack_adjust = get_call_stack_space();
-            if (print_stack_adjust > 0) {
-                code_printf(parser, "    subq $%d, %%rsp\n", print_stack_adjust);
-            }
+            generate_stack_align(parser);
             generate_printf_call(parser);
-            if (print_stack_adjust > 0) {
-                code_printf(parser, "    addq $%d, %%rsp\n", print_stack_adjust);
-            }
+            generate_stack_restore(parser);
         } else if (check(parser->tokens, TOKEN_LPAREN)) {
             consume(parser->tokens);
             parse_expression(parser);
@@ -1984,16 +1974,9 @@ void parse_print_statement(Parser *parser) {
                                     code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_reg_64(0));
                                 }
 
-                                {
-                                    int stack_adj_field = get_call_stack_space();
-                                    if (stack_adj_field > 0) {
-                                        code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_field);
-                                    }
-                                    generate_printf_call(parser);
-                                    if (stack_adj_field > 0) {
-                                        code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_field);
-                                    }
-                                }
+                                generate_stack_align(parser);
+                                generate_printf_call(parser);
+                                generate_stack_restore(parser);
 
                                 goto print_next_item;
                             }
@@ -2095,14 +2078,9 @@ void parse_printline_statement(Parser *parser) {
             const char **print_regs = get_arg_registers_64();
             code_printf(parser, "    leaq .LC%d(%%rip), %s\n", str_id, print_regs[1]);
             code_printf(parser, "    leaq .LC_string_format(%%rip), %s\n", print_regs[0]);
-            int print_stack_adjust = get_call_stack_space();
-            if (print_stack_adjust > 0) {
-                code_printf(parser, "    subq $%d, %%rsp\n", print_stack_adjust);
-            }
+            generate_stack_align(parser);
             generate_printf_call(parser);
-            if (print_stack_adjust > 0) {
-                code_printf(parser, "    addq $%d, %%rsp\n", print_stack_adjust);
-            }
+            generate_stack_restore(parser);
         } else if (check(parser->tokens, TOKEN_LPAREN)) {
             consume(parser->tokens);
             parse_expression(parser);
@@ -2455,16 +2433,9 @@ void parse_printline_statement(Parser *parser) {
                                     code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_reg_64(0));
                                 }
 
-                                {
-                                    int stack_adj_field = get_call_stack_space();
-                                    if (stack_adj_field > 0) {
-                                        code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_field);
-                                    }
-                                    generate_printf_call(parser);
-                                    if (stack_adj_field > 0) {
-                                        code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_field);
-                                    }
-                                }
+                                generate_stack_align(parser);
+                                generate_printf_call(parser);
+                                generate_stack_restore(parser);
 
                                 goto print_next_item;
                             }
@@ -2554,16 +2525,9 @@ void parse_printline_statement(Parser *parser) {
     expect(parser, TOKEN_RPAREN, "Expected ')' after print arguments");
 
     code_printf(parser, "    leaq .LC_newline(%%rip), %s\n", get_arg_reg_64(0));
-    {
-        int stack_adj_nl = get_call_stack_space();
-        if (stack_adj_nl > 0) {
-            code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_nl);
-        }
-        generate_printf_call(parser);
-        if (stack_adj_nl > 0) {
-            code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_nl);
-        }
-    }
+    generate_stack_align(parser);
+    generate_printf_call(parser);
+    generate_stack_restore(parser);
     expect(parser, TOKEN_SEMICOLON, "Expected ';' after print");
 }
 
@@ -2649,16 +2613,9 @@ void parse_function_call_statement(Parser *parser) {
                     }
                 }
 
-                {
-                    int stack_adj_static = get_call_stack_space();
-                    if (stack_adj_static > 0) {
-                        code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_static);
-                    }
-                    code_printf(parser, "    call %s\n", mangled_name);
-                    if (stack_adj_static > 0) {
-                        code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_static);
-                    }
-                }
+                generate_stack_align(parser);
+                code_printf(parser, "    call %s\n", mangled_name);
+                generate_stack_restore(parser);
 
                 return;
             }
