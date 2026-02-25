@@ -63,6 +63,12 @@ void generate_stack_align(Parser *parser);
 
 void generate_stack_restore(Parser *parser);
 
+void generate_printf_call(Parser *parser);
+
+void save_nonvolatile_registers(Parser *parser);
+
+void restore_nonvolatile_registers(Parser *parser);
+
 /* Parser core functions */
 Parser *create_parser(TokenStream *tokens);
 

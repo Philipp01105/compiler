@@ -501,12 +501,8 @@ void parse_struct(Parser *parser) {
                 code_printf(parser, "    subq $.L_frame_%s, %%rsp\n", mangled_name);
             }
 
-            /* Windows ABI: Save non-volatile registers RDI and RSI */
-            if (parser->target_format == TARGET_COFF) {
-                code_comment(parser, "Save Windows non-volatile registers");
-                emit_push(parser, "rdi");
-                emit_push(parser, "rsi");
-            }
+            code_comment(parser, "Save ABI non-volatile registers");
+            save_nonvolatile_registers(parser);
 
             const char **param_regs_64 = get_arg_registers_64();
             const char **param_regs_32 = get_arg_registers_32();
@@ -564,11 +560,7 @@ void parse_struct(Parser *parser) {
             if (func->return_type == TYPE_VOID) {
                 code_comment(parser, "Function epilogue (void return)");
 
-                /* Windows ABI: Restore non-volatile registers */
-                if (parser->target_format == TARGET_COFF) {
-                    emit_pop(parser, "rsi");
-                    emit_pop(parser, "rdi");
-                }
+                restore_nonvolatile_registers(parser);
 
                 code_printf(parser, "    leave\n");
                 code_printf(parser, "    ret\n");
@@ -1060,12 +1052,8 @@ void parse_function(Parser *parser) {
         code_printf(parser, "    subq $.L_frame_%s, %%rsp\n", func_name);
     }
 
-    /* Windows ABI: Save non-volatile registers RDI and RSI */
-    if (parser->target_format == TARGET_COFF) {
-        code_comment(parser, "Save Windows non-volatile registers");
-        emit_push(parser, "rdi");
-        emit_push(parser, "rsi");
-    }
+    code_comment(parser, "Save ABI non-volatile registers");
+    save_nonvolatile_registers(parser);
 
     if (func->param_count > 0) {
         code_comment(parser, "Save parameters to stack");
@@ -1099,11 +1087,7 @@ void parse_function(Parser *parser) {
         code_comment(parser, "Function epilogue (void return)");
         code_printf(parser, "    xorl %%eax, %%eax\n"); // Return 0 for void functions
 
-        /* Windows ABI: Restore non-volatile registers */
-        if (parser->target_format == TARGET_COFF) {
-            emit_pop(parser, "rsi");
-            emit_pop(parser, "rdi");
-        }
+        restore_nonvolatile_registers(parser);
 
         code_printf(parser, "    leave\n");
         code_printf(parser, "    ret\n");

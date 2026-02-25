@@ -92,6 +92,12 @@ frontend. It directly emits x86-64 instructions into checked lowering buffers.
 
 Target selection controls argument registers, stack shadow space, section directives, exported symbol metadata, and supported I/O lowering. Generated assembly is assembled and linked by an external GNU-compatible toolchain.
 
+Generated functions preserve every non-volatile register used by the backend
+(`rbx` and `r12`-`r15`, plus `rdi`/`rsi` for COFF). System V variadic calls set
+`al` to a valid upper bound for vector arguments before calling `printf`. These
+ABI properties are inspected by backend tests and exercised through the native
+C interoperability suite.
+
 ## Diagnostics
 
 `diagnostics/errorHandler.c` owns diagnostic contexts, severity, categories, source locations, buffering, and rendering. Normal mode prints contextual text. `--formatError` prints one JSON object with an `errors` array and summary counts. Lexer, parser, semantic, code-generation, option, allocation, and file failures use this path.
