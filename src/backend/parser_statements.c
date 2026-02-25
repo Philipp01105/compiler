@@ -1564,7 +1564,11 @@ void parse_print_statement(Parser *parser) {
             synchronize(parser);
             return;
         }
-        if (check(parser->tokens, TOKEN_STRING_LITERAL)) {
+        if (check(parser->tokens, TOKEN_STRING_LITERAL) &&
+            comparison_operator(peek_ahead(parser->tokens, 1).type)) {
+            parse_expression(parser);
+            emit_printed_expression(parser);
+        } else if (check(parser->tokens, TOKEN_STRING_LITERAL)) {
             Token str_token = consume(parser->tokens);
             int str_id = add_string_literal(parser, str_token.value);
 
@@ -2084,7 +2088,11 @@ void parse_printline_statement(Parser *parser) {
     expect(parser, TOKEN_LPAREN, "Expected '(' after 'println'");
 
     while (!check(parser->tokens, TOKEN_RPAREN) && !is_at_end(parser->tokens)) {
-        if (check(parser->tokens, TOKEN_STRING_LITERAL)) {
+        if (check(parser->tokens, TOKEN_STRING_LITERAL) &&
+            comparison_operator(peek_ahead(parser->tokens, 1).type)) {
+            parse_expression(parser);
+            emit_printed_expression(parser);
+        } else if (check(parser->tokens, TOKEN_STRING_LITERAL)) {
             Token str_token = consume(parser->tokens);
             int str_id = add_string_literal(parser, str_token.value);
 

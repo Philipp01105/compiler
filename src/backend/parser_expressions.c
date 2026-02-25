@@ -152,11 +152,33 @@ void parse_comparison(Parser *parser) {
             else code_printf(parser, "    setae %%al\n");
         } else if (left_type == TYPE_STRING && right_type == TYPE_STRING &&
                    (op == TOKEN_EQUAL_EQUAL || op == TOKEN_BANG_EQUAL)) {
+            int string_label = parser->label_counter++;
+            /* Uninitialized DMM strings are null and semantically empty. */
+            code_printf(parser, "    cmpq %%rbx, %%rax\n");
+            code_printf(parser, "    je .L_string_equal_%d\n", string_label);
+            code_printf(parser, "    testq %%rax, %%rax\n");
+            code_printf(parser, "    jz .L_string_left_null_%d\n", string_label);
+            code_printf(parser, "    testq %%rbx, %%rbx\n");
+            code_printf(parser, "    jz .L_string_right_null_%d\n", string_label);
             code_printf(parser, "    movq %%rax, %s\n", get_arg_reg_64(0));
             code_printf(parser, "    movq %%rbx, %s\n", get_arg_reg_64(1));
             generate_stack_align(parser);
             code_printf(parser, "    call strcmp\n");
             generate_stack_restore(parser);
+            code_printf(parser, "    jmp .L_string_compare_done_%d\n", string_label);
+            code_printf(parser, ".L_string_left_null_%d:\n", string_label);
+            code_printf(parser, "    cmpb $0, (%%rbx)\n");
+            code_printf(parser, "    jne .L_string_not_equal_%d\n", string_label);
+            code_printf(parser, "    jmp .L_string_equal_%d\n", string_label);
+            code_printf(parser, ".L_string_right_null_%d:\n", string_label);
+            code_printf(parser, "    cmpb $0, (%%rax)\n");
+            code_printf(parser, "    jne .L_string_not_equal_%d\n", string_label);
+            code_printf(parser, ".L_string_equal_%d:\n", string_label);
+            code_printf(parser, "    xorl %%eax, %%eax\n");
+            code_printf(parser, "    jmp .L_string_compare_done_%d\n", string_label);
+            code_printf(parser, ".L_string_not_equal_%d:\n", string_label);
+            code_printf(parser, "    movl $1, %%eax\n");
+            code_printf(parser, ".L_string_compare_done_%d:\n", string_label);
             code_printf(parser, "    testl %%eax, %%eax\n");
             code_printf(parser, op == TOKEN_EQUAL_EQUAL ? "    sete %%al\n" : "    setne %%al\n");
         } else if (op == TOKEN_EQUAL_EQUAL || op == TOKEN_BANG_EQUAL) {
@@ -488,27 +510,8 @@ void parse_primary(Parser *parser) {
     if (check(parser->tokens, TOKEN_CHAR_LITERAL)) {
         Token ch = consume(parser->tokens);
 
-        int char_value = 0;
-        if (ch.value[0] == '\\') {
-            switch (ch.value[1]) {
-                case 'n': char_value = '\n';
-                    break;
-                case 't': char_value = '\t';
-                    break;
-                case 'r': char_value = '\r';
-                    break;
-                case '0': char_value = '\0';
-                    break;
-                case '\\': char_value = '\\';
-                    break;
-                case '\'': char_value = '\'';
-                    break;
-                default: char_value = ch.value[1];
-                    break;
-            }
-        } else {
-            char_value = (unsigned char) ch.value[0];
-        }
+        /* Escape sequences are decoded exactly once by the frontend lexer. */
+        int char_value = (unsigned char) ch.value[0];
 
         const char *escaped_char = escape_char_for_comment(ch.value);
         code_comment(parser, "Character literal: '%s' (ASCII %d)", escaped_char, char_value);

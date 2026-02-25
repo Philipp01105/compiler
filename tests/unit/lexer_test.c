@@ -31,6 +31,16 @@ int main(void) {
     assert(tokens != NULL && !tokens->has_error);
     free_token_stream(tokens);
 
+    const char escaped_quotes[] = "'\\\"' '\\''";
+    tokens = lex(escaped_quotes, sizeof(escaped_quotes) - 1);
+    assert(tokens != NULL && !tokens->has_error);
+    assert(tokens->count == 3);
+    assert(tokens->tokens[0].type == TOKEN_CHAR_LITERAL);
+    assert(tokens->tokens[0].value[0] == '"');
+    assert(tokens->tokens[1].type == TOKEN_CHAR_LITERAL);
+    assert(tokens->tokens[1].value[0] == '\'');
+    free_token_stream(tokens);
+
     const char bad_escape[] = "\"bad\\q\"";
     tokens = lex(bad_escape, sizeof(bad_escape) - 1);
     assert(tokens != NULL && tokens->has_error);

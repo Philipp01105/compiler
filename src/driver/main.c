@@ -4,11 +4,9 @@
 #include <string.h>
 #include <time.h>
 #include <sys/stat.h>
-#include "lexer.h"
-#include "parser.h"
+#include "frontend.h"
+#include "backend.h"
 #include "errorHandler.h"
-#include "asm_optimizer.h"
-#include "instruction_builder.h"
 
 #ifndef DMM_VERSION
 #define DMM_VERSION "development"
@@ -61,38 +59,6 @@ void print_header(const char *source_file) {
     printf("  Size:    %ld Bytes\n", st.st_size);
     printf("  Date:    %s\n", datetime);
     printf("\n");
-}
-
-void write_escaped_string(FILE *out, const char *str) {
-    for (int i = 0; str[i] != '\0'; i++) {
-        unsigned char c = (unsigned char) str[i];
-        switch (c) {
-            case '\n':
-                fprintf(out, "\\n");
-                break;
-            case '\t':
-                fprintf(out, "\\t");
-                break;
-            case '\r':
-                fprintf(out, "\\r");
-                break;
-            case '\\':
-                fprintf(out, "\\\\");
-                break;
-            case '"':
-                fprintf(out, "\\\"");
-                break;
-            case '\0':
-                fprintf(out, "\\0");
-                break;
-            default:
-                if (c >= 32 && c < 127) {
-                    fprintf(out, "%c", c);
-                } else {
-                    fprintf(out, "\\%03o", c);
-                }
-        }
-    }
 }
 
 static void remove_stale_output(const char *source_file, const char *requested_output) {
@@ -248,8 +214,6 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    set_target_format(target_format);
-
     if (debug_mode || show_tokens) {
         print_header(source_file);
 
@@ -259,8 +223,15 @@ int main(int argc, char *argv[]) {
         printf("\n");
     }
 
-    TokenStream *tokens = tokenize_file(source_file, debug_mode);
-    if (!tokens) {
+    /* Failed frontend compilation must not leave a default stale artifact. */
+    remove_stale_output(source_file, requested_output);
+
+    FrontendOptions frontend_options = {
+        .debug = debug_mode,
+        .show_tokens = show_tokens
+    };
+    AstProgram *program = frontend_parse_file(source_file, &frontend_options);
+    if (program == NULL) {
         error_handler_flush(error_handler);
         error_handler_free(error_handler);
         return 1;
@@ -270,59 +241,13 @@ int main(int argc, char *argv[]) {
         error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
                      ERR_COMP_INVALID_OPTION, source_file, "Output file must differ from source file");
         error_handler_flush(error_handler);
-        error_handler_free(error_handler);
-        return 1;
-    }
-
-    /* A failed compilation must not leave an older output looking current. */
-    remove_stale_output(source_file, requested_output);
-
-    if (tokens->has_error) {
-        error_handler_flush(error_handler);
-        free_token_stream(tokens);
+        ast_program_free(program);
         error_handler_free(error_handler);
         return 1;
     }
 
     if (debug_mode || show_tokens) {
-        printf("  [+] %d Tokens generated\n", tokens->count);
-        printf("\n");
-    }
-
-    if (show_tokens) {
-        print_tokens(tokens);
-    }
-
-    Parser *parser = create_parser(tokens);
-    if (!parser) {
-        error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
-                     ERR_CODEGEN_OUTPUT_FAILED, source_file,
-                     "Out of memory while creating compiler state");
-        error_handler_flush(error_handler);
-        free_token_stream(tokens);
-        error_handler_free(error_handler);
-        return 1;
-    }
-    parser->debug_mode = debug_mode;
-    parser->target_format = target_format;
-    parser->syntax_mode = syntax_mode;
-
-    if (!parse_program(parser, source_file)) {
-        error_handler_flush(error_handler);
-        if (!format_error) {
-            fprintf(stderr, "\n[ERROR] Compilation failed!\n\n");
-        }
-        free_parser(parser);
-        free_token_stream(tokens);
-        error_handler_free(error_handler);
-        return 1;
-    }
-
-    if (debug_mode) {
-        printf("\n");
-        printf("================================================================\n");
-        printf("           PHASE 3: CODE GENERATION\n");
-        printf("================================================================\n");
+        printf("  [+] %zu Tokens represented in AST\n", program->token_count);
         printf("\n");
     }
 
@@ -334,8 +259,7 @@ int main(int argc, char *argv[]) {
             error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
                          ERR_CODEGEN_OUTPUT_FAILED, source_file, "Out of memory while creating output path");
             error_handler_flush(error_handler);
-            free_parser(parser);
-            free_token_stream(tokens);
+            ast_program_free(program);
             error_handler_free(error_handler);
             return 1;
         }
@@ -344,150 +268,28 @@ int main(int argc, char *argv[]) {
         output_filename = generated_output;
     }
 
-    FILE *output = fopen(output_filename, "w");
-    if (!output) {
-        error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
-                     ERR_CODEGEN_OUTPUT_FAILED, source_file,
-                     "Could not create output file '%s'", output_filename);
+    if (debug_mode) {
+        printf("\n================================================================\n");
+        printf("           PHASE 3: AST LOWERING AND CODE GENERATION\n");
+        printf("================================================================\n\n");
+    }
+
+    BackendOptions backend_options = {
+        .target_format = target_format,
+        .syntax_mode = syntax_mode,
+        .debug = debug_mode,
+        .deterministic = deterministic
+    };
+    if (!backend_emit_file(program, &backend_options, output_filename)) {
         error_handler_flush(error_handler);
+        if (!format_error) fprintf(stderr, "\n[ERROR] Compilation failed!\n\n");
         free(generated_output);
-        free_parser(parser);
-        free_token_stream(tokens);
-        error_handler_free(error_handler);
-        return 1;
-    }
-
-    time_t now = time(NULL);
-    struct tm *t = localtime(&now);
-    char datetime[64];
-    strftime(datetime, sizeof(datetime), "%Y-%m-%d %H:%M:%S", t);
-
-    /* Determine format name for header comment */
-    const char *format_name = (target_format == TARGET_COFF) ? "COFF" : "ELF";
-    const char *syntax_name = (syntax_mode == SYNTAX_INTEL) ? "Intel" : "AT&T";
-
-    fprintf(output, "# Generated by Philipp01105's Compiler\n");
-    fprintf(output, "# Source: %s\n", source_file);
-    if (!deterministic) fprintf(output, "# Date: %s\n", datetime);
-    fprintf(output, "# Target Format: %s\n", format_name);
-    fprintf(output, "# Syntax: %s\n", syntax_name);
-
-    /* Add Intel syntax directive if using Intel syntax */
-    if (syntax_mode == SYNTAX_INTEL) {
-        fprintf(output, "    .intel_syntax noprefix\n");
-    }
-
-    fprintf(output, "    .text\n");
-
-    if (target_format == TARGET_COFF) {
-        fprintf(output, "    .def    printf; .scl    2; .type   32; .endef\n");
-        fprintf(output, "    .def    putchar; .scl    2; .type   32; .endef\n");
-        fprintf(output, "    .section .rdata,\"dr\"\n");
-    } else {
-        fprintf(output, "    .section .rodata\n");
-    }
-
-    fprintf(output, ".LC_int_format:\n");
-    fprintf(output, "    .ascii \"%%d\\0\"\n");
-    fprintf(output, ".LC_float_format:\n");
-    fprintf(output, "    .ascii \"%%f\\0\"\n");
-    fprintf(output, ".LC_double_format:\n");
-    fprintf(output, "    .ascii \"%%lf\\0\"\n");
-    fprintf(output, ".LC_char_format:\n");
-    fprintf(output, "    .ascii \"%%c\\0\"\n");
-    fprintf(output, ".LC_char_input_format:\n");
-    fprintf(output, "    .ascii \" %%c\\0\"\n");
-    fprintf(output, ".LC_string_format:\n");
-    fprintf(output, "    .ascii \"%%s\\0\"\n");
-    fprintf(output, ".LC_pointer_format:\n");
-    fprintf(output, "    .ascii \"%%p\\0\"\n");
-    fprintf(output, ".LC_string_input_format:\n");
-    fprintf(output, "    .ascii \"%%255[^\\n]\\0\"\n");
-    fprintf(output, ".LC_newline:\n");
-    fprintf(output, "    .ascii \"\\n\\0\"\n");
-    fprintf(output, "\n");
-
-    if (parser->string_literal_count > 0) {
-        fprintf(output, "# String literals\n");
-        for (int i = 0; i < parser->string_literal_count; i++) {
-            fprintf(output, ".LC%d:\n", parser->string_literals[i].id);
-            fprintf(output, "    .ascii \"");
-            write_escaped_string(output, parser->string_literals[i].text);
-            fprintf(output, "\\0\"\n");
-        }
-        fprintf(output, "\n");
-    }
-
-    if (parser->float_literal_count > 0) {
-        fprintf(output, "# Float/Double constants\n");
-        fprintf(output, "    .align 4\n");
-
-        for (int i = 0; i < parser->float_literal_count; i++) {
-            fprintf(output, ".LC_float_%d:\n", parser->float_literals[i].id);
-
-            int is_double = (strchr(parser->float_literals[i].value, '.') != NULL &&
-                             strlen(strchr(parser->float_literals[i].value, '.')) > 8);
-
-            if (is_double) {
-                double dval = strtod(parser->float_literals[i].value, NULL);
-                unsigned long long double_bits;
-                memcpy(&double_bits, &dval, sizeof(double_bits));
-                fprintf(output, "    .quad 0x%016llx    # double %s\n",
-                        double_bits, parser->float_literals[i].value);
-            } else {
-                float fval = strtof(parser->float_literals[i].value, NULL);
-                unsigned int float_bits;
-                memcpy(&float_bits, &fval, sizeof(float_bits));
-                fprintf(output, "    .long 0x%08x    # float %s\n",
-                        float_bits, parser->float_literals[i].value);
-            }
-        }
-        fprintf(output, "\n");
-    }
-
-    fprintf(output, "    .bss\n");
-    fprintf(output, "    .align 8\n");
-    fprintf(output, "_scanfString_buffer:\n");
-    fprintf(output, "    .space 256\n");
-    fprintf(output, "\n");
-
-    if (parser->code_pos > 0) {
-        fprintf(output, "%s", parser->code_buffer);
-    }
-
-    fprintf(output, "    .text\n");
-    fprintf(output, "%s", parser->function_code_buffer);
-
-    if (fclose(output) != 0) {
-        error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
-                     ERR_CODEGEN_OUTPUT_FAILED, source_file,
-                     "Failed while writing output file '%s'", output_filename);
-        error_handler_flush(error_handler);
-        free(generated_output);
-        free_parser(parser);
-        free_token_stream(tokens);
-        error_handler_free(error_handler);
-        return 1;
-    }
-
-    // Post-process: Clean up unreachable code from assembly
-    if (cleanup_assembly_file(output_filename) != 0) {
-        error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_CODEGEN,
-                     ERR_CODEGEN_OUTPUT_FAILED, source_file, "Assembly cleanup pass failed");
-        error_handler_flush(error_handler);
-        free(generated_output);
-        free_parser(parser);
-        free_token_stream(tokens);
+        ast_program_free(program);
         error_handler_free(error_handler);
         return 1;
     }
 
     if (debug_mode) {
-        printf("  [+] Assembly code generated: %s\n", output_filename);
-        printf("      - Code size: %d Bytes\n", parser->function_code_pos);
-        printf("      - String literals: %d\n", parser->string_literal_count);
-        printf("      - Float literals: %d\n", parser->float_literal_count);
-        printf("      - Assembly optimized (dead code removed)\n");
         printf("\n");
         printf("################################################################\n");
         printf("#                                                              #\n");
@@ -501,8 +303,7 @@ int main(int argc, char *argv[]) {
         printf("\n");
     }
 
-    free_parser(parser);
-    free_token_stream(tokens);
+    ast_program_free(program);
     free(generated_output);
 
     if (error_handler) {

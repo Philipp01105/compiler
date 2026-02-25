@@ -9,29 +9,46 @@ option(DMM_STRICT_WARNINGS "Treat compiler warnings as errors" OFF)
 option(DMM_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 option(DMM_BUILD_FUZZERS "Build libFuzzer targets (Clang only)" OFF)
 
+set(DMM_INCLUDE_DIRS
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/common
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/ast
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/frontend
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/diagnostics
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/driver)
+
 add_executable(compiler
-        src/lexer.c
-        src/lexer.h
-        src/compiler_types.h
-        src/main.c
-        src/parser_types.c
-        src/parser_codegen.c
-        src/parser_core.c
-        src/parser_declarations.c
-        src/parser_statements.c
-        src/parser_expressions.c
-        src/parser.h
-        src/parser_internal.h
-        src/errorHandler.c
-        src/errorHandler.h
-        src/asm_optimizer.c
-        src/asm_optimizer.h
-        src/instruction_builder.c
-        src/instruction_builder.h
-        src/syntax_converter.c
-        src/syntax_converter.h
+        src/common/language_types.h
+        src/common/token.h
+        src/ast/ast.c
+        src/ast/ast.h
+        src/frontend/frontend.c
+        src/frontend/frontend.h
+        src/frontend/lexer.c
+        src/frontend/lexer.h
+        src/backend/backend.c
+        src/backend/backend.h
+        src/backend/compiler_types.h
+        src/backend/parser_types.c
+        src/backend/parser_codegen.c
+        src/backend/parser_core.c
+        src/backend/parser_declarations.c
+        src/backend/parser_statements.c
+        src/backend/parser_expressions.c
+        src/backend/parser.h
+        src/backend/parser_internal.h
+        src/backend/asm_optimizer.c
+        src/backend/asm_optimizer.h
+        src/backend/instruction_builder.c
+        src/backend/instruction_builder.h
+        src/backend/syntax_converter.c
+        src/backend/syntax_converter.h
+        src/diagnostics/errorHandler.c
+        src/diagnostics/errorHandler.h
+        src/driver/main.c
 )
 
+target_include_directories(compiler PRIVATE ${DMM_INCLUDE_DIRS})
 target_compile_definitions(compiler PRIVATE DMM_VERSION="${PROJECT_VERSION}")
 if(MSVC)
     target_compile_options(compiler PRIVATE /W4)
@@ -59,13 +76,13 @@ if(DMM_BUILD_FUZZERS)
     if(NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
         message(FATAL_ERROR "DMM_BUILD_FUZZERS requires Clang")
     endif()
-    add_executable(fuzz_syntax_converter tests/fuzz/fuzz_syntax_converter.c src/syntax_converter.c)
-    target_include_directories(fuzz_syntax_converter PRIVATE src)
+    add_executable(fuzz_syntax_converter tests/fuzz/fuzz_syntax_converter.c src/backend/syntax_converter.c)
+    target_include_directories(fuzz_syntax_converter PRIVATE ${DMM_INCLUDE_DIRS})
     target_compile_options(fuzz_syntax_converter PRIVATE -fsanitize=fuzzer,address,undefined)
     target_link_options(fuzz_syntax_converter PRIVATE -fsanitize=fuzzer,address,undefined)
 
-    add_executable(fuzz_lexer tests/fuzz/fuzz_lexer.c src/lexer.c src/errorHandler.c)
-    target_include_directories(fuzz_lexer PRIVATE src)
+    add_executable(fuzz_lexer tests/fuzz/fuzz_lexer.c src/frontend/lexer.c src/diagnostics/errorHandler.c)
+    target_include_directories(fuzz_lexer PRIVATE ${DMM_INCLUDE_DIRS})
     target_compile_options(fuzz_lexer PRIVATE -fsanitize=fuzzer,address,undefined)
     target_link_options(fuzz_lexer PRIVATE -fsanitize=fuzzer,address,undefined)
 endif()
@@ -101,21 +118,33 @@ if(BUILD_TESTING)
         set_property(TEST regression_abi APPEND PROPERTY LABELS safety)
     endif()
 
-    add_executable(dmm_optimizer_test tests/unit/optimizer_test.c src/asm_optimizer.c)
-    target_include_directories(dmm_optimizer_test PRIVATE src)
+    add_executable(dmm_optimizer_test tests/unit/optimizer_test.c src/backend/asm_optimizer.c)
+    target_include_directories(dmm_optimizer_test PRIVATE ${DMM_INCLUDE_DIRS})
     add_test(NAME optimizer_unit COMMAND dmm_optimizer_test
              ${CMAKE_BINARY_DIR}/optimizer_test_input.s)
     set_tests_properties(optimizer_unit PROPERTIES LABELS "unit;safety")
 
-    add_executable(dmm_syntax_converter_test tests/unit/syntax_converter_test.c src/syntax_converter.c)
-    target_include_directories(dmm_syntax_converter_test PRIVATE src)
+    add_executable(dmm_syntax_converter_test tests/unit/syntax_converter_test.c src/backend/syntax_converter.c)
+    target_include_directories(dmm_syntax_converter_test PRIVATE ${DMM_INCLUDE_DIRS})
     add_test(NAME syntax_converter_unit COMMAND dmm_syntax_converter_test)
     set_tests_properties(syntax_converter_unit PROPERTIES LABELS "unit;safety")
 
-    add_executable(dmm_lexer_test tests/unit/lexer_test.c src/lexer.c src/errorHandler.c)
-    target_include_directories(dmm_lexer_test PRIVATE src)
+    add_executable(dmm_lexer_test tests/unit/lexer_test.c src/frontend/lexer.c src/diagnostics/errorHandler.c)
+    target_include_directories(dmm_lexer_test PRIVATE ${DMM_INCLUDE_DIRS})
     add_test(NAME lexer_unit COMMAND dmm_lexer_test)
     set_tests_properties(lexer_unit PROPERTIES LABELS "unit;lexer;safety")
+
+    add_executable(dmm_frontend_ast_test
+            tests/unit/frontend_ast_test.c
+            src/ast/ast.c src/frontend/frontend.c src/frontend/lexer.c src/diagnostics/errorHandler.c)
+    target_include_directories(dmm_frontend_ast_test PRIVATE ${DMM_INCLUDE_DIRS})
+    add_test(NAME frontend_ast_unit COMMAND dmm_frontend_ast_test
+             ${CMAKE_SOURCE_DIR}/tests/unit/frontend_ast_fixture.dmm)
+    set_tests_properties(frontend_ast_unit PROPERTIES LABELS "unit;frontend;ast;safety")
+
+    add_test(NAME architecture_boundaries COMMAND ${CMAKE_COMMAND}
+             -P ${CMAKE_SOURCE_DIR}/tests/architecture_test.cmake)
+    set_tests_properties(architecture_boundaries PROPERTIES LABELS "unit;architecture;safety")
 
     add_test(NAME diagnostics_json COMMAND ${CMAKE_COMMAND}
              -DCOMPILER=$<TARGET_FILE:compiler>
@@ -147,7 +176,7 @@ if(BUILD_TESTING)
     set_tests_properties(stress_limits PROPERTIES LABELS "integration;stress;safety")
 
     if(DMM_SANITIZERS)
-        foreach(test_target dmm_optimizer_test dmm_syntax_converter_test dmm_lexer_test)
+        foreach(test_target dmm_optimizer_test dmm_syntax_converter_test dmm_lexer_test dmm_frontend_ast_test)
             target_compile_options(${test_target} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
             target_link_options(${test_target} PRIVATE -fsanitize=address,undefined)
         endforeach()

@@ -1,0 +1,8 @@
+func main() -> void {
+    var unset:string;
+    var [2] values:string;
+
+    println(unset == values[1]);
+    println(unset == "");
+    println(unset != "text");
+}

@@ -14,6 +14,7 @@ The project is suitable for learning and experimentation. It is not yet intended
 - Linux ELF and Windows COFF assembly output
 - Intel syntax by default, with AT&T syntax available
 - Human-readable or JSON diagnostics
+- An owned AST boundary separating frontend input handling from backend emission
 
 ## Requirements
 
@@ -69,6 +70,7 @@ CTest includes:
 - `tests/regression/`: minimal reproductions of fixed compiler bugs;
 - `tests/stress/`: generated `limit-1`, `limit`, and `limit+1` cases;
 - `tests/unit/`: lexer, optimizer, and syntax-converter unit tests;
+- architecture and AST ownership tests that enforce layer boundaries;
 - `tests/fuzz/`: libFuzzer entry points for the lexer and syntax converter.
 
 Every normal DMM execution test is compiled, assembled, and run in both Intel
@@ -93,6 +95,9 @@ cmake --build fuzz-build --target fuzz_lexer fuzz_syntax_converter
 - [Formal language](FORMAL_LANGUAGE.md): lexical and syntactic EBNF.
 - [Language specification](LANGUAGE_SPEC.md): semantic rules and implementation limits.
 - [Architecture](ARCHITECTURE.md): compiler pipeline, module ownership, backend, and validation design.
+
+Source code is grouped by ownership under `src/common`, `src/ast`,
+`src/frontend`, `src/backend`, `src/diagnostics`, and `src/driver`.
 
 ## License
 

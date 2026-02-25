@@ -328,6 +328,7 @@ TokenStream *tokenize_source(const char *source, size_t length, const char *file
                         case 'r':  ch[j++] = '\r'; break;
                         case '0':  ch[j++] = '\0'; break;
                         case '\\': ch[j++] = '\\'; break;
+                        case '"':  ch[j++] = '"'; break;
                         case '\'': ch[j++] = '\''; break;
                         default:
                             error_report(global_error_handler, SEVERITY_ERROR, line, column,
