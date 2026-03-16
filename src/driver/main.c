@@ -5,6 +5,8 @@
 #include <time.h>
 #include <sys/stat.h>
 #include "frontend.h"
+#include "ir.h"
+#include "semantic.h"
 #include "backend.h"
 #include "errorHandler.h"
 
@@ -248,6 +250,15 @@ int main(int argc, char *argv[]) {
 
     if (debug_mode || show_tokens) {
         printf("  [+] %zu Tokens represented in AST\n", program->token_count);
+        printf("  [+] Structured AST: %s (%zu declarations)\n",
+               program->structured_ast_complete ? "complete" : "compatibility fallback",
+               program->structured_declaration_count);
+        if (!program->structured_ast_complete) {
+            const AstToken *token = ast_program_token(program, program->structured_error_token);
+            if (token != NULL)
+                printf("      stopped at %d:%d near '%s'\n", token->span.begin.line,
+                       token->span.begin.column, token->lexeme);
+        }
         printf("\n");
     }
 
@@ -267,6 +278,7 @@ int main(int argc, char *argv[]) {
         memcpy(generated_output + source_length, ".s", 3);
         output_filename = generated_output;
     }
+    if (requested_output != NULL) (void) remove(requested_output);
 
     if (debug_mode) {
         printf("\n================================================================\n");
@@ -280,15 +292,63 @@ int main(int argc, char *argv[]) {
         .debug = debug_mode,
         .deterministic = deterministic
     };
-    if (!backend_emit_file(program, &backend_options, output_filename)) {
+    SemanticModel *semantics = NULL;
+    IrModule *module = NULL;
+    if (program->structured_ast_complete) {
+        semantics = semantic_analyze(program);
+        if (semantics != NULL) module = ir_lower_program(program, semantics);
+        if (semantics == NULL) {
+            error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
+                         ERR_CODEGEN_OUTPUT_FAILED, source_file,
+                         "Could not build typed frontend representation");
+            error_handler_flush(error_handler);
+            free(generated_output);
+            ir_module_free(module);
+            semantic_model_free(semantics);
+            ast_program_free(program);
+            error_handler_free(error_handler);
+            return 1;
+        }
+        if (module == NULL) module = ir_create_compatibility_module(program);
+        if (module == NULL) {
+            error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
+                         ERR_CODEGEN_OUTPUT_FAILED, source_file,
+                         "Could not create lowering module");
+            error_handler_flush(error_handler);
+            free(generated_output);
+            semantic_model_free(semantics);
+            ast_program_free(program);
+            error_handler_free(error_handler);
+            return 1;
+        }
+        if (debug_mode) {
+            printf("  [+] Semantic symbols: %zu\n", semantics->symbol_count);
+            printf("  [+] Typed IR functions: %zu%s\n", module->function_count,
+                   module->verified ? "" : " (compatibility fallback)");
+        }
+    } else {
+        module = ir_create_compatibility_module(program);
+        if (module == NULL) {
+            error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
+                         ERR_CODEGEN_OUTPUT_FAILED, source_file,
+                         "Could not create compatibility lowering module");
+            error_handler_flush(error_handler);
+            free(generated_output);
+            ast_program_free(program);
+            error_handler_free(error_handler);
+            return 1;
+        }
+    }
+    if (!backend_emit_file(module, &backend_options, output_filename)) {
         error_handler_flush(error_handler);
         if (!format_error) fprintf(stderr, "\n[ERROR] Compilation failed!\n\n");
         free(generated_output);
+        ir_module_free(module);
+        semantic_model_free(semantics);
         ast_program_free(program);
         error_handler_free(error_handler);
         return 1;
     }
-
     if (debug_mode) {
         printf("\n");
         printf("################################################################\n");
@@ -303,6 +363,8 @@ int main(int argc, char *argv[]) {
         printf("\n");
     }
 
+    ir_module_free(module);
+    semantic_model_free(semantics);
     ast_program_free(program);
     free(generated_output);
 

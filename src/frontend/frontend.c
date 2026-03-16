@@ -2,6 +2,7 @@
 
 #include "errorHandler.h"
 #include "lexer.h"
+#include "syntax_parser.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -118,6 +119,9 @@ AstProgram *frontend_parse_file(const char *source_path, const FrontendOptions *
                      ERR_CODEGEN_OUTPUT_FAILED, source_path, "Out of memory while building AST");
         return NULL;
     }
+    /* The compatibility declaration index above remains available to the old
+       emitter; all new compiler stages consume the structured tree. */
+    (void) frontend_build_structured_ast(program);
     return program;
 
 allocation_failure:

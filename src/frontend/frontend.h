@@ -8,7 +8,7 @@ typedef struct {
     int show_tokens;
 } FrontendOptions;
 
-/* Parse a source file into an AST with no backend side effects. */
+/* Parse a source file into an owned recursive AST with no backend side effects. */
 AstProgram *frontend_parse_file(const char *source_path, const FrontendOptions *options);
 
 #endif

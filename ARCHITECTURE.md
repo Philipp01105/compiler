@@ -8,18 +8,25 @@ DMM is a single-process C23 compiler that translates one DMM source file and its
 source and imports
        |
        v
-frontend: lexer -> owned AST (declarations, lossless leaves, source spans)
+frontend: lexer -> parser -> owned recursive AST
        |
-       | AstProgram
        v
-backend: semantic lowering -> x86-64 emission -> syntax conversion
+semantic analysis -> resolved expression types and symbols
+       |
+       v
+typed IR -> verifier
+       |
+       v
+backend: typed-IR x86-64 emission -> AT&T/Intel printer
+       or isolated compatibility lowering
        |
        v
 conservative peephole pass -> assembly file
 ```
 
-`AstProgram` is the only public value crossing the frontend/backend boundary.
-It owns its data, so lexer storage is released before the backend runs. The
+`AstProgram`, `SemanticModel`, and verified `IrModule` form the target-neutral
+side of the frontend/backend boundary. The AST owns its data, so lexer storage is
+released before semantic analysis runs. The
 boundary is checked by `architecture_boundaries`: the CLI cannot include lexer
 or parser APIs, the frontend cannot depend on backend implementation headers,
 and public AST/backend headers cannot expose legacy parser state.
@@ -30,18 +37,33 @@ and public AST/backend headers cannot expose legacy parser state.
 
 1. Parse output, target, syntax, diagnostics, and debugging options.
 2. Initialize the diagnostic handler.
-3. Ask the frontend to tokenize and build an owned `AstProgram`.
+3. Ask the frontend to tokenize and build an owned recursive `AstProgram`.
 4. Release all lexer-owned state.
-5. Pass the AST and immutable target options to `backend_emit_file`.
-6. Lower declarations, write data sections, literals, and function code.
-7. Run the conservative assembly cleanup pass.
-8. Release parser, token, and diagnostic state.
+5. Build an independent semantic model and lower the typed AST to verified IR.
+6. Pass only the IR module and immutable target options to `backend_emit_file`.
+7. Lower declarations, write data sections, literals, and function code.
+8. Run the conservative assembly cleanup pass.
+9. Release IR, semantic, AST, compatibility-lowering, and diagnostic state.
 
 Failed compilation removes the default stale assembly output. Explicit output paths are protected from overwriting the source file.
 
 ## Front end
 
-`src/frontend/lexer.c` converts files or in-memory byte sequences into the token types declared in `src/common/language_types.h`. Tokens retain line and column positions. `src/frontend/frontend.c` copies them into lossless AST leaves, constructs top-level declaration nodes, and destroys the lexer stream before returning. Lexical failures use the common diagnostic handler and can therefore be emitted as human-readable text or one JSON document. The in-memory entry point is also the boundary used by the lexer fuzzer.
+`src/frontend/lexer.c` converts files or in-memory byte sequences into the token types declared in `src/common/language_types.h`. Tokens retain line and column positions. `src/frontend/syntax_parser.c` constructs declarations, types, parameters, statements, and precedence-aware expressions in an AST arena. `src/frontend/frontend.c` destroys the lexer stream before returning. Lossless leaves remain temporarily for the compatibility emitter, but new stages consume structured nodes. Lexical failures use the common diagnostic handler and can therefore be emitted as human-readable text or one JSON document. The in-memory entry point is also the boundary used by the lexer fuzzer.
+
+## Semantic analysis and IR
+
+`src/sema/semantic.c` owns target-neutral declaration collection, lexical
+symbols, and expression type resolution. Resolved types and stable symbol IDs
+are attached to expression nodes, while `SemanticModel` retains global,
+parameter, and local symbols with ownership and scope metadata.
+
+`src/ir/ir.c` lowers functions and methods to typed values, explicit calls,
+loads/stores, branches, labels, loop edges, returns, and print operations. The
+IR verifier checks unique SSA definitions, use-before-definition, call argument
+ranges, and unique/defined control-flow labels before a module reaches the
+backend. The frontend pipeline unit test runs this sequence over every
+execution fixture and example.
 
 The parser is divided by responsibility:
 
@@ -73,17 +95,24 @@ Dynamic accesses to fixed local arrays emit runtime lower- and upper-bound check
 ## AST boundary
 
 `src/ast/ast.h` contains only language-level types. An `AstProgram` owns its source
-identity, token leaves, source spans, and declaration nodes. It has no parser,
+identity, source spans, recursive declarations/statements/expressions, and its
+allocation arena. It has no parser,
 lexer-stream, output-buffer, target, or assembly state. `src/frontend/frontend.h` creates
 it and `src/backend/backend.h` consumes it; neither public API includes the other
 layer's implementation headers.
 
 ## Back end
 
-The backend entry point accepts an immutable `AstProgram` and immutable target
-options. Compatibility lowering for the full existing language remains private
-inside `backend.c`; no legacy parser state crosses back into the CLI or
-frontend. It directly emits x86-64 instructions into checked lowering buffers.
+The backend entry point accepts a verified `IrModule` and immutable target
+options. `backend/x86_64/ir_emitter.c` directly emits scalar locals, integer
+arithmetic and comparisons, assignments, branches, loops, returns, and output
+from typed IR in either GNU syntax. It computes the complete frame before
+emission and keeps calls aligned for System V and Windows.
+
+Constructs not covered by native instruction selection are routed through the
+adapter in `src/compat`; legacy parser state does not enter `src/backend`, the
+CLI, or the frontend. This adapter preserves the complete existing language
+while native lowering expands.
 
 - `backend/parser_codegen.c` contains conversion, ABI argument lowering, stack-call helpers, bounds checks, and low-level runtime calls.
 - `backend/instruction_builder.c` provides focused instruction emitters. Syntax selection comes from the active parser context rather than global syntax state.
@@ -114,11 +143,12 @@ The root `CMakeLists.txt` builds the compiler, exposes strict-warning and saniti
 
 GitHub Actions validates Linux, Linux with AddressSanitizer/UndefinedBehaviorSanitizer, and Windows with MinGW-w64. Clang libFuzzer targets are available for the lexer and syntax converter through `DMM_BUILD_FUZZERS`.
 
-## Remaining internal constraint
+## Remaining migration constraint
 
-The public compiler pipeline is split at an owned AST, but the compatibility
-lowerer behind the backend API still combines detailed statement parsing,
-semantic checks, and instruction selection. New code must preserve the public
-AST-only boundary. The next internal refinement is to replace lossless statement
-leaves with typed statement/expression nodes and make backend lowering a pure
-visitor; this can happen without changing the CLI or backend API.
+The P0 pipeline and boundary are established and exercised for the complete
+valid corpus. Native IR emission currently covers the scalar/control-flow
+subset; calls, floating-point values, strings beyond direct output, aggregates,
+pointers, heap operations, and imported code use `src/compat`. New language
+analysis belongs in `frontend`/`sema`, never in the adapter. Once native
+instruction selection covers those constructs, the lossless token index and
+compatibility parser can be removed.
