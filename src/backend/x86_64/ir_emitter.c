@@ -228,7 +228,9 @@ static int supported_module(const IrModule *module) {
             }
             case IR_OP_INDEX:
             case IR_OP_MEMBER:
-            case IR_OP_RESERVE:
+            case IR_OP_CAST:
+            case IR_OP_ALLOC:
+            case IR_OP_FREE:
                 return 0;
         }
     }
@@ -565,7 +567,9 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
         }
         case IR_OP_INDEX:
         case IR_OP_MEMBER:
-        case IR_OP_RESERVE:
+        case IR_OP_CAST:
+        case IR_OP_ALLOC:
+        case IR_OP_FREE:
             return 0;
     }
     return 0;
