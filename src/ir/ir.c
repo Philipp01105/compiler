@@ -203,9 +203,46 @@ static void set_void_type(IrBuilder *builder, IrInstruction *instruction) {
     if (instruction->type_id == IR_TYPE_NONE) builder->failed = 1;
 }
 
+static void emit_label(IrBuilder *builder, size_t label, AstSourceSpan span);
+
 static size_t lower_expression(IrBuilder *builder, const AstExpression *expression) {
     if (expression == NULL) return IR_VALUE_NONE;
     size_t left = lower_expression(builder, expression->left);
+    if (expression->kind == AST_EXPR_BINARY &&
+        (expression->operator_type == TOKEN_AMP_AMP ||
+         expression->operator_type == TOKEN_PIPE_PIPE)) {
+        size_t short_label = new_label(builder);
+        size_t right_label = new_label(builder);
+        size_t end_label = new_label(builder);
+        IrInstruction *branch = emit(builder, IR_OP_BRANCH, expression->span);
+        if (branch != NULL) {
+            branch->operand_a = left;
+            branch->target_a = expression->operator_type == TOKEN_PIPE_PIPE
+                ? short_label : right_label;
+            branch->target_b = expression->operator_type == TOKEN_PIPE_PIPE
+                ? right_label : short_label;
+        }
+        set_expression_type(builder, branch, expression->left);
+        emit_label(builder, short_label, expression->span);
+        IrInstruction *short_jump = emit(builder, IR_OP_JUMP, expression->span);
+        if (short_jump != NULL) short_jump->target_a = end_label;
+        set_void_type(builder, short_jump);
+        emit_label(builder, right_label, expression->span);
+        size_t right_value = lower_expression(builder, expression->right);
+        IrInstruction *right_jump = emit(builder, IR_OP_JUMP, expression->span);
+        if (right_jump != NULL) right_jump->target_a = end_label;
+        set_void_type(builder, right_jump);
+        emit_label(builder, end_label, expression->span);
+        IrInstruction *phi = emit(builder, IR_OP_PHI, expression->span);
+        if (phi == NULL) return IR_VALUE_NONE;
+        phi->result = new_value(builder);
+        phi->operand_a = left;
+        phi->operand_b = right_value;
+        phi->target_a = short_label;
+        phi->target_b = right_label;
+        set_expression_type(builder, phi, expression);
+        return phi->result;
+    }
     size_t right = lower_expression(builder, expression->right);
     if ((expression->kind == AST_EXPR_CAST || expression->kind == AST_EXPR_FREE) &&
         expression->arguments != NULL)
@@ -227,13 +264,27 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
     size_t first_argument = IR_VALUE_NONE;
     size_t argument_count = 0;
     if (expression->kind == AST_EXPR_CALL) {
-        first_argument = builder->function->argument_count;
+        for (const AstExpression *argument = expression->arguments;
+             argument != NULL; argument = argument->next)
+            argument_count++;
+        size_t *values = argument_count == 0 ? NULL : calloc(argument_count, sizeof(*values));
+        if (values == NULL && argument_count != 0) {
+            builder->failed = 1;
+            return IR_VALUE_NONE;
+        }
+        size_t argument_index = 0;
         for (const AstExpression *argument = expression->arguments;
              argument != NULL; argument = argument->next) {
-            size_t value = lower_expression(builder, argument);
-            if (!append_argument(builder, value)) return IR_VALUE_NONE;
-            argument_count++;
+            values[argument_index++] = lower_expression(builder, argument);
         }
+        first_argument = builder->function->argument_count;
+        for (size_t i = 0; i < argument_count; i++) {
+            if (!append_argument(builder, values[i])) {
+                free(values);
+                return IR_VALUE_NONE;
+            }
+        }
+        free(values);
     }
     IrInstruction *instruction = emit(builder, opcode, expression->span);
     if (instruction == NULL) return IR_VALUE_NONE;
@@ -259,6 +310,27 @@ static void emit_label(IrBuilder *builder, size_t label, AstSourceSpan span) {
     IrInstruction *instruction = emit(builder, IR_OP_LABEL, span);
     if (instruction != NULL) instruction->target_a = label;
     set_void_type(builder, instruction);
+}
+
+static void lower_print_value(IrBuilder *builder, const AstExpression *expression,
+                              int print_newline) {
+    if (expression != NULL && expression->kind == AST_EXPR_BINARY &&
+        expression->operator_type == TOKEN_PLUS &&
+        expression->resolved_type == TYPE_STRING) {
+        lower_print_value(builder, expression->left, 0);
+        lower_print_value(builder, expression->right, print_newline);
+        return;
+    }
+    size_t value = lower_expression(builder, expression);
+    IrInstruction *instruction = emit(builder, IR_OP_PRINT,
+                                      expression == NULL ? (AstSourceSpan) {{0, 0}, {0, 0}}
+                                                         : expression->span);
+    if (instruction != NULL) {
+        instruction->operand_a = value;
+        instruction->operator_type = print_newline
+            ? TOKEN_KEYWORD_PRINTLINE : TOKEN_KEYWORD_PRINT;
+    }
+    set_expression_type(builder, instruction, expression);
 }
 
 static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
@@ -301,14 +373,7 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
         } else if (statement->kind == AST_STMT_EXPRESSION) {
             (void) lower_expression(builder, statement->expression);
         } else if (statement->kind == AST_STMT_PRINT) {
-            size_t value = lower_expression(builder, statement->value);
-            IrInstruction *instruction = emit(builder, IR_OP_PRINT, statement->span);
-            if (instruction != NULL) {
-                instruction->operand_a = value;
-                instruction->operator_type = statement->print_newline
-                    ? TOKEN_KEYWORD_PRINTLINE : TOKEN_KEYWORD_PRINT;
-            }
-            set_expression_type(builder, instruction, statement->value);
+            lower_print_value(builder, statement->value, statement->print_newline);
         } else if (statement->kind == AST_STMT_RETURN) {
             size_t value = lower_expression(builder, statement->value);
             IrInstruction *instruction = emit(builder, IR_OP_RETURN, statement->span);
@@ -601,7 +666,8 @@ static int instruction_produces_value(const IrInstruction *instruction) {
     return opcode == IR_OP_CONSTANT || opcode == IR_OP_LOAD ||
            opcode == IR_OP_UNARY || opcode == IR_OP_BINARY ||
            (opcode == IR_OP_CALL && instruction->type != TYPE_VOID) || opcode == IR_OP_INDEX ||
-           opcode == IR_OP_MEMBER || opcode == IR_OP_CAST || opcode == IR_OP_ALLOC;
+           opcode == IR_OP_MEMBER || opcode == IR_OP_CAST || opcode == IR_OP_ALLOC ||
+           opcode == IR_OP_PHI;
 }
 
 int ir_verify_module(const IrModule *module) {
@@ -754,6 +820,13 @@ int ir_verify_module(const IrModule *module) {
                 case IR_OP_INDEX:
                     REQUIRE_VALUE(instruction->operand_a);
                     REQUIRE_VALUE(instruction->operand_b);
+                    break;
+                case IR_OP_PHI:
+                    REQUIRE_VALUE(instruction->operand_a);
+                    REQUIRE_VALUE(instruction->operand_b);
+                    REQUIRE_LABEL(instruction->target_a);
+                    REQUIRE_LABEL(instruction->target_b);
+                    if (instruction->target_a == instruction->target_b) valid = 0;
                     break;
                 case IR_OP_MEMBER:
                     REQUIRE_VALUE(instruction->operand_a);

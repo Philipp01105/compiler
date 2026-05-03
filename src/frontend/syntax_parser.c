@@ -146,6 +146,10 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
         if (!check(parser, TOKEN_EOF)) parser->current++;
     }
 
+    /* A postfix expression keeps its operand as a child.  Finalize the
+       primary before wrapping it so that the retained name/literal node has
+       its own non-empty source range. */
+    finish_expression(parser, expression);
     while (!parser->failed && expression != NULL) {
         if (match(parser, TOKEN_LPAREN)) {
             AstExpressionKind call_kind = AST_EXPR_CALL;

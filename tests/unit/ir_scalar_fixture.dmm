@@ -1,0 +1,8 @@
+func main() -> void {
+    var value:int = 2;
+    value += 3;
+    value *= 4;
+    println(value);
+    println(-value);
+    println(!false);
+}
