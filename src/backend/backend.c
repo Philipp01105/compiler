@@ -1,7 +1,6 @@
 #include "backend.h"
 
 #include "asm_optimizer.h"
-#include "compat_backend.h"
 #include "errorHandler.h"
 #include "ir_emitter.h"
 
@@ -19,7 +18,9 @@ int backend_emit_file(const IrModule *module, const BackendOptions *options,
     if (module == NULL || module->program == NULL || options == NULL || output_path == NULL)
         return 0;
     if (!x86_64_ir_supports_module(module))
-        return compat_backend_emit_file(module, options, output_path);
+        return output_error(module->program,
+                            "Typed IR module is not supported by the x86-64 backend: '%s'",
+                            output_path);
     if (!x86_64_emit_ir_file(module, options->target_format, options->syntax_mode,
                              options->deterministic, output_path))
         return output_error(module->program, "Could not emit typed IR output '%s'", output_path);

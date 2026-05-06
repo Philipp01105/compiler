@@ -1,5 +1,7 @@
 #include "semantic.h"
 
+#include "errorHandler.h"
+
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,6 +15,7 @@ typedef struct LocalSymbol {
     size_t resolved_named_type_token;
     size_t resolved_named_symbol_id;
     int resolved_is_array;
+    size_t scope_depth;
     struct LocalSymbol *next;
 } LocalSymbol;
 
@@ -24,8 +27,24 @@ typedef struct {
     size_t current_function_symbol_id;
     size_t current_owner_token;
     size_t scope_depth;
+    unsigned loop_depth;
+    const AstDeclarationNode *current_function;
+    size_t local_storage;
+    int storage_error_reported;
+    int complexity_error_reported;
     int allocation_failed;
 } Analyzer;
+
+static void semantic_error(Analyzer *analyzer, size_t token, int code,
+                           const char *message) {
+    const AstToken *location = ast_program_token(analyzer->program, token);
+    error_report(global_error_handler, SEVERITY_ERROR,
+                 location == NULL ? 0 : location->span.begin.line,
+                 location == NULL ? 0 : location->span.begin.column,
+                 ERROR_CATEGORY_SEMANTIC, code, analyzer->program->source_path,
+                 "%s", message);
+    analyzer->model->error_count++;
+}
 
 static size_t named_type_token(const AstProgram *program, const AstType *type);
 
@@ -115,6 +134,9 @@ static void add_global(Analyzer *analyzer, AstDeclarationNode *declaration,
         if (existing->kind == kind && same_owner &&
             same_name(existing->source_program, existing->name_token, name)) {
             analyzer->model->duplicate_symbol_count++;
+            if (kind == SEMANTIC_SYMBOL_FUNCTION)
+                semantic_error(analyzer, declaration->name_token,
+                               ERR_PARSE_DUPLICATE_DEFINITION, "Duplicate function");
             return;
         }
     }
@@ -151,6 +173,18 @@ static void add_global(Analyzer *analyzer, AstDeclarationNode *declaration,
 static void add_member(Analyzer *analyzer, size_t name_token, size_t owner_token,
                        AstType type, SemanticSymbolKind kind, const void *node,
                        size_t *resolved_symbol_id) {
+    const char *member_name = ast_program_lexeme(analyzer->program, name_token);
+    const char *owner_name = ast_program_lexeme(analyzer->program, owner_token);
+    for (size_t i = 0; i < analyzer->model->symbol_count; i++) {
+        const SemanticSymbol *existing = &analyzer->model->symbols[i];
+        if (existing->owner_token != AST_TOKEN_NONE &&
+            same_name(existing->source_program, existing->owner_token, owner_name) &&
+            same_name(existing->source_program, existing->name_token, member_name)) {
+            semantic_error(analyzer, name_token, ERR_PARSE_DUPLICATE_DEFINITION,
+                           "Member is already defined");
+            return;
+        }
+    }
     SemanticSymbol symbol = {
         .kind = kind,
         .source_program = analyzer->program,
@@ -257,6 +291,7 @@ static LocalSymbol *push_local(Analyzer *analyzer, size_t name_token, AstType ty
     local->resolved_named_type_token = symbol.resolved_named_type_token;
     local->resolved_named_symbol_id = symbol.resolved_named_symbol_id;
     local->resolved_is_array = symbol.resolved_is_array;
+    local->scope_depth = analyzer->scope_depth;
     local->next = analyzer->locals;
     analyzer->locals = local;
     return local;
@@ -380,12 +415,11 @@ static DataType builtin_result_type(const char *name) {
         strcmp(name, "scanfInt") == 0 || strcmp(name, "sys_write") == 0 ||
         strcmp(name, "sys_read") == 0 || strcmp(name, "sys_open") == 0 ||
         strcmp(name, "sys_close") == 0 || strcmp(name, "io_strlen") == 0 ||
-        strcmp(name, "io_str_to_int") == 0)
+        strcmp(name, "io_str_to_int") == 0 || strcmp(name, "io_int_to_str") == 0)
         return TYPE_INT;
     if (strcmp(name, "scanfChar") == 0) return TYPE_CHAR;
     if (strcmp(name, "strcpy") == 0 || strcmp(name, "strcat") == 0 ||
-        strcmp(name, "strdup") == 0 || strcmp(name, "scanfString") == 0 ||
-        strcmp(name, "io_int_to_str") == 0)
+        strcmp(name, "strdup") == 0 || strcmp(name, "scanfString") == 0)
         return TYPE_STRING;
     if (strcmp(name, "free") == 0) return TYPE_VOID;
     return TYPE_UNKNOWN;
@@ -394,6 +428,283 @@ static DataType builtin_result_type(const char *name) {
 static int is_builtin_name(const char *name) {
     return builtin_result_type(name) != TYPE_UNKNOWN || strcmp(name, "malloc") == 0 ||
            strcmp(name, "read") == 0;
+}
+
+static size_t builtin_arity(const char *name) {
+    if (strcmp(name, "scanfInt") == 0 || strcmp(name, "scanfChar") == 0 ||
+        strcmp(name, "scanfString") == 0) return 0;
+    if (strcmp(name, "strlen") == 0 || strcmp(name, "strdup") == 0 ||
+        strcmp(name, "malloc") == 0 || strcmp(name, "io_strlen") == 0 ||
+        strcmp(name, "io_str_to_int") == 0 || strcmp(name, "sys_close") == 0)
+        return 1;
+    if (strcmp(name, "strcmp") == 0 || strcmp(name, "strcpy") == 0 ||
+        strcmp(name, "strcat") == 0 || strcmp(name, "read") == 0) return 2;
+    if (strcmp(name, "sys_write") == 0 || strcmp(name, "sys_read") == 0 ||
+        strcmp(name, "sys_open") == 0 || strcmp(name, "io_int_to_str") == 0)
+        return 3;
+    return AST_TOKEN_NONE;
+}
+
+static int implicit_conversion_allowed(DataType from, unsigned from_pointers,
+                                       DataType to, unsigned to_pointers) {
+    if (from_pointers != 0 || to_pointers != 0)
+        return from_pointers == to_pointers && (from == to || from == TYPE_UNKNOWN ||
+                                                to == TYPE_UNKNOWN);
+    if (from == to || from == TYPE_UNKNOWN || to == TYPE_UNKNOWN) return 1;
+    int from_integral = from == TYPE_INT || from == TYPE_CHAR || from == TYPE_BYTE ||
+                        from == TYPE_BIT;
+    int to_integral = to == TYPE_INT || to == TYPE_CHAR || to == TYPE_BYTE || to == TYPE_BIT;
+    if (from_integral && to_integral) return 1;
+    if ((from == TYPE_INT || from == TYPE_CHAR || from == TYPE_BYTE || from == TYPE_BIT) &&
+        (to == TYPE_FLOAT || to == TYPE_DOUBLE)) return 1;
+    return from == TYPE_FLOAT && to == TYPE_DOUBLE;
+}
+
+static int expression_conversion_allowed(const AstExpression *expression,
+                                         DataType to, unsigned to_pointers) {
+    if (expression == NULL) return 0;
+    if (implicit_conversion_allowed(expression->resolved_type,
+                                    expression->resolved_pointer_depth +
+                                        (unsigned) expression->resolved_is_array,
+                                    to, to_pointers)) return 1;
+    return expression->kind == AST_EXPR_LITERAL &&
+           expression->resolved_pointer_depth == 0 && to_pointers == 0 &&
+           ((expression->resolved_type == TYPE_DOUBLE && to == TYPE_FLOAT) ||
+            (expression->resolved_type == TYPE_INT &&
+             (to == TYPE_CHAR || to == TYPE_BYTE || to == TYPE_BIT)));
+}
+
+static int constant_integer(const Analyzer *analyzer, const AstExpression *expression,
+                            long long *value) {
+    int negative = 0;
+    if (expression != NULL && expression->kind == AST_EXPR_UNARY &&
+        expression->operator_type == TOKEN_MINUS) {
+        negative = 1;
+        expression = expression->right;
+    }
+    if (expression == NULL || expression->kind != AST_EXPR_LITERAL ||
+        expression->value_token >= analyzer->program->token_count ||
+        analyzer->program->tokens[expression->value_token].type != TOKEN_NUMBER) return 0;
+    *value = strtoll(ast_program_lexeme(analyzer->program, expression->value_token), NULL, 10);
+    if (negative) *value = -*value;
+    return 1;
+}
+
+static size_t parameter_count(const AstDeclarationNode *function) {
+    size_t count = 0;
+    if (function != NULL)
+        for (const AstParameter *parameter = function->as.function.parameters;
+             parameter != NULL; parameter = parameter->next) count++;
+    return count;
+}
+
+static int assignable_expression(const AstExpression *expression);
+
+static void validate_expression(Analyzer *analyzer, AstExpression *expression,
+                                int is_callee) {
+    if (expression == NULL) return;
+    if (expression->token_count > 512U && !analyzer->complexity_error_reported) {
+        semantic_error(analyzer, expression->first_token, ERR_PARSE_TOO_MANY_ERRORS,
+                       "Expression tree exceeds 512 tokens");
+        analyzer->complexity_error_reported = 1;
+    }
+    if (expression->kind == AST_EXPR_CALL) {
+        if (expression->left != NULL && expression->left->kind == AST_EXPR_NAME) {
+            const char *name = ast_program_lexeme(analyzer->program,
+                                                   expression->left->value_token);
+            TokenType token_type = analyzer->program->tokens[
+                expression->left->value_token].type;
+            int cast = token_type >= TOKEN_TYPE_INT && token_type <= TOKEN_TYPE_VOID;
+            if (expression->resolved_symbol_id == AST_SYMBOL_NONE &&
+                !is_builtin_name(name) && !cast) {
+                char message[MAX_TOKEN + 32];
+                (void) snprintf(message, sizeof(message), "Function '%s' not found", name);
+                semantic_error(analyzer, expression->left->value_token,
+                               ERR_SEM_UNDEFINED_FUNCTION, message);
+            } else if (is_builtin_name(name)) {
+                size_t actual = 0;
+                for (AstExpression *argument = expression->arguments;
+                     argument != NULL; argument = argument->next) actual++;
+                size_t expected = builtin_arity(name);
+                if (expected != AST_TOKEN_NONE && actual != expected) {
+                    char message[128];
+                    (void) snprintf(message, sizeof(message),
+                        "Function expects %zu arguments but received %zu", expected, actual);
+                    semantic_error(analyzer, expression->left->value_token,
+                                   ERR_SEM_WRONG_ARG_COUNT, message);
+                }
+            } else if (expression->resolved_symbol_id < analyzer->model->symbol_count) {
+                const SemanticSymbol *function =
+                    &analyzer->model->symbols[expression->resolved_symbol_id];
+                if (function->kind == SEMANTIC_SYMBOL_FUNCTION &&
+                    function->declaration != NULL) {
+                    size_t actual = 0;
+                    for (AstExpression *argument = expression->arguments;
+                         argument != NULL; argument = argument->next) actual++;
+                    size_t expected = parameter_count(function->declaration);
+                    if (actual != expected) {
+                        char message[128];
+                        (void) snprintf(message, sizeof(message),
+                            "Function expects %zu arguments but received %zu", expected, actual);
+                        semantic_error(analyzer, expression->left->value_token,
+                                       ERR_SEM_WRONG_ARG_COUNT, message);
+                    } else {
+                        AstExpression *argument = expression->arguments;
+                        const AstParameter *parameter =
+                            function->declaration->as.function.parameters;
+                        for (; argument != NULL && parameter != NULL;
+                             argument = argument->next, parameter = parameter->next) {
+                            DataType expected_type = primitive_type(function->source_program,
+                                                                     &parameter->type);
+                            if (!expression_conversion_allowed(argument, expected_type,
+                                    parameter->type.pointer_depth +
+                                        (unsigned) parameter->is_array))
+                                semantic_error(analyzer, argument->value_token,
+                                    ERR_TYPE_INCOMPATIBLE_TYPES,
+                                    "Cannot implicitly convert argument to parameter type");
+                        }
+                    }
+                }
+            }
+        } else validate_expression(analyzer, expression->left, 1);
+        for (AstExpression *argument = expression->arguments; argument != NULL;
+             argument = argument->next) validate_expression(analyzer, argument, 0);
+        return;
+    }
+    validate_expression(analyzer, expression->left, 0);
+    validate_expression(analyzer, expression->right, 0);
+    for (AstExpression *argument = expression->arguments; argument != NULL;
+         argument = argument->next) validate_expression(analyzer, argument, 0);
+    if (expression->kind == AST_EXPR_UNARY && expression->operator_type == TOKEN_AMPERSAND &&
+        (expression->right == NULL ||
+         (expression->right->kind != AST_EXPR_NAME &&
+          expression->right->kind != AST_EXPR_INDEX))) {
+        semantic_error(analyzer, expression->first_token, ERR_TYPE_INVALID_OPERATION,
+                       "Address-of requires a mutable lvalue");
+    } else if (expression->kind == AST_EXPR_UNARY && expression->operator_type == TOKEN_STAR &&
+        expression->right != NULL && expression->right->resolved_pointer_depth == 0 &&
+        !expression->right->resolved_is_array) {
+        semantic_error(analyzer, expression->first_token, ERR_TYPE_INVALID_OPERATION,
+                       "Dereference requires a pointer");
+    } else if (expression->kind == AST_EXPR_UNARY &&
+               expression->operator_type == TOKEN_MINUS && expression->right != NULL &&
+               expression->right->resolved_type == TYPE_BIT) {
+        semantic_error(analyzer, expression->first_token, ERR_TYPE_INVALID_OPERATION,
+                       "Boolean values do not support arithmetic");
+    } else if (expression->kind == AST_EXPR_BINARY && expression->left != NULL &&
+               expression->right != NULL) {
+        if ((expression->left->resolved_pointer_depth != 0 ||
+             expression->right->resolved_pointer_depth != 0) &&
+            expression->operator_type != TOKEN_EQUAL_EQUAL &&
+            expression->operator_type != TOKEN_BANG_EQUAL)
+            semantic_error(analyzer, expression->first_token, ERR_TYPE_INVALID_OPERATION,
+                           "Pointer arithmetic is not supported");
+        if (expression->operator_type == TOKEN_PERCENT &&
+            (expression->left->resolved_type == TYPE_FLOAT ||
+             expression->left->resolved_type == TYPE_DOUBLE ||
+             expression->right->resolved_type == TYPE_FLOAT ||
+             expression->right->resolved_type == TYPE_DOUBLE))
+            semantic_error(analyzer, expression->first_token, ERR_TYPE_INVALID_OPERATION,
+                           "Remainder requires integer operands");
+        if (expression->operator_type >= TOKEN_PLUS &&
+            expression->operator_type <= TOKEN_PERCENT &&
+            (expression->left->resolved_type == TYPE_BIT ||
+             expression->right->resolved_type == TYPE_BIT))
+            semantic_error(analyzer, expression->first_token, ERR_TYPE_INVALID_OPERATION,
+                           "Boolean values do not support arithmetic");
+    }
+    if (expression->kind == AST_EXPR_NAME && !is_callee &&
+        expression->resolved_symbol_id == AST_SYMBOL_NONE) {
+        const char *name = ast_program_lexeme(analyzer->program, expression->value_token);
+        TokenType type = analyzer->program->tokens[expression->value_token].type;
+        if (strcmp(name, "true") != 0 && strcmp(name, "false") != 0 &&
+            !is_builtin_name(name) && !(type >= TOKEN_TYPE_INT && type <= TOKEN_TYPE_VOID))
+            semantic_error(analyzer, expression->value_token, ERR_SEM_UNDEFINED_VARIABLE,
+                           "Undefined variable");
+    } else if (expression->kind == AST_EXPR_INDEX && expression->left != NULL) {
+        long long index = 0;
+        if (constant_integer(analyzer, expression->right, &index) &&
+            expression->left->resolved_symbol_id < analyzer->model->symbol_count) {
+            const SemanticSymbol *base =
+                &analyzer->model->symbols[expression->left->resolved_symbol_id];
+            if (base->declared_type.is_array &&
+                base->declared_type.array_length_token < analyzer->program->token_count) {
+                long long length = strtoll(ast_program_lexeme(analyzer->program,
+                    base->declared_type.array_length_token), NULL, 10);
+                if (index < 0 || index >= length)
+                    semantic_error(analyzer, expression->right->value_token,
+                                   ERR_SEM_NOT_ARRAY,
+                                   "Array index is outside declared bounds");
+            }
+        }
+    } else if (expression->kind == AST_EXPR_MEMBER && expression->left != NULL &&
+               expression->resolved_symbol_id == AST_SYMBOL_NONE) {
+        if (expression->left->resolved_named_symbol_id == AST_SYMBOL_NONE) {
+            semantic_error(analyzer, expression->value_token, ERR_SEM_NOT_STRUCT,
+                           "Member access target is not a struct");
+        } else {
+            semantic_error(analyzer, expression->value_token, ERR_SEM_FIELD_NOT_FOUND,
+                           "Field or enum member not found");
+        }
+    }
+}
+
+static int statement_always_returns(const AstStatement *statement) {
+    for (; statement != NULL; statement = statement->next) {
+        if (statement->kind == AST_STMT_RETURN) return 1;
+        if (statement->kind == AST_STMT_BLOCK && statement_always_returns(statement->body))
+            return 1;
+        if (statement->kind == AST_STMT_IF && statement->else_body != NULL &&
+            statement_always_returns(statement->body) &&
+            statement_always_returns(statement->else_body)) return 1;
+    }
+    return 0;
+}
+
+static int known_declared_type(const Analyzer *analyzer, const AstType *type) {
+    if (type == NULL || type->kind == AST_TYPE_INFERRED ||
+        primitive_type(analyzer->program, type) != TYPE_UNKNOWN) return 1;
+    return resolve_named_symbol_id(analyzer, analyzer->program,
+                                   named_type_token(analyzer->program, type)) != AST_SYMBOL_NONE;
+}
+
+static int aggregate_reaches(const Analyzer *analyzer, size_t current_symbol,
+                             size_t target_symbol, size_t depth) {
+    if (current_symbol >= analyzer->model->symbol_count ||
+        depth > analyzer->model->symbol_count) return 1;
+    const SemanticSymbol *current = &analyzer->model->symbols[current_symbol];
+    if (current->kind != SEMANTIC_SYMBOL_STRUCT || current->declaration == NULL) return 0;
+    for (const AstField *field = current->declaration->as.struct_decl.fields;
+         field != NULL; field = field->next) {
+        if (field->type.pointer_depth != 0) continue;
+        size_t named = named_type_token(current->source_program, &field->type);
+        size_t child = resolve_named_symbol_id(analyzer, current->source_program, named);
+        if (child == target_symbol ||
+            (child != AST_SYMBOL_NONE &&
+             aggregate_reaches(analyzer, child, target_symbol, depth + 1U))) return 1;
+    }
+    return 0;
+}
+
+static int assignable_expression(const AstExpression *expression) {
+    return expression != NULL &&
+        (expression->kind == AST_EXPR_NAME || expression->kind == AST_EXPR_INDEX ||
+         expression->kind == AST_EXPR_MEMBER ||
+         (expression->kind == AST_EXPR_UNARY && expression->operator_type == TOKEN_STAR));
+}
+
+static void validate_array_shape(Analyzer *analyzer, const AstType *type) {
+    if (type == NULL || !type->is_array) return;
+    if (type->array_length_token >= analyzer->program->token_count) {
+        semantic_error(analyzer, type->name_token, ERR_TYPE_INVALID_OPERATION,
+                       "Array length must be a compile-time integer");
+        return;
+    }
+    unsigned long long length = strtoull(ast_program_lexeme(analyzer->program,
+        type->array_length_token), NULL, 10);
+    if (length == 0 || length > 1048576ULL)
+        semantic_error(analyzer, type->array_length_token, ERR_TYPE_INVALID_OPERATION,
+                       "Array length must be positive and fit local storage");
 }
 
 static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
@@ -497,6 +808,14 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
             if (operation == TOKEN_PLUS && (expression->left->resolved_type == TYPE_STRING ||
                                             expression->right->resolved_type == TYPE_STRING))
                 expression->resolved_type = TYPE_STRING;
+            else if (expression->left->resolved_type == TYPE_FLOAT &&
+                     expression->right->resolved_type == TYPE_DOUBLE &&
+                     expression->right->kind == AST_EXPR_LITERAL)
+                expression->resolved_type = TYPE_FLOAT;
+            else if (expression->right->resolved_type == TYPE_FLOAT &&
+                     expression->left->resolved_type == TYPE_DOUBLE &&
+                     expression->left->kind == AST_EXPR_LITERAL)
+                expression->resolved_type = TYPE_FLOAT;
             else expression->resolved_type = promoted_numeric(expression->left->resolved_type,
                                                                 expression->right->resolved_type);
         }
@@ -538,12 +857,13 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                     expression->resolved_type = builtin_result_type(name);
                     if (strcmp(name, "malloc") == 0)
                         expression->resolved_pointer_depth = 1;
-                    if (strcmp(name, "read") == 0 && expression->arguments != NULL) {
-                        expression->resolved_type = expression->arguments->resolved_type;
-                        expression->resolved_named_type_token =
-                            expression->arguments->resolved_named_type_token;
-                        expression->resolved_named_symbol_id =
-                            expression->arguments->resolved_named_symbol_id;
+                    if (strcmp(name, "read") == 0 && expression->arguments != NULL &&
+                        expression->arguments->next != NULL) {
+                        const AstExpression *format = expression->arguments->next;
+                        const char *format_text = format->kind == AST_EXPR_LITERAL
+                            ? ast_program_lexeme(analyzer->program, format->value_token) : "";
+                        expression->resolved_type = strcmp(format_text, "%c") == 0
+                            ? TYPE_CHAR : TYPE_INT;
                     }
                 } else if (expression->left->resolved_named_type_token != AST_TOKEN_NONE) {
                     expression->resolved_named_type_token =
@@ -639,7 +959,11 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
         expression->resolved_symbol_id == AST_SYMBOL_NONE &&
         expression->kind != AST_EXPR_RESERVE &&
         !(expression->kind == AST_EXPR_NAME &&
-          is_builtin_name(ast_program_lexeme(analyzer->program, expression->value_token))))
+          is_builtin_name(ast_program_lexeme(analyzer->program, expression->value_token))) &&
+        !(expression->kind == AST_EXPR_CALL && expression->left != NULL &&
+          expression->left->kind == AST_EXPR_NAME &&
+          is_builtin_name(ast_program_lexeme(analyzer->program,
+                                             expression->left->value_token))))
         analyzer->model->unresolved_expression_count++;
 }
 
@@ -648,6 +972,61 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
         LocalSymbol *scope = analyzer->locals;
         if (statement->kind == AST_STMT_VARIABLE) {
             analyze_expression(analyzer, statement->value);
+            validate_expression(analyzer, statement->value, 0);
+            if (!known_declared_type(analyzer, &statement->type))
+                semantic_error(analyzer, statement->type.name_token, ERR_TYPE_UNKNOWN,
+                               "Unknown variable type");
+            if (statement->type.kind != AST_TYPE_INFERRED && statement->value != NULL) {
+                DataType declared = primitive_type(analyzer->program, &statement->type);
+                if (!expression_conversion_allowed(statement->value, declared,
+                        statement->type.pointer_depth))
+                    semantic_error(analyzer, statement->name_token,
+                                   ERR_TYPE_INCOMPATIBLE_TYPES,
+                                   "Cannot implicitly convert initializer");
+            }
+            if (statement->is_gc && statement->type.pointer_depth == 0 &&
+                (statement->value == NULL || statement->value->resolved_pointer_depth == 0))
+                semantic_error(analyzer, statement->name_token,
+                               ERR_TYPE_INVALID_OPERATION,
+                               "@gc requires a pointer allocation");
+            if (same_name(analyzer->program, statement->name_token, "true") ||
+                same_name(analyzer->program, statement->name_token, "false"))
+                semantic_error(analyzer, statement->name_token,
+                               ERR_PARSE_INVALID_DECLARATION,
+                               "Reserved name cannot be declared");
+            if (statement->type.is_array &&
+                statement->type.array_length_token < analyzer->program->token_count) {
+                unsigned long long length = strtoull(ast_program_lexeme(analyzer->program,
+                    statement->type.array_length_token), NULL, 10);
+                if (length == 0 || length > 1048576ULL)
+                    semantic_error(analyzer, statement->type.array_length_token,
+                                   ERR_TYPE_INVALID_OPERATION,
+                                   "Array length must be positive and fit local storage");
+            }
+            size_t slots = 1;
+            if (statement->type.is_array &&
+                statement->type.array_length_token < analyzer->program->token_count)
+                slots = (size_t) strtoull(ast_program_lexeme(analyzer->program,
+                    statement->type.array_length_token), NULL, 10);
+            size_t storage_limit = 8U * 1024U * 1024U;
+            if (slots > storage_limit / 8U || analyzer->local_storage >
+                storage_limit - slots * 8U) {
+                if (!analyzer->storage_error_reported)
+                    semantic_error(analyzer, statement->name_token,
+                                   ERR_CODEGEN_TOO_MANY_VARIABLES,
+                                   "Function local storage exceeds supported limit");
+                analyzer->storage_error_reported = 1;
+            } else analyzer->local_storage += slots * 8U;
+            for (const LocalSymbol *existing = analyzer->locals; existing != NULL;
+                 existing = existing->next) {
+                if (existing->scope_depth == analyzer->scope_depth &&
+                    same_name(analyzer->program, existing->name_token,
+                              ast_program_lexeme(analyzer->program, statement->name_token))) {
+                    semantic_error(analyzer, statement->name_token,
+                                   ERR_PARSE_DUPLICATE_DEFINITION, "Duplicate variable");
+                    break;
+                }
+            }
             LocalSymbol *local = push_local(analyzer, statement->name_token, statement->type,
                                             SEMANTIC_SYMBOL_LOCAL, statement->value);
             if (local != NULL) statement->resolved_symbol_id = local->symbol_id;
@@ -655,7 +1034,10 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
             analyzer->scope_depth++;
             analyze_statement(analyzer, statement->initializer);
             analyze_expression(analyzer, statement->condition);
+            validate_expression(analyzer, statement->condition, 0);
+            analyzer->loop_depth++;
             analyze_statement(analyzer, statement->body);
+            analyzer->loop_depth--;
             analyze_statement(analyzer, statement->else_body);
             pop_to(analyzer, scope);
             analyzer->scope_depth--;
@@ -664,8 +1046,61 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
             analyze_expression(analyzer, statement->value);
             analyze_expression(analyzer, statement->condition);
             analyze_expression(analyzer, statement->update);
+            validate_expression(analyzer, statement->expression, 0);
+            validate_expression(analyzer, statement->value, 0);
+            validate_expression(analyzer, statement->condition, 0);
+            validate_expression(analyzer, statement->update, 0);
+            if (statement->kind == AST_STMT_ASSIGNMENT &&
+                !assignable_expression(statement->expression))
+                semantic_error(analyzer, statement->first_token,
+                               ERR_PARSE_UNEXPECTED_TOKEN,
+                               "Unexpected statement: Assignment requires an assignable target");
+            if (statement->kind == AST_STMT_ASSIGNMENT && statement->expression != NULL &&
+                statement->value != NULL &&
+                !expression_conversion_allowed(statement->value,
+                    statement->expression->resolved_type,
+                    statement->expression->resolved_pointer_depth))
+                semantic_error(analyzer, statement->first_token,
+                               ERR_TYPE_INCOMPATIBLE_TYPES,
+                               "Cannot implicitly convert assigned value");
+            if (statement->kind == AST_STMT_ASSIGNMENT && statement->expression != NULL &&
+                statement->expression->resolved_type == TYPE_BIT &&
+                statement->assignment_operator != TOKEN_EQUAL)
+                semantic_error(analyzer, statement->first_token,
+                               ERR_TYPE_INVALID_OPERATION,
+                               "Boolean values do not support arithmetic assignment");
+            if (statement->kind == AST_STMT_BREAK && analyzer->loop_depth == 0)
+                semantic_error(analyzer, statement->first_token,
+                               ERR_SEM_BREAK_OUTSIDE_LOOP, "Break used outside a loop");
+            if (statement->kind == AST_STMT_CONTINUE && analyzer->loop_depth == 0)
+                semantic_error(analyzer, statement->first_token,
+                               ERR_SEM_CONTINUE_OUTSIDE_LOOP, "Continue used outside a loop");
+            if (statement->kind == AST_STMT_RETURN && analyzer->current_function != NULL) {
+                DataType expected = primitive_type(analyzer->program,
+                    &analyzer->current_function->as.function.return_type);
+                if (expected == TYPE_VOID && statement->value != NULL)
+                    semantic_error(analyzer, statement->first_token,
+                                   ERR_TYPE_INCOMPATIBLE_TYPES,
+                                   "Void function cannot return a value");
+                else if (expected != TYPE_VOID && statement->value == NULL)
+                    semantic_error(analyzer, statement->first_token,
+                                   ERR_TYPE_INCOMPATIBLE_TYPES,
+                                   "Function must return a value");
+                else if (statement->value != NULL &&
+                         !expression_conversion_allowed(statement->value, expected,
+                            analyzer->current_function->as.function.return_type.pointer_depth))
+                    semantic_error(analyzer, statement->first_token,
+                                   ERR_TYPE_INCOMPATIBLE_TYPES,
+                                   "Cannot implicitly convert returned value");
+            }
             analyze_statement(analyzer, statement->initializer);
+            if (statement->kind == AST_STMT_WHILE) analyzer->loop_depth++;
+            if (statement->kind == AST_STMT_BLOCK || statement->kind == AST_STMT_IF ||
+                statement->kind == AST_STMT_WHILE) analyzer->scope_depth++;
             analyze_statement(analyzer, statement->body);
+            if (statement->kind == AST_STMT_BLOCK || statement->kind == AST_STMT_IF ||
+                statement->kind == AST_STMT_WHILE) analyzer->scope_depth--;
+            if (statement->kind == AST_STMT_WHILE) analyzer->loop_depth--;
             analyze_statement(analyzer, statement->else_body);
         }
         if (statement->kind == AST_STMT_BLOCK || statement->kind == AST_STMT_IF ||
@@ -679,12 +1114,23 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
     size_t saved_function = analyzer->current_function_token;
     size_t saved_function_symbol = analyzer->current_function_symbol_id;
     size_t saved_owner = analyzer->current_owner_token;
+    const AstDeclarationNode *saved_declaration = analyzer->current_function;
     analyzer->current_function_token = function->name_token;
     analyzer->current_function_symbol_id = function->resolved_symbol_id;
     analyzer->current_owner_token = function->as.function.owner_token;
+    analyzer->current_function = function;
+    analyzer->local_storage = 0;
+    analyzer->storage_error_reported = 0;
+    analyzer->complexity_error_reported = 0;
+    if (!known_declared_type(analyzer, &function->as.function.return_type))
+        semantic_error(analyzer, function->as.function.return_type.name_token,
+                       ERR_TYPE_UNKNOWN, "Unknown function return type");
     analyzer->scope_depth++;
     for (AstParameter *parameter = function->as.function.parameters;
          parameter != NULL; parameter = parameter->next) {
+        if (!known_declared_type(analyzer, &parameter->type))
+            semantic_error(analyzer, parameter->type.name_token,
+                           ERR_TYPE_UNKNOWN, "Unknown parameter type");
         AstType parameter_type = parameter->type;
         if (parameter->is_array) parameter_type.is_array = 1;
         LocalSymbol *local = push_local(analyzer, parameter->name_token, parameter_type,
@@ -692,11 +1138,18 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
         if (local != NULL) parameter->resolved_symbol_id = local->symbol_id;
     }
     analyze_statement(analyzer, function->as.function.body);
+    DataType return_type = primitive_type(analyzer->program,
+                                           &function->as.function.return_type);
+    if (return_type != TYPE_VOID &&
+        !statement_always_returns(function->as.function.body))
+        semantic_error(analyzer, function->name_token, ERR_TYPE_INCOMPATIBLE_TYPES,
+                       "Function does not return on all paths");
     pop_to(analyzer, saved);
     analyzer->scope_depth--;
     analyzer->current_function_token = saved_function;
     analyzer->current_function_symbol_id = saved_function_symbol;
     analyzer->current_owner_token = saved_owner;
+    analyzer->current_function = saved_declaration;
 }
 
 SemanticModel *semantic_analyze(AstProgram *program) {
@@ -714,6 +1167,14 @@ SemanticModel *semantic_analyze(AstProgram *program) {
     collect_declarations(&analyzer, program);
     for (size_t i = 0; i < program->owned_import_count; i++)
         collect_declarations(&analyzer, program->owned_imports[i]);
+    for (size_t i = 0; i < model->symbol_count; i++) {
+        const SemanticSymbol *symbol = &model->symbols[i];
+        if (symbol->kind != SEMANTIC_SYMBOL_STRUCT || symbol->declaration == NULL) continue;
+        analyzer.program = (AstProgram *) symbol->source_program;
+        if (aggregate_reaches(&analyzer, symbol->id, symbol->id, 0))
+            semantic_error(&analyzer, symbol->name_token, ERR_TYPE_INVALID_OPERATION,
+                           "Recursive structure requires a pointer field");
+    }
     for (size_t unit_index = 0; unit_index <= program->owned_import_count; unit_index++) {
         AstProgram *unit = unit_index == 0 ? program : program->owned_imports[unit_index - 1];
         analyzer.program = unit;
@@ -721,15 +1182,55 @@ SemanticModel *semantic_analyze(AstProgram *program) {
              declaration != NULL; declaration = declaration->next) {
             if (declaration->kind == AST_DECL_FUNCTION) analyze_function(&analyzer, declaration);
             else if (declaration->kind == AST_DECL_STRUCT) {
+                for (AstField *field = declaration->as.struct_decl.fields;
+                     field != NULL; field = field->next) {
+                    if (!known_declared_type(&analyzer, &field->type))
+                        semantic_error(&analyzer, field->type.name_token, ERR_TYPE_UNKNOWN,
+                                       "Unknown field type");
+                    validate_array_shape(&analyzer, &field->type);
+                }
                 for (AstDeclarationNode *method = declaration->as.struct_decl.methods;
                      method != NULL; method = method->next)
                     analyze_function(&analyzer, method);
             } else if (declaration->kind == AST_DECL_ENUM) {
+                for (AstField *field = declaration->as.enum_decl.fields;
+                     field != NULL; field = field->next)
+                    if (!known_declared_type(&analyzer, &field->type))
+                        semantic_error(&analyzer, field->type.name_token, ERR_TYPE_UNKNOWN,
+                                       "Unknown enum field type");
+                size_t field_count = 0;
+                for (AstField *field = declaration->as.enum_decl.fields;
+                     field != NULL; field = field->next) field_count++;
                 for (AstEnumValue *value = declaration->as.enum_decl.values;
-                     value != NULL; value = value->next)
+                     value != NULL; value = value->next) {
+                    size_t argument_count = 0;
                     for (AstExpression *argument = value->arguments;
-                         argument != NULL; argument = argument->next)
+                         argument != NULL; argument = argument->next) {
                         analyze_expression(&analyzer, argument);
+                        validate_expression(&analyzer, argument, 0);
+                        argument_count++;
+                    }
+                    if (argument_count != field_count) {
+                        char message[128];
+                        (void) snprintf(message, sizeof(message),
+                            "Enum value expects %zu arguments but received %zu",
+                            field_count, argument_count);
+                        semantic_error(&analyzer, value->name_token,
+                                       ERR_SEM_WRONG_ARG_COUNT, message);
+                    } else {
+                        AstExpression *argument = value->arguments;
+                        AstField *field = declaration->as.enum_decl.fields;
+                        for (; argument != NULL && field != NULL;
+                             argument = argument->next, field = field->next) {
+                            DataType expected = primitive_type(unit, &field->type);
+                            if (!expression_conversion_allowed(argument, expected,
+                                                               field->type.pointer_depth))
+                                semantic_error(&analyzer, argument->value_token,
+                                    ERR_TYPE_INCOMPATIBLE_TYPES,
+                                    "Cannot implicitly convert enum argument");
+                        }
+                    }
+                }
             }
         }
     }

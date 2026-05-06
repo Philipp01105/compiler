@@ -238,6 +238,25 @@ int main(int argc, char *argv[]) {
         error_handler_free(error_handler);
         return 1;
     }
+    if (!program->structured_ast_complete) {
+        const AstToken *token = ast_program_token(program, program->structured_error_token);
+        if (error_handler_get_error_count(error_handler) == 0)
+            error_report(error_handler, SEVERITY_ERROR,
+                         token == NULL ? 0 : token->span.begin.line,
+                         token == NULL ? 0 : token->span.begin.column,
+                         ERROR_CATEGORY_PARSER, ERR_PARSE_INVALID_SYNTAX, source_file,
+                         "Could not construct a complete syntax tree");
+        error_handler_flush(error_handler);
+        ast_program_free(program);
+        error_handler_free(error_handler);
+        return 1;
+    }
+    if (error_handler_get_error_count(error_handler) != 0) {
+        error_handler_flush(error_handler);
+        ast_program_free(program);
+        error_handler_free(error_handler);
+        return 1;
+    }
 
     if (output_conflicts_with_source(source_file, requested_output)) {
         error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
@@ -250,15 +269,8 @@ int main(int argc, char *argv[]) {
 
     if (debug_mode || show_tokens) {
         printf("  [+] %zu Tokens represented in AST\n", program->token_count);
-        printf("  [+] Structured AST: %s (%zu declarations)\n",
-               program->structured_ast_complete ? "complete" : "compatibility fallback",
+        printf("  [+] Structured AST: complete (%zu declarations)\n",
                program->structured_declaration_count);
-        if (!program->structured_ast_complete) {
-            const AstToken *token = ast_program_token(program, program->structured_error_token);
-            if (token != NULL)
-                printf("      stopped at %d:%d near '%s'\n", token->span.begin.line,
-                       token->span.begin.column, token->lexeme);
-        }
         printf("\n");
     }
 
@@ -296,6 +308,14 @@ int main(int argc, char *argv[]) {
     IrModule *module = NULL;
     if (program->structured_ast_complete) {
         semantics = semantic_analyze(program);
+        if (semantics != NULL && semantics->error_count != 0) {
+            error_handler_flush(error_handler);
+            free(generated_output);
+            semantic_model_free(semantics);
+            ast_program_free(program);
+            error_handler_free(error_handler);
+            return 1;
+        }
         if (semantics != NULL) module = ir_lower_program(program, semantics);
         if (semantics == NULL) {
             error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
@@ -309,7 +329,6 @@ int main(int argc, char *argv[]) {
             error_handler_free(error_handler);
             return 1;
         }
-        if (module == NULL) module = ir_create_compatibility_module(program);
         if (module == NULL) {
             error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
                          ERR_CODEGEN_OUTPUT_FAILED, source_file,
@@ -323,20 +342,7 @@ int main(int argc, char *argv[]) {
         }
         if (debug_mode) {
             printf("  [+] Semantic symbols: %zu\n", semantics->symbol_count);
-            printf("  [+] Typed IR functions: %zu%s\n", module->function_count,
-                   module->verified ? "" : " (compatibility fallback)");
-        }
-    } else {
-        module = ir_create_compatibility_module(program);
-        if (module == NULL) {
-            error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
-                         ERR_CODEGEN_OUTPUT_FAILED, source_file,
-                         "Could not create compatibility lowering module");
-            error_handler_flush(error_handler);
-            free(generated_output);
-            ast_program_free(program);
-            error_handler_free(error_handler);
-            return 1;
+            printf("  [+] Verified typed IR functions: %zu\n", module->function_count);
         }
     }
     if (!backend_emit_file(module, &backend_options, output_filename)) {

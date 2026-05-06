@@ -1,5 +1,8 @@
 #include "syntax_parser.h"
 
+#include "errorHandler.h"
+
+#include <stdio.h>
 #include <string.h>
 
 typedef struct {
@@ -8,9 +11,38 @@ typedef struct {
     unsigned statement_depth;
     unsigned expression_depth;
     int failed;
+    int reported;
 } SyntaxParser;
 
 #define AST_MAX_PARSE_DEPTH 512U
+
+static void parser_failure(SyntaxParser *parser, int code, const char *message) {
+    if (!parser->reported) {
+        const AstToken *token = ast_program_token(parser->program, parser->current);
+        error_report(global_error_handler, SEVERITY_ERROR,
+                     token == NULL ? 0 : token->span.begin.line,
+                     token == NULL ? 0 : token->span.begin.column,
+                     ERROR_CATEGORY_PARSER, code, parser->program->source_path,
+                     "%s", message);
+        parser->reported = 1;
+    }
+    parser->failed = 1;
+}
+
+static const char *token_spelling(TokenType type) {
+    switch (type) {
+        case TOKEN_ARROW: return "->";
+        case TOKEN_LPAREN: return "(";
+        case TOKEN_RPAREN: return ")";
+        case TOKEN_LBRACE: return "{";
+        case TOKEN_RBRACE: return "}";
+        case TOKEN_LBRACKET: return "[";
+        case TOKEN_RBRACKET: return "]";
+        case TOKEN_COLON: return ":";
+        case TOKEN_SEMICOLON: return ";";
+        default: return "token";
+    }
+}
 
 static TokenType current_type(const SyntaxParser *parser) {
     if (parser->current >= parser->program->token_count) return TOKEN_EOF;
@@ -29,7 +61,9 @@ static int match(SyntaxParser *parser, TokenType type) {
 
 static size_t consume(SyntaxParser *parser, TokenType type) {
     if (!check(parser, type)) {
-        parser->failed = 1;
+        char message[64];
+        (void) snprintf(message, sizeof(message), "Expected '%s'", token_spelling(type));
+        parser_failure(parser, ERR_PARSE_EXPECTED_TOKEN, message);
         return AST_TOKEN_NONE;
     }
     return parser->current++;
@@ -39,7 +73,7 @@ static size_t consume_callable_name(SyntaxParser *parser) {
     TokenType type = current_type(parser);
     if (type != TOKEN_IDENTIFIER && type != TOKEN_KEYWORD_PRINT &&
         type != TOKEN_KEYWORD_PRINTLINE) {
-        parser->failed = 1;
+        parser_failure(parser, ERR_PARSE_EXPECTED_TOKEN, "Expected function name");
         return AST_TOKEN_NONE;
     }
     return parser->current++;
@@ -81,7 +115,7 @@ static AstType parse_type(SyntaxParser *parser) {
     size_t first = parser->current;
     while (match(parser, TOKEN_STAR)) type.pointer_depth++;
     if (!is_type_token(current_type(parser))) {
-        parser->failed = 1;
+        parser_failure(parser, ERR_TYPE_UNKNOWN, "Unknown variable type");
         return type;
     }
     type.kind = AST_TYPE_NAMED;
@@ -209,7 +243,8 @@ static AstExpression *parse_unary(SyntaxParser *parser) {
     if (type == TOKEN_BANG || type == TOKEN_MINUS || type == TOKEN_AMPERSAND ||
         type == TOKEN_STAR) {
         if (parser->expression_depth >= AST_MAX_PARSE_DEPTH) {
-            parser->failed = 1;
+            parser_failure(parser, ERR_PARSE_TOO_MANY_ERRORS,
+                           "Expression tree exceeds maximum depth");
             return NULL;
         }
         size_t first = parser->current++;
@@ -260,7 +295,8 @@ static AstExpression *parse_binary(SyntaxParser *parser, int minimum) {
 
 static AstExpression *parse_expression(SyntaxParser *parser) {
     if (parser->expression_depth >= AST_MAX_PARSE_DEPTH) {
-        parser->failed = 1;
+        parser_failure(parser, ERR_PARSE_TOO_MANY_ERRORS,
+                       "Expression tree exceeds maximum depth");
         return NULL;
     }
     parser->expression_depth++;
@@ -464,7 +500,8 @@ static AstStatement *parse_statement_impl(SyntaxParser *parser) {
 
 static AstStatement *parse_statement(SyntaxParser *parser) {
     if (parser->statement_depth >= AST_MAX_PARSE_DEPTH) {
-        parser->failed = 1;
+        parser_failure(parser, ERR_PARSE_TOO_MANY_ERRORS,
+                       "Statement nesting exceeds maximum depth");
         return NULL;
     }
     parser->statement_depth++;
@@ -702,7 +739,8 @@ int frontend_build_structured_ast(AstProgram *program) {
             declaration = parse_function(&parser, 0, AST_TOKEN_NONE);
         else if (check(&parser, TOKEN_KEYWORD_STRUCT)) declaration = parse_struct(&parser);
         else if (check(&parser, TOKEN_KEYWORD_ENUM)) declaration = parse_enum(&parser);
-        else parser.failed = 1;
+        else parser_failure(&parser, ERR_PARSE_INVALID_DECLARATION,
+                            "Expected function declaration");
         if (declaration != NULL) {
             *tail = declaration;
             tail = &declaration->next;

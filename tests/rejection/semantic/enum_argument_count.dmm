@@ -1,0 +1,2 @@
+enum Pair(left:int, right:int) { Broken(1) }
+func main() -> void {}

@@ -41,6 +41,7 @@ typedef struct {
     size_t symbol_capacity;
     size_t unresolved_expression_count;
     size_t duplicate_symbol_count;
+    size_t error_count;
 } SemanticModel;
 
 SemanticModel *semantic_analyze(AstProgram *program);

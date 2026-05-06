@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.21)
 get_filename_component(ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 
+if(EXISTS "${ROOT}/src/compat" OR
+   EXISTS "${ROOT}/src/backend/parser_core.c" OR
+   EXISTS "${ROOT}/src/backend/parser_codegen.c" OR
+   EXISTS "${ROOT}/src/backend/instruction_builder.c")
+    message(FATAL_ERROR "removed compatibility backend sources have returned")
+endif()
+
 file(READ "${ROOT}/src/driver/main.c" main_source)
 file(READ "${ROOT}/src/frontend/frontend.c" frontend_source)
 file(READ "${ROOT}/src/backend/backend.h" backend_api)
@@ -16,10 +23,10 @@ if(frontend_source MATCHES "#[ \t]*include[ \t]*[<\"](backend|parser|instruction
     message(FATAL_ERROR "frontend depends on backend implementation")
 endif()
 if(backend_api MATCHES "lexer\\.h|parser\\.h|TokenStream|Parser")
-    message(FATAL_ERROR "backend public API leaks legacy compiler state")
+    message(FATAL_ERROR "backend public API leaks frontend compiler state")
 endif()
 if(backend_source MATCHES "#[ \t]*include[ \t]*[<\"](lexer|parser|instruction_builder)\\.h|TokenStream|parse_program")
-    message(FATAL_ERROR "typed backend implementation depends on the compatibility parser")
+    message(FATAL_ERROR "typed backend implementation depends on a removed parser")
 endif()
 if(ast_api MATCHES "lexer\\.h|parser\\.h|backend\\.h|TokenStream|Parser")
     message(FATAL_ERROR "AST public API leaks a compiler layer")

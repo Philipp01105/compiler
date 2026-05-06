@@ -207,7 +207,17 @@ static void emit_label(IrBuilder *builder, size_t label, AstSourceSpan span);
 
 static size_t lower_expression(IrBuilder *builder, const AstExpression *expression) {
     if (expression == NULL) return IR_VALUE_NONE;
-    size_t left = lower_expression(builder, expression->left);
+    int method_call = expression->kind == AST_EXPR_CALL && expression->left != NULL &&
+                      expression->left->kind == AST_EXPR_MEMBER &&
+                      expression->resolved_symbol_id < builder->module->semantics->symbol_count;
+    const SemanticSymbol *method = method_call
+        ? &builder->module->semantics->symbols[expression->resolved_symbol_id] : NULL;
+    int has_receiver = method != NULL && method->kind == SEMANTIC_SYMBOL_FUNCTION &&
+                       method->declaration != NULL &&
+                       !method->declaration->as.function.is_static;
+    size_t receiver = has_receiver
+        ? lower_expression(builder, expression->left->left) : IR_VALUE_NONE;
+    size_t left = method_call ? IR_VALUE_NONE : lower_expression(builder, expression->left);
     if (expression->kind == AST_EXPR_BINARY &&
         (expression->operator_type == TOKEN_AMP_AMP ||
          expression->operator_type == TOKEN_PIPE_PIPE)) {
@@ -264,6 +274,7 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
     size_t first_argument = IR_VALUE_NONE;
     size_t argument_count = 0;
     if (expression->kind == AST_EXPR_CALL) {
+        if (has_receiver) argument_count++;
         for (const AstExpression *argument = expression->arguments;
              argument != NULL; argument = argument->next)
             argument_count++;
@@ -273,6 +284,7 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
             return IR_VALUE_NONE;
         }
         size_t argument_index = 0;
+        if (has_receiver) values[argument_index++] = receiver;
         for (const AstExpression *argument = expression->arguments;
              argument != NULL; argument = argument->next) {
             values[argument_index++] = lower_expression(builder, argument);
@@ -322,15 +334,16 @@ static void lower_print_value(IrBuilder *builder, const AstExpression *expressio
         return;
     }
     size_t value = lower_expression(builder, expression);
-    IrInstruction *instruction = emit(builder, IR_OP_PRINT,
-                                      expression == NULL ? (AstSourceSpan) {{0, 0}, {0, 0}}
-                                                         : expression->span);
+    AstSourceSpan span = expression == NULL
+        ? (AstSourceSpan) {{0, 0}, {0, 0}} : expression->span;
+    IrInstruction *instruction = emit(builder, IR_OP_PRINT, span);
     if (instruction != NULL) {
         instruction->operand_a = value;
         instruction->operator_type = print_newline
             ? TOKEN_KEYWORD_PRINTLINE : TOKEN_KEYWORD_PRINT;
     }
-    set_expression_type(builder, instruction, expression);
+    if (expression == NULL) set_void_type(builder, instruction);
+    else set_expression_type(builder, instruction, expression);
 }
 
 static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
@@ -353,6 +366,7 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
                 instruction->pointer_depth = statement->type.pointer_depth;
                 instruction->type_name_token = statement->type.name_token;
                 instruction->is_array = statement->type.is_array;
+                instruction->is_gc = statement->is_gc;
                 if (statement->type.kind == AST_TYPE_INFERRED && statement->value != NULL) {
                     instruction->type = statement->value->resolved_type;
                     instruction->pointer_depth = statement->value->resolved_pointer_depth;
@@ -478,11 +492,27 @@ static int append_function(IrModule *module, const AstProgram *program,
     for (const AstParameter *parameter = declaration->as.function.parameters;
          parameter != NULL; parameter = parameter->next)
         function->parameter_count++;
+    int has_receiver = function->owner_symbol_id != AST_SYMBOL_NONE &&
+                       !declaration->as.function.is_static;
+    if (has_receiver) function->parameter_count++;
     if (function->parameter_count != 0) {
         function->parameters = calloc(function->parameter_count, sizeof(*function->parameters));
         if (function->parameters == NULL) return 0;
     }
     size_t parameter_index = 0;
+    if (has_receiver) {
+        IrParameter *receiver = &function->parameters[parameter_index++];
+        receiver->source_program = program;
+        receiver->name_token = function->owner_token;
+        receiver->symbol_id = function->owner_symbol_id;
+        receiver->type = TYPE_UNKNOWN;
+        receiver->pointer_depth = 1;
+        receiver->type_name_token = function->owner_token;
+        receiver->is_receiver = 1;
+        receiver->type_id = type_from_parts(module, TYPE_UNKNOWN, 1,
+            function->owner_token, 0, 0, program, function->owner_symbol_id);
+        if (receiver->type_id == IR_TYPE_NONE) return 0;
+    }
     for (const AstParameter *parameter = declaration->as.function.parameters;
          parameter != NULL; parameter = parameter->next, parameter_index++) {
         IrParameter *ir_parameter = &function->parameters[parameter_index];
@@ -654,13 +684,6 @@ failure:
     return NULL;
 }
 
-IrModule *ir_create_compatibility_module(const AstProgram *program) {
-    if (program == NULL) return NULL;
-    IrModule *module = calloc(1, sizeof(*module));
-    if (module != NULL) module->program = program;
-    return module;
-}
-
 static int instruction_produces_value(const IrInstruction *instruction) {
     IrOpcode opcode = instruction->opcode;
     return opcode == IR_OP_CONSTANT || opcode == IR_OP_LOAD ||
@@ -724,6 +747,13 @@ int ir_verify_module(const IrModule *module) {
                  SEMANTIC_SYMBOL_STRUCT)) return 0;
         for (size_t p = 0; p < function->parameter_count; p++) {
             const IrParameter *parameter = &function->parameters[p];
+            if (parameter->is_receiver) {
+                if (p != 0 || function->owner_symbol_id == AST_SYMBOL_NONE ||
+                    parameter->symbol_id != function->owner_symbol_id ||
+                    parameter->pointer_depth != 1 ||
+                    parameter->type_id >= module->type_count) return 0;
+                continue;
+            }
             const SemanticSymbol *symbol = parameter->symbol_id <
                 module->semantics->symbol_count
                     ? &module->semantics->symbols[parameter->symbol_id] : NULL;
@@ -832,7 +862,10 @@ int ir_verify_module(const IrModule *module) {
                     REQUIRE_VALUE(instruction->operand_a);
                     break;
                 case IR_OP_CALL:
-                    REQUIRE_VALUE(instruction->operand_a);
+                    if (instruction->operand_a != IR_VALUE_NONE)
+                        REQUIRE_VALUE(instruction->operand_a);
+                    else if (instruction->symbol_id == AST_SYMBOL_NONE)
+                        valid = 0;
                     if (instruction->symbol_id != AST_SYMBOL_NONE &&
                         (instruction->symbol_id >= module->semantics->symbol_count ||
                          module->semantics->symbols[instruction->symbol_id].kind !=
@@ -848,7 +881,8 @@ int ir_verify_module(const IrModule *module) {
                     }
                     break;
                 case IR_OP_PRINT:
-                    REQUIRE_VALUE(instruction->operand_a);
+                    if (instruction->operand_a != IR_VALUE_NONE)
+                        REQUIRE_VALUE(instruction->operand_a);
                     break;
                 case IR_OP_RETURN:
                     if (instruction->operand_a != IR_VALUE_NONE) REQUIRE_VALUE(instruction->operand_a);

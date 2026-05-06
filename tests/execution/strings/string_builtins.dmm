@@ -1,0 +1,25 @@
+func main() -> void {
+    var [32] buffer:char;
+    strcpy(buffer, "typed");
+    strcat(buffer, " IR");
+    println(buffer);
+    println(strlen(buffer));
+    println(strcmp(buffer, "typed IR"));
+    var copy:string = strdup(buffer);
+    println(copy == "typed IR");
+    free(copy);
+
+    var [16] number:char;
+    println(io_int_to_str(-123, number, 16));
+    println(number);
+    println(io_str_to_int(number));
+
+    var joined:string = "native" + " backend";
+    println(joined);
+    free(joined);
+
+    var allocation:*int = malloc(8);
+    *allocation = 77;
+    println(*allocation);
+    free(allocation);
+}

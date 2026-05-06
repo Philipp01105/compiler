@@ -98,7 +98,7 @@ cmake --build fuzz-build --target fuzz_lexer fuzz_syntax_converter
 - [Architecture](ARCHITECTURE.md): compiler pipeline, module ownership, backend, and validation design.
 
 Source code is grouped by ownership under `src/common`, `src/ast`,
-`src/ast`, `src/frontend`, `src/sema`, `src/ir`, `src/backend`, `src/compat`,
+`src/frontend`, `src/sema`, `src/ir`, `src/backend`,
 `src/diagnostics`, and `src/driver`.
 
 ## License
