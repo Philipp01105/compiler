@@ -12,6 +12,15 @@ if(NOT DEFINED ASSEMBLER OR NOT EXISTS "${ASSEMBLER}")
 endif()
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 
+# Emit every supported object format, but only assemble and execute the format
+# understood by the host toolchain. Linux GCC cannot link COFF assembly and
+# MinGW cannot link ELF assembly.
+if(WIN32)
+    set(HOST_TARGET coff)
+else()
+    set(HOST_TARGET elf)
+endif()
+
 foreach(target elf coff)
     foreach(syntax att intel)
         set(output "${OUTPUT_DIR}/hello_${target}_${syntax}.s")
@@ -74,7 +83,7 @@ foreach(target elf coff)
     if(NOT assembly MATCHES "# Lowering: typed IR" OR NOT assembly MATCHES "call add")
         message(FATAL_ERROR "integer function call did not use typed IR (${target}/${syntax})")
     endif()
-    if(target STREQUAL "coff")
+    if(target STREQUAL "${HOST_TARGET}")
     execute_process(
             COMMAND "${ASSEMBLER}" -no-pie "${output}" -o "${executable}"
             RESULT_VARIABLE result OUTPUT_VARIABLE output_text ERROR_VARIABLE errors)
@@ -137,7 +146,7 @@ foreach(target elf coff)
     if(NOT assembly MATCHES "# Lowering: typed IR")
         message(FATAL_ERROR "scalar program did not use typed IR (${target}/${syntax})")
     endif()
-    if(target STREQUAL "coff")
+    if(target STREQUAL "${HOST_TARGET}")
       execute_process(
               COMMAND "${ASSEMBLER}" -no-pie "${output}" -o "${executable}"
               RESULT_VARIABLE result ERROR_VARIABLE errors)
