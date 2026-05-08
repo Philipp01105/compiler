@@ -58,7 +58,8 @@ int main(int argc, char **argv) {
     for (int i = 1; i < argc; i++) {
         AstProgram *program = frontend_parse_file(argv[i], &options);
         SemanticModel *semantics = semantic_analyze(program);
-        IrModule *module = ir_lower_program(program, semantics);
+        IrModule *module = semantics != NULL && semantics->error_count == 0
+            ? ir_lower_program(program, semantics) : NULL;
         int has_import = module != NULL && module->import_count != 0;
         if (semantics != NULL && semantics->unresolved_expression_count != 0)
             fprintf(stderr, "unresolved expressions for %s: %zu\n", argv[i],
@@ -67,6 +68,11 @@ int main(int argc, char **argv) {
             report_unresolved(program);
         if (semantics != NULL && semantics->unresolved_expression_count != 0 && !has_import)
             failed = 1;
+        if (semantics != NULL && semantics->error_count != 0) {
+            fprintf(stderr, "semantic errors for %s: %zu\n", argv[i],
+                    semantics->error_count);
+            failed = 1;
+        }
         if (strstr(argv[i], "import_root.dmm") != NULL &&
             (program->owned_import_count != 1 || semantics == NULL ||
              semantics->unresolved_expression_count != 0 || module == NULL ||
@@ -95,6 +101,8 @@ int main(int argc, char **argv) {
                 failed = 1;
             int saw_resolved_load = 0;
             int tested_verifier = 0;
+            int tested_typed_verifier = 0;
+            int tested_return_verifier = 0;
             int saw_typed_parameters = 0;
             for (size_t f = 0; module != NULL && f < module->function_count; f++) {
                 IrFunction *function = &module->functions[f];
@@ -129,9 +137,34 @@ int main(int argc, char **argv) {
                         instruction->operand_a = saved;
                         tested_verifier = 1;
                     }
+                    if (!tested_typed_verifier && instruction->opcode == IR_OP_BINARY) {
+                        TokenType saved = instruction->operator_type;
+                        instruction->operator_type = TOKEN_AMP_AMP;
+                        if (ir_verify_module(module)) failed = 1;
+                        instruction->operator_type = saved;
+                        tested_typed_verifier = 1;
+                    }
+                    if (!tested_return_verifier && instruction->opcode == IR_OP_RETURN &&
+                        instruction->operand_a != IR_VALUE_NONE) {
+                        IrTypeId invalid_return_type = IR_TYPE_NONE;
+                        for (IrTypeId t = 0; t < module->type_count; t++)
+                            if (module->types[t].kind == IR_TYPE_PRIMITIVE &&
+                                module->types[t].primitive == TYPE_VOID) {
+                                invalid_return_type = t;
+                                break;
+                            }
+                        if (invalid_return_type != IR_TYPE_NONE) {
+                            IrTypeId saved = function->return_type_id;
+                            function->return_type_id = invalid_return_type;
+                            if (ir_verify_module(module)) failed = 1;
+                            function->return_type_id = saved;
+                            tested_return_verifier = 1;
+                        }
+                    }
                 }
             }
             if (!saw_resolved_load || !saw_typed_parameters || !tested_verifier ||
+                !tested_typed_verifier || !tested_return_verifier ||
                 !ir_verify_module(module)) failed = 1;
         }
         for (size_t f = 0; module != NULL && f < module->function_count; f++)

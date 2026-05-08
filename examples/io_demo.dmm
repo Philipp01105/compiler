@@ -6,11 +6,11 @@
 //
 // Features demonstrated:
 //   - Direct syscall usage (sys_write, sys_read, sys_open, sys_close)
-//   - High-level file operations from stdlib/io.txt
+//   - High-level file operations from stdlib/io.dmm
 //   - String operations and conversions
 // ===================================================================
 
-#import <stdlib/io.txt>
+#import <stdlib/io.dmm>
 
 func main() -> void {
     println("╔════════════════════════════════════════╗");

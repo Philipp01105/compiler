@@ -126,6 +126,7 @@ typedef struct {
 typedef struct {
     size_t token;
     IrTypeId type_id;
+    int negative;
 } IrEnumArgument;
 
 typedef struct {

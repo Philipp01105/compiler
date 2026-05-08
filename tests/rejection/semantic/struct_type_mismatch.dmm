@@ -1,0 +1,3 @@
+struct Left { var value:int; }
+struct Right { var value:int; }
+func main() -> void { var left:Left; var right:Right = left; }
