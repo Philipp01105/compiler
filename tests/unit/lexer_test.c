@@ -21,6 +21,17 @@ int main(void) {
     assert(tokens->tokens[tokens->count - 1].type == TOKEN_EOF);
     free_token_stream(tokens);
 
+    const char repeated[] = "var repeated:int; repeated = repeated + repeated;";
+    tokens = lex(repeated, sizeof(repeated) - 1U);
+    assert(tokens != NULL && !tokens->has_error);
+    const char *identity = tokens->tokens[1].value;
+    assert(identity != NULL);
+    assert(tokens->tokens[5].value == identity);
+    assert(tokens->tokens[7].value == identity);
+    assert(tokens->tokens[9].value == identity);
+    assert(sizeof(Token) < MAX_TOKEN);
+    free_token_stream(tokens);
+
     tokens = lex("", 0);
     assert(tokens != NULL && !tokens->has_error && tokens->count == 1);
     assert(tokens->tokens[0].type == TOKEN_EOF);

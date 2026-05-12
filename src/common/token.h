@@ -2,10 +2,11 @@
 #define DMM_TOKEN_H
 
 #include "language_types.h"
+#include "string_interner.h"
 
 typedef struct {
     TokenType type;
-    char value[MAX_TOKEN];
+    const char *value;
     int line;
     int column;
 } Token;
@@ -16,6 +17,8 @@ typedef struct {
     int current;
     int capacity;
     int has_error;
+    StringInterner *strings;
+    int owns_strings;
 } TokenStream;
 
 #endif

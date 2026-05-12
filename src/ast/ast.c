@@ -47,6 +47,7 @@ void ast_program_free(AstProgram *program) {
     free(program->owned_imports);
     free(program->tokens);
     free(program->declarations);
+    if (program->owns_strings) string_interner_free(program->strings);
     free(program);
 }
 

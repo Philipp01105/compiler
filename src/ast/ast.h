@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include "language_types.h"
+#include "string_interner.h"
 
 #define AST_TOKEN_NONE ((size_t)-1)
 #define AST_SYMBOL_NONE ((size_t)-1)
@@ -25,10 +26,10 @@ typedef enum {
     AST_STMT_RETURN, AST_STMT_BREAK, AST_STMT_CONTINUE, AST_STMT_PRINT
 } AstStatementKind;
 
-/* Lossless token leaves own source spellings referenced by syntax and IR nodes. */
+/* Lossless token leaves reference source spellings owned by the module interner. */
 typedef struct {
     TokenType type;
-    char lexeme[MAX_TOKEN];
+    const char *lexeme;
     AstSourceSpan span;
 } AstToken;
 
@@ -160,6 +161,8 @@ struct AstProgram {
     int structured_ast_complete;
     size_t structured_error_token;
     void *arena;
+    StringInterner *strings;
+    int owns_strings;
     AstProgram **owned_imports;
     size_t owned_import_count;
     size_t owned_import_capacity;

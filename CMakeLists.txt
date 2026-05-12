@@ -24,6 +24,8 @@ set(DMM_INCLUDE_DIRS
 
 add_executable(compiler
         src/common/language_types.h
+        src/common/string_interner.c
+        src/common/string_interner.h
         src/common/token.h
         src/ast/ast.c
         src/ast/ast.h
@@ -87,7 +89,8 @@ if(DMM_BUILD_FUZZERS)
     target_compile_options(fuzz_syntax_converter PRIVATE -fsanitize=fuzzer,address,undefined)
     target_link_options(fuzz_syntax_converter PRIVATE -fsanitize=fuzzer,address,undefined)
 
-    add_executable(fuzz_lexer tests/fuzz/fuzz_lexer.c src/frontend/lexer.c src/diagnostics/errorHandler.c)
+    add_executable(fuzz_lexer tests/fuzz/fuzz_lexer.c src/frontend/lexer.c
+            src/common/string_interner.c src/diagnostics/errorHandler.c)
     target_include_directories(fuzz_lexer PRIVATE ${DMM_INCLUDE_DIRS})
     target_compile_options(fuzz_lexer PRIVATE -fsanitize=fuzzer,address,undefined)
     target_link_options(fuzz_lexer PRIVATE -fsanitize=fuzzer,address,undefined)
@@ -141,7 +144,14 @@ if(BUILD_TESTING)
     add_test(NAME x86_instruction_unit COMMAND dmm_x86_instruction_test)
     set_tests_properties(x86_instruction_unit PROPERTIES LABELS "unit;backend;safety")
 
-    add_executable(dmm_lexer_test tests/unit/lexer_test.c src/frontend/lexer.c src/diagnostics/errorHandler.c)
+    add_executable(dmm_string_interner_test tests/unit/string_interner_test.c
+            src/common/string_interner.c)
+    target_include_directories(dmm_string_interner_test PRIVATE ${DMM_INCLUDE_DIRS})
+    add_test(NAME string_interner_unit COMMAND dmm_string_interner_test)
+    set_tests_properties(string_interner_unit PROPERTIES LABELS "unit;frontend;safety")
+
+    add_executable(dmm_lexer_test tests/unit/lexer_test.c src/frontend/lexer.c
+            src/common/string_interner.c src/diagnostics/errorHandler.c)
     target_include_directories(dmm_lexer_test PRIVATE ${DMM_INCLUDE_DIRS})
     add_test(NAME lexer_unit COMMAND dmm_lexer_test)
     set_tests_properties(lexer_unit PROPERTIES LABELS "unit;lexer;safety")
@@ -149,7 +159,7 @@ if(BUILD_TESTING)
     add_executable(dmm_frontend_ast_test
             tests/unit/frontend_ast_test.c
             src/ast/ast.c src/frontend/frontend.c src/frontend/syntax_parser.c
-            src/frontend/lexer.c src/diagnostics/errorHandler.c)
+            src/frontend/lexer.c src/common/string_interner.c src/diagnostics/errorHandler.c)
     target_include_directories(dmm_frontend_ast_test PRIVATE ${DMM_INCLUDE_DIRS})
     add_test(NAME frontend_ast_unit COMMAND dmm_frontend_ast_test
              ${CMAKE_SOURCE_DIR}/tests/unit/frontend_ast_fixture.dmm)
@@ -158,7 +168,7 @@ if(BUILD_TESTING)
     add_executable(dmm_pipeline_test
             tests/unit/pipeline_test.c src/ast/ast.c src/frontend/frontend.c
             src/frontend/syntax_parser.c src/frontend/lexer.c src/sema/semantic.c
-            src/ir/ir.c src/diagnostics/errorHandler.c)
+            src/ir/ir.c src/common/string_interner.c src/diagnostics/errorHandler.c)
     target_include_directories(dmm_pipeline_test PRIVATE ${DMM_INCLUDE_DIRS})
     file(GLOB_RECURSE DMM_FRONTEND_CORPUS CONFIGURE_DEPENDS
             ${CMAKE_SOURCE_DIR}/tests/execution/*.dmm)
@@ -210,7 +220,8 @@ if(BUILD_TESTING)
     set_tests_properties(stress_limits PROPERTIES LABELS "integration;stress;safety")
 
     if(DMM_SANITIZERS)
-        foreach(test_target dmm_optimizer_test dmm_syntax_converter_test dmm_x86_instruction_test dmm_lexer_test
+        foreach(test_target dmm_optimizer_test dmm_syntax_converter_test dmm_x86_instruction_test
+                            dmm_string_interner_test dmm_lexer_test
                             dmm_frontend_ast_test dmm_pipeline_test)
             target_compile_options(${test_target} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
             target_link_options(${test_target} PRIVATE -fsanitize=address,undefined)

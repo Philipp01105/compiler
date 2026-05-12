@@ -88,9 +88,10 @@ static int build_declarations(AstProgram *program) {
     return 1;
 }
 
-static AstProgram *parse_single_file(const char *source_path, const FrontendOptions *options) {
+static AstProgram *parse_single_file(const char *source_path, const FrontendOptions *options,
+                                     StringInterner *strings) {
     const int debug = options != NULL && options->debug;
-    TokenStream *stream = tokenize_file(source_path, debug);
+    TokenStream *stream = tokenize_file_with_interner(source_path, debug, strings);
     if (stream == NULL) return NULL;
     if (options != NULL && options->show_tokens) print_tokens(stream);
     if (stream->has_error) {
@@ -100,6 +101,7 @@ static AstProgram *parse_single_file(const char *source_path, const FrontendOpti
 
     AstProgram *program = calloc(1, sizeof(*program));
     if (program == NULL) goto allocation_failure;
+    program->strings = strings;
     program->source_path = copy_string(source_path);
     if (program->source_path == NULL) goto allocation_failure;
     program->token_count = (size_t) stream->count;
@@ -109,7 +111,7 @@ static AstProgram *parse_single_file(const char *source_path, const FrontendOpti
 
     for (size_t i = 0; i < program->token_count; i++) {
         program->tokens[i].type = stream->tokens[i].type;
-        memcpy(program->tokens[i].lexeme, stream->tokens[i].value, MAX_TOKEN);
+        program->tokens[i].lexeme = stream->tokens[i].value;
         program->tokens[i].span = token_span(&stream->tokens[i]);
     }
     free_token_stream(stream);
@@ -250,7 +252,7 @@ static int resolve_imports(AstProgram *root, AstProgram *unit,
                 continue;
             }
             (void) fclose(probe);
-            imported = parse_single_file(path, options);
+            imported = parse_single_file(path, options, root->strings);
             if (imported == NULL) {
                 free(path);
                 free(import_text);
@@ -276,8 +278,14 @@ static int resolve_imports(AstProgram *root, AstProgram *unit,
 }
 
 AstProgram *frontend_parse_file(const char *source_path, const FrontendOptions *options) {
-    AstProgram *program = parse_single_file(source_path, options);
-    if (program == NULL) return NULL;
+    StringInterner *strings = string_interner_create();
+    if (strings == NULL) return NULL;
+    AstProgram *program = parse_single_file(source_path, options, strings);
+    if (program == NULL) {
+        string_interner_free(strings);
+        return NULL;
+    }
+    program->owns_strings = 1;
     if (!resolve_imports(program, program, options)) {
         ast_program_free(program);
         error_report(global_error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,

@@ -34,12 +34,13 @@ parser/type-checker/emitter have been removed from the build and source tree.
   runtime-failure, stress, and IR-native tests.
 - Structured x86-64 instructions and typed operands with data-driven Intel and
   AT&T printers; the IR emitter no longer formats machine instructions directly.
+- Module-wide interned token spellings shared across imports, plus a hashed
+  semantic symbol index for fast identifier lookup.
 
 ## Next priorities
 
 | Priority | Addition                                | Why                                                                                                       |
 |----------|-----------------------------------------|-----------------------------------------------------------------------------------------------------------|
-| P1       | Interned source strings and identifiers | Reduce token memory and speed symbol lookup in large modules.                                             |
 | P1       | Parser/sema/IR fuzzing                  | Extend fuzz coverage beyond the lexer and assembly syntax converter.                                      |
 | P1       | Richer source maps and dumps            | Add stable AST/IR dump formats and instruction-level source mapping.                                      |
 | P2       | Runtime library split                   | Move platform runtime shims out of the emitter while retaining typed runtime operations in IR.            |

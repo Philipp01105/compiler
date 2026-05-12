@@ -25,7 +25,9 @@ is no alternate compatibility emitter.
   and expression nodes in the AST arena.
 - `src/frontend/frontend.c` owns file/import loading. Quoted imports are relative
   to their source unit; angle imports can resolve from the bundled library root.
-- `src/ast` owns program lifetime, source token spellings, spans, and AST storage.
+- `src/common/string_interner.c` owns the module-wide canonical spelling table.
+  Root files and imports share it, so equal source strings have pointer identity.
+- `src/ast` owns program lifetime, the shared string interner, spans, and AST storage.
 - `src/sema` collects global/member/local symbols, resolves expressions and
   named types, validates scopes, calls, conversions, lvalues, returns, bounds,
   and control-flow placement, and annotates AST nodes with stable IDs and types.
@@ -43,10 +45,14 @@ is no alternate compatibility emitter.
 
 Every syntax node has a source span. Expressions retain their tree shape and
 evaluation order; postfix calls, indexes, and members wrap their operand rather
-than reconstructing it later. Token spellings remain owned by `AstProgram` and
-are referenced by token index.
+than reconstructing it later. Token spellings are interned once per complete
+root/import graph and referenced by token index, reducing each token from a
+fixed maximum-sized text buffer to a stable pointer.
 
 Semantic symbols use stable IDs across the root program and all imported units.
+Global lookup uses a hash index keyed by interned spelling and symbol kind;
+pointer equality is the common comparison path while public textual lookups
+remain content-correct.
 Local symbols are scoped before IR lowering. Expression annotations record the
 primitive type, pointer depth, named type symbol, array state, and referenced
 symbol. Backend emission therefore does not decide whether source operations are
