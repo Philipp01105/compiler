@@ -138,8 +138,6 @@ static TokenType get_keyword_type(const char *str) {
     if (strcmp(str, "var") == 0) return TOKEN_KEYWORD_VAR;
     if (strcmp(str, "return") == 0) return TOKEN_KEYWORD_RETURN;
     if (strcmp(str, "for") == 0) return TOKEN_KEYWORD_FOR;
-    if (strcmp(str, "print") == 0) return TOKEN_KEYWORD_PRINT;
-    if (strcmp(str, "println") == 0) return TOKEN_KEYWORD_PRINTLINE;
     if (strcmp(str, "if") == 0) return TOKEN_KEYWORD_IF;
     if (strcmp(str, "else") == 0) return TOKEN_KEYWORD_ELSE;
     if (strcmp(str, "while") == 0) return TOKEN_KEYWORD_WHILE;
@@ -151,7 +149,7 @@ static TokenType get_keyword_type(const char *str) {
     if (strcmp(str, "static") == 0) return TOKEN_KEYWORD_STATIC;
     if (strcmp(str, "reserve") == 0) return TOKEN_KEYWORD_RESERVE;
     if (strcmp(str, "free") == 0) return TOKEN_KEYWORD_FREE;
-    if (strcmp(str, "gc") == 0) return TOKEN_KEYWORD_GC;
+    if (strcmp(str, "const") == 0) return TOKEN_KEYWORD_CONST;
 
     if (strcmp(str, "int") == 0) return TOKEN_TYPE_INT;
     if (strcmp(str, "char") == 0) return TOKEN_TYPE_CHAR;

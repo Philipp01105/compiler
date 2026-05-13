@@ -71,8 +71,7 @@ static size_t consume(SyntaxParser *parser, TokenType type) {
 
 static size_t consume_callable_name(SyntaxParser *parser) {
     TokenType type = current_type(parser);
-    if (type != TOKEN_IDENTIFIER && type != TOKEN_KEYWORD_PRINT &&
-        type != TOKEN_KEYWORD_PRINTLINE) {
+    if (type != TOKEN_IDENTIFIER) {
         parser_failure(parser, ERR_PARSE_EXPECTED_TOKEN, "Expected function name");
         return AST_TOKEN_NONE;
     }
@@ -113,13 +112,34 @@ static int is_type_token(TokenType type) {
 static AstType parse_type(SyntaxParser *parser) {
     AstType type = inferred_type();
     size_t first = parser->current;
-    while (match(parser, TOKEN_STAR)) type.pointer_depth++;
-    if (!is_type_token(current_type(parser))) {
-        parser_failure(parser, ERR_TYPE_UNKNOWN, "Unknown variable type");
-        return type;
+    unsigned leading_pointers = 0;
+    while (match(parser, TOKEN_STAR)) leading_pointers++;
+    if (match(parser, TOKEN_LPAREN)) {
+        type = parse_type(parser);
+        (void) consume(parser, TOKEN_RPAREN);
+        if (type.is_array || type.is_slice) type.outer_pointer_depth += leading_pointers;
+        else type.pointer_depth += leading_pointers;
+    } else {
+        if (!is_type_token(current_type(parser))) {
+            parser_failure(parser, ERR_TYPE_UNKNOWN, "Unknown type");
+            return type;
+        }
+        type.kind = AST_TYPE_NAMED;
+        type.name_token = parser->current++;
+        type.pointer_depth = leading_pointers;
     }
-    type.kind = AST_TYPE_NAMED;
-    type.name_token = parser->current++;
+    if (match(parser, TOKEN_LBRACKET)) {
+        if (match(parser, TOKEN_RBRACKET)) {
+            type.is_slice = 1;
+        } else {
+            if (!check(parser, TOKEN_NUMBER) && !check(parser, TOKEN_IDENTIFIER))
+                parser_failure(parser, ERR_PARSE_EXPECTED_TOKEN,
+                               "Expected array length constant");
+            type.is_array = 1;
+            type.array_length_token = parser->current++;
+            (void) consume(parser, TOKEN_RBRACKET);
+        }
+    }
     type.span = range_span(parser, first, parser->current);
     return type;
 }
@@ -140,6 +160,7 @@ static AstExpression *new_expression(SyntaxParser *parser, AstExpressionKind kin
     expression->resolved_named_type_token = AST_TOKEN_NONE;
     expression->resolved_named_symbol_id = AST_SYMBOL_NONE;
     expression->resolved_symbol_id = AST_SYMBOL_NONE;
+    expression->allocated_type = inferred_type();
     return expression;
 }
 
@@ -166,6 +187,10 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
         expression = new_expression(parser, AST_EXPR_RESERVE, first);
         if (expression != NULL) expression->value_token = parser->current;
         parser->current++;
+        (void) consume(parser, TOKEN_LPAREN);
+        AstType allocated_type = parse_type(parser);
+        (void) consume(parser, TOKEN_RPAREN);
+        if (expression != NULL) expression->allocated_type = allocated_type;
     } else if (match(parser, TOKEN_LPAREN)) {
         expression = parse_expression(parser);
         (void) consume(parser, TOKEN_RPAREN);
@@ -187,8 +212,7 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
     while (!parser->failed && expression != NULL) {
         if (match(parser, TOKEN_LPAREN)) {
             AstExpressionKind call_kind = AST_EXPR_CALL;
-            if (expression->kind == AST_EXPR_RESERVE) call_kind = AST_EXPR_RESERVE;
-            else if (expression->kind == AST_EXPR_NAME &&
+            if (expression->kind == AST_EXPR_NAME &&
                      expression->value_token < parser->program->token_count) {
                 TokenType callee = parser->program->tokens[expression->value_token].type;
                 if (callee >= TOKEN_TYPE_INT && callee <= TOKEN_TYPE_VOID)
@@ -345,22 +369,9 @@ static AstStatement *parse_variable(SyntaxParser *parser, size_t first, int is_g
     (void) consume(parser, TOKEN_KEYWORD_VAR);
     AstStatement *statement = new_statement(parser, AST_STMT_VARIABLE, first);
     if (statement != NULL) statement->is_gc = is_gc;
-    size_t array_length = AST_TOKEN_NONE;
-    if (match(parser, TOKEN_LBRACKET)) {
-        array_length = consume(parser, TOKEN_NUMBER);
-        (void) consume(parser, TOKEN_RBRACKET);
-    }
     size_t name = consume(parser, TOKEN_IDENTIFIER);
     AstType type = inferred_type();
     if (match(parser, TOKEN_COLON)) type = parse_type(parser);
-    if (array_length == AST_TOKEN_NONE && match(parser, TOKEN_LBRACKET)) {
-        array_length = consume(parser, TOKEN_NUMBER);
-        (void) consume(parser, TOKEN_RBRACKET);
-    }
-    if (array_length != AST_TOKEN_NONE) {
-        type.is_array = 1;
-        type.array_length_token = array_length;
-    }
     AstExpression *value = NULL;
     if (match(parser, TOKEN_EQUAL)) value = parse_expression(parser);
     if (consume_semicolon) (void) consume(parser, TOKEN_SEMICOLON);
@@ -405,10 +416,6 @@ static AstStatement *parse_expression_statement(SyntaxParser *parser, int consum
 static AstStatement *parse_statement_impl(SyntaxParser *parser) {
     size_t first = parser->current;
     if (check(parser, TOKEN_LBRACE)) return parse_block(parser);
-    if (match(parser, TOKEN_AT)) {
-        (void) consume(parser, TOKEN_KEYWORD_GC);
-        return parse_variable(parser, first, 1, 1);
-    }
     if (check(parser, TOKEN_KEYWORD_VAR)) return parse_variable(parser, first, 0, 1);
 
     if (match(parser, TOKEN_KEYWORD_IF)) {
@@ -480,21 +487,6 @@ static AstStatement *parse_statement_impl(SyntaxParser *parser) {
         finish_statement(parser, statement);
         return statement;
     }
-    if (match(parser, TOKEN_KEYWORD_PRINT) || match(parser, TOKEN_KEYWORD_PRINTLINE)) {
-        TokenType keyword = parser->program->tokens[first].type;
-        AstStatement *statement = new_statement(parser, AST_STMT_PRINT, first);
-        (void) consume(parser, TOKEN_LPAREN);
-        AstExpression *value = NULL;
-        if (!check(parser, TOKEN_RPAREN)) value = parse_expression(parser);
-        (void) consume(parser, TOKEN_RPAREN);
-        (void) consume(parser, TOKEN_SEMICOLON);
-        if (statement != NULL) {
-            statement->value = value;
-            statement->print_newline = keyword == TOKEN_KEYWORD_PRINTLINE;
-        }
-        finish_statement(parser, statement);
-        return statement;
-    }
     return parse_expression_statement(parser, 1);
 }
 
@@ -514,17 +506,12 @@ static AstParameter *parse_parameter(SyntaxParser *parser) {
     size_t first = parser->current;
     AstParameter *parameter = allocate(parser, sizeof(*parameter));
     size_t name = consume(parser, TOKEN_IDENTIFIER);
-    int is_array = 0;
-    if (match(parser, TOKEN_LBRACKET)) {
-        (void) consume(parser, TOKEN_RBRACKET);
-        is_array = 1;
-    }
     (void) consume(parser, TOKEN_COLON);
     AstType type = parse_type(parser);
     if (parameter != NULL) {
         parameter->name_token = name;
         parameter->type = type;
-        parameter->is_array = is_array;
+        parameter->is_array = type.is_slice;
         parameter->resolved_symbol_id = AST_SYMBOL_NONE;
         parameter->span = range_span(parser, first, parser->current);
     }
@@ -588,11 +575,6 @@ static AstField *parse_field(SyntaxParser *parser) {
     size_t name = consume(parser, TOKEN_IDENTIFIER);
     (void) consume(parser, TOKEN_COLON);
     AstType type = parse_type(parser);
-    if (match(parser, TOKEN_LBRACKET)) {
-        type.is_array = 1;
-        type.array_length_token = consume(parser, TOKEN_NUMBER);
-        (void) consume(parser, TOKEN_RBRACKET);
-    }
     (void) consume(parser, TOKEN_SEMICOLON);
     if (field != NULL) {
         field->name_token = name;
