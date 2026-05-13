@@ -102,6 +102,19 @@ X64Instruction x64_instruction3(X64Opcode opcode, X64Width width,
     return result;
 }
 
+X64Instruction x64_instruction_with_source(X64Instruction instruction,
+                                           size_t ir_instruction,
+                                           int begin_line, int begin_column,
+                                           int end_line, int end_column) {
+    instruction.ir_instruction = ir_instruction;
+    instruction.has_source = begin_line > 0 && begin_column > 0;
+    instruction.source_begin_line = begin_line;
+    instruction.source_begin_column = begin_column;
+    instruction.source_end_line = end_line;
+    instruction.source_end_column = end_column;
+    return instruction;
+}
+
 typedef enum {
     X64_SUFFIX_NONE,
     X64_SUFFIX_WIDTH,

@@ -115,6 +115,12 @@ typedef struct {
     X64Width width;
     X64Operand operands[3];
     size_t operand_count;
+    size_t ir_instruction;
+    int has_source;
+    int source_begin_line;
+    int source_begin_column;
+    int source_end_line;
+    int source_end_column;
 } X64Instruction;
 
 X64Operand x64_register(const char *name);
@@ -134,6 +140,10 @@ X64Instruction x64_instruction2(X64Opcode opcode, X64Width width,
 X64Instruction x64_instruction3(X64Opcode opcode, X64Width width,
                                  X64Operand destination, X64Operand source,
                                  X64Operand extra);
+X64Instruction x64_instruction_with_source(X64Instruction instruction,
+                                           size_t ir_instruction,
+                                           int begin_line, int begin_column,
+                                           int end_line, int end_column);
 
 int x64_print_instruction(FILE *output, SyntaxMode syntax,
                           const X64Instruction *instruction);

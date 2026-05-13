@@ -2,6 +2,7 @@
 #define DMM_AST_H
 
 #include <stddef.h>
+#include <stdio.h>
 #include "language_types.h"
 #include "string_interner.h"
 
@@ -174,5 +175,6 @@ const AstToken *ast_program_token(const AstProgram *program, size_t index);
 const char *ast_program_lexeme(const AstProgram *program, size_t index);
 const char *ast_declaration_kind_name(AstDeclarationKind kind);
 int ast_validate_program(const AstProgram *program);
+int ast_dump(FILE *output, const AstProgram *program);
 
 #endif

@@ -63,5 +63,10 @@ int main(void) {
     if (!render(&byte_store, SYNTAX_INTEL,
                 "    mov BYTE PTR [rsp + rax], 0\n")) return 17;
     if (!render(&byte_store, SYNTAX_ATT, "    movb $0, (%rsp,%rax,1)\n")) return 18;
+    X64Instruction mapped = x64_instruction_with_source(load, 7, 3, 5, 3, 12);
+    if (!mapped.has_source || mapped.ir_instruction != 7 || mapped.source_begin_line != 3 ||
+        mapped.source_begin_column != 5 || mapped.source_end_line != 3 ||
+        mapped.source_end_column != 12) return 19;
+    if (!render(&mapped, SYNTAX_INTEL, "    mov rax, QWORD PTR [rbp - 24]\n")) return 20;
     return 0;
 }

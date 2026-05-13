@@ -40,6 +40,7 @@ add_executable(compiler
         src/common/token.h
         src/ast/ast.c
         src/ast/ast.h
+        src/ast/ast_dump.c
         src/frontend/frontend.c
         src/frontend/frontend.h
         src/frontend/lexer.c
@@ -50,6 +51,7 @@ add_executable(compiler
         src/sema/semantic.h
         src/ir/ir.c
         src/ir/ir.h
+        src/ir/ir_dump.c
         src/backend/backend.c
         src/backend/backend.h
         src/backend/x86_64/ir_emitter.c
@@ -230,6 +232,13 @@ if(BUILD_TESTING)
              -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/cli_test
              -P ${CMAKE_SOURCE_DIR}/tests/cli_test.cmake)
     set_tests_properties(cli_contract PROPERTIES LABELS "integration;cli")
+
+    add_test(NAME dump_formats COMMAND ${CMAKE_COMMAND}
+             -DCOMPILER=$<TARGET_FILE:compiler>
+             -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+             -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/dump_test
+             -P ${CMAKE_SOURCE_DIR}/tests/dump_test.cmake)
+    set_tests_properties(dump_formats PROPERTIES LABELS "integration;ast;ir;backend;cli;safety")
 
     add_test(NAME imports_integration COMMAND ${CMAKE_COMMAND}
              -DCOMPILER=$<TARGET_FILE:compiler>

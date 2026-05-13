@@ -2,6 +2,7 @@
 #define DMM_IR_H
 
 #include <stddef.h>
+#include <stdio.h>
 
 #include "ast.h"
 #include "semantic.h"
@@ -174,5 +175,6 @@ typedef struct {
 IrModule *ir_lower_program(const AstProgram *program, const SemanticModel *semantics);
 void ir_module_free(IrModule *module);
 int ir_verify_module(const IrModule *module);
+int ir_dump(FILE *output, const IrModule *module);
 
 #endif

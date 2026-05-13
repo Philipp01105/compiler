@@ -38,12 +38,13 @@ parser/type-checker/emitter have been removed from the build and source tree.
   semantic symbol index for fast identifier lookup.
 - Dedicated libFuzzer targets and seed corpora for parser, semantic analysis,
   IR lowering, and malformed-IR verification, with a portable CTest smoke path.
+- Versioned deterministic AST and typed-IR dumps plus per-x86-instruction source
+  maps that retain source unit, function, IR index, and exact source span.
 
 ## Next priorities
 
 | Priority | Addition                                | Why                                                                                                       |
 |----------|-----------------------------------------|-----------------------------------------------------------------------------------------------------------|
-| P1       | Richer source maps and dumps            | Add stable AST/IR dump formats and instruction-level source mapping.                                      |
 | P2       | Runtime library split                   | Move platform runtime shims out of the emitter while retaining typed runtime operations in IR.            |
 | P2       | Direct object emission                  | Avoid the external assembler when the instruction model is mature.                                        |
 | P3       | New language features                   | Consider constants, globals, richer arrays, interfaces, and generics after the middle-end remains stable. |

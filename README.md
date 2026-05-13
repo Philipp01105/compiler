@@ -54,11 +54,14 @@ Useful options:
 --tokens
 --debug
 --deterministic
+--dump-ast FILE
+--dump-ir FILE
+--source-map FILE
 -o FILE
 --version
 ```
 
-`--deterministic` omits the generation timestamp. `--formatError` emits one JSON document containing an `errors` array and a `summary` object.
+`--deterministic` omits the generation timestamp. `--formatError` emits one JSON document containing an `errors` array and a `summary` object. The three dump options produce versioned deterministic AST, typed-IR, and instruction-level source-map artifacts; see [DUMP_FORMATS.md](DUMP_FORMATS.md).
 
 ## Tests
 
@@ -100,6 +103,7 @@ See [FUZZING.md](FUZZING.md) for corpus commands and harness behavior.
 - [Language specification](LANGUAGE_SPEC.md): semantic rules and implementation limits.
 - [Architecture](ARCHITECTURE.md): compiler pipeline, module ownership, backend, and validation design.
 - [Fuzzing](FUZZING.md): libFuzzer builds, corpora, and target behavior.
+- [Dump formats](DUMP_FORMATS.md): stable AST, IR, and machine-instruction source maps.
 
 Source code is grouped by ownership under `src/common`, `src/ast`,
 `src/frontend`, `src/sema`, `src/ir`, `src/backend`,
