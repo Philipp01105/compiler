@@ -101,4 +101,6 @@ The regression corpus assembles and runs every positive program in Intel and
 AT&T syntax. Separate suites cover C ABI interoperability, rejection diagnostics,
 runtime bounds traps, imports and cycles, CLI behavior, architecture boundaries,
 large dynamic compiler state, AST construction, IR verification, optimization,
-and lexer/syntax conversion behavior.
+and lexer/syntax conversion behavior. Parser, semantic, and IR libFuzzer
+targets reuse the in-memory frontend API; the IR target also mutates safe,
+non-owning instruction fields to exercise malformed-module verification.

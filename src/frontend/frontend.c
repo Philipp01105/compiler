@@ -88,11 +88,8 @@ static int build_declarations(AstProgram *program) {
     return 1;
 }
 
-static AstProgram *parse_single_file(const char *source_path, const FrontendOptions *options,
-                                     StringInterner *strings) {
-    const int debug = options != NULL && options->debug;
-    TokenStream *stream = tokenize_file_with_interner(source_path, debug, strings);
-    if (stream == NULL) return NULL;
+static AstProgram *parse_stream(TokenStream *stream, const char *source_path,
+                                const FrontendOptions *options, StringInterner *strings) {
     if (options != NULL && options->show_tokens) print_tokens(stream);
     if (stream->has_error) {
         free_token_stream(stream);
@@ -132,6 +129,13 @@ allocation_failure:
     error_report(global_error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
                  ERR_CODEGEN_OUTPUT_FAILED, source_path, "Out of memory while building AST");
     return NULL;
+}
+
+static AstProgram *parse_single_file(const char *source_path, const FrontendOptions *options,
+                                     StringInterner *strings) {
+    const int debug = options != NULL && options->debug;
+    TokenStream *stream = tokenize_file_with_interner(source_path, debug, strings);
+    return stream == NULL ? NULL : parse_stream(stream, source_path, options, strings);
 }
 
 static char *relative_import_path(const char *source_path, const char *import_path) {
@@ -293,5 +297,27 @@ AstProgram *frontend_parse_file(const char *source_path, const FrontendOptions *
                      "Out of memory while resolving AST imports");
         return NULL;
     }
+    return program;
+}
+
+AstProgram *frontend_parse_source(const char *source, size_t length,
+                                  const char *source_name,
+                                  const FrontendOptions *options) {
+    if (source == NULL && length != 0) return NULL;
+    if (source_name == NULL) source_name = "<memory>";
+    StringInterner *strings = string_interner_create();
+    if (strings == NULL) return NULL;
+    TokenStream *stream = tokenize_source_with_interner(source == NULL ? "" : source,
+                                                         length, source_name, strings);
+    if (stream == NULL) {
+        string_interner_free(strings);
+        return NULL;
+    }
+    AstProgram *program = parse_stream(stream, source_name, options, strings);
+    if (program == NULL) {
+        string_interner_free(strings);
+        return NULL;
+    }
+    program->owns_strings = 1;
     return program;
 }

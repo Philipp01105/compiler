@@ -72,7 +72,8 @@ CTest includes:
 - `tests/stress/`: generated `limit-1`, `limit`, and `limit+1` cases;
 - `tests/unit/`: lexer, optimizer, and syntax-converter unit tests;
 - architecture and AST ownership tests that enforce layer boundaries;
-- `tests/fuzz/`: libFuzzer entry points for the lexer and syntax converter.
+- `tests/fuzz/`: libFuzzer entry points and seed corpora for the lexer, parser,
+  semantic analysis, IR lowering/verifier, and syntax converter.
 
 Every normal DMM execution test is compiled, assembled, and run in both Intel
 and AT&T syntax. Both runs must have exit code zero, empty stderr, and output
@@ -84,18 +85,21 @@ On Linux, `-DDMM_SANITIZERS=ON` instruments the compiler and unit tests and also
 links generated execution/ABI programs against ASan/UBSan runtimes. CI runs the
 `safety` label with leak detection enabled.
 
-Clang users can build both fuzzers with:
+Clang users can build all fuzzers with:
 
 ```sh
 cmake -S . -B fuzz-build -DDMM_BUILD_FUZZERS=ON -DCMAKE_C_COMPILER=clang
-cmake --build fuzz-build --target fuzz_lexer fuzz_syntax_converter
+cmake --build fuzz-build --target fuzz_lexer fuzz_parser fuzz_semantic fuzz_ir fuzz_syntax_converter
 ```
+
+See [FUZZING.md](FUZZING.md) for corpus commands and harness behavior.
 
 ## Documentation
 
 - [Formal language](FORMAL_LANGUAGE.md): lexical and syntactic EBNF.
 - [Language specification](LANGUAGE_SPEC.md): semantic rules and implementation limits.
 - [Architecture](ARCHITECTURE.md): compiler pipeline, module ownership, backend, and validation design.
+- [Fuzzing](FUZZING.md): libFuzzer builds, corpora, and target behavior.
 
 Source code is grouped by ownership under `src/common`, `src/ast`,
 `src/frontend`, `src/sema`, `src/ir`, `src/backend`,

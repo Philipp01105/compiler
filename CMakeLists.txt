@@ -11,6 +11,17 @@ option(DMM_STRICT_WARNINGS "Treat compiler warnings as errors" OFF)
 option(DMM_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 option(DMM_BUILD_FUZZERS "Build libFuzzer targets (Clang only)" OFF)
 
+set(DMM_FUZZ_PIPELINE_SOURCES
+        tests/fuzz/fuzz_pipeline.c
+        src/common/string_interner.c
+        src/ast/ast.c
+        src/frontend/frontend.c
+        src/frontend/lexer.c
+        src/frontend/syntax_parser.c
+        src/sema/semantic.c
+        src/ir/ir.c
+        src/diagnostics/errorHandler.c)
+
 set(DMM_INCLUDE_DIRS
         ${CMAKE_CURRENT_SOURCE_DIR}/src/common
         ${CMAKE_CURRENT_SOURCE_DIR}/src/ast
@@ -94,6 +105,16 @@ if(DMM_BUILD_FUZZERS)
     target_include_directories(fuzz_lexer PRIVATE ${DMM_INCLUDE_DIRS})
     target_compile_options(fuzz_lexer PRIVATE -fsanitize=fuzzer,address,undefined)
     target_link_options(fuzz_lexer PRIVATE -fsanitize=fuzzer,address,undefined)
+
+    foreach(fuzz_stage parser semantic ir)
+        add_executable(fuzz_${fuzz_stage} tests/fuzz/fuzz_${fuzz_stage}.c
+                ${DMM_FUZZ_PIPELINE_SOURCES})
+        target_include_directories(fuzz_${fuzz_stage} PRIVATE
+                ${DMM_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/tests/fuzz)
+        target_compile_options(fuzz_${fuzz_stage} PRIVATE
+                -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer)
+        target_link_options(fuzz_${fuzz_stage} PRIVATE -fsanitize=fuzzer,address,undefined)
+    endforeach()
 endif()
 
 include(CTest)
@@ -149,6 +170,14 @@ if(BUILD_TESTING)
     target_include_directories(dmm_string_interner_test PRIVATE ${DMM_INCLUDE_DIRS})
     add_test(NAME string_interner_unit COMMAND dmm_string_interner_test)
     set_tests_properties(string_interner_unit PROPERTIES LABELS "unit;frontend;safety")
+
+    add_executable(dmm_fuzz_pipeline_smoke_test
+            tests/unit/fuzz_pipeline_smoke_test.c ${DMM_FUZZ_PIPELINE_SOURCES})
+    target_include_directories(dmm_fuzz_pipeline_smoke_test PRIVATE
+            ${DMM_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/tests/fuzz)
+    add_test(NAME fuzz_pipeline_smoke COMMAND dmm_fuzz_pipeline_smoke_test)
+    set_tests_properties(fuzz_pipeline_smoke PROPERTIES
+            LABELS "unit;fuzz;parser;sema;ir;safety")
 
     add_executable(dmm_lexer_test tests/unit/lexer_test.c src/frontend/lexer.c
             src/common/string_interner.c src/diagnostics/errorHandler.c)
@@ -221,7 +250,7 @@ if(BUILD_TESTING)
 
     if(DMM_SANITIZERS)
         foreach(test_target dmm_optimizer_test dmm_syntax_converter_test dmm_x86_instruction_test
-                            dmm_string_interner_test dmm_lexer_test
+                            dmm_string_interner_test dmm_fuzz_pipeline_smoke_test dmm_lexer_test
                             dmm_frontend_ast_test dmm_pipeline_test)
             target_compile_options(${test_target} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
             target_link_options(${test_target} PRIVATE -fsanitize=address,undefined)

@@ -36,12 +36,13 @@ parser/type-checker/emitter have been removed from the build and source tree.
   AT&T printers; the IR emitter no longer formats machine instructions directly.
 - Module-wide interned token spellings shared across imports, plus a hashed
   semantic symbol index for fast identifier lookup.
+- Dedicated libFuzzer targets and seed corpora for parser, semantic analysis,
+  IR lowering, and malformed-IR verification, with a portable CTest smoke path.
 
 ## Next priorities
 
 | Priority | Addition                                | Why                                                                                                       |
 |----------|-----------------------------------------|-----------------------------------------------------------------------------------------------------------|
-| P1       | Parser/sema/IR fuzzing                  | Extend fuzz coverage beyond the lexer and assembly syntax converter.                                      |
 | P1       | Richer source maps and dumps            | Add stable AST/IR dump formats and instruction-level source mapping.                                      |
 | P2       | Runtime library split                   | Move platform runtime shims out of the emitter while retaining typed runtime operations in IR.            |
 | P2       | Direct object emission                  | Avoid the external assembler when the instruction model is mature.                                        |
