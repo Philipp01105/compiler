@@ -4,7 +4,11 @@ import <stdlib>
 func main() -> void {
     var score:int = 85;
     
-    println("Score: " + score);
+    {
+        var _output0:string = "Score: " + score;
+        println(_output0);
+        free(_output0);
+    }
     
     if (score >= 90) {
         println("Grade: A");

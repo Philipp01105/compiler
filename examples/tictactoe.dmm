@@ -360,7 +360,7 @@ func simulateGame() -> void {
     game.init();
     
     // Game moves: X at 4, O at 0, X at 1, O at 8, X at 7 (X wins)
-    var[5] moves:int;
+    var moves:int[5];
     moves[0] = 4;
     moves[1] = 0;
     moves[2] = 1;
@@ -378,7 +378,11 @@ func simulateGame() -> void {
             playerName = "O";
         }
         
-        println("Player " + playerName + " plays at position " + move);
+        {
+            var _output0:string = "Player " + playerName + " plays at position " + move;
+            println(_output0);
+            free(_output0);
+        }
         println("");
         
         if (game.makeMove(move) == 1) {
@@ -431,7 +435,11 @@ func simulateAIGame() -> void {
             playerName = "O";
         }
         
-        println("Player " + playerName + " (AI) plays at position " + move);
+        {
+            var _output1:string = "Player " + playerName + " (AI) plays at position " + move;
+            println(_output1);
+            free(_output1);
+        }
         println("");
         
         if (game.makeMove(move) == 1) {

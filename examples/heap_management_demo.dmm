@@ -7,7 +7,8 @@ import <stdlib>
 // - Pointer type declarations
 // - Heap allocation with reserve
 // - Manual deallocation with free
-// - Garbage collection with // ============================================================================
+// - Explicit releases before leaving a scope
+// ============================================================================
 
 // Example 1: Basic Pointer Declarations
 func example1_pointers() -> void {
@@ -61,16 +62,16 @@ func example3_multiple() -> void {
     println("");
 }
 
-// Example 4: Garbage Collected Variable
-func example4_gc() -> void {
-    println("=== Example 4: Garbage Collection ===");
+// Example 4: Explicit Allocation Lifetime
+func example4_lifetime() -> void {
+    println("=== Example 4: Explicit Allocation Lifetime ===");
     
     var gcPtr:*int = reserve(int);
     
-    println("GC-managed pointer allocated");
-    println("No manual free needed - automatically collected");
+    println("Pointer allocated");
+    free(gcPtr);
+    println("Pointer explicitly freed");
     
-    // No free statement - garbage collector handles it
     println("");
 }
 
@@ -86,7 +87,7 @@ func example5_large_allocation() -> void {
     println("");
 }
 
-// Example 6: Mixed Manual and GC Memory
+// Example 6: Multiple Allocation Lifetimes
 func example6_mixed() -> void {
     println("=== Example 6: Mixed Memory Management ===");
     
@@ -94,28 +95,30 @@ func example6_mixed() -> void {
     var manual:*int = reserve(int);
     println("Manual pointer allocated");
     
-    // Garbage collected
+    // A second independent allocation
     var automatic:*int = reserve(int);
-    println("GC pointer allocated");
+    println("Second pointer allocated");
     
-    // Only free the manual one
+    // Release both original allocation pointers
     free(manual);
     println("Manual pointer freed");
-    println("GC pointer will be auto-freed");
+    free(automatic);
+    println("Second pointer freed");
     println("");
 }
 
-// Example 7: Scoped GC Variables
-func example7_scoped_gc() -> void {
-    println("=== Example 7: Scoped GC Variables ===");
+// Example 7: Scoped Allocations
+func example7_scoped() -> void {
+    println("=== Example 7: Scoped Allocations ===");
     
-    println("Entering scope with GC variable");
+    println("Entering scope with a pointer variable");
     
     var scopedPtr:*int = reserve(int);
     println("  Allocated inside scope");
     
     println("Exiting scope");
-    println("  GC will clean up automatically");
+    free(scopedPtr);
+    println("  Allocation explicitly freed");
     println("");
 }
 
@@ -151,10 +154,10 @@ func main() -> void {
     example1_pointers();
     example2_reserve();
     example3_multiple();
-    example4_gc();
+    example4_lifetime();
     example5_large_allocation();
     example6_mixed();
-    example7_scoped_gc();
+    example7_scoped();
     example8_different_types();
     
     println("############################################");

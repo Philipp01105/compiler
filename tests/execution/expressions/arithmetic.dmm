@@ -5,10 +5,30 @@ func main() -> void {
     var a:int = 10;
     var b:int = 5;
     
-    println("Addition: " + (a + b));
-    println("Subtraction: " + (a - b));
-    println("Multiplication: " + (a * b));
-    println("Division: " + (a / b));
-    println("Modulo: " + (a % b));
+    {
+        var _output0:string = "Addition: " + (a + b);
+        println(_output0);
+        free(_output0);
+    }
+    {
+        var _output1:string = "Subtraction: " + (a - b);
+        println(_output1);
+        free(_output1);
+    }
+    {
+        var _output2:string = "Multiplication: " + (a * b);
+        println(_output2);
+        free(_output2);
+    }
+    {
+        var _output3:string = "Division: " + (a / b);
+        println(_output3);
+        free(_output3);
+    }
+    {
+        var _output4:string = "Modulo: " + (a % b);
+        println(_output4);
+        free(_output4);
+    }
 }
 // Category: execution/expressions

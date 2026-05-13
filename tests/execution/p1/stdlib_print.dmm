@@ -1,0 +1,7 @@
+import <stdlib>
+
+func main() -> void {
+    print(12);
+    println(" apples");
+    println(2.5);
+}

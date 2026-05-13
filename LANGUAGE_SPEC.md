@@ -6,13 +6,19 @@ Status: experimental. This document defines the tested source-language contract;
 
 A source file is UTF-8 text containing imports, structs, enums, and functions. Execution begins in a parameterless `main`, whose return type is `void` or `int`. Statements end with `;`. `//` introduces a line comment.
 
-Imports use `#import "relative/path.dmm"` or `#import <relative/path.dmm>`. A resolved file is imported at most once during a compilation.
+Imports use `import "relative/path.dmm"` or `import <relative/path.dmm>`, individually or grouped as `import ( path ... )`. Directory imports load only `package.dmm` and its explicit imports. Canonical files are loaded once; unlisted files are never scanned.
 
 ## Types
 
-The primitive types are `int`, `char`, `byte`, `bit`, `float`, `double`, `string`, and `void`. `void` is valid only as a function return type. Arrays use `var [length] name:type;`; pointers use `var name:*type`. Array lengths must be positive compile-time integers and local objects are subject to implementation limits. Whole-array assignment is not supported.
+The primitive types are `int`, `char`, `byte`, `bit`, `float`, `double`, `string`, and `void`. `void` is valid only as a function return type. Fixed arrays use `var name:type[length];`. Repeated prefix stars form pointers, such as `**int`; grouped types distinguish `*(int[4])` from `*int[4]`. Whole-array assignment is not supported.
+
+Parameters may use `T[]` slices. A matching fixed array supplies a data pointer and element count without copying; forwarding a slice preserves both. `slice.length` is read-only and indexing checks the passed count. The native ABI expands each slice to pointer then length in source-parameter order. Slices cannot be returned or stored in local bindings or fields.
 
 Implicit conversions preserve their source domain: integral types may convert among themselves or widen to floating point, and `float` may widen to `double`. Narrowing floating conversions require an explicit cast.
+
+Casts use `value.(target)`, for example `(amount / 2.0).(int)` or `value.(byte).(int)`. The target must be a numeric primitive type. The old `int(value)` form is rejected. Casts bind as postfix expressions; parentheses group compound source expressions.
+
+`const name[:type] = expression;` declares a top-level or block constant. Primitive and string initializer expressions are evaluated during semantic analysis. Earlier evaluated constants may be referenced, including positive `int` constants used as fixed-array lengths. Constants have no mutable storage and cannot be assigned, incremented, or addressed. Integer overflow and integer division by zero are compilation errors.
 
 ## Control flow and expressions
 
@@ -42,9 +48,13 @@ names that overlap the runtime are mangled internally, so source-level function
 names remain usable without breaking platform calls. Names beginning with
 `__dmm_` are reserved.
 
-`reserve(type)` returns manually managed storage and `free(value)` releases a
-pointer or owned string. A local declaration annotated with `@gc` is released on
-every function exit and must not be freed or returned directly.
+`reserve(type)` zero-initializes one complete sized non-void object and returns a pointer to that type. It accepts a type rather than a runtime count. `free(value)` releases a pointer or owned string. Allocations require explicit releases; `@gc` and automatic function-exit cleanup have been removed.
+
+Types support one array or slice constructor, with pointer levels inside and outside it. Nested arrays and slices are not supported.
+
+`print(value)` and `println(value)` are ordinary overloaded stdlib functions. Import `<stdlib>` to use them; an empty line is `println("")`. Calls evaluate their arguments before entering the output function.
+
+Function overloads differ by ordered parameter types, never return type. Exact matches beat promotions and other allowed numeric conversions. A candidate must be no worse in every argument and better in at least one; ties are ambiguous. `main` cannot be overloaded. Overloaded functions and methods use type-derived link names.
 
 ## Implementation limits
 

@@ -21,7 +21,11 @@ func printDoubleLine() -> void {
 }
 
 func printLabeled(label:string, value:int) -> void {
-    println(label + ": " + value);
+    {
+        var _output0:string = label + ": " + value;
+        println(_output0);
+        free(_output0);
+    }
 }
 
 // Point struct - represents a 2D coordinate

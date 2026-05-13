@@ -7,6 +7,10 @@ func add(x:int, y:int) -> int {
 
 func main() -> void {
     var result:int = add(7, 3);
-    println("7 + 3 = " + result);
+    {
+        var _output0:string = "7 + 3 = " + result;
+        println(_output0);
+        free(_output0);
+    }
 }
 // Category: execution/functions

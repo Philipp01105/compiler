@@ -61,6 +61,18 @@ int main(int argc, char **argv) {
         IrModule *module = semantics != NULL && semantics->error_count == 0
             ? ir_lower_program(program, semantics) : NULL;
         int has_import = module != NULL && module->import_count != 0;
+        if (strstr(argv[i], "package_import_fixture") != NULL) {
+            const AstImportPath *paths=program != NULL && program->root != NULL ?
+                program->root->as.import_decl.paths : NULL;
+            if (program == NULL || program->structured_declaration_count != 2 ||
+                program->owned_import_count != 2 || paths == NULL || paths->next == NULL ||
+                paths->next->next == NULL || paths->next->next->next != NULL ||
+                paths->resolved_program != paths->next->resolved_program ||
+                module == NULL || module->import_count != 4 || module->function_count != 2) {
+                fprintf(stderr, "grouped package import AST/IR contract failed\n");
+                failed=1;
+            }
+        }
         if (semantics != NULL && semantics->unresolved_expression_count != 0)
             fprintf(stderr, "unresolved expressions for %s: %zu\n", argv[i],
                     semantics->unresolved_expression_count);
@@ -108,6 +120,18 @@ int main(int argc, char **argv) {
             module == NULL || !ir_verify_module(module) || module->function_count == 0) {
             fprintf(stderr, "typed frontend pipeline failed for %s\n", argv[i]);
             failed = 1;
+        }
+        for (IrTypeId t = 0; module != NULL && t < module->type_count; t++) {
+            IrType saved = module->types[t];
+            if (saved.kind == IR_TYPE_ARRAY) module->types[t].array_length = 0;
+            else if (saved.kind == IR_TYPE_POINTER) module->types[t].element_type = t;
+            else if (saved.kind == IR_TYPE_SLICE) module->types[t].array_length = 1;
+            else continue;
+            if (ir_verify_module(module)) {
+                fprintf(stderr, "malformed P1 type graph accepted for %s\n", argv[i]);
+                failed = 1;
+            }
+            module->types[t] = saved;
         }
         if (i == 1) {
             const SemanticSymbol *add = semantic_find_global(semantics, "add",

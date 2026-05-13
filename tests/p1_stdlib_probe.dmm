@@ -3,7 +3,7 @@ import <stdlib>
 func main() -> int {
     print("value=");
     println(42);
-    println(char(65));
-    println(double(1));
+    println((65).(char));
+    println((1).(double));
     return 0;
 }

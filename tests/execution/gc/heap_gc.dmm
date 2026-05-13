@@ -1,10 +1,10 @@
 import <stdlib>
 
-// Test annotation for garbage collection
+// Former manual ownership fixture migrated to manual allocation ownership.
 func main() -> void {
     var p:*int = reserve(int);
     
-    println("GC-managed memory allocated");
-    // No free needed - will be garbage collected
+    println("Manually managed memory allocated");
+    free(p);
 }
 // Category: execution/gc

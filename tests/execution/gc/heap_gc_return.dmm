@@ -1,10 +1,11 @@
 import <stdlib>
 
-// Test annotation with explicit return statement
+// Manual allocation with an explicit return statement.
 func test() -> void {
     var t:*int = reserve(int);
     *t = 10;
     println("Inside test function");
+    free(t);
     return;
 }
 

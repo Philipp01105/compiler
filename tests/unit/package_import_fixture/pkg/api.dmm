@@ -1,0 +1,3 @@
+func package_answer() -> int {
+    return 42;
+}

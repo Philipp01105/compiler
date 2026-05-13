@@ -301,8 +301,10 @@ static const char *function_link_name(const IrModule *module, const IrFunction *
     buffer[0] = '\0';
     char part[128];
     if (function->owner_symbol_id == AST_SYMBOL_NONE) {
-        (void) snprintf(part, sizeof(part), "__dmm_f%zu_%s__%zu", strlen(name), name,
-                        function->parameter_count);
+        (void) snprintf(part, sizeof(part), "__dmm_f%zu_", strlen(name));
+        if (!mangle_append(buffer, buffer_size, &used, part) ||
+            !mangle_append(buffer, buffer_size, &used, name)) return NULL;
+        (void) snprintf(part, sizeof(part), "__%zu", function->parameter_count);
         if (!mangle_append(buffer, buffer_size, &used, part)) return NULL;
     } else {
         IrTypeId owner_type = IR_TYPE_NONE;
@@ -315,10 +317,13 @@ static const char *function_link_name(const IrModule *module, const IrFunction *
         if (!mangle_append(buffer, buffer_size, &used, "__dmm_m") ||
             !mangle_type(module, owner_type, buffer, buffer_size, &used, 0)) return NULL;
         const SemanticSymbol *symbol = &module->semantics->symbols[function->symbol_id];
-        (void) snprintf(part, sizeof(part), "_%c_%zu_%s__%zu",
+        (void) snprintf(part, sizeof(part), "_%c_%zu_",
                         symbol->declaration->as.function.is_static ? 's' : 'i',
-                        strlen(name), name,
-                        function->parameter_count - (function_receiver(function) != NULL ? 1U : 0U));
+                        strlen(name));
+        if (!mangle_append(buffer, buffer_size, &used, part) ||
+            !mangle_append(buffer, buffer_size, &used, name)) return NULL;
+        (void) snprintf(part, sizeof(part), "__%zu", function->parameter_count -
+                        (function_receiver(function) != NULL ? 1U : 0U));
         if (!mangle_append(buffer, buffer_size, &used, part)) return NULL;
     }
     size_t first = function_receiver(function) != NULL ? 1U : 0U;
@@ -332,6 +337,18 @@ static const char *function_link_name(const IrModule *module, const IrFunction *
 static int valid_module(const IrModule *module) {
     if (module == NULL || !module->verified || module->program == NULL ||
         module->semantics == NULL || module->function_count == 0) return 0;
+    for (size_t i = 0; i < module->function_count; i++) {
+        char left_buffer[4096];
+        const char *left = function_link_name(module, &module->functions[i],
+                                              left_buffer, sizeof(left_buffer));
+        if (left == NULL) return 0;
+        for (size_t j = 0; j < i; j++) {
+            char right_buffer[4096];
+            const char *right = function_link_name(module, &module->functions[j],
+                                                   right_buffer, sizeof(right_buffer));
+            if (right == NULL || strcmp(left, right) == 0) return 0;
+        }
+    }
     const SemanticSymbol *main_symbol = semantic_find_global(module->semantics, "main",
                                                               SEMANTIC_SYMBOL_FUNCTION);
     return main_symbol != NULL && main_symbol->declaration != NULL &&
@@ -1128,6 +1145,9 @@ static int emit_builtin_call(Emitter *emitter, const IrInstruction *instruction,
 static size_t fixed_array_length(const Emitter *emitter,
                                  const IrInstruction *base) {
     if (base == NULL) return 0;
+    if (base->type_id < emitter->module->type_count &&
+        emitter->module->types[base->type_id].kind == IR_TYPE_ARRAY)
+        return emitter->module->types[base->type_id].array_length;
     if (base->opcode == IR_OP_LOAD) {
         const IrInstruction *declaration = local_declaration(emitter->function,
             base->symbol_id, emitter->function->instruction_count);
@@ -1142,9 +1162,11 @@ static size_t fixed_array_length(const Emitter *emitter,
         const AstField *field = symbol->kind == SEMANTIC_SYMBOL_FIELD
             ? (const AstField *) symbol->node : NULL;
         if (field != NULL && field->type.is_array &&
-            field->type.array_length_token < symbol->source_program->token_count)
+            field->type.array_length_token < symbol->source_program->token_count) {
+            if (field->type.resolved_array_length != 0) return field->type.resolved_array_length;
             return (size_t) strtoull(ast_program_lexeme(symbol->source_program,
                 field->type.array_length_token), NULL, 10);
+        }
     }
     return 0;
 }
@@ -1695,7 +1717,12 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                     const char *text = ast_program_lexeme(function->source_program,
                                                           instruction->auxiliary_token);
                     union { double floating; uint64_t bits; } value = {strtod(text, NULL)};
-                    write_immediate(emitter, "rax", (long long) value.bits);
+                    if (instruction->type == TYPE_FLOAT) {
+                        union { float floating; uint32_t bits; } single = {
+                            (float) value.floating
+                        };
+                        write_immediate(emitter, "rax", (long long) single.bits);
+                    } else write_immediate(emitter, "rax", (long long) value.bits);
                 } else {
                     write_immediate(emitter, "rax", constant_value(function->source_program,
                                                                     instruction));
@@ -1850,8 +1877,9 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             }
             write_value_load(emitter, "rax", instruction->operand_b);
             if (instruction->operator_type == TOKEN_STAR) {
-                write_typed_indirect_load(emitter, instruction->type,
-                                          instruction->pointer_depth, "rax");
+                if (!instruction->is_array && !is_inline_structure(emitter->module, instruction))
+                    write_typed_indirect_load(emitter, instruction->type,
+                                              instruction->pointer_depth, "rax");
                 write_value_store(emitter, "rax", instruction->result);
                 return 1;
             }
@@ -1961,8 +1989,12 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                             x64_sized_register(X64_WIDTH_BYTE, "al"));
             } else {
                 convert_rax(emitter, source->type, instruction->type);
-                if (instruction->type == TYPE_BIT)
-                    normalize_truth_rax(emitter, source->type);
+                  if (instruction->type == TYPE_BIT)
+                      normalize_truth_rax(emitter, source->type);
+                  else if (instruction->type == TYPE_BYTE || instruction->type == TYPE_CHAR)
+                      write_x64_2(emitter, X64_OP_MOVZX, X64_WIDTH_QWORD,
+                                  x64_sized_register(X64_WIDTH_QWORD, "rax"),
+                                  x64_sized_register(X64_WIDTH_BYTE, "al"));
             }
             write_value_store(emitter, "rax", instruction->result);
             return 1;
@@ -1980,7 +2012,7 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
         }
         case IR_OP_INDEX:
             if (!emit_lvalue_address(emitter, instruction, index)) return 0;
-            if (is_inline_structure(emitter->module, instruction)) {
+            if (instruction->is_array || is_inline_structure(emitter->module, instruction)) {
                 write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
                             x64_register("rax"), x64_register("rbx"));
             } else
@@ -1991,7 +2023,7 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
         case IR_OP_MEMBER:
             if (emit_enum_member(emitter, instruction)) return 1;
             if (!emit_lvalue_address(emitter, instruction, index)) return 0;
-            if (is_inline_structure(emitter->module, instruction)) {
+            if (instruction->is_array || is_inline_structure(emitter->module, instruction)) {
                 write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
                             x64_register("rax"), x64_register("rbx"));
             } else

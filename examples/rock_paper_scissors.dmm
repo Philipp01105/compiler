@@ -21,7 +21,11 @@ func printDoubleLine() -> void {
 }
 
 func printLabeled(label:string, value:int) -> void {
-    println(label + ": " + value);
+    {
+        var _output0:string = label + ": " + value;
+        println(_output0);
+        free(_output0);
+    }
 }
 
 // Rock Paper Scissors Game struct
@@ -131,14 +135,14 @@ func simulateGame() -> void {
     println("");
     
     // Predefined moves for simulation
-    var[5] p1Moves:int;
+    var p1Moves:int[5];
     p1Moves[0] = 0;
     p1Moves[1] = 1;
     p1Moves[2] = 2;
     p1Moves[3] = 0;
     p1Moves[4] = 1;
     
-    var[5] p2Moves:int;
+    var p2Moves:int[5];
     p2Moves[0] = 2;
     p2Moves[1] = 0;
     p2Moves[2] = 2;
@@ -149,9 +153,21 @@ func simulateGame() -> void {
         var p1Move:int = p1Moves[i];
         var p2Move:int = p2Moves[i];
         
-        println("Round " + (i + 1) + ":");
-        println("  Player 1: " + getMoveName(p1Move));
-        println("  Player 2: " + getMoveName(p2Move));
+        {
+            var _output1:string = "Round " + (i + 1) + ":";
+            println(_output1);
+            free(_output1);
+        }
+        {
+            var _output2:string = "  Player 1: " + getMoveName(p1Move);
+            println(_output2);
+            free(_output2);
+        }
+        {
+            var _output3:string = "  Player 2: " + getMoveName(p2Move);
+            println(_output3);
+            free(_output3);
+        }
         
         var result:int = game.playRound(p1Move, p2Move);
         
@@ -175,7 +191,11 @@ func simulateGame() -> void {
     } else {
         println("FINAL RESULT: PLAYER 2 WINS!");
     }
-    println("Final Score - P1: " + game.player1Score + " | P2: " + game.player2Score);
+    {
+        var _output4:string = "Final Score - P1: " + game.player1Score + " | P2: " + game.player2Score;
+        println(_output4);
+        free(_output4);
+    }
 }
 
 // Simulate a tournament
@@ -198,7 +218,11 @@ func simulateTournament() -> void {
         // Player 2 uses counter pattern (tries to beat P1)
         var p2Move:int = (i + 1) % 3;
         
-        println("Round " + (i + 1) + ": " + getMoveName(p1Move) + " vs " + getMoveName(p2Move));
+        {
+            var _output5:string = "Round " + (i + 1) + ": " + getMoveName(p1Move) + " vs " + getMoveName(p2Move);
+            println(_output5);
+            free(_output5);
+        }
         
         var result:int = game.playRound(p1Move, p2Move);
         

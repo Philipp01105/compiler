@@ -31,8 +31,8 @@ static AstSourceSpan token_span(const Token *token) {
     AstSourceSpan span;
     span.begin.line = token->line;
     span.begin.column = token->column;
-    span.end.line = token->line;
-    span.end.column = token->column + (int) strlen(token->value);
+    span.end.line = token->end_line;
+    span.end.column = token->end_column;
     return span;
 }
 
@@ -261,17 +261,17 @@ static char *logical_module_identity(const AstProgram *root,
 }
 
 static char *import_path_text(const AstProgram *unit,
-                              const AstDeclarationNode *declaration) {
-    if (declaration->as.import_decl.path_token != AST_TOKEN_NONE) {
-        const char *text = ast_program_lexeme(unit, declaration->as.import_decl.path_token);
+                              const AstImportPath *entry) {
+    if (entry->path_token != AST_TOKEN_NONE) {
+        const char *text = ast_program_lexeme(unit, entry->path_token);
         size_t length = strlen(text);
         char *copy = malloc(length + 1U);
         if (copy != NULL) memcpy(copy, text, length + 1U);
         return copy;
     }
     size_t length = 0;
-    size_t first = declaration->as.import_decl.path_first_token;
-    size_t count = declaration->as.import_decl.path_token_count;
+    size_t first = entry->path_first_token;
+    size_t count = entry->path_token_count;
     for (size_t i = 0; i < count && first + i < unit->token_count; i++) {
         const AstToken *token = &unit->tokens[first + i];
         if (token->type == TOKEN_GREATER) break;
@@ -320,22 +320,10 @@ static int resolve_imports(AstProgram *root, AstProgram *unit,
     for (AstDeclarationNode *declaration = unit->root; declaration != NULL;
          declaration = declaration->next) {
         if (declaration->kind != AST_DECL_IMPORT) continue;
-        char *import_text = import_path_text(unit, declaration);
-        if (import_text == NULL) return 0;
-        char *path = relative_import_path(unit->source_path, import_text);
-        if (path == NULL) {
-            free(import_text);
-            return 0;
-        }
-        path = package_entry_path(path);
-        if (path == NULL) {
-            free(import_text);
-            return 0;
-        }
-        FILE *probe = fopen(path, "rb");
-        if (probe == NULL && declaration->as.import_decl.path_token == AST_TOKEN_NONE) {
-            free(path);
-            path = joined_path(DMM_SOURCE_ROOT, import_text);
+        for (AstImportPath *entry = declaration->as.import_decl.paths; entry != NULL; entry = entry->next) {
+            char *import_text = import_path_text(unit, entry);
+            if (import_text == NULL) return 0;
+            char *path = relative_import_path(unit->source_path, import_text);
             if (path == NULL) {
                 free(import_text);
                 return 0;
@@ -345,61 +333,75 @@ static int resolve_imports(AstProgram *root, AstProgram *unit,
                 free(import_text);
                 return 0;
             }
-            probe = fopen(path, "rb");
-        }
-        if (probe == NULL) {
-            error_report(global_error_handler, SEVERITY_ERROR,
-                         declaration->span.begin.line,
-                         declaration->span.begin.column,
-                         ERROR_CATEGORY_COMPILER, ERR_LEX_FILE_NOT_FOUND,
-                         unit->source_path, "Failed to open import file '%s'", path);
-            free(path);
-            free(import_text);
-            continue;
-        }
-        (void) fclose(probe);
-        char *canonical = canonical_existing_path(path);
-        free(path);
-        path = canonical;
-        if (path == NULL) {
-            free(import_text);
-            return 0;
-        }
-        AstProgram *imported = known_import(root, path);
-        if (imported == NULL) {
-            imported = parse_single_file(path, options, root->strings);
-            if (imported == NULL) {
+            FILE *probe = fopen(path, "rb");
+            if (probe == NULL && entry->path_token == AST_TOKEN_NONE) {
+                free(path);
+                path = joined_path(DMM_SOURCE_ROOT, import_text);
+                if (path == NULL) {
+                    free(import_text);
+                    return 0;
+                }
+                path = package_entry_path(path);
+                if (path == NULL) {
+                    free(import_text);
+                    return 0;
+                }
+                probe = fopen(path, "rb");
+            }
+            if (probe == NULL) {
+                error_report(global_error_handler, SEVERITY_ERROR,
+                             entry->span.begin.line,
+                             entry->span.begin.column,
+                             ERROR_CATEGORY_COMPILER, ERR_LEX_FILE_NOT_FOUND,
+                             unit->source_path, "Failed to open import file '%s'", path);
                 free(path);
                 free(import_text);
                 continue;
             }
-            if (!append_owned_import(root, imported)) {
-                ast_program_free(imported);
-                free(path);
+            (void) fclose(probe);
+            char *canonical = canonical_existing_path(path);
+            free(path);
+            path = canonical;
+            if (path == NULL) {
                 free(import_text);
                 return 0;
             }
-            imported->module_identity = logical_module_identity(root, path);
-            if (imported->module_identity == NULL) {
-                error_report(global_error_handler, SEVERITY_ERROR,
-                             declaration->span.begin.line,
-                             declaration->span.begin.column,
-                             ERROR_CATEGORY_COMPILER, ERR_LEX_FILE_NOT_FOUND,
-                             unit->source_path,
-                             "Import escapes the source or package root");
-                free(path);
-                free(import_text);
-                return 0;
+            AstProgram *imported = known_import(root, path);
+            if (imported == NULL) {
+                imported = parse_single_file(path, options, root->strings);
+                if (imported == NULL) {
+                    free(path);
+                    free(import_text);
+                    continue;
+                }
+                if (!append_owned_import(root, imported)) {
+                    ast_program_free(imported);
+                    free(path);
+                    free(import_text);
+                    return 0;
+                }
+                imported->module_identity = logical_module_identity(root, path);
+                if (imported->module_identity == NULL) {
+                    error_report(global_error_handler, SEVERITY_ERROR,
+                                 entry->span.begin.line,
+                                 entry->span.begin.column,
+                                 ERROR_CATEGORY_COMPILER, ERR_LEX_FILE_NOT_FOUND,
+                                 unit->source_path,
+                                 "Import escapes the source or package root");
+                    free(path);
+                    free(import_text);
+                    return 0;
+                }
+                if (!resolve_imports(root, imported, options)) {
+                    free(path);
+                    free(import_text);
+                    return 0;
+                }
             }
-            if (!resolve_imports(root, imported, options)) {
-                free(path);
-                free(import_text);
-                return 0;
-            }
+            entry->resolved_program = imported;
+            free(path);
+            free(import_text);
         }
-        declaration->as.import_decl.resolved_program = imported;
-        free(path);
-        free(import_text);
     }
     return 1;
 }

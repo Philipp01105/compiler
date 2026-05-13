@@ -191,7 +191,7 @@ static int dump_aggregates(FILE *output, const IrModule *module) {
 
 int ir_dump(FILE *output, const IrModule *module) {
     if (output == NULL || module == NULL || !ir_verify_module(module)) return 0;
-    if (fputs("dmm-ir-v1\nmodule path=", output) == EOF ||
+    if (fputs("dmm-ir-v2\nmodule path=", output) == EOF ||
         !quoted(output, module->program->source_path) ||
         fprintf(output, " verified=%d types=%zu functions=%zu structs=%zu enums=%zu imports=%zu\n",
                 module->verified, module->type_count, module->function_count,

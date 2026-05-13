@@ -1,0 +1,2 @@
+func change(values:int[]) -> void { values.length = 1; }
+func main() -> void {}

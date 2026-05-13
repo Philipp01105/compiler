@@ -44,6 +44,7 @@ typedef struct AstType {
     int is_array;
     int is_slice;
     size_t array_length_token;
+    size_t resolved_array_length;
 } AstType;
 
 typedef struct AstExpression AstExpression;
@@ -53,6 +54,16 @@ typedef struct AstField AstField;
 typedef struct AstEnumValue AstEnumValue;
 typedef struct AstDeclarationNode AstDeclarationNode;
 typedef struct AstProgram AstProgram;
+
+typedef struct AstImportPath {
+    AstSourceSpan span;
+    size_t path_token;
+    size_t path_first_token;
+    size_t path_token_count;
+    size_t resolved_symbol_id;
+    AstProgram *resolved_program;
+    struct AstImportPath *next;
+} AstImportPath;
 
 struct AstExpression {
     AstExpressionKind kind;
@@ -66,6 +77,8 @@ struct AstExpression {
     AstExpression *arguments;
     AstExpression *next;
     AstType allocated_type;
+    /* Sema-owned folded constant spelling, separate from the source tree. */
+    AstToken folded_constant;
     DataType resolved_type;
     unsigned resolved_pointer_depth;
     unsigned resolved_outer_pointer_depth;
@@ -73,6 +86,7 @@ struct AstExpression {
     size_t resolved_named_symbol_id;
     int resolved_is_array;
     int resolved_is_slice;
+    size_t resolved_array_length;
     size_t resolved_symbol_id;
 };
 
@@ -130,10 +144,7 @@ struct AstDeclarationNode {
     AstDeclarationNode *next;
     union {
         struct {
-            size_t path_token;
-            size_t path_first_token;
-            size_t path_token_count;
-            AstProgram *resolved_program;
+            AstImportPath *paths;
         } import_decl;
         struct {
             AstParameter *parameters;

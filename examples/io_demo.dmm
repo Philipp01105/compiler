@@ -33,9 +33,9 @@ func main() -> void {
     
     var test:string = "Hello";
     var test_len:int = io_strlen(test);
-    var[16] buf:char;
-    var num_len:int = io_int_to_str(test_len, &buf, 16);
-    sys_write(1, &buf, num_len);
+    var buf:char[16];
+    var num_len:int = io_int_to_str(test_len, buf, 16);
+    sys_write(1, buf, num_len);
     var nl:string = "\n";
     sys_write(1, nl, 1);
     
@@ -57,8 +57,8 @@ func main() -> void {
     
     println("");
     println("  → Reading file back...");
-    var[512] read_buf:char;
-    var bytes_read:int = read_file("demo_output.txt", &read_buf, 511);
+    var read_buf:char[512];
+    var bytes_read:int = read_file("demo_output.txt", read_buf, 511);
     
     if (bytes_read > 0) {
         println("     ✓ File read successfully");
@@ -66,7 +66,7 @@ func main() -> void {
         println("     ─────────────────");
         var preview:string = "     ";
         sys_write(1, preview, 5);
-        sys_write(1, &read_buf, 50);
+        sys_write(1, read_buf, 50);
         println("...");
     }
     

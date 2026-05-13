@@ -1,0 +1,2 @@
+#import "old.dmm"
+func main() -> void {}

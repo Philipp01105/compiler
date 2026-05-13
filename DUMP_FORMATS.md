@@ -13,16 +13,16 @@ Paths must be distinct from the source, assembly output, and one another. Dump
 creation is part of compilation: an I/O or validation failure makes the command
 fail and removes the incomplete artifact.
 
-## `dmm-ast-v1`
+## `dmm-ast-v2`
 
 The AST dump lists the root and every loaded import unit, each as a preorder
 traversal. Two-space indentation records ownership;
 the explicit role following `statement` or `expression` records the child edge.
 Declarations, parameters, fields, enum variants, statements, expressions,
-resolved types, stable semantic symbol IDs, operators, GC ownership, and source
+resolved types, stable semantic symbol IDs, operators, folded constants, type operands, and source
 spans are included. A dash denotes an absent optional value.
 
-## `dmm-ir-v1`
+## `dmm-ir-v2`
 
 The IR dump lists interned types and aggregate definitions before functions.
 Function instructions are numbered in storage order. Values use `%N`, types use
@@ -42,5 +42,5 @@ compiler-generated prologue, epilogue, cleanup, and ABI instructions use
 
 Quoted values use `\\`, `\"`, `\n`, `\r`, and `\t` escapes. Other ASCII control
 bytes use `\xNN`. Field order, traversal order, identifier numbering, and final
-newlines are part of each v1 format. Adding or reordering fields requires a new
+newlines are part of each versioned format. Adding or reordering fields requires a new
 format version.

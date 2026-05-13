@@ -1,0 +1,5 @@
+import ("pkg" "pkg/package.dmm" "pkg/api.dmm")
+
+func main() -> void {
+    var result:int = package_answer();
+}

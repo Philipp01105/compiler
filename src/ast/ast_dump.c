@@ -122,6 +122,12 @@ static int dump_expression(FILE *output, const AstProgram *program,
     if ((expression->kind == AST_EXPR_UNARY || expression->kind == AST_EXPR_BINARY) &&
         (fputs(" operator=", output) == EOF ||
          !quoted(output, operator_name(expression->operator_type)))) return 0;
+    if (expression->folded_constant.lexeme != NULL &&
+        (fputs(" folded=", output) == EOF || !quoted(output, expression->folded_constant.lexeme))) return 0;
+    if (expression->kind == AST_EXPR_CAST || expression->kind == AST_EXPR_RESERVE) {
+        if (fputs(" operand-type=", output) == EOF ||
+            !dump_type(output, program, &expression->allocated_type)) return 0;
+    }
     if (fputc('\n', output) == EOF) return 0;
     return dump_expression(output, program, expression->left, depth + 1, "left") &&
            dump_expression(output, program, expression->right, depth + 1, "right") &&
@@ -189,18 +195,22 @@ static int dump_declaration(FILE *output, const AstProgram *program,
     if (declaration->kind == AST_DECL_FUNCTION &&
         fprintf(output, " static=%d", declaration->as.function.is_static) < 0) return 0;
     if (declaration->kind == AST_DECL_IMPORT) {
-        if (fputs(" path=", output) == EOF) return 0;
-        if (declaration->as.import_decl.path_token != AST_TOKEN_NONE) {
-            if (!quoted(output, ast_program_lexeme(program,
-                                                   declaration->as.import_decl.path_token))) return 0;
-        } else {
-            if (fputc('"', output) == EOF) return 0;
-            size_t first = declaration->as.import_decl.path_first_token;
-            for (size_t i = 0; i < declaration->as.import_decl.path_token_count &&
-                               first + i < program->token_count; i++)
-                if (fputs(program->tokens[first + i].lexeme, output) == EOF) return 0;
-            if (fputc('"', output) == EOF) return 0;
+        if (fputs(" paths=[", output) == EOF) return 0;
+        for (const AstImportPath *path = declaration->as.import_decl.paths; path != NULL; path = path->next) {
+            if (path != declaration->as.import_decl.paths && fputs(",", output) == EOF) return 0;
+            if (path->path_token != AST_TOKEN_NONE) {
+                if (!quoted(output, ast_program_lexeme(program,
+                                                       path->path_token))) return 0;
+            } else {
+                if (fputc('"', output) == EOF) return 0;
+                size_t first = path->path_first_token;
+                for (size_t i = 0; i < path->path_token_count &&
+                                   first + i < program->token_count; i++)
+                    if (fputs(program->tokens[first + i].lexeme, output) == EOF) return 0;
+                if (fputc('"', output) == EOF) return 0;
+            }
         }
+        if (fputs("]", output) == EOF) return 0;
     }
     if (fputc('\n', output) == EOF) return 0;
     if (declaration->kind == AST_DECL_FUNCTION)
@@ -250,7 +260,7 @@ static int dump_program(FILE *output, const AstProgram *program, size_t index,
 
 int ast_dump(FILE *output, const AstProgram *program) {
     if (output == NULL || program == NULL || !ast_validate_program(program)) return 0;
-    if (fprintf(output, "dmm-ast-v1\nmodule units=%zu\n", program->owned_import_count + 1) < 0 ||
+    if (fprintf(output, "dmm-ast-v2\nmodule units=%zu\n", program->owned_import_count + 1) < 0 ||
         !dump_program(output, program, 0, "root")) return 0;
     for (size_t i = 0; i < program->owned_import_count; i++)
         if (!dump_program(output, program->owned_imports[i], i + 1, "import")) return 0;

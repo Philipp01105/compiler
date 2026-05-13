@@ -21,7 +21,11 @@ func printDoubleLine() -> void {
 }
 
 func printLabeled(label:string, value:int) -> void {
-    println(label + ": " + value);
+    {
+        var _output0:string = label + ": " + value;
+        println(_output0);
+        free(_output0);
+    }
 }
 
 // Calculator struct
@@ -175,7 +179,11 @@ func demonstrateBasicOps() -> void {
     calc.printStatus("Modulo 3");
     
     println("");
-    println("Total operations: " + calc.operationCount);
+    {
+        var _output1:string = "Total operations: " + calc.operationCount;
+        println(_output1);
+        free(_output1);
+    }
 }
 
 // Demonstrate memory functions
@@ -243,8 +251,16 @@ func demonstrateMath() -> void {
     calc.printStatus("Square");
     
     println("");
-    println("Result: " + calc.getValue());
-    println("Operations performed: " + calc.operationCount);
+    {
+        var _output2:string = "Result: " + calc.getValue();
+        println(_output2);
+        free(_output2);
+    }
+    {
+        var _output3:string = "Operations performed: " + calc.operationCount;
+        println(_output3);
+        free(_output3);
+    }
 }
 
 // Demonstrate chain calculations
@@ -262,22 +278,46 @@ func demonstrateChain() -> void {
     println("");
     
     calc.setValue(100);
-    println("Start: " + calc.getValue());
+    {
+        var _output4:string = "Start: " + calc.getValue();
+        println(_output4);
+        free(_output4);
+    }
     
     calc.subtract(25);
-    println("After -25: " + calc.getValue());
+    {
+        var _output5:string = "After -25: " + calc.getValue();
+        println(_output5);
+        free(_output5);
+    }
     
     calc.add(10);
-    println("After +10: " + calc.getValue());
+    {
+        var _output6:string = "After +10: " + calc.getValue();
+        println(_output6);
+        free(_output6);
+    }
     
     calc.multiply(2);
-    println("After *2: " + calc.getValue());
+    {
+        var _output7:string = "After *2: " + calc.getValue();
+        println(_output7);
+        free(_output7);
+    }
     
     calc.divide(4);
-    println("After /4: " + calc.getValue());
+    {
+        var _output8:string = "After /4: " + calc.getValue();
+        println(_output8);
+        free(_output8);
+    }
     
     println("");
-    println("Final result: " + calc.getValue());
+    {
+        var _output9:string = "Final result: " + calc.getValue();
+        println(_output9);
+        free(_output9);
+    }
 }
 
 // Demonstrate absolute value and negative numbers

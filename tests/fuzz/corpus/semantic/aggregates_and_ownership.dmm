@@ -15,7 +15,7 @@ struct PacketBuffer {
         used = 0;
         checksum = seed;
         for (var i:int = 0; i < 12; i++) {
-            bytes[i] = byte(0);
+            bytes[i] = (0).(byte);
         }
     }
 
@@ -23,18 +23,18 @@ struct PacketBuffer {
         if (used >= 12) {
             return false;
         }
-        bytes[used] = byte(value);
-        checksum += int(bytes[used]);
+        bytes[used] = (value).(byte);
+        checksum += (bytes[used]).(int);
         used++;
         return true;
     }
 
     func at(index:int) -> int {
-        return int(bytes[index]);
+        return (bytes[index]).(int);
     }
 
     static func normalize(value:double) -> float {
-        return float(value / 10.0);
+        return (value / 10.0).(float);
     }
 }
 
@@ -78,11 +78,11 @@ func main() -> void {
     var kind:PacketKind = rotate_kind(PacketKind.data, buffer.at(3));
     var samples:double[4];
     for (var i:int = 0; i < 4; i++) {
-        samples[i] = double(buffer.at(i)) / 3.0;
+        samples[i] = (buffer.at(i)).(double) / 3.0;
     }
 
     var manual:*double = reserve(double);
-    *manual = double(PacketBuffer.normalize(samples[2]));
+    *manual = (PacketBuffer.normalize(samples[2])).(double);
     var label:string = "packet=" + kind.name + ",id=" + kind.id
         + ",reliable=" + kind.reliable + ",checksum=" + buffer.checksum
         + ",allocated=" + allocated_value(buffer.used)

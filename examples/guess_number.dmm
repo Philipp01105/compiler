@@ -21,7 +21,11 @@ func printDoubleLine() -> void {
 }
 
 func printLabeled(label:string, value:int) -> void {
-    println(label + ": " + value);
+    {
+        var _output0:string = label + ": " + value;
+        println(_output0);
+        free(_output0);
+    }
 }
 
 // Number Guessing Game struct
@@ -101,7 +105,7 @@ func simulateGame() -> void {
     println("");
     
     // Array of guesses to simulate
-    var[7] guesses:int;
+    var guesses:int[7];
     guesses[0] = 50;
     guesses[1] = 25;
     guesses[2] = 37;
@@ -116,7 +120,11 @@ func simulateGame() -> void {
         }
         
         var guess:int = guesses[i];
-        println("Guess #" + (i + 1) + ": " + guess);
+        {
+            var _output1:string = "Guess #" + (i + 1) + ": " + guess;
+            println(_output1);
+            free(_output1);
+        }
         
         var result:int = game.makeGuess(guess);
         
@@ -134,9 +142,17 @@ func simulateGame() -> void {
     
     println("");
     if (game.gameWon == 1) {
-        println("YOU WON in " + game.guessCount + " guesses!");
+        {
+            var _output2:string = "YOU WON in " + game.guessCount + " guesses!";
+            println(_output2);
+            free(_output2);
+        }
     } else {
-        println("GAME OVER! The number was " + game.secretNumber);
+        {
+            var _output3:string = "GAME OVER! The number was " + game.secretNumber;
+            println(_output3);
+            free(_output3);
+        }
     }
 }
 
@@ -162,7 +178,11 @@ func simulateBinarySearch() -> void {
         }
         
         var guess:int = (low + high) / 2;
-        println("Guess #" + (i + 1) + ": " + guess + " (searching " + low + "-" + high + ")");
+        {
+            var _output4:string = "Guess #" + (i + 1) + ": " + guess + " (searching " + low + "-" + high + ")";
+            println(_output4);
+            free(_output4);
+        }
         
         var result:int = game.makeGuess(guess);
         
@@ -179,7 +199,11 @@ func simulateBinarySearch() -> void {
         println("");
     }
     
-    println("Binary search found the number in " + game.guessCount + " guesses!");
+    {
+        var _output5:string = "Binary search found the number in " + game.guessCount + " guesses!";
+        println(_output5);
+        free(_output5);
+    }
 }
 
 func main() -> void {

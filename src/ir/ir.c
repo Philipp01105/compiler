@@ -172,6 +172,7 @@ static IrTypeId type_from_parts(IrModule *module, DataType primitive,
 }
 
 static size_t ast_array_length(const AstProgram *program, const AstType *type) {
+    if (type != NULL && type->resolved_array_length != 0) return type->resolved_array_length;
     if (type == NULL || !type->is_array || type->array_length_token >= program->token_count)
         return 0;
     return (size_t) strtoull(ast_program_lexeme(program, type->array_length_token), NULL, 10);
@@ -197,7 +198,8 @@ static IrTypeId type_from_expression(IrModule *module, const AstProgram *program
     return type_from_parts(module, expression->resolved_type,
                            expression->resolved_pointer_depth,
                            expression->resolved_named_type_token,
-                           expression->resolved_is_array, expression->resolved_is_slice, 0,
+                           expression->resolved_is_array, expression->resolved_is_slice,
+                           expression->resolved_array_length,
                            expression->resolved_outer_pointer_depth, program,
                            expression->resolved_named_symbol_id);
 }
@@ -206,9 +208,9 @@ static void set_expression_type(IrBuilder *builder, IrInstruction *instruction,
                                 const AstExpression *expression) {
     if (instruction == NULL || expression == NULL) return;
     instruction->type = expression->resolved_type;
-    instruction->pointer_depth = expression->resolved_pointer_depth;
+    instruction->pointer_depth = expression->resolved_pointer_depth + expression->resolved_outer_pointer_depth;
     instruction->type_name_token = expression->resolved_named_type_token;
-    instruction->is_array = expression->resolved_is_array;
+    instruction->is_array = expression->resolved_is_array && expression->resolved_outer_pointer_depth == 0;
     instruction->is_slice = expression->resolved_is_slice;
     instruction->type_id = IR_TYPE_NONE;
     if ((expression->resolved_is_array || expression->resolved_is_slice) &&
@@ -236,6 +238,22 @@ static void emit_label(IrBuilder *builder, size_t label, AstSourceSpan span);
 
 static size_t lower_expression(IrBuilder *builder, const AstExpression *expression) {
     if (expression == NULL) return IR_VALUE_NONE;
+    if (expression->folded_constant.lexeme != NULL) {
+        AstProgram *program = (AstProgram *) builder->function->source_program;
+        AstToken *tokens = realloc(program->tokens, (program->token_count+1)*sizeof(*tokens));
+        if (tokens == NULL) { builder->failed=1; return IR_VALUE_NONE; }
+        program->tokens = tokens;
+        size_t token = program->token_count++;
+        program->tokens[token] = expression->folded_constant;
+        IrInstruction *instruction = emit(builder, IR_OP_CONSTANT, expression->span);
+        if (instruction == NULL) return IR_VALUE_NONE;
+        instruction->result = new_value(builder);
+        instruction->auxiliary_token = token;
+        instruction->type = expression->resolved_type;
+        instruction->type_id = type_from_parts(builder->module, expression->resolved_type,
+            0, AST_TOKEN_NONE, 0, 0, 0, 0, program, AST_SYMBOL_NONE);
+        return instruction->result;
+    }
     if (expression->kind == AST_EXPR_NAME &&
         expression->resolved_symbol_id < builder->module->semantics->symbol_count) {
         const SemanticSymbol *symbol =
@@ -424,15 +442,15 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
                                            ? type_from_expression(builder->module, builder->program, statement->value)
                                            : type_from_ast(builder->module, builder->program, &statement->type);
                 if (instruction->type_id == IR_TYPE_NONE) builder->failed = 1;
-                instruction->pointer_depth = statement->type.pointer_depth;
+                instruction->pointer_depth = statement->type.pointer_depth + statement->type.outer_pointer_depth;
                 instruction->type_name_token = statement->type.name_token;
-                instruction->is_array = statement->type.is_array;
+                instruction->is_array = statement->type.is_array && statement->type.outer_pointer_depth == 0;
                 instruction->is_slice = statement->type.is_slice;
                 if (statement->type.kind == AST_TYPE_INFERRED && statement->value != NULL) {
                     instruction->type = statement->value->resolved_type;
-                    instruction->pointer_depth = statement->value->resolved_pointer_depth;
+                    instruction->pointer_depth = statement->value->resolved_pointer_depth + statement->value->resolved_outer_pointer_depth;
                     instruction->type_name_token = statement->value->resolved_named_type_token;
-                    instruction->is_array = statement->value->resolved_is_array;
+                    instruction->is_array = statement->value->resolved_is_array && statement->value->resolved_outer_pointer_depth == 0;
                     instruction->is_slice = statement->value->resolved_is_slice;
                 }
             }
@@ -586,9 +604,9 @@ static int append_function(IrModule *module, const AstProgram *program,
             .symbol_id = parameter->resolved_symbol_id,
             .type = ast_type_data_type(program, &parameter->type),
             .type_id = type_from_ast(module, program, &parameter->type),
-            .pointer_depth = parameter->type.pointer_depth,
+            .pointer_depth = parameter->type.pointer_depth + parameter->type.outer_pointer_depth,
             .type_name_token = parameter->type.name_token,
-            .is_array = parameter->type.is_array,
+            .is_array = parameter->type.is_array && parameter->type.outer_pointer_depth == 0,
             .is_slice = parameter->type.is_slice
         };
         if (ir_parameter->type_id == IR_TYPE_NONE) return 0;
@@ -702,18 +720,20 @@ static int append_enum(IrModule *module, const AstProgram *program,
 
 static int append_import(IrModule *module, const AstProgram *program,
                          const AstDeclarationNode *declaration) {
-    if (module->import_count == module->import_capacity &&
-        !grow_array((void **) &module->imports, &module->import_capacity,
-                    sizeof(*module->imports)))
-        return 0;
-    module->imports[module->import_count++] = (IrImport){
-        .source_program = program,
-        .symbol_id = declaration->resolved_symbol_id,
-        .path_token = declaration->as.import_decl.path_token,
-        .path_first_token = declaration->as.import_decl.path_first_token,
-        .path_token_count = declaration->as.import_decl.path_token_count,
-        .resolved_program = declaration->as.import_decl.resolved_program
-    };
+    for (const AstImportPath *path = declaration->as.import_decl.paths; path != NULL; path = path->next) {
+        if (module->import_count == module->import_capacity &&
+            !grow_array((void **) &module->imports, &module->import_capacity,
+                        sizeof(*module->imports)))
+            return 0;
+        module->imports[module->import_count++] = (IrImport){
+            .source_program = program,
+            .symbol_id = path->resolved_symbol_id,
+            .path_token = path->path_token,
+            .path_first_token = path->path_first_token,
+            .path_token_count = path->path_token_count,
+            .resolved_program = path->resolved_program
+        };
+    }
     return 1;
 }
 
@@ -988,6 +1008,11 @@ int ir_verify_module(const IrModule *module) {
     for (size_t t = 0; t < module->type_count; t++) {
         const IrType *type = &module->types[t];
         if (type->kind < IR_TYPE_PRIMITIVE || type->kind > IR_TYPE_SLICE) return 0;
+        if (type->kind == IR_TYPE_PRIMITIVE &&
+            type->primitive != TYPE_UNKNOWN &&
+            (type->primitive < TYPE_INT || type->primitive > TYPE_VOID)) return 0;
+        if (type->kind == IR_TYPE_ARRAY && type->array_length == 0) return 0;
+        if (type->kind != IR_TYPE_ARRAY && type->array_length != 0) return 0;
         if ((type->kind == IR_TYPE_POINTER || type->kind == IR_TYPE_ARRAY ||
              type->kind == IR_TYPE_SLICE) &&
             (type->element_type == IR_TYPE_NONE || type->element_type >= t))
@@ -1076,7 +1101,7 @@ int ir_verify_module(const IrModule *module) {
                 symbol->owner_token != function->name_token ||
                 ast_type_data_type(symbol->source_program, &symbol->declared_type) !=
                 parameter->type ||
-                symbol->declared_type.pointer_depth != parameter->pointer_depth)
+                symbol->declared_type.pointer_depth + symbol->declared_type.outer_pointer_depth != parameter->pointer_depth)
                 return 0;
             if (parameter->type_id >= module->type_count) return 0;
             for (size_t previous = 0; previous < p; previous++)

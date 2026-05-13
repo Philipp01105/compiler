@@ -87,9 +87,9 @@ func main() -> void {
         *aggregate += row_totals[i];
     }
 
-    var converted:float = float(double(*aggregate) / 7.0);
+    var converted:float = ((*aggregate).(double) / 7.0).(float);
     var manual:*int = reserve(int);
-    *manual = int(converted);
+    *manual = (converted).(int);
     var final_phase:Phase = phase_for(4);
     var output:string = "phase=" + final_phase.text + ",index=" + final_phase.index
         + ",writes=" + matrix.writes + ",total=" + *aggregate

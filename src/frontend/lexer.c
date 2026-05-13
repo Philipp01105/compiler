@@ -75,6 +75,8 @@ void add_token(TokenStream *stream, TokenType type, const char *value, int line,
     token->type = type;
     token->line = line;
     token->column = column;
+    token->end_line = line;
+    token->end_column = column + (int)strlen(value == NULL ? "" : value);
 
     token->value = string_interner_intern(stream->strings, value == NULL ? "" : value);
     if (token->value == NULL) {
@@ -91,7 +93,7 @@ Token peek(const TokenStream *stream) {
     if (stream->current < stream->count) {
         return stream->tokens[stream->current];
     }
-    const Token eof = {TOKEN_EOF, "", 0, 0};
+    const Token eof = {.type=TOKEN_EOF, .value=""};
     return eof;
 }
 
@@ -100,7 +102,7 @@ Token peek_ahead(const TokenStream *stream, int offset) {
     if (pos < stream->count) {
         return stream->tokens[pos];
     }
-    Token eof = {TOKEN_EOF, "", 0, 0};
+    Token eof = {.type=TOKEN_EOF, .value=""};
     return eof;
 }
 
@@ -108,7 +110,7 @@ Token consume(TokenStream *stream) {
     if (stream->current < stream->count) {
         return stream->tokens[stream->current++];
     }
-    Token eof = {TOKEN_EOF, "", 0, 0};
+    Token eof = {.type=TOKEN_EOF, .value=""};
     return eof;
 }
 
@@ -318,7 +320,12 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
             } else if (i < length && source[i] == '"') {
                 i++;
                 column++;
+                int previous_count = stream->count;
                 add_token(stream, TOKEN_STRING_LITERAL, str, start_line, start_col);
+                if (stream->count > previous_count) {
+                    stream->tokens[stream->count - 1].end_line = line;
+                    stream->tokens[stream->count - 1].end_column = column;
+                }
             } else {
                 error_report(global_error_handler, SEVERITY_ERROR, start_line, start_col,
                              ERROR_CATEGORY_LEXER, ERR_LEX_UNCLOSED_STRING, filename,
@@ -378,7 +385,12 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
                                  "Character literal must contain exactly one byte");
                     stream->has_error = 1;
                 } else {
+                    int previous_count = stream->count;
                     add_token(stream, TOKEN_CHAR_LITERAL, ch, start_line, start_col);
+                    if (stream->count > previous_count) {
+                        stream->tokens[stream->count - 1].end_line = line;
+                        stream->tokens[stream->count - 1].end_column = column;
+                    }
                 }
             } else {
                 error_report(global_error_handler, SEVERITY_ERROR, start_line, start_col,
@@ -397,6 +409,7 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
             int has_dot = 0;
             while (i < length && (isdigit((unsigned char)source[i]) || source[i] == '.') && j < MAX_TOKEN - 1) {
                 if (source[i] == '.') {
+                    if (i+1 < length && source[i+1] == '(') break;
                     if (has_dot) break;
                     has_dot = 1;
                 }
@@ -443,7 +456,8 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
                 }
             }
 
-            if (i < length && (isdigit((unsigned char) source[i]) || source[i] == '.')) {
+            if (i < length && (isdigit((unsigned char) source[i]) ||
+                (source[i] == '.' && !(i+1 < length && source[i+1] == '(')))) {
                 error_report(global_error_handler, SEVERITY_ERROR, line, start_col,
                              ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_SYNTAX, filename,
                              "Numeric token exceeds maximum length");

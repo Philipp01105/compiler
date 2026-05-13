@@ -11,5 +11,9 @@ func main() -> void {
     point.y = 7;
     var area:int = point.x * point.y;
     var label:string = "area";
-    println(label + "=" + area);
+    {
+        var _output0:string = label + "=" + area;
+        println(_output0);
+        free(_output0);
+    }
 }
