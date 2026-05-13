@@ -37,7 +37,7 @@ func write_file(path:string, text:string) -> int {
     return 0;
 }
 
-func read_file(path:string, buffer:*char, capacity:int) -> int {
+func read_file(path:string, buffer:char[], capacity:int) -> int {
     var fd:int = open_read(path);
     if (fd < 0) { return fd; }
     var result:int = sys_read(fd, buffer, capacity);

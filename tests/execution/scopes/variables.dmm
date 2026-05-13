@@ -1,3 +1,5 @@
+import <stdlib>
+
 // Variable types test
 func main() -> void {
     var int_val:int = 42;

@@ -13,7 +13,8 @@ typedef enum {
     SEMANTIC_SYMBOL_FIELD,
     SEMANTIC_SYMBOL_ENUM_VALUE,
     SEMANTIC_SYMBOL_PARAMETER,
-    SEMANTIC_SYMBOL_LOCAL
+    SEMANTIC_SYMBOL_LOCAL,
+    SEMANTIC_SYMBOL_CONSTANT
 } SemanticSymbolKind;
 
 typedef struct {
@@ -26,9 +27,11 @@ typedef struct {
     AstType declared_type;
     DataType resolved_type;
     unsigned resolved_pointer_depth;
+    unsigned resolved_outer_pointer_depth;
     size_t resolved_named_type_token;
     size_t resolved_named_symbol_id;
     int resolved_is_array;
+    int resolved_is_slice;
     const AstDeclarationNode *declaration;
     const void *node;
     size_t scope_depth;

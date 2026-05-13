@@ -1,6 +1,7 @@
-// Test @gc annotation with explicit return statement
+import <stdlib>
+
+// Test annotation with explicit return statement
 func test() -> void {
-    @gc
     var t:*int = reserve(int);
     *t = 10;
     println("Inside test function");

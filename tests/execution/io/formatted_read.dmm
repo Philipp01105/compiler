@@ -1,3 +1,5 @@
+import <stdlib>
+
 func main() -> void {
     var path:string = "formatted_read.tmp";
     var output:int = sys_open(path, 577, 384);

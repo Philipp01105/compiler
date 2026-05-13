@@ -1,3 +1,5 @@
+import <stdlib>
+
 func mix(a:int, b:double, c:int, d:float) -> double {
     return a + b + c + d;
 }

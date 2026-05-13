@@ -1,3 +1,5 @@
+import <stdlib>
+
 enum State(code:int, text:string, weight:float, active:bit) {
     idle(-1, "idle", -1.5, false),
     ready(2, "ready", 2.25, true)

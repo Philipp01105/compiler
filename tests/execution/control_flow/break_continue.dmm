@@ -1,3 +1,5 @@
+import <stdlib>
+
 func main() -> void {
     var total:int = 0;
     var i:int = 0;

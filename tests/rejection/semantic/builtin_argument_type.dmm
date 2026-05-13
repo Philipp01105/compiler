@@ -1,1 +1,3 @@
+import <stdlib>
+
 func main() -> void { println(strlen(42)); }

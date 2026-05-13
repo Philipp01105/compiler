@@ -569,7 +569,6 @@ const char *token_type_to_string(TokenType type) {
         case TOKEN_KEYWORD_IF: return "KEYWORD_IF";
         case TOKEN_KEYWORD_ELSE: return "KEYWORD_ELSE";
         case TOKEN_KEYWORD_WHILE: return "KEYWORD_WHILE";
-        case TOKEN_KEYWORD_PRINT: return "KEYWORD_PRINT";
         case TOKEN_KEYWORD_STRUCT: return "KEYWORD_STRUCT";
         case TOKEN_KEYWORD_ENUM: return "KEYWORD_ENUM";
         case TOKEN_KEYWORD_BREAK: return "KEYWORD_BREAK";
@@ -577,7 +576,6 @@ const char *token_type_to_string(TokenType type) {
         case TOKEN_KEYWORD_IMPORT: return "KEYWORD_IMPORT";
         case TOKEN_KEYWORD_RESERVE: return "KEYWORD_RESERVE";
         case TOKEN_KEYWORD_FREE: return "KEYWORD_FREE";
-        case TOKEN_KEYWORD_GC: return "KEYWORD_GC";
 
         case TOKEN_TYPE_INT: return "TYPE_INT";
         case TOKEN_TYPE_CHAR: return "TYPE_CHAR";

@@ -1,3 +1,5 @@
+import <stdlib>
+
 // Test free keyword for manual deallocation
 func main() -> void {
     var p:*int = reserve(int);

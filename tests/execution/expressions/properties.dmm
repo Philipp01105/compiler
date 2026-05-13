@@ -1,3 +1,5 @@
+import <stdlib>
+
 func main() -> void {
     var x:int = -37;
     var add_identity:bit = x + 0 == x;

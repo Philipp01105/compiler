@@ -1,3 +1,5 @@
+import <stdlib>
+
 func main() -> void {
     var x:int = 10;
     { var x:int = 20; println(x); }
@@ -16,7 +18,7 @@ func main() -> void {
     println(total);
     var zero:int;
     println(zero);
-    var [3000] values:int;
+    var values:int[3000];
     values[2999] = 42;
     var p:*int = &x;
     *p = 7;
@@ -27,7 +29,7 @@ func main() -> void {
     values[1] = 5;
     println(first(values));
     var empty:string;
-    var [2] names:string;
+    var names:string[2];
     println(empty==names[1]);
     var cursor:int=0;
     values[index(&cursor)] += 3;
@@ -35,6 +37,6 @@ func main() -> void {
     println(values[0]);
 }
 func modify(p:*int) -> void { *p += 2; }
-func first(a[]:int) -> int { return a[1]; }
+func first(a:int[]) -> int { return a[1]; }
 func index(p:*int) -> int { var old:int=*p; *p += 1; return old; }
 // Category: execution/scopes

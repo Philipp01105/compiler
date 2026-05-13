@@ -1,3 +1,5 @@
+import <stdlib>
+
 // Test heap management with custom struct types
 
 struct Point {
@@ -48,10 +50,8 @@ func test2_multiple_structs() -> void {
 func test3_gc_structs() -> void {
     println("[TEST 3] GC with structs");
     
-    @gc
     var p:*Point = reserve(Point);
     
-    @gc
     var r:*Rectangle = reserve(Rectangle);
     
     println("  [OK] GC structs allocated (auto-freed)");
@@ -80,7 +80,6 @@ func test5_manual_and_gc_structs() -> void {
     
     var manual:*Point = reserve(Point);
     
-    @gc
     var automatic:*Rectangle = reserve(Rectangle);
     
     println("  [OK] Manual and GC structs allocated");

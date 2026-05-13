@@ -1,6 +1,5 @@
 // Test for Input struct functionality
-#import <stdlib/io.dmm>
-
+import <stdlib>
 func main() -> void {
     var input:Input;
     input.init();

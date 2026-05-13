@@ -1,0 +1,74 @@
+// Ordinary overloaded output functions. Conversion is expressed in DMM through
+// string concatenation; byte output remains the neutral sys_write intrinsic.
+func print(value:string) -> void { write_str_to(1, value); }
+func println(value:string) -> void {
+    var text:string = value + "\n";
+    write_str_to(1, text);
+    free(text);
+}
+
+func print(value:int) -> void {
+    var text:string = "" + value;
+    write_str_to(1, text);
+    free(text);
+}
+func println(value:int) -> void {
+    var text:string = "" + value + "\n";
+    write_str_to(1, text);
+    free(text);
+}
+
+func print(value:char) -> void {
+    var text:string = "" + value;
+    write_str_to(1, text);
+    free(text);
+}
+func println(value:char) -> void {
+    var text:string = "" + value + "\n";
+    write_str_to(1, text);
+    free(text);
+}
+
+func print(value:byte) -> void {
+    var text:string = "" + value;
+    write_str_to(1, text);
+    free(text);
+}
+func println(value:byte) -> void {
+    var text:string = "" + value + "\n";
+    write_str_to(1, text);
+    free(text);
+}
+
+func print(value:bit) -> void {
+    var text:string = "" + value;
+    write_str_to(1, text);
+    free(text);
+}
+func println(value:bit) -> void {
+    var text:string = "" + value + "\n";
+    write_str_to(1, text);
+    free(text);
+}
+
+func print(value:float) -> void {
+    var text:string = "" + value;
+    write_str_to(1, text);
+    free(text);
+}
+func println(value:float) -> void {
+    var text:string = "" + value + "\n";
+    write_str_to(1, text);
+    free(text);
+}
+
+func print(value:double) -> void {
+    var text:string = "" + value;
+    write_str_to(1, text);
+    free(text);
+}
+func println(value:double) -> void {
+    var text:string = "" + value + "\n";
+    write_str_to(1, text);
+    free(text);
+}

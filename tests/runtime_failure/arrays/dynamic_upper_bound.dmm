@@ -1,5 +1,7 @@
+import <stdlib>
+
 func main() -> void {
-    var [3] values:int;
+    var values:int[3];
     var index:int = 3;
     println(values[index]);
 }

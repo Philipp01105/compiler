@@ -1,3 +1,5 @@
+import <stdlib>
+
 enum test(id:int, name:string) {
     In(1, "test"),
     Out(2, "test2")

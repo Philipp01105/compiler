@@ -42,6 +42,7 @@ void ast_program_free(AstProgram *program) {
         block = next;
     }
     free(program->source_path);
+    free(program->module_identity);
     for (size_t i = 0; i < program->owned_import_count; i++)
         ast_program_free(program->owned_imports[i]);
     free(program->owned_imports);
@@ -67,6 +68,7 @@ const char *ast_declaration_kind_name(AstDeclarationKind kind) {
         case AST_DECL_STRUCT: return "struct";
         case AST_DECL_ENUM: return "enum";
         case AST_DECL_FUNCTION: return "function";
+        case AST_DECL_CONSTANT: return "constant";
         case AST_DECL_INVALID: return "invalid";
     }
     return "invalid";
@@ -105,10 +107,14 @@ static int valid_expression(const AstProgram *program, const AstExpression *expr
             if (!valid_expression(program, expression->left)) return 0;
             break;
         case AST_EXPR_MEMBER:
+        case AST_EXPR_SLICE_LENGTH:
             if (!valid_expression(program, expression->left) ||
                 !valid_token(program, expression->value_token)) return 0;
             break;
         case AST_EXPR_RESERVE:
+            if (!valid_token(program, expression->value_token) ||
+                !valid_type(program, &expression->allocated_type, 0)) return 0;
+            break;
         case AST_EXPR_CAST:
         case AST_EXPR_FREE:
             if (!valid_token(program, expression->value_token) || expression->arguments == NULL)
@@ -171,9 +177,6 @@ static int valid_statement(const AstProgram *program, const AstStatement *statem
             case AST_STMT_BREAK:
             case AST_STMT_CONTINUE:
                 break;
-            case AST_STMT_PRINT:
-                if (statement->value != NULL && !valid_expression(program, statement->value)) return 0;
-                break;
             case AST_STMT_ERROR:
                 return 0;
         }
@@ -211,6 +214,10 @@ static int valid_declarations(const AstProgram *program) {
                 declaration->as.import_decl.path_token_count == 0) return 0;
         } else if (declaration->kind == AST_DECL_FUNCTION) {
             if (!valid_function_declaration(program, declaration)) return 0;
+        } else if (declaration->kind == AST_DECL_CONSTANT) {
+            if (!valid_token(program, declaration->name_token) ||
+                !valid_type(program, &declaration->as.constant.type, 1) ||
+                !valid_expression(program, declaration->as.constant.value)) return 0;
         } else if (declaration->kind == AST_DECL_STRUCT) {
             if (!valid_token(program, declaration->name_token) ||
                 !valid_fields(program, declaration->as.struct_decl.fields)) return 0;

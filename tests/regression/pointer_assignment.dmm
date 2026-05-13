@@ -1,3 +1,5 @@
+import <stdlib>
+
 // Test pointer assignment bug fix
 // This test ensures that pointer-to-pointer assignments work correctly
 func main() -> void {

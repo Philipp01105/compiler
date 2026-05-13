@@ -1,3 +1,5 @@
+import <stdlib>
+
 // Nested loops test
 func main() -> void {
     println("Multiplication table (1-3):");

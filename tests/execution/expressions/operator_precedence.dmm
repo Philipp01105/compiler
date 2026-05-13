@@ -1,3 +1,5 @@
+import <stdlib>
+
 func main() -> void {
     var grouped:int = (1 + 2) * 3;
     println(1 + 2 * 3);

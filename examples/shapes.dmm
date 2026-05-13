@@ -1,3 +1,5 @@
+import <stdlib>
+
 // =================================================================
 // SHAPES - Nested Structs Example
 // A demonstration of nested structs with geometric shapes

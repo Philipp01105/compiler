@@ -1,5 +1,7 @@
+import <stdlib>
+
 func allocate(value:int) -> int {
-    @gc var p:*int = reserve(int);
+    var p:*int = reserve(int);
     *p = value;
     var alias:*int = p;
     return *alias;

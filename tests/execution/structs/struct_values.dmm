@@ -1,3 +1,5 @@
+import <stdlib>
+
 struct Pair {
     var x:int;
     var y:int;
@@ -32,7 +34,7 @@ func main() -> void {
     println(box.pair.x);
     println(box.marker);
 
-    var [2] items:Pair;
+    var items:Pair[2];
     items[1] = box.pair;
     println(items[1].x);
     println(items[1].y);

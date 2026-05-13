@@ -1,3 +1,5 @@
+import <stdlib>
+
 func set_value(p:*int, value:int) -> void { *p = value; }
 
 func main() -> void {

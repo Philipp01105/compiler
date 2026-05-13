@@ -1,3 +1,5 @@
+import <stdlib>
+
 // ============================================================================
 // HEAP MANAGEMENT DEMONSTRATION
 // ============================================================================
@@ -5,8 +7,7 @@
 // - Pointer type declarations
 // - Heap allocation with reserve
 // - Manual deallocation with free
-// - Garbage collection with @gc
-// ============================================================================
+// - Garbage collection with // ============================================================================
 
 // Example 1: Basic Pointer Declarations
 func example1_pointers() -> void {
@@ -64,7 +65,6 @@ func example3_multiple() -> void {
 func example4_gc() -> void {
     println("=== Example 4: Garbage Collection ===");
     
-    @gc
     var gcPtr:*int = reserve(int);
     
     println("GC-managed pointer allocated");
@@ -95,7 +95,6 @@ func example6_mixed() -> void {
     println("Manual pointer allocated");
     
     // Garbage collected
-    @gc
     var automatic:*int = reserve(int);
     println("GC pointer allocated");
     
@@ -112,7 +111,6 @@ func example7_scoped_gc() -> void {
     
     println("Entering scope with GC variable");
     
-    @gc
     var scopedPtr:*int = reserve(int);
     println("  Allocated inside scope");
     

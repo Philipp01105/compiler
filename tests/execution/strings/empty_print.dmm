@@ -1,5 +1,7 @@
+import <stdlib>
+
 func main() -> void {
     print();
-    println();
+    println("");
     println("done");
 }

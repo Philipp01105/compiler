@@ -1,3 +1,5 @@
+import <stdlib>
+
 func echo(value:string) -> string { return value; }
 
 func main() -> void {
