@@ -19,6 +19,8 @@ typedef enum {
 #define ERR_LEX_FILE_NOT_FOUND          104
 #define ERR_LEX_FILE_READ_ERROR         105
 #define ERR_LEX_INVALID_SYNTAX          106
+#define ERR_LEX_INVALID_CHAR_LITERAL    107
+#define ERR_LEX_TOKEN_TOO_LONG          108
 
 #define ERR_PARSE_UNEXPECTED_TOKEN      100
 #define ERR_PARSE_EXPECTED_TOKEN        101
@@ -46,6 +48,12 @@ typedef enum {
 #define ERR_SEM_NOT_STATIC              108
 #define ERR_SEM_BREAK_OUTSIDE_LOOP      109
 #define ERR_SEM_CONTINUE_OUTSIDE_LOOP   110
+#define ERR_SEM_METHOD_REFERENCE       111
+#define ERR_SEM_DUPLICATE_DEFINITION    112
+#define ERR_SEM_INVALID_DECLARATION     113
+#define ERR_SEM_COMPLEXITY_LIMIT        114
+#define ERR_SEM_STORAGE_LIMIT           115
+#define ERR_SEM_INDEX_OUT_OF_BOUNDS     116
 
 #define ERR_CODEGEN_TOO_MANY_LITERALS   100
 #define ERR_CODEGEN_TOO_MANY_VARIABLES  101
@@ -55,6 +63,10 @@ typedef enum {
 #define ERR_COMP_NO_MAIN_FUNCTION       100
 #define ERR_COMP_NO_SOURCE_FILE         101
 #define ERR_COMP_INVALID_OPTION         102
+#define ERR_COMP_INTERNAL_FAILURE       103
+#define ERR_COMP_IMPORT_NOT_FOUND       104
+#define ERR_COMP_IMPORT_OUTSIDE_ROOT    105
+#define ERR_COMP_DUMP_FAILED            106
 
 #define WARN_UNUSED_VARIABLE            100
 #define WARN_DEPRECATED                 101
@@ -73,6 +85,8 @@ typedef struct ErrorContext {
     ErrorSeverity severity;
     int line;
     int column;
+    int end_line;
+    int end_column;
     char error_category;
     int error_code;
     char *filename;
@@ -80,6 +94,11 @@ typedef struct ErrorContext {
     char *source_line;
     char *token_value;
     char *suggestion;
+    char *fix_replacement;
+    int fix_line;
+    int fix_column;
+    int fix_end_line;
+    int fix_end_column;
     struct ErrorContext *parent;
     struct ErrorContext **children;
     int child_count;
@@ -93,6 +112,9 @@ typedef struct {
     int max_errors;
     int error_count;
     int warning_count;
+    int suppressed_error_count;
+    const char *source_override_name;
+    const char *source_override_path;
     FILE *output_stream;
     int json_output;
     int buffered;
@@ -102,6 +124,7 @@ typedef struct {
 } ErrorHandler;
 
 extern ErrorHandler *global_error_handler;
+const char *error_handler_source_path(const char *filename);
 
 ErrorHandler *error_handler_init(void);
 
@@ -134,6 +157,9 @@ void error_context_set_source_line(ErrorContext *ctx, const char *source_line);
 void error_context_set_token(ErrorContext *ctx, const char *token_value);
 
 void error_context_set_suggestion(ErrorContext *ctx, const char *suggestion);
+void error_context_set_span(ErrorContext *ctx, int end_line, int end_column);
+void error_context_set_fix(ErrorContext *ctx, int line, int column,
+                           int end_line, int end_column, const char *replacement);
 
 void error_context_free(ErrorContext *ctx);
 

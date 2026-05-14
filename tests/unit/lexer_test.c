@@ -76,6 +76,54 @@ int main(void) {
     assert(tokens != NULL && tokens->has_error);
     free_token_stream(tokens);
 
+    error_handler_reset(handler);
+    const char multiple_chars[] = "'ab' 'x'";
+    tokens = lex(multiple_chars, sizeof(multiple_chars) - 1);
+    assert(tokens != NULL && tokens->has_error && handler->error_count == 1);
+    assert(handler->buffer[0]->error_code == ERR_LEX_INVALID_CHAR_LITERAL);
+    assert(tokens->tokens[0].type == TOKEN_CHAR_LITERAL && tokens->tokens[0].value[0] == 'x');
+    free_token_stream(tokens);
+
+    error_handler_reset(handler);
+    const char escaped_single_quote[] = "\"\\'\"";
+    tokens = lex(escaped_single_quote, sizeof(escaped_single_quote) - 1);
+    assert(tokens != NULL && !tokens->has_error);
+    free_token_stream(tokens);
+
+    error_handler_reset(handler);
+    const char unicode_unknown[] = "\xCE\xB1 ?";
+    tokens = lex(unicode_unknown, sizeof(unicode_unknown) - 1);
+    assert(tokens != NULL && tokens->has_error && handler->error_count == 2);
+    assert(handler->buffer[1]->column == 3);
+    free_token_stream(tokens);
+
+    error_handler_reset(handler);
+    const char unicode_char[] = "'\xCE\xB1' ?";
+    tokens = lex(unicode_char, sizeof(unicode_char) - 1);
+    assert(tokens != NULL && tokens->has_error && handler->error_count == 2);
+    assert(handler->buffer[0]->error_code == ERR_LEX_INVALID_CHAR_LITERAL);
+    assert(handler->buffer[1]->column == 5);
+    free_token_stream(tokens);
+
+    error_handler_reset(handler);
+    FILE *json = tmpfile();
+    assert(json != NULL);
+    handler->output_stream = json;
+    error_handler_set_json_output(handler, 1);
+    ErrorContext *invalid_utf8 = error_context_create(SEVERITY_ERROR, 1, 1,
+        ERROR_CATEGORY_LEXER, ERR_LEX_UNKNOWN_CHAR, "<unit>", "Invalid byte \xFF");
+    error_context_set_source_line(invalid_utf8, "\xE0\x80 \xF4\x90\x80\x80 \xCE\xB1");
+    error_report_context(handler, invalid_utf8);
+    error_handler_flush(handler);
+    rewind(json);
+    char output[4096] = {0};
+    size_t size = fread(output, 1, sizeof(output) - 1, json);
+    assert(size > 0 && strstr(output, "\\uFFFD") != NULL);
+    assert(strstr(output, "\xCE\xB1") != NULL);
+    assert(strchr(output, (char)0xFF) == NULL && strchr(output, (char)0xE0) == NULL);
+    fclose(json);
+    handler->output_stream = stderr;
+
     error_handler_free(handler);
     error_handler_set_global(NULL);
     return 0;

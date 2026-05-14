@@ -1,5 +1,7 @@
 #include "ir_emitter.h"
 #include "instruction.h"
+#include "errorHandler.h"
+#include <errno.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -2317,13 +2319,22 @@ int x86_64_emit_ir_file(const IrModule *module, TargetFormat target,
                         const char *output_path, const char *source_map_path) {
     if (!valid_module(module) || output_path == NULL) return 0;
     FILE *output = fopen(output_path, "w");
-    if (output == NULL) return 0;
+    if (output == NULL) {
+        error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_CODEGEN,
+                     ERR_CODEGEN_OUTPUT_FAILED, module->program->source_path,
+                     "Could not open assembly output '%s': %s", output_path, strerror(errno));
+        return 0;
+    }
     SourceMapWriter map = {0};
     if (source_map_path != NULL) {
         map.output = fopen(source_map_path, "w");
         if (map.output == NULL) {
+            int saved_errno = errno;
             fclose(output);
             (void) remove(output_path);
+            error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_CODEGEN,
+                         ERR_CODEGEN_OUTPUT_FAILED, module->program->source_path,
+                         "Could not open source-map output '%s': %s", source_map_path, strerror(saved_errno));
             return 0;
         }
         if (fputs("dmm-source-map-v1\nsource path=", map.output) == EOF ||
@@ -2338,9 +2349,18 @@ int x86_64_emit_ir_file(const IrModule *module, TargetFormat target,
         .source_map = source_map_path == NULL ? NULL : &map
     };
     int success = emit_file(&emitter, deterministic);
-    if (fclose(output) != 0) success = 0;
-    if (map.output != NULL && (fclose(map.output) != 0 || map.failed)) success = 0;
+    int assembly_io_error = ferror(output);
+    if (fclose(output) != 0) assembly_io_error = 1;
+    int map_io_error = map.output != NULL && ferror(map.output);
+    if (map.output != NULL && fclose(map.output) != 0) map_io_error = 1;
+    int saved_errno = errno;
+    if (assembly_io_error || map_io_error || map.failed) success = 0;
     if (!success) (void) remove(output_path);
     if (!success && source_map_path != NULL) (void) remove(source_map_path);
+    if (assembly_io_error || map_io_error)
+        error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_CODEGEN,
+                     ERR_CODEGEN_OUTPUT_FAILED, module->program->source_path,
+                     "Could not write %s output '%s': %s", assembly_io_error ? "assembly" : "source-map",
+                     assembly_io_error ? output_path : source_map_path, strerror(saved_errno == 0 ? EIO : saved_errno));
     return success;
 }

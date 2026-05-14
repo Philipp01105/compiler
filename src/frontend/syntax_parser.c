@@ -12,6 +12,8 @@ typedef struct {
     unsigned expression_depth;
     int failed;
     int reported;
+    int recover_syntax;
+    int allocation_failed;
 } SyntaxParser;
 
 #define AST_MAX_PARSE_DEPTH 512U
@@ -19,11 +21,42 @@ typedef struct {
 static void parser_failure(SyntaxParser *parser, int code, const char *message) {
     if (!parser->reported) {
         const AstToken *token = ast_program_token(parser->program, parser->current);
-        error_report(global_error_handler, SEVERITY_ERROR,
+        char detail[1024];
+        if (token == NULL || token->type == TOKEN_EOF)
+            snprintf(detail, sizeof(detail), "%s; reached end of file", message);
+        else snprintf(detail, sizeof(detail), "%s; found '%s'", message, token->lexeme);
+        ErrorContext *context = error_context_create(SEVERITY_ERROR,
                      token == NULL ? 0 : token->span.begin.line,
                      token == NULL ? 0 : token->span.begin.column,
                      ERROR_CATEGORY_PARSER, code, parser->program->source_path,
-                     "%s", message);
+                     detail);
+        if (token != NULL) {
+            error_context_set_span(context, token->span.end.line, token->span.end.column);
+            error_context_set_token(context, token->lexeme);
+        }
+        if (code == ERR_PARSE_MISSING_BRACE || code == ERR_PARSE_MISSING_PAREN) {
+            TokenType open = code == ERR_PARSE_MISSING_BRACE ? TOKEN_LBRACE : TOKEN_LPAREN;
+            TokenType close = code == ERR_PARSE_MISSING_BRACE ? TOKEN_RBRACE : TOKEN_RPAREN;
+            unsigned depth = 0;
+            for (size_t i = parser->current; i > 0; i--) {
+                const AstToken *candidate = ast_program_token(parser->program, i - 1);
+                if (candidate->type == close) depth++;
+                if (candidate->type == open) {
+                    if (depth > 0) depth--;
+                    else {
+                        ErrorContext *note = error_context_create(SEVERITY_INFO,
+                            candidate->span.begin.line, candidate->span.begin.column,
+                            ERROR_CATEGORY_PARSER, code, parser->program->source_path,
+                            "Opening delimiter is here");
+                        error_context_set_span(note, candidate->span.end.line, candidate->span.end.column);
+                        error_context_add_child(context, note);
+                        break;
+                    }
+                }
+            }
+        }
+        error_report_context(global_error_handler, context);
+        if (global_error_handler == NULL || !global_error_handler->buffered) error_context_free(context);
         parser->reported = 1;
     }
     parser->failed = 1;
@@ -40,6 +73,15 @@ static const char *token_spelling(TokenType type) {
         case TOKEN_RBRACKET: return "]";
         case TOKEN_COLON: return ":";
         case TOKEN_SEMICOLON: return ";";
+        case TOKEN_IDENTIFIER: return "identifier (name)";
+        case TOKEN_EQUAL: return "=";
+        case TOKEN_GREATER: return ">";
+        case TOKEN_KEYWORD_FUNC: return "func";
+        case TOKEN_KEYWORD_VAR: return "var";
+        case TOKEN_KEYWORD_STRUCT: return "struct";
+        case TOKEN_KEYWORD_ENUM: return "enum";
+        case TOKEN_KEYWORD_IMPORT: return "import";
+        case TOKEN_KEYWORD_CONST: return "const";
         default: return "token";
     }
 }
@@ -61,9 +103,33 @@ static int match(SyntaxParser *parser, TokenType type) {
 
 static size_t consume(SyntaxParser *parser, TokenType type) {
     if (!check(parser, type)) {
+        if (parser->recover_syntax && !parser->failed && type == TOKEN_RBRACE && check(parser, TOKEN_EOF)) {
+            parser_failure(parser, ERR_PARSE_MISSING_BRACE, "Expected '}' to close block before end of file");
+            parser->failed = 0;
+            return AST_TOKEN_NONE;
+        }
+        if (type == TOKEN_SEMICOLON && !parser->failed && parser->current > 0) {
+            const AstToken *previous = ast_program_token(parser->program, parser->current - 1);
+            if (previous != NULL) {
+                ErrorContext *context = error_context_create(SEVERITY_ERROR,
+                    previous->span.end.line, previous->span.end.column,
+                    ERROR_CATEGORY_PARSER, ERR_PARSE_MISSING_SEMICOLON, parser->program->source_path,
+                    "Expected ';' after statement");
+                error_context_set_span(context, previous->span.end.line, previous->span.end.column);
+                error_context_set_suggestion(context, "Insert ';' at the end of the preceding statement");
+                error_context_set_fix(context, previous->span.end.line, previous->span.end.column,
+                    previous->span.end.line, previous->span.end.column, ";");
+                error_report_context(global_error_handler, context);
+                if (global_error_handler == NULL || !global_error_handler->buffered) error_context_free(context);
+                parser->reported = 1;
+                parser->failed = !parser->recover_syntax;
+                return AST_TOKEN_NONE;
+            }
+        }
         char message[64];
         (void) snprintf(message, sizeof(message), "Expected '%s'", token_spelling(type));
-        parser_failure(parser, ERR_PARSE_EXPECTED_TOKEN, message);
+        parser_failure(parser, type == TOKEN_RBRACE ? ERR_PARSE_MISSING_BRACE :
+                       type == TOKEN_RPAREN ? ERR_PARSE_MISSING_PAREN : ERR_PARSE_EXPECTED_TOKEN, message);
         return AST_TOKEN_NONE;
     }
     return parser->current++;
@@ -80,7 +146,15 @@ static size_t consume_callable_name(SyntaxParser *parser) {
 
 static void *allocate(SyntaxParser *parser, size_t size) {
     void *result = ast_program_alloc(parser->program, size);
-    if (result == NULL) parser->failed = 1;
+    if (result == NULL) {
+        if (!parser->allocation_failed)
+            error_report(global_error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
+                         ERR_COMP_INTERNAL_FAILURE, parser->program->source_path,
+                         "Out of memory while building structured syntax tree");
+        parser->failed = 1;
+        parser->allocation_failed = 1;
+        parser->reported = 1;
+    }
     return result;
 }
 
@@ -121,7 +195,7 @@ static AstType parse_type(SyntaxParser *parser) {
         else type.pointer_depth += leading_pointers;
     } else {
         if (!is_type_token(current_type(parser))) {
-            parser_failure(parser, ERR_TYPE_UNKNOWN, "Unknown type");
+            parser_failure(parser, ERR_PARSE_EXPECTED_TOKEN, "Unknown type: expected a type name");
             return type;
         }
         type.kind = AST_TYPE_NAMED;
@@ -204,9 +278,10 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
             finish_expression(parser, expression);
         }
     } else {
-        parser->failed = 1;
+        parser_failure(parser, ERR_PARSE_UNEXPECTED_TOKEN, "Expected expression");
         expression = new_expression(parser, AST_EXPR_ERROR, first);
-        if (!check(parser, TOKEN_EOF)) parser->current++;
+        if (!check(parser, TOKEN_EOF) && !check(parser, TOKEN_RBRACE) && !check(parser, TOKEN_SEMICOLON))
+            parser->current++;
     }
 
     /* A postfix expression keeps its operand as a child.  Finalize the
@@ -381,7 +456,33 @@ static AstStatement *parse_block(SyntaxParser *parser) {
     AstStatement *block = new_statement(parser, AST_STMT_BLOCK, first);
     AstStatement **tail = block == NULL ? NULL : &block->body;
     while (!parser->failed && !check(parser, TOKEN_RBRACE) && !check(parser, TOKEN_EOF)) {
+        size_t child_first = parser->current;
+        if (parser->recover_syntax) parser->reported = 0;
         AstStatement *child = parse_statement(parser);
+        if (parser->failed && parser->recover_syntax && !parser->allocation_failed) {
+            // Throw away the malformed subtree; resume at a statement/block boundary.
+            int braces = 0;
+            for (size_t i = child_first; i < parser->current && i < parser->program->token_count; i++) {
+                if (parser->program->tokens[i].type == TOKEN_LBRACE) braces++;
+                if (parser->program->tokens[i].type == TOKEN_RBRACE) braces--;
+            }
+            while (!check(parser, TOKEN_EOF) && !(braces <= 0 && parser->current > child_first &&
+                   parser->program->tokens[parser->current - 1].type == TOKEN_SEMICOLON)) {
+                TokenType token = current_type(parser);
+                if (braces <= 0 && token == TOKEN_RBRACE) break;
+                if (braces <= 0 && token == TOKEN_SEMICOLON) { parser->current++; break; }
+                if (braces <= 0 && parser->current > child_first &&
+                    (token == TOKEN_KEYWORD_VAR || token == TOKEN_KEYWORD_CONST ||
+                     token == TOKEN_KEYWORD_RETURN || token == TOKEN_KEYWORD_IF ||
+                     token == TOKEN_KEYWORD_FOR || token == TOKEN_KEYWORD_WHILE ||
+                     token == TOKEN_KEYWORD_BREAK || token == TOKEN_KEYWORD_CONTINUE)) break;
+                if (token == TOKEN_LBRACE) braces++;
+                if (token == TOKEN_RBRACE) braces--;
+                parser->current++;
+            }
+            parser->failed = 0;
+            child = NULL;
+        }
         if (tail != NULL) {
             *tail = child;
             if (child != NULL) tail = &child->next;
@@ -512,7 +613,8 @@ static AstStatement *parse_statement_impl(SyntaxParser *parser) {
     if (match(parser, TOKEN_KEYWORD_RETURN)) {
         AstStatement *statement = new_statement(parser, AST_STMT_RETURN, first);
         AstExpression *value = NULL;
-        if (!check(parser, TOKEN_SEMICOLON)) value = parse_expression(parser);
+        if (!check(parser, TOKEN_SEMICOLON) && !check(parser, TOKEN_RBRACE) && !check(parser, TOKEN_EOF))
+            value = parse_expression(parser);
         (void) consume(parser, TOKEN_SEMICOLON);
         if (statement != NULL) statement->value = value;
         finish_statement(parser, statement);
@@ -785,12 +887,14 @@ static AstDeclarationNode *parse_constant(SyntaxParser *parser) {
     return declaration;
 }
 
-int frontend_build_structured_ast(AstProgram *program) {
+int frontend_build_structured_ast_recover(AstProgram *program, int recover_syntax) {
     if (program == NULL) return 0;
     program->structured_error_token = AST_TOKEN_NONE;
-    SyntaxParser parser = {.program = program};
+    SyntaxParser parser = {.program = program, .recover_syntax = recover_syntax};
     AstDeclarationNode **tail = &program->root;
     while (!parser.failed && !check(&parser, TOKEN_EOF)) {
+        size_t first = parser.current;
+        if (recover_syntax) parser.reported = 0;
         AstDeclarationNode *declaration = NULL;
         if (check(&parser, TOKEN_KEYWORD_IMPORT)) declaration = parse_import(&parser);
         else if (check(&parser, TOKEN_KEYWORD_CONST)) declaration = parse_constant(&parser);
@@ -803,6 +907,24 @@ int frontend_build_structured_ast(AstProgram *program) {
                            "#import was removed; use import path");
         else parser_failure(&parser, ERR_PARSE_INVALID_DECLARATION,
                             "Expected function declaration");
+        if (parser.failed && recover_syntax && !parser.allocation_failed) {
+            int braces = 0;
+            for (size_t i = first; i < parser.current && i < program->token_count; i++) {
+                if (program->tokens[i].type == TOKEN_LBRACE) braces++;
+                if (program->tokens[i].type == TOKEN_RBRACE) braces--;
+            }
+            while (!check(&parser, TOKEN_EOF)) {
+                TokenType token = current_type(&parser);
+                if (braces <= 0 && parser.current > first &&
+                    (token == TOKEN_KEYWORD_FUNC || token == TOKEN_KEYWORD_STRUCT ||
+                     token == TOKEN_KEYWORD_ENUM || token == TOKEN_KEYWORD_IMPORT || token == TOKEN_KEYWORD_CONST)) break;
+                if (token == TOKEN_LBRACE) braces++;
+                if (token == TOKEN_RBRACE) braces--;
+                parser.current++;
+            }
+            declaration = NULL;
+            parser.failed = 0;
+        }
         while (declaration != NULL) {
             AstDeclarationNode *next = declaration->next;
             *tail = declaration;
@@ -814,4 +936,8 @@ int frontend_build_structured_ast(AstProgram *program) {
     program->structured_ast_complete = !parser.failed && check(&parser, TOKEN_EOF);
     if (!program->structured_ast_complete) program->structured_error_token = parser.current;
     return program->structured_ast_complete;
+}
+
+int frontend_build_structured_ast(AstProgram *program) {
+    return frontend_build_structured_ast_recover(program, 0);
 }

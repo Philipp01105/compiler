@@ -228,6 +228,25 @@ if(BUILD_TESTING)
              -P ${CMAKE_SOURCE_DIR}/tests/diagnostics_test.cmake)
     set_tests_properties(diagnostics_json PROPERTIES LABELS "integration;diagnostics;safety")
 
+    add_test(NAME ide_analysis COMMAND ${CMAKE_COMMAND}
+             -DCOMPILER=$<TARGET_FILE:compiler>
+             -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/ide_test
+             -P ${CMAKE_SOURCE_DIR}/tests/ide_analysis_test.cmake)
+    set_tests_properties(ide_analysis PROPERTIES LABELS "integration;diagnostics;frontend;safety")
+
+    add_test(NAME diagnostics_audit COMMAND ${CMAKE_COMMAND}
+             -DCOMPILER=$<TARGET_FILE:compiler>
+             -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+             -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/diagnostics_audit
+             -P ${CMAKE_SOURCE_DIR}/tests/diagnostics_audit_test.cmake)
+    set_tests_properties(diagnostics_audit PROPERTIES LABELS "integration;diagnostics;safety")
+
+    add_test(NAME diagnostics_cases COMMAND ${CMAKE_COMMAND}
+             -DCOMPILER=$<TARGET_FILE:compiler>
+             -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/diagnostics_cases
+             -P ${CMAKE_SOURCE_DIR}/tests/diagnostics_cases_test.cmake)
+    set_tests_properties(diagnostics_cases PROPERTIES LABELS "integration;diagnostics;safety")
+
     add_test(NAME cli_contract COMMAND ${CMAKE_COMMAND}
              -DCOMPILER=$<TARGET_FILE:compiler>
              -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/cli_test

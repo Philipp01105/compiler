@@ -9,6 +9,7 @@
 #include "syntax_parser.h"
 
 #include <stdint.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -140,18 +141,18 @@ static AstProgram *parse_stream(TokenStream *stream, const char *source_path,
     if (!build_declarations(program)) {
         ast_program_free(program);
         error_report(global_error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
-                     ERR_CODEGEN_OUTPUT_FAILED, source_path, "Out of memory while building AST");
+                     ERR_COMP_INTERNAL_FAILURE, source_path, "Out of memory while building AST");
         return NULL;
     }
     /* Semantic analysis and IR lowering consume the structured tree. */
-    (void) frontend_build_structured_ast(program);
+    (void) frontend_build_structured_ast_recover(program, options != NULL && options->recover_syntax);
     return program;
 
 allocation_failure:
     free_token_stream(stream);
     ast_program_free(program);
     error_report(global_error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
-                 ERR_CODEGEN_OUTPUT_FAILED, source_path, "Out of memory while building AST");
+                 ERR_COMP_INTERNAL_FAILURE, source_path, "Out of memory while building AST");
     return NULL;
 }
 
@@ -352,8 +353,8 @@ static int resolve_imports(AstProgram *root, AstProgram *unit,
                 error_report(global_error_handler, SEVERITY_ERROR,
                              entry->span.begin.line,
                              entry->span.begin.column,
-                             ERROR_CATEGORY_COMPILER, ERR_LEX_FILE_NOT_FOUND,
-                             unit->source_path, "Failed to open import file '%s'", path);
+                             ERROR_CATEGORY_COMPILER, ERR_COMP_IMPORT_NOT_FOUND,
+                             unit->source_path, "Failed to open import file '%s': %s", path, strerror(errno));
                 free(path);
                 free(import_text);
                 continue;
@@ -385,7 +386,7 @@ static int resolve_imports(AstProgram *root, AstProgram *unit,
                     error_report(global_error_handler, SEVERITY_ERROR,
                                  entry->span.begin.line,
                                  entry->span.begin.column,
-                                 ERROR_CATEGORY_COMPILER, ERR_LEX_FILE_NOT_FOUND,
+                                 ERROR_CATEGORY_COMPILER, ERR_COMP_IMPORT_OUTSIDE_ROOT,
                                  unit->source_path,
                                  "Import escapes the source or package root");
                     free(path);
@@ -426,7 +427,7 @@ AstProgram *frontend_parse_file(const char *source_path, const FrontendOptions *
     if (!resolve_imports(program, program, options)) {
         ast_program_free(program);
         error_report(global_error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
-                     ERR_CODEGEN_OUTPUT_FAILED, source_path,
+                     ERR_COMP_INTERNAL_FAILURE, source_path,
                      "Out of memory while resolving AST imports");
         return NULL;
     }
