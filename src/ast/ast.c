@@ -46,6 +46,8 @@ void ast_program_free(AstProgram *program) {
     for (size_t i = 0; i < program->owned_import_count; i++)
         ast_program_free(program->owned_imports[i]);
     free(program->owned_imports);
+    for (size_t i = 0; i < program->loaded_source_count; i++) free(program->loaded_source_paths[i]);
+    free(program->loaded_source_paths);
     free(program->tokens);
     free(program->declarations);
     if (program->owns_strings) string_interner_free(program->strings);

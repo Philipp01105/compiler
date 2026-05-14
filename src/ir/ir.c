@@ -1,4 +1,5 @@
 #include "ir.h"
+#include "ir_cfg.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -22,8 +23,19 @@ static int grow_array(void **items, size_t *capacity, size_t item_size) {
     return 1;
 }
 
+static int is_terminator(IrOpcode opcode) {
+    return opcode == IR_OP_RETURN || opcode == IR_OP_BRANCH || opcode == IR_OP_JUMP;
+}
+
+static int block_terminated(const IrFunction *function) {
+    return function->instruction_count != 0 &&
+        is_terminator(function->instructions[function->instruction_count - 1].opcode);
+}
+
 static IrInstruction *emit(IrBuilder *builder, IrOpcode opcode, AstSourceSpan span) {
     IrFunction *function = builder->function;
+    /* Structured lowering may request a join jump after a return/break. */
+    if (opcode == IR_OP_JUMP && block_terminated(function)) return NULL;
     if (function->instruction_count == function->instruction_capacity &&
         !grow_array((void **) &function->instructions, &function->instruction_capacity,
                     sizeof(*function->instructions))) {
@@ -307,6 +319,12 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         set_void_type(builder, short_jump);
         emit_label(builder, right_label, expression->span);
         size_t right_value = lower_expression(builder, expression->right);
+        size_t right_predecessor = right_label;
+        for (size_t i = builder->function->instruction_count; i > 0; i--)
+            if (builder->function->instructions[i - 1].opcode == IR_OP_LABEL) {
+                right_predecessor = builder->function->instructions[i - 1].target_a;
+                break;
+            }
         IrInstruction *right_jump = emit(builder, IR_OP_JUMP, expression->span);
         if (right_jump != NULL) right_jump->target_a = end_label;
         set_void_type(builder, right_jump);
@@ -317,7 +335,7 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         phi->operand_a = left;
         phi->operand_b = right_value;
         phi->target_a = short_label;
-        phi->target_b = right_label;
+        phi->target_b = right_predecessor;
         set_expression_type(builder, phi, expression);
         return phi->result;
     }
@@ -426,6 +444,7 @@ static void emit_label(IrBuilder *builder, size_t label, AstSourceSpan span) {
 
 static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
     for (; statement != NULL && !builder->failed; statement = statement->next) {
+        if (block_terminated(builder->function)) break;
         if (statement->kind == AST_STMT_BLOCK) {
             lower_statement(builder, statement->body);
         } else if (statement->kind == AST_STMT_VARIABLE) {
@@ -1241,7 +1260,7 @@ int ir_verify_module(const IrModule *module) {
         }
         free(defined);
         free(labels);
-        if (!valid) return 0;
+        if (!valid || !ir_verify_control_flow(function, ir_void_type(module, function->return_type_id))) return 0;
     }
     return 1;
 }

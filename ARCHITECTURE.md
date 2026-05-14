@@ -10,8 +10,9 @@ source file
   -> arena-owned structured AST
   -> semantic model and typed AST annotations
   -> verified target-neutral IR
-  -> target-aware x86-64 assembly emission
-  -> assembly cleanup
+  -> target-aware structured x86-64 instructions
+  -> assembly printing/cleanup OR direct encoding
+  -> ELF/COFF object serialization OR internal ELF/PE executable linking
 ```
 
 Frontend or semantic errors stop compilation before IR creation. IR verification
@@ -40,6 +41,13 @@ is no alternate compatibility emitter.
   and Windows x64 calling conventions, scalar/SSE conversion, aggregate address
   calculation, runtime calls, and Intel/AT&T assembly formatting.
 - `src/backend/asm_optimizer.c` performs the final conservative text cleanup.
+- `src/backend/native/encoder.c` encodes structured instructions directly.
+- `src/backend/native/object.c` owns sections, symbols and relocations and writes
+  ELF64/COFF relocatable objects. `linker.c` lays out executable images, resolves
+  relocations and emits dynamic ELF imports or PE import/base-relocation tables.
+- `src/runtime/native_runtime.c` supplies executable startup and native runtime
+  shims; system imports have private names to prevent source-symbol collisions.
+  See [NATIVE_BACKEND.md](NATIVE_BACKEND.md) for image layout and limits.
 - `src/diagnostics` buffers and renders text or JSON diagnostics from every phase.
 - `src/driver` owns CLI validation and phase lifetime.
 
@@ -94,16 +102,33 @@ values use eight-byte virtual slots while indirect memory operations honor their
 actual element width.
 
 System V classifies integer and SSE arguments independently and spills overflow
-arguments in source order. Windows x64 uses positional registers, shadow space,
-and its CRT syscall shims. Both targets preserve stack alignment and the RBX
+arguments in source order. Windows x64 uses positional registers and shadow space.
+Platform I/O shims live in the runtime library. Both targets
+preserve stack alignment and the RBX
 callee-saved register used by address lowering. User functions that overlap the
 runtime are mangled into a private DMM namespace; method symbols also encode their
 owning type. Other top-level symbols remain available for C ABI interoperability.
 
-The runtime surface includes printing, string comparison/concatenation and C
-string intrinsics, numeric conversion, formatted/scalar input, allocation,
-explicit and automatic cleanup, bounds traps, and low-level file operations.
-`stdlib/io.dmm` builds higher-level I/O facilities from those typed intrinsics.
+`src/runtime/runtime.c` implements string intrinsics, numeric conversion and
+scalar/formatted input. `src/runtime/platform_io.c` owns POSIX calls and Windows
+CRT flag translation. CMake builds and installs a separate `dmm_runtime` static
+library; generated programs link it after their object/assembly inputs. Its v1 C
+ABI uses signed 64-bit integral slots and native pointers. Windows file failures
+retain CRT negative results; POSIX failures retain negative errno results.
+`src/backend/runtime_calls.c` maps typed builtin calls to reserved runtime link
+symbols. The emitter performs ordinary ABI argument/result lowering and contains
+no syscall-number selection, Windows file-flag mapping or input implementations.
+Runtime calls remain typed `IR_OP_CALL` instructions. Allocation/release and string
+concatenation still lower to libc calls; bounds checks remain backend operations.
+`stdlib/io.dmm` builds higher-level I/O from typed runtime calls, while
+`print`/`println` are ordinary DMM overloads. There is no automatic cleanup.
+
+`ir_verify_control_flow` builds basic blocks with explicit and fallthrough edges,
+computes entry reachability and dominators, and checks that ordinary values are
+available at their uses. PHIs must begin a labeled join and name its two actual
+jump predecessors; each value must be available on the corresponding edge.
+Instructions cannot follow a terminator before a new label. Reachable non-void
+exits require a return; void bodies retain their implicit-return convention.
 
 ## Tests
 

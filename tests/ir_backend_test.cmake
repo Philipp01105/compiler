@@ -85,7 +85,7 @@ foreach(target elf coff)
     endif()
     if(target STREQUAL "${HOST_TARGET}")
     execute_process(
-            COMMAND "${ASSEMBLER}" -no-pie "${output}" -o "${executable}"
+            COMMAND "${ASSEMBLER}" -no-pie "${output}" ${SANITIZER_FLAGS} ${RUNTIME_LIBRARY} -o "${executable}"
             RESULT_VARIABLE result OUTPUT_VARIABLE output_text ERROR_VARIABLE errors)
     if(NOT result STREQUAL "0")
         message(FATAL_ERROR "IR-native integer call assembly failed: ${errors}")
@@ -148,7 +148,7 @@ foreach(target elf coff)
     endif()
     if(target STREQUAL "${HOST_TARGET}")
       execute_process(
-              COMMAND "${ASSEMBLER}" -no-pie "${output}" -o "${executable}"
+              COMMAND "${ASSEMBLER}" -no-pie "${output}" ${SANITIZER_FLAGS} ${RUNTIME_LIBRARY} -o "${executable}"
               RESULT_VARIABLE result ERROR_VARIABLE errors)
       if(NOT result STREQUAL "0")
           message(FATAL_ERROR "IR-native scalar assembly failed: ${errors}")

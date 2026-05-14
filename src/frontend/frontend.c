@@ -316,6 +316,22 @@ static int append_owned_import(AstProgram *root, AstProgram *imported) {
     return 1;
 }
 
+static int record_loaded_source(AstProgram *root, const char *path) {
+    for (size_t i = 0; i < root->loaded_source_count; i++)
+        if (strcmp(root->loaded_source_paths[i], path) == 0) return 1;
+    if (root->loaded_source_count == root->loaded_source_capacity) {
+        size_t next = root->loaded_source_capacity == 0 ? 8 : root->loaded_source_capacity * 2;
+        if (next < root->loaded_source_capacity || next > SIZE_MAX / sizeof(char *)) return 0;
+        char **grown = realloc(root->loaded_source_paths, next * sizeof(*grown));
+        if (grown == NULL) return 0;
+        root->loaded_source_paths = grown; root->loaded_source_capacity = next;
+    }
+    char *copy = copy_string(path);
+    if (copy == NULL) return 0;
+    root->loaded_source_paths[root->loaded_source_count++] = copy;
+    return 1;
+}
+
 static int resolve_imports(AstProgram *root, AstProgram *unit,
                            const FrontendOptions *options) {
     for (AstDeclarationNode *declaration = unit->root; declaration != NULL;
@@ -366,6 +382,9 @@ static int resolve_imports(AstProgram *root, AstProgram *unit,
             if (path == NULL) {
                 free(import_text);
                 return 0;
+            }
+            if (!record_loaded_source(root, path)) {
+                free(path); free(import_text); return 0;
             }
             AstProgram *imported = known_import(root, path);
             if (imported == NULL) {

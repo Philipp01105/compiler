@@ -4,7 +4,8 @@ The P0 frontend and typed-IR migration is complete. The production pipeline is:
 
 ```text
 source -> lexer -> structured AST -> semantic analysis -> verified typed IR
-       -> x86-64 emitter -> assembly cleanup
+       -> structured x86-64 instructions -> assembly OR native ELF/COFF objects
+       -> internal ELF/PE linker for native executable output
 ```
 
 There is one code-generation path. The compatibility backend and its combined
@@ -46,10 +47,9 @@ parser/type-checker/emitter have been removed from the build and source tree.
 
 | Priority | Addition                                | Why                                                                                                       |
 |----------|-----------------------------------------|-----------------------------------------------------------------------------------------------------------|
-| P1 (complete) | Language syntax and stdlib ABI revision | Package imports, slices, constants, overloads, normalized arrays/pointers, explicit ownership, and ordinary stdlib output are implemented and validated. |
-| P1       | Artifact safety and verifier hardening | Protect all loaded sources and aliased output paths; verify control-flow availability of IR values. |
-| P2       | Runtime library split                   | Move platform runtime shims out of the emitter while retaining typed runtime operations in IR.            |
-| P2       | Direct object emission                  | Avoid the external assembler when the instruction model is mature.                                        |
+| P1 (complete) | Artifact safety and verifier hardening | Loaded-source inventory, canonical paths/file identity, CFG dominance and PHI edge verification are implemented and covered by regressions. |
+| P2 (complete) | Runtime library split               | Separate installed C runtime library owns platform I/O, input and conversions; IR retains typed calls and the emitter lowers their ABI. |
+| P2 (implemented) | Direct object emission and internal linking | Direct x86-64 encoding, ELF/COFF objects and ELF/PE executable images are implemented; Windows execution and cross-format binary checks pass. Linux execution awaits CI. |
 | P3       | New language features                   | Add globals, richer arrays, interfaces, and generics after the middle-end remains stable. |
 
 ## Reanalysis checkpoint (2026-09-13)
@@ -62,43 +62,88 @@ This checkpoint does not revalidate Linux, sanitizers, a fresh strict-warning
 build, or the JetBrains plugin. The earlier 19-suite cross-platform acceptance
 below remains a historical checkpoint, not the current suite count.
 
-The following open items are based on source review; the passing regression
-suite does not establish coverage for these cases. No destructive overwrite
-reproducer or allocation/I/O fault injection was run.
+The findings below originated in source review. Follow-up implementation passed
+23/23 Windows CTest suites and a separate fresh strict-warning compiler/runtime build in
+`cmake-build-review` (`BUILD_TESTING=OFF`). Source-overwrite regressions use
+isolated temporary fixtures; cleanup flush/close/replace failures are injected
+only in the optimizer test target. Windows hardlink and case checks pass;
+directory-symlink checks are skipped because the OS does not grant symlink
+creation rights. Linux and sanitizers were not rerun.
 
-- [ ] **P1 — Protect every loaded source from every generated artifact.**
-  `src/driver/main.c` checks assembly/AST/IR/source-map paths against only the
-  root `source_file`. Imported source units are not checked, and the IDE branch
-  writes its AST dump before the normal artifact checks. Validate against all
-  loaded units before any removal or output open, including IDE dumps.
-  Acceptance: isolated temporary fixtures prove that an output or dump pointing
-  at an imported source, or an IDE dump pointing at the root source, is rejected
-  and every source remains byte-for-byte unchanged.
-- [ ] **P1 — Detect artifact aliases using canonical paths and file identity.**
-  Artifact pairs in `src/driver/main.c` are compared with `strcmp`, so different
-  relative spellings, Windows case variants, or links can bypass the distinct-path
-  check. Windows source protection uses `_fullpath` rather than file identity,
-  leaving link aliases unaccounted for. Apply consistent identity checks to
-  sources and artifact pairs, resolving the parent of outputs that do not exist.
-  Acceptance: cover `./`/`..`, case variants on Windows, and hard/symbolic links
-  where supported; collisions fail before truncation or deletion.
-- [ ] **P1 — Verify CFG dominance and PHI predecessor edges.**
-  `ir_verify_module` in `src/ir/ir.c` uses a linear `defined` bitmap and checks
-  that PHI target labels exist and differ. It does not establish that an ordinary
-  value definition dominates its use, or that a PHI input is available on its
-  actual incoming predecessor edge. Build explicit basic-block/predecessor
-  information and verify value availability and terminator structure against it.
-  Acceptance: malformed-IR mutations reject a branch-local value used on the
-  other branch, unrelated PHI labels, missing incoming edges, and invalid block
-  termination, while nested short-circuit expressions and loops still pass.
-- [ ] **P2 — Always close cleanup output and preserve the actual I/O failure.**
-  `cleanup_assembly_file` in `src/backend/asm_optimizer.c` uses
-  `fflush(output) != 0 || fclose(output) != 0`; a failed flush skips `fclose`.
-  Execute both operations, retain the first failure, and propagate the failing
-  operation/path plus `errno` or the Windows replacement error to `backend.c`
-  instead of only reporting "Assembly cleanup pass failed".
-  Acceptance: deterministic flush/close/replace failures leave no open stream
-  or temporary-file leak and produce precise human/JSON diagnostics.
+- [x] **P1 — Protect every loaded source from every generated artifact.**
+  `src/driver/main.c` validates requested artifacts against the root and a separate
+  inventory of opened imports, including imports rejected by the lexer, before
+  output removal or opening. This includes the IDE AST dump. The
+  implicit `.s` output is checked before deletion and emission. If the frontend
+  returns no program, stale assembly is retained because source-safe deletion
+  cannot be established.
+  Validation: `cli_contract` checks assembly/AST/IR/source-map collisions with
+  root, direct and transitive imports, IDE dump collisions, and an imported source
+  at the implicit `.s` path; hashes remain unchanged and JSON reports `C102`.
+  Rejection tests verify lexical failures preserve stale output without writing
+  new assembly; parser and semantic failures still clear safe stale output.
+- [x] **P1 — Detect artifact aliases using canonical paths and file identity.**
+  `src/common/path_identity.c` handles canonical existing paths, missing-output
+  parents, Unix inode/device identity and Windows volume/file identity. Both
+  sources and artifact pairs use the same checks before destructive output
+  actions. Unresolvable identities and dangling links fail closed.
+  Validation: `cli_contract` covers `./`/`..`, missing output aliases, Windows
+  case variants and hardlinked sources. Directory-symlink alias tests are present
+  but require an OS that permits symlink creation.
+- [x] **P1 — Verify CFG dominance and PHI predecessor edges.**
+  `src/ir/ir_cfg.c` builds blocks, explicit/fallthrough edges, predecessor lists,
+  reachability and dominators. Ordinary value definitions must dominate reachable
+  uses; PHIs begin labeled joins, match the two actual jump predecessors and check
+  value availability on each edge. Terminators cannot have trailing instructions
+  before another label, and reachable non-void exits require a return.
+  Lowering avoids redundant jumps after returns/breaks and records the actual
+  finishing block of nested short-circuit right operands for PHI edges.
+  Validation: `frontend_pipeline_unit` mutates branch-local uses, unrelated PHI
+  labels, missing edges, missing returns, post-terminator instructions and PHI
+  placement. Nested short-circuit expressions execute in Intel/AT&T; existing
+  loop, fuzz and malformed-IR tests pass.
+- [x] **P2 — Split the platform runtime into a separate library.**
+  `src/runtime/runtime.c` implements input, conversions and string intrinsics;
+  `platform_io.c` owns POSIX calls and Windows CRT file-flag translation.
+  CMake builds/installs `dmm_runtime` plus its C ABI header. The emitter maps
+  typed `IR_OP_CALL` builtins through `runtime_calls.c` and lowers ordinary ABI
+  arguments/results; it no longer embeds syscalls or platform I/O/input shims.
+  Generated programs must link the target-compatible runtime library after their
+  assembly/object inputs; README and architecture docs describe that requirement.
+  Allocation/free, concatenation libc lowering and bounds checks stay in the backend.
+  Validation: new `runtime_unit` covers strings, conversion/truncation, scalar
+  input/EOF, read/write/open/append/close and negative errors. All execution,
+  native backend, import and C ABI suites link the separate library, and architecture
+  checks prevent platform shims or compiler dependencies returning across the boundary.
+- [x] **P2 — Direct native objects and internal ELF/PE executable linking.**
+  `--emit=asm|obj|exe` shares verified IR and structured instruction lowering.
+  Native encoding supports the compiler's integer/SSE instructions and indexed/
+  RIP-relative addressing. ELF64/COFF writers own symbols and relocations;
+  the internal image linker adds startup, native runtime shims, libc/CRT imports,
+  ELF load/dynamic tables and PE import/ASLR relocation tables. It invokes no
+  assembler, C compiler or platform linker. Native runtime definitions remain
+  outside the emitter and private import names prevent source-name collisions.
+  Native source maps record text-section byte offsets. All modes retain loaded
+  source/file-alias protection. See `NATIVE_BACKEND.md` for usage and limits.
+  Validation: Windows corpus execution for direct objects and internal PE images,
+  C ABI interoperability, input/EOF/truncation, cross ELF/COFF emission, deterministic
+  syntax-independent bytes, binary relocation/import/layout checks and native
+  CLI artifact protection. All 26 Windows CTest suites and a strict warning build
+  pass. Linux execution and
+  sanitizer execution were not run locally; existing CI includes the new suites.
+- [ ] **P2 — Confirm native ELF execution on Linux CI.**
+  Run the new native corpus, C ABI and runtime/EOF suites on x86-64 glibc Linux.
+  Local cross-emission and structural ELF checks pass; they do not establish
+  dynamic-loader/runtime execution. Keep this verification explicit until CI passes.
+- [x] **P2 — Always close cleanup output and preserve the actual I/O failure.**
+  `cleanup_assembly_file_detailed` always attempts flush and close separately,
+  records the first failure before cleanup, and reports its operation, path and
+  reason through `backend.c` as `G103`. Windows replacement failures retain the
+  native error code and system message. The original cleanup API remains available.
+  Validation: `optimizer_unit` injects flush, close, replacement and combined
+  flush/close failures, verifies output close executes once, checks removal of
+  failed temporary output and preservation of the original assembly, and exercises
+  the actual backend human/JSON diagnostic path for all three failure operations.
 - [ ] **P2 — Finish public documentation migration.**
   `README.md` still advertises garbage-collected allocations and imports through
   `# import`, although both were removed. Audit the README and language examples

@@ -1,6 +1,6 @@
 # DMM Compiler
 
-DMM is an experimental compiler for a small statically typed language. It emits x86-64 GNU assembly in Intel or AT&T syntax and supports ELF/System V and COFF/Windows calling conventions.
+DMM is an experimental compiler for a small statically typed language. It emits x86-64 assembly, native ELF/COFF objects, and ELF/PE executables with an internal linker for Linux and Windows.
 
 The project is suitable for learning and experimentation. It is not yet intended for production workloads.
 
@@ -9,9 +9,9 @@ The project is suitable for learning and experimentation. It is not yet intended
 - Primitive types: `int`, `char`, `byte`, `bit`, `float`, `double`, `string`, and `void`
 - Functions, forward calls, local variables, arrays, pointers, structs, enums, and methods
 - `if`/`else`, `for`, `while`, `break`, `continue`, and `return`
-- String operations, formatted input/output, file I/O, heap allocation, and garbage-collected allocations
-- Source imports through `# import`
-- Linux ELF and Windows COFF assembly output
+- String operations, formatted input/output, file I/O, and explicit heap allocation/free
+- Source imports through `import "file.dmm"` and `import <stdlib>`
+- Linux ELF and Windows COFF objects, ELF/PE executables, and GNU assembly output
 - Intel syntax by default, with AT&T syntax available
 - Human-readable or JSON diagnostics
 - A recursive owned AST, independent semantic model, and verified typed IR
@@ -21,7 +21,10 @@ The project is suitable for learning and experimentation. It is not yet intended
 
 - CMake 3.21 or newer
 - A C23 compiler
-- GCC or a compatible GNU assembler/linker to assemble generated `.s` files
+- GCC or compatible GNU tools for assembly mode and object interoperability tests
+
+Native executable mode requires no external build tools at compilation time.
+It targets x86-64 glibc Linux or Windows with `msvcrt.dll`.
 
 The automated suite is exercised with GCC on Linux and MinGW-w64 on Windows.
 
@@ -37,17 +40,38 @@ Enable warnings as errors with `-DDMM_STRICT_WARNINGS=ON`.
 
 ## Compile a program
 
+Emit and internally link a native executable:
+
+```sh
+./build/compiler --emit=exe tests/execution/basics/hello.dmm -o hello
+./hello
+```
+
+On Windows use `-o hello.exe`. Use `--emit=obj` for a direct native object.
+See [NATIVE_BACKEND.md](NATIVE_BACKEND.md) for target formats and linking details.
+
+The default assembly mode remains available:
+
 ```sh
 ./build/compiler tests/execution/basics/hello.dmm
-gcc -no-pie tests/execution/basics/hello.dmm.s -o hello
+gcc -no-pie tests/execution/basics/hello.dmm.s build/libdmm_runtime.a -o hello
 ./hello
 ```
 
 On a multi-configuration generator, the compiler executable may be inside `build/Debug` or `build/Release`.
 
+Assembly and object outputs use the separately built `dmm_runtime` static library for
+input, numeric conversion, string intrinsics, and low-level file I/O. Link the
+library after the assembly/object inputs. CMake installs it under `lib` and its
+C ABI header under `include/dmm`. Library filenames and configuration directories
+depend on the toolchain; MinGW builds `libdmm_runtime.a`. Build the runtime for
+the same platform as the generated program; `--target` does not cross-compile it.
+With `DMM_SANITIZERS=ON`, also link programs with `-fsanitize=address,undefined`.
+
 Useful options:
 
 ```text
+--emit=asm|obj|exe
 --syntax=intel|att
 --target=elf|coff
 --formatError
