@@ -132,6 +132,14 @@ creation rights. Linux and sanitizers were not rerun.
   pass. Linux execution and
   sanitizer execution were not run locally; existing CI includes the new suites.
 - [ ] **P2 — Confirm native ELF execution on Linux CI.**
+  First CI run: Linux and sanitizer suites both failed in `pointer_semantics`
+  for assembly/direct objects because source `write` intercepted libc `write`
+  from the static C runtime. Internal ELF executable execution passed this case.
+  Fixed shared symbol mangling for `write`, `open`, `close`, startup/errno and
+  CRT aliases; expanded runtime collision execution and cross-target symbol tests.
+  Also fixed Clang's misleading-indentation error in native import lookup that
+  blocked the fuzz build. Windows 26/26 and strict GCC build pass after the fix;
+  Linux, sanitizer and Clang fuzz CI need rerunning to confirm the changes.
   Run the new native corpus, C ABI and runtime/EOF suites on x86-64 glibc Linux.
   Local cross-emission and structural ELF checks pass; they do not establish
   dynamic-loader/runtime execution. Keep this verification explicit until CI passes.

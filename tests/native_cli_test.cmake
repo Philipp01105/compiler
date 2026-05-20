@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
+get_filename_component(ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 set(source "${OUTPUT_DIR}/root.dmm")
 set(library "${OUTPUT_DIR}/library.dmm")
@@ -100,3 +101,23 @@ execute_process(COMMAND "${COMPILER}" --emit=invalid "${source}" RESULT_VARIABLE
 if(result STREQUAL "0" OR NOT errors MATCHES "Invalid emission mode")
     message(FATAL_ERROR "Invalid --emit was accepted")
 endif()
+
+# Check Linux collision protection even when this suite runs on Windows.
+foreach(target elf coff)
+    set(assembly "${OUTPUT_DIR}/collision_${target}.s")
+    execute_process(COMMAND "${COMPILER}" --emit=asm "--target=${target}"
+        "${ROOT}/tests/execution/functions/runtime_name_collision.dmm" -o "${assembly}"
+        RESULT_VARIABLE result ERROR_VARIABLE errors)
+    if(NOT result STREQUAL "0")
+        message(FATAL_ERROR "Collision cross-emission failed: ${errors}")
+    endif()
+    file(READ "${assembly}" contents)
+    foreach(name write open close exit __errno_location)
+        string(LENGTH "${name}" length)
+        string(FIND "${contents}" ".globl ${name}\n" unsafe)
+        string(FIND "${contents}" ".globl __dmm_f${length}_${name}__" mangled)
+        if(NOT unsafe EQUAL -1 OR mangled EQUAL -1)
+            message(FATAL_ERROR "${target}: source symbol ${name} can intercept runtime calls")
+        endif()
+    endforeach()
+endforeach()

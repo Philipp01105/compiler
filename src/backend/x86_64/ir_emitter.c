@@ -237,7 +237,9 @@ static int runtime_link_name(const char *name) {
     static const char *runtime_names[] = {
         "printf", "putchar", "puts", "strcmp", "strcpy", "strcat", "strdup",
         "_strdup", "malloc", "calloc", "free", "strlen", "strtoll", "scanf",
-        "snprintf", "fflush", "read", "_read", "_write", "_open", "_close"
+        "snprintf", "fflush", "read", "write", "open", "close", "exit",
+        "_read", "_write", "_open", "_close", "_snprintf", "_strtoi64",
+        "__errno_location", "_errno", "__libc_start_main", "__isoc99_scanf"
     };
     for (size_t i = 0; i < sizeof(runtime_names) / sizeof(runtime_names[0]); i++)
         if (strcmp(name, runtime_names[i]) == 0) return 1;
