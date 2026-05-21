@@ -81,22 +81,6 @@ add_executable(compiler
 
 target_include_directories(compiler PRIVATE ${DMM_INCLUDE_DIRS})
 
-add_library(dmm_runtime STATIC src/runtime/runtime.c src/runtime/platform_io.c)
-target_include_directories(dmm_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime)
-if(MSVC)
-    target_compile_options(dmm_runtime PRIVATE /W4)
-    if(DMM_STRICT_WARNINGS)
-        target_compile_options(dmm_runtime PRIVATE /WX)
-    endif()
-else()
-    target_compile_options(dmm_runtime PRIVATE -Wall -Wextra -Wpedantic)
-    if(DMM_STRICT_WARNINGS)
-        target_compile_options(dmm_runtime PRIVATE -Wconversion -Wshadow -Werror)
-    endif()
-endif()
-if(DMM_SANITIZERS)
-    target_compile_options(dmm_runtime PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
-endif()
 target_compile_definitions(compiler PRIVATE
         DMM_VERSION="${PROJECT_VERSION}")
 if(MSVC)
@@ -120,8 +104,6 @@ if(DMM_SANITIZERS)
 endif()
 
 install(TARGETS compiler RUNTIME DESTINATION bin)
-install(TARGETS dmm_runtime ARCHIVE DESTINATION lib)
-install(FILES src/runtime/runtime.h DESTINATION include/dmm)
 install(DIRECTORY stdlib/ DESTINATION share/dmm/stdlib)
 
 if(DMM_BUILD_FUZZERS)
@@ -161,13 +143,14 @@ if(BUILD_TESTING)
     if(DMM_SANITIZERS)
         set(DMM_TEST_LINK_FLAGS "-fsanitize=address,undefined")
     endif()
-    add_executable(dmm_runtime_test tests/unit/runtime_test.c)
+    add_executable(dmm_runtime_test tests/unit/runtime_test.c src/runtime/native_runtime.c
+        src/backend/native/encoder.c src/backend/native/object.c src/backend/x86_64/instruction.c)
+    target_include_directories(dmm_runtime_test PRIVATE ${DMM_INCLUDE_DIRS})
     add_executable(dmm_native_test tests/unit/native_test.c src/backend/native/object.c
         src/backend/native/encoder.c src/backend/native/linker.c src/runtime/native_runtime.c src/backend/x86_64/instruction.c)
     target_include_directories(dmm_native_test PRIVATE ${DMM_INCLUDE_DIRS})
     add_test(NAME native_binary_unit COMMAND dmm_native_test)
     set_tests_properties(native_binary_unit PROPERTIES LABELS "unit;native;backend;safety")
-    target_link_libraries(dmm_runtime_test PRIVATE dmm_runtime)
     add_test(NAME runtime_unit COMMAND dmm_runtime_test ${CMAKE_BINARY_DIR}/runtime_test.dat)
     set_tests_properties(runtime_unit PROPERTIES LABELS "unit;runtime;safety")
     function(add_dmm_regression_stage stage label)
@@ -175,7 +158,7 @@ if(BUILD_TESTING)
                 COMMAND ${CMAKE_COMMAND}
                     -DCOMPILER=$<TARGET_FILE:compiler>
                     -DASSEMBLER=${DMM_ASSEMBLER}
-                    -DRUNTIME_LIBRARY=$<TARGET_FILE:dmm_runtime>
+
                     "-DSANITIZER_FLAGS=${DMM_TEST_LINK_FLAGS}"
                     -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/test_output/${stage}
                     -DTEST_STAGE=${stage}
@@ -188,7 +171,7 @@ if(BUILD_TESTING)
     add_dmm_regression_stage(backend safety)
     add_test(NAME direct_native_backend COMMAND ${CMAKE_COMMAND}
         -DCOMPILER=$<TARGET_FILE:compiler> -DASSEMBLER=${DMM_ASSEMBLER}
-        -DRUNTIME_LIBRARY=$<TARGET_FILE:dmm_runtime> "-DSANITIZER_FLAGS=${DMM_TEST_LINK_FLAGS}"
+         "-DSANITIZER_FLAGS=${DMM_TEST_LINK_FLAGS}"
         -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/direct_native_test -P ${CMAKE_SOURCE_DIR}/tests/native_backend_test.cmake)
     set_tests_properties(direct_native_backend PROPERTIES LABELS "integration;backend;native;safety")
     add_test(NAME native_cli_contract COMMAND ${CMAKE_COMMAND} -DCOMPILER=$<TARGET_FILE:compiler>
@@ -269,7 +252,7 @@ if(BUILD_TESTING)
     add_test(NAME ir_backend_native COMMAND ${CMAKE_COMMAND}
              -DCOMPILER=$<TARGET_FILE:compiler>
              -DASSEMBLER=${DMM_ASSEMBLER}
-             -DRUNTIME_LIBRARY=$<TARGET_FILE:dmm_runtime>
+
              "-DSANITIZER_FLAGS=${DMM_TEST_LINK_FLAGS}"
              -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/ir_backend_test
              -P ${CMAKE_SOURCE_DIR}/tests/ir_backend_test.cmake)
@@ -316,7 +299,7 @@ if(BUILD_TESTING)
     add_test(NAME imports_integration COMMAND ${CMAKE_COMMAND}
              -DCOMPILER=$<TARGET_FILE:compiler>
              -DASSEMBLER=${DMM_ASSEMBLER}
-             -DRUNTIME_LIBRARY=$<TARGET_FILE:dmm_runtime>
+
              "-DSANITIZER_FLAGS=${DMM_TEST_LINK_FLAGS}"
              -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/imports_test
              -P ${CMAKE_SOURCE_DIR}/tests/imports_test.cmake)

@@ -4,6 +4,7 @@
 #include "errorHandler.h"
 #include "ir_emitter.h"
 #include "native/linker.h"
+#include "native_runtime.h"
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
@@ -28,6 +29,8 @@ static int emit_native(const IrModule *module,const BackendOptions *options,cons
     if(!success) native_error(&object,"Could not open native source map");
     if(success) success=x86_64_lower_native(module,options->target_format,&object,map);
     if(map) {if(ferror(map))success=0;if(fclose(map)!=0)success=0;}
+    if(success && options->emission==BACKEND_OBJECT)success=native_runtime_emit(&object,options->target_format);
+    if(success && options->emission==BACKEND_OBJECT)success=native_runtime_object_imports(&object,options->target_format);
     if(success)success=options->emission==BACKEND_OBJECT?native_write_object(&object,options->target_format,&output):
         native_link_executable(&object,options->target_format,&output);
     int opened=0;

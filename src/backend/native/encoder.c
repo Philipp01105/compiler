@@ -208,6 +208,7 @@ int native_encode(NativeObject *object, const X64Instruction *in) {
              (op >= X64_OP_CALL && op <= X64_OP_SETNP))
         expected = 1;
     else if (op == X64_OP_IMUL && in->operand_count == 3)expected = 3;
+    if(op==X64_OP_DIV)expected=1;
     if (in->operand_count != expected || op < 0 || op >= X64_OP_COUNT)e.bad = 1;
     if (op == X64_OP_RET)byte(&e, 0xc3);
     else if (op == X64_OP_CQO) {
@@ -373,7 +374,12 @@ int native_encode(NativeObject *object, const X64Instruction *in) {
         else if (a->kind == X64_OPERAND_REGISTER)operation(&e, prefix, wide, (unsigned) group * 8u + (w == 8 ? 2u : 3u),
                                                            0, register_number(&e, a), b);
         else operation(&e, prefix, wide, (unsigned) group * 8u + (w == 8 ? 0u : 1u), 0, register_number(&e, b), a);
-    } else e.bad = 1;
+    } else if(op==X64_OP_SHL || op==X64_OP_SHR) {
+        if(b->kind!=X64_OPERAND_IMMEDIATE || b->immediate<0 || b->immediate>63)e.bad=1;
+        operation(&e,prefix,wide,w==8?0xc0:0xc1,0,op==X64_OP_SHL?4:5,a);
+        byte(&e,(unsigned)b->immediate);
+    } else if(op==X64_OP_DIV)operation(&e,prefix,wide,w==8?0xf6:0xf7,0,6,a);
+    else e.bad = 1;
     if (e.bad || e.size == 0 || e.size > 15) {
         char error[128];
         snprintf(error, sizeof(error), "Invalid native x86-64 instruction (opcode %d, IR instruction %zu)", (int) op,

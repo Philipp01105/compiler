@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
+include("${CMAKE_CURRENT_LIST_DIR}/standalone_link.cmake")
 get_filename_component(ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 
 if(NOT DEFINED COMPILER OR NOT EXISTS "${COMPILER}")
@@ -46,9 +47,9 @@ function(run_case source expected syntax)
     endif()
 
     execute_process(
-            COMMAND "${ASSEMBLER}" ${SANITIZER_FLAGS} -no-pie
+            COMMAND "${ASSEMBLER}" ${STANDALONE_FLAGS}
             "${work}/input.dmm.s"
-            ${RUNTIME_LIBRARY} -o "${work}/program.exe"
+            ${SYSTEM_LIBRARIES} -o "${work}/program.exe"
             RESULT_VARIABLE result
             OUTPUT_VARIABLE output
             ERROR_VARIABLE errors
@@ -59,6 +60,9 @@ function(run_case source expected syntax)
         message(FATAL_ERROR
                 "${name}/${syntax}: assembly failed (${result})\n${output}${errors}"
         )
+    endif()
+    if(name STREQUAL "hello")
+        check_standalone_dependencies("${work}/program.exe")
     endif()
 
     execute_process(
@@ -191,7 +195,7 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "abi")
                 -no-pie
                 "${work}/interop.s"
                 "${ROOT}/tests/abi/c_interop/abi_driver.c"
-                ${RUNTIME_LIBRARY} -o "${work}/interop.exe"
+                ${SYSTEM_LIBRARIES} -o "${work}/interop.exe"
                 RESULT_VARIABLE result
                 ERROR_VARIABLE errors
                 TIMEOUT 30
@@ -544,11 +548,9 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
 
         if(target STREQUAL "elf")
             set(register "%rsi")
-            string(FIND "${assembly}" "movq $0, %rax
-    call snprintf" variadic_marker)
-            if(variadic_marker EQUAL -1)
-                message(FATAL_ERROR
-                        "ELF backend does not initialize AL for variadic calls")
+            string(FIND "${assembly}" "call __dmm_core_snprintf" format_marker)
+            if(format_marker EQUAL -1)
+                message(FATAL_ERROR "ELF backend bypasses the standalone formatter")
             endif()
         else()
             set(register "%rdx")
@@ -619,10 +621,9 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
 
             execute_process(
                     COMMAND "${ASSEMBLER}"
-                    ${SANITIZER_FLAGS}
-                    -no-pie
+                    ${STANDALONE_FLAGS}
                     "${work}/input.dmm.s"
-                    ${RUNTIME_LIBRARY} -o "${work}/program.exe"
+                    ${SYSTEM_LIBRARIES} -o "${work}/program.exe"
                     RESULT_VARIABLE result
                     ERROR_VARIABLE errors
                     TIMEOUT 30

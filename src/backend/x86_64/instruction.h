@@ -84,6 +84,9 @@ typedef enum {
     X64_OP_CQO,
     X64_OP_SYSCALL,
     X64_OP_UD2,
+    X64_OP_SHL,
+    X64_OP_SHR,
+    X64_OP_DIV,
     X64_OP_COUNT
 } X64Opcode;
 

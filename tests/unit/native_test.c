@@ -27,6 +27,12 @@ static int encoder_tests(void) {
     CHECK(encoding_case(x64_instruction2(X64_OP_ADDSD,X64_WIDTH_NONE,x64_register("xmm9"),x64_register("xmm10")),sse,sizeof(sse)));
     const unsigned char integer[]={0x48,0x69,0xc9,4,0,0,0};
     CHECK(encoding_case(x64_instruction2(X64_OP_IMUL,X64_WIDTH_QWORD,x64_register("rcx"),x64_immediate(4)),integer,sizeof(integer)));
+    const unsigned char shift_left[]={0x49,0xc1,0xe0,52};
+    CHECK(encoding_case(x64_instruction2(X64_OP_SHL,X64_WIDTH_QWORD,x64_register("r8"),x64_immediate(52)),shift_left,sizeof(shift_left)));
+    const unsigned char shift_right[]={0x48,0xc1,0xe8,1};
+    CHECK(encoding_case(x64_instruction2(X64_OP_SHR,X64_WIDTH_QWORD,x64_register("rax"),x64_immediate(1)),shift_right,sizeof(shift_right)));
+    const unsigned char divide[]={0x49,0xf7,0xf0};
+    CHECK(encoding_case(x64_instruction1(X64_OP_DIV,X64_WIDTH_QWORD,x64_register("r8")),divide,sizeof(divide)));
     NativeObject object={0};
     X64Instruction invalid=x64_instruction2(X64_OP_ADDSS,X64_WIDTH_NONE,x64_register("rax"),x64_register("rbx"));
     CHECK(!native_encode(&object,&invalid)&&object.failed&&object.sections[0].size==0);native_object_free(&object);
@@ -57,30 +63,35 @@ static int binary_tests(TargetFormat target) {
     free(b.data);native_object_free(&o);memset(&b,0,sizeof(b));memset(&o,0,sizeof(o));CHECK(make_object(&o));
     CHECK(native_link_executable(&o,target,&b));
     if(target==TARGET_ELF) {
-        CHECK(read_uint(&b,16,2)==2);CHECK(read_uint(&b,56,2)==7);
-        CHECK(read_uint(&b,24,8)>=0x401000);uint64_t dyn=0,dyn_size=0,rw=0,rw_size=0;
-        for(size_t n=0;n<7;++n){size_t p=64+n*56;uint64_t kind=read_uint(&b,p,4),flags=read_uint(&b,p+4,4),off=read_uint(&b,p+8,8),size=read_uint(&b,p+32,8);
-            CHECK(off+size<=b.size);CHECK(!(flags==7));
-            if(kind==2){dyn=off;dyn_size=size;}if(kind==1&&flags==6){rw=read_uint(&b,p+16,8);rw_size=size;}}
-        CHECK(dyn&&dyn_size);uint64_t rela=0,rela_size=0,symtab=0,strtab=0,str_size=0;
-        for(size_t n=(size_t)dyn;n<dyn+dyn_size;n+=16){uint64_t tag=read_uint(&b,n,8),value=read_uint(&b,n+8,8);
-            if(tag==5)strtab=value-0x400000;if(tag==10)str_size=value;if(tag==6)symtab=value-0x400000;
-            if(tag==7)rela=value-0x400000;if(tag==8)rela_size=value;}
-        CHECK(rela_size&&rela+rela_size<=b.size&&strtab+str_size<=b.size);
-        for(size_t n=(size_t)rela;n<rela+rela_size;n+=24){uint64_t cell=read_uint(&b,n,8),info=read_uint(&b,n+8,8);
-            CHECK((info&UINT32_MAX)==6);CHECK(cell>=rw&&cell+8<=rw+rw_size);
-            uint64_t symbol=symtab+(info>>32)*24;CHECK(symbol+24<=b.size);CHECK(read_uint(&b,(size_t)symbol,4)<str_size);}
-        uint64_t payload=read_uint(&b,(size_t)(read_uint(&b,64+3*56+8,8)),8);CHECK(payload==0x401000);
+        CHECK(read_uint(&b,16,2)==2);CHECK(read_uint(&b,56,2)==5);
+        CHECK(read_uint(&b,24,8)>=0x401000);
+        for(size_t n=0;n<5;++n){size_t p=64+n*56;uint64_t kind=read_uint(&b,p,4),flags=read_uint(&b,p+4,4),off=read_uint(&b,p+8,8),size=read_uint(&b,p+32,8);
+            CHECK(off+size<=b.size);CHECK(flags!=7);CHECK(kind!=2 && kind!=3);
+        }
+        uint64_t payload=read_uint(&b,(size_t)read_uint(&b,64+2*56+8,8),8);CHECK(payload==0x401000);
     } else {
         CHECK(read_uint(&b,0,2)==0x5a4d);CHECK(read_uint(&b,0x80,4)==0x4550);CHECK(read_uint(&b,0x98,2)==0x20b);
         size_t dir=pe_offset(&b,read_uint(&b,0x98+120,4));CHECK(dir!=SIZE_MAX);
-        size_t lookup=pe_offset(&b,read_uint(&b,dir,4)),iat=pe_offset(&b,read_uint(&b,dir+16,4));CHECK(lookup!=SIZE_MAX&&iat!=SIZE_MAX);
-        size_t count=0;while(read_uint(&b,lookup+count*8,8)){
-            uint64_t name=read_uint(&b,lookup+count*8,8);CHECK(read_uint(&b,iat+count*8,8)==name);
+        size_t count=0;int kernel=0;
+        while(read_uint(&b,dir+count*20,4)) {
+            size_t descriptor=dir+count*20;
+            size_t lookup=pe_offset(&b,read_uint(&b,descriptor,4)),iat=pe_offset(&b,read_uint(&b,descriptor+16,4));
+            CHECK(lookup!=SIZE_MAX&&iat!=SIZE_MAX);
+            uint64_t name=read_uint(&b,lookup,8);CHECK(read_uint(&b,iat,8)==name);
+            CHECK(read_uint(&b,lookup+8,8)==0 && read_uint(&b,iat+8,8)==0);
             size_t hint=pe_offset(&b,name);CHECK(hint!=SIZE_MAX&&hint+2<b.size);
-            CHECK(memchr(b.data+hint+2,0,b.size-hint-2));CHECK(++count<100);}
-        CHECK(count>10);size_t reloc=pe_offset(&b,read_uint(&b,0x98+112+5*8,4));CHECK(reloc!=SIZE_MAX);
-        CHECK(read_uint(&b,reloc+8,2)==0xa000);size_t payload=pe_offset(&b,0x2000);CHECK(payload!=SIZE_MAX);
+            CHECK(memchr(b.data+hint+2,0,b.size-hint-2));
+            const char *import=(const char *)b.data+hint+2;
+            CHECK(strcmp(import,"malloc") && strcmp(import,"calloc") && strcmp(import,"free"));
+            CHECK(strcmp(import,"strlen") && strcmp(import,"strcpy") && strcmp(import,"strcat") && strcmp(import,"strcmp"));
+            size_t dll=pe_offset(&b,read_uint(&b,descriptor+12,4));CHECK(dll!=SIZE_MAX);
+            CHECK(memchr(b.data+dll,0,b.size-dll));
+            CHECK(!strcmp((const char *)b.data+dll,"kernel32.dll"));kernel=1;
+            CHECK(++count<100);
+        }
+        CHECK(count && kernel);size_t reloc=pe_offset(&b,read_uint(&b,0x98+112+5*8,4));CHECK(reloc!=SIZE_MAX);
+        CHECK(read_uint(&b,reloc+8,2)==0xa000);
+        size_t payload=pe_offset(&b,read_uint(&b,0x98+240+40+12,4));CHECK(payload!=SIZE_MAX);
         CHECK(read_uint(&b,payload,8)==UINT64_C(0x140001000));
     }
     free(b.data);native_object_free(&o);

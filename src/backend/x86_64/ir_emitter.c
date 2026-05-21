@@ -3,6 +3,7 @@
 #include "native/encoder.h"
 #include <stdarg.h>
 #include "runtime_calls.h"
+#include "native_runtime.h"
 #include "errorHandler.h"
 #include <errno.h>
 
@@ -234,12 +235,15 @@ static size_t slice_length_ordinal(const IrFunction *function, size_t parameter_
 }
 
 static int runtime_link_name(const char *name) {
+    if (!strncmp(name, "__dmm_", 6)) return 1;
     static const char *runtime_names[] = {
         "printf", "putchar", "puts", "strcmp", "strcpy", "strcat", "strdup",
         "_strdup", "malloc", "calloc", "free", "strlen", "strtoll", "scanf",
         "snprintf", "fflush", "read", "write", "open", "close", "exit",
         "_read", "_write", "_open", "_close", "_snprintf", "_strtoi64",
-        "__errno_location", "_errno", "__libc_start_main", "__isoc99_scanf"
+        "__errno_location", "_errno", "__libc_start_main", "__isoc99_scanf",
+        "VirtualAlloc", "VirtualFree", "GetStdHandle", "ReadFile", "WriteFile",
+        "CreateFileA", "CloseHandle", "GetLastError", "ExitProcess"
     };
     for (size_t i = 0; i < sizeof(runtime_names) / sizeof(runtime_names[0]); i++)
         if (strcmp(name, runtime_names[i]) == 0) return 1;
@@ -509,6 +513,13 @@ static void write_address(const Emitter *emitter, const char *reg, const char *l
 }
 
 static void write_call(const Emitter *emitter, const char *name) {
+    char core_symbol[128];
+    if (strcmp(name, "strlen")==0 || strcmp(name, "strcmp")==0 ||
+        strcmp(name, "strcpy")==0 || strcmp(name, "strcat")==0 ||
+        strcmp(name, "calloc")==0 || strcmp(name, "free")==0 || strcmp(name, "snprintf")==0) {
+        snprintf(core_symbol, sizeof(core_symbol), "__dmm_core_%s", name); name=core_symbol;
+    }
+
     if (emitter->target == TARGET_COFF) {
         X64Instruction stack = x64_instruction2(X64_OP_SUB, X64_WIDTH_QWORD,
             x64_register("rsp"), x64_immediate(32));
@@ -2024,18 +2035,7 @@ static int emit_file(Emitter *emitter, int deterministic) {
             emitter->syntax == SYNTAX_INTEL ? "Intel" : "AT&T");
     if (emitter->syntax == SYNTAX_INTEL) fputs("    .intel_syntax noprefix\n", output);
     if (emitter->target == TARGET_COFF) {
-        fputs("    .def printf; .scl 2; .type 32; .endef\n"
-              "    .def putchar; .scl 2; .type 32; .endef\n"
-              "    .def puts; .scl 2; .type 32; .endef\n"
-              "    .def strcmp; .scl 2; .type 32; .endef\n"
-              "    .def strcpy; .scl 2; .type 32; .endef\n"
-              "    .def strcat; .scl 2; .type 32; .endef\n"
-              "    .def malloc; .scl 2; .type 32; .endef\n"
-              "    .def calloc; .scl 2; .type 32; .endef\n"
-              "    .def free; .scl 2; .type 32; .endef\n"
-              "    .def strlen; .scl 2; .type 32; .endef\n"
-              "    .def snprintf; .scl 2; .type 32; .endef\n"
-              "    .section .rdata,\"dr\"\n", output);
+        fputs("    .section .rdata,\"dr\"\n", output);
     } else {
         fputs("    .section .rodata\n", output);
     }
@@ -2206,6 +2206,7 @@ int x86_64_emit_ir_file(const IrModule *module, TargetFormat target,
         .source_map = source_map_path == NULL ? NULL : &map
     };
     int success = emit_file(&emitter, deterministic);
+    if(success) success=native_runtime_assembly(output,target);
     int assembly_io_error = ferror(output);
     if (fclose(output) != 0) assembly_io_error = 1;
     int map_io_error = map.output != NULL && ferror(map.output);
