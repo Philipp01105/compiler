@@ -26,7 +26,7 @@ foreach(target elf coff)
     foreach(syntax att intel)
         set(output "${OUTPUT_DIR}/hello_${target}_${syntax}.s")
         execute_process(
-                COMMAND "${COMPILER}" --deterministic "--target=${target}"
+                COMMAND "${COMPILER}" --emit=asm --deterministic "--target=${target}"
                         "--syntax=${syntax}" -o "${output}"
                         "${ROOT}/tests/execution/basics/hello.dmm"
                 RESULT_VARIABLE result ERROR_VARIABLE errors)
@@ -44,7 +44,7 @@ foreach(case conditional break_continue)
     set(source "${ROOT}/tests/execution/control_flow/${case}.dmm")
     set(output "${OUTPUT_DIR}/${case}_native.s")
     execute_process(
-            COMMAND "${COMPILER}" --deterministic --target=elf --syntax=intel
+            COMMAND "${COMPILER}" --emit=asm --deterministic --target=elf --syntax=intel
                     -o "${output}" "${source}"
             RESULT_VARIABLE result ERROR_VARIABLE errors)
     if(NOT result STREQUAL "0")
@@ -58,7 +58,7 @@ endforeach()
 
 set(function_output "${OUTPUT_DIR}/function_native.s")
 execute_process(
-        COMMAND "${COMPILER}" --deterministic -o "${function_output}"
+        COMMAND "${COMPILER}" --emit=asm --deterministic -o "${function_output}"
                 "${ROOT}/tests/execution/functions/function.dmm"
         RESULT_VARIABLE result ERROR_VARIABLE errors)
 if(NOT result STREQUAL "0")
@@ -74,7 +74,7 @@ foreach(target elf coff)
     set(output "${OUTPUT_DIR}/integer_call_${target}_${syntax}.s")
     set(executable "${OUTPUT_DIR}/integer_call_${target}_${syntax}.exe")
     execute_process(
-            COMMAND "${COMPILER}" --deterministic "--target=${target}" "--syntax=${syntax}"
+            COMMAND "${COMPILER}" --emit=asm --deterministic "--target=${target}" "--syntax=${syntax}"
                     -o "${output}" "${ROOT}/tests/unit/frontend_ast_fixture.dmm"
             RESULT_VARIABLE result ERROR_VARIABLE errors)
     if(NOT result STREQUAL "0")
@@ -107,7 +107,7 @@ foreach(case operator_precedence short_circuit)
     set(source "${ROOT}/tests/execution/expressions/${case}.dmm")
     set(output "${OUTPUT_DIR}/${case}_native.s")
     execute_process(
-            COMMAND "${COMPILER}" --deterministic --target=elf --syntax=intel
+            COMMAND "${COMPILER}" --emit=asm --deterministic --target=elf --syntax=intel
                     -o "${output}" "${source}"
             RESULT_VARIABLE result ERROR_VARIABLE errors)
     if(NOT result STREQUAL "0")
@@ -121,7 +121,7 @@ endforeach()
 
 set(float_output "${OUTPUT_DIR}/float_literal_native.s")
 execute_process(
-        COMMAND "${COMPILER}" --deterministic --target=elf --syntax=intel
+        COMMAND "${COMPILER}" --emit=asm --deterministic --target=elf --syntax=intel
                 -o "${float_output}" "${ROOT}/tests/execution/expressions/float_literal.dmm"
         RESULT_VARIABLE result ERROR_VARIABLE errors)
 if(NOT result STREQUAL "0")
@@ -137,7 +137,7 @@ foreach(target elf coff)
     set(output "${OUTPUT_DIR}/scalar_${target}_${syntax}.s")
     set(executable "${OUTPUT_DIR}/scalar_${target}_${syntax}.exe")
     execute_process(
-            COMMAND "${COMPILER}" --deterministic "--target=${target}" "--syntax=${syntax}"
+            COMMAND "${COMPILER}" --emit=asm --deterministic "--target=${target}" "--syntax=${syntax}"
                     -o "${output}" "${ROOT}/tests/unit/ir_scalar_fixture.dmm"
             RESULT_VARIABLE result ERROR_VARIABLE errors)
     if(NOT result STREQUAL "0")

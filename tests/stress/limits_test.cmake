@@ -8,7 +8,7 @@ function(expect_compile name source)
     set(input "${OUTPUT_DIR}/${name}.dmm")
     set(assembly "${OUTPUT_DIR}/${name}.s")
     file(WRITE "${input}" "${source}")
-    execute_process(COMMAND "${COMPILER}" --deterministic -o "${assembly}" "${input}"
+    execute_process(COMMAND "${COMPILER}" --emit=asm --deterministic -o "${assembly}" "${input}"
         RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE errors TIMEOUT 30)
     if(NOT result EQUAL 0 OR NOT EXISTS "${assembly}")
         message(FATAL_ERROR "${name}: boundary program should compile: ${output}${errors}")
@@ -19,7 +19,7 @@ function(expect_reject name source diagnostic)
     set(input "${OUTPUT_DIR}/${name}.dmm")
     set(assembly "${OUTPUT_DIR}/${name}.s")
     file(WRITE "${input}" "${source}")
-    execute_process(COMMAND "${COMPILER}" --deterministic -o "${assembly}" "${input}"
+    execute_process(COMMAND "${COMPILER}" --emit=asm --deterministic -o "${assembly}" "${input}"
         RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE errors TIMEOUT 30)
     string(FIND "${errors}" "${diagnostic}" diagnostic_position)
     if(result EQUAL 0 OR diagnostic_position EQUAL -1 OR EXISTS "${assembly}")

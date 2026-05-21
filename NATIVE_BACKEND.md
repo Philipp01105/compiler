@@ -13,7 +13,9 @@ compiler --emit=obj --target=elf program.dmm -o program.o
 compiler --emit=obj --target=coff program.dmm -o program.obj
 ```
 
-`--emit=asm` remains the default; the target defaults to the host. Both targets
+Executable output (`--emit=exe`) is the default; the target defaults to the host.
+Use `-c` / `--emit=obj` for objects or `-S` / `--emit=asm` for assembly.
+Default filenames append `.out` / `.exe`, `.o` / `.obj`, or `.s` to the source. Both targets
 can be emitted from either host. Syntax selection affects assembly printing,
 not native bytes. Native headers and symbol ordering are deterministic.
 
