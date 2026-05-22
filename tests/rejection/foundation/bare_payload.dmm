@@ -1,0 +1,2 @@
+enum E { Some(int), None, }
+func main() -> void { var e:E = E.Some; }

@@ -8,6 +8,9 @@ The project is suitable for learning and experimentation. It is not yet intended
 
 - Primitive types: `int`, `char`, `byte`, `bit`, `float`, `double`, `string`, and `void`
 - Functions, forward calls, local variables, arrays, pointers, structs, enums, and methods
+- Inferred generic functions and invariant generic structs/enums, with static specialization
+- Explicit traits, `Self`, multiple trait bounds, and static method dispatch
+- Tagged variant payloads and exhaustive `match` statements with typed bindings
 - `if`/`else`, `for`, `while`, `break`, `continue`, and `return`
 - String operations, formatted input/output, file I/O, and explicit heap allocation/free
 - Source imports through `import "file.dmm"` and `import <stdlib>`

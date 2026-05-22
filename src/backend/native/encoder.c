@@ -390,8 +390,11 @@ int native_encode(NativeObject *object, const X64Instruction *in) {
     size_t start = object->sections[object->section].size;
     if (!native_bytes(object, e.bytes, e.size))return 0;
     if (e.symbol) {
-        char name[512];
         const X64Operand *s = e.symbol;
+        if (s->symbol && !s->has_symbol_suffix)
+            return native_reference(object,s->symbol,op == X64_OP_CALL ? NATIVE_CALL32 : NATIVE_REL32,
+                start+e.fixup,(int64_t)s->displacement-(int64_t)(e.size-e.fixup));
+        char name[512];
         int count = s->has_symbol_suffix
                         ? snprintf(name, sizeof(name), "%s%zu", s->symbol, s->symbol_suffix)
                         : snprintf(name, sizeof(name), "%s", s->symbol ? s->symbol : "");

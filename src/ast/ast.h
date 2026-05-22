@@ -14,18 +14,18 @@ typedef struct { AstSourceLocation begin; AstSourceLocation end; } AstSourceSpan
 
 typedef enum {
     AST_DECL_IMPORT, AST_DECL_STRUCT, AST_DECL_ENUM, AST_DECL_FUNCTION,
-    AST_DECL_CONSTANT, AST_DECL_INVALID
+    AST_DECL_CONSTANT, AST_DECL_TRAIT, AST_DECL_IMPL, AST_DECL_INVALID
 } AstDeclarationKind;
 typedef enum { AST_TYPE_INFERRED, AST_TYPE_NAMED } AstTypeKind;
 typedef enum {
     AST_EXPR_ERROR, AST_EXPR_LITERAL, AST_EXPR_NAME, AST_EXPR_UNARY,
     AST_EXPR_BINARY, AST_EXPR_CALL, AST_EXPR_INDEX, AST_EXPR_MEMBER,
-    AST_EXPR_SLICE_LENGTH, AST_EXPR_RESERVE, AST_EXPR_CAST, AST_EXPR_FREE
+    AST_EXPR_SLICE_LENGTH, AST_EXPR_RESERVE, AST_EXPR_CAST, AST_EXPR_FREE, AST_EXPR_ENUM_CONSTRUCT
 } AstExpressionKind;
 typedef enum {
     AST_STMT_ERROR, AST_STMT_BLOCK, AST_STMT_VARIABLE, AST_STMT_EXPRESSION,
     AST_STMT_ASSIGNMENT, AST_STMT_IF, AST_STMT_WHILE, AST_STMT_FOR,
-    AST_STMT_RETURN, AST_STMT_BREAK, AST_STMT_CONTINUE
+    AST_STMT_RETURN, AST_STMT_BREAK, AST_STMT_CONTINUE, AST_STMT_MATCH
 } AstStatementKind;
 
 /* Lossless token leaves reference source spellings owned by the module interner. */
@@ -34,6 +34,9 @@ typedef struct {
     const char *lexeme;
     AstSourceSpan span;
 } AstToken;
+
+typedef struct AstTypeArgument AstTypeArgument;
+typedef struct AstGenericParameter AstGenericParameter;
 
 typedef struct AstType {
     AstTypeKind kind;
@@ -45,7 +48,12 @@ typedef struct AstType {
     int is_slice;
     size_t array_length_token;
     size_t resolved_array_length;
+    AstTypeArgument *arguments;
 } AstType;
+
+struct AstTypeArgument { AstType type; AstTypeArgument *next; };
+typedef struct AstTraitBound { size_t name_token; struct AstTraitBound *next; } AstTraitBound;
+struct AstGenericParameter { size_t name_token; AstTraitBound *bounds; AstGenericParameter *next; };
 
 typedef struct AstExpression AstExpression;
 typedef struct AstStatement AstStatement;
@@ -54,6 +62,7 @@ typedef struct AstField AstField;
 typedef struct AstEnumValue AstEnumValue;
 typedef struct AstDeclarationNode AstDeclarationNode;
 typedef struct AstProgram AstProgram;
+typedef struct AstMatchArm AstMatchArm;
 
 typedef struct AstImportPath {
     AstSourceSpan span;
@@ -108,6 +117,18 @@ struct AstStatement {
     AstStatement *initializer;
     AstStatement *next;
     size_t resolved_symbol_id;
+    AstMatchArm *match_arms;
+    int match_exhaustive;
+};
+
+struct AstMatchArm {
+    size_t variant_token;
+    size_t resolved_variant_symbol;
+    AstParameter *bindings;
+    AstStatement *body;
+    AstSourceSpan span;
+    int wildcard;
+    AstMatchArm *next;
 };
 
 struct AstParameter {
@@ -130,6 +151,7 @@ struct AstEnumValue {
     AstSourceSpan span;
     size_t name_token;
     AstExpression *arguments;
+    AstTypeArgument *payload_types;
     size_t resolved_symbol_id;
     AstEnumValue *next;
 };
@@ -142,6 +164,11 @@ struct AstDeclarationNode {
     size_t name_token;
     size_t resolved_symbol_id;
     AstDeclarationNode *next;
+    AstGenericParameter *generic_parameters;
+    const AstDeclarationNode *generic_origin;
+    AstTypeArgument *specialization_arguments;
+    const char *specialization_identity;
+    int semantic_body_checked;
     union {
         struct {
             AstImportPath *paths;
@@ -154,8 +181,10 @@ struct AstDeclarationNode {
             size_t owner_token;
         } function;
         struct { AstField *fields; AstDeclarationNode *methods; } struct_decl;
-        struct { AstField *fields; AstEnumValue *values; } enum_decl;
+        struct { AstField *fields; AstEnumValue *values; int is_sum; } enum_decl;
         struct { AstType type; AstExpression *value; } constant;
+        struct { AstDeclarationNode *methods; } trait_decl;
+        struct { size_t trait_token; AstType for_type; AstDeclarationNode *methods; int attached; } impl_decl;
     } as;
 };
 

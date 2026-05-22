@@ -18,7 +18,7 @@ set(DMM_FUZZ_PIPELINE_SOURCES
         src/frontend/frontend.c
         src/frontend/lexer.c
         src/frontend/syntax_parser.c
-        src/sema/semantic.c
+        src/sema/semantic.c src/ast/generics.c
         src/ir/ir_optimize.c
         src/ir/ir.c
         src/ir/ir_cfg.c
@@ -52,7 +52,7 @@ add_executable(compiler
         src/frontend/lexer.h
         src/frontend/syntax_parser.c
         src/frontend/syntax_parser.h
-        src/sema/semantic.c
+        src/sema/semantic.c src/ast/generics.c
         src/sema/semantic.h
         src/ir/ir.c
         src/ir/ir.h
@@ -137,6 +137,26 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+    if(UNIX)
+        add_compile_definitions(_XOPEN_SOURCE=700)
+    endif()
+    add_executable(dmm_foundation_test tests/unit/foundation_test.c ${DMM_FUZZ_PIPELINE_SOURCES})
+    target_include_directories(dmm_foundation_test PRIVATE ${DMM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/tests/fuzz)
+    add_test(NAME language_foundation_unit COMMAND dmm_foundation_test)
+    set_tests_properties(language_foundation_unit PROPERTIES LABELS "unit;frontend;sema;ir;safety")
+    set_source_files_properties(tests/resource_fault.c PROPERTIES COMPILE_DEFINITIONS DMM_RESOURCE_IMPLEMENTATION)
+    get_target_property(DMM_COMPILER_SOURCES compiler SOURCES)
+    list(REMOVE_ITEM DMM_COMPILER_SOURCES src/driver/main.c)
+    add_executable(dmm_resource_fault_test tests/unit/resource_fault_test.c
+        tests/resource_fault.c ${DMM_COMPILER_SOURCES})
+    target_include_directories(dmm_resource_fault_test PRIVATE ${DMM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/tests)
+    if(MSVC)
+        target_compile_options(dmm_resource_fault_test PRIVATE /FI${CMAKE_SOURCE_DIR}/tests/resource_fault.h)
+    else()
+        target_compile_options(dmm_resource_fault_test PRIVATE -include ${CMAKE_SOURCE_DIR}/tests/resource_fault.h)
+    endif()
+    add_test(NAME resource_fault_unit COMMAND dmm_resource_fault_test ${CMAKE_BINARY_DIR}/resource_fault_output)
+    set_tests_properties(resource_fault_unit PROPERTIES LABELS "unit;backend;diagnostics;safety")
     set(DMM_ASSEMBLER "${CMAKE_C_COMPILER}" CACHE FILEPATH
         "C compiler used to assemble and link generated code")
     if(NOT EXISTS "${DMM_ASSEMBLER}")
@@ -235,12 +255,12 @@ if(BUILD_TESTING)
 
     add_executable(dmm_pipeline_test
             tests/unit/pipeline_test.c src/ast/ast.c src/frontend/frontend.c
-            src/frontend/syntax_parser.c src/frontend/lexer.c src/sema/semantic.c
+            src/frontend/syntax_parser.c src/frontend/lexer.c src/sema/semantic.c src/ast/generics.c
             src/ir/ir.c src/ir/ir_cfg.c src/common/string_interner.c src/diagnostics/errorHandler.c)
     target_include_directories(dmm_pipeline_test PRIVATE ${DMM_INCLUDE_DIRS})
     add_executable(dmm_ir_optimizer_test tests/unit/ir_optimizer_test.c
             src/ast/ast.c src/frontend/frontend.c src/frontend/syntax_parser.c
-            src/frontend/lexer.c src/sema/semantic.c src/ir/ir.c src/ir/ir_cfg.c
+            src/frontend/lexer.c src/sema/semantic.c src/ast/generics.c src/ir/ir.c src/ir/ir_cfg.c
             src/ir/ir_optimize.c src/common/string_interner.c src/diagnostics/errorHandler.c)
     target_include_directories(dmm_ir_optimizer_test PRIVATE ${DMM_INCLUDE_DIRS})
     add_test(NAME ir_optimizer_unit COMMAND dmm_ir_optimizer_test)
@@ -330,7 +350,7 @@ if(BUILD_TESTING)
     set_tests_properties(stress_limits PROPERTIES LABELS "integration;stress;safety")
 
     if(DMM_SANITIZERS)
-        foreach(test_target dmm_optimizer_test dmm_syntax_converter_test dmm_x86_instruction_test
+        foreach(test_target dmm_foundation_test dmm_resource_fault_test dmm_optimizer_test dmm_syntax_converter_test dmm_x86_instruction_test
                             dmm_string_interner_test dmm_fuzz_pipeline_smoke_test dmm_lexer_test
                             dmm_frontend_ast_test dmm_pipeline_test dmm_runtime_test dmm_native_test dmm_ir_optimizer_test)
             target_compile_options(${test_target} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)

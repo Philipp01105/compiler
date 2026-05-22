@@ -20,6 +20,16 @@ Frontend or semantic errors stop compilation before IR creation. IR verification
 failures are compiler errors. The backend never reparses source tokens and there
 is no alternate compatibility emitter.
 
+Generic declarations remain arena-owned templates. `src/ast/generics.c` clones
+concrete specializations, substitutes nested types and derives canonical identities.
+Semantic analysis infers call arguments, enforces invariant substitutions and explicit
+trait implementations, and checks each concrete body through a growing work list.
+The IR skips templates. Sum construction, tag tests and guarded payload extraction
+are explicit operations; exhaustive matches become ordinary branches and labels.
+The verifier rejects extraction without the matching guarded predecessor. Native
+aggregate layout reserves a tag slot and the largest payload, preserving by-value
+copying through the existing internal ABI.
+
 ## Ownership
 
 - `src/frontend/lexer.c` owns lexical analysis and token diagnostics.

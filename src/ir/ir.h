@@ -47,7 +47,7 @@ typedef enum {
     IR_OP_BRANCH,
     IR_OP_JUMP,
     IR_OP_LABEL,
-    IR_OP_PHI
+    IR_OP_PHI, IR_OP_ENUM_CONSTRUCT, IR_OP_ENUM_IS, IR_OP_ENUM_PAYLOAD, IR_OP_TRAP
 } IrOpcode;
 
 typedef struct {
@@ -68,6 +68,7 @@ typedef struct {
     size_t argument_count;
     size_t target_a;
     size_t target_b;
+    size_t enum_payload_index;
     TokenType operator_type;
     /* Compiler-owned numeric literal; source tokens remain immutable. */
     int has_immediate;
@@ -128,6 +129,8 @@ typedef struct {
     size_t symbol_id;
     size_t first_argument;
     size_t argument_count;
+    IrTypeId *payload_types;
+    size_t payload_count;
 } IrEnumVariant;
 
 typedef struct {
@@ -146,6 +149,7 @@ typedef struct {
     size_t variant_count;
     IrEnumArgument *variant_arguments;
     size_t variant_argument_count;
+    int is_sum;
 } IrEnum;
 
 typedef struct {
@@ -182,5 +186,8 @@ IrModule *ir_lower_program(const AstProgram *program, const SemanticModel *seman
 void ir_module_free(IrModule *module);
 int ir_verify_module(const IrModule *module);
 int ir_dump(FILE *output, const IrModule *module);
+/* Internal failures retain the concrete instruction and its original source unit. */
+void ir_report_failure(const IrFunction *function, size_t instruction_index,
+                       const char *stage, const char *reason);
 
 #endif

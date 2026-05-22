@@ -1,8 +1,35 @@
 #include "ir.h"
 #include "ir_cfg.h"
+#include "errorHandler.h"
 
 #include <stdint.h>
 #include <stdlib.h>
+
+void ir_report_failure(const IrFunction *function, size_t index,
+                       const char *stage, const char *reason) {
+    if (function == NULL || function->source_program == NULL) return;
+    const IrInstruction *instruction = index < function->instruction_count
+        ? &function->instructions[index] : NULL;
+    AstSourceSpan span = instruction == NULL ? function->return_type.span : instruction->span;
+    char message[2048];
+    if (instruction != NULL)
+        snprintf(message, sizeof(message),
+            "%s failed in function '%s', IR instruction %zu "
+            "(opcode=%d result=%zu operands=%zu,%zu type=%zu): %s",
+            stage, ast_program_lexeme(function->source_program, function->name_token),
+            index, (int)instruction->opcode, instruction->result,
+            instruction->operand_a, instruction->operand_b, instruction->type_id, reason);
+    else snprintf(message, sizeof(message), "%s failed in function '%s': %s", stage,
+        ast_program_lexeme(function->source_program, function->name_token), reason);
+    ErrorContext *context = error_context_create(SEVERITY_ERROR, span.begin.line,
+        span.begin.column, ERROR_CATEGORY_COMPILER, ERR_COMP_INTERNAL_FAILURE,
+        function->source_program->source_path, message);
+    error_context_set_span(context, span.end.line, span.end.column);
+    error_report_context(global_error_handler, context);
+    if (global_error_handler == NULL || !global_error_handler->buffered) error_context_free(context);
+}
+
+static int ir_verify_module_internal(const IrModule *module,int report);
 
 typedef struct {
     IrModule *module;
@@ -24,7 +51,7 @@ static int grow_array(void **items, size_t *capacity, size_t item_size) {
 }
 
 static int is_terminator(IrOpcode opcode) {
-    return opcode == IR_OP_RETURN || opcode == IR_OP_BRANCH || opcode == IR_OP_JUMP;
+    return opcode == IR_OP_RETURN || opcode == IR_OP_BRANCH || opcode == IR_OP_JUMP || opcode == IR_OP_TRAP;
 }
 
 static int block_terminated(const IrFunction *function) {
@@ -295,7 +322,7 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
     size_t receiver = has_receiver
                           ? lower_expression(builder, expression->left->left)
                           : IR_VALUE_NONE;
-    size_t left = method_call ? IR_VALUE_NONE : lower_expression(builder, expression->left);
+    size_t left = (method_call || expression->kind == AST_EXPR_ENUM_CONSTRUCT) ? IR_VALUE_NONE : lower_expression(builder, expression->left);
     if (expression->kind == AST_EXPR_BINARY &&
         (expression->operator_type == TOKEN_AMP_AMP ||
          expression->operator_type == TOKEN_PIPE_PIPE)) {
@@ -353,6 +380,7 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
             break;
         case AST_EXPR_BINARY: opcode = IR_OP_BINARY;
             break;
+        case AST_EXPR_ENUM_CONSTRUCT: opcode = IR_OP_ENUM_CONSTRUCT; break;
         case AST_EXPR_CALL: opcode = IR_OP_CALL;
             break;
         case AST_EXPR_INDEX: opcode = IR_OP_INDEX;
@@ -372,7 +400,7 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
     }
     size_t first_argument = IR_VALUE_NONE;
     size_t argument_count = 0;
-    if (expression->kind == AST_EXPR_CALL) {
+    if (expression->kind == AST_EXPR_CALL || expression->kind == AST_EXPR_ENUM_CONSTRUCT) {
         if (has_receiver) argument_count++;
         for (const AstExpression *argument = expression->arguments;
              argument != NULL; argument = argument->next)
@@ -427,7 +455,7 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
             return IR_VALUE_NONE;
         }
     }
-    if (expression->kind == AST_EXPR_CALL) {
+    if (expression->kind == AST_EXPR_CALL || expression->kind == AST_EXPR_ENUM_CONSTRUCT) {
         instruction->first_argument = first_argument;
         instruction->argument_count = argument_count;
     }
@@ -444,6 +472,49 @@ static void emit_label(IrBuilder *builder, size_t label, AstSourceSpan span) {
 
 static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
     for (; statement != NULL && !builder->failed; statement = statement->next) {
+        if (statement->kind == AST_STMT_MATCH) {
+            size_t value=lower_expression(builder,statement->value);
+            size_t join=new_label(builder); int wildcard=0;
+            for (const AstMatchArm *arm=statement->match_arms; arm; arm=arm->next) {
+                size_t body_label=IR_VALUE_NONE,next_label=IR_VALUE_NONE;
+                if (!arm->wildcard) {
+                    body_label=new_label(builder); next_label=new_label(builder);
+                    IrInstruction *test=emit(builder,IR_OP_ENUM_IS,arm->span);
+                    if (!test) return;
+                    test->operand_a=value; test->symbol_id=arm->resolved_variant_symbol; test->result=new_value(builder);
+                    test->type=TYPE_BIT; test->type_id=type_from_parts(builder->module,TYPE_BIT,0,AST_TOKEN_NONE,0,0,0,0,builder->program,AST_SYMBOL_NONE);
+                    size_t condition=test->result;
+                    IrInstruction *branch=emit(builder,IR_OP_BRANCH,arm->span); if (!branch) return;
+                    set_void_type(builder,branch); branch->operand_a=condition; branch->target_a=body_label; branch->target_b=next_label;
+                    emit_label(builder,body_label,arm->span);
+                } else wildcard=1;
+                size_t payload_index=0;
+                for (const AstParameter *binding=arm->bindings; binding; binding=binding->next,payload_index++) {
+                    IrInstruction *payload=emit(builder,IR_OP_ENUM_PAYLOAD,arm->span); if (!payload) return;
+                    payload->operand_a=value; payload->symbol_id=arm->resolved_variant_symbol;
+                    payload->enum_payload_index=payload_index; payload->target_a=body_label;
+                    payload->result=new_value(builder); payload->type_id=type_from_ast(builder->module,builder->program,&binding->type);
+                    payload->type=ast_type_data_type(builder->program,&binding->type);
+                    payload->pointer_depth=binding->type.pointer_depth+binding->type.outer_pointer_depth;
+                    payload->type_name_token=binding->type.name_token; payload->is_array=binding->type.is_array;
+                    size_t initial=payload->result;
+                    IrInstruction *local=emit(builder,IR_OP_DECLARE,arm->span); if (!local) return;
+                    local->operand_a=initial; local->symbol_id=binding->resolved_symbol_id;
+                    local->type_id=type_from_ast(builder->module,builder->program,&binding->type);
+                    local->type=ast_type_data_type(builder->program,&binding->type);
+                    local->pointer_depth=binding->type.pointer_depth+binding->type.outer_pointer_depth;
+                    local->type_name_token=binding->type.name_token; local->is_array=binding->type.is_array;
+                }
+                lower_statement(builder,arm->body);
+                IrInstruction *jump=emit(builder,IR_OP_JUMP,arm->span);
+                if (jump) { set_void_type(builder,jump); jump->target_a=join; }
+                if (!arm->wildcard) emit_label(builder,next_label,arm->span);
+            }
+            if (!wildcard) { IrInstruction *trap=emit(builder,IR_OP_TRAP,statement->span); set_void_type(builder,trap); }
+            emit_label(builder,join,statement->span);
+            continue;
+        }
+
         if (block_terminated(builder->function)) break;
         if (statement->kind == AST_STMT_BLOCK) {
             lower_statement(builder, statement->body);
@@ -638,6 +709,9 @@ static int append_function(IrModule *module, const AstProgram *program,
         .continue_label = IR_VALUE_NONE
     };
     lower_statement(&builder, declaration->as.function.body);
+    if (builder.failed) ir_report_failure(function,
+        function->instruction_count == 0 ? IR_VALUE_NONE : function->instruction_count - 1,
+        "IR lowering", "could not lower the typed source tree");
     return !builder.failed;
 }
 
@@ -686,7 +760,8 @@ static int append_enum(IrModule *module, const AstProgram *program,
     *enumeration = (IrEnum){
         .source_program = program,
         .name_token = declaration->name_token,
-        .symbol_id = declaration->resolved_symbol_id
+        .symbol_id = declaration->resolved_symbol_id,
+        .is_sum = declaration->as.enum_decl.is_sum
     };
     if (!copy_fields(module, program, declaration->as.enum_decl.fields,
                      &enumeration->fields, &enumeration->field_count))
@@ -719,6 +794,14 @@ static int append_enum(IrModule *module, const AstProgram *program,
             .symbol_id = value->resolved_symbol_id,
             .first_argument = argument_index
         };
+        for (const AstTypeArgument *p=value->payload_types; p; p=p->next) variant->payload_count++;
+        if (variant->payload_count) {
+            variant->payload_types=calloc(variant->payload_count,sizeof(*variant->payload_types));
+            if (!variant->payload_types) return 0;
+            size_t index=0;
+            for (const AstTypeArgument *p=value->payload_types; p; p=p->next)
+                variant->payload_types[index++]=type_from_ast(module,program,&p->type);
+        }
         for (const AstExpression *argument = value->arguments;
              argument != NULL; argument = argument->next) {
             const AstExpression *constant = argument->kind == AST_EXPR_UNARY &&
@@ -760,6 +843,7 @@ static int lower_unit(IrModule *module, const AstProgram *program) {
     if (!program->structured_ast_complete) return 0;
     for (const AstDeclarationNode *declaration = program->root;
          declaration != NULL; declaration = declaration->next) {
+        if (declaration->generic_parameters != NULL) continue;
         if (declaration->kind == AST_DECL_IMPORT && !append_import(module, program, declaration))
             return 0;
         if (declaration->kind == AST_DECL_STRUCT &&
@@ -767,9 +851,13 @@ static int lower_unit(IrModule *module, const AstProgram *program) {
             return 0;
         if (declaration->kind == AST_DECL_ENUM && !append_enum(module, program, declaration))
             return 0;
-        if (declaration->kind == AST_DECL_FUNCTION &&
+        if (declaration->kind == AST_DECL_FUNCTION && declaration->generic_parameters == NULL &&
             !append_function(module, program, declaration))
             return 0;
+        if (declaration->kind == AST_DECL_IMPL && declaration->as.impl_decl.attached) {
+            for (const AstDeclarationNode *m=declaration->as.impl_decl.methods; m; m=m->next)
+                if (!append_function(module,program,m)) return 0;
+        }
         if (declaration->kind == AST_DECL_STRUCT) {
             for (const AstDeclarationNode *method = declaration->as.struct_decl.methods;
                  method != NULL; method = method->next)
@@ -790,7 +878,7 @@ IrModule *ir_lower_program(const AstProgram *program, const SemanticModel *seman
     if (!lower_unit(module, program)) goto failure;
     for (size_t i = 0; i < program->owned_import_count; i++)
         if (!lower_unit(module, program->owned_imports[i])) goto failure;
-    if (!ir_verify_module(module)) goto failure;
+    if (!ir_verify_module_internal(module,1)) goto failure;
     module->verified = 1;
     return module;
 
@@ -806,7 +894,7 @@ static int instruction_produces_value(const IrInstruction *instruction) {
            (opcode == IR_OP_CALL && instruction->type != TYPE_VOID) || opcode == IR_OP_INDEX ||
            opcode == IR_OP_MEMBER || opcode == IR_OP_SLICE_LENGTH ||
            opcode == IR_OP_CAST || opcode == IR_OP_ALLOC ||
-           opcode == IR_OP_PHI;
+           opcode == IR_OP_PHI || opcode == IR_OP_ENUM_CONSTRUCT || opcode == IR_OP_ENUM_IS || opcode == IR_OP_ENUM_PAYLOAD;
 }
 
 static const IrInstruction *verified_producer(const IrFunction *function,
@@ -882,6 +970,34 @@ static int ir_void_type(const IrModule *module, IrTypeId type_id) {
            module->types[type_id].primitive == TYPE_VOID;
 }
 
+static const IrEnumVariant *ir_variant(const IrModule *module,size_t symbol,const IrEnum **owner) {
+    for (size_t e=0; e<module->enum_count; e++)
+        for (size_t v=0; v<module->enums[e].variant_count; v++)
+            if (module->enums[e].variants[v].symbol_id == symbol) {
+                if (owner) *owner=&module->enums[e];
+                return &module->enums[e].variants[v];
+            }
+    return NULL;
+}
+static int verified_payload_guard(const IrFunction *function,const IrInstruction *payload,size_t index) {
+    size_t label=index;
+    while (label > 0 && function->instructions[label].opcode != IR_OP_LABEL) label--;
+    if (label == 0 || function->instructions[label].target_a != payload->target_a) return 0;
+    const IrInstruction *branch=&function->instructions[label-1];
+    if (branch->opcode != IR_OP_BRANCH || branch->target_a != payload->target_a) return 0;
+    const IrInstruction *test=verified_producer(function,branch->operand_a,label-1);
+    if (!test || test->opcode != IR_OP_ENUM_IS || test->operand_a != payload->operand_a ||
+        test->symbol_id != payload->symbol_id) return 0;
+    /* A single checked entry into the arm makes the proof dominate every extraction. */
+    for (size_t i=0; i<function->instruction_count; i++) {
+        const IrInstruction *in=&function->instructions[i];
+        if (i == label-1) continue;
+        if ((in->opcode == IR_OP_BRANCH || in->opcode == IR_OP_JUMP) &&
+            (in->target_a == payload->target_a || in->target_b == payload->target_a)) return 0;
+    }
+    return 1;
+}
+
 static int verify_instruction_types(const IrModule *module,
                                     const IrFunction *function,
                                     const IrInstruction *instruction,
@@ -889,6 +1005,32 @@ static int verify_instruction_types(const IrModule *module,
     const IrInstruction *a = verified_producer(function, instruction->operand_a, index);
     const IrInstruction *b = verified_producer(function, instruction->operand_b, index);
     switch (instruction->opcode) {
+        case IR_OP_ENUM_CONSTRUCT: {
+            const IrEnum *owner=NULL; const IrEnumVariant *variant=ir_variant(module,instruction->symbol_id,&owner);
+            if (!variant || instruction->type_id >= module->type_count ||
+                module->types[instruction->type_id].kind != IR_TYPE_NAMED ||
+                module->types[instruction->type_id].symbol_id != owner->symbol_id ||
+                instruction->argument_count != variant->payload_count ||
+                instruction->first_argument > function->argument_count ||
+                instruction->argument_count > function->argument_count-instruction->first_argument) return 0;
+            for (size_t n=0; n<variant->payload_count; n++) {
+                const IrInstruction *value=verified_producer(function,function->arguments[instruction->first_argument+n],index);
+                if (!value || !ir_types_assignable(module,value->type_id,variant->payload_types[n],value->opcode)) return 0;
+            }
+            return 1;
+        }
+        case IR_OP_ENUM_IS:
+        case IR_OP_ENUM_PAYLOAD: {
+            const IrEnum *owner=NULL; const IrEnumVariant *variant=ir_variant(module,instruction->symbol_id,&owner);
+            if (!variant || !a || module->types[a->type_id].kind != IR_TYPE_NAMED ||
+                module->types[a->type_id].symbol_id != owner->symbol_id) return 0;
+            if (instruction->opcode == IR_OP_ENUM_IS) return instruction->type == TYPE_BIT && ir_integral_type(module,instruction->type_id);
+            return instruction->enum_payload_index < variant->payload_count &&
+                instruction->type_id == variant->payload_types[instruction->enum_payload_index] &&
+                verified_payload_guard(function,instruction,index);
+        }
+        case IR_OP_TRAP: return ir_void_type(module,instruction->type_id);
+
         case IR_OP_CONSTANT:
             return (instruction->has_immediate
                         ? ir_numeric_type(module, instruction->type_id)
@@ -1024,7 +1166,9 @@ static int verify_instruction_types(const IrModule *module,
     return 0;
 }
 
-int ir_verify_module(const IrModule *module) {
+int ir_verify_module(const IrModule *module) { return ir_verify_module_internal(module,0); }
+
+static int ir_verify_module_internal(const IrModule *module,int report) {
     if (module == NULL || module->program == NULL || module->semantics == NULL) return 0;
     for (size_t t = 0; t < module->type_count; t++) {
         const IrType *type = &module->types[t];
@@ -1061,18 +1205,23 @@ int ir_verify_module(const IrModule *module) {
     }
     for (size_t e = 0; e < module->enum_count; e++) {
         const IrEnum *enumeration = &module->enums[e];
+        if (enumeration->is_sum != 0 && enumeration->is_sum != 1) return 0;
+        if (enumeration->variant_count && !enumeration->variants) return 0;
         if (enumeration->symbol_id == AST_SYMBOL_NONE ||
             enumeration->symbol_id >= module->semantics->symbol_count ||
             module->semantics->symbols[enumeration->symbol_id].kind != SEMANTIC_SYMBOL_ENUM)
             return 0;
         for (size_t variant = 0; variant < enumeration->variant_count; variant++) {
             const IrEnumVariant *item = &enumeration->variants[variant];
+            if (item->payload_count && (!enumeration->is_sum || !item->payload_types)) return 0;
             if (item->symbol_id == AST_SYMBOL_NONE ||
                 item->argument_count != enumeration->field_count ||
                 item->first_argument > enumeration->variant_argument_count ||
                 item->argument_count > enumeration->variant_argument_count -
                 item->first_argument)
                 return 0;
+            for (size_t p=0; p<item->payload_count; p++)
+                if (item->payload_types[p] >= module->type_count) return 0;
             for (size_t argument = 0; argument < item->argument_count; argument++)
                 if (enumeration->variant_arguments[item->first_argument + argument].type_id >=
                     module->type_count)
@@ -1139,9 +1288,11 @@ int ir_verify_module(const IrModule *module) {
             free(labels);
             return 0;
         }
+        size_t failing_instruction=IR_VALUE_NONE;
         int valid = 1;
         for (size_t i = 0; i < function->instruction_count; i++) {
             const IrInstruction *instruction = &function->instructions[i];
+            failing_instruction=i;
             if (instruction->opcode == IR_OP_LABEL) {
                 if (instruction->target_a >= function->next_label ||
                     labels[instruction->target_a] != 0) {
@@ -1154,6 +1305,7 @@ int ir_verify_module(const IrModule *module) {
         for (size_t i = 0; i < function->instruction_count; i++) {
             const IrInstruction *instruction = &function->instructions[i];
             if (!valid) break;
+            failing_instruction=i;
             if ((instruction->has_immediate != 0 && instruction->has_immediate != 1) ||
                 (instruction->has_immediate && instruction->opcode != IR_OP_CONSTANT)) {
                 valid = 0;
@@ -1223,6 +1375,18 @@ int ir_verify_module(const IrModule *module) {
                 case IR_OP_SLICE_LENGTH:
                     REQUIRE_VALUE(instruction->operand_a);
                     break;
+                case IR_OP_ENUM_IS:
+                case IR_OP_ENUM_PAYLOAD:
+                    REQUIRE_VALUE(instruction->operand_a);
+                    if (instruction->opcode == IR_OP_ENUM_PAYLOAD) REQUIRE_LABEL(instruction->target_a);
+                    break;
+                case IR_OP_TRAP: break;
+                case IR_OP_ENUM_CONSTRUCT:
+                    if (instruction->first_argument > function->argument_count ||
+                        instruction->argument_count > function->argument_count-instruction->first_argument) valid=0;
+                    else for (size_t n=0; n<instruction->argument_count; n++)
+                        REQUIRE_VALUE(function->arguments[instruction->first_argument+n]);
+                    break;
                 case IR_OP_CALL:
                     if (instruction->operand_a != IR_VALUE_NONE)
                         REQUIRE_VALUE(instruction->operand_a);
@@ -1267,7 +1431,11 @@ int ir_verify_module(const IrModule *module) {
         }
         free(defined);
         free(labels);
-        if (!valid || !ir_verify_control_flow(function, ir_void_type(module, function->return_type_id))) return 0;
+        if (!valid || !ir_verify_control_flow(function, ir_void_type(module, function->return_type_id))) {
+            if (report) ir_report_failure(function,valid ? IR_VALUE_NONE : failing_instruction,
+                "IR verification",valid ? "malformed control flow" : "invalid instruction types or operands");
+            return 0;
+        }
     }
     return 1;
 }
@@ -1283,6 +1451,8 @@ void ir_module_free(IrModule *module) {
         free(module->structures[i].fields);
     for (size_t i = 0; i < module->enum_count; i++) {
         free(module->enums[i].fields);
+        if (module->enums[i].variants != NULL)
+            for (size_t v=0; v<module->enums[i].variant_count; v++) free(module->enums[i].variants[v].payload_types);
         free(module->enums[i].variants);
         free(module->enums[i].variant_arguments);
     }

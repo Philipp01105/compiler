@@ -29,8 +29,8 @@ static const char *primitive_name(DataType type) {
 static const char *opcode_name(IrOpcode opcode) {
     static const char *names[] = {"constant", "load", "declare", "store", "unary",
         "binary", "call", "index", "member", "slice-length", "cast", "alloc", "free",
-        "return", "branch", "jump", "label", "phi"};
-    return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_PHI ? names[opcode] : "invalid";
+        "return", "branch", "jump", "label", "phi", "enum-construct", "enum-is", "enum-payload", "trap"};
+    return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_TRAP ? names[opcode] : "invalid";
 }
 
 static const char *operator_name(TokenType type) {
@@ -117,6 +117,8 @@ static int dump_instruction(FILE *output, const IrFunction *function,
         if (fputc('-', output) == EOF) return 0;
     } else if (fprintf(output, "%zu+%zu", instruction->first_argument,
                        instruction->argument_count) < 0) return 0;
+    if (instruction->opcode == IR_OP_ENUM_PAYLOAD &&
+        fprintf(output," payload-index=%zu",instruction->enum_payload_index) < 0) return 0;
     if (fputs(" span=", output) == EOF || !print_span(output, instruction->span)) return 0;
     if (instruction->argument_count != 0) {
         if (fputs(" values=[", output) == EOF) return 0;
@@ -155,8 +157,8 @@ static int dump_aggregates(FILE *output, const IrModule *module) {
         const IrEnum *enumeration = &module->enums[i];
         if (fprintf(output, "enum #%zu name=", i) < 0 ||
             !print_token(output, enumeration->source_program, enumeration->name_token) ||
-            fprintf(output, " symbol=%zu fields=%zu variants=%zu\n", enumeration->symbol_id,
-                    enumeration->field_count, enumeration->variant_count) < 0) return 0;
+            fprintf(output, " symbol=%zu fields=%zu variants=%zu sum=%d\n", enumeration->symbol_id,
+                    enumeration->field_count, enumeration->variant_count,enumeration->is_sum) < 0) return 0;
         for (size_t field = 0; field < enumeration->field_count; field++) {
             const IrFieldDefinition *definition = &enumeration->fields[field];
             if (fputs("  field name=", output) == EOF ||
@@ -170,6 +172,11 @@ static int dump_aggregates(FILE *output, const IrModule *module) {
                 !print_token(output, variant->source_program, variant->name_token) ||
                 fprintf(output, " symbol=%zu arguments=%zu+%zu\n", variant->symbol_id,
                         variant->first_argument, variant->argument_count) < 0) return 0;
+            for (size_t p=0; p<variant->payload_count; p++)
+                if (fprintf(output,"    payload #%zu type=@%zu\n",p,variant->payload_types[p]) < 0) return 0;
+            for (size_t p=0; p<variant->payload_count; p++)
+                if (fprintf(output,"    payload #%zu type=@%zu\n",p,variant->payload_types[p]) < 0) return 0;
+
         }
         for (size_t a = 0; a < enumeration->variant_argument_count; a++) {
             const IrEnumArgument *argument = &enumeration->variant_arguments[a];

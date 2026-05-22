@@ -151,7 +151,7 @@ static int graph(Graph *g, const IrFunction *f) {
     for (size_t i=0;i<g->count;++i) {
         Block *b=&g->blocks[i]; const IrInstruction *last=&f->instructions[b->end-1];
         if (last->opcode == IR_OP_BRANCH || last->opcode == IR_OP_JUMP) b->successor[0]=g->labels[last->target_a];
-        else if (last->opcode != IR_OP_RETURN && i+1<g->count) b->successor[0]=i+1;
+        else if (last->opcode != IR_OP_RETURN && last->opcode != IR_OP_TRAP && i+1<g->count) b->successor[0]=i+1;
         if (last->opcode == IR_OP_BRANCH && last->target_b != last->target_a) b->successor[1]=g->labels[last->target_b];
         for (size_t s=0;s<2;++s) if (b->successor[s] != IR_VALUE_NONE) {
             Block *to=&g->blocks[b->successor[s]];
@@ -210,7 +210,7 @@ static int initialize(Pass *p) {
         if (in->opcode == IR_OP_STORE) protect(p,in->operand_a);
         if (in->opcode == IR_OP_UNARY && in->operator_type == TOKEN_AMPERSAND) protect(p,in->operand_b);
         if (in->opcode == IR_OP_MEMBER || in->opcode == IR_OP_SLICE_LENGTH) protect(p,in->operand_a);
-        if (in->opcode == IR_OP_CALL) {
+        if ((in->opcode == IR_OP_CALL || in->opcode == IR_OP_ENUM_CONSTRUCT)) {
             protect(p,in->operand_a);
             if (in->symbol_id != AST_SYMBOL_NONE)
                 for (size_t c=0;c<p->module->function_count;++c) if (p->module->functions[c].symbol_id == in->symbol_id &&
@@ -399,7 +399,7 @@ static int pure(Pass *p,const IrInstruction *in) {
     return 0;
 }
 static int memory_effect(const IrInstruction *in) {
-    return in->opcode == IR_OP_STORE || in->opcode == IR_OP_DECLARE || in->opcode == IR_OP_CALL ||
+    return in->opcode == IR_OP_STORE || in->opcode == IR_OP_DECLARE || (in->opcode == IR_OP_CALL || in->opcode == IR_OP_ENUM_CONSTRUCT) ||
         in->opcode == IR_OP_FREE || in->opcode == IR_OP_ALLOC ||
         (in->opcode == IR_OP_BINARY && in->type == TYPE_STRING);
 }
@@ -613,11 +613,11 @@ static int compact_ids(IrFunction *f) {
         if (in->result != IR_VALUE_NONE) in->result=values[in->result];
         if (in->operand_a != IR_VALUE_NONE) in->operand_a=values[in->operand_a];
         if (in->operand_b != IR_VALUE_NONE) in->operand_b=values[in->operand_b];
-        if (in->opcode == IR_OP_LABEL || in->opcode == IR_OP_JUMP || in->opcode == IR_OP_BRANCH || in->opcode == IR_OP_PHI) {
+        if (in->opcode == IR_OP_LABEL || in->opcode == IR_OP_JUMP || in->opcode == IR_OP_BRANCH || in->opcode == IR_OP_PHI || in->opcode == IR_OP_ENUM_PAYLOAD) {
             in->target_a=labels[in->target_a];
             if (in->target_b != IR_VALUE_NONE) in->target_b=labels[in->target_b];
         }
-        if (in->opcode == IR_OP_CALL) {
+        if ((in->opcode == IR_OP_CALL || in->opcode == IR_OP_ENUM_CONSTRUCT)) {
             size_t old=in->first_argument; in->first_argument=na;
             for (size_t a=0;a<in->argument_count;++a) arguments[na++]=values[f->arguments[old+a]];
         }

@@ -40,9 +40,16 @@ jobs:
         run: cmake --build build-fuzz --parallel
       - name: Short fuzzing smoke run
         run: |
-          ./build-fuzz/fuzz_parser tests/fuzz/corpus/parser -dict=tests/fuzz/dmm.dict -max_total_time=5 -timeout=2
-          ./build-fuzz/fuzz_semantic tests/fuzz/corpus/semantic -dict=tests/fuzz/dmm.dict -max_total_time=5 -timeout=2
-          ./build-fuzz/fuzz_ir tests/fuzz/corpus/ir -dict=tests/fuzz/dmm.dict -max_total_time=5 -timeout=2
+          for stage in lexer parser semantic ir syntax_converter; do
+            mkdir -p "build-fuzz/corpus/$stage"
+            if [ -d "tests/fuzz/corpus/$stage" ]; then
+              cp -R "tests/fuzz/corpus/$stage/." "build-fuzz/corpus/$stage/"
+            fi
+            if [ "$stage" != syntax_converter ]; then
+              cp tests/execution/generics/*.dmm "build-fuzz/corpus/$stage/"
+            fi
+            "./build-fuzz/fuzz_$stage" "build-fuzz/corpus/$stage" -dict=tests/fuzz/dmm.dict -max_total_time=5 -timeout=2
+          done
 
   windows:
     runs-on: windows-latest

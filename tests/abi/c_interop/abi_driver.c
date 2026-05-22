@@ -1,6 +1,14 @@
 /* Independent GCC-generated callers check the DMM callee's ABI, rather than
  * relying solely on agreement between the DMM caller and callee. */
 #include <stdio.h>
+#include <stdint.h>
+
+/* DMM aggregate arguments are passed by address and copied by the callee.
+ * Slots are eight bytes; sums begin with a variant tag. DMM wrappers exercise
+ * generic aggregate returns internally and expose scalar results to C. */
+extern int abi_generic_cell(const uint64_t *);
+extern int abi_generic_option(const uint64_t *);
+extern int abi_generic_sum_value(const uint64_t *);
 
 extern int abi_ints(int,int,int,int,int,int,int,int);
 extern double abi_floats(double,double,double,double,double,double,double,double,double);
@@ -17,6 +25,13 @@ extern double abi_double_eight(double,double,double,double,double,double,double,
 extern double abi_double_nine(double,double,double,double,double,double,double,double,double);
 
 int main(void) {
+    uint64_t cell[1]={42};
+    uint64_t option[2]={0,42};
+    if (abi_generic_cell(cell) != 43 || cell[0] != 42) return 20;
+    if (abi_generic_option(option) != 42 || option[0] != 0 || option[1] != 42) return 21;
+    if (abi_generic_sum_value(option) != 42) return 22;
+    option[0]=1;
+    if (abi_generic_sum_value(option) != -1) return 23;
     if (abi_zero() != 42) return 10;
     if (abi_one(41) != 42) return 11;
     if (abi_six(1,2,3,4,5,6) != 21) return 12;

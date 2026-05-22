@@ -3,6 +3,7 @@
 #include "errorHandler.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 typedef struct {
@@ -10,6 +11,9 @@ typedef struct {
     size_t current;
     unsigned statement_depth;
     unsigned expression_depth;
+    unsigned type_depth;
+    int trait_signature;
+    int pending_equal;
     int failed;
     int reported;
     int recover_syntax;
@@ -87,6 +91,7 @@ static const char *token_spelling(TokenType type) {
 }
 
 static TokenType current_type(const SyntaxParser *parser) {
+    if (parser->pending_equal) return TOKEN_EQUAL;
     if (parser->current >= parser->program->token_count) return TOKEN_EOF;
     return parser->program->tokens[parser->current].type;
 }
@@ -97,11 +102,16 @@ static int check(const SyntaxParser *parser, TokenType type) {
 
 static int match(SyntaxParser *parser, TokenType type) {
     if (!check(parser, type)) return 0;
+    parser->pending_equal=0;
     parser->current++;
     return 1;
 }
 
 static size_t consume(SyntaxParser *parser, TokenType type) {
+    if (type == TOKEN_GREATER && !parser->pending_equal && check(parser,TOKEN_GREATER_EQUAL)) {
+        parser->pending_equal=1;
+        return parser->current;
+    }
     if (!check(parser, type)) {
         if (parser->recover_syntax && !parser->failed && type == TOKEN_RBRACE && check(parser, TOKEN_EOF)) {
             parser_failure(parser, ERR_PARSE_MISSING_BRACE, "Expected '}' to close block before end of file");
@@ -132,6 +142,7 @@ static size_t consume(SyntaxParser *parser, TokenType type) {
                        type == TOKEN_RPAREN ? ERR_PARSE_MISSING_PAREN : ERR_PARSE_EXPECTED_TOKEN, message);
         return AST_TOKEN_NONE;
     }
+    parser->pending_equal=0;
     return parser->current++;
 }
 
@@ -185,6 +196,10 @@ static int is_type_token(TokenType type) {
 
 static AstType parse_type(SyntaxParser *parser) {
     AstType type = inferred_type();
+    if (++parser->type_depth > AST_MAX_PARSE_DEPTH) {
+        parser_failure(parser, ERR_PARSE_INVALID_DECLARATION, "Type nesting exceeds parser limit");
+        parser->type_depth--; return type;
+    }
     size_t first = parser->current;
     unsigned leading_pointers = 0;
     while (match(parser, TOKEN_STAR)) leading_pointers++;
@@ -196,17 +211,30 @@ static AstType parse_type(SyntaxParser *parser) {
     } else {
         if (!is_type_token(current_type(parser))) {
             parser_failure(parser, ERR_PARSE_EXPECTED_TOKEN, "Unknown type: expected a type name");
-            return type;
+            parser->type_depth--; return type;
         }
         type.kind = AST_TYPE_NAMED;
         type.name_token = parser->current++;
         type.pointer_depth = leading_pointers;
+        if (match(parser, TOKEN_LESS)) {
+            AstTypeArgument **tail=&type.arguments;
+            size_t count=0;
+            do {
+                if (++count > 16) {
+                    parser_failure(parser, ERR_PARSE_INVALID_DECLARATION, "Generic types allow at most 16 arguments"); break;
+                }
+                AstTypeArgument *argument=allocate(parser,sizeof(*argument));
+                AstType value=parse_type(parser);
+                if (argument != NULL) { argument->type=value; *tail=argument; tail=&argument->next; }
+            } while (match(parser,TOKEN_COMMA));
+            (void)consume(parser,TOKEN_GREATER);
+        }
     }
     if (match(parser, TOKEN_LBRACKET)) {
         if (type.is_array || type.is_slice) {
             parser_failure(parser, ERR_PARSE_EXPECTED_TOKEN,
                            "Nested array and slice types are not supported");
-            return type;
+            parser->type_depth--; return type;
         }
         if (match(parser, TOKEN_RBRACKET)) {
             type.is_slice = 1;
@@ -216,15 +244,51 @@ static AstType parse_type(SyntaxParser *parser) {
                                "Expected array length constant");
             type.is_array = 1;
             type.array_length_token = parser->current++;
+            if (type.array_length_token < parser->program->token_count &&
+                parser->program->tokens[type.array_length_token].type == TOKEN_NUMBER)
+                type.resolved_array_length=(size_t)strtoull(
+                    ast_program_lexeme(parser->program,type.array_length_token),NULL,10);
             (void) consume(parser, TOKEN_RBRACKET);
         }
     }
     type.span = range_span(parser, first, parser->current);
-    return type;
+    if (parser->pending_equal) {
+        type.span.end=token_span(parser,parser->current).begin;
+        type.span.end.column++;
+    }
+    parser->type_depth--; return type;
 }
 
 static AstExpression *parse_expression(SyntaxParser *parser);
 static AstStatement *parse_statement(SyntaxParser *parser);
+static AstGenericParameter *parse_generic_parameters(SyntaxParser *parser) {
+    AstGenericParameter *head = NULL, **tail = &head;
+    if (!match(parser, TOKEN_LESS)) return NULL;
+    size_t count = 0;
+    do {
+        if (++count > 16) {
+            parser_failure(parser, ERR_PARSE_INVALID_DECLARATION, "Generic declarations allow at most 16 type parameters");
+            break;
+        }
+        AstGenericParameter *parameter = allocate(parser, sizeof(*parameter));
+        size_t name = consume(parser, TOKEN_IDENTIFIER);
+        if (parameter != NULL) {
+            parameter->name_token = name;
+            if (match(parser,TOKEN_COLON)) {
+                AstTraitBound **bound=&parameter->bounds;
+                do {
+                    AstTraitBound *b=allocate(parser,sizeof(*b));
+                    size_t token=consume(parser,TOKEN_IDENTIFIER);
+                    if (b != NULL) { b->name_token=token; *bound=b; bound=&b->next; }
+                } while (match(parser,TOKEN_PLUS));
+            }
+            *tail = parameter; tail = &parameter->next;
+        }
+    } while (match(parser, TOKEN_COMMA));
+    (void)consume(parser, TOKEN_GREATER);
+    return head;
+}
+
 static AstDeclarationNode *parse_function(SyntaxParser *parser, int is_static,
                                           size_t owner_token);
 
@@ -282,6 +346,22 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
         expression = new_expression(parser, AST_EXPR_ERROR, first);
         if (!check(parser, TOKEN_EOF) && !check(parser, TOKEN_RBRACE) && !check(parser, TOKEN_SEMICOLON))
             parser->current++;
+    }
+
+    if (expression != NULL && expression->kind == AST_EXPR_NAME && check(parser,TOKEN_LESS)) {
+        size_t look=parser->current; unsigned depth=0;
+        do {
+            TokenType t=parser->program->tokens[look++].type;
+            if (t == TOKEN_LESS) depth++;
+            if (t == TOKEN_GREATER) depth--;
+            if (t == TOKEN_EOF || t == TOKEN_SEMICOLON) break;
+        } while (look < parser->program->token_count && depth != 0);
+        if (depth == 0 && look < parser->program->token_count &&
+            parser->program->tokens[look].type == TOKEN_DOT) {
+            size_t saved=parser->current; parser->current=expression->value_token;
+            expression->allocated_type=parse_type(parser);
+            if (parser->current <= saved) parser->failed=1;
+        }
     }
 
     /* A postfix expression keeps its operand as a child.  Finalize the
@@ -557,6 +637,36 @@ static AstStatement *parse_statement_impl(SyntaxParser *parser) {
     if (check(parser, TOKEN_KEYWORD_VAR) || check(parser, TOKEN_KEYWORD_CONST))
         return parse_variable(parser, first, 1);
 
+    if (match(parser,TOKEN_KEYWORD_MATCH)) {
+        AstStatement *statement=new_statement(parser,AST_STMT_MATCH,first);
+        (void)consume(parser,TOKEN_LPAREN);
+        AstExpression *value=parse_expression(parser);
+        (void)consume(parser,TOKEN_RPAREN); (void)consume(parser,TOKEN_LBRACE);
+        AstMatchArm *head=NULL, **tail=&head;
+        while (!parser->failed && !check(parser,TOKEN_RBRACE) && !check(parser,TOKEN_EOF)) {
+            size_t arm_first=parser->current;
+            AstMatchArm *arm=allocate(parser,sizeof(*arm));
+            size_t variant=consume(parser,TOKEN_IDENTIFIER);
+            AstParameter *bindings=NULL, **binding_tail=&bindings;
+            if (match(parser,TOKEN_LPAREN)) {
+                if (!check(parser,TOKEN_RPAREN)) do {
+                    AstParameter *binding=allocate(parser,sizeof(*binding));
+                    size_t token=consume(parser,TOKEN_IDENTIFIER);
+                    if (binding) { binding->name_token=token; binding->type=inferred_type();
+                        binding->resolved_symbol_id=AST_SYMBOL_NONE; *binding_tail=binding; binding_tail=&binding->next; }
+                } while (match(parser,TOKEN_COMMA));
+                (void)consume(parser,TOKEN_RPAREN);
+            }
+            (void)consume(parser,TOKEN_FAT_ARROW);
+            AstStatement *body=parse_statement(parser);
+            if (arm) { arm->variant_token=variant; arm->wildcard=!strcmp(ast_program_lexeme(parser->program,variant),"_");
+                arm->bindings=bindings; arm->body=body; arm->span=range_span(parser,arm_first,parser->current);
+                arm->resolved_variant_symbol=AST_SYMBOL_NONE; *tail=arm; tail=&arm->next; }
+        }
+        (void)consume(parser,TOKEN_RBRACE);
+        if (statement) { statement->value=value; statement->match_arms=head; }
+        finish_statement(parser,statement); return statement;
+    }
     if (match(parser, TOKEN_KEYWORD_IF)) {
         AstStatement *statement = new_statement(parser, AST_STMT_IF, first);
         (void) consume(parser, TOKEN_LPAREN);
@@ -682,6 +792,8 @@ static AstDeclarationNode *parse_function(SyntaxParser *parser, int is_static,
     (void) consume(parser, TOKEN_KEYWORD_FUNC);
     AstDeclarationNode *declaration = new_declaration(parser, AST_DECL_FUNCTION, first);
     size_t name = consume_callable_name(parser);
+    AstGenericParameter *generics = parse_generic_parameters(parser);
+    if (declaration != NULL) declaration->generic_parameters = generics;
     (void) consume(parser, TOKEN_LPAREN);
     AstParameter *parameters = NULL;
     AstParameter **tail = &parameters;
@@ -695,7 +807,12 @@ static AstDeclarationNode *parse_function(SyntaxParser *parser, int is_static,
     (void) consume(parser, TOKEN_RPAREN);
     (void) consume(parser, TOKEN_ARROW);
     AstType return_type = parse_type(parser);
-    AstStatement *body = parse_block(parser);
+    AstStatement *body;
+    if (parser->trait_signature) {
+        body=new_statement(parser,AST_STMT_BLOCK,parser->current);
+        (void)consume(parser,TOKEN_SEMICOLON);
+        finish_statement(parser,body);
+    } else body = parse_block(parser);
     if (declaration != NULL) {
         declaration->name_token = name;
         declaration->as.function.parameters = parameters;
@@ -730,6 +847,8 @@ static AstDeclarationNode *parse_struct(SyntaxParser *parser) {
     (void) consume(parser, TOKEN_KEYWORD_STRUCT);
     AstDeclarationNode *declaration = new_declaration(parser, AST_DECL_STRUCT, first);
     size_t name = consume(parser, TOKEN_IDENTIFIER);
+    AstGenericParameter *generics=parse_generic_parameters(parser);
+    if (declaration != NULL) declaration->generic_parameters=generics;
     (void) consume(parser, TOKEN_LBRACE);
     AstField *fields = NULL;
     AstField **field_tail = &fields;
@@ -764,6 +883,8 @@ static AstDeclarationNode *parse_enum(SyntaxParser *parser) {
     (void) consume(parser, TOKEN_KEYWORD_ENUM);
     AstDeclarationNode *declaration = new_declaration(parser, AST_DECL_ENUM, first);
     size_t name = consume(parser, TOKEN_IDENTIFIER);
+    AstGenericParameter *generics=parse_generic_parameters(parser);
+    if (declaration) declaration->generic_parameters=generics;
     AstField *fields = NULL;
     AstField **field_tail = &fields;
     if (match(parser, TOKEN_LPAREN)) {
@@ -793,14 +914,22 @@ static AstDeclarationNode *parse_enum(SyntaxParser *parser) {
         size_t value_first = parser->current;
         AstEnumValue *value = allocate(parser, sizeof(*value));
         size_t value_name = consume(parser, TOKEN_IDENTIFIER);
+        AstTypeArgument *payload=NULL, **payload_tail=&payload;
         AstExpression *arguments = NULL;
         AstExpression **argument_tail = &arguments;
         if (match(parser, TOKEN_LPAREN)) {
             if (!check(parser, TOKEN_RPAREN)) {
                 do {
-                    AstExpression *argument = parse_expression(parser);
-                    *argument_tail = argument;
-                    if (argument != NULL) argument_tail = &argument->next;
+                    if (fields == NULL) {
+                        AstTypeArgument *argument=allocate(parser,sizeof(*argument));
+                        AstType t=parse_type(parser);
+                        if (argument) { argument->type=t; *payload_tail=argument; payload_tail=&argument->next; }
+                        if (declaration) declaration->as.enum_decl.is_sum=1;
+                    } else {
+                        AstExpression *argument = parse_expression(parser);
+                        *argument_tail = argument;
+                        if (argument != NULL) argument_tail = &argument->next;
+                    }
                 } while (match(parser, TOKEN_COMMA));
             }
             (void) consume(parser, TOKEN_RPAREN);
@@ -808,6 +937,7 @@ static AstDeclarationNode *parse_enum(SyntaxParser *parser) {
         if (value != NULL) {
             value->name_token = value_name;
             value->arguments = arguments;
+            value->payload_types=payload;
             value->resolved_symbol_id = AST_SYMBOL_NONE;
             value->span = range_span(parser, value_first, parser->current);
             *value_tail = value;
@@ -868,6 +998,29 @@ static AstDeclarationNode *parse_import(SyntaxParser *parser) {
     return declaration;
 }
 
+static AstDeclarationNode *parse_trait(SyntaxParser *parser,int implementation) {
+    size_t first=parser->current++;
+    AstDeclarationNode *d=new_declaration(parser,implementation ? AST_DECL_IMPL : AST_DECL_TRAIT,first);
+    size_t trait=consume(parser,TOKEN_IDENTIFIER);
+    AstType for_type=inferred_type();
+    if (implementation) { (void)consume(parser,TOKEN_KEYWORD_FOR); for_type=parse_type(parser); }
+    (void)consume(parser,TOKEN_LBRACE);
+    AstDeclarationNode *head=NULL, **tail=&head;
+    int saved=parser->trait_signature; parser->trait_signature=!implementation;
+    while (!parser->failed && !check(parser,TOKEN_RBRACE) && !check(parser,TOKEN_EOF)) {
+        AstDeclarationNode *method=parse_function(parser,0,implementation ? for_type.name_token : trait);
+        *tail=method; if (method) tail=&method->next;
+    }
+    parser->trait_signature=saved;
+    (void)consume(parser,TOKEN_RBRACE);
+    if (d) {
+        d->name_token=trait;
+        if (implementation) { d->as.impl_decl.trait_token=trait; d->as.impl_decl.for_type=for_type; d->as.impl_decl.methods=head; }
+        else d->as.trait_decl.methods=head;
+    }
+    finish_declaration(parser,d); return d;
+}
+
 static AstDeclarationNode *parse_constant(SyntaxParser *parser) {
     size_t first = parser->current;
     (void) consume(parser, TOKEN_KEYWORD_CONST);
@@ -902,6 +1055,8 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
             declaration = parse_function(&parser, 0, AST_TOKEN_NONE);
         else if (check(&parser, TOKEN_KEYWORD_STRUCT)) declaration = parse_struct(&parser);
         else if (check(&parser, TOKEN_KEYWORD_ENUM)) declaration = parse_enum(&parser);
+        else if (check(&parser,TOKEN_KEYWORD_TRAIT)) declaration=parse_trait(&parser,0);
+        else if (check(&parser,TOKEN_KEYWORD_IMPL)) declaration=parse_trait(&parser,1);
         else if (check(&parser, TOKEN_HASH))
             parser_failure(&parser, ERR_PARSE_INVALID_DECLARATION,
                            "#import was removed; use import path");

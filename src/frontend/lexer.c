@@ -136,6 +136,9 @@ int is_at_end(const TokenStream *stream) {
 
 static TokenType get_keyword_type(const char *str) {
      
+    if (strcmp(str, "trait") == 0) return TOKEN_KEYWORD_TRAIT;
+    if (strcmp(str, "impl") == 0) return TOKEN_KEYWORD_IMPL;
+    if (strcmp(str, "match") == 0) return TOKEN_KEYWORD_MATCH;
     if (strcmp(str, "func") == 0) return TOKEN_KEYWORD_FUNC;
     if (strcmp(str, "var") == 0) return TOKEN_KEYWORD_VAR;
     if (strcmp(str, "return") == 0) return TOKEN_KEYWORD_RETURN;
@@ -518,6 +521,10 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
             continue;
         }
 
+        if (i + 1 < length && source[i] == '=' && source[i+1] == '>') {
+            add_token(stream,TOKEN_FAT_ARROW,"=>",line,column);
+            i+=2; column+=2; continue;
+        }
         if (i + 1 < length) {
             char next = source[i + 1];
             TokenType type = TOKEN_ERROR;

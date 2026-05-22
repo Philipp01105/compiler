@@ -14,7 +14,7 @@ typedef struct {
 typedef struct { size_t block, next; } Edge;
 
 static int terminator(IrOpcode opcode) {
-    return opcode == IR_OP_BRANCH || opcode == IR_OP_JUMP || opcode == IR_OP_RETURN;
+    return opcode == IR_OP_BRANCH || opcode == IR_OP_JUMP || opcode == IR_OP_TRAP || opcode == IR_OP_RETURN;
 }
 
 static int available(size_t value, size_t use_block, size_t use_index,
@@ -76,7 +76,7 @@ int ir_verify_control_flow(const IrFunction *function, int implicit_void_return)
         const IrInstruction *last = &function->instructions[blocks[b].end - 1];
         if (last->opcode == IR_OP_BRANCH || last->opcode == IR_OP_JUMP)
             blocks[b].successor[0] = labels[last->target_a];
-        else if (last->opcode != IR_OP_RETURN && b + 1 < count)
+        else if (last->opcode != IR_OP_RETURN && last->opcode != IR_OP_TRAP && b + 1 < count)
             blocks[b].successor[0] = b + 1;
         if (last->opcode == IR_OP_BRANCH && last->target_b != last->target_a)
             blocks[b].successor[1] = labels[last->target_b];
@@ -143,7 +143,7 @@ int ir_verify_control_flow(const IrFunction *function, int implicit_void_return)
         } else {
             if (instruction->operand_a != IR_VALUE_NONE) AVAILABLE(instruction->operand_a);
             if (instruction->operand_b != IR_VALUE_NONE) AVAILABLE(instruction->operand_b);
-            if (instruction->opcode == IR_OP_CALL)
+            if (instruction->opcode == IR_OP_CALL || instruction->opcode == IR_OP_ENUM_CONSTRUCT)
                 for (size_t a = 0; a < instruction->argument_count; a++)
                     AVAILABLE(function->arguments[instruction->first_argument + a]);
         }

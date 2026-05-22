@@ -1,0 +1,19 @@
+import <stdlib>
+struct Pair<A,B> { var first:A; var second:B; }
+func copy(value:Result<Pair<int,string>,int>) -> Result<Pair<int,string>,int> { return value; }
+func main() -> void {
+    var value:Option<int> = Option<int>.Some(42);
+    println(unwrapOr(value,7));
+    value=Option<int>.None;
+    println(unwrapOr(value,7));
+    var p:Pair<int,string>; p.first=9; p.second="payload";
+    var result:Result<Pair<int,string>,int> = Result<Pair<int,string>,int>.Ok(p);
+    var other:Result<Pair<int,string>,int> = copy(result);
+    p.first=20;
+    match (other) {
+        Ok(pair) => { println(pair.first); println(pair.second); }
+        Err(code) => println(code);
+    }
+    other=Result<Pair<int,string>,int>.Err(3);
+    match (other) { Ok(pair) => println(pair.first); _ => println(100); }
+}

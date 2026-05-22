@@ -112,9 +112,15 @@ they do not imply an implemented diagnostic or warning.
 - Plugin `check` is run with the rebuilt compiler to verify JSON consumption and
   type hover, including syntax recovery.
 
-Allocation failures, actual disk exhaustion and every internal IR/emitter failure
-were reviewed statically, but were not induced through fault injection. An internal
-backend failure still lacks an exact failing IR instruction/source span. Some `T102`
-messages explain operand requirements without printing the complete operand types.
+`resource_fault_unit` deterministically fails every nonzero allocation in a generic
+frontend/semantic/IR pipeline and native ELF/COFF emission, and every wrapped file
+open/write/close operation. Failed output writes remove partial artifacts. Zero-byte
+allocations are excluded because a NULL result is permitted. The sweep runs under
+ASan/UBSan and covers cleanup after partially initialized enum metadata.
+Internal IR/emitter diagnostics include the function, instruction, operands, type
+and source span. Native filesystem failures retain the failing path, operation and
+system error. Operator diagnostics print supplied concrete types and complete shapes.
+Injected I/O failures model permission denial, disk exhaustion and close failure;
+they do not simulate every filesystem or operating-system failure.
 Machine/source columns count Unicode code points; terminal alignment of wide glyphs
 depends on the terminal/font. This audit is not proof for every possible input.

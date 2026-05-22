@@ -154,8 +154,11 @@ static int type_is_structure(const IrModule *module, IrTypeId type_id) {
     if (type_id >= module->type_count || module->types[type_id].kind != IR_TYPE_NAMED)
         return 0;
     size_t symbol_id = module->types[type_id].symbol_id;
-    return symbol_id < module->semantics->symbol_count &&
-           module->semantics->symbols[symbol_id].kind == SEMANTIC_SYMBOL_STRUCT;
+    if (symbol_id < module->semantics->symbol_count &&
+        module->semantics->symbols[symbol_id].kind == SEMANTIC_SYMBOL_STRUCT) return 1;
+    for (size_t e=0; e<module->enum_count; e++)
+        if (module->enums[e].symbol_id == symbol_id) return module->enums[e].is_sum;
+    return 0;
 }
 
 static int is_inline_structure(const IrModule *module,
@@ -319,6 +322,12 @@ static int function_is_overloaded(const IrModule *module, const IrFunction *func
 
 static const char *function_link_name(const IrModule *module, const IrFunction *function,
                                       char *buffer, size_t buffer_size) {
+    if (function->symbol_id < module->semantics->symbol_count) {
+        const AstDeclarationNode *declaration=module->semantics->symbols[function->symbol_id].declaration;
+        if (declaration != NULL && declaration->specialization_identity != NULL)
+            return declaration->specialization_identity;
+    }
+
     const char *name = ast_program_lexeme(function->source_program, function->name_token);
     if (strcmp(name, "main") == 0) return name;
     if (function->owner_symbol_id == AST_SYMBOL_NONE &&
@@ -406,7 +415,19 @@ static size_t type_slots_depth(const IrModule *module, IrTypeId type_id, size_t 
         return slots == 0 ? 1 : slots;
     }
     for (size_t e = 0; e < module->enum_count; e++) {
-        if (module->enums[e].symbol_id == type->symbol_id) return 1;
+        if (module->enums[e].symbol_id == type->symbol_id) {
+            size_t largest=0;
+            for (size_t v=0; v<module->enums[e].variant_count; v++) {
+                size_t payload=0; const IrEnumVariant *variant=&module->enums[e].variants[v];
+                for (size_t p=0; p<variant->payload_count; p++) {
+                    size_t slots=type_slots_depth(module,variant->payload_types[p],depth+1);
+                    if (!slots || slots > SIZE_MAX-payload) return 0;
+                    payload+=slots;
+                }
+                if (payload > largest) largest=payload;
+            }
+            return largest == SIZE_MAX ? 0 : largest+1;
+        }
     }
     return 1;
 }
@@ -1038,7 +1059,7 @@ static size_t aggregate_result_offset(const Emitter *emitter,
     size_t slots_before = 0;
     for (size_t i = 0; i < emitter->function->instruction_count; i++) {
         const IrInstruction *candidate = &emitter->function->instructions[i];
-        if (candidate->opcode != IR_OP_CALL || !is_inline_structure(emitter->module,
+        if ((candidate->opcode != IR_OP_CALL && candidate->opcode != IR_OP_ENUM_CONSTRUCT) || !is_inline_structure(emitter->module,
                                                                     candidate))
             continue;
         size_t slots = type_slots(emitter->module, candidate->type_id);
@@ -1055,7 +1076,7 @@ static size_t aggregate_result_slots(const Emitter *emitter) {
     size_t result = 0;
     for (size_t i = 0; i < emitter->function->instruction_count; i++) {
         const IrInstruction *instruction = &emitter->function->instructions[i];
-        if (instruction->opcode == IR_OP_CALL &&
+        if ((instruction->opcode == IR_OP_CALL || instruction->opcode == IR_OP_ENUM_CONSTRUCT) &&
             is_inline_structure(emitter->module, instruction))
             result += type_slots(emitter->module, instruction->type_id);
     }
@@ -1567,6 +1588,62 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                             size_t index) {
     const IrFunction *function = emitter->function;
     switch (instruction->opcode) {
+        case IR_OP_ENUM_CONSTRUCT:
+        case IR_OP_ENUM_IS:
+        case IR_OP_ENUM_PAYLOAD: {
+            const IrEnum *enumeration=NULL; const IrEnumVariant *variant=NULL; size_t tag=0;
+            for (size_t e=0; e<emitter->module->enum_count; e++)
+                for (size_t v=0; v<emitter->module->enums[e].variant_count; v++)
+                    if (emitter->module->enums[e].variants[v].symbol_id == instruction->symbol_id) {
+                        enumeration=&emitter->module->enums[e]; variant=&enumeration->variants[v]; tag=v;
+                    }
+            if (!enumeration || !variant) return 0;
+            if (instruction->opcode == IR_OP_ENUM_IS) {
+                write_value_load(emitter,"rax",instruction->operand_a);
+                if (enumeration->is_sum)
+                    write_x64_2(emitter,X64_OP_MOV,X64_WIDTH_QWORD,x64_register("rax"),x64_memory(X64_WIDTH_QWORD,"rax",0));
+                write_x64_2(emitter,X64_OP_CMP,X64_WIDTH_QWORD,x64_register("rax"),x64_immediate((long long)tag));
+                write_x64_1(emitter,X64_OP_SETE,X64_WIDTH_BYTE,x64_register("al"));
+                write_x64_2(emitter,X64_OP_MOVZX,X64_WIDTH_QWORD,
+                    x64_sized_register(X64_WIDTH_QWORD,"rax"),x64_sized_register(X64_WIDTH_BYTE,"al"));
+            } else if (instruction->opcode == IR_OP_ENUM_PAYLOAD) {
+                size_t slot=1;
+                for (size_t p=0; p<instruction->enum_payload_index; p++) slot+=type_slots(emitter->module,variant->payload_types[p]);
+                write_value_load(emitter,"rax",instruction->operand_a);
+                if (type_is_structure(emitter->module,instruction->type_id) || instruction->is_array)
+                    write_x64_2(emitter,X64_OP_LEA,X64_WIDTH_QWORD,x64_register("rax"),x64_memory(X64_WIDTH_NONE,"rax",(long long)(slot*8)));
+                else write_x64_2(emitter,X64_OP_MOV,X64_WIDTH_QWORD,x64_register("rax"),x64_memory(X64_WIDTH_QWORD,"rax",(long long)(slot*8)));
+            } else if (!enumeration->is_sum) write_immediate(emitter,"rax",(long long)tag);
+            else {
+                size_t offset=aggregate_result_offset(emitter,instruction);
+                size_t slots=type_slots(emitter->module,instruction->type_id);
+                if (!offset || !slots) return 0;
+                write_immediate(emitter,"rax",0);
+                for (size_t p=0; p<slots; p++)
+                    write_x64_2(emitter,X64_OP_MOV,X64_WIDTH_QWORD,x64_memory(X64_WIDTH_QWORD,"rbp",-(long long)offset+(long long)(p*8)),x64_register("rax"));
+                write_immediate(emitter,"rax",(long long)tag);
+                write_x64_2(emitter,X64_OP_MOV,X64_WIDTH_QWORD,x64_memory(X64_WIDTH_QWORD,"rbp",-(long long)offset),x64_register("rax"));
+                size_t slot=1;
+                for (size_t p=0; p<variant->payload_count; p++) {
+                    size_t argument=function->arguments[instruction->first_argument+p];
+                    const IrInstruction *value=producer(function,argument);
+                    IrTypeId type=variant->payload_types[p];
+                    write_value_load(emitter,"rax",argument);
+                    write_x64_2(emitter,X64_OP_LEA,X64_WIDTH_QWORD,x64_register("rbx"),x64_memory(X64_WIDTH_NONE,"rbp",-(long long)offset+(long long)(slot*8)));
+                    if (type_is_structure(emitter->module,type) || emitter->module->types[type].kind == IR_TYPE_ARRAY)
+                        copy_aggregate(emitter,type_slots(emitter->module,type),"rax","rbx");
+                    else {
+                        convert_rax(emitter,value->type,emitter->module->types[type].kind == IR_TYPE_PRIMITIVE ? emitter->module->types[type].primitive : TYPE_UNKNOWN);
+                        write_x64_2(emitter,X64_OP_MOV,X64_WIDTH_QWORD,x64_memory(X64_WIDTH_QWORD,"rbx",0),x64_register("rax"));
+                    }
+                    slot+=type_slots(emitter->module,type);
+                }
+                write_x64_2(emitter,X64_OP_LEA,X64_WIDTH_QWORD,x64_register("rax"),x64_memory(X64_WIDTH_NONE,"rbp",-(long long)offset));
+            }
+            write_value_store(emitter,"rax",instruction->result); return 1;
+        }
+        case IR_OP_TRAP: write_x64_0(emitter,X64_OP_UD2); return 1;
+
         case IR_OP_CONSTANT:
             if (instruction->type == TYPE_STRING) {
                 char string_label[64];
@@ -1628,7 +1705,7 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             if (instruction->is_array || is_inline_structure(emitter->module, instruction)) {
                 size_t slots = declaration_slots(emitter, instruction);
                 if (instruction->operand_a != IR_VALUE_NONE &&
-                    is_inline_structure(emitter->module, instruction)) {
+                    (instruction->is_array || is_inline_structure(emitter->module, instruction))) {
                     write_value_load(emitter, "rax", instruction->operand_a);
                     write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD,
                                 x64_register("rbx"),
@@ -2001,7 +2078,13 @@ static int emit_function(Emitter *emitter) {
             emitter->source_map->current_span = emitter->function->instructions[i].span;
             emitter->source_map->has_source = emitter->function->instructions[i].span.begin.line > 0;
         }
-        if (!emit_instruction(emitter, &emitter->function->instructions[i], i)) return 0;
+        if (!emit_instruction(emitter, &emitter->function->instructions[i], i) ||
+            (emitter->native != NULL && emitter->native->failed)) {
+            ir_report_failure(emitter->function, i, "x86-64 lowering",
+                emitter->native != NULL && emitter->native->failed
+                    ? emitter->native->error : "unsupported instruction or operand");
+            return 0;
+        }
     }
     if (emitter->source_map != NULL) emitter->source_map->has_source = 0;
     write_immediate(emitter, "rax", 0);
@@ -2137,7 +2220,7 @@ static int emit_file(Emitter *emitter, int deterministic) {
                 size_t slots = type_slots(emitter->module, function->instructions[i].type_id);
                 if (slots == 0 || declarations > SIZE_MAX - slots) return 0;
                 declarations += slots;
-            } else if (function->instructions[i].opcode == IR_OP_CALL &&
+            } else if ((function->instructions[i].opcode == IR_OP_CALL || function->instructions[i].opcode == IR_OP_ENUM_CONSTRUCT) &&
                        is_inline_structure(emitter->module,
                                            &function->instructions[i])) {
                 size_t slots = type_slots(emitter->module,

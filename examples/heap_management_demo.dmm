@@ -66,10 +66,10 @@ func example3_multiple() -> void {
 func example4_lifetime() -> void {
     println("=== Example 4: Explicit Allocation Lifetime ===");
     
-    var gcPtr:*int = reserve(int);
+    var pointer:*int = reserve(int);
     
     println("Pointer allocated");
-    free(gcPtr);
+    free(pointer);
     println("Pointer explicitly freed");
     
     println("");
@@ -96,13 +96,13 @@ func example6_mixed() -> void {
     println("Manual pointer allocated");
     
     // A second independent allocation
-    var automatic:*int = reserve(int);
+    var second:*int = reserve(int);
     println("Second pointer allocated");
     
     // Release both original allocation pointers
     free(manual);
     println("Manual pointer freed");
-    free(automatic);
+    free(second);
     println("Second pointer freed");
     println("");
 }
