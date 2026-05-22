@@ -10,6 +10,7 @@
 #include <errno.h>
 #include "frontend.h"
 #include "ir.h"
+#include "ir_optimize.h"
 #include "semantic.h"
 #include "backend.h"
 #include "errorHandler.h"
@@ -35,6 +36,7 @@ void print_usage(const char *program_name) {
     printf("  --emit=MODE    Output exe (default), obj, or asm; executable linking is internal\n");
     printf("  -c             Emit a native object file (same as --emit=obj)\n");
     printf("  -S             Emit assembly (same as --emit=asm)\n");
+    printf("  -O0 / -O1      Disable / enable IR optimization (default: -O1)\n");
     printf("  --syntax=MODE  Assembly printing syntax: att or intel (default: intel)\n");
     printf("  --target=FMT   Target format: elf or coff (default: auto-detect)\n");
     printf("  --dump-ast FILE Write the stable dmm-ast-v2 dump to FILE\n");
@@ -133,6 +135,8 @@ static int write_ir_dump(FILE *output, const void *value) {
 int main(int argc, char *argv[]) {
     BackendEmission emission = BACKEND_EXECUTABLE;
     int emission_requested = 0;
+    int optimize_ir = 1;
+    int optimization_requested = 0;
     int show_tokens = 0;
     int debug_mode = 0;
     int format_error = 0;
@@ -204,6 +208,9 @@ int main(int argc, char *argv[]) {
             if (strcmp(option, "--dump-ast") == 0) ast_dump_path = argv[i];
             else if (strcmp(option, "--dump-ir") == 0) ir_dump_path = argv[i];
             else source_map_path = argv[i];
+        } else if (!strcmp(argv[i], "-O0") || !strcmp(argv[i], "-O1")) {
+            optimize_ir = !strcmp(argv[i], "-O1");
+            optimization_requested = 1;
         } else if (!strcmp(argv[i], "-c") || !strcmp(argv[i], "-S")) {
             emission = !strcmp(argv[i], "-c") ? BACKEND_OBJECT : BACKEND_ASSEMBLY;
             emission_requested = 1;
@@ -304,7 +311,7 @@ int main(int argc, char *argv[]) {
     }
 
     if ((ide_buffer != NULL && !ide_mode) || (ide_mode && (ast_dump_path == NULL || requested_output != NULL || ir_dump_path != NULL ||
-                    source_map_path != NULL || debug_mode || show_tokens || (emission_requested && emission != BACKEND_ASSEMBLY) ||
+                    source_map_path != NULL || debug_mode || show_tokens || optimization_requested || (emission_requested && emission != BACKEND_ASSEMBLY) ||
                     output_conflicts_with_source(source_file, ast_dump_path) ||
                     (ide_buffer != NULL && output_conflicts_with_source(ide_buffer, ast_dump_path))))) {
         error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
@@ -522,6 +529,25 @@ int main(int argc, char *argv[]) {
             return 1;
         }
         const char *failed_dump = NULL;
+        IrOptimizationStats optimization_stats = {0};
+        if (optimize_ir && !ir_optimize_module(module, &optimization_stats)) {
+            error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
+                         ERR_COMP_INTERNAL_FAILURE, source_file, "IR optimization or verification failed");
+            error_handler_flush(error_handler);
+            free(generated_output);
+            ir_module_free(module);
+            semantic_model_free(semantics);
+            ast_program_free(program);
+            error_handler_free(error_handler);
+            return 1;
+        }
+        if (debug_mode && optimize_ir) {
+            printf("  [+] IR optimization: %zu folds, %zu constants, %zu copies, %zu dead values, %zu dead stores, %zu branches, %zu blocks, %zu addresses\n",
+                   optimization_stats.constants_folded, optimization_stats.constants_propagated,
+                   optimization_stats.copies_propagated, optimization_stats.dead_instructions,
+                   optimization_stats.dead_stores, optimization_stats.branches_folded,
+                   optimization_stats.blocks_removed, optimization_stats.addresses_simplified);
+        }
         if (ast_dump_path != NULL && !dump_file(ast_dump_path, write_ast_dump, program)) failed_dump = ast_dump_path;
         else if (ir_dump_path != NULL && !dump_file(ir_dump_path, write_ir_dump, module)) failed_dump = ir_dump_path;
         if (failed_dump != NULL) {
@@ -559,10 +585,6 @@ int main(int argc, char *argv[]) {
         printf("#            [SUCCESS] COMPILATION COMPLETED!                 #\n");
         printf("#                                                              #\n");
         printf("################################################################\n");
-        printf("\n");
-        printf("Next steps:\n");
-        printf("  [1] Assemble: gcc -no-pie %s -o program\n", output_filename);
-        printf("  [2] Execute:  ./program\n");
         printf("\n");
     }
 

@@ -1,4 +1,4 @@
-# Compiler roadmap
+Compiler roadmap
 
 The P0 frontend and typed-IR migration is complete. The production pipeline is:
 
@@ -51,11 +51,314 @@ parser/type-checker/emitter have been removed from the build and source tree.
 | P1 (implemented) | Standalone generated programs | Every output embeds the own machine-code runtime. Static ELF uses Linux syscalls; PE imports only kernel32. Windows 26/26 and strict GCC pass; Linux/sanitizer CI validation remains. |
 | P2 (complete) | Runtime library split               | Runtime generation lives outside the emitter; IR retains typed calls. The standalone runtime supersedes the initial installed C archive. |
 | P2 (implemented) | Direct object emission and internal linking | Direct x86-64 encoding, ELF/COFF objects and ELF/PE executable images are implemented; Windows execution and cross-format binary checks pass. Linux execution awaits CI. |
-| P3       | New language features                   | Add globals, richer arrays, interfaces, and generics after the middle-end remains stable. |
+| P3       | New language features                   | Add globals, richer arrays, generics, traits, and richer enums/sum types after the middle-end remains stable. |
 | P3       | Selfhosting | Broaden the language until its lexer, parser, semantic analysis, IR and backend can be implemented in DMM; keep the C compiler as bootstrap until staged builds agree. |
 
 - [x] Executables are the default CLI output; `-c` selects objects and `-S`
   selects assembly. Help, examples and assembly-specific tests use explicit modes.
+
+## P3 language foundation: generics, traits, and sum types
+
+P3 should extend DMM without weakening its current static, nominal type model. The
+preferred foundation is compile-time generics, explicit traits, and tagged sum
+types. A universal dynamically typed `any` value is not required for these
+features and should not be introduced as their implementation mechanism.
+
+The design goals are:
+
+- preserve static type checking and deterministic overload resolution;
+- keep ordinary concrete values unboxed and preserve the current native ABI when
+  no abstraction requires otherwise;
+- make generic code reusable without adding an implicit garbage collector or
+  hidden ownership model;
+- allow user-defined types to participate in common operations through explicit
+  trait implementations;
+- evolve the existing enum feature into safe tagged unions with payloads and
+  exhaustive pattern matching;
+- keep all generic, trait, and sum-type information explicit in the AST, semantic
+  model, typed IR, diagnostics, dumps, and mangling rules.
+
+### Generics
+
+Generics are compile-time type parameters on functions and named aggregate types.
+The initial model should use monomorphization: every concrete generic instantiation
+produces an ordinary typed function or aggregate before backend lowering. This
+keeps the verified IR concrete and avoids a mandatory boxed runtime representation.
+
+Target syntax:
+
+```dmm
+func identity<T>(value:T) -> T {
+    return value;
+}
+
+func first<T>(values:T[]) -> T {
+    return values[0];
+}
+
+struct Pair<A, B> {
+    var first:A;
+    var second:B;
+}
+```
+
+Generic type parameters are nominal compile-time symbols and may appear anywhere a
+normal type is accepted, subject to the same sized/unsized restrictions as other
+types. A generic declaration is checked once structurally, then each concrete
+instantiation is checked again after substitution for operations that depend on
+capabilities or layout.
+
+Initial generic rules:
+
+- Type arguments are inferred from call arguments when there is exactly one valid
+  substitution; explicit type arguments may be added later if inference is not
+  sufficient.
+- Generic parameters are invariant. `Container<Derived>` is not implicitly
+  convertible to `Container<Base>`.
+- Pointer depth, array length, slice element type, and nominal aggregate identity
+  remain part of the instantiated type.
+- Generic functions participate in overload resolution only after a valid type
+  substitution has been found. A concrete non-generic exact match should win over
+  an otherwise-equivalent generic candidate.
+- Return type alone never determines generic inference, matching the existing rule
+  that return type does not distinguish overloads.
+- `void` is not a valid type argument where a sized value is required.
+- Recursive instantiation must be cycle-checked and the compiler must impose a
+  deterministic instantiation-depth/total-instantiation limit.
+
+Example:
+
+```dmm
+func max<T: Ordered>(a:T, b:T) -> T {
+    if (a < b) { return b; }
+    return a;
+}
+```
+
+The `T: Ordered` form is a trait bound. Unconstrained generic code must not assume
+operators, methods, formatting, copying behavior beyond what is valid for every
+possible substituted type.
+
+### Traits
+
+Traits define compile-time capabilities that named types may implement. They are
+not classes and do not introduce inheritance. The first implementation should use
+static dispatch for generic trait bounds; runtime trait objects can be considered
+later as a separate feature.
+
+Target syntax:
+
+```dmm
+trait Printable {
+    func toString() -> string;
+}
+
+trait Equal {
+    func equals(other:*Self) -> bit;
+}
+
+impl Printable for Person {
+    func toString() -> string {
+        return name;
+    }
+}
+```
+
+`Self` refers to the implementing nominal type. An `impl` is valid only when all
+required members are present with exactly compatible signatures. Duplicate or
+conflicting implementations are compile errors.
+
+Initial trait rules:
+
+- Trait satisfaction is explicit; structural method-name matching alone does not
+  implement a trait.
+- A type may implement multiple traits.
+- A trait may be used as a generic bound, for example `T: Printable`.
+- Multiple bounds should use a deterministic syntax such as
+  `T: Printable + Equal`.
+- Trait methods used through a generic bound are resolved during semantic analysis
+  and monomorphized to ordinary concrete calls.
+- Trait implementations follow module visibility and nominal type identity. Two
+  same-named structs from different modules are distinct implementers.
+- The first trait revision should not include trait inheritance, default method
+  bodies, associated types, higher-kinded types, or runtime `dyn Trait` values.
+  These can be added independently after the core model is stable.
+
+Traits provide the long-term replacement for using an unrestricted `any` type for
+operations such as printing. The standard library can retain primitive overloads
+while also exposing generic helpers constrained by `Printable` when user-defined
+implementations become available.
+
+For example:
+
+```dmm
+func printValue<T: Printable>(value:T) -> void {
+    print(value.toString());
+}
+```
+
+This keeps unsupported values as compile-time errors rather than deferring type
+checks to runtime.
+
+### Enums as tagged sum types
+
+DMM already has first-class enums with named variants and constant scalar payload
+fields. P3 should evolve this into general tagged sum types where each variant may
+carry its own typed payload. The runtime representation is a discriminant/tag plus
+storage large and aligned enough for the largest variant payload.
+
+Target syntax:
+
+```dmm
+enum Result<T, E> {
+    Ok(T),
+    Err(E),
+}
+
+enum Option<T> {
+    Some(T),
+    None,
+}
+
+enum Token {
+    Integer(int),
+    Identifier(string),
+    End,
+}
+```
+
+Unlike the current enum field model, payload shape belongs to the individual
+variant. Values therefore require checked destructuring before variant payloads
+may be read.
+
+Pattern matching should be introduced together with payload-bearing variants:
+
+```dmm
+func unwrapOr<T>(value:Option<T>, fallback:T) -> T {
+    match (value) {
+        Some(v) => return v;
+        None => return fallback;
+    }
+}
+```
+
+Initial sum-type rules:
+
+- Every enum value stores exactly one active variant.
+- Access to variant payloads is legal only after a successful pattern match or an
+  equivalent compiler-proven tag check.
+- `match` on an enum must be exhaustive unless an explicit wildcard arm is present.
+- Duplicate or unreachable variant arms are diagnostics.
+- Generic enum payloads are substituted before layout is computed.
+- Equality is not implicit for every enum. It is available only when the language
+  defines it for all payloads or when a suitable trait bound/implementation exists.
+- By-value enum parameters, assignments, and returns keep the current aggregate
+  semantics; large-value ABI lowering may use the same target-specific aggregate
+  rules already used for structs.
+- Payload ownership remains explicit. A variant containing a pointer or owned
+  string does not gain automatic destruction merely because it is stored in an
+  enum.
+
+This form supports common safe APIs without introducing null or untyped dynamic
+values:
+
+```dmm
+func find(values:int[], needle:int) -> Option<int>;
+func parseInt(text:string) -> Result<int, ParseError>;
+```
+
+### Interaction with overloads and `print`
+
+Existing overloads remain useful and are not replaced by generics or traits.
+Overloads select between different concrete APIs; generics reuse one implementation
+for multiple types; traits constrain which types a generic implementation may use.
+
+The intended progression for output is therefore:
+
+```text
+P1/P2: print(int), print(float), print(string), ...
+              |
+              v
+P3:     generic helpers constrained by Printable
+              |
+              v
+later:  optional formatting traits / formatter objects
+```
+
+The language should not define `print(value:any)` as the primary abstraction.
+Doing so would require runtime type metadata, boxing/tagging rules, dynamic failure
+semantics, and ownership rules that are otherwise unnecessary for DMM's static
+model.
+
+### Semantic and IR model
+
+The frontend and middle-end should represent these features explicitly rather than
+hiding them in parser sugar.
+
+- AST: add generic parameter lists, trait declarations, implementation blocks,
+  generic type arguments, variant-specific enum payload declarations, `match`,
+  patterns, and bound syntax.
+- Semantic analysis: add type-variable symbols, substitution/unification,
+  instantiation caches, trait tables, coherence/conflict checks, bound checking,
+  exhaustiveness analysis, and variant-flow refinement.
+- Typed IR: lower only fully instantiated concrete types and functions in the
+  initial design. Sum types lower to an explicit tag plus payload storage and
+  `match` lowers to verified tag branches plus payload extraction.
+- Verifier: reject unresolved generic parameters, invalid trait dispatch,
+  out-of-range variant tags, payload extraction from the wrong variant, malformed
+  match control flow, and layout/type mismatches.
+- Backend: receives concrete layouts and calls after monomorphization, so generic
+  dispatch itself requires no new machine-level ABI. Sum-type layout and aggregate
+  passing must be implemented for both System V and Windows x64.
+
+### Generic symbol identity and mangling
+
+Instantiated generic declarations require deterministic type-derived identities.
+The mangled symbol must include the generic declaration identity and every concrete
+type argument in source order using the same canonical module-qualified type
+encoding already used for overloads.
+
+Conceptually:
+
+```text
+identity<int>          -> generic identity + <int>
+Pair<int,string>       -> nominal Pair + <int,string>
+max<MyType>            -> generic max + <module::MyType>
+```
+
+Two identical instantiations in one program must canonicalize to one generated
+specialization. Instantiation order must not affect emitted names or binary output.
+
+### Implementation sequence
+
+Generics, traits, and sum types should be staged so each step leaves the compiler
+in a testable state:
+
+1. **Generic type infrastructure:** type variables, generic parameter AST nodes,
+   canonical substitutions, generic identity in dumps, and monomorphization cache.
+2. **Generic functions:** inference from arguments, specialization, recursion
+   protection, overload interaction, mangling, and positive/rejection tests.
+3. **Generic structs/enums:** instantiated aggregate identity, layout, member access,
+   assignment, calls, returns, and ABI coverage.
+4. **Traits and `impl`:** trait symbols, implementation tables, `Self`, bound
+   validation, static dispatch, conflict diagnostics, and generic constrained calls.
+5. **Variant-specific enum payloads:** tagged layout, construction, storage,
+   parameter/return support, and verifier coverage.
+6. **Pattern matching:** pattern AST, exhaustiveness/reachability checks, payload
+   binding, control-flow lowering, diagnostics, and source maps.
+7. **Standard library adoption:** introduce reusable generic containers and
+   `Option<T>`/`Result<T,E>`; add traits such as `Printable`, `Equal`, and later
+   ordering/formatting capabilities only where concrete use cases justify them.
+8. **Acceptance:** cross-platform execution, deterministic AST/IR dumps and native
+   output, sanitizer/fuzz coverage, overload/generic ambiguity tests, recursive
+   instantiation limits, trait-conflict tests, exhaustive-match tests, and ABI tests
+   for small/large instantiated sum types.
+
+The first P3 milestone is complete when generic functions and generic aggregate
+values can be fully type-checked and monomorphized without backend knowledge of
+open type variables. The second milestone is complete when trait-bounded generic
+code and payload-bearing enums with exhaustive matching execute through the same
+verified IR and native backends as ordinary concrete DMM code.
 
 ## Standalone runtime migration and selfhosting
 

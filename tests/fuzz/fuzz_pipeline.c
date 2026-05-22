@@ -3,6 +3,7 @@
 #include "errorHandler.h"
 #include "frontend.h"
 #include "ir.h"
+#include "ir_optimize.h"
 #include "semantic.h"
 
 #include <stdlib.h>
@@ -66,7 +67,10 @@ int dmm_fuzz_pipeline_input(const uint8_t *data, size_t size, DmmFuzzStage stage
     if (stage >= DMM_FUZZ_SEMANTIC) semantics = semantic_analyze(program);
     if (stage >= DMM_FUZZ_IR && semantics != NULL && semantics->error_count == 0) {
         module = ir_lower_program(program, semantics);
-        if (module != NULL) fuzz_ir_verifier(module, data, size);
+        if (module != NULL) {
+            if (!ir_optimize_module(module, NULL)) abort();
+            fuzz_ir_verifier(module, data, size);
+        }
     }
 
     ir_module_free(module);

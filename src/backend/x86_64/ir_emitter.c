@@ -1575,7 +1575,9 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                 write_address(emitter, "rax", string_label, instruction->result);
                 write_value_store(emitter, "rax", instruction->result);
             } else {
-                if (is_floating(instruction->type)) {
+                if (instruction->has_immediate) {
+                    write_immediate(emitter, "rax", (long long)instruction->immediate);
+                } else if (is_floating(instruction->type)) {
                     const char *text = ast_program_lexeme(function->source_program,
                                                           instruction->auxiliary_token);
                     union { double floating; uint64_t bits; } value = {strtod(text, NULL)};

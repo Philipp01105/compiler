@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdio.h>
+#include <stdint.h>
 
 #include "ast.h"
 #include "semantic.h"
@@ -68,6 +69,9 @@ typedef struct {
     size_t target_a;
     size_t target_b;
     TokenType operator_type;
+    /* Compiler-owned numeric literal; source tokens remain immutable. */
+    int has_immediate;
+    uint64_t immediate;
 } IrInstruction;
 
 typedef struct {

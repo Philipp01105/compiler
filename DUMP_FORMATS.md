@@ -30,13 +30,17 @@ Declarations, parameters, fields, enum variants, statements, expressions,
 resolved types, stable semantic symbol IDs, operators, folded constants, type operands, and source
 spans are included. A dash denotes an absent optional value.
 
-## `dmm-ir-v2`
+## `dmm-ir-v3`
 
 The IR dump lists interned types and aggregate definitions before functions.
 Function instructions are numbered in storage order. Values use `%N`, types use
 `@N`, and control-flow labels use `LN`. Each instruction records its opcode,
 result, type, operands, symbol/token references, argument slice, operator, and
 source span. Enum payload constants and imported-unit references are explicit.
+Numeric constants produced by optimization include `immediate=0x...` with their
+64-bit integer value or IEEE floating-point bits. Original source tokens remain
+unchanged. Dumps describe optimized IR by default; use `-O0` for the lowered IR.
+Optimization compacts value and label IDs while preserving source spans.
 
 ## `dmm-source-map-v1`
 

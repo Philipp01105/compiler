@@ -13,10 +13,10 @@ set(ir_second "${OUTPUT_DIR}/second.ir")
 set(map_first "${OUTPUT_DIR}/first.map")
 set(map_second "${OUTPUT_DIR}/second.map")
 file(WRITE "${source}" "func main() -> int { var result:int=1; return result; }")
-execute_process(COMMAND "${COMPILER}" --emit=asm --deterministic
+execute_process(COMMAND "${COMPILER}" --emit=asm -O0 --deterministic
     --dump-ast "${ast_first}" --dump-ir "${ir_first}" --source-map "${map_first}"
     -o "${first}" "${source}" RESULT_VARIABLE first_result)
-execute_process(COMMAND "${COMPILER}" --emit=asm "${source}" --deterministic
+execute_process(COMMAND "${COMPILER}" --emit=asm -O0 "${source}" --deterministic
     --dump-ast "${ast_second}" --dump-ir "${ir_second}" --source-map "${map_second}"
     -o "${second}" RESULT_VARIABLE second_result)
 execute_process(COMMAND "${COMPILER}" --emit=asm --version RESULT_VARIABLE version_result OUTPUT_VARIABLE version)
@@ -41,7 +41,7 @@ file(READ "${map_first}" source_map)
 string(FIND "${ast_dump}" "dmm-ast-v2" ast_header)
 string(FIND "${ast_dump}" "declaration function" ast_declaration)
 string(FIND "${ast_dump}" "statement body block" ast_statement)
-string(FIND "${ir_dump}" "dmm-ir-v2" ir_header)
+string(FIND "${ir_dump}" "dmm-ir-v3" ir_header)
 string(FIND "${ir_dump}" "opcode=declare" ir_instruction)
 string(FIND "${source_map}" "dmm-source-map-v1" map_header)
 string(FIND "${source_map}" "function=\"main\" source=\"${source}\" ir=3 span=1:" map_instruction)

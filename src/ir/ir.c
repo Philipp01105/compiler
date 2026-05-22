@@ -890,7 +890,9 @@ static int verify_instruction_types(const IrModule *module,
     const IrInstruction *b = verified_producer(function, instruction->operand_b, index);
     switch (instruction->opcode) {
         case IR_OP_CONSTANT:
-            return instruction->auxiliary_token < function->source_program->token_count &&
+            return (instruction->has_immediate
+                        ? ir_numeric_type(module, instruction->type_id)
+                        : instruction->auxiliary_token < function->source_program->token_count) &&
                    (ir_numeric_type(module, instruction->type_id) ||
                     ir_string_type(module, instruction->type_id));
         case IR_OP_LOAD:
@@ -1152,6 +1154,11 @@ int ir_verify_module(const IrModule *module) {
         for (size_t i = 0; i < function->instruction_count; i++) {
             const IrInstruction *instruction = &function->instructions[i];
             if (!valid) break;
+            if ((instruction->has_immediate != 0 && instruction->has_immediate != 1) ||
+                (instruction->has_immediate && instruction->opcode != IR_OP_CONSTANT)) {
+                valid = 0;
+                break;
+            }
             int produces_value = instruction_produces_value(instruction);
             if ((produces_value && instruction->result == IR_VALUE_NONE) ||
                 (!produces_value && instruction->result != IR_VALUE_NONE) ||
