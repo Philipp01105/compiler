@@ -39,7 +39,7 @@ void print_usage(const char *program_name) {
     printf("  -O0 / -O1      Disable / enable IR optimization (default: -O1)\n");
     printf("  --syntax=MODE  Assembly printing syntax: att or intel (default: intel)\n");
     printf("  --target=FMT   Target format: elf or coff (default: auto-detect)\n");
-    printf("  --dump-ast FILE Write the stable dmm-ast-v2 dump to FILE\n");
+    printf("  --dump-ast FILE Write the stable dmm-ast-v3 dump to FILE\n");
     printf("  --dump-ir FILE  Write the stable dmm-ir-v2 dump to FILE\n");
     printf("  --source-map FILE Write the instruction source map to FILE\n");
     printf("  -o FILE        Write the selected output to FILE\n");

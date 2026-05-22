@@ -21,7 +21,7 @@ prefixed with `text-offset N`, the instruction's byte offset in the text section
 Executable offsets cover source-generated code before runtime/startup/import
 thunks are appended. They are section offsets, not file offsets or addresses.
 
-## `dmm-ast-v2`
+## `dmm-ast-v3`
 
 The AST dump lists the root and every loaded import unit, each as a preorder
 traversal. Two-space indentation records ownership;
@@ -34,6 +34,11 @@ Generic parameter/bound records and specialization identities are explicit. Type
 arguments appear recursively in type spellings. Trait/implementation methods retain
 their source ownership; enum payload and match-arm/binding records describe the new
 nodes. Template declarations remain visible in AST dumps but are absent from IR.
+Specialized declarations include `generic-origin name="..."` and ordered
+`type-argument type=...` children so consumers can display source-level generic
+types instead of private specialization identifiers. Match bindings include their
+semantic symbol ID and the name token's source span. These additions distinguish
+version 3 from version 2.
 
 ## `dmm-ir-v3`
 

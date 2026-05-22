@@ -176,7 +176,9 @@ static int dump_statement(FILE *output, const AstProgram *program,
         for (const AstParameter *binding=a->bindings; binding; binding=binding->next)
             if (!indent(output,depth+2) || fputs("binding=",output) == EOF ||
                 !quoted(output,ast_program_lexeme(program,binding->name_token)) ||
-                fputs(" type=",output) == EOF || !dump_type(output,program,&binding->type) || fputc('\n',output) == EOF) return 0;
+                fputs(" type=",output) == EOF || !dump_type(output,program,&binding->type) ||
+                !symbol_field(output,binding->resolved_symbol_id) || fputs(" span=",output) == EOF ||
+                !span(output,ast_program_token(program,binding->name_token)->span) || fputc('\n',output) == EOF) return 0;
         if (!dump_statement(output,program,a->body,depth+2,"arm")) return 0;
     }
     return dump_statement(output, program, statement->initializer, depth + 1, "initializer") &&
@@ -242,6 +244,13 @@ static int dump_declaration(FILE *output, const AstProgram *program,
     if (declaration->specialization_identity &&
         (fputs(" specialization=",output) == EOF || !quoted(output,declaration->specialization_identity))) return 0;
     if (fputc('\n', output) == EOF) return 0;
+    if (declaration->generic_origin) {
+        if (!indent(output,depth+1) || fputs("generic-origin name=",output) == EOF ||
+            !quoted(output,ast_program_lexeme(program,declaration->generic_origin->name_token)) || fputc('\n',output) == EOF) return 0;
+        for (const AstTypeArgument *argument=declaration->specialization_arguments; argument; argument=argument->next)
+            if (!indent(output,depth+1) || fputs("type-argument type=",output) == EOF ||
+                !dump_type(output,program,&argument->type) || fputc('\n',output) == EOF) return 0;
+    }
     if (declaration->kind == AST_DECL_FUNCTION)
         return dump_function(output, program, declaration, depth + 1);
     if (declaration->kind == AST_DECL_CONSTANT) {
@@ -303,7 +312,7 @@ static int dump_program(FILE *output, const AstProgram *program, size_t index,
 
 int ast_dump(FILE *output, const AstProgram *program) {
     if (output == NULL || program == NULL || !ast_validate_program(program)) return 0;
-    if (fprintf(output, "dmm-ast-v2\nmodule units=%zu\n", program->owned_import_count + 1) < 0 ||
+    if (fprintf(output, "dmm-ast-v3\nmodule units=%zu\n", program->owned_import_count + 1) < 0 ||
         !dump_program(output, program, 0, "root")) return 0;
     for (size_t i = 0; i < program->owned_import_count; i++)
         if (!dump_program(output, program->owned_imports[i], i + 1, "import")) return 0;
