@@ -168,6 +168,7 @@ See [FUZZING.md](FUZZING.md) for corpus commands and harness behavior.
 
 ## Documentation
 
+- [Examples](examples/README.md): standalone demos of language features and input/output.
 - [Formal language](FORMAL_LANGUAGE.md): lexical and syntactic EBNF.
 - [Language specification](LANGUAGE_SPEC.md): semantic rules and implementation limits.
 - [Architecture](ARCHITECTURE.md): compiler pipeline, module ownership, backend, and validation design.

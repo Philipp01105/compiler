@@ -8,7 +8,8 @@ import <stdlib>
 // - Nested struct usage (struct within struct)
 // - Methods accessing nested struct fields
 // - Struct composition for complex data structures
-// - Coordinate system with Points
+// - Generic Point<T> coordinates
+// - Explicit Equal trait implementation with Self and a generic bound
 // =================================================================
 
 // Helper functions
@@ -29,34 +30,30 @@ func printLabeled(label:string, value:int) -> void {
 }
 
 // Point struct - represents a 2D coordinate
-struct Point {
-    var x:int;
-    var y:int;
+struct Point<T> {
+    var x:T;
+    var y:T;
     
     // Initialize point with coordinates
-    func init(xVal:int, yVal:int) -> void {
+    func init(xVal:T, yVal:T) -> void {
         x = xVal;
         y = yVal;
     }
-    
-    // Print point coordinates
-    func print() -> void {
-        printLabeled("X", x);
-        printLabeled("Y", y);
+}
+
+impl Equal for Point<int> {
+    func equal(other:Self) -> bit {
+        return x == other.x && y == other.y;
     }
 }
 
-// Rectangle struct - uses two Point structs
+func same<T:Equal>(left:T, right:T) -> bit {
+    return left.equal(right);
+}
+
 struct Rectangle {
-    var topLeft:Point;
-    var bottomRight:Point;
-    
-    // Note: Due to current compiler limitations, nested struct field
-    // initialization must be done outside the struct methods
-    // See main() for initialization examples
-    
-    // Note: Methods accessing nested struct fields are not yet supported
-    // Calculations must be done in main() or external functions
+    var topLeft:Point<int>;
+    var bottomRight:Point<int>;
 }
 
 // Demonstrate simple rectangle
@@ -227,6 +224,19 @@ func demonstratePointManipulation() -> void {
 }
 
 func main() -> void {
+    var origin:Point<int>;
+    origin.init(0, 0);
+    var copy:Point<int> = origin;
+    println("Copied points are equal:");
+    println(same(origin, copy));
+    copy.x = 1;
+    println("Changed points are equal:");
+    println(same(origin, copy));
+    var fractional:Point<double>;
+    fractional.init(1.5, 2.5);
+    println("A Point<double> coordinate:");
+    println(fractional.x);
+    println("");
     demonstrateSimpleRectangle();
     println("");
     

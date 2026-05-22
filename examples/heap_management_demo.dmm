@@ -8,6 +8,7 @@ import <stdlib>
 // - Heap allocation with reserve
 // - Manual deallocation with free
 // - Explicit releases before leaving a scope
+// - Generic allocation of Cell<T> with inferred type arguments
 // ============================================================================
 
 // Example 1: Basic Pointer Declarations
@@ -87,6 +88,25 @@ func example5_large_allocation() -> void {
     println("");
 }
 
+// The argument infers T; reserve allocates the complete concrete Cell<T>.
+// The caller owns the returned allocation and releases it once.
+func allocateCell<T>(value:T) -> *Cell<T> {
+    var cell:*Cell<T> = reserve(Cell<T>);
+    cell.value = value;
+    return cell;
+}
+
+func example9_generic_allocation() -> void {
+    println("=== Example 9: Generic Heap Containers ===");
+    var number:*Cell<int> = allocateCell(42);
+    var letter:*Cell<char> = allocateCell('A');
+    println(number.value);
+    println(letter.value);
+    free(number);
+    free(letter);
+    println("");
+}
+
 // Example 6: Multiple Allocation Lifetimes
 func example6_mixed() -> void {
     println("=== Example 6: Mixed Memory Management ===");
@@ -159,6 +179,7 @@ func main() -> void {
     example6_mixed();
     example7_scoped();
     example8_different_types();
+    example9_generic_allocation();
     
     println("############################################");
     println("#                                          #");
