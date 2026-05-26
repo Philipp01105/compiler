@@ -10,12 +10,14 @@ The project is suitable for learning and experimentation. It is not yet intended
 - Signed/unsigned fixed-width integers `i8`/`u8` through `i64`/`u64`, and `isize`/`usize`
 - A standalone `stdlib/core` package for byte regions, raw I/O and process primitives
 - Functions, forward calls, local variables, arrays, pointers, structs, enums, and methods
-- Inferred generic functions and invariant generic structs/enums, with static specialization
+- Inferred and explicitly instantiated generic functions, and invariant generic structs/enums
+- Compile-time `sizeof(T)` / `alignof(T)` and typed `core.alloc<T>()` / `core.alloc_array<T>(count)`
+- Borrowed slices usable in variables, fields, enum payloads and returns, with checked indexing
 - Explicit traits, `Self`, multiple trait bounds, and static method dispatch
 - Tagged variant payloads and exhaustive `match` statements with typed bindings
 - `if`/`else`, `for`, `while`, `break`, `continue`, and `return`
 - String operations, formatted input/output, file I/O, and explicit heap allocation/free
-- Modules with `dmm.mod`, directory packages, qualified imports and explicit `pub` exports
+- Modules with `dmm.manifest`, directory packages, qualified imports and explicit `pub` exports
 - Local versioned vendor dependencies, forbidden import cycles and restricted `internal` packages
 - Linux ELF and Windows COFF objects, ELF/PE executables, and GNU assembly output
 - Intel syntax by default, with AT&T syntax available
@@ -47,9 +49,13 @@ Enable warnings as errors with `-DDMM_STRICT_WARNINGS=ON`.
 
 ## Compile a program
 
-Each DMM project needs a `dmm.mod`; each source file starts with `package name;`.
+Each DMM project needs a `dmm.manifest`; each source file starts with `package name;`.
 The compiler accepts a source file or package directory. See [MODULE_SYSTEM.md](MODULE_SYSTEM.md)
 for package discovery, visibility, imports and local vendor dependencies.
+
+The build also provides `build/dmm` (`build/dmm.exe` on Windows). Run
+`dmm manifest sync` from a project package to synchronize direct and indirect
+dependencies in `dmm.manifest` and remove unused requirements.
 
 Emit and internally link a native executable:
 

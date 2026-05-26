@@ -1,0 +1,2 @@
+package main;
+func main() -> int { var values:i32[]; free(values); return 0; }

@@ -17,11 +17,14 @@
 #include <dirent.h>
 #include <ctype.h>
 #include <stdarg.h>
+#include <fcntl.h>
 #ifdef _WIN32
 #include <direct.h>
 #define TokenType WindowsTokenType
 #include <windows.h>
 #undef TokenType
+#undef SEVERITY_ERROR
+#include <io.h>
 #else
 #include <unistd.h>
 #endif
@@ -273,6 +276,7 @@ static int record_loaded_source(AstProgram *root, const char *path) {
 }
 
 #include "package_loader.inc"
+#include "manifest_commands.inc"
 
 AstProgram *frontend_parse_file(const char *source_path, const FrontendOptions *options) {
     StringInterner *strings = string_interner_create();

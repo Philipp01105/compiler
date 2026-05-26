@@ -44,7 +44,7 @@ static int package_path_prefix(const char *path,const char *prefix) {
 }
 
 static DmmModule *read_module(PackageLoader *loader,const char *directory) {
-    char *manifest=joined_path(directory,"dmm.mod");
+    char *manifest=joined_path(directory,"dmm.manifest");
     if (!manifest) return NULL;
     FILE *input=fopen(manifest,"rb");
     if (!input) { package_error(loader->root,AST_TOKEN_NONE,ERR_MODULE_MANIFEST,"Missing module manifest '%s'",manifest); free(manifest); return NULL; }
@@ -55,7 +55,13 @@ static DmmModule *read_module(PackageLoader *loader,const char *directory) {
     module->root=string_interner_intern(loader->root->strings,directory);
     char line[4096]; int group=0,failed=0;
     while (fgets(line,sizeof(line),input)) {
-        char *comment=strstr(line,"//"); if (comment) *comment='\0';
+        char *comment=strstr(line,"//");
+        int indirect=0;
+        if (comment) {
+            char marker[32]={0},extra_marker[2]={0};
+            indirect=sscanf(comment+2,"%31s %1s",marker,extra_marker) == 1 && !strcmp(marker,"indirect");
+            *comment='\0';
+        }
         char one[1100]={0},two[1100]={0},three[1100]={0},extra[2]={0};
         int count=sscanf(line,"%1099s %1099s %1099s %1s",one,two,three,extra);
         if (count <= 0) continue;
@@ -75,12 +81,13 @@ static DmmModule *read_module(PackageLoader *loader,const char *directory) {
             if (!dependency) { failed=1; break; }
             dependency->path=string_interner_intern(loader->root->strings,path);
             dependency->version=string_interner_intern(loader->root->strings,version);
+            dependency->is_indirect=indirect;
             dependency->next=module->dependencies; module->dependencies=dependency;
         } else { failed=1; break; }
     }
     if (ferror(input) || group || !module->path || !module->version || !module->root) failed=1;
     fclose(input);
-    if (failed) package_error(loader->root,AST_TOKEN_NONE,ERR_MODULE_MANIFEST,"Invalid dmm.mod '%s': expected one valid module path, 'dmm 0.3', and versioned require entries",manifest);
+    if (failed) package_error(loader->root,AST_TOKEN_NONE,ERR_MODULE_MANIFEST,"Invalid dmm.manifest '%s': expected one valid module path, 'dmm 0.3', and versioned require entries",manifest);
     free(manifest); return failed ? NULL : module;
 }
 
@@ -88,7 +95,7 @@ static char *find_module_root(const char *file) {
     char *directory=source_directory(file);
     if (!directory) return NULL;
     while (*directory) {
-        char *manifest=joined_path(directory,"dmm.mod");
+        char *manifest=joined_path(directory,"dmm.manifest");
         if (!manifest) break;
         struct stat status; int found=stat(manifest,&status) == 0;
         free(manifest); if (found) return directory;
@@ -259,7 +266,7 @@ static int load_module_packages(AstProgram *root,const FrontendOptions *options)
     if (!root->structured_ast_complete) return 1;
     PackageLoader loader={.root=root,.options=options};
     char *directory=find_module_root(root->source_path);
-    if (!directory) { package_error(root,AST_TOKEN_NONE,ERR_MODULE_MANIFEST,"No dmm.mod found above the current package"); return 0; }
+    if (!directory) { package_error(root,AST_TOKEN_NONE,ERR_MODULE_MANIFEST,"No dmm.manifest found above the current package"); return 0; }
     root->module=read_module(&loader,directory); free(directory);
     if (!root->module) return 0;
     char *current=source_directory(root->source_path);

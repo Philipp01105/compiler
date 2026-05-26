@@ -61,7 +61,7 @@ A non-void DMM function still needs a syntactic return on every reachable path.
 
 ## Compiler and library responsibilities
 
-`src/common/core.core_intrinsics.h` is the target-independent signature table shared
+`src/common/core_intrinsics.h` is the target-independent signature table shared
 by semantic analysis, IR verification and backend call mapping. Intrinsic source
 names use the reserved `__dmm_intrinsic_` prefix and cannot be redefined by DMM
 functions. Byte pointers have an explicit `u8` pointee; unrelated pointers and
@@ -79,6 +79,29 @@ Existing scanning, string concatenation and floating formatting retain their
 compatibility runtime implementations. Executable packages still embed that runtime;
 this first core interface does not yet selectively link runtime routines.
 
-Further foundations include type-size/alignment queries, persistent slices,
-typed allocation helpers. Those can build on
-this boundary without adding collection or formatting policy to the compiler.
+## Typed allocation and borrowed views
+
+The ordinary generic functions in `stdlib/core/allocation.dmm` provide:
+
+```dmm
+var item:*i32 = core.alloc<i32>();
+var items:i32[] = core.alloc_array<i32>(32);
+core.release(item);
+core.release_array(items);
+```
+
+`alloc<T>` uses `sizeof(T)` and zero-fills successful allocations. Failure returns
+`core.null<T>()`. `alloc_array<T>` checks count multiplication before allocating;
+zero, overflow and allocation failure return a null slice with length zero.
+Its elements use the queried backend layout, including aggregate padding.
+
+Slices can be stored and returned, and `.data` and `.length` expose their pointer
+and `usize` count. Fixed-array conversion and `slice(pointer,count)` borrow storage.
+Copying a slice copies its descriptor; it neither copies elements nor transfers
+ownership. Release the original allocation base exactly once. Borrowed array views,
+subviews and descriptors copied from an already released allocation must not be
+released. Bounds checks do not establish region validity or track lifetimes.
+
+The compiler provides layout queries, descriptor operations, bounds checks and
+explicit raw pointer casts. Typed allocation, ownership conventions and future
+buffers and collections are implemented in DMM.

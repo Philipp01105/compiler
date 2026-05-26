@@ -31,6 +31,7 @@ void ir_report_failure(const IrFunction *function, size_t index,
 }
 
 static int ir_verify_module_internal(const IrModule *module,int report);
+#include "type_layout.inc"
 
 typedef struct {
     IrModule *module;
@@ -255,14 +256,14 @@ static void set_expression_type(IrBuilder *builder, IrInstruction *instruction,
     instruction->pointer_depth = expression->resolved_pointer_depth + expression->resolved_outer_pointer_depth;
     instruction->type_name_token = expression->resolved_named_type_token;
     instruction->is_array = expression->resolved_is_array && expression->resolved_outer_pointer_depth == 0;
-    instruction->is_slice = expression->resolved_is_slice;
+    instruction->is_slice=expression->resolved_is_slice && !expression->resolved_outer_pointer_depth;
     instruction->type_id = IR_TYPE_NONE;
     if ((expression->resolved_is_array || expression->resolved_is_slice) &&
         expression->resolved_symbol_id < builder->module->semantics->symbol_count) {
         const SemanticSymbol *symbol =
             &builder->module->semantics->symbols[expression->resolved_symbol_id];
-        instruction->type_id = type_from_ast(builder->module, symbol->source_program,
-                                              &symbol->declared_type);
+        if (symbol->declared_type.kind != AST_TYPE_INFERRED)
+            instruction->type_id=type_from_ast(builder->module,symbol->source_program,&symbol->declared_type);
     }
     if (instruction->type_id == IR_TYPE_NONE)
         instruction->type_id = type_from_expression(builder->module, builder->program, expression);
@@ -279,6 +280,26 @@ static void set_void_type(IrBuilder *builder, IrInstruction *instruction) {
 }
 
 static void emit_label(IrBuilder *builder, size_t label, AstSourceSpan span);
+
+static size_t coerce_slice(IrBuilder *builder,size_t value,IrTypeId target,AstSourceSpan span) {
+    if (target>=builder->module->type_count || builder->module->types[target].kind != IR_TYPE_SLICE || value == IR_VALUE_NONE) return value;
+    IrInstruction source={0}; int found=0;
+    for (size_t i=0;i<builder->function->instruction_count;i++)
+        if (builder->function->instructions[i].result == value) { source=builder->function->instructions[i]; found=1; break; }
+    if (!found || source.type_id>=builder->module->type_count || builder->module->types[source.type_id].kind != IR_TYPE_ARRAY) return value;
+    size_t length=builder->module->types[source.type_id].array_length;
+    IrInstruction *count=emit(builder,IR_OP_CONSTANT,span);
+    if (!count) return IR_VALUE_NONE;
+    count->type=TYPE_USIZE; count->type_id=type_from_parts(builder->module,TYPE_USIZE,0,AST_TOKEN_NONE,0,0,0,0,builder->program,AST_SYMBOL_NONE);
+    count->has_immediate=1; count->immediate=length; count->result=new_value(builder);
+    size_t count_value=count->result;
+    IrInstruction *slice=emit(builder,IR_OP_SLICE,span);
+    if (!slice) return IR_VALUE_NONE;
+    slice->type_id=target; slice->type=source.type; slice->pointer_depth=source.pointer_depth;
+    slice->type_name_token=source.type_name_token; slice->is_slice=1;
+    slice->operand_a=value; slice->operand_b=count_value; slice->result=new_value(builder);
+    return slice->result;
+}
 
 static size_t lower_expression(IrBuilder *builder, const AstExpression *expression) {
     if (expression == NULL) return IR_VALUE_NONE;
@@ -425,6 +446,9 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
             break;
         case AST_EXPR_SLICE_LENGTH: opcode = IR_OP_SLICE_LENGTH;
             break;
+        case AST_EXPR_SLICE_DATA: opcode = IR_OP_SLICE_DATA; break;
+        case AST_EXPR_SLICE: opcode = IR_OP_SLICE; break;
+        case AST_EXPR_SIZEOF: case AST_EXPR_ALIGNOF: return IR_VALUE_NONE;
         case AST_EXPR_RESERVE: opcode = IR_OP_ALLOC;
             break;
         case AST_EXPR_CAST: opcode = IR_OP_CAST;
@@ -448,9 +472,24 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         }
         size_t argument_index = 0;
         if (has_receiver) values[argument_index++] = receiver;
+        const AstParameter *parameter=NULL;
+        const AstTypeArgument *payload=NULL;
+        const AstProgram *type_unit=NULL;
+        if (expression->resolved_symbol_id<builder->module->semantics->symbol_count) {
+            const SemanticSymbol *target=&builder->module->semantics->symbols[expression->resolved_symbol_id];
+            type_unit=target->source_program;
+            if (expression->kind == AST_EXPR_CALL && target->declaration) parameter=target->declaration->as.function.parameters;
+            else if (expression->kind == AST_EXPR_ENUM_CONSTRUCT && target->node) payload=((const AstEnumValue *)target->node)->payload_types;
+        }
         for (const AstExpression *argument = expression->arguments;
              argument != NULL; argument = argument->next) {
-            values[argument_index++] = lower_expression(builder, argument);
+            size_t value=lower_expression(builder,argument);
+            if (parameter || payload) {
+                const AstType *type=parameter ? &parameter->type : &payload->type;
+                value=coerce_slice(builder,value,type_from_ast(builder->module,type_unit,type),argument->span);
+                if (parameter) parameter=parameter->next; else payload=payload->next;
+            }
+            values[argument_index++] = value;
         }
         first_argument = builder->function->argument_count;
         for (size_t i = 0; i < argument_count; i++) {
@@ -557,6 +596,8 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
         } else if (statement->kind == AST_STMT_VARIABLE) {
             if (statement->is_const) continue;
             size_t value = lower_expression(builder, statement->value);
+            if (statement->type.kind != AST_TYPE_INFERRED)
+                value=coerce_slice(builder,value,type_from_ast(builder->module,builder->program,&statement->type),statement->span);
             IrInstruction *instruction = emit(builder, IR_OP_DECLARE, statement->span);
             if (instruction != NULL) {
                 instruction->operand_a = value;
@@ -571,18 +612,19 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
                 instruction->pointer_depth = statement->type.pointer_depth + statement->type.outer_pointer_depth;
                 instruction->type_name_token = statement->type.name_token;
                 instruction->is_array = statement->type.is_array && statement->type.outer_pointer_depth == 0;
-                instruction->is_slice = statement->type.is_slice;
+                instruction->is_slice=statement->type.is_slice && !statement->type.outer_pointer_depth;
                 if (statement->type.kind == AST_TYPE_INFERRED && statement->value != NULL) {
                     instruction->type = statement->value->resolved_type;
                     instruction->pointer_depth = statement->value->resolved_pointer_depth + statement->value->resolved_outer_pointer_depth;
                     instruction->type_name_token = statement->value->resolved_named_type_token;
                     instruction->is_array = statement->value->resolved_is_array && statement->value->resolved_outer_pointer_depth == 0;
-                    instruction->is_slice = statement->value->resolved_is_slice;
+                    instruction->is_slice=statement->value->resolved_is_slice && !statement->value->resolved_outer_pointer_depth;
                 }
             }
         } else if (statement->kind == AST_STMT_ASSIGNMENT) {
             size_t target = lower_expression(builder, statement->expression);
             size_t value = lower_expression(builder, statement->value);
+            value=coerce_slice(builder,value,type_from_expression(builder->module,builder->program,statement->expression),statement->span);
             IrInstruction *instruction = emit(builder, IR_OP_STORE, statement->span);
             if (instruction != NULL) {
                 instruction->operand_a = target;
@@ -594,9 +636,13 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
             (void) lower_expression(builder, statement->expression);
         } else if (statement->kind == AST_STMT_RETURN) {
             size_t value = lower_expression(builder, statement->value);
+            value=coerce_slice(builder,value,builder->function->return_type_id,statement->span);
             IrInstruction *instruction = emit(builder, IR_OP_RETURN, statement->span);
             if (instruction != NULL) instruction->operand_a = value;
-            if (statement->value != NULL) set_expression_type(builder, instruction, statement->value);
+            if (statement->value != NULL) {
+                set_expression_type(builder,instruction,statement->value);
+                instruction->type_id=builder->function->return_type_id;
+            }
             else set_void_type(builder, instruction);
         } else if (statement->kind == AST_STMT_BREAK ||
                    statement->kind == AST_STMT_CONTINUE) {
@@ -733,7 +779,7 @@ static int append_function(IrModule *module, const AstProgram *program,
             .pointer_depth = parameter->type.pointer_depth + parameter->type.outer_pointer_depth,
             .type_name_token = parameter->type.name_token,
             .is_array = parameter->type.is_array && parameter->type.outer_pointer_depth == 0,
-            .is_slice = parameter->type.is_slice
+            .is_slice=parameter->type.is_slice && !parameter->type.outer_pointer_depth
         };
         if (ir_parameter->type_id == IR_TYPE_NONE) return 0;
     }
@@ -949,6 +995,7 @@ static int instruction_produces_value(const IrInstruction *instruction) {
            opcode == IR_OP_UNARY || opcode == IR_OP_BINARY ||
            (opcode == IR_OP_CALL && instruction->type != TYPE_VOID) || opcode == IR_OP_INDEX ||
            opcode == IR_OP_MEMBER || opcode == IR_OP_SLICE_LENGTH ||
+           opcode == IR_OP_SLICE || opcode == IR_OP_SLICE_DATA ||
            opcode == IR_OP_CAST || opcode == IR_OP_ALLOC ||
            opcode == IR_OP_PHI || opcode == IR_OP_ENUM_CONSTRUCT || opcode == IR_OP_ENUM_IS || opcode == IR_OP_ENUM_PAYLOAD;
 }
@@ -1230,8 +1277,18 @@ static int verify_instruction_types(const IrModule *module,
                    module->types[a->type_id].kind == IR_TYPE_SLICE &&
                    ir_integral_type(module, instruction->type_id);
         case IR_OP_CAST:
-            return a != NULL && ir_numeric_type(module, a->type_id) &&
-                   ir_numeric_type(module, instruction->type_id);
+            return a != NULL && ((ir_numeric_type(module,a->type_id) && ir_numeric_type(module,instruction->type_id)) ||
+                (a->type_id<module->type_count && instruction->type_id<module->type_count &&
+                 module->types[a->type_id].kind == IR_TYPE_POINTER && module->types[instruction->type_id].kind == IR_TYPE_POINTER));
+        case IR_OP_SLICE_DATA:
+            return a && a->type_id<module->type_count && module->types[a->type_id].kind == IR_TYPE_SLICE &&
+                instruction->type_id<module->type_count && module->types[instruction->type_id].kind == IR_TYPE_POINTER &&
+                module->types[instruction->type_id].element_type == module->types[a->type_id].element_type;
+        case IR_OP_SLICE:
+            return a && b && a->type_id<module->type_count &&
+                (module->types[a->type_id].kind == IR_TYPE_POINTER || module->types[a->type_id].kind == IR_TYPE_ARRAY) &&
+                instruction->type_id<module->type_count && module->types[instruction->type_id].kind == IR_TYPE_SLICE &&
+                module->types[instruction->type_id].element_type == module->types[a->type_id].element_type && ir_integral_type(module,b->type_id);
         case IR_OP_ALLOC:
             return ir_pointer_type(module, instruction->type_id);
         case IR_OP_FREE:
@@ -1459,6 +1516,7 @@ static int ir_verify_module_internal(const IrModule *module,int report) {
                     REQUIRE_VALUE(instruction->operand_b);
                     break;
                 case IR_OP_BINARY:
+                case IR_OP_SLICE:
                 case IR_OP_INDEX:
                     REQUIRE_VALUE(instruction->operand_a);
                     REQUIRE_VALUE(instruction->operand_b);
@@ -1472,6 +1530,7 @@ static int ir_verify_module_internal(const IrModule *module,int report) {
                     break;
                 case IR_OP_MEMBER:
                 case IR_OP_SLICE_LENGTH:
+                case IR_OP_SLICE_DATA:
                     REQUIRE_VALUE(instruction->operand_a);
                     break;
                 case IR_OP_ENUM_IS:

@@ -111,6 +111,7 @@ static int valid_expression(const AstProgram *program, const AstExpression *expr
             if (!valid_expression(program, expression->right)) return 0;
             break;
         case AST_EXPR_BINARY:
+        case AST_EXPR_SLICE:
         case AST_EXPR_INDEX:
             if (!valid_expression(program, expression->left) ||
                 !valid_expression(program, expression->right)) return 0;
@@ -122,10 +123,13 @@ static int valid_expression(const AstProgram *program, const AstExpression *expr
             break;
         case AST_EXPR_MEMBER:
         case AST_EXPR_SLICE_LENGTH:
+        case AST_EXPR_SLICE_DATA:
             if (!valid_expression(program, expression->left) ||
                 !valid_token(program, expression->value_token)) return 0;
             break;
         case AST_EXPR_RESERVE:
+        case AST_EXPR_SIZEOF:
+        case AST_EXPR_ALIGNOF:
             if (!valid_token(program, expression->value_token) ||
                 !valid_type(program, &expression->allocated_type, 0)) return 0;
             break;

@@ -233,7 +233,7 @@ static int initialize(Pass *p) {
         }
         if (in->opcode == IR_OP_STORE) protect(p,in->operand_a);
         if (in->opcode == IR_OP_UNARY && in->operator_type == TOKEN_AMPERSAND) protect(p,in->operand_b);
-        if (in->opcode == IR_OP_MEMBER || in->opcode == IR_OP_SLICE_LENGTH) protect(p,in->operand_a);
+        if (in->opcode == IR_OP_MEMBER || in->opcode == IR_OP_SLICE_LENGTH || in->opcode == IR_OP_SLICE_DATA || in->opcode == IR_OP_SLICE) protect(p,in->operand_a);
         if ((in->opcode == IR_OP_CALL || in->opcode == IR_OP_ENUM_CONSTRUCT)) {
             protect(p,in->operand_a);
             if (in->symbol_id != AST_SYMBOL_NONE)
@@ -295,7 +295,9 @@ static Fact expression(Pass *p,const IrInstruction *in) {
         if (in->operator_type == TOKEN_MINUS && numeric(p->module,in->type_id))
             return convert(literal(floating(in->type) ? b.bits ^ (in->type == TYPE_FLOAT ? UINT64_C(0x80000000) : UINT64_C(0x8000000000000000)) : 0-b.bits),in->type,in->type,0);
     }
-    if (in->opcode == IR_OP_CAST && ad) return a.kind == BOTTOM ? bottom() : convert(a,ad->type,in->type,1);
+    if (in->opcode == IR_OP_CAST && ad && scalar(p->module,in->type_id) &&
+        p->module->types[in->type_id].kind != IR_TYPE_POINTER && p->module->types[ad->type_id].kind != IR_TYPE_POINTER)
+        return a.kind == BOTTOM ? bottom() : convert(a,ad->type,in->type,1);
     if (in->opcode == IR_OP_PHI) return meet(a,b);
     return unknown();
 }

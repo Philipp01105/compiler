@@ -33,7 +33,8 @@ string          = '"', { escape | string-byte }, '"' ;
 keyword         = "func" | "var" | "return" | "for" | "if" | "else"
                 | "while" | "const" | "break" | "continue"
                 | "struct" | "enum" | "import" | "static" | "reserve"
-                | "free" | "trait" | "impl" | "match" | "package" | "pub" ;
+                | "free" | "trait" | "impl" | "match" | "package" | "pub"
+                | "sizeof" | "alignof" | "slice" ;
 
 primitive-type  = "int" | "char" | "byte" | "bit"
                 | "float" | "double" | "string" | "void"
@@ -171,13 +172,15 @@ postfix-expression = primary, {postfix} ;
 primary         = integer | floating | character | string
                 | "true" | "false"
                 | identifier
-                | "reserve", "(", type, ")"
+                | ("reserve" | "sizeof" | "alignof"), "(", type, ")"
+                | "slice", "(", expression, ",", expression, ")"
                 | "free"
                 | "(", expression, ")" ;
 
 identifier-expression
                 = identifier, { postfix } ;
 postfix         = "(", [argument-list], ")"
+                | type-arguments, "(", [argument-list], ")"
                 | "[", expression, "]"
                 | ".", identifier
                 | ".", "(", type, ")" ;

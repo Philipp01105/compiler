@@ -336,14 +336,24 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
         expression = new_expression(parser, AST_EXPR_NAME, first);
         if (expression != NULL) expression->value_token = parser->current;
         parser->current++;
-    } else if (type == TOKEN_KEYWORD_RESERVE) {
-        expression = new_expression(parser, AST_EXPR_RESERVE, first);
+    } else if (type == TOKEN_KEYWORD_RESERVE || type == TOKEN_KEYWORD_SIZEOF || type == TOKEN_KEYWORD_ALIGNOF) {
+        expression = new_expression(parser,type == TOKEN_KEYWORD_RESERVE ? AST_EXPR_RESERVE :
+            type == TOKEN_KEYWORD_SIZEOF ? AST_EXPR_SIZEOF : AST_EXPR_ALIGNOF,first);
         if (expression != NULL) expression->value_token = parser->current;
         parser->current++;
         (void) consume(parser, TOKEN_LPAREN);
         AstType allocated_type = parse_type(parser);
         (void) consume(parser, TOKEN_RPAREN);
         if (expression != NULL) expression->allocated_type = allocated_type;
+    } else if (type == TOKEN_KEYWORD_SLICE) {
+        parser->current++;
+        expression=new_expression(parser,AST_EXPR_SLICE,first);
+        (void)consume(parser,TOKEN_LPAREN);
+        AstExpression *data=parse_expression(parser);
+        (void)consume(parser,TOKEN_COMMA);
+        AstExpression *length=parse_expression(parser);
+        (void)consume(parser,TOKEN_RPAREN);
+        if (expression) { expression->left=data; expression->right=length; }
     } else if (match(parser, TOKEN_LPAREN)) {
         expression = parse_expression(parser);
         (void) consume(parser, TOKEN_RPAREN);
@@ -367,9 +377,10 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
             if (t == TOKEN_EOF || t == TOKEN_SEMICOLON) break;
         } while (look < parser->program->token_count && depth != 0);
         if (depth == 0 && look < parser->program->token_count &&
-            parser->program->tokens[look].type == TOKEN_DOT) {
+            (parser->program->tokens[look].type == TOKEN_DOT || parser->program->tokens[look].type == TOKEN_LPAREN)) {
             size_t saved=parser->current; parser->current=expression->value_token;
             expression->allocated_type=parse_type(parser);
+            expression->explicit_type_arguments=parser->program->tokens[look].type == TOKEN_LPAREN;
             if (parser->current <= saved) parser->failed=1;
         }
     }
@@ -444,9 +455,11 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
                         if (next == TOKEN_GREATER) depth--;
                         if (next == TOKEN_EOF || next == TOKEN_SEMICOLON) break;
                     } while (look < parser->program->token_count && depth);
-                    if (!depth && look < parser->program->token_count && parser->program->tokens[look].type == TOKEN_DOT) {
+                    if (!depth && look < parser->program->token_count &&
+                        (parser->program->tokens[look].type == TOKEN_DOT || parser->program->tokens[look].type == TOKEN_LPAREN)) {
                         parser->current=expression->value_token;
                         member->allocated_type=parse_type(parser);
+                        member->explicit_type_arguments=parser->program->tokens[look].type == TOKEN_LPAREN;
                         member->kind=AST_EXPR_NAME; member->left=NULL; member->value_token=member->allocated_type.name_token;
                     }
                 }
