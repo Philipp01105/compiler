@@ -2512,7 +2512,7 @@ static int unify_generic_pattern(Analyzer *analyzer,const AstProgram *pattern_un
         actual.outer_pointer_depth-=pattern->outer_pointer_depth;
     }
     if (pattern->is_array || pattern->is_slice) {
-        if (!(actual.is_array || actual.is_slice) ||
+        if (actual.outer_pointer_depth || !(actual.is_array || actual.is_slice) ||
             (pattern->is_array && (!actual.is_array ||
              actual.resolved_array_length != pattern->resolved_array_length))) return 0;
         actual.is_array=actual.is_slice=0; actual.resolved_array_length=0;
@@ -2607,6 +2607,8 @@ static const SemanticSymbol *explicit_generic_function(Analyzer *analyzer,const 
         types[count++]=argument->type;
     }
     size_t candidates[1024],candidate_count=0;
+    size_t value_count=0;
+    for (const AstExpression *argument=call->arguments;argument;argument=argument->next) value_count++;
     const DmmPackage *target=lookup_package(analyzer->program,&name);
     for (size_t i=0;i<=root->owned_import_count;i++) {
         AstProgram *unit=i == 0 ? root : root->owned_imports[i-1];
@@ -2618,7 +2620,7 @@ static const SemanticSymbol *explicit_generic_function(Analyzer *analyzer,const 
             }
             size_t expected=0;
             for (AstGenericParameter *g=d->generic_parameters;g;g=g->next) expected++;
-            if (count != expected || !generic_bounds_satisfied(analyzer,unit,d,types)) continue;
+            if (count != expected || parameter_count(d) != value_count || !generic_bounds_satisfied(analyzer,unit,d,types)) continue;
             AstDeclarationNode *instance=ast_specialize_function(unit,d,types,count,analyzer->program);
             if (!instance) { semantic_error(analyzer,call->first_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_COMPLEXITY_LIMIT,"Generic specialization exceeds resource limits"); continue; }
             if (instance->resolved_symbol_id == AST_SYMBOL_NONE) {

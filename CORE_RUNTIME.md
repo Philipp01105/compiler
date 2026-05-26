@@ -85,13 +85,13 @@ The ordinary generic functions in `stdlib/core/allocation.dmm` provide:
 
 ```dmm
 var item:*i32 = core.alloc<i32>();
-var items:i32[] = core.alloc_array<i32>(32);
+var items:i32[] = core.alloc<i32>(32);
 core.release(item);
-core.release_array(items);
+core.release(items);
 ```
 
 `alloc<T>` uses `sizeof(T)` and zero-fills successful allocations. Failure returns
-`core.null<T>()`. `alloc_array<T>` checks count multiplication before allocating;
+`core.null<T>()`. `alloc<T>` checks count multiplication before allocating;
 zero, overflow and allocation failure return a null slice with length zero.
 Its elements use the queried backend layout, including aggregate padding.
 

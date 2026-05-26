@@ -134,7 +134,7 @@ Generic functions accept explicit type arguments: `identity<i32>(value)` or `cor
 
 `reserve(type)` zero-initializes one complete sized non-void object and returns a pointer to that type. It accepts a type rather than a runtime count. `free(value)` releases a raw pointer or owned string, never a slice descriptor or fixed array directly. Explicit pointer-to-pointer casts such as `data.(*Node)` reinterpret the address; validity and alignment remain caller responsibilities. Allocations require explicit releases; `@gc` and automatic function-exit cleanup have been removed.
 
-`stdlib/core` implements `alloc<T>() -> *T`, `alloc_array<T>(count:usize) -> T[]`, `null<T>() -> *T`, `release<T>(pointer:*T)` and `release_array<T>(view:T[])` in DMM over byte-region primitives. Successful allocations are zero-initialized; failure returns null or an empty null slice. Release an allocation base exactly once, and never release a borrowed view into local, global or interior storage. See `CORE_RUNTIME.md`.
+`stdlib/core` implements `alloc<T>() -> *T`, `alloc<T>(count:usize) -> T[]`, `null<T>() -> *T`, `release<T>(pointer:*T)` and `release<T>(view:T[])` in DMM over byte-region primitives. Successful allocations are zero-initialized; failure returns null or an empty null slice. Release an allocation base exactly once, and never release a borrowed view into local, global or interior storage. See `CORE_RUNTIME.md`.
 
 Types support one array or slice constructor, with pointer levels inside and outside it. Nested arrays and slices are not supported.
 

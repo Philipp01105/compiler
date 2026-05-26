@@ -11,7 +11,7 @@ The project is suitable for learning and experimentation. It is not yet intended
 - A standalone `stdlib/core` package for byte regions, raw I/O and process primitives
 - Functions, forward calls, local variables, arrays, pointers, structs, enums, and methods
 - Inferred and explicitly instantiated generic functions, and invariant generic structs/enums
-- Compile-time `sizeof(T)` / `alignof(T)` and typed `core.alloc<T>()` / `core.alloc_array<T>(count)`
+- Compile-time `sizeof(T)` / `alignof(T)` and typed `core.alloc<T>()` / `core.alloc<T>(count)`
 - Borrowed slices usable in variables, fields, enum payloads and returns, with checked indexing
 - Explicit traits, `Self`, multiple trait bounds, and static method dispatch
 - Tagged variant payloads and exhaustive `match` statements with typed bindings

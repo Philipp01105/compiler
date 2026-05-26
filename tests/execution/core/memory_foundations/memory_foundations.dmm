@@ -12,7 +12,7 @@ const NODE_SIZE=sizeof(Node);
 const CAPACITY=sizeof(i64);
 
 func identity<T>(value:T) -> T { return value; }
-func allocate_values(count:usize) -> i32[] { return core.alloc_array<i32>(count); }
+func allocate_values(count:usize) -> i32[] { return core.alloc<i32>(count); }
 func forward(values:i32[]) -> i32[] { return values; }
 func tail(values:i32[]) -> i32[] { return slice(&values[1],values.length-1); }
 func global_view() -> i32[] { return global_backing; }
@@ -43,22 +43,22 @@ func main() -> int {
     var node=core.alloc<Node>();
     if (node == core.null<Node>()) { return 11; }
     if (node.value != 0 || node.next != core.null<Node>() || node.children.length != 0) { return 12; }
-    node.value=123; node.children=core.alloc_array<Node>(2);
+    node.value=123; node.children=core.alloc<Node>(2);
     if (node.children.length != 2 || node.children[1].value != 0) { return 13; }
     node.children[1].value=456;
     if (node.children[0].value != 0 || node.children[1].value != 456) { return 14; }
-    core.release_array(node.children); core.release(node);
+    core.release(node.children); core.release(node);
     var values=allocate_values(4);
     if (values.length != 4 || values[0] != 0 || values[3] != 0) { return 15; }
     values[3]=17;
     if (forward(values)[3] != 17) { return 16; }
-    core.release_array(values);
-    var empty=core.alloc_array<u8>(0);
+    core.release(values);
+    var empty=core.alloc<u8>(0);
     if (empty.length != 0 || empty.data != core.null<u8>()) { return 17; }
-    core.release_array(empty);
-    var failed=core.alloc_array<i64>(18446744073709551615.(usize));
+    core.release(empty);
+    var failed=core.alloc<i64>(18446744073709551615.(usize));
     if (failed.length != 0 || failed.data != core.null<i64>()) { return 18; }
-    core.release_array(failed);
+    core.release(failed);
     var byte_value=core.alloc<u8>();
     if (byte_value == core.null<u8>()) { return 19; }
     *byte_value=255;
