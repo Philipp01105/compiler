@@ -16,6 +16,14 @@ func allocate_values(count:usize) -> i32[] { return core.alloc<i32>(count); }
 func forward(values:i32[]) -> i32[] { return values; }
 func tail(values:i32[]) -> i32[] { return slice(&values[1],values.length-1); }
 func global_view() -> i32[] { return global_backing; }
+func floating_pointers(p:*float, value:float, q:*double, other:double) -> double {
+    *p=value; *q=other;
+    return *p+*q;
+}
+func floating_array(values:float[2], value:float) -> float {
+    values[1]=value;
+    return values[0]+values[1];
+}
 func many(a:int,b:int,c:int,d:int,e:int,values:i32[],other:i32[],last:int) -> int {
     return a+b+c+d+e+last+values[1]+other[0];
 }
@@ -73,7 +81,13 @@ func main() -> int {
     if (real == core.null<float>()) { return 23; }
     *real=1.25;
     if (*real != 1.25) { return 24; }
+    var wide=core.alloc<double>();
+    if (wide == core.null<double>()) { core.release(real); return 29; }
+    if (floating_pointers(real,2.5,wide,4.25) != 6.75 || *real != 2.5 || *wide != 4.25) { return 30; }
+    core.release(wide);
     core.release(real);
+    var floating_values:float[2]; floating_values[0]=1.25;
+    if (floating_array(floating_values,2.5) != 3.75 || floating_values[1] != 2.5) { return 31; }
     global_backing[2]=41;
     var view=global_view();
     if (view.length != 3 || view[2] != 41) { return 25; }

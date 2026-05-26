@@ -572,7 +572,8 @@ static int physical_is_floating(const IrFunction *function, size_t physical_inde
     size_t source = 0;
     int is_length = 0;
     return physical_parameter(function, physical_index, &source, &is_length) &&
-           !is_length && !function->parameters[source].is_slice &&
+           !is_length && function->parameters[source].pointer_depth == 0 &&
+           !function->parameters[source].is_array && !function->parameters[source].is_slice &&
            is_floating(function->parameters[source].type);
 }
 

@@ -3440,10 +3440,6 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
             semantic_error(analyzer, parameter->type.name_token,
                            ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN, "Unknown parameter type");
         validate_array_shape(analyzer, &parameter->type);
-        if (parameter->type.is_array && parameter->type.outer_pointer_depth == 0)
-            semantic_error(analyzer, parameter->type.array_length_token,
-                           ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                           "Array parameters use an unsized slice type T[]");
         if (primitive_type(analyzer->program, &parameter->type) == TYPE_VOID &&
             parameter->type.pointer_depth == 0)
             semantic_error(analyzer, parameter->type.name_token,

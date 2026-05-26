@@ -46,7 +46,7 @@ jobs:
               cp -R "tests/fuzz/corpus/$stage/." "build-fuzz/corpus/$stage/"
             fi
             if [ "$stage" != syntax_converter ]; then
-              cp tests/execution/generics/*.dmm "build-fuzz/corpus/$stage/"
+              find tests/execution/generics -type f -name '*.dmm' -exec cp {} "build-fuzz/corpus/$stage/" \;
             fi
             "./build-fuzz/fuzz_$stage" "build-fuzz/corpus/$stage" -dict=tests/fuzz/dmm.dict -max_total_time=5 -timeout=2
           done

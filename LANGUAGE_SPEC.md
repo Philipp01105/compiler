@@ -27,6 +27,8 @@ Existing `int`, `char` and `byte` retain their 32-bit signed, 8-bit signed and
 primitive types for overload resolution and generic specialization.
 `void` is valid only as a function return type. Fixed arrays use `var name:type[length];`. Repeated prefix stars form pointers, such as `**int`; grouped types distinguish `*(int[4])` from `*int[4]`. Whole-array assignment is not supported.
 
+Fixed-size array parameters such as `values:float[2]` accept arrays with exactly the declared length and element type. They borrow the caller's storage, so element mutations are visible to the caller. Their ABI passes one data pointer; indexing uses the statically known bound. A slice does not implicitly convert to a fixed-size array parameter.
+
 `T[]` slices are borrowed views containing a data pointer and an element count. They may be parameters, local bindings, fields, enum payloads, package variables and return values. A matching fixed array converts to a slice without copying its elements. Assignment and return copy the view; they do not transfer ownership or extend the underlying storage lifetime. Package variables may be zero-initialized slices; runtime package initializers remain unsupported. `.length:usize` and `.data:*T` are read-only properties. Indexing checks the current count, including negative indices. Slice equality is not defined.
 
 `slice(pointer, count)` constructs a view from a typed non-void raw pointer and an integral count. Zero permits a null pointer; negative counts, nonzero counts with null pointers and byte-size overflow trap. The caller ensures the region is valid, aligned and alive. Slice parameters use pointer and length ABI lanes in source-parameter order; stored and returned slices use a two-word descriptor.
