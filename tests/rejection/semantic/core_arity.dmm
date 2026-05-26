@@ -1,0 +1,2 @@
+package main;
+func main() -> void { __dmm_intrinsic_alloc(); }

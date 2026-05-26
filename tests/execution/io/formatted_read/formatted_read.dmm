@@ -1,0 +1,12 @@
+package main;
+import "stdlib";
+func main() -> void {
+    var path:string = "formatted_read.tmp";
+    var output:int = sys_open(path, 577, 384);
+    var text:string = "42";
+    sys_write(output, text, 2);
+    sys_close(output);
+    var input:int = sys_open(path, 0, 0);
+    stdlib.println(read(input, "%i"));
+    sys_close(input);
+}

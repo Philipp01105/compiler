@@ -1,0 +1,18 @@
+package main;
+import "stdlib";
+func write(p:*int, value:int) -> void { *p = value; }
+
+func main() -> void {
+    var value:int = 10;
+    var first:*int = &value;
+    var second:*int = first;
+    write(first, 41);
+    *second += 1;
+    stdlib.println(value);
+    stdlib.println(*first == *second);
+
+    var values:int[2];
+    values[1] = 77;
+    var element:*int = &values[1];
+    stdlib.println(*element);
+}

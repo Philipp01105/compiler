@@ -1,0 +1,113 @@
+package main;
+// ===================================================================
+// DMM I/O System Demonstration
+// ===================================================================
+// This example showcases the pure syscall-based I/O system that
+// operates without any C library dependencies.
+//
+// Features demonstrated:
+//   - Direct syscall usage (sys_write, sys_read, sys_open, sys_close)
+//   - High-level file operations from stdlib/io.dmm
+//   - String operations and conversions
+// ===================================================================
+
+import "stdlib";
+func main() -> void {
+    stdlib.println("╔════════════════════════════════════════╗");
+    stdlib.println("║   DMM Syscall-Based I/O System Demo   ║");
+    stdlib.println("╚════════════════════════════════════════╝");
+    stdlib.println("");
+    
+    // ===============================================================
+    // Part 1: Direct Syscall Usage (Low-Level)
+    // ===============================================================
+    stdlib.println("【Part 1: Direct Syscalls】");
+    stdlib.println("");
+    
+    var msg1:string = "  → Using sys_write directly...\n";
+    var len1:int = io_strlen(msg1);
+    sys_write(1, msg1, len1);
+    
+    var msg2:string = "  → String length of 'Hello': ";
+    var len2:int = io_strlen(msg2);
+    sys_write(1, msg2, len2);
+    
+    var test:string = "Hello";
+    var test_len:int = io_strlen(test);
+    var buf:char[16];
+    var num_len:int = io_int_to_str(test_len, buf, 16);
+    sys_write(1, buf, num_len);
+    var nl:string = "\n";
+    sys_write(1, nl, 1);
+    
+    stdlib.println("");
+    
+    // ===============================================================
+    // Part 2: High-Level File Operations
+    // ===============================================================
+    stdlib.println("【Part 2: File Operations】");
+    stdlib.println("");
+    
+    stdlib.println("  → Writing to file 'demo_output.txt'...");
+    var content:string = "This file was created using pure Linux syscalls!\nNo C library functions were used.\nDirect kernel I/O operations only.\n";
+    var result:int = stdlib.write_file("demo_output.txt", content);
+    
+    if (result == 0) {
+        stdlib.println("     ✓ File written successfully");
+    }
+    
+    stdlib.println("");
+    stdlib.println("  → Reading file back...");
+    var read_buf:char[512];
+    var bytes_read:int = stdlib.read_file("demo_output.txt", read_buf, 511);
+    
+    if (bytes_read > 0) {
+        stdlib.println("     ✓ File read successfully");
+        stdlib.println("     Content preview:");
+        stdlib.println("     ─────────────────");
+        var preview:string = "     ";
+        sys_write(1, preview, 5);
+        sys_write(1, read_buf, 50);
+        stdlib.println("...");
+    }
+    
+    stdlib.println("");
+    
+    // ===============================================================
+    // Part 3: Stream-Based I/O
+    // ===============================================================
+    stdlib.println("【Part 3: Stream I/O】");
+    stdlib.println("");
+    
+    stdlib.println("  → Opening file stream...");
+    var fd:int = stdlib.open_write("stream_demo.txt");
+    
+    if (fd >= 0) {
+        stdlib.println("     ✓ Stream opened (fd: file descriptor obtained)");
+        
+        stdlib.write_str_to(fd, "Line 1: Stream-based writing\n");
+        stdlib.write_str_to(fd, "Line 2: Multiple writes\n");
+        stdlib.write_str_to(fd, "Line 3: All without C library\n");
+        
+        stdlib.close_file(fd);
+        stdlib.println("     ✓ Stream closed");
+    }
+    
+    stdlib.println("");
+    
+    // ===============================================================
+    // Summary
+    // ===============================================================
+    stdlib.println("╔════════════════════════════════════════╗");
+    stdlib.println("║          Demo Completed! ✓             ║");
+    stdlib.println("╚════════════════════════════════════════╝");
+    stdlib.println("");
+    stdlib.println("Files created:");
+    stdlib.println("  • demo_output.txt");
+    stdlib.println("  • stream_demo.txt");
+    stdlib.println("");
+    stdlib.println("All I/O operations performed using:");
+    stdlib.println("  ✓ Linux syscalls only (write, read, open, close)");
+    stdlib.println("  ✓ No C library dependencies");
+    stdlib.println("  ✓ Direct kernel communication");
+}

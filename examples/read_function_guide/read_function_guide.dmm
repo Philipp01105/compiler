@@ -1,0 +1,104 @@
+package main;
+// ===================================================================
+// Complete Guide to the read() Function
+// ===================================================================
+// The read() function provides a scanf-like interface for reading
+// formatted input from streams.
+//
+// Syntax:
+//   var value:type = read(stream, "format");
+//
+// Parameters:
+//   - stream: file descriptor (0 for stdin, System.in.fd, or file fd)
+//   - format: format specifier string literal
+//
+// Format Specifiers:
+//   "%i" or "%d" - read integer
+//   "%c" - read character
+//
+// Inspired by:
+//   - C's scanf()
+//   - Java's Scanner class
+//   - Go's fmt.Scan()
+// ===================================================================
+
+import "stdlib";
+func main() -> void {
+    stdlib.println("╔═══════════════════════════════════════════════╗");
+    stdlib.println("║   Complete Guide to read() Function          ║");
+    stdlib.println("╚═══════════════════════════════════════════════╝");
+    stdlib.println("");
+    
+    // ===============================================================
+    // Method 1: Using stdin directly (file descriptor 0)
+    // ===============================================================
+    stdlib.println("【Method 1: Direct stdin】");
+    stdlib.println("Enter an integer:");
+    var num1:int = read(0, "%i");
+    stdlib.print("Read: ");
+    stdlib.println(num1);
+    stdlib.println("");
+    
+    // ===============================================================
+    // Method 2: Using System.in enum for readability
+    // ===============================================================
+    stdlib.println("【Method 2: System.in】");
+    stdlib.println("Enter another integer:");
+    var num2:int = read(stdlib.System.in.fd, "%i");
+    stdlib.print("Read: ");
+    stdlib.println(num2);
+    stdlib.println("");
+    
+    // ===============================================================
+    // Method 3: Reading from a file
+    // ===============================================================
+    stdlib.println("【Method 3: File Input】");
+    
+    // Create a file with test data
+    stdlib.write_file("test_numbers.txt", "100\n200\n300\n");
+    stdlib.println("Created test file");
+    
+    // Open the file
+    var fd:int = stdlib.open_read("test_numbers.txt");
+    
+    if (fd >= 0) {
+        // Read three numbers from file
+        var n1:int = read(fd, "%i");
+        var n2:int = read(fd, "%i");
+        var n3:int = read(fd, "%i");
+        
+        stdlib.close_file(fd);
+        
+        stdlib.print("Numbers from file: ");
+        stdlib.print(n1);
+        stdlib.print(", ");
+        stdlib.print(n2);
+        stdlib.print(", ");
+        stdlib.println(n3);
+    }
+    
+    stdlib.println("");
+    
+    // ===============================================================
+    // Practical Example: Simple Calculator
+    // ===============================================================
+    stdlib.println("【Practical Example: Calculator】");
+    stdlib.println("Enter two numbers to add:");
+    stdlib.println("First number:");
+    var a:int = read(stdlib.System.in.fd, "%i");
+    stdlib.println("Second number:");
+    var b:int = read(stdlib.System.in.fd, "%i");
+    
+    var result:int = a + b;
+    stdlib.print("Result: ");
+    stdlib.print(a);
+    stdlib.print(" + ");
+    stdlib.print(b);
+    stdlib.print(" = ");
+    stdlib.println(result);
+    
+    stdlib.println("");
+    stdlib.println("╔═══════════════════════════════════════════════╗");
+    stdlib.println("║              Guide Complete!                  ║");
+    stdlib.println("╚═══════════════════════════════════════════════╝");
+}

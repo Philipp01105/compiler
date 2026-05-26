@@ -1,3 +1,4 @@
+package main;
 func main() -> void {
     @gc var value:*int = reserve(int);
 }

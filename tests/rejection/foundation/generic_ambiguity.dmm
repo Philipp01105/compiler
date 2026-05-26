@@ -1,3 +1,4 @@
+package main;
 func select<A,B>(a:A,b:B) -> int { return 1; }
 func select<A,B>(a:B,b:A) -> int { return 2; }
 func main() -> void { select(1,2); }

@@ -1,0 +1,20 @@
+package main;
+import "stdlib";
+func allocate(value:int) -> int {
+    var p:*int = reserve(int);
+    *p = value;
+    var alias:*int = p;
+    var result:int = *alias;
+    free(p);
+    return result;
+}
+
+func main() -> void {
+    var total:int = 0;
+    for (var i:int = 0; i < 10; i++) { total += allocate(i); }
+    stdlib.println(total);
+    var manual:*int = reserve(int);
+    *manual = 7;
+    stdlib.println(*manual);
+    free(manual);
+}

@@ -1,0 +1,17 @@
+package main;
+import "stdlib";
+// Conditional test
+func main() -> void {
+    var x:int = 10;
+    
+    if (x > 5) {
+        stdlib.println("x is greater than 5");
+    } else {
+        stdlib.println("x is not greater than 5");
+    }
+    
+    if (x == 10) {
+        stdlib.println("x equals 10");
+    }
+}
+// Category: execution/control_flow

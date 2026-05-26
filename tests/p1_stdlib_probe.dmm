@@ -1,9 +1,9 @@
-import <stdlib>
-
+package main;
+import "stdlib";
 func main() -> int {
-    print("value=");
-    println(42);
-    println((65).(char));
-    println((1).(double));
+    stdlib.print("value=");
+    stdlib.println(42);
+    stdlib.println((65).(char));
+    stdlib.println((1).(double));
     return 0;
 }

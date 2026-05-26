@@ -1,3 +1,4 @@
+package main;
 struct Pair {
     var left:int;
     var right:double;

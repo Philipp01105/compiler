@@ -22,9 +22,11 @@ language/runtime behavior are intentionally omitted.
 Before porting compiler stages, add the minimum capabilities required by compiler
 code itself:
 
-- [ ] fixed-width and pointer-size integer types;
+- [ ] type-size/alignment queries and typed allocation over core byte regions;
 - [ ] practical byte buffers/slices and dynamic collections;
-- [ ] module/library compilation without mandatory `main`;
+- [ ] dependency fetching, version selection, module cache and checksum/lockfile support;
+- [ ] explicit package initialization order and runtime variable initializers;
+- [ ] stable C export declarations and separate library linking workflows;
 - [ ] explicit file-error handling;
 - [ ] deterministic artifact writing.
 

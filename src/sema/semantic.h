@@ -14,7 +14,7 @@ typedef enum {
     SEMANTIC_SYMBOL_ENUM_VALUE,
     SEMANTIC_SYMBOL_PARAMETER,
     SEMANTIC_SYMBOL_LOCAL,
-    SEMANTIC_SYMBOL_CONSTANT
+    SEMANTIC_SYMBOL_CONSTANT, SEMANTIC_SYMBOL_VARIABLE
 } SemanticSymbolKind;
 
 typedef struct {
@@ -54,5 +54,7 @@ void semantic_model_free(SemanticModel *model);
 const SemanticSymbol *semantic_find_global(const SemanticModel *model,
                                            const char *name,
                                            SemanticSymbolKind kind);
+const SemanticSymbol *semantic_find_in_package(const SemanticModel *model,const AstProgram *file,
+                                               const char *name,SemanticSymbolKind kind);
 
 #endif

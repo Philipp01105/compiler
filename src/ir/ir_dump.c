@@ -21,8 +21,7 @@ static int quoted(FILE *output, const char *text) {
 }
 
 static const char *primitive_name(DataType type) {
-    static const char *names[] = {"int", "char", "byte", "bit", "float", "double",
-                                  "string", "void", "unknown"};
+    static const char *names[] = {DMM_TYPE_NAMES};
     return type >= TYPE_INT && type <= TYPE_UNKNOWN ? names[type] : "invalid";
 }
 
@@ -206,6 +205,12 @@ int ir_dump(FILE *output, const IrModule *module) {
                 module->verified, module->type_count, module->function_count,
                 module->structure_count, module->enum_count, module->import_count) < 0 ||
         !dump_types(output, module) || !dump_aggregates(output, module)) return 0;
+    if (fputs("package identity=",output) == EOF || !quoted(output,module->program->module_identity ? module->program->module_identity : "") ||
+        fputc('\n',output) == EOF) return 0;
+    for (size_t g=0;g<module->global_count;g++) {
+        if (fprintf(output,"global #%zu symbol=%zu type=@%zu bits=%llu\n",g,module->globals[g].symbol_id,module->globals[g].type_id,
+            (unsigned long long)module->globals[g].bits) < 0) return 0;
+    }
     for (size_t f = 0; f < module->function_count; f++) {
         const IrFunction *function = &module->functions[f];
         if (fprintf(output, "function #%zu name=", f) < 0 ||

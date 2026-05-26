@@ -1,2 +1,3 @@
+package main;
 func bad<T:Missing>(value:T) -> T { return value; }
 func main() -> void { }

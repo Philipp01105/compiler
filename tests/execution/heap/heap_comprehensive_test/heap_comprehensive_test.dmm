@@ -1,0 +1,440 @@
+package main;
+import "stdlib";
+// ============================================================================
+// COMPREHENSIVE HEAP MANAGEMENT TEST
+// ============================================================================
+// This file tests all heap management features including:
+// - Pointer type declarations for all data types
+// - reserve() function with different types (primitives and structs)
+// - free() function for manual memory management
+// - annotation for automatic explicit allocation ownership
+// - Mixed manual and manual ownership memory management
+// - Error cases and edge cases
+// ============================================================================
+
+// Test structs
+struct Point {
+    var x:int;
+    var y:int;
+}
+
+struct Data {
+    var value:int;
+}
+
+// Test 1: Pointer declarations for all types
+func test1_pointer_declarations() -> void {
+    stdlib.println("[TEST 1] Pointer Declarations");
+    
+    var intPtr:*int;
+    var charPtr:*char;
+    var bytePtr:*byte;
+    var floatPtr:*float;
+    var doublePtr:*double;
+    var stringPtr:*string;
+    
+    stdlib.println("  [OK] All pointer types declared");
+}
+
+// Test 2: Basic reserve and free with int
+func test2_basic_int() -> void {
+    stdlib.println("[TEST 2] Basic int allocation");
+    
+    var p:*int = reserve(int);
+    stdlib.println("  [OK] Int allocated");
+    
+    free(p);
+    stdlib.println("  [OK] Int freed");
+}
+
+// Test 3: Basic reserve and free with char
+func test3_basic_char() -> void {
+    stdlib.println("[TEST 3] Basic char allocation");
+    
+    var p:*char = reserve(char);
+    stdlib.println("  [OK] Char allocated");
+    
+    free(p);
+    stdlib.println("  [OK] Char freed");
+}
+
+// Test 4: Basic reserve and free with float
+func test4_basic_float() -> void {
+    stdlib.println("[TEST 4] Basic float allocation");
+    
+    var p:*float = reserve(float);
+    stdlib.println("  [OK] Float allocated");
+    
+    free(p);
+    stdlib.println("  [OK] Float freed");
+}
+
+// Test 5: Basic reserve and free with double
+func test5_basic_double() -> void {
+    stdlib.println("[TEST 5] Basic double allocation");
+    
+    var p:*double = reserve(double);
+    stdlib.println("  [OK] Double allocated");
+    
+    free(p);
+    stdlib.println("  [OK] Double freed");
+}
+
+// Test 6: Multiple allocations of same type
+func test6_multiple_same_type() -> void {
+    stdlib.println("[TEST 6] Multiple allocations of same type");
+    
+    var p1:*int = reserve(int);
+    var p2:*int = reserve(int);
+    var p3:*int = reserve(int);
+    
+    stdlib.println("  [OK] Three ints allocated");
+    
+    free(p1);
+    free(p2);
+    free(p3);
+    
+    stdlib.println("  [OK] All three ints freed");
+}
+
+// Test 7: Multiple allocations of different types
+func test7_multiple_different_types() -> void {
+    stdlib.println("[TEST 7] Multiple allocations of different types");
+    
+    var intPtr:*int = reserve(int);
+    var charPtr:*char = reserve(char);
+    var floatPtr:*float = reserve(float);
+    var doublePtr:*double = reserve(double);
+    
+    stdlib.println("  [OK] Multiple types allocated");
+    
+    free(intPtr);
+    free(charPtr);
+    free(floatPtr);
+    free(doublePtr);
+    
+    stdlib.println("  [OK] All types freed");
+}
+
+// Test 8: Explicit allocation ownership with int
+func test8_gc_int() -> void {
+    stdlib.println("[TEST 8] manual ownership with int");
+    
+    var p:*int = reserve(int);
+    
+    stdlib.println("  [OK] manual ownership int allocated (explicit release follows)");
+
+    free(p);
+}
+
+// Test 9: Explicit allocation ownership with multiple types
+func test9_gc_multiple() -> void {
+    stdlib.println("[TEST 9] manual ownership with multiple types");
+    
+    var intPtr:*int = reserve(int);
+    
+    var charPtr:*char = reserve(char);
+    
+    var floatPtr:*float = reserve(float);
+    
+    stdlib.println("  [OK] Multiple manual ownership allocations (explicit release follows)");
+
+    free(floatPtr);
+    free(charPtr);
+    free(intPtr);
+}
+
+// Test 10: Mixed manual and manual ownership management
+func test10_mixed_management() -> void {
+    stdlib.println("[TEST 10] Mixed manual and manual ownership management");
+    
+    var manual1:*int = reserve(int);
+    
+    var gc1:*int = reserve(int);
+    
+    var manual2:*char = reserve(char);
+    
+    var gc2:*float = reserve(float);
+    
+    stdlib.println("  [OK] Mixed allocations created");
+    
+    free(manual1);
+    free(manual2);
+    
+    stdlib.println("  [OK] Manual pointers freed (explicit releases follow)");
+
+    free(gc2);
+    free(gc1);
+}
+
+// Test 11: Sequential allocation and freeing
+func test11_sequential() -> void {
+    stdlib.println("[TEST 11] Sequential allocation and freeing");
+    
+    var p1:*int = reserve(int);
+    stdlib.println("  [OK] Allocated p1");
+    free(p1);
+    stdlib.println("  [OK] Freed p1");
+    
+    var p2:*char = reserve(char);
+    stdlib.println("  [OK] Allocated p2");
+    free(p2);
+    stdlib.println("  [OK] Freed p2");
+    
+    var p3:*double = reserve(double);
+    stdlib.println("  [OK] Allocated p3");
+    free(p3);
+    stdlib.println("  [OK] Freed p3");
+}
+
+// Test 12: Nested scope with manual ownership
+func test12_nested_gc() -> void {
+    stdlib.println("[TEST 12] Nested scope with manual ownership");
+    
+    var outer:*int = reserve(int);
+    stdlib.println("  [OK] Outer manual allocation");
+    
+    var gcOuter:*int = reserve(int);
+    stdlib.println("  [OK] Outer manual ownership allocation");
+    
+    free(outer);
+    stdlib.println("  [OK] Outer manual freed");
+
+    free(gcOuter);
+}
+
+// Test 13: Allocate many pointers
+func test13_many_pointers() -> void {
+    stdlib.println("[TEST 13] Many pointers");
+    
+    var p1:*int = reserve(int);
+    var p2:*int = reserve(int);
+    var p3:*int = reserve(int);
+    var p4:*int = reserve(int);
+    var p5:*int = reserve(int);
+    var p6:*int = reserve(int);
+    var p7:*int = reserve(int);
+    var p8:*int = reserve(int);
+    var p9:*int = reserve(int);
+    var p10:*int = reserve(int);
+    
+    stdlib.println("  [OK] 10 pointers allocated");
+    
+    free(p1);
+    free(p2);
+    free(p3);
+    free(p4);
+    free(p5);
+    free(p6);
+    free(p7);
+    free(p8);
+    free(p9);
+    free(p10);
+    
+    stdlib.println("  [OK] 10 pointers freed");
+}
+
+// Test 14: Byte type allocation
+func test14_byte_type() -> void {
+    stdlib.println("[TEST 14] Byte type allocation");
+    
+    var p:*byte = reserve(byte);
+    stdlib.println("  [OK] Byte allocated");
+    
+    free(p);
+    stdlib.println("  [OK] Byte freed");
+}
+
+// Test 15: Different order of free
+func test15_free_order() -> void {
+    stdlib.println("[TEST 15] Different order of free");
+    
+    var p1:*int = reserve(int);
+    var p2:*char = reserve(char);
+    var p3:*float = reserve(float);
+    
+    stdlib.println("  [OK] Three allocations");
+    
+    free(p2);
+    stdlib.println("  [OK] Freed middle one");
+    free(p3);
+    stdlib.println("  [OK] Freed last one");
+    free(p1);
+    stdlib.println("  [OK] Freed first one");
+}
+
+// Test 16: manual ownership in function scope
+func test16_gc_function_scope() -> void {
+    stdlib.println("[TEST 16] manual ownership in function scope");
+    
+    var temp:*int = reserve(int);
+    
+    stdlib.println("  [OK] manual ownership variable in function");
+    // Auto-freed when function returns
+
+    free(temp);
+}
+
+// Test 17: Multiple reserve calls
+func test17_multiple_reserve_calls() -> void {
+    stdlib.println("[TEST 17] Multiple reserve calls");
+    
+    var p:*int = reserve(int);
+    stdlib.println("  [OK] First reserve");
+    free(p);
+    
+    p = reserve(int);
+    stdlib.println("  [OK] Second reserve");
+    free(p);
+    
+    p = reserve(int);
+    stdlib.println("  [OK] Third reserve");
+    free(p);
+}
+
+// Test 18: All data types together
+func test18_all_types_together() -> void {
+    stdlib.println("[TEST 18] All data types together");
+    
+    var intP:*int = reserve(int);
+    var charP:*char = reserve(char);
+    var byteP:*byte = reserve(byte);
+    var floatP:*float = reserve(float);
+    var doubleP:*double = reserve(double);
+    
+    stdlib.println("  [OK] All 5 basic types allocated");
+    
+    free(doubleP);
+    free(floatP);
+    free(byteP);
+    free(charP);
+    free(intP);
+    
+    stdlib.println("  [OK] All 5 basic types freed (reverse order)");
+}
+
+// Test 19: manual ownership with all types
+func test19_gc_all_types() -> void {
+    stdlib.println("[TEST 19] manual ownership with all types");
+    
+    var intP:*int = reserve(int);
+    
+    var charP:*char = reserve(char);
+    
+    var floatP:*float = reserve(float);
+    
+    var doubleP:*double = reserve(double);
+    
+    stdlib.println("  [OK] All manual ownership types allocated (explicit release follows)");
+
+    free(doubleP);
+    free(floatP);
+    free(charP);
+    free(intP);
+}
+
+// Test 20: Alternating manual and manual ownership
+func test20_alternating() -> void {
+    stdlib.println("[TEST 20] Alternating manual and manual ownership");
+    
+    var m1:*int = reserve(int);
+    
+    var g1:*int = reserve(int);
+    
+    var m2:*int = reserve(int);
+    
+    var g2:*int = reserve(int);
+    
+    var m3:*int = reserve(int);
+    
+    stdlib.println("  [OK] Alternating allocations");
+    
+    free(m1);
+    free(m2);
+    free(m3);
+    
+    stdlib.println("  [OK] Manual pointers freed");
+
+    free(g2);
+    free(g1);
+}
+
+// Test 21: Struct allocation
+func test21_struct_allocation() -> void {
+    stdlib.println("[TEST 21] Struct allocation");
+    
+    var p:*Point = reserve(Point);
+    stdlib.println("  [OK] Struct allocated");
+    
+    free(p);
+    stdlib.println("  [OK] Struct freed");
+}
+
+// Test 22: Multiple struct allocations
+func test22_multiple_structs() -> void {
+    stdlib.println("[TEST 22] Multiple struct allocations");
+    
+    var p1:*Point = reserve(Point);
+    var p2:*Point = reserve(Point);
+    var d:*Data = reserve(Data);
+    
+    stdlib.println("  [OK] Multiple structs allocated");
+    
+    free(p1);
+    free(p2);
+    free(d);
+    
+    stdlib.println("  [OK] Multiple structs freed");
+}
+
+// Test 23: manual ownership with structs
+func test23_gc_structs() -> void {
+    stdlib.println("[TEST 23] manual ownership with structs");
+    
+    var p:*Point = reserve(Point);
+    
+    var d:*Data = reserve(Data);
+    
+    stdlib.println("  [OK] manual ownership structs allocated (explicit release follows)");
+
+    free(d);
+    free(p);
+}
+
+// Main test runner
+func main() -> void {
+    stdlib.println("============================================");
+    stdlib.println("  COMPREHENSIVE HEAP MANAGEMENT TEST");
+    stdlib.println("============================================");
+    stdlib.println("");
+    
+    test1_pointer_declarations();
+    test2_basic_int();
+    test3_basic_char();
+    test4_basic_float();
+    test5_basic_double();
+    test6_multiple_same_type();
+    test7_multiple_different_types();
+    test8_gc_int();
+    test9_gc_multiple();
+    test10_mixed_management();
+    test11_sequential();
+    test12_nested_gc();
+    test13_many_pointers();
+    test14_byte_type();
+    test15_free_order();
+    test16_gc_function_scope();
+    test17_multiple_reserve_calls();
+    test18_all_types_together();
+    test19_gc_all_types();
+    test20_alternating();
+    test21_struct_allocation();
+    test22_multiple_structs();
+    test23_gc_structs();
+    
+    stdlib.println("");
+    stdlib.println("============================================");
+    stdlib.println("  ALL TESTS PASSED!");
+    stdlib.println("============================================");
+}
+// Category: execution/heap

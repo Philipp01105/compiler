@@ -1,0 +1,8 @@
+package main;
+import "stdlib";
+func main() -> void {
+    stdlib.print("100% %s %n %%");
+    stdlib.println(" done");
+    stdlib.println("%d %f %p");
+}
+// Category: execution/strings

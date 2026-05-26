@@ -14,8 +14,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <dirent.h>
+#include <ctype.h>
+#include <stdarg.h>
 #ifdef _WIN32
 #include <direct.h>
+#define TokenType WindowsTokenType
+#include <windows.h>
+#undef TokenType
 #else
 #include <unistd.h>
 #endif
@@ -38,7 +44,7 @@ static AstSourceSpan token_span(const Token *token) {
 }
 
 static AstDeclarationKind declaration_kind(TokenType first, TokenType second) {
-    (void) second;
+    if (first == TOKEN_KEYWORD_PUB) first=second;
     if (first == TOKEN_KEYWORD_IMPORT) return AST_DECL_IMPORT;
     if (first == TOKEN_KEYWORD_STRUCT) return AST_DECL_STRUCT;
     if (first == TOKEN_KEYWORD_ENUM) return AST_DECL_ENUM;
@@ -46,6 +52,7 @@ static AstDeclarationKind declaration_kind(TokenType first, TokenType second) {
     if (first == TOKEN_KEYWORD_IMPL) return AST_DECL_IMPL;
     if (first == TOKEN_KEYWORD_FUNC) return AST_DECL_FUNCTION;
     if (first == TOKEN_KEYWORD_CONST) return AST_DECL_CONSTANT;
+    if (first == TOKEN_KEYWORD_VAR) return AST_DECL_VARIABLE;
     return AST_DECL_INVALID;
 }
 
@@ -54,9 +61,15 @@ static size_t declaration_end(const AstProgram *program, size_t first) {
         program->tokens[first].type,
         first + 1 < program->token_count ? program->tokens[first + 1].type : TOKEN_EOF);
 
-    if (kind == AST_DECL_IMPORT || kind == AST_DECL_CONSTANT) {
+    if (kind == AST_DECL_IMPORT) {
+        size_t index=first;
+        while (index < program->token_count && program->tokens[index].type != TOKEN_SEMICOLON &&
+               program->tokens[index].type != TOKEN_EOF) index++;
+        return index < program->token_count && program->tokens[index].type == TOKEN_SEMICOLON ? index+1 : index;
+    }
+    if (kind == AST_DECL_CONSTANT || kind == AST_DECL_VARIABLE) {
         size_t index = first + 1;
-        if (kind == AST_DECL_CONSTANT) {
+        if (kind == AST_DECL_CONSTANT || kind == AST_DECL_VARIABLE) {
             while (index < program->token_count &&
                    program->tokens[index].type != TOKEN_SEMICOLON &&
                    program->tokens[index].type != TOKEN_EOF) index++;
@@ -91,6 +104,8 @@ static size_t declaration_end(const AstProgram *program, size_t first) {
 static int build_declarations(AstProgram *program) {
     size_t capacity = 0;
     size_t index = 0;
+    if (program->token_count >= 3 && program->tokens[0].type == TOKEN_KEYWORD_PACKAGE &&
+        program->tokens[2].type == TOKEN_SEMICOLON) index=3;
     while (index < program->token_count && program->tokens[index].type != TOKEN_EOF) {
         size_t end = declaration_end(program, index);
         if (end <= index) end = index + 1;
@@ -165,20 +180,6 @@ static AstProgram *parse_single_file(const char *source_path, const FrontendOpti
     return stream == NULL ? NULL : parse_stream(stream, source_path, options, strings);
 }
 
-static char *relative_import_path(const char *source_path, const char *import_path) {
-    const char *slash = strrchr(source_path, '/');
-    const char *backslash = strrchr(source_path, '\\');
-    if (backslash != NULL && (slash == NULL || backslash > slash)) slash = backslash;
-    size_t directory_length = slash == NULL ? 0 : (size_t) (slash - source_path + 1);
-    size_t import_length = strlen(import_path);
-    if (directory_length > SIZE_MAX - import_length - 1) return NULL;
-    char *result = malloc(directory_length + import_length + 1);
-    if (result == NULL) return NULL;
-    memcpy(result, source_path, directory_length);
-    memcpy(result + directory_length, import_path, import_length + 1);
-    return result;
-}
-
 static char *joined_path(const char *directory, const char *path) {
     size_t directory_length = strlen(directory);
     size_t path_length = strlen(path);
@@ -203,22 +204,22 @@ static int path_is_directory(const char *path) {
 #endif
 }
 
-static char *package_entry_path(char *path) {
-    if (!path_is_directory(path)) return path;
-    char *entry = joined_path(path, "package.dmm");
-    free(path);
-    return entry;
-}
-
 static char *canonical_existing_path(const char *path) {
     char buffer[4096];
 #ifdef _WIN32
-    if (_fullpath(buffer, path, sizeof(buffer)) == NULL) return NULL;
+    HANDLE handle=CreateFileA(path,0,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,NULL,OPEN_EXISTING,FILE_FLAG_BACKUP_SEMANTICS,NULL);
+    if (handle == INVALID_HANDLE_VALUE) return NULL;
+    DWORD count=GetFinalPathNameByHandleA(handle,buffer,(DWORD)sizeof(buffer),FILE_NAME_NORMALIZED);
+    CloseHandle(handle);
+    if (!count || count >= sizeof(buffer)) return NULL;
+    if (!strncmp(buffer,"\\\\?\\",4)) memmove(buffer,buffer+4,strlen(buffer+4)+1);
 #else
     if (realpath(path, buffer) == NULL) return NULL;
 #endif
     for (char *p = buffer; *p != '\0'; p++)
         if (*p == '\\') *p = '/';
+    size_t length=strlen(buffer);
+    while (length > 3 && buffer[length-1] == '/') buffer[--length]='\0';
     return copy_string(buffer);
 }
 
@@ -239,69 +240,6 @@ static char *source_directory(const char *path) {
     if (slash == NULL) copy[0] = '\0';
     else *slash = '\0';
     return copy;
-}
-
-static char *logical_module_identity(const AstProgram *root,
-                                     const char *canonical_path) {
-    char *root_directory = source_directory(root->source_path);
-    char *source_root = canonical_existing_path(DMM_SOURCE_ROOT);
-    if (root_directory == NULL || source_root == NULL) {
-        free(root_directory);
-        free(source_root);
-        return NULL;
-    }
-    const char *base = path_prefix(canonical_path, root_directory)
-        ? root_directory : path_prefix(canonical_path, source_root) ? source_root : NULL;
-    char *identity = NULL;
-    if (base != NULL) {
-        const char *relative = canonical_path + strlen(base);
-        if (*relative == '/') relative++;
-        identity = copy_string(*relative == '\0' ? "." : relative);
-    }
-    free(root_directory);
-    free(source_root);
-    return identity;
-}
-
-static char *import_path_text(const AstProgram *unit,
-                              const AstImportPath *entry) {
-    if (entry->path_token != AST_TOKEN_NONE) {
-        const char *text = ast_program_lexeme(unit, entry->path_token);
-        size_t length = strlen(text);
-        char *copy = malloc(length + 1U);
-        if (copy != NULL) memcpy(copy, text, length + 1U);
-        return copy;
-    }
-    size_t length = 0;
-    size_t first = entry->path_first_token;
-    size_t count = entry->path_token_count;
-    for (size_t i = 0; i < count && first + i < unit->token_count; i++) {
-        const AstToken *token = &unit->tokens[first + i];
-        if (token->type == TOKEN_GREATER) break;
-        size_t token_length = strlen(token->lexeme);
-        if (length > SIZE_MAX - token_length) return NULL;
-        length += token_length;
-    }
-    char *result = malloc(length + 1U);
-    if (result == NULL) return NULL;
-    size_t offset = 0;
-    for (size_t i = 0; i < count && first + i < unit->token_count; i++) {
-        const AstToken *token = &unit->tokens[first + i];
-        if (token->type == TOKEN_GREATER) break;
-        size_t token_length = strlen(token->lexeme);
-        memcpy(result + offset, token->lexeme, token_length);
-        offset += token_length;
-    }
-    result[offset] = '\0';
-    return result;
-}
-
-static AstProgram *known_import(const AstProgram *root, const char *path) {
-    if (strcmp(root->source_path, path) == 0) return (AstProgram *) root;
-    for (size_t i = 0; i < root->owned_import_count; i++)
-        if (strcmp(root->owned_imports[i]->source_path, path) == 0)
-            return root->owned_imports[i];
-    return NULL;
 }
 
 static int append_owned_import(AstProgram *root, AstProgram *imported) {
@@ -334,104 +272,32 @@ static int record_loaded_source(AstProgram *root, const char *path) {
     return 1;
 }
 
-static int resolve_imports(AstProgram *root, AstProgram *unit,
-                           const FrontendOptions *options) {
-    for (AstDeclarationNode *declaration = unit->root; declaration != NULL;
-         declaration = declaration->next) {
-        if (declaration->kind != AST_DECL_IMPORT) continue;
-        for (AstImportPath *entry = declaration->as.import_decl.paths; entry != NULL; entry = entry->next) {
-            char *import_text = import_path_text(unit, entry);
-            if (import_text == NULL) return 0;
-            char *path = relative_import_path(unit->source_path, import_text);
-            if (path == NULL) {
-                free(import_text);
-                return 0;
-            }
-            path = package_entry_path(path);
-            if (path == NULL) {
-                free(import_text);
-                return 0;
-            }
-            FILE *probe = fopen(path, "rb");
-            if (probe == NULL && entry->path_token == AST_TOKEN_NONE) {
-                free(path);
-                path = joined_path(DMM_SOURCE_ROOT, import_text);
-                if (path == NULL) {
-                    free(import_text);
-                    return 0;
-                }
-                path = package_entry_path(path);
-                if (path == NULL) {
-                    free(import_text);
-                    return 0;
-                }
-                probe = fopen(path, "rb");
-            }
-            if (probe == NULL) {
-                error_report(global_error_handler, SEVERITY_ERROR,
-                             entry->span.begin.line,
-                             entry->span.begin.column,
-                             ERROR_CATEGORY_COMPILER, ERR_COMP_IMPORT_NOT_FOUND,
-                             unit->source_path, "Failed to open import file '%s': %s", path, strerror(errno));
-                free(path);
-                free(import_text);
-                continue;
-            }
-            (void) fclose(probe);
-            char *canonical = canonical_existing_path(path);
-            free(path);
-            path = canonical;
-            if (path == NULL) {
-                free(import_text);
-                return 0;
-            }
-            if (!record_loaded_source(root, path)) {
-                free(path); free(import_text); return 0;
-            }
-            AstProgram *imported = known_import(root, path);
-            if (imported == NULL) {
-                imported = parse_single_file(path, options, root->strings);
-                if (imported == NULL) {
-                    free(path);
-                    free(import_text);
-                    continue;
-                }
-                if (!append_owned_import(root, imported)) {
-                    ast_program_free(imported);
-                    free(path);
-                    free(import_text);
-                    return 0;
-                }
-                imported->module_identity = logical_module_identity(root, path);
-                if (imported->module_identity == NULL) {
-                    error_report(global_error_handler, SEVERITY_ERROR,
-                                 entry->span.begin.line,
-                                 entry->span.begin.column,
-                                 ERROR_CATEGORY_COMPILER, ERR_COMP_IMPORT_OUTSIDE_ROOT,
-                                 unit->source_path,
-                                 "Import escapes the source or package root");
-                    free(path);
-                    free(import_text);
-                    return 0;
-                }
-                if (!resolve_imports(root, imported, options)) {
-                    free(path);
-                    free(import_text);
-                    return 0;
-                }
-            }
-            entry->resolved_program = imported;
-            free(path);
-            free(import_text);
-        }
-    }
-    return 1;
-}
+#include "package_loader.inc"
 
 AstProgram *frontend_parse_file(const char *source_path, const FrontendOptions *options) {
     StringInterner *strings = string_interner_create();
     if (strings == NULL) return NULL;
     char *canonical_source = canonical_existing_path(source_path);
+    if (canonical_source && path_is_directory(canonical_source)) {
+        DIR *directory=opendir(canonical_source); struct dirent *entry; char *selected=NULL;
+        if (directory) {
+            while ((entry=readdir(directory)) != NULL) {
+                size_t n=strlen(entry->d_name);
+                if (n > 4 && !strcmp(entry->d_name+n-4,".dmm")) {
+                    char *candidate=joined_path(canonical_source,entry->d_name);
+                    if (candidate && !path_is_directory(candidate) && (!selected || strcmp(candidate,selected) < 0)) {
+                        free(selected); selected=candidate;
+                    } else free(candidate);
+                }
+            }
+            closedir(directory);
+        }
+        free(canonical_source); canonical_source=selected;
+        if (!canonical_source) {
+            error_report(global_error_handler,SEVERITY_ERROR,0,0,ERROR_CATEGORY_SEMANTIC,ERR_PACKAGE_NOT_FOUND,source_path,"Package directory has no DMM source files");
+            string_interner_free(strings); return NULL;
+        }
+    }
     AstProgram *program = parse_single_file(canonical_source == NULL ? source_path : canonical_source,
                                             options, strings);
     free(canonical_source);
@@ -440,17 +306,8 @@ AstProgram *frontend_parse_file(const char *source_path, const FrontendOptions *
         return NULL;
     }
     program->owns_strings = 1;
-    program->module_identity = copy_string(".");
-    if (program->module_identity == NULL) {
-        ast_program_free(program);
-        return NULL;
-    }
-    if (!resolve_imports(program, program, options)) {
-        ast_program_free(program);
-        error_report(global_error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
-                     ERR_COMP_INTERNAL_FAILURE, source_path,
-                     "Out of memory while resolving AST imports");
-        return NULL;
+    if (!load_module_packages(program, options) && error_handler_get_error_count(global_error_handler) == 0) {
+        ast_program_free(program); return NULL;
     }
     return program;
 }

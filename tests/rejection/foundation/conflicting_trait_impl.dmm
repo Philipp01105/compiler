@@ -1,1 +1,2 @@
+package main;
 trait A { func get() -> int; } struct S {} impl A for S { func get() -> int { return 1; } } impl A for S { func get() -> int { return 2; } } func main() -> void {}

@@ -1,2 +1,3 @@
+package main;
 func value(x:int) -> int { if (x > 0) { return 1; } }
 func main() -> void {}

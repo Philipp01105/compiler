@@ -1,1 +1,2 @@
+package main;
 func main() -> int { return int(3.9); }

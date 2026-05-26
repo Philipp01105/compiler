@@ -1,0 +1,19 @@
+package main;
+import "stdlib";
+struct Point {
+    var x:int;
+    var y:int;
+}
+
+func main() -> void {
+    var point:Point;
+    point.x = 6;
+    point.y = 7;
+    var area:int = point.x * point.y;
+    var label:string = "area";
+    {
+        var _output0:string = label + "=" + area;
+        stdlib.println(_output0);
+        free(_output0);
+    }
+}

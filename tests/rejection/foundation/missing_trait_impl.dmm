@@ -1,1 +1,2 @@
+package main;
 trait Printable { func text() -> string; } struct Thing { func text() -> string { return "x"; } } func output<T:Printable>(x:T) -> string { return x.text(); } func main() -> void { var x:Thing; output(x); }

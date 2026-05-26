@@ -215,6 +215,15 @@ static AstType parse_type(SyntaxParser *parser) {
         }
         type.kind = AST_TYPE_NAMED;
         type.name_token = parser->current++;
+        if (match(parser,TOKEN_DOT)) {
+            const char *qualifier=ast_program_lexeme(parser->program,type.name_token);
+            size_t member=consume(parser,TOKEN_IDENTIFIER);
+            char qualified[MAX_TOKEN];
+            snprintf(qualified,sizeof(qualified),"%s.%s",qualifier,ast_program_lexeme(parser->program,member));
+            const char *interned=string_interner_intern(parser->program->strings,qualified);
+            if (!interned) parser->failed=1;
+            else parser->program->tokens[type.name_token].lexeme=interned;
+        }
         type.pointer_depth = leading_pointers;
         if (match(parser, TOKEN_LESS)) {
             AstTypeArgument **tail=&type.arguments;
@@ -278,7 +287,8 @@ static AstGenericParameter *parse_generic_parameters(SyntaxParser *parser) {
                 AstTraitBound **bound=&parameter->bounds;
                 do {
                     AstTraitBound *b=allocate(parser,sizeof(*b));
-                    size_t token=consume(parser,TOKEN_IDENTIFIER);
+                    AstType bound_type=parse_type(parser);
+                    size_t token=bound_type.name_token;
                     if (b != NULL) { b->name_token=token; *bound=b; bound=&b->next; }
                 } while (match(parser,TOKEN_PLUS));
             }
@@ -426,6 +436,20 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
             if (member != NULL) {
                 member->left = expression;
                 member->value_token = name;
+                if (expression->kind == AST_EXPR_NAME && check(parser,TOKEN_LESS)) {
+                    size_t look=parser->current; unsigned depth=0;
+                    do {
+                        TokenType next=parser->program->tokens[look++].type;
+                        if (next == TOKEN_LESS) depth++;
+                        if (next == TOKEN_GREATER) depth--;
+                        if (next == TOKEN_EOF || next == TOKEN_SEMICOLON) break;
+                    } while (look < parser->program->token_count && depth);
+                    if (!depth && look < parser->program->token_count && parser->program->tokens[look].type == TOKEN_DOT) {
+                        parser->current=expression->value_token;
+                        member->allocated_type=parse_type(parser);
+                        member->kind=AST_EXPR_NAME; member->left=NULL; member->value_token=member->allocated_type.name_token;
+                    }
+                }
             }
             expression = member;
         } else {
@@ -855,13 +879,16 @@ static AstDeclarationNode *parse_struct(SyntaxParser *parser) {
     AstDeclarationNode *methods = NULL;
     AstDeclarationNode **method_tail = &methods;
     while (!parser->failed && !check(parser, TOKEN_RBRACE) && !check(parser, TOKEN_EOF)) {
+        int is_public=match(parser,TOKEN_KEYWORD_PUB);
         int is_static = match(parser, TOKEN_KEYWORD_STATIC);
         if (check(parser, TOKEN_KEYWORD_FUNC)) {
             AstDeclarationNode *method = parse_function(parser, is_static, name);
+            if (method) method->is_public=is_public;
             *method_tail = method;
             if (method != NULL) method_tail = &method->next;
         } else if (!is_static && check(parser, TOKEN_KEYWORD_VAR)) {
             AstField *field = parse_field(parser);
+            if (field) field->is_public=is_public;
             *field_tail = field;
             if (field != NULL) field_tail = &field->next;
         } else {
@@ -892,10 +919,12 @@ static AstDeclarationNode *parse_enum(SyntaxParser *parser) {
             do {
                 size_t field_first = parser->current;
                 AstField *field = allocate(parser, sizeof(*field));
+                int is_public=match(parser,TOKEN_KEYWORD_PUB);
                 size_t field_name = consume(parser, TOKEN_IDENTIFIER);
                 (void) consume(parser, TOKEN_COLON);
                 AstType field_type = parse_type(parser);
                 if (field != NULL) {
+                    field->is_public=is_public;
                     field->name_token = field_name;
                     field->type = field_type;
                     field->resolved_symbol_id = AST_SYMBOL_NONE;
@@ -913,6 +942,7 @@ static AstDeclarationNode *parse_enum(SyntaxParser *parser) {
     while (!parser->failed && !check(parser, TOKEN_RBRACE) && !check(parser, TOKEN_EOF)) {
         size_t value_first = parser->current;
         AstEnumValue *value = allocate(parser, sizeof(*value));
+        int is_public=match(parser,TOKEN_KEYWORD_PUB);
         size_t value_name = consume(parser, TOKEN_IDENTIFIER);
         AstTypeArgument *payload=NULL, **payload_tail=&payload;
         AstExpression *arguments = NULL;
@@ -935,6 +965,7 @@ static AstDeclarationNode *parse_enum(SyntaxParser *parser) {
             (void) consume(parser, TOKEN_RPAREN);
         }
         if (value != NULL) {
+            value->is_public=is_public;
             value->name_token = value_name;
             value->arguments = arguments;
             value->payload_types=payload;
@@ -966,19 +997,19 @@ static AstDeclarationNode *parse_import(SyntaxParser *parser) {
         if (grouped && check(parser, TOKEN_RPAREN)) break;
         size_t path_start = parser->current;
         AstImportPath *entry = allocate(parser, sizeof(*entry));
+        size_t alias_token=AST_TOKEN_NONE;
+        if (check(parser,TOKEN_IDENTIFIER)) alias_token=parser->current++;
         size_t path_first = path_start;
         size_t path_token = AST_TOKEN_NONE;
         if (check(parser, TOKEN_STRING_LITERAL)) {
             path_token = parser->current++;
-        } else if (match(parser, TOKEN_LESS)) {
-            path_first = parser->current;
-            while (!check(parser, TOKEN_GREATER) && !check(parser, TOKEN_EOF)) parser->current++;
-            (void) consume(parser, TOKEN_GREATER);
         } else {
-            parser_failure(parser, ERR_PARSE_EXPECTED_TOKEN, "Expected import path");
+            parser_failure(parser, ERR_PACKAGE_ALIAS, "Expected quoted package path and an optional identifier alias; dot imports and file imports are unsupported");
         }
         if (entry != NULL) {
             entry->path_token = path_token;
+            entry->alias_token=alias_token;
+            entry->alias=alias_token == AST_TOKEN_NONE ? NULL : ast_program_lexeme(parser->program,alias_token);
             entry->path_first_token = path_first;
             entry->path_token_count = parser->current - path_first;
             entry->span = range_span(parser, path_start, parser->current);
@@ -988,6 +1019,7 @@ static AstDeclarationNode *parse_import(SyntaxParser *parser) {
         }
     } while (grouped && !parser->failed);
     if (grouped) (void) consume(parser, TOKEN_RPAREN);
+    (void)consume(parser,TOKEN_SEMICOLON);
     if (head == NULL && !parser->failed)
         parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
                        "Import group must contain at least one path");
@@ -1001,14 +1033,16 @@ static AstDeclarationNode *parse_import(SyntaxParser *parser) {
 static AstDeclarationNode *parse_trait(SyntaxParser *parser,int implementation) {
     size_t first=parser->current++;
     AstDeclarationNode *d=new_declaration(parser,implementation ? AST_DECL_IMPL : AST_DECL_TRAIT,first);
-    size_t trait=consume(parser,TOKEN_IDENTIFIER);
+    size_t trait=implementation ? parse_type(parser).name_token : consume(parser,TOKEN_IDENTIFIER);
     AstType for_type=inferred_type();
     if (implementation) { (void)consume(parser,TOKEN_KEYWORD_FOR); for_type=parse_type(parser); }
     (void)consume(parser,TOKEN_LBRACE);
     AstDeclarationNode *head=NULL, **tail=&head;
     int saved=parser->trait_signature; parser->trait_signature=!implementation;
     while (!parser->failed && !check(parser,TOKEN_RBRACE) && !check(parser,TOKEN_EOF)) {
+        int is_public=match(parser,TOKEN_KEYWORD_PUB);
         AstDeclarationNode *method=parse_function(parser,0,implementation ? for_type.name_token : trait);
+        if (method) method->is_public=is_public;
         *tail=method; if (method) tail=&method->next;
     }
     parser->trait_signature=saved;
@@ -1023,13 +1057,16 @@ static AstDeclarationNode *parse_trait(SyntaxParser *parser,int implementation) 
 
 static AstDeclarationNode *parse_constant(SyntaxParser *parser) {
     size_t first = parser->current;
-    (void) consume(parser, TOKEN_KEYWORD_CONST);
-    AstDeclarationNode *declaration = new_declaration(parser, AST_DECL_CONSTANT, first);
+    int variable=match(parser,TOKEN_KEYWORD_VAR);
+    if (!variable) (void) consume(parser, TOKEN_KEYWORD_CONST);
+    AstDeclarationNode *declaration = new_declaration(parser, variable ? AST_DECL_VARIABLE : AST_DECL_CONSTANT, first);
     size_t name = consume(parser, TOKEN_IDENTIFIER);
     AstType type = inferred_type();
     if (match(parser, TOKEN_COLON)) type = parse_type(parser);
-    (void) consume(parser, TOKEN_EQUAL);
-    AstExpression *value = parse_expression(parser);
+    AstExpression *value=NULL;
+    if (!variable || check(parser,TOKEN_EQUAL)) {
+        (void)consume(parser,TOKEN_EQUAL); value=parse_expression(parser);
+    }
     (void) consume(parser, TOKEN_SEMICOLON);
     if (declaration != NULL) {
         declaration->name_token = name;
@@ -1044,19 +1081,34 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
     if (program == NULL) return 0;
     program->structured_error_token = AST_TOKEN_NONE;
     SyntaxParser parser = {.program = program, .recover_syntax = recover_syntax};
+    program->package_token=AST_TOKEN_NONE;
+    if (!check(&parser,TOKEN_KEYWORD_PACKAGE))
+        parser_failure(&parser,ERR_PACKAGE_DECLARATION,"Every DMM source file must begin with 'package name;'");
+    else {
+        parser.current++;
+        program->package_token=consume(&parser,TOKEN_IDENTIFIER);
+        program->package_name=ast_program_lexeme(program,program->package_token);
+        if (!strcmp(program->package_name,"_"))
+            parser_failure(&parser,ERR_PACKAGE_NAME,"Package name cannot be '_'");
+        (void)consume(&parser,TOKEN_SEMICOLON);
+    }
     AstDeclarationNode **tail = &program->root;
     while (!parser.failed && !check(&parser, TOKEN_EOF)) {
         size_t first = parser.current;
         if (recover_syntax) parser.reported = 0;
         AstDeclarationNode *declaration = NULL;
+        int is_public=match(&parser,TOKEN_KEYWORD_PUB);
         if (check(&parser, TOKEN_KEYWORD_IMPORT)) declaration = parse_import(&parser);
         else if (check(&parser, TOKEN_KEYWORD_CONST)) declaration = parse_constant(&parser);
+        else if (check(&parser, TOKEN_KEYWORD_VAR)) declaration = parse_constant(&parser);
         else if (check(&parser, TOKEN_KEYWORD_FUNC))
             declaration = parse_function(&parser, 0, AST_TOKEN_NONE);
         else if (check(&parser, TOKEN_KEYWORD_STRUCT)) declaration = parse_struct(&parser);
         else if (check(&parser, TOKEN_KEYWORD_ENUM)) declaration = parse_enum(&parser);
         else if (check(&parser,TOKEN_KEYWORD_TRAIT)) declaration=parse_trait(&parser,0);
         else if (check(&parser,TOKEN_KEYWORD_IMPL)) declaration=parse_trait(&parser,1);
+        else if (check(&parser,TOKEN_KEYWORD_PACKAGE))
+            parser_failure(&parser,ERR_PACKAGE_DECLARATION,"Package declaration must appear exactly once, before all declarations");
         else if (check(&parser, TOKEN_HASH))
             parser_failure(&parser, ERR_PARSE_INVALID_DECLARATION,
                            "#import was removed; use import path");
@@ -1081,6 +1133,9 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
             parser.failed = 0;
         }
         while (declaration != NULL) {
+            if (is_public && (declaration->kind == AST_DECL_IMPORT || declaration->kind == AST_DECL_IMPL))
+                parser_failure(&parser,ERR_PARSE_INVALID_DECLARATION,"pub applies to declarations and members, not imports or implementations");
+            declaration->is_public=is_public;
             AstDeclarationNode *next = declaration->next;
             *tail = declaration;
             tail = &declaration->next;

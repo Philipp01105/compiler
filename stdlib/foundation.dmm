@@ -1,17 +1,18 @@
+package stdlib;
 // Compile-time containers and capabilities. Pointer/string ownership stays explicit.
-enum Option<T> { Some(T), None, }
-enum Result<T,E> { Ok(T), Err(E), }
-struct Cell<T> {
-    var value:T;
-    func get() -> T { return value; }
-    func set(newValue:T) -> void { value=newValue; }
+pub enum Option<T> { pub Some(T), pub None, }
+pub enum Result<T,E> { pub Ok(T), pub Err(E), }
+pub struct Cell<T> {
+    pub var value:T;
+    pub func get() -> T { return value; }
+    pub func set(newValue:T) -> void { value=newValue; }
 }
-trait Printable { func toString() -> string; }
-trait Equal { func equal(other:Self) -> bit; }
-func unwrapOr<T>(value:Option<T>,fallback:T) -> T {
+pub trait Printable { pub func toString() -> string; }
+pub trait Equal { pub func equal(other:Self) -> bit; }
+pub func unwrapOr<T>(value:Option<T>,fallback:T) -> T {
     match (value) {
         Some(v) => return v;
         None => return fallback;
     }
 }
-func printValue<T:Printable>(value:T) -> void { print(value.toString()); }
+pub func printValue<T:Printable>(value:T) -> void { print(value.toString()); }

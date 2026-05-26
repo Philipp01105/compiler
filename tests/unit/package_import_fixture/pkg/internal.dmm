@@ -1,1 +1,2 @@
-this file must not be loaded
+package pkg;
+func private_answer() -> int { return 42; }

@@ -32,15 +32,14 @@ static int span(FILE *output, AstSourceSpan value) {
 }
 
 static const char *data_type_name(DataType type) {
-    static const char *names[] = {"int", "char", "byte", "bit", "float", "double",
-                                  "string", "void", "unknown"};
+    static const char *names[] = {DMM_TYPE_NAMES};
     return type >= TYPE_INT && type <= TYPE_UNKNOWN ? names[type] : "invalid";
 }
 
 static const char *expression_name(AstExpressionKind kind) {
     static const char *names[] = {"error", "literal", "name", "unary", "binary", "call",
-        "index", "member", "slice-length", "reserve", "cast", "free", "enum-construct"};
-    return kind >= AST_EXPR_ERROR && kind <= AST_EXPR_ENUM_CONSTRUCT ? names[kind] : "invalid";
+        "index", "member", "slice-length", "reserve", "cast", "free", "enum-construct", "enum-access"};
+    return kind >= AST_EXPR_ERROR && kind <= AST_EXPR_ENUM_ACCESS ? names[kind] : "invalid";
 }
 
 static const char *statement_name(AstStatementKind kind) {
@@ -243,6 +242,7 @@ static int dump_declaration(FILE *output, const AstProgram *program,
     }
     if (declaration->specialization_identity &&
         (fputs(" specialization=",output) == EOF || !quoted(output,declaration->specialization_identity))) return 0;
+    if (fprintf(output," visibility=%s",declaration->is_public ? "public" : "private") < 0) return 0;
     if (fputc('\n', output) == EOF) return 0;
     if (declaration->generic_origin) {
         if (!indent(output,depth+1) || fputs("generic-origin name=",output) == EOF ||
@@ -253,7 +253,7 @@ static int dump_declaration(FILE *output, const AstProgram *program,
     }
     if (declaration->kind == AST_DECL_FUNCTION)
         return dump_function(output, program, declaration, depth + 1);
-    if (declaration->kind == AST_DECL_CONSTANT) {
+    if (declaration->kind == AST_DECL_CONSTANT || declaration->kind == AST_DECL_VARIABLE) {
         if (!indent(output, depth + 1) || fputs("type=", output) == EOF ||
             !dump_type(output, program, &declaration->as.constant.type) ||
             fputc('\n', output) == EOF) return 0;
@@ -273,6 +273,7 @@ static int dump_declaration(FILE *output, const AstProgram *program,
     const AstField *fields = declaration->kind == AST_DECL_STRUCT ? declaration->as.struct_decl.fields :
                              declaration->kind == AST_DECL_ENUM ? declaration->as.enum_decl.fields : NULL;
     for (const AstField *field = fields; field != NULL; field = field->next) {
+        if (!indent(output,depth+1) || fprintf(output,"member-visibility=%s\n",field->is_public ? "public" : "private") < 0) return 0;
         if (!indent(output, depth + 1) || fputs("field name=", output) == EOF ||
             !quoted(output, ast_program_lexeme(program, field->name_token)) ||
             fputs(" type=", output) == EOF || !dump_type(output, program, &field->type) ||
@@ -304,6 +305,8 @@ static int dump_program(FILE *output, const AstProgram *program, size_t index,
         !quoted(output, program->source_path) ||
         fprintf(output, " declarations=%zu tokens=%zu\n", program->structured_declaration_count,
                 program->token_count) < 0) return 0;
+    if (fputs("  package name=",output) == EOF || !quoted(output,program->package_name ? program->package_name : "") ||
+        fputs(" identity=",output) == EOF || !quoted(output,program->module_identity ? program->module_identity : "") || fputc('\n',output) == EOF) return 0;
     for (const AstDeclarationNode *declaration = program->root;
          declaration != NULL; declaration = declaration->next)
         if (!dump_declaration(output, program, declaration, 1)) return 0;

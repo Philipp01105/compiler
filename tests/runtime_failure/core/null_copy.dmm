@@ -1,0 +1,3 @@
+package main;
+import "stdlib/core";
+func main() -> void { core.core_copy(core.core_null(), core.core_null(), 1); }

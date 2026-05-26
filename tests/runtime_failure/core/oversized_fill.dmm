@@ -1,0 +1,3 @@
+package main;
+import "stdlib/core";
+func main() -> void { core.core_fill(core.core_null(), 0, (-1).(usize)); }

@@ -1,4 +1,4 @@
-import <stdlib>
-
+package main;
+import "stdlib";
 func one(x:int) -> int { return x; }
-func main() -> void { println(one("x")); }
+func main() -> void { stdlib.println(one("x")); }

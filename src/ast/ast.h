@@ -14,13 +14,14 @@ typedef struct { AstSourceLocation begin; AstSourceLocation end; } AstSourceSpan
 
 typedef enum {
     AST_DECL_IMPORT, AST_DECL_STRUCT, AST_DECL_ENUM, AST_DECL_FUNCTION,
-    AST_DECL_CONSTANT, AST_DECL_TRAIT, AST_DECL_IMPL, AST_DECL_INVALID
+    AST_DECL_CONSTANT, AST_DECL_TRAIT, AST_DECL_IMPL, AST_DECL_VARIABLE, AST_DECL_INVALID
 } AstDeclarationKind;
 typedef enum { AST_TYPE_INFERRED, AST_TYPE_NAMED } AstTypeKind;
 typedef enum {
     AST_EXPR_ERROR, AST_EXPR_LITERAL, AST_EXPR_NAME, AST_EXPR_UNARY,
     AST_EXPR_BINARY, AST_EXPR_CALL, AST_EXPR_INDEX, AST_EXPR_MEMBER,
-    AST_EXPR_SLICE_LENGTH, AST_EXPR_RESERVE, AST_EXPR_CAST, AST_EXPR_FREE, AST_EXPR_ENUM_CONSTRUCT
+    AST_EXPR_SLICE_LENGTH, AST_EXPR_RESERVE, AST_EXPR_CAST, AST_EXPR_FREE, AST_EXPR_ENUM_CONSTRUCT,
+    AST_EXPR_ENUM_ACCESS
 } AstExpressionKind;
 typedef enum {
     AST_STMT_ERROR, AST_STMT_BLOCK, AST_STMT_VARIABLE, AST_STMT_EXPRESSION,
@@ -71,6 +72,8 @@ typedef struct AstImportPath {
     size_t path_token_count;
     size_t resolved_symbol_id;
     AstProgram *resolved_program;
+    const char *alias;
+    size_t alias_token;
     struct AstImportPath *next;
 } AstImportPath;
 
@@ -140,6 +143,7 @@ struct AstParameter {
 };
 
 struct AstField {
+    int is_public;
     AstSourceSpan span;
     size_t name_token;
     AstType type;
@@ -148,6 +152,7 @@ struct AstField {
 };
 
 struct AstEnumValue {
+    int is_public;
     AstSourceSpan span;
     size_t name_token;
     AstExpression *arguments;
@@ -157,6 +162,7 @@ struct AstEnumValue {
 };
 
 struct AstDeclarationNode {
+    int is_public;
     AstDeclarationKind kind;
     AstSourceSpan span;
     size_t first_token;
@@ -184,7 +190,7 @@ struct AstDeclarationNode {
         struct { AstField *fields; AstEnumValue *values; int is_sum; } enum_decl;
         struct { AstType type; AstExpression *value; } constant;
         struct { AstDeclarationNode *methods; } trait_decl;
-        struct { size_t trait_token; AstType for_type; AstDeclarationNode *methods; int attached; } impl_decl;
+        struct { size_t trait_token; AstType for_type; AstDeclarationNode *methods; int attached; const AstDeclarationNode *trait_identity; } impl_decl;
     } as;
 };
 
@@ -196,7 +202,38 @@ typedef struct {
     size_t token_count;
 } AstDeclaration;
 
+typedef struct DmmPackage DmmPackage;
+typedef struct DmmModule DmmModule;
+typedef struct DmmDependency {
+    const char *path;
+    const char *version;
+    struct DmmDependency *next;
+} DmmDependency;
+struct DmmModule {
+    DmmModule *graph;
+    const char *path;
+    const char *root;
+    const char *version;
+    DmmDependency *dependencies;
+    DmmPackage *packages;
+};
+struct DmmPackage {
+    DmmModule *module;
+    const char *path;
+    const char *directory;
+    const char *name;
+    AstProgram **files;
+    size_t file_count;
+    int loading;
+    DmmPackage *next;
+};
+
 struct AstProgram {
+    const char *package_name;
+    size_t package_token;
+    DmmPackage *package;
+    DmmModule *module;
+    int executable_build;
     char *source_path;
     char *module_identity;
     AstToken *tokens;

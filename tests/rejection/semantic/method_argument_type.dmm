@@ -1,2 +1,3 @@
+package main;
 struct Item { func use(value:int) -> void {} }
 func main() -> void { var item:Item; item.use("bad"); }

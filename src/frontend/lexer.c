@@ -155,8 +155,20 @@ static TokenType get_keyword_type(const char *str) {
     if (strcmp(str, "reserve") == 0) return TOKEN_KEYWORD_RESERVE;
     if (strcmp(str, "free") == 0) return TOKEN_KEYWORD_FREE;
     if (strcmp(str, "const") == 0) return TOKEN_KEYWORD_CONST;
+    if (strcmp(str, "package") == 0) return TOKEN_KEYWORD_PACKAGE;
+    if (strcmp(str, "pub") == 0) return TOKEN_KEYWORD_PUB;
 
     if (strcmp(str, "int") == 0) return TOKEN_TYPE_INT;
+    if (strcmp(str, "i8") == 0) return TOKEN_TYPE_I8;
+    if (strcmp(str, "u8") == 0) return TOKEN_TYPE_U8;
+    if (strcmp(str, "i16") == 0) return TOKEN_TYPE_I16;
+    if (strcmp(str, "u16") == 0) return TOKEN_TYPE_U16;
+    if (strcmp(str, "i32") == 0) return TOKEN_TYPE_I32;
+    if (strcmp(str, "u32") == 0) return TOKEN_TYPE_U32;
+    if (strcmp(str, "i64") == 0) return TOKEN_TYPE_I64;
+    if (strcmp(str, "u64") == 0) return TOKEN_TYPE_U64;
+    if (strcmp(str, "isize") == 0) return TOKEN_TYPE_ISIZE;
+    if (strcmp(str, "usize") == 0) return TOKEN_TYPE_USIZE;
     if (strcmp(str, "char") == 0) return TOKEN_TYPE_CHAR;
     if (strcmp(str, "byte") == 0) return TOKEN_TYPE_BYTE;
     if (strcmp(str, "bit") == 0) return TOKEN_TYPE_BIT;
@@ -466,11 +478,11 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
             if (!has_dot) {
                 errno = 0;
                 char *end = NULL;
-                unsigned long value = strtoul(num, &end, 10);
-                if (errno == ERANGE || end == num || *end != '\0' || value > INT_MAX) {
+                (void)strtoull(num, &end, 10);
+                if (errno == ERANGE || end == num || *end != '\0') {
                     error_report(global_error_handler, SEVERITY_ERROR, line, start_col,
                                  ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_SYNTAX, filename,
-                                 "Integer literal is outside signed 32-bit range");
+                                 "Integer literal is outside unsigned 64-bit range");
                     stream->has_error = 1;
                 }
             }
@@ -629,6 +641,8 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
 
 const char *token_type_to_string(TokenType type) {
     switch (type) {
+        case TOKEN_KEYWORD_PACKAGE: return "KEYWORD_PACKAGE";
+        case TOKEN_KEYWORD_PUB: return "KEYWORD_PUB";
         case TOKEN_KEYWORD_FUNC: return "KEYWORD_FUNC";
         case TOKEN_KEYWORD_VAR: return "KEYWORD_VAR";
         case TOKEN_KEYWORD_RETURN: return "KEYWORD_RETURN";
@@ -645,6 +659,16 @@ const char *token_type_to_string(TokenType type) {
         case TOKEN_KEYWORD_FREE: return "KEYWORD_FREE";
 
         case TOKEN_TYPE_INT: return "TYPE_INT";
+        case TOKEN_TYPE_I8: return "TYPE_I8";
+        case TOKEN_TYPE_U8: return "TYPE_U8";
+        case TOKEN_TYPE_I16: return "TYPE_I16";
+        case TOKEN_TYPE_U16: return "TYPE_U16";
+        case TOKEN_TYPE_I32: return "TYPE_I32";
+        case TOKEN_TYPE_U32: return "TYPE_U32";
+        case TOKEN_TYPE_I64: return "TYPE_I64";
+        case TOKEN_TYPE_U64: return "TYPE_U64";
+        case TOKEN_TYPE_ISIZE: return "TYPE_ISIZE";
+        case TOKEN_TYPE_USIZE: return "TYPE_USIZE";
         case TOKEN_TYPE_CHAR: return "TYPE_CHAR";
         case TOKEN_TYPE_BYTE: return "TYPE_BYTE";
         case TOKEN_TYPE_BIT: return "TYPE_BIT";

@@ -71,6 +71,7 @@ const char *ast_declaration_kind_name(AstDeclarationKind kind) {
         case AST_DECL_ENUM: return "enum";
         case AST_DECL_FUNCTION: return "function";
         case AST_DECL_CONSTANT: return "constant";
+        case AST_DECL_VARIABLE: return "variable";
         case AST_DECL_TRAIT: return "trait";
         case AST_DECL_IMPL: return "impl";
         case AST_DECL_INVALID: return "invalid";
@@ -115,6 +116,7 @@ static int valid_expression(const AstProgram *program, const AstExpression *expr
                 !valid_expression(program, expression->right)) return 0;
             break;
         case AST_EXPR_ENUM_CONSTRUCT:
+        case AST_EXPR_ENUM_ACCESS:
         case AST_EXPR_CALL:
             if (!valid_expression(program, expression->left)) return 0;
             break;
@@ -238,10 +240,11 @@ static int valid_declarations(const AstProgram *program) {
             }
         } else if (declaration->kind == AST_DECL_FUNCTION) {
             if (!valid_function_declaration(program, declaration)) return 0;
-        } else if (declaration->kind == AST_DECL_CONSTANT) {
+        } else if (declaration->kind == AST_DECL_CONSTANT || declaration->kind == AST_DECL_VARIABLE) {
             if (!valid_token(program, declaration->name_token) ||
                 !valid_type(program, &declaration->as.constant.type, 1) ||
-                !valid_expression(program, declaration->as.constant.value)) return 0;
+                ((declaration->kind == AST_DECL_CONSTANT || declaration->as.constant.value) &&
+                 !valid_expression(program, declaration->as.constant.value))) return 0;
         } else if (declaration->kind == AST_DECL_STRUCT) {
             if (!valid_token(program, declaration->name_token) ||
                 !valid_fields(program, declaration->as.struct_decl.fields)) return 0;

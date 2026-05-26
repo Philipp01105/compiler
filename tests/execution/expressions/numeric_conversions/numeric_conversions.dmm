@@ -1,0 +1,24 @@
+package main;
+import "stdlib";
+func mix(a:int, b:double, c:int, d:float) -> double {
+    return a + b + c + d;
+}
+
+func pass_char(x:char) -> int { return x; }
+func pass_byte(x:byte) -> int { return x; }
+func pass_float(x:float) -> float { return x * 2.0; }
+func pass_double(x:double) -> double { return x / 2.0; }
+
+func main() -> void {
+    var c:char = 'A';
+    var b:byte = 250;
+    var flag:bit = true;
+    var f:float = 1.5;
+    var d:double = f;
+    stdlib.println(pass_char(c));
+    stdlib.println(pass_byte(b));
+    stdlib.println(flag == true);
+    stdlib.println(pass_float(f));
+    stdlib.println(pass_double(d + 2.5));
+    stdlib.println(mix(1, 2.5, 3, 4.5));
+}

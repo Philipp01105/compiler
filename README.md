@@ -7,13 +7,16 @@ The project is suitable for learning and experimentation. It is not yet intended
 ## Supported features
 
 - Primitive types: `int`, `char`, `byte`, `bit`, `float`, `double`, `string`, and `void`
+- Signed/unsigned fixed-width integers `i8`/`u8` through `i64`/`u64`, and `isize`/`usize`
+- A standalone `stdlib/core` package for byte regions, raw I/O and process primitives
 - Functions, forward calls, local variables, arrays, pointers, structs, enums, and methods
 - Inferred generic functions and invariant generic structs/enums, with static specialization
 - Explicit traits, `Self`, multiple trait bounds, and static method dispatch
 - Tagged variant payloads and exhaustive `match` statements with typed bindings
 - `if`/`else`, `for`, `while`, `break`, `continue`, and `return`
 - String operations, formatted input/output, file I/O, and explicit heap allocation/free
-- Source imports through `import "file.dmm"` and `import <stdlib>`
+- Modules with `dmm.mod`, directory packages, qualified imports and explicit `pub` exports
+- Local versioned vendor dependencies, forbidden import cycles and restricted `internal` packages
 - Linux ELF and Windows COFF objects, ELF/PE executables, and GNU assembly output
 - Intel syntax by default, with AT&T syntax available
 - Human-readable or JSON diagnostics
@@ -44,10 +47,14 @@ Enable warnings as errors with `-DDMM_STRICT_WARNINGS=ON`.
 
 ## Compile a program
 
+Each DMM project needs a `dmm.mod`; each source file starts with `package name;`.
+The compiler accepts a source file or package directory. See [MODULE_SYSTEM.md](MODULE_SYSTEM.md)
+for package discovery, visibility, imports and local vendor dependencies.
+
 Emit and internally link a native executable:
 
 ```sh
-./build/compiler tests/execution/basics/hello.dmm -o hello
+./build/compiler tests/execution/basics/hello/hello.dmm -o hello
 ./hello
 ```
 
@@ -57,8 +64,8 @@ See [NATIVE_BACKEND.md](NATIVE_BACKEND.md) for target formats and linking detail
 Assembly output is available with `-S` or `--emit=asm`:
 
 ```sh
-./build/compiler -S tests/execution/basics/hello.dmm
-gcc -nostdlib -no-pie -Wl,-e,__dmm_entry tests/execution/basics/hello.dmm.s -o hello
+./build/compiler -S tests/execution/basics/hello/hello.dmm
+gcc -nostdlib -no-pie -Wl,-e,__dmm_entry tests/execution/basics/hello/hello.dmm.s -o hello
 ./hello
 ```
 
@@ -172,6 +179,7 @@ See [FUZZING.md](FUZZING.md) for corpus commands and harness behavior.
 - [Formal language](FORMAL_LANGUAGE.md): lexical and syntactic EBNF.
 - [Language specification](LANGUAGE_SPEC.md): semantic rules and implementation limits.
 - [Architecture](ARCHITECTURE.md): compiler pipeline, module ownership, backend, and validation design.
+- [Core runtime](CORE_RUNTIME.md): low-level compiler primitives and DMM library responsibilities.
 - [Fuzzing](FUZZING.md): libFuzzer builds, corpora, and target behavior.
 - [Dump formats](DUMP_FORMATS.md): stable AST, IR, and machine-instruction source maps.
 

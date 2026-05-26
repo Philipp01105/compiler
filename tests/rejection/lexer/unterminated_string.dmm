@@ -1,3 +1,3 @@
-import <stdlib>
-
-func main() -> void { println("unterminated); }
+package main;
+import "stdlib";
+func main() -> void { stdlib.println("unterminated); }

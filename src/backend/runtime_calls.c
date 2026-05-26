@@ -1,7 +1,11 @@
 #include "runtime_calls.h"
+#include "core_intrinsics.h"
 #include <string.h>
 
 static const RuntimeCall calls[] = {
+#define CORE_CALL(source, link, count, result, a, b, c) {source, link, count},
+    DMM_CORE_INTRINSICS(CORE_CALL)
+#undef CORE_CALL
     {"strlen", "__dmm_rt_strlen", 1},
     {"io_strlen", "__dmm_rt_strlen", 1},
     {"strcmp", "__dmm_rt_strcmp", 2},

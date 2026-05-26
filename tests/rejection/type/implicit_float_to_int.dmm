@@ -1,1 +1,2 @@
+package main;
 func main() -> void { var x:int = 1.5; }

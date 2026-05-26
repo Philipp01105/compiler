@@ -1,10 +1,10 @@
-import <stdlib>
-
+package main;
+import "stdlib";
 struct Counter {
     var value:int;
     static func twice(value:int) -> int { return value * 2; }
 }
 func main() -> void {
     var counter:Counter;
-    println(counter.twice(2));
+    stdlib.println(counter.twice(2));
 }

@@ -1,0 +1,25 @@
+package main;
+import "stdlib";
+enum State(code:int, text:string, weight:float, active:bit) {
+    idle(-1, "idle", -1.5, false),
+    ready(2, "ready", 2.25, true)
+}
+
+func echo(value:State) -> State {
+    return value;
+}
+
+func main() -> void {
+    var state:State = State.idle;
+    stdlib.println(state == State.idle);
+    stdlib.println(state.code);
+    stdlib.println(state.text);
+    stdlib.println(state.weight);
+    stdlib.println(state.active);
+    state = echo(State.ready);
+    stdlib.println(state != State.idle);
+    stdlib.println(state.code);
+    stdlib.println(state.text);
+    stdlib.println(state.weight);
+    stdlib.println(state.active);
+}

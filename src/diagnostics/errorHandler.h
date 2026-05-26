@@ -54,6 +54,16 @@ typedef enum {
 #define ERR_SEM_COMPLEXITY_LIMIT        114
 #define ERR_SEM_STORAGE_LIMIT           115
 #define ERR_SEM_INDEX_OUT_OF_BOUNDS     116
+#define ERR_PACKAGE_DECLARATION        120
+#define ERR_PACKAGE_NAME               121
+#define ERR_MODULE_MANIFEST            122
+#define ERR_PACKAGE_NOT_FOUND          123
+#define ERR_PACKAGE_CYCLE              124
+#define ERR_PACKAGE_PRIVATE            125
+#define ERR_PACKAGE_INTERNAL           126
+#define ERR_PACKAGE_ALIAS              127
+#define ERR_MODULE_VERSION             128
+#define ERR_MODULE_DEPENDENCY          129
 
 #define ERR_CODEGEN_TOO_MANY_LITERALS   100
 #define ERR_CODEGEN_TOO_MANY_VARIABLES  101

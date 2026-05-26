@@ -1,0 +1,29 @@
+package main;
+import "stdlib";
+// Variable types test
+func main() -> void {
+    var int_val:int = 42;
+    
+    {
+        var _output0:string = "Integer: " + int_val;
+        stdlib.println(_output0);
+        free(_output0);
+    }
+    
+    // Variable reassignment
+    int_val = 100;
+    {
+        var _output1:string = "Updated integer: " + int_val;
+        stdlib.println(_output1);
+        free(_output1);
+    }
+    
+    // Another variable
+    var another:int = 200;
+    {
+        var _output2:string = "Another integer: " + another;
+        stdlib.println(_output2);
+        free(_output2);
+    }
+}
+// Category: execution/scopes

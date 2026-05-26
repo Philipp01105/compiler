@@ -1,0 +1,13 @@
+package main;
+import "stdlib";
+func main() -> void {
+    var total:int = 0;
+    var i:int = 0;
+    while (i < 10) {
+        i++;
+        if (i % 2 == 0) { continue; }
+        if (i > 7) { break; }
+        total += i;
+    }
+    stdlib.println(total);
+}

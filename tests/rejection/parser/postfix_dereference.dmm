@@ -1,3 +1,4 @@
+package main;
 func main() -> void {
     var value:*int = reserve(int);
     value* = 1;

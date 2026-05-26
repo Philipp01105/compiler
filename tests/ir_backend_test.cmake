@@ -1,3 +1,4 @@
+include("${CMAKE_CURRENT_LIST_DIR}/source_fixture.cmake")
 cmake_minimum_required(VERSION 3.21)
 include("${CMAKE_CURRENT_LIST_DIR}/standalone_link.cmake")
 get_filename_component(ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
@@ -28,7 +29,7 @@ foreach(target elf coff)
         execute_process(
                 COMMAND "${COMPILER}" --emit=asm --deterministic "--target=${target}"
                         "--syntax=${syntax}" -o "${output}"
-                        "${ROOT}/tests/execution/basics/hello.dmm"
+                        "${ROOT}/tests/execution/basics/hello/hello.dmm"
                 RESULT_VARIABLE result ERROR_VARIABLE errors)
         if(NOT result STREQUAL "0")
             message(FATAL_ERROR "IR-native emission failed: ${errors}")
@@ -41,7 +42,7 @@ foreach(target elf coff)
 endforeach()
 
 foreach(case conditional break_continue)
-    set(source "${ROOT}/tests/execution/control_flow/${case}.dmm")
+    set(source "${ROOT}/tests/execution/control_flow/${case}/${case}.dmm")
     set(output "${OUTPUT_DIR}/${case}_native.s")
     execute_process(
             COMMAND "${COMPILER}" --emit=asm --deterministic --target=elf --syntax=intel
@@ -59,7 +60,7 @@ endforeach()
 set(function_output "${OUTPUT_DIR}/function_native.s")
 execute_process(
         COMMAND "${COMPILER}" --emit=asm --deterministic -o "${function_output}"
-                "${ROOT}/tests/execution/functions/function.dmm"
+                "${ROOT}/tests/execution/functions/function/function.dmm"
         RESULT_VARIABLE result ERROR_VARIABLE errors)
 if(NOT result STREQUAL "0")
     message(FATAL_ERROR "IR-native function emission failed: ${errors}")
@@ -75,13 +76,13 @@ foreach(target elf coff)
     set(executable "${OUTPUT_DIR}/integer_call_${target}_${syntax}.exe")
     execute_process(
             COMMAND "${COMPILER}" --emit=asm --deterministic "--target=${target}" "--syntax=${syntax}"
-                    -o "${output}" "${ROOT}/tests/unit/frontend_ast_fixture.dmm"
+                    -o "${output}" "${ROOT}/tests/unit/frontend_ast_fixture/frontend_ast_fixture.dmm"
             RESULT_VARIABLE result ERROR_VARIABLE errors)
     if(NOT result STREQUAL "0")
         message(FATAL_ERROR "IR-native integer call emission failed: ${errors}")
     endif()
     file(READ "${output}" assembly)
-    if(NOT assembly MATCHES "# Lowering: typed IR" OR NOT assembly MATCHES "call add")
+    if(NOT assembly MATCHES "# Lowering: typed IR" OR NOT assembly MATCHES "call .*_add__")
         message(FATAL_ERROR "integer function call did not use typed IR (${target}/${syntax})")
     endif()
     if(target STREQUAL "${HOST_TARGET}")
@@ -104,7 +105,7 @@ foreach(target elf coff)
 endforeach()
 
 foreach(case operator_precedence short_circuit)
-    set(source "${ROOT}/tests/execution/expressions/${case}.dmm")
+    set(source "${ROOT}/tests/execution/expressions/${case}/${case}.dmm")
     set(output "${OUTPUT_DIR}/${case}_native.s")
     execute_process(
             COMMAND "${COMPILER}" --emit=asm --deterministic --target=elf --syntax=intel
@@ -122,7 +123,7 @@ endforeach()
 set(float_output "${OUTPUT_DIR}/float_literal_native.s")
 execute_process(
         COMMAND "${COMPILER}" --emit=asm --deterministic --target=elf --syntax=intel
-                -o "${float_output}" "${ROOT}/tests/execution/expressions/float_literal.dmm"
+                -o "${float_output}" "${ROOT}/tests/execution/expressions/float_literal/float_literal.dmm"
         RESULT_VARIABLE result ERROR_VARIABLE errors)
 if(NOT result STREQUAL "0")
     message(FATAL_ERROR "IR-native float literal emission failed: ${errors}")
@@ -138,7 +139,7 @@ foreach(target elf coff)
     set(executable "${OUTPUT_DIR}/scalar_${target}_${syntax}.exe")
     execute_process(
             COMMAND "${COMPILER}" --emit=asm --deterministic "--target=${target}" "--syntax=${syntax}"
-                    -o "${output}" "${ROOT}/tests/unit/ir_scalar_fixture.dmm"
+                    -o "${output}" "${ROOT}/tests/unit/ir_scalar_fixture/ir_scalar_fixture.dmm"
             RESULT_VARIABLE result ERROR_VARIABLE errors)
     if(NOT result STREQUAL "0")
         message(FATAL_ERROR "IR-native scalar emission failed: ${errors}")

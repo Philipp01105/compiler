@@ -1,5 +1,6 @@
-import ("pkg" "pkg/package.dmm" "pkg/api.dmm")
+package main;
+import "dmm.test/packagefixture/pkg";
 
 func main() -> void {
-    var result:int = package_answer();
+    var result:int = pkg.package_answer();
 }

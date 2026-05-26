@@ -8,6 +8,8 @@ The compiler has a single production pipeline:
 source file
   -> token stream
   -> arena-owned structured AST
+  -> module manifest and package graph loading
+  -> package-wide symbol collection with file-local import bindings
   -> semantic model and typed AST annotations
   -> verified target-neutral IR
   -> IR peephole/dataflow optimization and verification
@@ -35,13 +37,14 @@ copying through the existing internal ABI.
 - `src/frontend/lexer.c` owns lexical analysis and token diagnostics.
 - `src/frontend/syntax_parser.c` constructs all declaration, type, statement,
   and expression nodes in the AST arena.
-- `src/frontend/frontend.c` owns file/import loading. Quoted imports are relative
-  to their source unit; angle imports can resolve from the bundled library root.
+- `src/frontend/frontend.c` and `package_loader.inc` own module manifests,
+  package discovery and the package graph. Imports resolve canonical package paths
+  through the module root, declared vendor dependencies or bundled `stdlib`.
 - `src/common/string_interner.c` owns the module-wide canonical spelling table.
   Root files and imports share it, so equal source strings have pointer identity.
 - `src/ast` owns program lifetime, the shared string interner, spans, and AST storage.
 - `src/ast/ast_dump.c` serializes the resolved tree as versioned `dmm-ast-v3`.
-- `src/sema` collects global/member/local symbols, resolves expressions and
+- `src/sema` collects package/member/local symbols, resolves file-local imports and
   named types, validates scopes, calls, conversions, lvalues, returns, bounds,
   and control-flow placement, and annotates AST nodes with stable IDs and types.
 - `src/ir` lowers typed AST nodes to explicit values and control flow, interns
@@ -121,17 +124,25 @@ arguments in source order. Windows x64 uses positional registers and shadow spac
 Platform I/O shims live in the standalone runtime generator. Both targets
 preserve stack alignment and the RBX
 callee-saved register used by address lowering. User functions that overlap the
-runtime are mangled into a private DMM namespace; method symbols also encode their
-owning type. Other top-level symbols remain available for C ABI interoperability.
+runtime are mangled using canonical package identities; method symbols also encode
+their owning type. Public declarations retain their DMM names in source; C callers
+use the emitted link names. Generic identities encode declaration names and signatures.
 
 `src/runtime/native_runtime.c` and `standalone.inc` generate machine instructions
 for strings, allocation, conversions, fixed-format output, input and platform
-I/O. They are embedded in assembly, objects and internal executable images.
+I/O. Executable packages embed these routines in assembly, objects and internal
+executable images. Library objects have no executable startup requirement.
 Linux uses syscalls and static ELF startup; Windows uses kernel32 APIs and its
 own file-descriptor table. The old C runtime archive has been removed.
 `src/backend/runtime_calls.c` maps typed builtin calls to reserved runtime link
 symbols. The emitter performs ordinary ABI argument/result lowering and contains
 no syscall-number selection, Windows file-flag mapping or input implementations.
+The low-level core signatures in `src/common/core_intrinsics.h` are shared by
+semantic analysis, typed IR verification and runtime call mapping. Core byte
+regions use `*u8`, counts use `usize`, and signed offsets/results use `isize`.
+`stdlib/core` exposes ordinary DMM wrappers; byte loads/stores, string traversal
+and fixed-width integer output are implemented in DMM. See [CORE_RUNTIME.md](CORE_RUNTIME.md).
+
 Runtime calls remain typed `IR_OP_CALL` instructions. Allocation/release and string
 concatenation call compiler-owned routines; bounds checks remain backend operations.
 `stdlib/io.dmm` builds higher-level I/O from typed runtime calls, while

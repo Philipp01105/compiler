@@ -7,7 +7,8 @@ if(WIN32)
 endif()
 
 function(check_standalone_dependencies program)
-    find_program(OBJDUMP NAMES objdump REQUIRED)
+    get_filename_component(tool_directory "${ASSEMBLER}" DIRECTORY)
+    find_program(OBJDUMP NAMES objdump HINTS "${tool_directory}" REQUIRED)
     execute_process(COMMAND "${OBJDUMP}" -p "${program}"
         RESULT_VARIABLE result OUTPUT_VARIABLE headers ERROR_VARIABLE errors TIMEOUT 10)
     if(NOT result STREQUAL "0")

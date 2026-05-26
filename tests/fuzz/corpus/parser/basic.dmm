@@ -1,6 +1,6 @@
-import <stdlib>
-
+package main;
+import "stdlib";
 func main() -> void {
     var value:int = 1 + 2 * 3;
-    if (value > 2) { println(value); }
+    if (value > 2) { stdlib.println(value); }
 }

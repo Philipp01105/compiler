@@ -1,0 +1,13 @@
+package main;
+import "stdlib";
+func main() -> void {
+    var grouped:int = (1 + 2) * 3;
+    stdlib.println(1 + 2 * 3);
+    stdlib.println(grouped);
+    stdlib.println(1 + 2 * 3 == 7);
+    stdlib.println(1 + 2 < 4 && 5 > 3);
+    stdlib.println(true || false && false);
+    stdlib.println(!(1 == 2));
+    stdlib.println(20 / 5 * 2 + 3 % 2);
+    stdlib.println(-2 * 3 + 10);
+}

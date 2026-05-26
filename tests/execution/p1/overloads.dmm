@@ -1,6 +1,0 @@
-func choose(value:int) -> int { return 10; }
-func choose(value:double) -> int { return 20; }
-
-func main() -> int {
-    return choose(1) + choose(1.5) - 30;
-}
