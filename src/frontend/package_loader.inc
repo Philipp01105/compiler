@@ -53,8 +53,16 @@ static DmmModule *read_module(PackageLoader *loader,const char *directory) {
     if (!module) { fclose(input); free(manifest); return NULL; }
     module->graph=loader->root->module ? loader->root->module : module;
     module->root=string_interner_intern(loader->root->strings,directory);
-    char line[4096]; int group=0,failed=0;
+    char line[4096]; int group=0,failed=0,in_comment=0;
     while (fgets(line,sizeof(line),input)) {
+        for (size_t i=0;line[i];i++) {
+            if (!in_comment && line[i] == '/' && line[i+1] == '/') break;
+            if (!in_comment && line[i] == '/' && line[i+1] == '*') {
+                in_comment=1; line[i]=line[i+1]=' '; i++;
+            } else if (in_comment && line[i] == '*' && line[i+1] == '/') {
+                in_comment=0; line[i]=line[i+1]=' '; i++;
+            } else if (in_comment) line[i]=' ';
+        }
         char *comment=strstr(line,"//");
         int indirect=0;
         if (comment) {
@@ -85,7 +93,7 @@ static DmmModule *read_module(PackageLoader *loader,const char *directory) {
             dependency->next=module->dependencies; module->dependencies=dependency;
         } else { failed=1; break; }
     }
-    if (ferror(input) || group || !module->path || !module->version || !module->root) failed=1;
+    if (ferror(input) || group || in_comment || !module->path || !module->version || !module->root) failed=1;
     fclose(input);
     if (failed) package_error(loader->root,AST_TOKEN_NONE,ERR_MODULE_MANIFEST,"Invalid dmm.manifest '%s': expected one valid module path, 'dmm 0.3', and versioned require entries",manifest);
     free(manifest); return failed ? NULL : module;

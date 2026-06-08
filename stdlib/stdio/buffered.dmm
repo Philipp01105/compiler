@@ -1,0 +1,172 @@
+package stdio;
+import "stdlib/core";
+
+func bufferedRead(stream:*Stream, storage:u8[], position:*usize, end:*usize, active:bit, destination:u8[]) -> Transfer {
+    if (!active) { return transfer(0,Status.Closed,0); }
+    if (destination.length == 0) { return transfer(0,Status.Ok,0); }
+    if (*position == *end) {
+        var result:Transfer=stream.read(storage);
+        if (!result.ok()) { return result; }
+        *position=0; *end=result.count;
+    }
+    var count:usize=*end-*position;
+    if (count > destination.length) { count=destination.length; }
+    core.core_copy(destination.data,core.core_offset(storage.data,(*position).(isize)),count);
+    *position+=count; return transfer(count,Status.Ok,0);
+}
+
+// Owns its buffer and borrows a live Stream pointer. Do not mix buffered and raw
+// reads, or use two readers on one stream: read-ahead belongs to this reader.
+pub struct BufferedReader {
+    var stream:*Stream;
+    var storage:u8[];
+    var position:usize;
+    var end:usize;
+    var active:bit;
+    pub var status:Status;
+    pub func isOpen() -> bit { return active; }
+    pub func read(destination:u8[]) -> Transfer {
+        return bufferedRead(
+            stream,
+            storage,
+            &position,
+            &end,
+            active,
+            destination
+        );
+    }
+
+    pub func readExact(destination:u8[]) -> Transfer {
+        if (destination.length == 0) { return bufferedRead(stream,storage,&position,&end,active,destination); }
+        var total:usize=0;
+        while (total < destination.length) {
+            var result:Transfer=bufferedRead(stream,storage,&position,&end,active,subview(destination,total,destination.length-total));
+            total+=result.count;
+            if (!result.ok()) { return transfer(total,result.status,result.error); }
+        }
+        return transfer(total,Status.Ok,0);
+    }
+
+    pub func readByte() -> ByteResult {
+        var bytes:u8[1]; var result:Transfer=bufferedRead(stream,storage,&position,&end,active,bytes);
+        var value:ByteResult; value.status=result.status; value.error=result.error;
+        if (result.count == 1) { value.value=bytes[0]; } return value;
+    }
+
+    // Line reads preserve read-ahead for the next operation and omit CRLF/LF.
+    pub func readLine(maximum:usize) -> Bytes {
+        var bytes:Bytes; var one:u8[1];
+        while (bytes.length < maximum) {
+            var result:Transfer=bufferedRead(stream,storage,&position,&end,active,one);
+            if (!result.ok()) { bytes.status=result.status; bytes.error=result.error; return bytes; }
+            if (one[0] == 10) {
+                if (bytes.length > 0 && bytes.storage[bytes.length-1] == 13) { bytes.length-=1; }
+                return bytes;
+            }
+            if (!append(&bytes,one[0])) { return bytes; }
+        }
+        bytes.status=Status.LimitReached; return bytes;
+    }
+
+    // Releases the buffer only. Closing the borrowed stream remains the caller's job.
+    pub func close() -> void {
+        if (active) { core.release(storage); }
+        storage=slice(core.null<u8>(),0); position=0; end=0; active=false; status=Status.Closed;
+    }
+}
+
+pub func bufferedReader(stream:*Stream, capacity:usize) -> BufferedReader {
+    var reader:BufferedReader;
+    if (stream == core.null<Stream>() || capacity == 0) { reader.status=Status.InvalidInput; return reader; }
+    if (!stream.canRead()) { reader.status=Status.AccessDenied; return reader; }
+    reader.storage=core.alloc<u8>(capacity);
+    if (reader.storage.length == 0) { reader.status=Status.OutOfMemory; return reader; }
+    reader.stream=stream; reader.active=true; return reader;
+}
+
+func flushBuffer(stream:*Stream, storage:u8[], pending:*usize, active:bit) -> Transfer {
+    if (!active) { return transfer(0,Status.Closed,0); }
+    if (*pending == 0) { return transfer(0,Status.Ok,0); }
+    var result:Transfer=stream.writeAll(subview(storage,0,*pending));
+    *pending-=result.count;
+    if (result.count > 0 && *pending > 0) {
+        core.core_copy(storage.data,core.core_offset(storage.data,result.count.(isize)),*pending);
+    }
+    return result;
+}
+func bufferedWrite(stream:*Stream, storage:u8[], pending:*usize, active:bit, source:u8[]) -> Transfer {
+    if (!active) { return transfer(0,Status.Closed,0); }
+    if (!stream.canWrite()) { return transfer(0,Status.AccessDenied,0); }
+    var total:usize=0;
+    while (total < source.length) {
+        if (*pending == storage.length) {
+            var flushed:Transfer=flushBuffer(stream,storage,pending,active);
+            if (!flushed.ok()) { return transfer(total,flushed.status,flushed.error); }
+        }
+        var count:usize=storage.length-*pending;
+        if (count > source.length-total) { count=source.length-total; }
+        core.core_copy(core.core_offset(storage.data,(*pending).(isize)),core.core_offset(source.data,total.(isize)),count);
+        *pending+=count; total+=count;
+    }
+    return transfer(total,Status.Ok,0);
+}
+
+// Owns its buffer and borrows a Stream. write counts bytes accepted into this
+// buffer; flush counts bytes sent to the OS. Flush is not a durability/fsync promise.
+pub struct BufferedWriter {
+    var stream:*Stream;
+    var storage:u8[];
+    var pending:usize;
+    var active:bit;
+    pub var status:Status;
+    pub func isOpen() -> bit { return active; }
+    pub func bufferedBytes() -> usize { return pending; }
+    pub func write(source:u8[]) -> Transfer { return bufferedWrite(stream,storage,&pending,active,source); }
+    pub func writeString(text:string) -> Transfer {
+        return bufferedWrite(stream,storage,&pending,active,slice(core.core_string_data(text),core.core_string_length(text)));
+    }
+    pub func writeLine(text:string) -> Transfer {
+        var result:Transfer=bufferedWrite(stream,storage,&pending,active,slice(core.core_string_data(text),core.core_string_length(text)));
+        if (!result.ok()) { return result; }
+        var newline:Transfer=bufferedWrite(stream,storage,&pending,active,slice(core.core_string_data("\n"),1));
+        return transfer(result.count+newline.count,newline.status,newline.error);
+    }
+    // A partial failure retains the unwritten suffix for a later flush.
+    pub func flush() -> Transfer { return flushBuffer(stream,storage,&pending,active); }
+    // Failed close retains the owner and pending data. Retry or explicitly discard.
+    pub func close() -> Transfer {
+        if (!active) { return transfer(0,Status.Ok,0); }
+        var result:Transfer=flushBuffer(stream,storage,&pending,active);
+        if (!result.ok()) { return result; }
+        core.release(storage); storage=slice(core.null<u8>(),0); active=false; status=Status.Closed;
+        return result;
+    }
+    pub func discard() -> void {
+        if (active) { core.release(storage); }
+        storage=slice(core.null<u8>(),0); pending=0; active=false; status=Status.Closed;
+    }
+}
+pub func bufferedWriter(stream:*Stream, capacity:usize) -> BufferedWriter {
+    var writer:BufferedWriter;
+    if (stream == core.null<Stream>() || capacity == 0) { writer.status=Status.InvalidInput; return writer; }
+    if (!stream.canWrite()) { writer.status=Status.AccessDenied; return writer; }
+    writer.storage=core.alloc<u8>(capacity);
+    if (writer.storage.length == 0) { writer.status=Status.OutOfMemory; return writer; }
+    writer.stream=stream; writer.active=true; return writer;
+}
+
+pub func readFile(path:string, maximum:usize) -> Bytes {
+    var stream:Stream=openRead(path); var bytes:Bytes;
+    if (!stream.isOpen()) { bytes.status=Status.SystemError; bytes.error=stream.lastError(); return bytes; }
+    bytes=readToEnd(&stream,maximum);
+    var closed:isize=stream.close();
+    if (closed < 0 && bytes.status == Status.EndOfStream) { bytes.status=Status.SystemError; bytes.error=closed; }
+    return bytes;
+}
+pub func writeFile(path:string, source:u8[]) -> Transfer {
+    var stream:Stream=openWrite(path);
+    if (!stream.isOpen()) { return transfer(0,Status.SystemError,stream.lastError()); }
+    var result:Transfer=stream.writeAll(source); var closed:isize=stream.close();
+    if (result.ok() && closed < 0) { return transfer(result.count,Status.SystemError,closed); }
+    return result;
+}

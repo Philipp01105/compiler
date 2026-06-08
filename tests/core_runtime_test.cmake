@@ -5,7 +5,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/standalone_link.cmake")
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 
 # Exercise widths and unsigned conversion paths without relying on folding.
-foreach(name byte_regions fixed_integers memory_foundations type_metadata slice_bounds slice_negative slice_null slice_overflow)
+foreach(name byte_regions fixed_integers memory_foundations type_metadata io_streams slice_bounds slice_negative slice_null slice_overflow)
     set(trapping FALSE)
     set(source "${ROOT}/tests/execution/core/${name}/${name}.dmm")
     if(name MATCHES "^slice_")

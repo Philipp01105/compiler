@@ -384,6 +384,16 @@ static int look_type(const SyntaxParser *parser,size_t *index,unsigned depth) {
 }
 static int type_metadata_ahead(const SyntaxParser *parser) {
     size_t index=parser->current;
+    /* An enum variant followed by a field is a value expression. */
+    if (index+3 < parser->program->token_count &&
+        parser->program->tokens[index].type == TOKEN_IDENTIFIER &&
+        parser->program->tokens[index+1].type == TOKEN_DOT &&
+        parser->program->tokens[index+3].type == TOKEN_DOT) {
+        const char *name=parser->program->tokens[index].lexeme;
+        for (const AstDeclarationNode *d=parser->program->root;d;d=d->next)
+            if (d->kind == AST_DECL_ENUM &&
+                !strcmp(name,ast_program_lexeme(parser->program,d->name_token))) return 0;
+    }
     return look_type(parser,&index,0) && index+1 < parser->program->token_count &&
         parser->program->tokens[index].type == TOKEN_DOT &&
         parser->program->tokens[index+1].type == TOKEN_IDENTIFIER &&

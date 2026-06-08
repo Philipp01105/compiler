@@ -40,6 +40,11 @@ types instead of private specialization identifiers. Match bindings include thei
 semantic symbol ID and the name token's source span. These additions distinguish
 version 3 from version 2.
 
+Compile-time metadata adds `type-info` expressions with `operand-type` and
+`type-property` expressions with a `folded` value. Type-match patterns include
+`type=...`; the chosen arm is marked `selected`. Metadata and discarded type
+arms do not generate runtime IR values or code.
+
 ## `dmm-ir-v3`
 
 The IR dump lists interned types and aggregate definitions before functions.

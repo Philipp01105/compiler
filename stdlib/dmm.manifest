@@ -1,3 +1,19 @@
+/* stdlib
+Standard DMM containers, traits, formatted output and file I/O.
+Includes Option, Result, Cell, Printable and Equal.
+*/
+
+/* core
+Low-level byte-region allocation, explicit release, raw I/O and process primitives.
+Callers manage pointer validity, allocation ownership and storage lifetimes.
+*/
+
+/* stdio
+Byte-oriented file and standard streams with explicit lifecycle and transfer results.
+Buffered readers/writers, owned byte results, line reads, file copying and integer output.
+Stream and buffer owners must be closed or released explicitly and must not be copied.
+*/
+
 module stdlib
 
 dmm 0.3

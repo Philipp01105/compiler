@@ -47,8 +47,9 @@ responsibilities. Only allocation base pointers may be released. A zero-byte
 allocation may return a releasable allocation or null. Borrowed string bytes
 must not be mutated or released through the core API.
 
-Reads and writes expose short operations directly; buffering, retries and
-structured error handling belong in DMM. Error values are platform-dependent;
+Reads and writes expose short operations directly. `stdlib/stdio` implements
+streams, buffering, complete-transfer loops and structured results in DMM;
+see [STDIO.md](STDIO.md). Error values are platform-dependent;
 portable callers test for a negative result. Windows operations currently accept
 counts up to `UINT32_MAX`, and use the runtime's descriptor table. Linux uses
 direct syscalls. The supported portable open flags are `CORE_READ_ONLY`,

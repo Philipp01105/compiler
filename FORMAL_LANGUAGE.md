@@ -12,7 +12,7 @@ x | y        (* alternative *)
 "text"       (* terminal text *)
 ```
 
-Whitespace separates tokens and is otherwise insignificant. A line comment begins with `//` and continues through the end of the line.
+Whitespace separates tokens and is otherwise insignificant. A line comment begins with `//` and continues through the end of the line. A non-nesting block comment begins with `/*` and ends at the next `*/`, and may span lines.
 
 ## Lexical grammar
 
@@ -34,7 +34,7 @@ keyword         = "func" | "var" | "return" | "for" | "if" | "else"
                 | "while" | "const" | "break" | "continue"
                 | "struct" | "enum" | "import" | "static" | "reserve"
                 | "free" | "trait" | "impl" | "match" | "package" | "pub"
-                | "sizeof" | "alignof" | "slice" ;
+                | "sizeof" | "alignof" | "slice" | "case" | "typeof" ;
 
 primitive-type  = "int" | "char" | "byte" | "bit"
                 | "float" | "double" | "string" | "void"
@@ -148,9 +148,10 @@ for-update      = lvalue, assignment-operator, expression
 return-statement = "return", [expression], ";" ;
 break-statement  = "break", ";" ;
 continue-statement = "continue", ";" ;
-match-statement = "match", "(", expression, ")", "{", {match-arm}, "}" ;
+match-statement = "match", "(", (expression | type), ")", "{", {match-arm}, "}" ;
 match-arm       = (identifier, ["(", [identifier, {",", identifier}], ")"] | "_"),
-                  "=>", statement ;
+                  "=>", statement
+                | "case", (type | "_"), "->", statement ;
 ```
 
 ## Expressions
@@ -172,6 +173,7 @@ postfix-expression = primary, {postfix} ;
 primary         = integer | floating | character | string
                 | "true" | "false"
                 | identifier
+                | type-metadata
                 | ("reserve" | "sizeof" | "alignof"), "(", type, ")"
                 | "slice", "(", expression, ",", expression, ")"
                 | "free"
@@ -186,7 +188,15 @@ postfix         = "(", [argument-list], ")"
                 | ".", "(", type, ")" ;
 argument-list   = expression, { ",", expression } ;
 call-expression = identifier-expression ;
+type-metadata   = type, ".", ("name" | "size" | "align") ;
 ```
+
+`expression.type` is a member expression denoting compile-time static type metadata.
+It may be followed by `.name`, `.size`, or `.align`, or used as a type-match
+scrutinee. Type matches use `case Type -> statement` and `case _ -> statement`;
+enum matches use variant patterns with `=>`. See `LANGUAGE_SPEC.md` for
+specialization and unevaluated-expression rules. `typeof` is currently reserved
+by the lexer; use `.type` for static type access.
 
 ## Context-sensitive validity
 

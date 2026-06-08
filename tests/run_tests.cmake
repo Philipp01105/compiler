@@ -33,6 +33,10 @@ function(run_case source expected syntax)
     set(work "${OUTPUT_DIR}/${name}_${syntax}")
     file(MAKE_DIRECTORY "${work}")
     file(COPY_FILE "${source}" "${work}/input.dmm")
+    get_filename_component(source_directory "${source}" DIRECTORY)
+    if(EXISTS "${source_directory}/dmm.manifest")
+        file(COPY_FILE "${source_directory}/dmm.manifest" "${work}/dmm.manifest")
+    endif()
 
     execute_process(
             COMMAND "${COMPILER}" --emit=asm "--syntax=${syntax}" "${work}/input.dmm"

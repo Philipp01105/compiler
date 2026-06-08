@@ -1,0 +1,103 @@
+package main;
+import "stdlib/stdio";
+import "stdlib/core";
+
+func main() -> int {
+    var scratch:u8[16]; var empty:u8[]=slice(core.null<u8>(),0);
+    var unopened:stdio.Stream;
+    if (unopened.isOpen() || unopened.read(empty).status != stdio.Status.Closed || unopened.close() != 0) { return 1; }
+    var missing=stdio.openRead("no-such-stream-directory/missing.bin");
+    if (missing.isOpen() || missing.lastError() >= 0) { return 2; }
+    var output=stdio.stdout(); output.close();
+    var outputAgain=stdio.stdout();
+    if (!outputAgain.canWrite() || outputAgain.canRead()) { return 3; }
+
+    var file=stdio.openWrite("stream.bin");
+    if (!file.isOpen() || file.canRead()) { return 4; }
+    if (file.read(scratch).status != stdio.Status.AccessDenied || !file.write(empty).ok()) { return 5; }
+    var writer=stdio.bufferedWriter(&file,3);
+    if (!writer.isOpen() || !writer.writeLine("ab").ok() || !writer.writeString("c\r\n").ok()) { return 6; }
+    var binary:u8[3]; binary[0]=0; binary[1]=255; binary[2]=42;
+    if (writer.write(binary).count != 3 || !writer.close().ok() || writer.isOpen() || !writer.close().ok()) { return 7; }
+    if (file.close() != 0 || file.close() != 0 || file.write(binary).status != stdio.Status.Closed) { return 8; }
+
+    var source=stdio.openRead("stream.bin");
+    var reader=stdio.bufferedReader(&source,2);
+    var line=reader.readLine(64);
+    var lineView=line.view();
+    if (line.status != stdio.Status.Ok || line.length != 2 || lineView[0] != 97 || lineView[1] != 98) { return 9; }
+    line.release(); line.release();
+    line=reader.readLine(64); lineView=line.view();
+    if (line.status != stdio.Status.Ok || line.length != 1 || lineView[0] != 99) { return 10; }
+    line.release();
+    var readResult=reader.readExact(binary);
+    if (!readResult.ok() || readResult.count != 3 || binary[0] != 0 || binary[1] != 255 || binary[2] != 42) { return 11; }
+    if (reader.readByte().status != stdio.Status.EndOfStream || !reader.read(empty).ok()) { return 12; }
+    reader.close(); reader.close();
+    if (reader.read(binary).status != stdio.Status.Closed || source.close() != 0) { return 13; }
+
+    var appended=stdio.openAppend("stream.bin");
+    if (!appended.writeString("tail").ok() || appended.close() != 0) { return 14; }
+    var bytes=stdio.readFile("stream.bin",64); var view=bytes.view();
+    if (bytes.status != stdio.Status.EndOfStream || bytes.length != 13 || view[9] != 116 || view[12] != 108) { return 15; }
+    bytes.release();
+    var update=stdio.openReadWrite("stream.bin");
+    if (!update.canRead() || !update.canWrite() || !update.writeString("XY").ok() || update.close() != 0) { return 16; }
+    source=stdio.openRead("stream.bin"); bytes=stdio.readToEnd(&source,2); view=bytes.view();
+    if (bytes.status != stdio.Status.LimitReached || bytes.length != 2 || view[0] != 88 || view[1] != 89) { return 17; }
+    bytes.release();
+    if (source.readByte().value != 10) { return 18; }
+    source.close();
+
+    var copied=stdio.openWrite("copy.bin"); source=stdio.openRead("stream.bin");
+    var copiedResult=stdio.copy(&source,&copied,scratch);
+    if (!copiedResult.ok() || copiedResult.count != 13 || source.close() != 0 || copied.close() != 0) { return 19; }
+    if (stdio.copy(core.null<stdio.Stream>(),&copied,scratch).status != stdio.Status.InvalidInput) { return 20; }
+    source=stdio.openRead("copy.bin");
+    readResult=source.readExact(scratch);
+    if (readResult.status != stdio.Status.EndOfStream || readResult.count != 13) { return 21; }
+    source.close();
+    var invalid=stdio.borrow(99999,true,true);
+    if (invalid.read(binary).status != stdio.Status.SystemError || invalid.lastError() >= 0 || invalid.close() != 0) { return 22; }
+
+    file=stdio.openWrite("retry.bin"); writer=stdio.bufferedWriter(&file,8);
+    writer.writeString("pending"); file.close();
+    if (writer.flush().status != stdio.Status.Closed || writer.bufferedBytes() != 7) { return 23; }
+    if (writer.close().status != stdio.Status.Closed || !writer.isOpen()) { return 24; }
+    writer.discard(); writer.discard();
+    if (writer.isOpen() || writer.bufferedBytes() != 0) { return 25; }
+    var invalidReader=stdio.bufferedReader(core.null<stdio.Stream>(),4);
+    if (invalidReader.status != stdio.Status.InvalidInput || invalidReader.isOpen()) { return 26; }
+    var invalidWriter=stdio.bufferedWriter(&outputAgain,0);
+    if (invalidWriter.status != stdio.Status.InvalidInput || invalidWriter.isOpen()) { return 27; }
+
+    var large:u8[8193]; var index:usize=0;
+    while (index < 8193) { large[index]=(index%251).(u8); index+=1; }
+    if (stdio.writeFile("large.bin",large).count != 8193) { return 28; }
+    bytes=stdio.readFile("large.bin",16384); view=bytes.view();
+    if (bytes.status != stdio.Status.EndOfStream || bytes.length != 8193 || view[0] != 0 || view[8192] != large[8192]) { return 29; }
+    bytes.release();
+    file=stdio.openWrite("lines.bin"); file.writeString("first\r\nlast"); file.close();
+    source=stdio.openRead("lines.bin"); bytes=stdio.readLine(&source,64);
+    if (bytes.status != stdio.Status.Ok || bytes.length != 5) { return 30; }
+    bytes.release(); bytes=stdio.readLine(&source,64);
+    if (bytes.status != stdio.Status.EndOfStream || bytes.length != 4) { return 31; }
+    bytes.release(); source.close();
+    file=stdio.openWrite("integers.bin");
+    if (!stdio.writeInt(&file,(-9223372036854775807-1).(i64)).ok() || !file.writeString(" ").ok() || !stdio.writeUint(&file,18446744073709551615).ok()) { return 33; }
+    file.close(); bytes=stdio.readFile("integers.bin",128); view=bytes.view();
+    if (bytes.status != stdio.Status.EndOfStream || bytes.length != 41 || view[0] != 45 || view[19] != 56 || view[40] != 53) { return 34; }
+    bytes.release();
+    source=stdio.openRead("large.bin"); bytes=stdio.readLine(&source,100); view=bytes.view();
+    // The byte pattern includes LF at position 10, so it terminates the first line.
+    if (bytes.status != stdio.Status.Ok || bytes.length != 10 || view[9] != 9) { return 35; }
+    bytes.release(); source.close();
+    source=stdio.openRead("stream.bin");
+    var tooLarge=stdio.bufferedReader(&source,18446744073709551615);
+    if (tooLarge.status != stdio.Status.OutOfMemory || tooLarge.isOpen()) { return 36; }
+    source.close();
+    if (stdio.readToEnd(core.null<stdio.Stream>(),4).status != stdio.Status.InvalidInput) { return 37; }
+    if (stdio.readLine(core.null<stdio.Stream>(),4).status != stdio.Status.InvalidInput) { return 38; }
+    if (!outputAgain.writeLine("streams").ok()) { return 32; }
+    return 0;
+}

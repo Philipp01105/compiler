@@ -8,8 +8,6 @@ pub func alloc<T>() -> *T {
     return data.(*T);
 }
 
-pub func null<T>() -> *T { return core_null().(*T); }
-
 pub func alloc<T>(count:usize) -> T[] {
     if (count == 0 || count > 9223372036854775807.(usize)/sizeof(T)) {
         return slice(core_null().(*T),0);
@@ -23,3 +21,5 @@ pub func alloc<T>(count:usize) -> T[] {
 
 pub func release<T>(data:*T) -> void { core_release(data.(*u8)); }
 pub func release<T>(data:T[]) -> void { core_release(data.data.(*u8)); }
+
+pub func null<T>() -> *T { return core_null().(*T); }

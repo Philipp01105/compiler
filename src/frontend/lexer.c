@@ -272,6 +272,20 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
             continue;
         }
 
+        if (c == '/' && i + 1 < length && source[i + 1] == '*') {
+            int start_line=line,start_col=column;
+            i+=2; column+=2;
+            while (i < length && !(source[i] == '*' && i+1 < length && source[i+1] == '/')) {
+                if (source[i++] == '\n') { line++; column=1; } else column++;
+            }
+            if (i == length) {
+                error_report(global_error_handler,SEVERITY_ERROR,start_line,start_col,
+                    ERROR_CATEGORY_LEXER,ERR_LEX_INVALID_SYNTAX,filename,"Unclosed block comment");
+                stream->has_error=1;
+            } else { i+=2; column+=2; }
+            continue;
+        }
+
         if (c == '/' && i + 1 < length && source[i + 1] == '/') {
             while (i < length && source[i] != '\n') {
                 i++;

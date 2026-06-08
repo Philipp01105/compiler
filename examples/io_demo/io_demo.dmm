@@ -1,113 +1,61 @@
 package main;
-// ===================================================================
-// DMM I/O System Demonstration
-// ===================================================================
-// This example showcases the pure syscall-based I/O system that
-// operates without any C library dependencies.
-//
-// Features demonstrated:
-//   - Direct syscall usage (sys_write, sys_read, sys_open, sys_close)
-//   - High-level file operations from stdlib/io.dmm
-//   - String operations and conversions
-// ===================================================================
+import "stdlib/stdio";
 
-import "stdlib";
-func main() -> void {
-    stdlib.println("╔════════════════════════════════════════╗");
-    stdlib.println("║   DMM Syscall-Based I/O System Demo   ║");
-    stdlib.println("╚════════════════════════════════════════╝");
-    stdlib.println("");
-    
-    // ===============================================================
-    // Part 1: Direct Syscall Usage (Low-Level)
-    // ===============================================================
-    stdlib.println("【Part 1: Direct Syscalls】");
-    stdlib.println("");
-    
-    var msg1:string = "  → Using sys_write directly...\n";
-    var len1:int = io_strlen(msg1);
-    sys_write(1, msg1, len1);
-    
-    var msg2:string = "  → String length of 'Hello': ";
-    var len2:int = io_strlen(msg2);
-    sys_write(1, msg2, len2);
-    
-    var test:string = "Hello";
-    var test_len:int = io_strlen(test);
-    var buf:char[16];
-    var num_len:int = io_int_to_str(test_len, buf, 16);
-    sys_write(1, buf, num_len);
-    var nl:string = "\n";
-    sys_write(1, nl, 1);
-    
-    stdlib.println("");
-    
-    // ===============================================================
-    // Part 2: High-Level File Operations
-    // ===============================================================
-    stdlib.println("【Part 2: File Operations】");
-    stdlib.println("");
-    
-    stdlib.println("  → Writing to file 'demo_output.txt'...");
-    var content:string = "This file was created using pure Linux syscalls!\nNo C library functions were used.\nDirect kernel I/O operations only.\n";
-    var result:int = stdlib.write_file("demo_output.txt", content);
-    
-    if (result == 0) {
-        stdlib.println("     ✓ File written successfully");
+// Save borrowed input bytes through a buffered file stream, then read them back.
+func saveAndDisplay(name:u8[], message:u8[], output:*stdio.Stream, errors:*stdio.Stream) -> int {
+    var file=stdio.openWrite("demo_output.txt");
+    if (!file.isOpen()) { errors.writeLine("Could not open demo_output.txt for writing."); return 1; }
+    var writer=stdio.bufferedWriter(&file,256);
+    if (!writer.isOpen()) { file.close(); errors.writeLine("Could not allocate the file buffer."); return 1; }
+    if (!writer.writeString("Name: ").ok() || !writer.write(name).ok() || !writer.writeLine("").ok() ||
+        !writer.writeString("Message: ").ok() || !writer.write(message).ok() || !writer.writeLine("").ok()) {
+        writer.discard(); file.close(); errors.writeLine("Could not write the message."); return 1;
     }
-    
-    stdlib.println("");
-    stdlib.println("  → Reading file back...");
-    var read_buf:char[512];
-    var bytes_read:int = stdlib.read_file("demo_output.txt", read_buf, 511);
-    
-    if (bytes_read > 0) {
-        stdlib.println("     ✓ File read successfully");
-        stdlib.println("     Content preview:");
-        stdlib.println("     ─────────────────");
-        var preview:string = "     ";
-        sys_write(1, preview, 5);
-        sys_write(1, read_buf, 50);
-        stdlib.println("...");
+    var flushed=writer.close();
+    if (!flushed.ok()) { writer.discard(); }
+    var closed:isize=file.close();
+    if (!flushed.ok() || closed < 0) { errors.writeLine("Could not finish writing the file."); return 1; }
+
+    file=stdio.openRead("demo_output.txt");
+    if (!file.isOpen()) { errors.writeLine("Could not reopen the file for reading."); return 1; }
+    if (!output.writeLine("Saved to demo_output.txt. Reading it back:").ok()) { file.close(); return 1; }
+    var scratch:u8[256];
+    var copied=stdio.copy(&file,output,scratch);
+    closed=file.close();
+    if (!copied.ok() || closed < 0) { errors.writeLine("Could not read the saved message."); return 1; }
+    return 0;
+}
+
+// Reuse one buffered stdin reader so read-ahead survives between prompts.
+func interact(input:*stdio.BufferedReader, output:*stdio.Stream, errors:*stdio.Stream) -> int {
+    if (!output.writeLine("DMM stream I/O demo").ok() || !output.writeString("Name: ").ok()) { return 1; }
+    var name=input.readLine(1024);
+    if (name.status == stdio.Status.EndOfStream && name.length == 0) {
+        name.release(); output.writeLine("No input received."); return 0;
     }
-    
-    stdlib.println("");
-    
-    // ===============================================================
-    // Part 3: Stream-Based I/O
-    // ===============================================================
-    stdlib.println("【Part 3: Stream I/O】");
-    stdlib.println("");
-    
-    stdlib.println("  → Opening file stream...");
-    var fd:int = stdlib.open_write("stream_demo.txt");
-    
-    if (fd >= 0) {
-        stdlib.println("     ✓ Stream opened (fd: file descriptor obtained)");
-        
-        stdlib.write_str_to(fd, "Line 1: Stream-based writing\n");
-        stdlib.write_str_to(fd, "Line 2: Multiple writes\n");
-        stdlib.write_str_to(fd, "Line 3: All without C library\n");
-        
-        stdlib.close_file(fd);
-        stdlib.println("     ✓ Stream closed");
+    if (name.status != stdio.Status.Ok && name.status != stdio.Status.EndOfStream) {
+        name.release(); errors.writeLine("Could not read the name (maximum 1024 bytes)."); return 1;
     }
-    
-    stdlib.println("");
-    
-    // ===============================================================
-    // Summary
-    // ===============================================================
-    stdlib.println("╔════════════════════════════════════════╗");
-    stdlib.println("║          Demo Completed! ✓             ║");
-    stdlib.println("╚════════════════════════════════════════╝");
-    stdlib.println("");
-    stdlib.println("Files created:");
-    stdlib.println("  • demo_output.txt");
-    stdlib.println("  • stream_demo.txt");
-    stdlib.println("");
-    stdlib.println("All I/O operations performed using:");
-    stdlib.println("  ✓ Linux syscalls only (write, read, open, close)");
-    stdlib.println("  ✓ No C library dependencies");
-    stdlib.println("  ✓ Direct kernel communication");
+    if (!output.writeString("Message: ").ok()) { name.release(); return 1; }
+    var message=input.readLine(4096);
+    if (message.status != stdio.Status.Ok && message.status != stdio.Status.EndOfStream) {
+        name.release(); message.release(); errors.writeLine("Could not read the message (maximum 4096 bytes)."); return 1;
+    }
+    if (!output.writeString("Hello, ").ok() || !output.writeAll(name.view()).ok() || !output.writeLine("!").ok()) {
+        name.release(); message.release(); return 1;
+    }
+    var result:int=saveAndDisplay(name.view(),message.view(),output,errors);
+    name.release(); message.release();
+    return result;
+}
+
+func main() -> int {
+    var input=stdio.stdin(); var output=stdio.stdout(); var errors=stdio.stderr();
+    var reader=stdio.bufferedReader(&input,256);
+    if (!reader.isOpen()) { errors.writeLine("Could not allocate the input buffer."); return 1; }
+    var result:int=interact(&reader,&output,&errors);
+    reader.close();
+    // Closing these borrowed wrappers leaves the OS standard descriptors open.
+    input.close(); output.close(); errors.close();
+    return result;
 }

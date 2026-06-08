@@ -9,9 +9,11 @@ The project is suitable for learning and experimentation. It is not yet intended
 - Primitive types: `int`, `char`, `byte`, `bit`, `float`, `double`, `string`, and `void`
 - Signed/unsigned fixed-width integers `i8`/`u8` through `i64`/`u64`, and `isize`/`usize`
 - A standalone `stdlib/core` package for byte regions, raw I/O and process primitives
+- DMM stream I/O in `stdlib/stdio`, with buffered readers/writers, complete transfers and explicit errors; see [STDIO.md](STDIO.md)
 - Functions, forward calls, local variables, arrays, pointers, structs, enums, and methods
 - Inferred and explicitly instantiated generic functions, and invariant generic structs/enums
 - Compile-time `sizeof(T)` / `alignof(T)` and typed `core.alloc<T>()` / `core.alloc<T>(count)`
+- Compile-time type `.name` / `.size` / `.align`, unevaluated `expression.type`, and `case Type ->` matches
 - Borrowed slices usable in variables, fields, enum payloads and returns, with checked indexing
 - Explicit traits, `Self`, multiple trait bounds, and static method dispatch
 - Tagged variant payloads and exhaustive `match` statements with typed bindings

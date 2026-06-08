@@ -54,6 +54,15 @@ int main(void) {
     assert(tokens->tokens[1].end_column == tokens->tokens[1].column + 4);
     free_token_stream(tokens);
 
+    const char block[]="/* documentation\n second line */func";
+    tokens=lex(block,sizeof(block)-1);
+    assert(tokens != NULL && !tokens->has_error && tokens->tokens[0].type == TOKEN_KEYWORD_FUNC);
+    assert(tokens->tokens[0].line == 2 && tokens->tokens[0].column == 16);
+    free_token_stream(tokens);
+    tokens=lex("/* unfinished",13);
+    assert(tokens != NULL && tokens->has_error);
+    free_token_stream(tokens);
+
     const char postfix_casts[] = "3.(int) 3.5.(float) \"\\n\"";
     tokens = lex(postfix_casts, sizeof(postfix_casts)-1);
     assert(tokens != NULL && !tokens->has_error && tokens->count == 12);

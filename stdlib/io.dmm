@@ -1,5 +1,7 @@
 package stdlib;
-// Standard I/O surface implemented in DMM over the typed runtime intrinsics.
+import "stdlib/core";
+import "stdlib/stdio";
+// Compatibility input scanning. New byte-oriented I/O uses stdlib/stdio streams.
 pub struct Input {
     pub func init() -> void {}
     pub func readInt() -> int { return scanfInt(); }
@@ -14,34 +16,44 @@ pub enum System(pub fd:int) {
 }
 
 pub func open_read(path:string) -> int {
-    return sys_open(path, 0, 0);
+    return core.core_open(path,core.CORE_READ_ONLY,0);
 }
 
 pub func open_write(path:string) -> int {
-    return sys_open(path, 577, 384);
+    return core.core_open(path,core.CORE_WRITE_ONLY+core.CORE_CREATE+core.CORE_TRUNCATE,384);
 }
 
 pub func close_file(fd:int) -> int {
-    return sys_close(fd);
+    return core.core_close(fd);
 }
 
 pub func write_str_to(fd:int, text:string) -> int {
-    return sys_write(fd, text, io_strlen(text));
+    if (core.core_string_length(text) > 2147483647.(usize)) { return -1; }
+    var stream=stdio.borrow(fd,false,true);
+    var result=stream.writeString(text);
+    if (!result.ok()) { if (result.error < 0) { return result.error.(int); } return -1; }
+    return result.count.(int);
 }
 
 pub func write_file(path:string, text:string) -> int {
-    var fd:int = open_write(path);
-    if (fd < 0) { return fd; }
-    var result:int = write_str_to(fd, text);
-    close_file(fd);
-    if (result < 0) { return result; }
+    var stream=stdio.openWrite(path);
+    if (!stream.isOpen()) { return stream.lastError().(int); }
+    var result=stream.writeString(text);
+    var closed:isize=stream.close();
+    if (!result.ok()) { if (result.error < 0) { return result.error.(int); } return -1; }
+    if (closed < 0) { return closed.(int); }
     return 0;
 }
 
 pub func read_file(path:string, buffer:char[], capacity:int) -> int {
-    var fd:int = open_read(path);
-    if (fd < 0) { return fd; }
-    var result:int = sys_read(fd, buffer, capacity);
-    close_file(fd);
-    return result;
+    if (capacity < 0 || capacity.(usize) > buffer.length) { return -1; }
+    var stream=stdio.openRead(path);
+    if (!stream.isOpen()) { return stream.lastError().(int); }
+    var result=stream.read(slice(buffer.data.(*u8),capacity.(usize)));
+    var closed:isize=stream.close();
+    if (result.status != stdio.Status.Ok && result.status != stdio.Status.EndOfStream) {
+        if (result.error < 0) { return result.error.(int); } return -1;
+    }
+    if (closed < 0) { return closed.(int); }
+    return result.count.(int);
 }

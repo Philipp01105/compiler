@@ -22,8 +22,19 @@ directory, such as `cmake-build-debug`, for `build`.
 | [input_demo.dmm](input_demo.dmm) | Interactive integer and character input |
 | [read_demo.dmm](read_demo.dmm) | Interactive formatted input |
 | [read_function_guide.dmm](read_function_guide.dmm) | Formatted read usage and supported formats |
-| [io_demo.dmm](io_demo.dmm) | File input/output and explicit buffer ownership |
+| [io_demo.dmm](io_demo/io_demo.dmm) | Stream output, buffered user input, buffered file writing and read-back with explicit ownership |
 
 The game and calculator demos use scripted inputs. The input/read demos prompt
 for input. Heap allocations and concatenated strings remain explicitly owned;
 copying a container does not release or duplicate an allocation.
+
+The stream I/O demo asks for a name and message, saves `demo_output.txt` in the
+working directory, and streams the file back to stdout:
+
+```sh
+./build/compiler examples/io_demo/io_demo.dmm -o io_demo
+./io_demo
+```
+
+All console and file I/O uses `stdlib/stdio`; input lines are bounded to 1024
+bytes for the name and 4096 bytes for the message. EOF without input exits cleanly.

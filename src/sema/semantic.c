@@ -3127,6 +3127,8 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                                                                           &method->declared_type);
                 expression->resolved_named_symbol_id = resolve_named_symbol_id(analyzer,
                     method->source_program, expression->resolved_named_type_token);
+                expression->resolved_is_array = method->declared_type.is_array;
+                expression->resolved_is_slice = method->declared_type.is_slice;
             }
         }
     } else if (expression->kind == AST_EXPR_INDEX && expression->left != NULL) {

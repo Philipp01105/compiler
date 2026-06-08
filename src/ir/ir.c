@@ -1256,7 +1256,7 @@ static int verify_instruction_types(const IrModule *module,
                 if (parameter->is_receiver) {
                     const IrType *pointer = &module->types[parameter->type_id];
                     if (pointer->kind != IR_TYPE_POINTER ||
-                        pointer->element_type != value->type_id)
+                        (pointer->element_type != value->type_id && parameter->type_id != value->type_id))
                         return 0;
                 } else if (!ir_types_assignable(module, value->type_id,
                                                 parameter->type_id, value->opcode))

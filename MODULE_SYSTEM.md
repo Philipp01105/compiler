@@ -33,7 +33,22 @@ package paths are case-sensitive slash-separated identifiers. Empty components,
 `.` and `..`, backslashes and absolute paths are invalid. This compiler supports
 language edition `0.3`; incompatible editions are rejected. Dependency versions
 currently use `vMAJOR.MINOR.PATCH`. Duplicate requirements and malformed directives
-are rejected. `//` comments and single-line `require path version` are supported.
+are rejected. `//` comments, non-nesting `/* ... */` block comments and single-line `require path version` are supported. An unclosed block comment invalidates the manifest.
+
+Package documentation lives in its enclosing module's manifest. Start a block
+with the exact source package name as its first word. Each block documents one
+package; editor hovers select only the matching block, without merging other comments:
+
+```text
+/* lexer
+Tokenizes DMM source files.
+Provides tokens and source positions for the parser.
+*/
+```
+
+Function documentation is the immediately preceding `//` comment group or
+`/* ... */` block in the source file. JetBrains hovers show it with the declared
+signature, including generic parameters, parameter types and the return type.
 
 External dependencies are local for now. `require github.com/example/collections
 v1.2.0` authorizes loading that module from
@@ -66,8 +81,9 @@ command does not fetch packages or select versions. Build commands read manifest
 and do not rewrite them. `--formatError` provides structured failure diagnostics.
 
 Synchronization writes a sorted, normalized manifest and replaces the original
-only after successful graph analysis and writing. Formatting and comments other
-than `// indirect` are not preserved. Repeated synchronization is deterministic.
+only after successful graph analysis and writing. Block comments are preserved
+and placed before the directives, so package documentation survives synchronization.
+Other formatting and comments except `// indirect` are not preserved. Repeated synchronization is deterministic.
 
 ```text
 require (

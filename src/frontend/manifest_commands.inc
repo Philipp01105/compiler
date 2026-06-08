@@ -50,6 +50,30 @@ static int manifest_entry_order(const void *a,const void *b) {
     return strcmp(((const ManifestEntry *)a)->path,((const ManifestEntry *)b)->path);
 }
 
+/* Documentation survives dependency synchronization, including unrelated blocks. */
+static int manifest_copy_comments(FILE *output,const char *path) {
+    FILE *input=fopen(path,"rb");
+    if (!input) return 0;
+    int c,ok=1;
+    while (ok && (c=fgetc(input)) != EOF) {
+        if (c != '/') continue;
+        int next=fgetc(input);
+        if (next == '/') { while ((c=fgetc(input)) != EOF && c != '\n') { } }
+        else if (next == '*') {
+            if (fputs("/*",output) == EOF) { ok=0; break; }
+            int previous=0,closed=0;
+            while ((c=fgetc(input)) != EOF) {
+                if (fputc(c,output) == EOF) { ok=0; break; }
+                if (previous == '*' && c == '/') { closed=1; break; }
+                previous=c;
+            }
+            if (!closed || fputs("\n\n",output) == EOF) ok=0;
+        } else if (next != EOF) ungetc(next,input);
+    }
+    if (ferror(input)) ok=0;
+    fclose(input); return ok;
+}
+
 static int manifest_write(AstProgram *root,ManifestEntry *entries,size_t count) {
     char *path=joined_path(root->module->root,"dmm.manifest");
     char *temporary=path ? malloc(strlen(path)+5) : NULL;
@@ -74,7 +98,8 @@ static int manifest_write(AstProgram *root,ManifestEntry *entries,size_t count) 
         package_error(root,AST_TOKEN_NONE,ERR_MODULE_MANIFEST,"Cannot create manifest temporary file '%s' (existing files are preserved)",temporary);
         free(path); free(temporary); return 0;
     }
-    int ok=fprintf(output,"module %s\n\ndmm %s\n",root->module->path,root->module->version) >= 0;
+    int ok=manifest_copy_comments(output,path);
+    if (fprintf(output,"module %s\n\ndmm %s\n",root->module->path,root->module->version) < 0) ok=0;
     size_t retained=0;
     for (size_t i=0;i<count;i++)
         if (entries[i].used) retained++;
