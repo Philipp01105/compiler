@@ -448,7 +448,7 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
             break;
         case AST_EXPR_SLICE_DATA: opcode = IR_OP_SLICE_DATA; break;
         case AST_EXPR_SLICE: opcode = IR_OP_SLICE; break;
-        case AST_EXPR_SIZEOF: case AST_EXPR_ALIGNOF: return IR_VALUE_NONE;
+        case AST_EXPR_SIZEOF: case AST_EXPR_ALIGNOF: case AST_EXPR_TYPE_INFO: case AST_EXPR_TYPE_PROPERTY: return IR_VALUE_NONE;
         case AST_EXPR_RESERVE: opcode = IR_OP_ALLOC;
             break;
         case AST_EXPR_CAST: opcode = IR_OP_CAST;
@@ -548,6 +548,10 @@ static void emit_label(IrBuilder *builder, size_t label, AstSourceSpan span) {
 static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
     for (; statement != NULL && !builder->failed; statement = statement->next) {
         if (statement->kind == AST_STMT_MATCH) {
+            if (statement->is_type_match) {
+                if (statement->selected_type_arm) lower_statement(builder,statement->selected_type_arm->body);
+                continue;
+            }
             size_t value=lower_expression(builder,statement->value);
             size_t join=new_label(builder); int wildcard=0;
             for (const AstMatchArm *arm=statement->match_arms; arm; arm=arm->next) {

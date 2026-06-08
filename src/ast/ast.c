@@ -124,12 +124,14 @@ static int valid_expression(const AstProgram *program, const AstExpression *expr
         case AST_EXPR_MEMBER:
         case AST_EXPR_SLICE_LENGTH:
         case AST_EXPR_SLICE_DATA:
+        case AST_EXPR_TYPE_PROPERTY:
             if (!valid_expression(program, expression->left) ||
                 !valid_token(program, expression->value_token)) return 0;
             break;
         case AST_EXPR_RESERVE:
         case AST_EXPR_SIZEOF:
         case AST_EXPR_ALIGNOF:
+        case AST_EXPR_TYPE_INFO:
             if (!valid_token(program, expression->value_token) ||
                 !valid_type(program, &expression->allocated_type, 0)) return 0;
             break;
@@ -196,6 +198,7 @@ static int valid_statement(const AstProgram *program, const AstStatement *statem
                 if (!valid_expression(program,statement->value) || !statement->match_arms) return 0;
                 for (const AstMatchArm *a=statement->match_arms; a; a=a->next) {
                     if (!valid_token(program,a->variant_token) || !valid_statement(program,a->body)) return 0;
+                    if (a->is_type_pattern && !valid_type(program,&a->type,0)) return 0;
                     for (const AstParameter *p=a->bindings; p; p=p->next)
                         if (!valid_token(program,p->name_token)) return 0;
                 }

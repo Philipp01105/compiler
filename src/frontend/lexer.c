@@ -158,6 +158,8 @@ static TokenType get_keyword_type(const char *str) {
     if (strcmp(str, "package") == 0) return TOKEN_KEYWORD_PACKAGE;
     if (strcmp(str, "pub") == 0) return TOKEN_KEYWORD_PUB;
     if (strcmp(str, "sizeof") == 0) return TOKEN_KEYWORD_SIZEOF;
+    if (strcmp(str, "typeof") == 0) return TOKEN_KEYWORD_TYPEOF;
+    if (strcmp(str, "case") == 0) return TOKEN_KEYWORD_CASE;
     if (strcmp(str, "alignof") == 0) return TOKEN_KEYWORD_ALIGNOF;
     if (strcmp(str, "slice") == 0) return TOKEN_KEYWORD_SLICE;
 
@@ -647,6 +649,7 @@ const char *token_type_to_string(TokenType type) {
         case TOKEN_KEYWORD_PACKAGE: return "KEYWORD_PACKAGE";
         case TOKEN_KEYWORD_PUB: return "KEYWORD_PUB";
         case TOKEN_KEYWORD_SIZEOF: return "KEYWORD_SIZEOF";
+        case TOKEN_KEYWORD_CASE: return "KEYWORD_CASE";
         case TOKEN_KEYWORD_ALIGNOF: return "KEYWORD_ALIGNOF";
         case TOKEN_KEYWORD_SLICE: return "KEYWORD_SLICE";
         case TOKEN_KEYWORD_FUNC: return "KEYWORD_FUNC";

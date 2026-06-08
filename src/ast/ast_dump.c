@@ -39,8 +39,8 @@ static const char *data_type_name(DataType type) {
 static const char *expression_name(AstExpressionKind kind) {
     static const char *names[] = {"error", "literal", "name", "unary", "binary", "call",
         "index", "member", "slice-length", "reserve", "cast", "free", "enum-construct", "enum-access",
-        "sizeof", "alignof", "slice", "slice-data"};
-    return kind >= AST_EXPR_ERROR && kind <= AST_EXPR_SLICE_DATA ? names[kind] : "invalid";
+        "sizeof", "alignof", "slice", "slice-data", "type-info", "type-property"};
+    return kind >= AST_EXPR_ERROR && kind <= AST_EXPR_TYPE_PROPERTY ? names[kind] : "invalid";
 }
 
 static const char *statement_name(AstStatementKind kind) {
@@ -132,7 +132,7 @@ static int dump_expression(FILE *output, const AstProgram *program,
          !quoted(output, operator_name(expression->operator_type)))) return 0;
     if (expression->folded_constant.lexeme != NULL &&
         (fputs(" folded=", output) == EOF || !quoted(output, expression->folded_constant.lexeme))) return 0;
-    if (expression->kind == AST_EXPR_CAST || expression->kind == AST_EXPR_RESERVE) {
+    if (expression->kind == AST_EXPR_CAST || expression->kind == AST_EXPR_RESERVE || expression->kind == AST_EXPR_TYPE_INFO) {
         if (fputs(" operand-type=", output) == EOF ||
             !dump_type(output, program, &expression->allocated_type)) return 0;
     }
@@ -172,7 +172,10 @@ static int dump_statement(FILE *output, const AstProgram *program,
     if (fputc('\n', output) == EOF) return 0;
     for (const AstMatchArm *a=statement->match_arms; a; a=a->next) {
         if (!indent(output,depth+1) || fputs("pattern=",output) == EOF ||
-            !quoted(output,ast_program_lexeme(program,a->variant_token)) || fputc('\n',output) == EOF) return 0;
+            !quoted(output,ast_program_lexeme(program,a->variant_token))) return 0;
+        if (a->is_type_pattern && (fputs(" type=",output) == EOF || !dump_type(output,program,&a->type))) return 0;
+        if (statement->selected_type_arm == a && fputs(" selected",output) == EOF) return 0;
+        if (fputc('\n',output) == EOF) return 0;
         for (const AstParameter *binding=a->bindings; binding; binding=binding->next)
             if (!indent(output,depth+2) || fputs("binding=",output) == EOF ||
                 !quoted(output,ast_program_lexeme(program,binding->name_token)) ||

@@ -67,7 +67,7 @@ static AstType substitute_type(Substitution *s, AstType type) {
             else result.pointer_depth+=type.pointer_depth;
             result.outer_pointer_depth+=type.outer_pointer_depth;
             if (type.is_array || type.is_slice) {
-                if (result.is_array || result.is_slice) s->failed=1;
+                if (result.is_array || result.is_slice) result.invalid_substitution=1;
                 result.is_array=type.is_array; result.is_slice=type.is_slice;
                 result.array_length_token=type.array_length_token;
                 result.resolved_array_length=type.resolved_array_length;
@@ -104,6 +104,7 @@ static AstStatement *clone_statement(Substitution *s,const AstStatement *origina
     for (const AstMatchArm *a=original->match_arms; a; a=a->next) {
         AstMatchArm *copy=owned(s,sizeof(*copy)); if (!copy) break;
         *copy=*a; copy->next=NULL; copy->body=clone_statement(s,a->body); copy->bindings=NULL;
+        copy->type=substitute_type(s,a->type);
         AstParameter **bindings=&copy->bindings;
         for (const AstParameter *p=a->bindings; p; p=p->next) {
             AstParameter *binding=owned(s,sizeof(*binding)); if (!binding) break;

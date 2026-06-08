@@ -21,7 +21,8 @@ typedef enum {
     AST_EXPR_ERROR, AST_EXPR_LITERAL, AST_EXPR_NAME, AST_EXPR_UNARY,
     AST_EXPR_BINARY, AST_EXPR_CALL, AST_EXPR_INDEX, AST_EXPR_MEMBER,
     AST_EXPR_SLICE_LENGTH, AST_EXPR_RESERVE, AST_EXPR_CAST, AST_EXPR_FREE, AST_EXPR_ENUM_CONSTRUCT,
-    AST_EXPR_ENUM_ACCESS, AST_EXPR_SIZEOF, AST_EXPR_ALIGNOF, AST_EXPR_SLICE, AST_EXPR_SLICE_DATA
+    AST_EXPR_ENUM_ACCESS, AST_EXPR_SIZEOF, AST_EXPR_ALIGNOF, AST_EXPR_SLICE, AST_EXPR_SLICE_DATA,
+    AST_EXPR_TYPE_INFO, AST_EXPR_TYPE_PROPERTY
 } AstExpressionKind;
 typedef enum {
     AST_STMT_ERROR, AST_STMT_BLOCK, AST_STMT_VARIABLE, AST_STMT_EXPRESSION,
@@ -50,6 +51,7 @@ typedef struct AstType {
     size_t array_length_token;
     size_t resolved_array_length;
     AstTypeArgument *arguments;
+    int invalid_substitution;
 } AstType;
 
 struct AstTypeArgument { AstType type; AstTypeArgument *next; };
@@ -123,6 +125,8 @@ struct AstStatement {
     size_t resolved_symbol_id;
     AstMatchArm *match_arms;
     int match_exhaustive;
+    int is_type_match;
+    AstMatchArm *selected_type_arm;
 };
 
 struct AstMatchArm {
@@ -132,6 +136,8 @@ struct AstMatchArm {
     AstStatement *body;
     AstSourceSpan span;
     int wildcard;
+    int is_type_pattern;
+    AstType type;
     AstMatchArm *next;
 };
 
