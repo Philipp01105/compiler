@@ -38,14 +38,22 @@ static void fuzz_ir_verifier(IrModule *module, const uint8_t *data, size_t size)
     IrInstruction *instruction = &function->instructions[
         (hash / module->function_count) % function->instruction_count];
     switch (hash % 8U) {
-        case 0: instruction->opcode = (IrOpcode) 255; break;
-        case 1: instruction->type_id = IR_TYPE_NONE; break;
-        case 2: instruction->result = function->next_value; break;
-        case 3: instruction->operand_a = function->next_value; break;
-        case 4: instruction->operand_b = function->next_value; break;
-        case 5: instruction->symbol_id = AST_SYMBOL_NONE; break;
-        case 6: instruction->target_a = function->next_label; break;
-        case 7: instruction->operator_type = TOKEN_ERROR; break;
+        case 0: instruction->opcode = (IrOpcode) 255;
+            break;
+        case 1: instruction->type_id = IR_TYPE_NONE;
+            break;
+        case 2: instruction->result = function->next_value;
+            break;
+        case 3: instruction->operand_a = function->next_value;
+            break;
+        case 4: instruction->operand_b = function->next_value;
+            break;
+        case 5: instruction->symbol_id = AST_SYMBOL_NONE;
+            break;
+        case 6: instruction->target_a = function->next_label;
+            break;
+        case 7: instruction->operator_type = TOKEN_ERROR;
+            break;
     }
     (void) ir_verify_module(module);
 }

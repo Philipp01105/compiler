@@ -96,7 +96,7 @@ static void modrm(Encoding *e, int field, const X64Operand *rm) {
         return;
     }
     if (rm->rip_relative) {
-        if (!rm->symbol || !rm->symbol[0]) e->bad=1;
+        if (!rm->symbol || !rm->symbol[0]) e->bad = 1;
         if (rm->index || !signed32(rm->displacement))e->bad = 1;
         byte(e, ((unsigned) field & 7u) * 8u | 5u);
         e->fixup = e->size;
@@ -183,23 +183,23 @@ int native_encode(NativeObject *object, const X64Instruction *in) {
     unsigned prefix = w == 16 ? 0x66u : 0u;
     int wide = w == 64;
     X64Opcode op = in->opcode;
-    for (size_t n=0; n<in->operand_count && n<3; ++n) {
-        const X64Operand *operand=&in->operands[n];
-        if (operand->kind==X64_OPERAND_REGISTER && reg(operand->reg).number<0) e.bad=1;
+    for (size_t n = 0; n < in->operand_count && n < 3; ++n) {
+        const X64Operand *operand = &in->operands[n];
+        if (operand->kind == X64_OPERAND_REGISTER && reg(operand->reg).number < 0) e.bad = 1;
     }
-    if (op==X64_OP_MOV || op==X64_OP_MOVABS || op==X64_OP_MOVSX || op==X64_OP_MOVZX ||
-        op==X64_OP_LEA || (op>=X64_OP_ADD && op<=X64_OP_DEC)) {
-        if (w!=8 && w!=16 && w!=32 && w!=64) e.bad=1;
-        if (ar.xmm || br.xmm) e.bad=1;
-        if (a->kind==X64_OPERAND_REGISTER && ar.bits!=w) e.bad=1;
-        if (op!=X64_OP_MOVSX && op!=X64_OP_MOVZX && b->kind==X64_OPERAND_REGISTER && br.bits!=w) e.bad=1;
+    if (op == X64_OP_MOV || op == X64_OP_MOVABS || op == X64_OP_MOVSX || op == X64_OP_MOVZX ||
+        op == X64_OP_LEA || (op >= X64_OP_ADD && op <= X64_OP_DEC)) {
+        if (w != 8 && w != 16 && w != 32 && w != 64) e.bad = 1;
+        if (ar.xmm || br.xmm) e.bad = 1;
+        if (a->kind == X64_OPERAND_REGISTER && ar.bits != w) e.bad = 1;
+        if (op != X64_OP_MOVSX && op != X64_OP_MOVZX && b->kind == X64_OPERAND_REGISTER && br.bits != w) e.bad = 1;
     }
-    if (op>=X64_OP_SETE && op<=X64_OP_SETNP && a->kind==X64_OPERAND_REGISTER && ar.bits!=8) e.bad=1;
-    if (op>=X64_OP_CVTSI2SS && op<=X64_OP_XORPD) {
-        int to_integer=op>=X64_OP_CVTTSS2SI && op<=X64_OP_CVTTSD2SIQ;
-        int from_integer=op>=X64_OP_CVTSI2SS && op<=X64_OP_CVTSI2SDQ;
-        if (a->kind!=X64_OPERAND_REGISTER || (to_integer ? ar.xmm : !ar.xmm)) e.bad=1;
-        if (b->kind==X64_OPERAND_REGISTER && (from_integer ? br.xmm : !br.xmm)) e.bad=1;
+    if (op >= X64_OP_SETE && op <= X64_OP_SETNP && a->kind == X64_OPERAND_REGISTER && ar.bits != 8) e.bad = 1;
+    if (op >= X64_OP_CVTSI2SS && op <= X64_OP_XORPD) {
+        int to_integer = op >= X64_OP_CVTTSS2SI && op <= X64_OP_CVTTSD2SIQ;
+        int from_integer = op >= X64_OP_CVTSI2SS && op <= X64_OP_CVTSI2SDQ;
+        if (a->kind != X64_OPERAND_REGISTER || (to_integer ? ar.xmm : !ar.xmm)) e.bad = 1;
+        if (b->kind == X64_OPERAND_REGISTER && (from_integer ? br.xmm : !br.xmm)) e.bad = 1;
     }
     size_t expected = 2;
     if (op == X64_OP_RET || op == X64_OP_CQO || op == X64_OP_SYSCALL || op == X64_OP_UD2)expected = 0;
@@ -208,7 +208,7 @@ int native_encode(NativeObject *object, const X64Instruction *in) {
              (op >= X64_OP_CALL && op <= X64_OP_SETNP))
         expected = 1;
     else if (op == X64_OP_IMUL && in->operand_count == 3)expected = 3;
-    if(op==X64_OP_DIV)expected=1;
+    if (op == X64_OP_DIV)expected = 1;
     if (in->operand_count != expected || op < 0 || op >= X64_OP_COUNT)e.bad = 1;
     if (op == X64_OP_RET)byte(&e, 0xc3);
     else if (op == X64_OP_CQO) {
@@ -340,9 +340,10 @@ int native_encode(NativeObject *object, const X64Instruction *in) {
         if (in->operand_count == 2 && b->kind == X64_OPERAND_IMMEDIATE) {
             operation(&e, prefix, wide, 0x69, 0, register_number(&e, a), a);
             if (!signed32(b->immediate)) e.bad = 1;
-            integer(&e, (uint64_t)b->immediate, w == 16 ? 2 : 4);
-        } else operation(&e, prefix, wide, in->operand_count == 3 ? 0x69 : 0x0f, in->operand_count == 3 ? 0 : 0xaf,
-                  register_number(&e, a), b);
+            integer(&e, (uint64_t) b->immediate, w == 16 ? 2 : 4);
+        } else
+            operation(&e, prefix, wide, in->operand_count == 3 ? 0x69 : 0x0f, in->operand_count == 3 ? 0 : 0xaf,
+                      register_number(&e, a), b);
         if (in->operand_count == 3) {
             const X64Operand *c = &in->operands[2];
             if (c->kind != X64_OPERAND_IMMEDIATE || !signed32(c->immediate))e.bad = 1;
@@ -371,14 +372,15 @@ int native_encode(NativeObject *object, const X64Instruction *in) {
             if (wide && !signed32(b->immediate))e.bad = 1;
             integer(&e, (uint64_t) b->immediate, w == 8 ? 1 : w == 16 ? 2 : 4);
         } else if (op == X64_OP_TEST)operation(&e, prefix, wide, w == 8 ? 0x84 : 0x85, 0, register_number(&e, b), a);
-        else if (a->kind == X64_OPERAND_REGISTER)operation(&e, prefix, wide, (unsigned) group * 8u + (w == 8 ? 2u : 3u),
-                                                           0, register_number(&e, a), b);
+        else if (a->kind == X64_OPERAND_REGISTER)
+            operation(&e, prefix, wide, (unsigned) group * 8u + (w == 8 ? 2u : 3u),
+                      0, register_number(&e, a), b);
         else operation(&e, prefix, wide, (unsigned) group * 8u + (w == 8 ? 0u : 1u), 0, register_number(&e, b), a);
-    } else if(op==X64_OP_SHL || op==X64_OP_SHR) {
-        if(b->kind!=X64_OPERAND_IMMEDIATE || b->immediate<0 || b->immediate>63)e.bad=1;
-        operation(&e,prefix,wide,w==8?0xc0:0xc1,0,op==X64_OP_SHL?4:5,a);
-        byte(&e,(unsigned)b->immediate);
-    } else if(op==X64_OP_DIV)operation(&e,prefix,wide,w==8?0xf6:0xf7,0,6,a);
+    } else if (op == X64_OP_SHL || op == X64_OP_SHR) {
+        if (b->kind != X64_OPERAND_IMMEDIATE || b->immediate < 0 || b->immediate > 63)e.bad = 1;
+        operation(&e, prefix, wide, w == 8 ? 0xc0 : 0xc1, 0, op == X64_OP_SHL ? 4 : 5, a);
+        byte(&e, (unsigned) b->immediate);
+    } else if (op == X64_OP_DIV)operation(&e, prefix, wide, w == 8 ? 0xf6 : 0xf7, 0, 6, a);
     else e.bad = 1;
     if (e.bad || e.size == 0 || e.size > 15) {
         char error[128];
@@ -392,8 +394,8 @@ int native_encode(NativeObject *object, const X64Instruction *in) {
     if (e.symbol) {
         const X64Operand *s = e.symbol;
         if (s->symbol && !s->has_symbol_suffix)
-            return native_reference(object,s->symbol,op == X64_OP_CALL ? NATIVE_CALL32 : NATIVE_REL32,
-                start+e.fixup,(int64_t)s->displacement-(int64_t)(e.size-e.fixup));
+            return native_reference(object, s->symbol, op == X64_OP_CALL ? NATIVE_CALL32 : NATIVE_REL32,
+                                    start + e.fixup, (int64_t) s->displacement - (int64_t)(e.size - e.fixup));
         char name[512];
         int count = s->has_symbol_suffix
                         ? snprintf(name, sizeof(name), "%s%zu", s->symbol, s->symbol_suffix)
@@ -403,7 +405,7 @@ int native_encode(NativeObject *object, const X64Instruction *in) {
             return 0;
         }
         return native_reference(object, name, op == X64_OP_CALL ? NATIVE_CALL32 : NATIVE_REL32, start + e.fixup,
-                                (int64_t) s->displacement - (int64_t) (e.size - e.fixup));
+                                (int64_t) s->displacement - (int64_t)(e.size - e.fixup));
     }
     return 1;
 }

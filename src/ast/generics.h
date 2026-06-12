@@ -3,9 +3,11 @@
 #include "ast.h"
 #define DMM_MAX_TYPE_PARAMETERS 16
 #define DMM_MAX_SPECIALIZATIONS 256
+
 int ast_concrete_type_equal(const AstProgram *a, const AstType *left,
-                             const AstProgram *b, const AstType *right);
+                            const AstProgram *b, const AstType *right);
+
 AstDeclarationNode *ast_specialize_function(AstProgram *program,
-    const AstDeclarationNode *origin, const AstType *arguments, size_t count,
-    const AstProgram *argument_program);
+                                            const AstDeclarationNode *origin, const AstType *arguments, size_t count,
+                                            const AstProgram *argument_program);
 #endif

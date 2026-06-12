@@ -19,8 +19,9 @@ static char *canonical_path(const char *path) {
         DWORD size = GetFinalPathNameByHandleA(file, NULL, 0, FILE_NAME_NORMALIZED);
         char *result = size == 0 ? NULL : malloc((size_t) size + 1);
         if (result != NULL && GetFinalPathNameByHandleA(file, result, size + 1,
-                                                       FILE_NAME_NORMALIZED) == 0) {
-            free(result); result = NULL;
+                                                        FILE_NAME_NORMALIZED) == 0) {
+            free(result);
+            result = NULL;
         }
         CloseHandle(file);
         return result;
@@ -47,7 +48,8 @@ static char *canonical_path(const char *path) {
         size_t n = strlen(cwd), m = strlen(path);
         if (n <= SIZE_MAX - m - 2) absolute = malloc(n + m + 2);
         if (absolute != NULL) {
-            memcpy(absolute, cwd, n); absolute[n] = '/';
+            memcpy(absolute, cwd, n);
+            absolute[n] = '/';
             memcpy(absolute + n + 1, path, m + 1);
         }
         free(cwd);
@@ -62,7 +64,10 @@ static char *canonical_path(const char *path) {
     char *backslash = strrchr(absolute, '\\');
     if (backslash != NULL && (leaf == NULL || backslash > leaf)) leaf = backslash;
 #endif
-    if (leaf == NULL || leaf[1] == '\0') { free(absolute); return NULL; }
+    if (leaf == NULL || leaf[1] == '\0') {
+        free(absolute);
+        return NULL;
+    }
     size_t offset = (size_t) (leaf - absolute);
     /* Keep a volume/filesystem root intact while resolving the parent. */
     char saved = leaf[1];
@@ -70,10 +75,15 @@ static char *canonical_path(const char *path) {
     char *parent;
     if (offset == 0 || (offset == 2 && absolute[1] == ':')) parent = canonical_path(absolute);
     else {
-        *leaf = '\0'; parent = canonical_path(absolute); *leaf = '/';
+        *leaf = '\0';
+        parent = canonical_path(absolute);
+        *leaf = '/';
     }
     leaf[1] = saved;
-    if (parent == NULL) { free(absolute); return NULL; }
+    if (parent == NULL) {
+        free(absolute);
+        return NULL;
+    }
     const char *name = leaf + 1;
     size_t n = strlen(parent), m = strlen(name);
     char *result = n <= SIZE_MAX - m - 2 ? malloc(n + m + 2) : NULL;
@@ -84,11 +94,13 @@ static char *canonical_path(const char *path) {
             char *end = strrchr(result, '/');
             if (end != NULL && end != result) *end = '\0';
         } else {
-            memcpy(result, parent, n); result[n] = '/';
+            memcpy(result, parent, n);
+            result[n] = '/';
             memcpy(result + n + 1, name, m + 1);
         }
     }
-    free(parent); free(absolute);
+    free(parent);
+    free(absolute);
     return result;
 }
 
@@ -102,16 +114,17 @@ int path_identity_equal(const char *first, const char *second) {
                            NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
     BY_HANDLE_FILE_INFORMATION ai, bi;
     int same = a != INVALID_HANDLE_VALUE && b != INVALID_HANDLE_VALUE &&
-        GetFileInformationByHandle(a, &ai) && GetFileInformationByHandle(b, &bi) &&
-        ai.dwVolumeSerialNumber == bi.dwVolumeSerialNumber &&
-        ai.nFileIndexHigh == bi.nFileIndexHigh && ai.nFileIndexLow == bi.nFileIndexLow;
+               GetFileInformationByHandle(a, &ai) && GetFileInformationByHandle(b, &bi) &&
+               ai.dwVolumeSerialNumber == bi.dwVolumeSerialNumber &&
+               ai.nFileIndexHigh == bi.nFileIndexHigh && ai.nFileIndexLow == bi.nFileIndexLow;
     if (a != INVALID_HANDLE_VALUE) CloseHandle(a);
     if (b != INVALID_HANDLE_VALUE) CloseHandle(b);
     if (same) return 1;
 #else
     struct stat a, b;
     if (stat(first, &a) == 0 && stat(second, &b) == 0 &&
-        a.st_dev == b.st_dev && a.st_ino == b.st_ino) return 1;
+        a.st_dev == b.st_dev && a.st_ino == b.st_ino)
+        return 1;
 #endif
     char *a_path = canonical_path(first), *b_path = canonical_path(second);
     int result = -1;
@@ -124,6 +137,7 @@ int path_identity_equal(const char *first, const char *second) {
         result = strcmp(a_path, b_path) == 0;
 #endif
     }
-    free(a_path); free(b_path);
+    free(a_path);
+    free(b_path);
     return result;
 }

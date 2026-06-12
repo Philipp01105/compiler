@@ -1,7 +1,17 @@
 package stdio;
 import "stdlib/core";
 
-pub enum Status { pub Ok, pub EndOfStream, pub Closed, pub AccessDenied, pub NoProgress, pub SystemError, pub OutOfMemory, pub LimitReached, pub InvalidInput }
+pub enum Status {
+    pub Ok,
+    pub EndOfStream,
+    pub Closed,
+    pub AccessDenied,
+    pub NoProgress,
+    pub SystemError,
+    pub OutOfMemory,
+    pub LimitReached,
+    pub InvalidInput
+}
 
 // count always reports progress, including partial progress before an error.
 // error preserves the OS error when status is SystemError; other statuses use 0.

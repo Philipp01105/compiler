@@ -32,39 +32,53 @@ static int emit_native(const IrModule *module, const BackendOptions *options, co
         map = fopen(options->source_map_path, "w");
         map_opened = map != NULL;
         if (map == NULL) {
-            io_errno = errno; io_path = options->source_map_path; operation = "open source-map";
+            io_errno = errno;
+            io_path = options->source_map_path;
+            operation = "open source-map";
             success = 0;
         }
     }
     if (success) success = x86_64_lower_native(module, options->target_format, &object, map);
     if (map != NULL) {
         if (ferror(map)) {
-            io_errno = errno ? errno : EIO; io_path = options->source_map_path;
-            operation = "write source-map"; success = 0;
+            io_errno = errno ? errno : EIO;
+            io_path = options->source_map_path;
+            operation = "write source-map";
+            success = 0;
         }
         if (fclose(map) != 0 && operation == NULL) {
-            io_errno = errno; io_path = options->source_map_path;
-            operation = "close source-map"; success = 0;
+            io_errno = errno;
+            io_path = options->source_map_path;
+            operation = "close source-map";
+            success = 0;
         }
     }
     if (success && options->emission == BACKEND_OBJECT &&
-        (!module->program->package_name || !strcmp(module->program->package_name,"main")))
+        (!module->program->package_name || !strcmp(module->program->package_name, "main")))
         success = native_runtime_emit(&object, options->target_format);
     if (success && options->emission == BACKEND_OBJECT)
         success = native_runtime_object_imports(&object, options->target_format);
-    if (success) success = options->emission == BACKEND_OBJECT
-        ? native_write_object(&object, options->target_format, &output)
-        : native_link_executable(&object, options->target_format, &output);
+    if (success)
+        success = options->emission == BACKEND_OBJECT
+                      ? native_write_object(&object, options->target_format, &output)
+                      : native_link_executable(&object, options->target_format, &output);
     if (success) {
         FILE *file = fopen(path, "wb");
-        if (file == NULL) { io_errno = errno; operation = "open native"; success = 0; }
-        else {
+        if (file == NULL) {
+            io_errno = errno;
+            operation = "open native";
+            success = 0;
+        } else {
             opened = 1;
             if (fwrite(output.data, 1, output.size, file) != output.size) {
-                io_errno = errno ? errno : EIO; operation = "write native"; success = 0;
+                io_errno = errno ? errno : EIO;
+                operation = "write native";
+                success = 0;
             }
             if (fclose(file) != 0 && operation == NULL) {
-                io_errno = errno; operation = "close native"; success = 0;
+                io_errno = errno;
+                operation = "close native";
+                success = 0;
             }
         }
     }
@@ -72,24 +86,27 @@ static int emit_native(const IrModule *module, const BackendOptions *options, co
     if (success && options->emission == BACKEND_EXECUTABLE && options->target_format == TARGET_ELF) {
         struct stat status;
         if (stat(path, &status) != 0 || chmod(path, status.st_mode | S_IXUSR | S_IXGRP | S_IXOTH) != 0) {
-            io_errno = errno; operation = "set executable permissions on"; success = 0;
+            io_errno = errno;
+            operation = "set executable permissions on";
+            success = 0;
         }
     }
 #endif
     if (!success) {
-        if (opened) (void)remove(path);
-        if (map_opened) (void)remove(options->source_map_path);
+        if (opened) (void) remove(path);
+        if (map_opened) (void) remove(options->source_map_path);
         if (operation != NULL)
             error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_CODEGEN,
-                ERR_CODEGEN_OUTPUT_FAILED, module->program->source_path,
-                "Could not %s output '%s': %s", operation, io_path, strerror(io_errno ? io_errno : EIO));
-        else error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_CODEGEN,
-            ERR_CODEGEN_OUTPUT_FAILED, module->program->source_path,
-            "Could not emit native output '%s': %s", path,
-            object.failed ? object.error : "internal backend failure");
+                         ERR_CODEGEN_OUTPUT_FAILED, module->program->source_path,
+                         "Could not %s output '%s': %s", operation, io_path, strerror(io_errno ? io_errno : EIO));
+        else
+            error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_CODEGEN,
+                         ERR_CODEGEN_OUTPUT_FAILED, module->program->source_path,
+                         "Could not emit native output '%s': %s", path,
+                         object.failed ? object.error : "internal backend failure");
     } else if (options->debug)
         printf("  [+] Native %s generated: %s\n",
-            options->emission == BACKEND_OBJECT ? "object" : "executable", path);
+               options->emission == BACKEND_OBJECT ? "object" : "executable", path);
     native_object_free(&object);
     free(output.data);
     return success;
@@ -99,12 +116,15 @@ int backend_emit_file(const IrModule *module, const BackendOptions *options,
                       const char *output_path) {
     if (module == NULL || module->program == NULL || options == NULL || output_path == NULL)
         return 0;
-    if (options->emission != BACKEND_ASSEMBLY) return emit_native(module,options,output_path);
+    if (options->emission != BACKEND_ASSEMBLY) return emit_native(module, options, output_path);
     int previous_errors = error_handler_get_error_count(global_error_handler);
     if (!x86_64_emit_ir_file(module, options->target_format, options->syntax_mode,
                              options->deterministic, output_path, options->source_map_path))
-        return error_handler_get_error_count(global_error_handler) > previous_errors ? 0 :
-            output_error(module->program, "Could not emit typed IR output '%s' (internal backend failure after semantic analysis)", output_path);
+        return error_handler_get_error_count(global_error_handler) > previous_errors
+                   ? 0
+                   : output_error(module->program,
+                                  "Could not emit typed IR output '%s' (internal backend failure after semantic analysis)",
+                                  output_path);
     AssemblyCleanupError cleanup_error;
     if (cleanup_assembly_file_detailed(output_path, &cleanup_error) != 0) {
         error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_CODEGEN,

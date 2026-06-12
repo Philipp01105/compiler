@@ -84,39 +84,39 @@ add_executable(compiler
 
 target_include_directories(compiler PRIVATE ${DMM_INCLUDE_DIRS})
 add_custom_command(TARGET compiler POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:compiler>" "$<TARGET_FILE_DIR:compiler>/dmm$<TARGET_FILE_SUFFIX:compiler>"
-    COMMENT "Creating the dmm command")
+        COMMENT "Creating the dmm command")
 
 target_compile_definitions(compiler PRIVATE
         DMM_VERSION="${PROJECT_VERSION}")
-if(MSVC)
+if (MSVC)
     target_compile_options(compiler PRIVATE /W4)
-    if(DMM_STRICT_WARNINGS)
+    if (DMM_STRICT_WARNINGS)
         target_compile_options(compiler PRIVATE /WX)
-    endif()
-else()
+    endif ()
+else ()
     target_compile_options(compiler PRIVATE -Wall -Wextra -Wpedantic)
-    if(DMM_STRICT_WARNINGS)
+    if (DMM_STRICT_WARNINGS)
         target_compile_options(compiler PRIVATE -Wconversion -Wshadow -Werror)
-    endif()
-endif()
+    endif ()
+endif ()
 
-if(DMM_SANITIZERS)
-    if(MSVC OR WIN32)
+if (DMM_SANITIZERS)
+    if (MSVC OR WIN32)
         message(FATAL_ERROR "DMM_SANITIZERS currently requires GCC or Clang on a Unix-like platform")
-    endif()
+    endif ()
     target_compile_options(compiler PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
     target_link_options(compiler PRIVATE -fsanitize=address,undefined)
-endif()
+endif ()
 
 install(TARGETS compiler RUNTIME DESTINATION bin)
 install(DIRECTORY stdlib/ DESTINATION share/dmm/stdlib)
 
-if(DMM_BUILD_FUZZERS)
-    if(NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
+if (DMM_BUILD_FUZZERS)
+    if (NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
         message(FATAL_ERROR "DMM_BUILD_FUZZERS requires Clang")
-    endif()
+    endif ()
     add_executable(fuzz_syntax_converter tests/fuzz/fuzz_syntax_converter.c src/backend/syntax_converter.c)
     target_include_directories(fuzz_syntax_converter PRIVATE ${DMM_INCLUDE_DIRS})
     target_compile_options(fuzz_syntax_converter PRIVATE -fsanitize=fuzzer,address,undefined)
@@ -128,7 +128,7 @@ if(DMM_BUILD_FUZZERS)
     target_compile_options(fuzz_lexer PRIVATE -fsanitize=fuzzer,address,undefined)
     target_link_options(fuzz_lexer PRIVATE -fsanitize=fuzzer,address,undefined)
 
-    foreach(fuzz_stage parser semantic ir)
+    foreach (fuzz_stage parser semantic ir)
         add_executable(fuzz_${fuzz_stage} tests/fuzz/fuzz_${fuzz_stage}.c
                 ${DMM_FUZZ_PIPELINE_SOURCES})
         target_include_directories(fuzz_${fuzz_stage} PRIVATE
@@ -136,14 +136,14 @@ if(DMM_BUILD_FUZZERS)
         target_compile_options(fuzz_${fuzz_stage} PRIVATE
                 -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer)
         target_link_options(fuzz_${fuzz_stage} PRIVATE -fsanitize=fuzzer,address,undefined)
-    endforeach()
-endif()
+    endforeach ()
+endif ()
 
 include(CTest)
-if(BUILD_TESTING)
-    if(UNIX)
+if (BUILD_TESTING)
+    if (UNIX)
         add_compile_definitions(_XOPEN_SOURCE=700)
-    endif()
+    endif ()
     add_executable(dmm_foundation_test tests/unit/foundation_test.c ${DMM_FUZZ_PIPELINE_SOURCES})
     target_include_directories(dmm_foundation_test PRIVATE ${DMM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/tests/fuzz)
     add_test(NAME language_foundation_unit COMMAND dmm_foundation_test)
@@ -152,29 +152,29 @@ if(BUILD_TESTING)
     get_target_property(DMM_COMPILER_SOURCES compiler SOURCES)
     list(REMOVE_ITEM DMM_COMPILER_SOURCES src/driver/main.c)
     add_executable(dmm_resource_fault_test tests/unit/resource_fault_test.c
-        tests/resource_fault.c ${DMM_COMPILER_SOURCES})
+            tests/resource_fault.c ${DMM_COMPILER_SOURCES})
     target_include_directories(dmm_resource_fault_test PRIVATE ${DMM_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/tests)
-    if(MSVC)
+    if (MSVC)
         target_compile_options(dmm_resource_fault_test PRIVATE /FI${CMAKE_SOURCE_DIR}/tests/resource_fault.h)
-    else()
+    else ()
         target_compile_options(dmm_resource_fault_test PRIVATE -include ${CMAKE_SOURCE_DIR}/tests/resource_fault.h)
-    endif()
+    endif ()
     add_test(NAME resource_fault_unit COMMAND dmm_resource_fault_test ${CMAKE_BINARY_DIR}/resource_fault_output)
     set_tests_properties(resource_fault_unit PROPERTIES LABELS "unit;backend;diagnostics;safety")
     set(DMM_ASSEMBLER "${CMAKE_C_COMPILER}" CACHE FILEPATH
-        "C compiler used to assemble and link generated code")
-    if(NOT EXISTS "${DMM_ASSEMBLER}")
+            "C compiler used to assemble and link generated code")
+    if (NOT EXISTS "${DMM_ASSEMBLER}")
         message(FATAL_ERROR "BUILD_TESTING is ON, but DMM_ASSEMBLER does not exist: ${DMM_ASSEMBLER}")
-    endif()
+    endif ()
     set(DMM_TEST_LINK_FLAGS "")
-    if(DMM_SANITIZERS)
+    if (DMM_SANITIZERS)
         set(DMM_TEST_LINK_FLAGS "-fsanitize=address,undefined")
-    endif()
+    endif ()
     add_executable(dmm_runtime_test tests/unit/runtime_test.c src/runtime/native_runtime.c
-        src/backend/native/encoder.c src/backend/native/object.c src/backend/x86_64/instruction.c)
+            src/backend/native/encoder.c src/backend/native/object.c src/backend/x86_64/instruction.c)
     target_include_directories(dmm_runtime_test PRIVATE ${DMM_INCLUDE_DIRS})
     add_executable(dmm_native_test tests/unit/native_test.c src/backend/native/object.c
-        src/backend/native/encoder.c src/backend/native/linker.c src/runtime/native_runtime.c src/backend/x86_64/instruction.c)
+            src/backend/native/encoder.c src/backend/native/linker.c src/runtime/native_runtime.c src/backend/x86_64/instruction.c)
     target_include_directories(dmm_native_test PRIVATE ${DMM_INCLUDE_DIRS})
     add_test(NAME native_binary_unit COMMAND dmm_native_test)
     set_tests_properties(native_binary_unit PROPERTIES LABELS "unit;native;backend;safety")
@@ -183,13 +183,13 @@ if(BUILD_TESTING)
     function(add_dmm_regression_stage stage label)
         add_test(NAME regression_${stage}
                 COMMAND ${CMAKE_COMMAND}
-                    -DCOMPILER=$<TARGET_FILE:compiler>
-                    -DASSEMBLER=${DMM_ASSEMBLER}
+                -DCOMPILER=$<TARGET_FILE:compiler>
+                -DASSEMBLER=${DMM_ASSEMBLER}
 
-                    "-DSANITIZER_FLAGS=${DMM_TEST_LINK_FLAGS}"
-                    -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/test_output/${stage}
-                    -DTEST_STAGE=${stage}
-                    -P ${CMAKE_SOURCE_DIR}/tests/run_tests.cmake)
+                "-DSANITIZER_FLAGS=${DMM_TEST_LINK_FLAGS}"
+                -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/test_output/${stage}
+                -DTEST_STAGE=${stage}
+                -P ${CMAKE_SOURCE_DIR}/tests/run_tests.cmake)
         set_tests_properties(regression_${stage} PROPERTIES LABELS "integration;${label}")
     endfunction()
     add_dmm_regression_stage(positive execution)
@@ -197,28 +197,28 @@ if(BUILD_TESTING)
     add_dmm_regression_stage(rejection diagnostics)
     add_dmm_regression_stage(backend safety)
     add_test(NAME direct_native_backend COMMAND ${CMAKE_COMMAND}
-        -DCOMPILER=$<TARGET_FILE:compiler> -DASSEMBLER=${DMM_ASSEMBLER}
-         "-DSANITIZER_FLAGS=${DMM_TEST_LINK_FLAGS}"
-        -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/direct_native_test -P ${CMAKE_SOURCE_DIR}/tests/native_backend_test.cmake)
+            -DCOMPILER=$<TARGET_FILE:compiler> -DASSEMBLER=${DMM_ASSEMBLER}
+            "-DSANITIZER_FLAGS=${DMM_TEST_LINK_FLAGS}"
+            -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/direct_native_test -P ${CMAKE_SOURCE_DIR}/tests/native_backend_test.cmake)
     set_tests_properties(direct_native_backend PROPERTIES LABELS "integration;backend;native;safety")
     add_test(NAME core_runtime_contract COMMAND ${CMAKE_COMMAND}
-        -DCOMPILER=$<TARGET_FILE:compiler> -DASSEMBLER=${DMM_ASSEMBLER}
-        -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/core_runtime_test -P ${CMAKE_SOURCE_DIR}/tests/core_runtime_test.cmake)
+            -DCOMPILER=$<TARGET_FILE:compiler> -DASSEMBLER=${DMM_ASSEMBLER}
+            -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/core_runtime_test -P ${CMAKE_SOURCE_DIR}/tests/core_runtime_test.cmake)
     set_tests_properties(core_runtime_contract PROPERTIES LABELS "integration;core;runtime;execution;abi;safety")
     add_test(NAME native_cli_contract COMMAND ${CMAKE_COMMAND} -DCOMPILER=$<TARGET_FILE:compiler>
-        -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/native_cli_test -P ${CMAKE_SOURCE_DIR}/tests/native_cli_test.cmake)
+            -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/native_cli_test -P ${CMAKE_SOURCE_DIR}/tests/native_cli_test.cmake)
     set_tests_properties(native_cli_contract PROPERTIES LABELS "integration;cli;native;safety")
-    if(DMM_SANITIZERS)
+    if (DMM_SANITIZERS)
         set_property(TEST regression_positive APPEND PROPERTY LABELS safety)
         set_property(TEST regression_abi APPEND PROPERTY LABELS safety)
-    endif()
+    endif ()
 
     add_executable(dmm_optimizer_test tests/unit/optimizer_test.c src/backend/asm_optimizer.c
             src/backend/backend.c src/diagnostics/errorHandler.c)
     target_compile_definitions(dmm_optimizer_test PRIVATE DMM_OPTIMIZER_FAULT_TEST)
     target_include_directories(dmm_optimizer_test PRIVATE ${DMM_INCLUDE_DIRS})
     add_test(NAME optimizer_unit COMMAND dmm_optimizer_test
-             ${CMAKE_BINARY_DIR}/optimizer_test_input.s)
+            ${CMAKE_BINARY_DIR}/optimizer_test_input.s)
     set_tests_properties(optimizer_unit PROPERTIES LABELS "unit;safety")
 
     add_executable(dmm_syntax_converter_test tests/unit/syntax_converter_test.c src/backend/syntax_converter.c)
@@ -258,7 +258,7 @@ if(BUILD_TESTING)
             src/frontend/lexer.c src/common/string_interner.c src/diagnostics/errorHandler.c)
     target_include_directories(dmm_frontend_ast_test PRIVATE ${DMM_INCLUDE_DIRS})
     add_test(NAME frontend_ast_unit COMMAND dmm_frontend_ast_test
-             ${CMAKE_SOURCE_DIR}/tests/unit/frontend_ast_fixture/frontend_ast_fixture.dmm)
+            ${CMAKE_SOURCE_DIR}/tests/unit/frontend_ast_fixture/frontend_ast_fixture.dmm)
     set_tests_properties(frontend_ast_unit PROPERTIES LABELS "unit;frontend;ast;safety")
 
     add_executable(dmm_pipeline_test
@@ -274,100 +274,100 @@ if(BUILD_TESTING)
     add_test(NAME ir_optimizer_unit COMMAND dmm_ir_optimizer_test)
     set_tests_properties(ir_optimizer_unit PROPERTIES LABELS "unit;ir;backend;safety")
     add_test(NAME ir_optimization_execution COMMAND ${CMAKE_COMMAND}
-             -DCOMPILER=$<TARGET_FILE:compiler>
-             -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/ir_optimization_test
-             -P ${CMAKE_SOURCE_DIR}/tests/ir_optimization_test.cmake)
+            -DCOMPILER=$<TARGET_FILE:compiler>
+            -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/ir_optimization_test
+            -P ${CMAKE_SOURCE_DIR}/tests/ir_optimization_test.cmake)
     set_tests_properties(ir_optimization_execution PROPERTIES LABELS "integration;ir;backend;execution;safety")
     file(GLOB_RECURSE DMM_FRONTEND_CORPUS CONFIGURE_DEPENDS
             ${CMAKE_SOURCE_DIR}/tests/execution/*.dmm)
     file(GLOB_RECURSE DMM_EXAMPLE_CORPUS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/examples/*.dmm)
     add_test(NAME frontend_pipeline_unit COMMAND dmm_pipeline_test
-             ${CMAKE_SOURCE_DIR}/tests/unit/frontend_ast_fixture/frontend_ast_fixture.dmm
-             ${CMAKE_SOURCE_DIR}/tests/unit/import_fixture/main.dmm
-             ${CMAKE_SOURCE_DIR}/tests/unit/package_import_fixture/main.dmm
-             ${DMM_FRONTEND_CORPUS} ${DMM_EXAMPLE_CORPUS})
+            ${CMAKE_SOURCE_DIR}/tests/unit/frontend_ast_fixture/frontend_ast_fixture.dmm
+            ${CMAKE_SOURCE_DIR}/tests/unit/import_fixture/main.dmm
+            ${CMAKE_SOURCE_DIR}/tests/unit/package_import_fixture/main.dmm
+            ${DMM_FRONTEND_CORPUS} ${DMM_EXAMPLE_CORPUS})
     set_tests_properties(frontend_pipeline_unit PROPERTIES LABELS "unit;frontend;ast;sema;ir;safety")
 
     add_test(NAME architecture_boundaries COMMAND ${CMAKE_COMMAND}
-             -P ${CMAKE_SOURCE_DIR}/tests/architecture_test.cmake)
+            -P ${CMAKE_SOURCE_DIR}/tests/architecture_test.cmake)
     set_tests_properties(architecture_boundaries PROPERTIES LABELS "unit;architecture;safety")
 
     add_test(NAME ir_backend_native COMMAND ${CMAKE_COMMAND}
-             -DCOMPILER=$<TARGET_FILE:compiler>
-             -DASSEMBLER=${DMM_ASSEMBLER}
+            -DCOMPILER=$<TARGET_FILE:compiler>
+            -DASSEMBLER=${DMM_ASSEMBLER}
 
-             "-DSANITIZER_FLAGS=${DMM_TEST_LINK_FLAGS}"
-             -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/ir_backend_test
-             -P ${CMAKE_SOURCE_DIR}/tests/ir_backend_test.cmake)
+            "-DSANITIZER_FLAGS=${DMM_TEST_LINK_FLAGS}"
+            -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/ir_backend_test
+            -P ${CMAKE_SOURCE_DIR}/tests/ir_backend_test.cmake)
     set_tests_properties(ir_backend_native PROPERTIES LABELS "integration;backend;ir;safety")
 
     add_test(NAME diagnostics_json COMMAND ${CMAKE_COMMAND}
-             -DCOMPILER=$<TARGET_FILE:compiler>
-             -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/diagnostics_test
-             -P ${CMAKE_SOURCE_DIR}/tests/diagnostics_test.cmake)
+            -DCOMPILER=$<TARGET_FILE:compiler>
+            -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/diagnostics_test
+            -P ${CMAKE_SOURCE_DIR}/tests/diagnostics_test.cmake)
     set_tests_properties(diagnostics_json PROPERTIES LABELS "integration;diagnostics;safety")
 
     add_test(NAME ide_analysis COMMAND ${CMAKE_COMMAND}
-             -DCOMPILER=$<TARGET_FILE:compiler>
-             -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/ide_test
-             -P ${CMAKE_SOURCE_DIR}/tests/ide_analysis_test.cmake)
+            -DCOMPILER=$<TARGET_FILE:compiler>
+            -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/ide_test
+            -P ${CMAKE_SOURCE_DIR}/tests/ide_analysis_test.cmake)
     set_tests_properties(ide_analysis PROPERTIES LABELS "integration;diagnostics;frontend;safety")
 
     add_test(NAME diagnostics_audit COMMAND ${CMAKE_COMMAND}
-             -DCOMPILER=$<TARGET_FILE:compiler>
-             -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
-             -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/diagnostics_audit
-             -P ${CMAKE_SOURCE_DIR}/tests/diagnostics_audit_test.cmake)
+            -DCOMPILER=$<TARGET_FILE:compiler>
+            -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+            -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/diagnostics_audit
+            -P ${CMAKE_SOURCE_DIR}/tests/diagnostics_audit_test.cmake)
     set_tests_properties(diagnostics_audit PROPERTIES LABELS "integration;diagnostics;safety")
 
     add_test(NAME diagnostics_cases COMMAND ${CMAKE_COMMAND}
-             -DCOMPILER=$<TARGET_FILE:compiler>
-             -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/diagnostics_cases
-             -P ${CMAKE_SOURCE_DIR}/tests/diagnostics_cases_test.cmake)
+            -DCOMPILER=$<TARGET_FILE:compiler>
+            -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/diagnostics_cases
+            -P ${CMAKE_SOURCE_DIR}/tests/diagnostics_cases_test.cmake)
     set_tests_properties(diagnostics_cases PROPERTIES LABELS "integration;diagnostics;safety")
 
     add_test(NAME cli_contract COMMAND ${CMAKE_COMMAND}
-             -DCOMPILER=$<TARGET_FILE:compiler>
-             -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/cli_test
-             -P ${CMAKE_SOURCE_DIR}/tests/cli_test.cmake)
+            -DCOMPILER=$<TARGET_FILE:compiler>
+            -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/cli_test
+            -P ${CMAKE_SOURCE_DIR}/tests/cli_test.cmake)
     set_tests_properties(cli_contract PROPERTIES LABELS "integration;cli")
 
     add_test(NAME dump_formats COMMAND ${CMAKE_COMMAND}
-             -DCOMPILER=$<TARGET_FILE:compiler>
-             -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
-             -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/dump_test
-             -P ${CMAKE_SOURCE_DIR}/tests/dump_test.cmake)
+            -DCOMPILER=$<TARGET_FILE:compiler>
+            -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+            -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/dump_test
+            -P ${CMAKE_SOURCE_DIR}/tests/dump_test.cmake)
     set_tests_properties(dump_formats PROPERTIES LABELS "integration;ast;ir;backend;cli;safety")
 
     add_test(NAME imports_integration COMMAND ${CMAKE_COMMAND}
-             -DCOMPILER=$<TARGET_FILE:compiler>
-             -DASSEMBLER=${DMM_ASSEMBLER}
+            -DCOMPILER=$<TARGET_FILE:compiler>
+            -DASSEMBLER=${DMM_ASSEMBLER}
 
-             "-DSANITIZER_FLAGS=${DMM_TEST_LINK_FLAGS}"
-             -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/imports_test
-             -P ${CMAKE_SOURCE_DIR}/tests/imports_test.cmake)
+            "-DSANITIZER_FLAGS=${DMM_TEST_LINK_FLAGS}"
+            -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/imports_test
+            -P ${CMAKE_SOURCE_DIR}/tests/imports_test.cmake)
     set_tests_properties(imports_integration PROPERTIES LABELS "integration;imports")
     add_test(NAME manifest_commands COMMAND ${CMAKE_COMMAND}
-        -DCOMPILER=$<TARGET_FILE:compiler>
-        -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/manifest_test
-        -P ${CMAKE_SOURCE_DIR}/tests/manifest_test.cmake)
+            -DCOMPILER=$<TARGET_FILE:compiler>
+            -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/manifest_test
+            -P ${CMAKE_SOURCE_DIR}/tests/manifest_test.cmake)
     set_tests_properties(manifest_commands PROPERTIES LABELS "integration;imports;cli")
-    if(DMM_SANITIZERS)
+    if (DMM_SANITIZERS)
         set_property(TEST imports_integration APPEND PROPERTY LABELS safety)
-    endif()
+    endif ()
 
     add_test(NAME stress_limits COMMAND ${CMAKE_COMMAND}
-             -DCOMPILER=$<TARGET_FILE:compiler>
-             -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/stress_test
-             -P ${CMAKE_SOURCE_DIR}/tests/stress/limits_test.cmake)
+            -DCOMPILER=$<TARGET_FILE:compiler>
+            -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/stress_test
+            -P ${CMAKE_SOURCE_DIR}/tests/stress/limits_test.cmake)
     set_tests_properties(stress_limits PROPERTIES LABELS "integration;stress;safety")
 
-    if(DMM_SANITIZERS)
-        foreach(test_target dmm_foundation_test dmm_resource_fault_test dmm_optimizer_test dmm_syntax_converter_test dmm_x86_instruction_test
-                            dmm_string_interner_test dmm_fuzz_pipeline_smoke_test dmm_lexer_test
-                            dmm_frontend_ast_test dmm_pipeline_test dmm_runtime_test dmm_native_test dmm_ir_optimizer_test)
+    if (DMM_SANITIZERS)
+        foreach (test_target dmm_foundation_test dmm_resource_fault_test dmm_optimizer_test dmm_syntax_converter_test dmm_x86_instruction_test
+                dmm_string_interner_test dmm_fuzz_pipeline_smoke_test dmm_lexer_test
+                dmm_frontend_ast_test dmm_pipeline_test dmm_runtime_test dmm_native_test dmm_ir_optimizer_test)
             target_compile_options(${test_target} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
             target_link_options(${test_target} PRIVATE -fsanitize=address,undefined)
-        endforeach()
-    endif()
-endif()
+        endforeach ()
+    endif ()
+endif ()

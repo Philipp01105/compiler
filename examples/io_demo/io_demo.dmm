@@ -20,6 +20,7 @@ func saveAndDisplay(name:u8[], message:u8[], output:*stdio.Stream, errors:*stdio
     if (!file.isOpen()) { errors.writeLine("Could not reopen the file for reading."); return 1; }
     if (!output.writeLine("Saved to demo_output.txt. Reading it back:").ok()) { file.close(); return 1; }
     var scratch:u8[256];
+
     var copied=stdio.copy(&file,output,scratch);
     closed=file.close();
     if (!copied.ok() || closed < 0) { errors.writeLine("Could not read the saved message."); return 1; }
@@ -28,34 +29,56 @@ func saveAndDisplay(name:u8[], message:u8[], output:*stdio.Stream, errors:*stdio
 
 // Reuse one buffered stdin reader so read-ahead survives between prompts.
 func interact(input:*stdio.BufferedReader, output:*stdio.Stream, errors:*stdio.Stream) -> int {
-    if (!output.writeLine("DMM stream I/O demo").ok() || !output.writeString("Name: ").ok()) { return 1; }
-    var name=input.readLine(1024);
+    if (!output.writeLine("DMM stream I/O demo").ok() || !output.writeString("Name: ").ok()) {
+        return 1;
+    }
+    var name = input.readLine(1024);
     if (name.status == stdio.Status.EndOfStream && name.length == 0) {
-        name.release(); output.writeLine("No input received."); return 0;
+        name.release();
+        output.writeLine("No input received.");
+        return 0;
     }
     if (name.status != stdio.Status.Ok && name.status != stdio.Status.EndOfStream) {
-        name.release(); errors.writeLine("Could not read the name (maximum 1024 bytes)."); return 1;
+        name.release();
+        errors.writeLine("Could not read the name (maximum 1024 bytes).");
+        return 1;
     }
-    if (!output.writeString("Message: ").ok()) { name.release(); return 1; }
-    var message=input.readLine(4096);
+    if (!output.writeString("Message: ").ok()) {
+        name.release();
+        return 1;
+    }
+    var message = input.readLine(4096);
     if (message.status != stdio.Status.Ok && message.status != stdio.Status.EndOfStream) {
-        name.release(); message.release(); errors.writeLine("Could not read the message (maximum 4096 bytes)."); return 1;
+        name.release();
+        message.release();
+        errors.writeLine("Could not read the message (maximum 4096 bytes).");
+        return 1;
     }
     if (!output.writeString("Hello, ").ok() || !output.writeAll(name.view()).ok() || !output.writeLine("!").ok()) {
-        name.release(); message.release(); return 1;
+        name.release();
+        message.release();
+        return 1;
     }
-    var result:int=saveAndDisplay(name.view(),message.view(),output,errors);
-    name.release(); message.release();
+    var result:int = saveAndDisplay(name.view(), message.view(), output,errors);
+    name.release();
+    message.release();
     return result;
 }
 
 func main() -> int {
-    var input=stdio.stdin(); var output=stdio.stdout(); var errors=stdio.stderr();
-    var reader=stdio.bufferedReader(&input,256);
-    if (!reader.isOpen()) { errors.writeLine("Could not allocate the input buffer."); return 1; }
-    var result:int=interact(&reader,&output,&errors);
+    var input = stdio.stdin();
+    var output = stdio.stdout();
+    var errors = stdio.stderr();
+
+    var reader = stdio.bufferedReader(&input, 256);
+    if (!reader.isOpen()) {
+        errors.writeLine("Could not allocate the input buffer.");
+        return 1;
+    }
+    var result:int = interact(&reader, &output, &errors);
     reader.close();
-    // Closing these borrowed wrappers leaves the OS standard descriptors open.
-    input.close(); output.close(); errors.close();
+    input.close();
+    output.close();
+    errors.close();
     return result;
 }

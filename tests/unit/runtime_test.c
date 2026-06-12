@@ -15,7 +15,12 @@
 #endif
 
 #define CHECK(x) do { if (!(x)) { fprintf(stderr, "runtime check failed at %d\n", __LINE__); return 1; } } while (0)
-typedef struct { NativeObject object; unsigned char *memory; size_t size, offsets[3]; } Image;
+
+typedef struct {
+    NativeObject object;
+    unsigned char *memory;
+    size_t size, offsets[3];
+} Image;
 
 static int initialize(Image *image) {
 #ifdef _WIN32
@@ -45,7 +50,7 @@ static int initialize(Image *image) {
 #endif
     }
     for (size_t i = 0; i < 3; ++i) {
-        image->size = (image->size + 15) & ~(size_t)15;
+        image->size = (image->size + 15) & ~(size_t) 15;
         image->offsets[i] = image->size;
         image->size += o->sections[i].size;
     }
@@ -62,16 +67,17 @@ static int initialize(Image *image) {
         NativeRelocation *r = &o->relocations[i];
         NativeSymbol *s = &o->symbols[r->symbol];
         unsigned char *patch = image->memory + image->offsets[r->section] + r->offset;
-        uint64_t value = (uintptr_t)(image->memory + image->offsets[s->section] + s->offset) + (uint64_t)r->addend;
+        uint64_t value = (uintptr_t)(image->memory + image->offsets[s->section] + s->offset) + (uint64_t) r->addend;
         size_t width = r->kind == NATIVE_ADDR64 ? 8 : 4;
-        if (width == 4) value -= (uintptr_t)patch;
-        for (size_t j = 0; j < width; ++j) patch[j] = (unsigned char)(value >> (j * 8));
+        if (width == 4) value -= (uintptr_t) patch;
+        for (size_t j = 0; j < width; ++j) patch[j] = (unsigned char) (value >> (j * 8));
     }
 #ifdef _WIN32
     FlushInstructionCache(GetCurrentProcess(), image->memory, image->size);
 #endif
     return !o->failed;
 }
+
 static void *function(Image *image, const char *name) {
     for (size_t i = 0; i < image->object.symbol_count; ++i) {
         NativeSymbol *s = &image->object.symbols[i];
@@ -79,19 +85,29 @@ static void *function(Image *image, const char *name) {
     }
     return NULL;
 }
+
 #define FUNCTION(type, var, name) type var; do { void *entry = function(&image, name); CHECK(entry); memcpy(&var, &entry, sizeof(var)); } while (0)
+
 typedef int64_t (*Format)(char *, uint64_t);
+
 typedef int64_t (*Parse)(const char *);
+
 typedef void *(*Allocate)(uint64_t);
+
 typedef void *(*Callocate)(uint64_t, uint64_t);
+
 typedef void (*Release)(void *);
+
 typedef int64_t (*Open)(const char *, int64_t, int64_t);
+
 typedef int64_t (*IO)(int64_t, void *, int64_t);
+
 typedef int64_t (*Close)(int64_t);
 
 int main(int argc, char **argv) {
     CHECK(argc == 2);
-    Image image = {0}; CHECK(initialize(&image));
+    Image image = {0};
+    CHECK(initialize(&image));
     FUNCTION(Format, floating, "__dmm_format_float");
     FUNCTION(Format, integer, "__dmm_format_integer");
     FUNCTION(Parse, parse, "__dmm_rt_string_to_int");
@@ -104,9 +120,11 @@ int main(int argc, char **argv) {
     FUNCTION(Close, close_file, "__dmm_rt_sys_close");
     char actual[384], expected[384];
     uint64_t bits = 0;
-    const double cases[] = {0, -0.0, 2.5, -12.125, 0.0000005, 0.0000015, 1.9999995,
-        0x1p-1074, 0x1.fffffffffffffp1023, INFINITY, -INFINITY, NAN, 0x1p-7};
-    for (size_t i = 0; i < sizeof(cases)/sizeof(cases[0]); ++i) {
+    const double cases[] = {
+        0, -0.0, 2.5, -12.125, 0.0000005, 0.0000015, 1.9999995,
+        0x1p-1074, 0x1.fffffffffffffp1023, INFINITY, -INFINITY, NAN, 0x1p-7
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
         memcpy(&bits, &cases[i], 8);
         int length = snprintf(expected, sizeof(expected), "%.6f", cases[i]);
         CHECK(floating(actual, bits) == length && !strcmp(actual, expected));
@@ -115,28 +133,35 @@ int main(int argc, char **argv) {
     for (size_t i = 0; i < 2000; ++i) {
         bits = bits * UINT64_C(6364136223846793005) + 1;
         if (((bits >> 52) & 2047) == 2047) continue;
-        double value; memcpy(&value, &bits, 8);
+        double value;
+        memcpy(&value, &bits, 8);
         int length = snprintf(expected, sizeof(expected), "%.6f", value);
         CHECK(floating(actual, bits) == length && !strcmp(actual, expected));
     }
     const int64_t integers[] = {0, 1, -1, INT64_MIN, INT64_MAX, 123456789, -987654321};
-    for (size_t i = 0; i < sizeof(integers)/sizeof(integers[0]); ++i) {
-        int length = snprintf(expected, sizeof(expected), "%lld", (long long)integers[i]);
+    for (size_t i = 0; i < sizeof(integers) / sizeof(integers[0]); ++i) {
+        int length = snprintf(expected, sizeof(expected), "%lld", (long long) integers[i]);
         CHECK(integer(actual, (uint64_t)integers[i]) == length && !strcmp(actual, expected));
         CHECK(parse(actual) == integers[i]);
     }
     CHECK(parse(NULL) == 0 && parse(" \t-42tail") == -42 && parse("invalid") == 0);
     CHECK(parse("9223372036854775808") == INT64_MAX && parse("-9223372036854775809") == INT64_MIN);
     const uint64_t sizes[] = {0, 1, 15, 16, 4095, 4096, 65536};
-    for (size_t i = 0; i < sizeof(sizes)/sizeof(sizes[0]); ++i) {
-        unsigned char *p = allocate(sizes[i]); CHECK(p && !((uintptr_t)p & 15));
-        if (sizes[i]) { p[0] = 1; p[sizes[i] - 1] = 2; }
+    for (size_t i = 0; i < sizeof(sizes) / sizeof(sizes[0]); ++i) {
+        unsigned char *p = allocate(sizes[i]);
+        CHECK(p && !((uintptr_t)p & 15));
+        if (sizes[i]) {
+            p[0] = 1;
+            p[sizes[i] - 1] = 2;
+        }
         release(p);
     }
     release(NULL);
     CHECK(!allocate(UINT64_MAX) && !allocate(INT64_MAX) && !callocate(INT64_MAX, 2));
-    unsigned char *p = callocate(19, 17); CHECK(p);
-    for (size_t i = 0; i < 19 * 17; ++i) CHECK(p[i] == 0);
+    unsigned char *p = callocate(19, 17);
+    CHECK(p);
+    for (size_t i = 0; i < 19 * 17; ++i)
+        CHECK(p[i] == 0);
     release(p);
     int64_t fd = open_file(argv[1], 577, 384);
     CHECK(fd >= 0 && write_file(fd, "123", 3) == 3 && close_file(fd) == 0);

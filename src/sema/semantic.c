@@ -44,25 +44,26 @@ typedef struct {
 } Analyzer;
 
 static int known_declared_type(const Analyzer *analyzer, const AstType *type);
-static void analyze_constant_declaration(Analyzer *analyzer,AstDeclarationNode *declaration);
+
+static void analyze_constant_declaration(Analyzer * analyzer, AstDeclarationNode * declaration);
 
 static void semantic_error_at(Analyzer *analyzer, size_t token, size_t last_token, char category, int code,
-                           const char *message) {
+                              const char *message) {
     const AstToken *location = ast_program_token(analyzer->program, token);
     const AstToken *end = ast_program_token(analyzer->program, last_token);
     char named_message[1024];
     if (location != NULL && ((category == ERROR_CATEGORY_TYPE && code == ERR_TYPE_UNKNOWN) ||
-        (category == ERROR_CATEGORY_SEMANTIC &&
-         (code == ERR_SEM_UNDEFINED_VARIABLE || code == ERR_SEM_DUPLICATE_DEFINITION ||
-          code == ERR_SEM_FIELD_NOT_FOUND)))) {
+                             (category == ERROR_CATEGORY_SEMANTIC &&
+                              (code == ERR_SEM_UNDEFINED_VARIABLE || code == ERR_SEM_DUPLICATE_DEFINITION ||
+                               code == ERR_SEM_FIELD_NOT_FOUND)))) {
         snprintf(named_message, sizeof(named_message), "%s '%s'", message, location->lexeme);
         message = named_message;
     }
     ErrorContext *context = error_context_create(SEVERITY_ERROR,
-                 location == NULL ? 0 : location->span.begin.line,
-                 location == NULL ? 0 : location->span.begin.column,
-                 category, code, analyzer->program->source_path,
-                 message);
+                                                 location == NULL ? 0 : location->span.begin.line,
+                                                 location == NULL ? 0 : location->span.begin.column,
+                                                 category, code, analyzer->program->source_path,
+                                                 message);
     if (location != NULL) {
         error_context_set_span(context, end == NULL ? location->span.end.line : end->span.end.line,
                                end == NULL ? location->span.end.column : end->span.end.column);
@@ -81,20 +82,23 @@ static void semantic_error(Analyzer *analyzer, size_t token, char category, int 
 static size_t named_type_token(const AstProgram *program, const AstType *type);
 
 static void semantic_duplicate(Analyzer *analyzer, size_t token,
-                                const AstProgram *previous_program, size_t previous_token,
-                                const char *message) {
+                               const AstProgram *previous_program, size_t previous_token,
+                               const char *message) {
     const AstToken *location = ast_program_token(analyzer->program, token);
     const AstToken *previous = ast_program_token(previous_program, previous_token);
     char detail[1024];
     snprintf(detail, sizeof(detail), "%s '%s'", message, ast_program_lexeme(analyzer->program, token));
     ErrorContext *context = error_context_create(SEVERITY_ERROR,
-        location == NULL ? 0 : location->span.begin.line, location == NULL ? 0 : location->span.begin.column,
-        ERROR_CATEGORY_SEMANTIC, ERR_SEM_DUPLICATE_DEFINITION, analyzer->program->source_path, detail);
+                                                 location == NULL ? 0 : location->span.begin.line,
+                                                 location == NULL ? 0 : location->span.begin.column,
+                                                 ERROR_CATEGORY_SEMANTIC, ERR_SEM_DUPLICATE_DEFINITION,
+                                                 analyzer->program->source_path, detail);
     if (location != NULL) error_context_set_span(context, location->span.end.line, location->span.end.column);
     if (previous != NULL) {
         ErrorContext *note = error_context_create(SEVERITY_INFO, previous->span.begin.line, previous->span.begin.column,
-            ERROR_CATEGORY_SEMANTIC, ERR_SEM_DUPLICATE_DEFINITION, previous_program->source_path,
-            "Previous declaration is here");
+                                                  ERROR_CATEGORY_SEMANTIC, ERR_SEM_DUPLICATE_DEFINITION,
+                                                  previous_program->source_path,
+                                                  "Previous declaration is here");
         error_context_set_span(note, previous->span.end.line, previous->span.end.column);
         error_context_add_child(context, note);
     }
@@ -107,9 +111,16 @@ static DataType primitive_type(const AstProgram *program, const AstType *type) {
     if (type == NULL || type->kind != AST_TYPE_NAMED || type->name_token >= program->token_count)
         return TYPE_UNKNOWN;
     switch (program->tokens[type->name_token].type) {
-        case TOKEN_TYPE_I8: case TOKEN_TYPE_U8: case TOKEN_TYPE_I16: case TOKEN_TYPE_U16:
-        case TOKEN_TYPE_I32: case TOKEN_TYPE_U32: case TOKEN_TYPE_I64: case TOKEN_TYPE_U64:
-        case TOKEN_TYPE_ISIZE: case TOKEN_TYPE_USIZE:
+        case TOKEN_TYPE_I8:
+        case TOKEN_TYPE_U8:
+        case TOKEN_TYPE_I16:
+        case TOKEN_TYPE_U16:
+        case TOKEN_TYPE_I32:
+        case TOKEN_TYPE_U32:
+        case TOKEN_TYPE_I64:
+        case TOKEN_TYPE_U64:
+        case TOKEN_TYPE_ISIZE:
+        case TOKEN_TYPE_USIZE:
             return token_data_type(program->tokens[type->name_token].type);
         case TOKEN_TYPE_INT: return TYPE_INT;
         case TOKEN_TYPE_CHAR: return TYPE_CHAR;
@@ -166,9 +177,11 @@ static int index_symbol(SemanticModel *model, size_t symbol_id) {
 
 static int grow_symbol_index(SemanticModel *model) {
     size_t capacity = model->symbol_index_capacity == 0
-        ? 64U : model->symbol_index_capacity * 2U;
+                          ? 64U
+                          : model->symbol_index_capacity * 2U;
     if (capacity < model->symbol_index_capacity ||
-        capacity > SIZE_MAX / sizeof(*model->symbol_index)) return 0;
+        capacity > SIZE_MAX / sizeof(*model->symbol_index))
+        return 0;
     size_t *previous = model->symbol_index;
     model->symbol_index = calloc(capacity, sizeof(*model->symbol_index));
     if (model->symbol_index == NULL) {
@@ -181,48 +194,60 @@ static int grow_symbol_index(SemanticModel *model) {
     return 1;
 }
 
-static int same_package(const AstProgram *left,const AstProgram *right) {
+static int same_package(const AstProgram *left, const AstProgram *right) {
     return left->package && right->package ? left->package == right->package : left == right;
 }
 
-static const DmmPackage *lookup_package(const AstProgram *file,const char **name) {
-    const char *canonical=strstr(*name,"::");
+static const DmmPackage *lookup_package(const AstProgram *file, const char **name) {
+    const char *canonical = strstr(*name, "::");
     if (canonical && file->module) {
-        for (DmmPackage *p=file->module->graph->packages; p; p=p->next)
-            if (strlen(p->path) == (size_t)(canonical-*name) && !strncmp(p->path,*name,(size_t)(canonical-*name))) {
-                *name=canonical+2; return p;
+        for (DmmPackage *p = file->module->graph->packages; p; p = p->next)
+            if (strlen(p->path) == (size_t) (canonical - *name) && !strncmp(
+                    p->path, *name, (size_t) (canonical - *name))) {
+                *name = canonical + 2;
+                return p;
             }
     }
-    const char *dot=strchr(*name,'.');
+    const char *dot = strchr(*name, '.');
     if (dot) {
-        for (AstDeclarationNode *d=file->root; d; d=d->next) if (d->kind == AST_DECL_IMPORT)
-            for (AstImportPath *p=d->as.import_decl.paths; p; p=p->next)
-                if (p->alias && p->resolved_program && strlen(p->alias) == (size_t)(dot-*name) &&
-                    !strncmp(p->alias,*name,(size_t)(dot-*name))) { *name=dot+1; return p->resolved_program->package; }
+        for (AstDeclarationNode *d = file->root; d; d = d->next)
+            if (d->kind == AST_DECL_IMPORT)
+                for (AstImportPath *p = d->as.import_decl.paths; p; p = p->next)
+                    if (p->alias && p->resolved_program && strlen(p->alias) == (size_t) (dot - *name) &&
+                        !strncmp(p->alias, *name, (size_t) (dot - *name))) {
+                        *name = dot + 1;
+                        return p->resolved_program->package;
+                    }
         return NULL;
     }
     return file->package;
 }
 
-static int symbol_matches_scope(const AstProgram *file,const SemanticSymbol *symbol,const char *name) {
-    const char *plain=name; const DmmPackage *package=lookup_package(file,&plain);
-    if ((package ? symbol->source_program->package != package :
-        (strchr(name,'.') || strstr(name,"::") || !same_package(file,symbol->source_program))) ||
-        symbol->owner_symbol_id != AST_SYMBOL_NONE) return 0;
-    return same_name(symbol->source_program,symbol->name_token,plain);
+static int symbol_matches_scope(const AstProgram *file, const SemanticSymbol *symbol, const char *name) {
+    const char *plain = name;
+    const DmmPackage *package = lookup_package(file, &plain);
+    if ((package
+             ? symbol->source_program->package != package
+             : (strchr(name, '.') || strstr(name, "::") || !same_package(file, symbol->source_program))) ||
+        symbol->owner_symbol_id != AST_SYMBOL_NONE)
+        return 0;
+    return same_name(symbol->source_program, symbol->name_token, plain);
 }
 
-static const SemanticSymbol *scoped_find_global(const SemanticModel *model,const AstProgram *file,
-                                           const char *name,
-                                           SemanticSymbolKind kind) {
+static const SemanticSymbol *scoped_find_global(const SemanticModel *model, const AstProgram *file,
+                                                const char *name,
+                                                SemanticSymbolKind kind) {
     if (!model || !name) return NULL;
-    for (size_t i=0;i<model->symbol_count;i++) {
-        const SemanticSymbol *symbol=&model->symbols[i];
-        if (symbol->kind == kind && symbol_matches_scope(file,symbol,name)) {
-            if (!strstr(name,"::") && !same_package(file,symbol->source_program) && symbol->declaration && !symbol->declaration->is_public) {
-                error_report(global_error_handler,SEVERITY_ERROR,0,0,ERROR_CATEGORY_SEMANTIC,
-                    ERR_PACKAGE_PRIVATE,file->source_path,"Symbol '%s' is private to package '%s'",name,symbol->source_program->module_identity);
-                ((SemanticModel *)model)->error_count++; return NULL;
+    for (size_t i = 0; i < model->symbol_count; i++) {
+        const SemanticSymbol *symbol = &model->symbols[i];
+        if (symbol->kind == kind && symbol_matches_scope(file, symbol, name)) {
+            if (!strstr(name, "::") && !same_package(file, symbol->source_program) && symbol->declaration && !symbol->
+                declaration->is_public) {
+                error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_SEMANTIC,
+                             ERR_PACKAGE_PRIVATE, file->source_path, "Symbol '%s' is private to package '%s'", name,
+                             symbol->source_program->module_identity);
+                ((SemanticModel *) model)->error_count++;
+                return NULL;
             }
             return symbol;
         }
@@ -230,11 +255,13 @@ static const SemanticSymbol *scoped_find_global(const SemanticModel *model,const
     return NULL;
 }
 
-const SemanticSymbol *semantic_find_global(const SemanticModel *model,const char *name,SemanticSymbolKind kind) {
-    return model ? scoped_find_global(model,model->program,name,kind) : NULL;
+const SemanticSymbol *semantic_find_global(const SemanticModel *model, const char *name, SemanticSymbolKind kind) {
+    return model ? scoped_find_global(model, model->program, name, kind) : NULL;
 }
-const SemanticSymbol *semantic_find_in_package(const SemanticModel *model,const AstProgram *file,const char *name,SemanticSymbolKind kind) {
-    return scoped_find_global(model,file,name,kind);
+
+const SemanticSymbol *semantic_find_in_package(const SemanticModel *model, const AstProgram *file, const char *name,
+                                               SemanticSymbolKind kind) {
+    return scoped_find_global(model, file, name, kind);
 }
 
 static int append_symbol(Analyzer *analyzer, SemanticSymbol symbol) {
@@ -282,7 +309,7 @@ static size_t resolve_named_symbol_id(const Analyzer *analyzer,
     if (token == AST_TOKEN_NONE || token >= program->token_count) return AST_SYMBOL_NONE;
     const char *name = ast_program_lexeme(program, token);
     const SemanticSymbol *symbol = scoped_find_global(analyzer->model, program, name,
-                                                         SEMANTIC_SYMBOL_STRUCT);
+                                                      SEMANTIC_SYMBOL_STRUCT);
     if (symbol == NULL)
         symbol = scoped_find_global(analyzer->model, program, name, SEMANTIC_SYMBOL_ENUM);
     return symbol == NULL ? AST_SYMBOL_NONE : symbol->id;
@@ -297,7 +324,7 @@ static void add_global(Analyzer *analyzer, AstDeclarationNode *declaration,
                        "Function name is reserved by the runtime");
     for (size_t i = 0; i < analyzer->model->symbol_count; i++) {
         const SemanticSymbol *existing = &analyzer->model->symbols[i];
-        if (!same_package(analyzer->program,existing->source_program)) continue;
+        if (!same_package(analyzer->program, existing->source_program)) continue;
         int same_owner = existing->owner_token == AST_TOKEN_NONE && owner_token == AST_TOKEN_NONE;
         if (existing->owner_token != AST_TOKEN_NONE && owner_token != AST_TOKEN_NONE)
             same_owner = same_name(existing->source_program, existing->owner_token,
@@ -305,11 +332,11 @@ static void add_global(Analyzer *analyzer, AstDeclarationNode *declaration,
         if (existing->kind != SEMANTIC_SYMBOL_IMPORT && same_owner &&
             same_name(existing->source_program, existing->name_token, name)) {
             if (kind == SEMANTIC_SYMBOL_FUNCTION &&
-                existing->kind == SEMANTIC_SYMBOL_FUNCTION) continue;
+                existing->kind == SEMANTIC_SYMBOL_FUNCTION)
+                continue;
             analyzer->model->duplicate_symbol_count++;
             semantic_duplicate(analyzer, declaration->name_token, existing->source_program, existing->name_token,
-                           kind == SEMANTIC_SYMBOL_FUNCTION ? "Duplicate function" :
-                                                              "Duplicate type declaration");
+                               kind == SEMANTIC_SYMBOL_FUNCTION ? "Duplicate function" : "Duplicate type declaration");
             return;
         }
     }
@@ -328,12 +355,12 @@ static void add_global(Analyzer *analyzer, AstDeclarationNode *declaration,
         .scope_depth = 0
     };
     if (owner_token != AST_TOKEN_NONE) {
-        symbol.owner_symbol_id=resolve_named_symbol_id(analyzer,analyzer->program,owner_token);
+        symbol.owner_symbol_id = resolve_named_symbol_id(analyzer, analyzer->program, owner_token);
         const char *owner_name = ast_program_lexeme(analyzer->program, owner_token);
         for (size_t i = 0; i < analyzer->model->symbol_count; i++) {
             const SemanticSymbol *owner = &analyzer->model->symbols[i];
             if (owner->kind == SEMANTIC_SYMBOL_STRUCT &&
-                same_package(analyzer->program,owner->source_program) &&
+                same_package(analyzer->program, owner->source_program) &&
                 same_name(owner->source_program, owner->name_token, owner_name)) {
                 symbol.owner_symbol_id = owner->id;
                 break;
@@ -352,12 +379,12 @@ static void add_member(Analyzer *analyzer, size_t name_token, size_t owner_token
     const char *owner_name = ast_program_lexeme(analyzer->program, owner_token);
     for (size_t i = 0; i < analyzer->model->symbol_count; i++) {
         const SemanticSymbol *existing = &analyzer->model->symbols[i];
-        if (!same_package(analyzer->program,existing->source_program)) continue;
+        if (!same_package(analyzer->program, existing->source_program)) continue;
         if (existing->owner_token != AST_TOKEN_NONE &&
             same_name(existing->source_program, existing->owner_token, owner_name) &&
             same_name(existing->source_program, existing->name_token, member_name)) {
             semantic_duplicate(analyzer, name_token, existing->source_program, existing->name_token,
-                           "Member is already defined");
+                               "Member is already defined");
             return;
         }
     }
@@ -397,7 +424,7 @@ static void collect_declarations(Analyzer *analyzer, AstProgram *program) {
         } else if (declaration->kind == AST_DECL_CONSTANT) {
             add_global(analyzer, declaration, SEMANTIC_SYMBOL_CONSTANT, AST_TOKEN_NONE);
         } else if (declaration->kind == AST_DECL_VARIABLE) {
-            add_global(analyzer,declaration,SEMANTIC_SYMBOL_VARIABLE,AST_TOKEN_NONE);
+            add_global(analyzer, declaration, SEMANTIC_SYMBOL_VARIABLE, AST_TOKEN_NONE);
         } else if (declaration->kind == AST_DECL_STRUCT) {
             add_global(analyzer, declaration, SEMANTIC_SYMBOL_STRUCT, AST_TOKEN_NONE);
             for (AstField *field = declaration->as.struct_decl.fields;
@@ -460,7 +487,7 @@ static LocalSymbol *push_local(Analyzer *analyzer, size_t name_token, AstType ty
     if (symbol.resolved_named_type_token != AST_TOKEN_NONE &&
         symbol.resolved_named_symbol_id == AST_SYMBOL_NONE)
         symbol.resolved_named_symbol_id = resolve_named_symbol_id(analyzer,
-            analyzer->program, symbol.resolved_named_type_token);
+                                                                  analyzer->program, symbol.resolved_named_type_token);
     if (!append_symbol(analyzer, symbol)) {
         free(local);
         return NULL;
@@ -500,7 +527,8 @@ static size_t named_type_token(const AstProgram *program, const AstType *type) {
     if (type == NULL || type->kind != AST_TYPE_NAMED || type->name_token >= program->token_count)
         return AST_TOKEN_NONE;
     return program->tokens[type->name_token].type == TOKEN_IDENTIFIER
-        ? type->name_token : AST_TOKEN_NONE;
+               ? type->name_token
+               : AST_TOKEN_NONE;
 }
 
 static const AstDeclarationNode *find_struct_declaration(const Analyzer *analyzer,
@@ -508,7 +536,7 @@ static const AstDeclarationNode *find_struct_declaration(const Analyzer *analyze
                                                          const AstProgram **source_program) {
     const char *name = ast_program_lexeme(analyzer->program, name_token);
     const SemanticSymbol *symbol = scoped_find_global(analyzer->model, analyzer->program, name,
-                                                         SEMANTIC_SYMBOL_STRUCT);
+                                                      SEMANTIC_SYMBOL_STRUCT);
     if (source_program != NULL)
         *source_program = symbol == NULL ? NULL : symbol->source_program;
     return symbol == NULL ? NULL : symbol->declaration;
@@ -519,7 +547,7 @@ static const AstDeclarationNode *find_enum_declaration(const Analyzer *analyzer,
                                                        const AstProgram **source_program) {
     const char *name = ast_program_lexeme(analyzer->program, name_token);
     const SemanticSymbol *symbol = scoped_find_global(analyzer->model, analyzer->program, name,
-                                                         SEMANTIC_SYMBOL_ENUM);
+                                                      SEMANTIC_SYMBOL_ENUM);
     if (source_program != NULL)
         *source_program = symbol == NULL ? NULL : symbol->source_program;
     return symbol == NULL ? NULL : symbol->declaration;
@@ -533,7 +561,7 @@ static const AstField *find_field(const Analyzer *analyzer, size_t type_token,
     const AstField *fields = structure == NULL ? NULL : structure->as.struct_decl.fields;
     if (fields == NULL) {
         const AstDeclarationNode *enumeration = find_enum_declaration(analyzer, type_token,
-                                                                       &source);
+                                                                      &source);
         fields = enumeration == NULL ? NULL : enumeration->as.enum_decl.fields;
     }
     for (const AstField *field = fields;
@@ -549,8 +577,8 @@ static const AstField *find_field_by_symbol(const Analyzer *analyzer, size_t typ
     const AstDeclarationNode *declaration = type->declaration;
     if (declaration == NULL) return NULL;
     const AstField *fields = type->kind == SEMANTIC_SYMBOL_STRUCT
-        ? declaration->as.struct_decl.fields
-        : (type->kind == SEMANTIC_SYMBOL_ENUM ? declaration->as.enum_decl.fields : NULL);
+                                 ? declaration->as.struct_decl.fields
+                                 : (type->kind == SEMANTIC_SYMBOL_ENUM ? declaration->as.enum_decl.fields : NULL);
     const char *name = ast_program_lexeme(analyzer->program, field_token);
     for (const AstField *field = fields; field != NULL; field = field->next)
         if (same_name(type->source_program, field->name_token, name)) return field;
@@ -577,7 +605,8 @@ static const SemanticSymbol *find_method(const Analyzer *analyzer, size_t owner_
     for (size_t i = 0; i < analyzer->model->symbol_count; i++) {
         const SemanticSymbol *symbol = &analyzer->model->symbols[i];
         if (symbol->kind == SEMANTIC_SYMBOL_FUNCTION && symbol->owner_symbol_id == owner_symbol_id &&
-            same_name(symbol->source_program, symbol->name_token, name)) return symbol;
+            same_name(symbol->source_program, symbol->name_token, name))
+            return symbol;
     }
     return NULL;
 }
@@ -616,23 +645,25 @@ static int same_declared_type(const Analyzer *analyzer,
                               const AstProgram *right_program, const AstType *right) {
     if (left->pointer_depth != right->pointer_depth ||
         left->outer_pointer_depth != right->outer_pointer_depth ||
-        left->is_array != right->is_array || left->is_slice != right->is_slice) return 0;
+        left->is_array != right->is_array || left->is_slice != right->is_slice)
+        return 0;
     DataType left_primitive = primitive_type(left_program, left);
     DataType right_primitive = primitive_type(right_program, right);
     if (left_primitive != TYPE_UNKNOWN || right_primitive != TYPE_UNKNOWN) {
         if (left_primitive != right_primitive) return 0;
     } else {
         size_t left_symbol = resolve_named_symbol_id(analyzer, left_program,
-            named_type_token(left_program, left));
+                                                     named_type_token(left_program, left));
         size_t right_symbol = resolve_named_symbol_id(analyzer, right_program,
-            named_type_token(right_program, right));
+                                                      named_type_token(right_program, right));
         if (left_symbol == AST_SYMBOL_NONE || left_symbol != right_symbol) return 0;
     }
     if (left->is_array) {
         if (left->resolved_array_length != 0 && right->resolved_array_length != 0)
             return left->resolved_array_length == right->resolved_array_length;
         if (left->array_length_token >= left_program->token_count ||
-            right->array_length_token >= right_program->token_count) return 0;
+            right->array_length_token >= right_program->token_count)
+            return 0;
         return strcmp(ast_program_lexeme(left_program, left->array_length_token),
                       ast_program_lexeme(right_program, right->array_length_token)) == 0;
     }
@@ -646,7 +677,8 @@ static int same_function_signature(const Analyzer *analyzer,
     const AstParameter *b = right->declaration->as.function.parameters;
     for (; a != NULL && b != NULL; a = a->next, b = b->next)
         if (!same_declared_type(analyzer, left->source_program, &a->type,
-                               right->source_program, &b->type)) return 0;
+                                right->source_program, &b->type))
+            return 0;
     return a == NULL && b == NULL;
 }
 
@@ -658,16 +690,18 @@ static void validate_overload_sets(Analyzer *analyzer) {
         for (size_t j = 0; j < i; j++) {
             const SemanticSymbol *right = &analyzer->model->symbols[j];
             if (right->kind != SEMANTIC_SYMBOL_FUNCTION || right->declaration == NULL ||
-                !same_package(left->source_program,right->source_program) ||
+                !same_package(left->source_program, right->source_program) ||
                 left->owner_symbol_id != right->owner_symbol_id ||
                 left->declaration->as.function.is_static !=
-                    right->declaration->as.function.is_static ||
-                !same_name(right->source_program, right->name_token, name)) continue;
+                right->declaration->as.function.is_static ||
+                !same_name(right->source_program, right->name_token, name))
+                continue;
             if (strcmp(name, "main") == 0 || same_function_signature(analyzer, left, right)) {
                 analyzer->model->duplicate_symbol_count++;
                 semantic_duplicate(analyzer, left->name_token, right->source_program, right->name_token,
-                    strcmp(name, "main") == 0 ? "main cannot be overloaded" :
-                                                "Duplicate function overload signature");
+                                   strcmp(name, "main") == 0
+                                       ? "main cannot be overloaded"
+                                       : "Duplicate function overload signature");
             }
         }
     }
@@ -677,13 +711,15 @@ static size_t builtin_arity(const char *name) {
     const CoreIntrinsic *core = core_intrinsic_find(name);
     if (core != NULL) return core->argument_count;
     if (strcmp(name, "scanfInt") == 0 || strcmp(name, "scanfChar") == 0 ||
-        strcmp(name, "scanfString") == 0) return 0;
+        strcmp(name, "scanfString") == 0)
+        return 0;
     if (strcmp(name, "strlen") == 0 || strcmp(name, "strdup") == 0 ||
         strcmp(name, "malloc") == 0 || strcmp(name, "io_strlen") == 0 ||
         strcmp(name, "io_str_to_int") == 0 || strcmp(name, "sys_close") == 0)
         return 1;
     if (strcmp(name, "strcmp") == 0 || strcmp(name, "strcpy") == 0 ||
-        strcmp(name, "strcat") == 0 || strcmp(name, "read") == 0) return 2;
+        strcmp(name, "strcat") == 0 || strcmp(name, "read") == 0)
+        return 2;
     if (strcmp(name, "sys_write") == 0 || strcmp(name, "sys_read") == 0 ||
         strcmp(name, "sys_open") == 0 || strcmp(name, "io_int_to_str") == 0)
         return 3;
@@ -700,7 +736,8 @@ static int implicit_conversion_allowed(DataType from, unsigned from_pointers,
     int to_integral = data_type_integral(to);
     if (from_integral && to_integral) return 1;
     if (from_integral &&
-        (to == TYPE_FLOAT || to == TYPE_DOUBLE)) return 1;
+        (to == TYPE_FLOAT || to == TYPE_DOUBLE))
+        return 1;
     return from == TYPE_FLOAT && to == TYPE_DOUBLE;
 }
 
@@ -709,12 +746,13 @@ static int expression_conversion_allowed(const AstExpression *expression,
     if (expression == NULL) return 0;
     if (implicit_conversion_allowed(expression->resolved_type,
                                     expression->resolved_pointer_depth +
-                                        expression->resolved_outer_pointer_depth,
-                                    to, to_pointers)) return 1;
+                                    expression->resolved_outer_pointer_depth,
+                                    to, to_pointers))
+        return 1;
     int literal = expression->kind == AST_EXPR_LITERAL ||
-        (expression->kind == AST_EXPR_UNARY &&
-         expression->operator_type == TOKEN_MINUS && expression->right != NULL &&
-         expression->right->kind == AST_EXPR_LITERAL);
+                  (expression->kind == AST_EXPR_UNARY &&
+                   expression->operator_type == TOKEN_MINUS && expression->right != NULL &&
+                   expression->right->kind == AST_EXPR_LITERAL);
     return literal && expression->resolved_pointer_depth == 0 &&
            expression->resolved_outer_pointer_depth == 0 &&
            !expression->resolved_is_array && !expression->resolved_is_slice &&
@@ -725,9 +763,9 @@ static int expression_conversion_allowed(const AstExpression *expression,
 }
 
 static int expression_to_declared_type_allowed(const Analyzer *analyzer,
-                                                const AstExpression *expression,
-                                                const AstProgram *type_program,
-                                                const AstType *type) {
+                                               const AstExpression *expression,
+                                               const AstProgram *type_program,
+                                               const AstType *type) {
     if (expression == NULL || type == NULL) return 0;
     unsigned target_depth = type->pointer_depth + type->outer_pointer_depth;
     unsigned source_depth = expression->resolved_pointer_depth +
@@ -736,17 +774,17 @@ static int expression_to_declared_type_allowed(const Analyzer *analyzer,
     int matching_shape = target_depth == source_depth;
     if (type->is_slice && !type->outer_pointer_depth)
         matching_shape = type->outer_pointer_depth == 0 &&
-            expression->resolved_outer_pointer_depth == 0 &&
-            type->pointer_depth == expression->resolved_pointer_depth &&
-            (expression->resolved_is_array || expression->resolved_is_slice);
+                         expression->resolved_outer_pointer_depth == 0 &&
+                         type->pointer_depth == expression->resolved_pointer_depth &&
+                         (expression->resolved_is_array || expression->resolved_is_slice);
     else
         matching_shape = matching_shape && type->is_array == expression->resolved_is_array &&
                          type->is_slice == expression->resolved_is_slice;
     if (type->is_array)
         matching_shape = matching_shape &&
-            type->pointer_depth == expression->resolved_pointer_depth &&
-            type->outer_pointer_depth == expression->resolved_outer_pointer_depth &&
-            type->resolved_array_length == expression->resolved_array_length;
+                         type->pointer_depth == expression->resolved_pointer_depth &&
+                         type->outer_pointer_depth == expression->resolved_outer_pointer_depth &&
+                         type->resolved_array_length == expression->resolved_array_length;
     if (target_name != AST_TOKEN_NONE) {
         size_t target_symbol = resolve_named_symbol_id(analyzer, type_program, target_name);
         return target_symbol != AST_SYMBOL_NONE &&
@@ -755,8 +793,9 @@ static int expression_to_declared_type_allowed(const Analyzer *analyzer,
     }
     if (expression->resolved_named_symbol_id != AST_SYMBOL_NONE) return 0;
     if (!matching_shape) return 0;
-    if (type->is_array || type->is_slice) return
-        expression->resolved_type == primitive_type(type_program, type);
+    if (type->is_array || type->is_slice)
+        return
+                expression->resolved_type == primitive_type(type_program, type);
     return expression_conversion_allowed(expression, primitive_type(type_program, type),
                                          target_depth);
 }
@@ -770,11 +809,13 @@ static int expression_assignment_allowed(const Analyzer *analyzer,
     unsigned target_depth = target->resolved_pointer_depth +
                             target->resolved_outer_pointer_depth;
     if (source->resolved_is_array != target->resolved_is_array ||
-        source->resolved_is_slice != target->resolved_is_slice) return 0;
+        source->resolved_is_slice != target->resolved_is_slice)
+        return 0;
     if (source->resolved_is_array &&
         (source->resolved_pointer_depth != target->resolved_pointer_depth ||
          source->resolved_outer_pointer_depth != target->resolved_outer_pointer_depth ||
-         source->resolved_array_length != target->resolved_array_length)) return 0;
+         source->resolved_array_length != target->resolved_array_length))
+        return 0;
     if (target->resolved_named_symbol_id != AST_SYMBOL_NONE ||
         source->resolved_named_symbol_id != AST_SYMBOL_NONE)
         return target->resolved_named_symbol_id != AST_SYMBOL_NONE &&
@@ -804,14 +845,14 @@ static int integral_expression(const AstExpression *expression) {
 
 static int string_expression(const AstExpression *expression) {
     return expression != NULL &&
-        ((expression->resolved_type == TYPE_STRING &&
-          expression->resolved_pointer_depth == 0 &&
-          expression->resolved_outer_pointer_depth == 0 &&
-          !expression->resolved_is_array && !expression->resolved_is_slice) ||
-         (expression->resolved_type == TYPE_CHAR &&
-          (expression->resolved_pointer_depth != 0 ||
-           expression->resolved_outer_pointer_depth != 0 ||
-           expression->resolved_is_array || expression->resolved_is_slice)));
+           ((expression->resolved_type == TYPE_STRING &&
+             expression->resolved_pointer_depth == 0 &&
+             expression->resolved_outer_pointer_depth == 0 &&
+             !expression->resolved_is_array && !expression->resolved_is_slice) ||
+            (expression->resolved_type == TYPE_CHAR &&
+             (expression->resolved_pointer_depth != 0 ||
+              expression->resolved_outer_pointer_depth != 0 ||
+              expression->resolved_is_array || expression->resolved_is_slice)));
 }
 
 static int pointer_expression(const AstExpression *expression) {
@@ -831,7 +872,8 @@ static int constant_integer(const Analyzer *analyzer, const AstExpression *expre
     }
     if (expression == NULL || expression->kind != AST_EXPR_LITERAL ||
         expression->value_token >= analyzer->program->token_count ||
-        analyzer->program->tokens[expression->value_token].type != TOKEN_NUMBER) return 0;
+        analyzer->program->tokens[expression->value_token].type != TOKEN_NUMBER)
+        return 0;
     *value = strtoll(ast_program_lexeme(analyzer->program, expression->value_token), NULL, 10);
     if (negative) *value = -*value;
     return 1;
@@ -841,7 +883,8 @@ static int enum_constant_expression(const Analyzer *analyzer,
                                     const AstExpression *expression) {
     if (expression == NULL) return 0;
     if (expression->kind == AST_EXPR_LITERAL) return 1;
-    if (expression->kind == AST_EXPR_SIZEOF || expression->kind == AST_EXPR_ALIGNOF || expression->kind == AST_EXPR_TYPE_PROPERTY)
+    if (expression->kind == AST_EXPR_SIZEOF || expression->kind == AST_EXPR_ALIGNOF || expression->kind ==
+        AST_EXPR_TYPE_PROPERTY)
         return expression->folded_constant.lexeme != NULL;
     if (expression->kind == AST_EXPR_NAME)
         return same_name(analyzer->program, expression->value_token, "true") ||
@@ -857,7 +900,8 @@ static size_t parameter_count(const AstDeclarationNode *function) {
     size_t count = 0;
     if (function != NULL)
         for (const AstParameter *parameter = function->as.function.parameters;
-             parameter != NULL; parameter = parameter->next) count++;
+             parameter != NULL; parameter = parameter->next)
+            count++;
     return count;
 }
 
@@ -866,22 +910,24 @@ static int argument_conversion_rank(const Analyzer *analyzer,
                                     const AstProgram *parameter_program,
                                     const AstType *parameter) {
     if (!expression_to_declared_type_allowed(analyzer, argument,
-                                             parameter_program, parameter)) return -1;
+                                             parameter_program, parameter))
+        return -1;
     size_t target_named = resolve_named_symbol_id(analyzer, parameter_program,
-        named_type_token(parameter_program, parameter));
+                                                  named_type_token(parameter_program, parameter));
     int same_base = target_named != AST_SYMBOL_NONE
-        ? target_named == argument->resolved_named_symbol_id
-        : argument->resolved_named_symbol_id == AST_SYMBOL_NONE &&
-          primitive_type(parameter_program, parameter) == argument->resolved_type;
+                        ? target_named == argument->resolved_named_symbol_id
+                        : argument->resolved_named_symbol_id == AST_SYMBOL_NONE &&
+                          primitive_type(parameter_program, parameter) == argument->resolved_type;
     int same_shape = parameter->pointer_depth == argument->resolved_pointer_depth &&
-        parameter->outer_pointer_depth == argument->resolved_outer_pointer_depth &&
-        parameter->is_array == argument->resolved_is_array &&
-        parameter->is_slice == argument->resolved_is_slice;
+                     parameter->outer_pointer_depth == argument->resolved_outer_pointer_depth &&
+                     parameter->is_array == argument->resolved_is_array &&
+                     parameter->is_slice == argument->resolved_is_slice;
     if (same_base && same_shape) return 0;
     if (parameter->is_slice && argument->resolved_is_array && same_base &&
         parameter->pointer_depth == argument->resolved_pointer_depth &&
         parameter->outer_pointer_depth == 0 &&
-        argument->resolved_outer_pointer_depth == 0) return 1;
+        argument->resolved_outer_pointer_depth == 0)
+        return 1;
     if (argument->resolved_pointer_depth == 0 &&
         argument->resolved_outer_pointer_depth == 0 &&
         !argument->resolved_is_array && !argument->resolved_is_slice &&
@@ -890,54 +936,64 @@ static int argument_conversion_rank(const Analyzer *analyzer,
         DataType to = primitive_type(parameter_program, parameter);
         if (((argument->resolved_type == TYPE_BIT || argument->resolved_type == TYPE_BYTE ||
               argument->resolved_type == TYPE_CHAR) && to == TYPE_INT) ||
-            (argument->resolved_type == TYPE_FLOAT && to == TYPE_DOUBLE)) return 1;
+            (argument->resolved_type == TYPE_FLOAT && to == TYPE_DOUBLE))
+            return 1;
     }
     return 2;
 }
 
-static int contains_type_parameter(const AstProgram *unit,const AstType *type,const AstDeclarationNode *origin) {
+static int contains_type_parameter(const AstProgram *unit, const AstType *type, const AstDeclarationNode *origin) {
     if (!origin || origin->kind != AST_DECL_FUNCTION) return 0;
-    for (const AstGenericParameter *g=origin->generic_parameters; g; g=g->next)
-        if (!strcmp(ast_program_lexeme(unit,g->name_token),ast_program_lexeme(unit,type->name_token))) return 1;
-    for (const AstTypeArgument *a=type->arguments; a; a=a->next)
-        if (contains_type_parameter(unit,&a->type,origin)) return 1;
+    for (const AstGenericParameter *g = origin->generic_parameters; g; g = g->next)
+        if (!strcmp(ast_program_lexeme(unit, g->name_token), ast_program_lexeme(unit, type->name_token))) return 1;
+    for (const AstTypeArgument *a = type->arguments; a; a = a->next)
+        if (contains_type_parameter(unit, &a->type, origin)) return 1;
     return 0;
 }
-static int type_mentions(const AstProgram *unit,const AstType *type,const char *name) {
-    if (!strcmp(ast_program_lexeme(unit,type->name_token),name)) return 1;
-    for (const AstTypeArgument *a=type->arguments;a;a=a->next)
-        if (type_mentions(unit,&a->type,name)) return 1;
+
+static int type_mentions(const AstProgram *unit, const AstType *type, const char *name) {
+    if (!strcmp(ast_program_lexeme(unit, type->name_token), name)) return 1;
+    for (const AstTypeArgument *a = type->arguments; a; a = a->next)
+        if (type_mentions(unit, &a->type, name)) return 1;
     return 0;
 }
+
 static int viable_function(const Analyzer *analyzer, const SemanticSymbol *function,
                            const AstExpression *arguments) {
     size_t actual = 0;
     for (const AstExpression *argument = arguments; argument != NULL;
-         argument = argument->next) actual++;
+         argument = argument->next)
+        actual++;
     if (function == NULL || function->declaration == NULL ||
-        parameter_count(function->declaration) != actual) return 0;
+        parameter_count(function->declaration) != actual)
+        return 0;
     const AstExpression *argument = arguments;
     const AstParameter *parameter = function->declaration->as.function.parameters;
-    const AstDeclarationNode *origin=function->declaration->generic_origin;
-    if (origin && origin->kind == AST_DECL_FUNCTION) for (const AstGenericParameter *g=origin->generic_parameters;g;g=g->next) {
-        int found=0;
-        for (const AstParameter *p=origin->as.function.parameters;p;p=p->next)
-            if (type_mentions(function->source_program,&p->type,ast_program_lexeme(function->source_program,g->name_token))) found=1;
-        if (!found) return 0;
-    }
-    const AstParameter *pattern=origin && origin->kind == AST_DECL_FUNCTION ? origin->as.function.parameters : NULL;
+    const AstDeclarationNode *origin = function->declaration->generic_origin;
+    if (origin && origin->kind == AST_DECL_FUNCTION)
+        for (const AstGenericParameter *g = origin->generic_parameters; g; g = g->next) {
+            int found = 0;
+            for (const AstParameter *p = origin->as.function.parameters; p; p = p->next)
+                if (type_mentions(function->source_program, &p->type,
+                                  ast_program_lexeme(function->source_program, g->name_token))) found = 1;
+            if (!found) return 0;
+        }
+    const AstParameter *pattern = origin && origin->kind == AST_DECL_FUNCTION ? origin->as.function.parameters : NULL;
     for (; argument != NULL && parameter != NULL;
-         argument = argument->next, parameter = parameter->next) {
-        int rank=argument_conversion_rank(analyzer,argument,function->source_program,&parameter->type);
+           argument = argument->next, parameter = parameter->next) {
+        int rank = argument_conversion_rank(analyzer, argument, function->source_program, &parameter->type);
         if (rank < 0) return 0;
-        if (pattern && contains_type_parameter(function->source_program,&pattern->type,origin) && rank != 0) {
-            int array_to_slice=parameter->type.is_slice && argument->resolved_is_array &&
-                parameter->type.pointer_depth == argument->resolved_pointer_depth &&
-                primitive_type(function->source_program,&parameter->type) == argument->resolved_type &&
-                resolve_named_symbol_id(analyzer,function->source_program,named_type_token(function->source_program,&parameter->type)) == argument->resolved_named_symbol_id;
+        if (pattern && contains_type_parameter(function->source_program, &pattern->type, origin) && rank != 0) {
+            int array_to_slice = parameter->type.is_slice && argument->resolved_is_array &&
+                                 parameter->type.pointer_depth == argument->resolved_pointer_depth &&
+                                 primitive_type(function->source_program, &parameter->type) == argument->resolved_type
+                                 &&
+                                 resolve_named_symbol_id(analyzer, function->source_program,
+                                                         named_type_token(function->source_program, &parameter->type))
+                                 == argument->resolved_named_symbol_id;
             if (!array_to_slice) return 0;
         }
-        if (pattern) pattern=pattern->next;
+        if (pattern) pattern = pattern->next;
     }
     return argument == NULL && parameter == NULL;
 }
@@ -952,14 +1008,15 @@ static int function_dominates(const Analyzer *analyzer,
     for (const AstExpression *argument = arguments; argument != NULL;
          argument = argument->next, a = a->next, b = b->next) {
         int left_rank = argument_conversion_rank(analyzer, argument,
-                                                  left->source_program, &a->type);
+                                                 left->source_program, &a->type);
         int right_rank = argument_conversion_rank(analyzer, argument,
-                                                   right->source_program, &b->type);
+                                                  right->source_program, &b->type);
         if (left_rank > right_rank) return 0;
         if (left_rank < right_rank) strictly_better = 1;
     }
     if (!strictly_better && left->declaration->generic_origin == NULL &&
-        right->declaration->generic_origin != NULL) return 1;
+        right->declaration->generic_origin != NULL)
+        return 1;
     return strictly_better;
 }
 
@@ -975,23 +1032,27 @@ static const SemanticSymbol *resolve_overload(const Analyzer *analyzer,
         const SemanticSymbol *candidate = &analyzer->model->symbols[i];
         if (candidate->kind != SEMANTIC_SYMBOL_FUNCTION ||
             candidate->owner_symbol_id != owner_symbol_id ||
-            !(owner_symbol_id == AST_SYMBOL_NONE ? symbol_matches_scope(analyzer->program,candidate,name) :
-              same_name(candidate->source_program,candidate->name_token,name)) ||
+            !(owner_symbol_id == AST_SYMBOL_NONE
+                  ? symbol_matches_scope(analyzer->program, candidate, name)
+                  : same_name(candidate->source_program, candidate->name_token, name)) ||
             candidate->declaration == NULL ||
             (owner_symbol_id != AST_SYMBOL_NONE &&
              candidate->declaration->as.function.is_static != is_static) ||
-            !viable_function(analyzer, candidate, arguments)) continue;
+            !viable_function(analyzer, candidate, arguments))
+            continue;
         int dominated = 0;
         for (size_t j = 0; j < analyzer->model->symbol_count && !dominated; j++) {
             const SemanticSymbol *other = &analyzer->model->symbols[j];
             if (other == candidate || other->kind != SEMANTIC_SYMBOL_FUNCTION ||
                 other->owner_symbol_id != owner_symbol_id ||
-                !(owner_symbol_id == AST_SYMBOL_NONE ? symbol_matches_scope(analyzer->program,other,name) :
-                  same_name(other->source_program,other->name_token,name)) ||
+                !(owner_symbol_id == AST_SYMBOL_NONE
+                      ? symbol_matches_scope(analyzer->program, other, name)
+                      : same_name(other->source_program, other->name_token, name)) ||
                 other->declaration == NULL ||
                 (owner_symbol_id != AST_SYMBOL_NONE &&
                  other->declaration->as.function.is_static != is_static) ||
-                !viable_function(analyzer, other, arguments)) continue;
+                !viable_function(analyzer, other, arguments))
+                continue;
             dominated = function_dominates(analyzer, other, candidate, arguments);
         }
         if (!dominated) {
@@ -1003,7 +1064,11 @@ static const SemanticSymbol *resolve_overload(const Analyzer *analyzer,
     return non_dominated == 1 ? selected : NULL;
 }
 
-typedef struct { char *text; size_t used; int failed; } DiagnosticText;
+typedef struct {
+    char *text;
+    size_t used;
+    int failed;
+} DiagnosticText;
 
 static void diagnostic_append(DiagnosticText *text, const char *format, ...) {
     if (text->failed) return;
@@ -1012,15 +1077,15 @@ static void diagnostic_append(DiagnosticText *text, const char *format, ...) {
     va_copy(copy, arguments);
     int count = vsnprintf(NULL, 0, format, copy);
     va_end(copy);
-    if (count < 0 || (size_t)count > SIZE_MAX-text->used-1) text->failed=1;
+    if (count < 0 || (size_t) count > SIZE_MAX - text->used - 1) text->failed = 1;
     else {
-        size_t needed=text->used+(size_t)count+1;
-        char *grown=realloc(text->text, needed);
-        if (grown == NULL) text->failed=1;
+        size_t needed = text->used + (size_t) count + 1;
+        char *grown = realloc(text->text, needed);
+        if (grown == NULL) text->failed = 1;
         else {
-            text->text=grown;
-            (void)vsnprintf(text->text+text->used, needed-text->used, format, arguments);
-            text->used+=(size_t)count;
+            text->text = grown;
+            (void) vsnprintf(text->text + text->used, needed - text->used, format, arguments);
+            text->used += (size_t) count;
         }
     }
     va_end(arguments);
@@ -1029,24 +1094,28 @@ static void diagnostic_append(DiagnosticText *text, const char *format, ...) {
 static void diagnostic_type(DiagnosticText *text, const Analyzer *analyzer,
                             DataType primitive, size_t nominal, unsigned pointers,
                             unsigned outer, int array, int slice, const char *length) {
-    static const char *names[]={DMM_TYPE_NAMES};
-    for (unsigned i=0; i<outer; i++) diagnostic_append(text, "*");
+    static const char *names[] = {DMM_TYPE_NAMES};
+    for (unsigned i = 0; i < outer; i++) diagnostic_append(text, "*");
     if (outer != 0 && (array || slice)) diagnostic_append(text, "(");
-    for (unsigned i=0; i<pointers; i++) diagnostic_append(text, "*");
+    for (unsigned i = 0; i < pointers; i++) diagnostic_append(text, "*");
     if (nominal < analyzer->model->symbol_count) {
-        const SemanticSymbol *symbol=&analyzer->model->symbols[nominal];
-        const AstDeclarationNode *declaration=symbol->declaration;
+        const SemanticSymbol *symbol = &analyzer->model->symbols[nominal];
+        const AstDeclarationNode *declaration = symbol->declaration;
         if (declaration && declaration->generic_origin) {
-            diagnostic_append(text,"%s<",ast_program_lexeme(symbol->source_program,declaration->generic_origin->name_token));
-            for (const AstTypeArgument *argument=declaration->specialization_arguments; argument; argument=argument->next) {
-                const AstType *type=&argument->type; char size[32];
-                snprintf(size,sizeof(size),"%zu",type->resolved_array_length);
-                diagnostic_type(text,analyzer,primitive_type(symbol->source_program,type),
-                    resolve_named_symbol_id(analyzer,symbol->source_program,named_type_token(symbol->source_program,type)),
-                    type->pointer_depth,type->outer_pointer_depth,type->is_array,type->is_slice,size);
-                if (argument->next) diagnostic_append(text,",");
+            diagnostic_append(text, "%s<",
+                              ast_program_lexeme(symbol->source_program, declaration->generic_origin->name_token));
+            for (const AstTypeArgument *argument = declaration->specialization_arguments; argument;
+                 argument = argument->next) {
+                const AstType *type = &argument->type;
+                char size[32];
+                snprintf(size, sizeof(size), "%zu", type->resolved_array_length);
+                diagnostic_type(text, analyzer, primitive_type(symbol->source_program, type),
+                                resolve_named_symbol_id(analyzer, symbol->source_program,
+                                                        named_type_token(symbol->source_program, type)),
+                                type->pointer_depth, type->outer_pointer_depth, type->is_array, type->is_slice, size);
+                if (argument->next) diagnostic_append(text, ",");
             }
-            diagnostic_append(text,">");
+            diagnostic_append(text, ">");
         } else diagnostic_append(text, "%s", ast_program_lexeme(symbol->source_program, symbol->name_token));
     } else diagnostic_append(text, "%s", primitive <= TYPE_UNKNOWN ? names[primitive] : "unknown");
     if (slice) diagnostic_append(text, "[]");
@@ -1060,7 +1129,7 @@ static void operand_error(Analyzer *analyzer, const AstExpression *expression,
     DiagnosticText message = {0};
     diagnostic_append(&message, "%s; supplied types:", reason);
     const AstExpression *operands[2] = {expression->left, expression->right};
-    if (operands[0] == NULL && operands[1] == NULL) operands[0]=expression;
+    if (operands[0] == NULL && operands[1] == NULL) operands[0] = expression;
     if (expression->kind == AST_EXPR_CAST || expression->kind == AST_EXPR_FREE)
         operands[0] = expression->arguments;
     for (size_t i = 0; i < 2; i++) {
@@ -1070,15 +1139,16 @@ static void operand_error(Analyzer *analyzer, const AstExpression *expression,
         snprintf(length, sizeof(length), "%zu", operand->resolved_array_length);
         diagnostic_append(&message, " '");
         diagnostic_type(&message, analyzer, operand->resolved_type,
-            operand->resolved_named_symbol_id, operand->resolved_pointer_depth,
-            operand->resolved_outer_pointer_depth, operand->resolved_is_array,
-            operand->resolved_is_slice, length);
+                        operand->resolved_named_symbol_id, operand->resolved_pointer_depth,
+                        operand->resolved_outer_pointer_depth, operand->resolved_is_array,
+                        operand->resolved_is_slice, length);
         diagnostic_append(&message, "'");
     }
     semantic_error_at(analyzer, expression->first_token,
-        expression->token_count == 0 ? expression->first_token :
-        expression->first_token + expression->token_count - 1,
-        category, code, message.failed ? reason : message.text);
+                      expression->token_count == 0
+                          ? expression->first_token
+                          : expression->first_token + expression->token_count - 1,
+                      category, code, message.failed ? reason : message.text);
     free(message.text);
 }
 
@@ -1095,8 +1165,8 @@ static void conversion_error(Analyzer *analyzer, const AstExpression *value,
         length = ast_program_lexeme(symbol->source_program, symbol->declared_type.array_length_token);
     }
     diagnostic_type(&message, analyzer, value->resolved_type, value->resolved_named_symbol_id,
-        value->resolved_pointer_depth, value->resolved_outer_pointer_depth,
-        value->resolved_is_array, value->resolved_is_slice, length);
+                    value->resolved_pointer_depth, value->resolved_outer_pointer_depth,
+                    value->resolved_is_array, value->resolved_is_slice, length);
     diagnostic_append(&message, "', expected '");
     if (expected_value != NULL) {
         const char *expected_length = NULL;
@@ -1104,74 +1174,86 @@ static void conversion_error(Analyzer *analyzer, const AstExpression *value,
             const SemanticSymbol *symbol = &analyzer->model->symbols[expected_value->resolved_symbol_id];
             expected_length = ast_program_lexeme(symbol->source_program, symbol->declared_type.array_length_token);
         }
-        if (expected_value->resolved_type == TYPE_UNKNOWN && expected_value->resolved_named_symbol_id == AST_SYMBOL_NONE) {
+        if (expected_value->resolved_type == TYPE_UNKNOWN && expected_value->resolved_named_symbol_id ==
+            AST_SYMBOL_NONE) {
             free(message.text);
             return;
         }
         diagnostic_type(&message, analyzer, expected_value->resolved_type, expected_value->resolved_named_symbol_id,
-            expected_value->resolved_pointer_depth, expected_value->resolved_outer_pointer_depth,
-            expected_value->resolved_is_array, expected_value->resolved_is_slice, expected_length);
-    } else diagnostic_type(&message, analyzer, primitive_type(expected_program, expected),
-        resolve_named_symbol_id(analyzer, expected_program, named_type_token(expected_program, expected)),
-        expected->pointer_depth, expected->outer_pointer_depth, expected->is_array, expected->is_slice,
-        ast_program_lexeme(expected_program, expected->array_length_token));
+                        expected_value->resolved_pointer_depth, expected_value->resolved_outer_pointer_depth,
+                        expected_value->resolved_is_array, expected_value->resolved_is_slice, expected_length);
+    } else
+        diagnostic_type(&message, analyzer, primitive_type(expected_program, expected),
+                        resolve_named_symbol_id(analyzer, expected_program,
+                                                named_type_token(expected_program, expected)),
+                        expected->pointer_depth, expected->outer_pointer_depth, expected->is_array, expected->is_slice,
+                        ast_program_lexeme(expected_program, expected->array_length_token));
     diagnostic_append(&message, "'");
     semantic_error_at(analyzer, value->first_token,
-        value->token_count == 0 ? value->first_token : value->first_token + value->token_count - 1,
-        ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
-        message.failed ? reason : message.text);
+                      value->token_count == 0 ? value->first_token : value->first_token + value->token_count - 1,
+                      ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
+                      message.failed ? reason : message.text);
     free(message.text);
 }
 
 static void overload_error(Analyzer *analyzer, const AstExpression *call,
                            const char *name, size_t owner, int is_static, int ambiguous) {
-    DiagnosticText message={0};
-    diagnostic_append(&message, owner == AST_SYMBOL_NONE ?
-        (ambiguous ? "Call to '%s' is ambiguous" : "No overload of '%s' matches the supplied arguments") :
-        (ambiguous ? "Method call to '%s' is ambiguous" : "No method overload matches the supplied arguments for '%s'"), name);
+    DiagnosticText message = {0};
+    diagnostic_append(&message, owner == AST_SYMBOL_NONE
+                                    ? (ambiguous
+                                           ? "Call to '%s' is ambiguous"
+                                           : "No overload of '%s' matches the supplied arguments")
+                                    : (ambiguous
+                                           ? "Method call to '%s' is ambiguous"
+                                           : "No method overload matches the supplied arguments for '%s'"), name);
     diagnostic_append(&message, "; supplied types: (");
-    size_t index=0;
-    for (const AstExpression *argument=call->arguments; argument != NULL; argument=argument->next) {
+    size_t index = 0;
+    for (const AstExpression *argument = call->arguments; argument != NULL; argument = argument->next) {
         if (index++ != 0) diagnostic_append(&message, ", ");
-        const char *length=NULL;
+        const char *length = NULL;
         if (argument->resolved_symbol_id < analyzer->model->symbol_count) {
-            const SemanticSymbol *symbol=&analyzer->model->symbols[argument->resolved_symbol_id];
+            const SemanticSymbol *symbol = &analyzer->model->symbols[argument->resolved_symbol_id];
             if (symbol->declared_type.is_array)
-                length=ast_program_lexeme(symbol->source_program, symbol->declared_type.array_length_token);
+                length = ast_program_lexeme(symbol->source_program, symbol->declared_type.array_length_token);
         }
         diagnostic_type(&message, analyzer, argument->resolved_type, argument->resolved_named_symbol_id,
-            argument->resolved_pointer_depth, argument->resolved_outer_pointer_depth,
-            argument->resolved_is_array, argument->resolved_is_slice, length);
+                        argument->resolved_pointer_depth, argument->resolved_outer_pointer_depth,
+                        argument->resolved_is_array, argument->resolved_is_slice, length);
     }
     diagnostic_append(&message, ambiguous ? "); viable signatures: " : "); available signatures: ");
-    index=0;
-    for (size_t i=0; i<analyzer->model->symbol_count; i++) {
-        const SemanticSymbol *symbol=&analyzer->model->symbols[i];
+    index = 0;
+    for (size_t i = 0; i < analyzer->model->symbol_count; i++) {
+        const SemanticSymbol *symbol = &analyzer->model->symbols[i];
         if (symbol->kind != SEMANTIC_SYMBOL_FUNCTION || symbol->owner_symbol_id != owner ||
             !same_name(symbol->source_program, symbol->name_token, name) || symbol->declaration == NULL ||
             (owner != AST_SYMBOL_NONE && symbol->declaration->as.function.is_static != is_static) ||
-            (ambiguous && !viable_function(analyzer, symbol, call->arguments))) continue;
+            (ambiguous && !viable_function(analyzer, symbol, call->arguments)))
+            continue;
         if (index++ != 0) diagnostic_append(&message, "; ");
         if (owner < analyzer->model->symbol_count) {
-            const SemanticSymbol *owner_symbol=&analyzer->model->symbols[owner];
-            diagnostic_append(&message, "%s.", ast_program_lexeme(owner_symbol->source_program, owner_symbol->name_token));
+            const SemanticSymbol *owner_symbol = &analyzer->model->symbols[owner];
+            diagnostic_append(&message, "%s.",
+                              ast_program_lexeme(owner_symbol->source_program, owner_symbol->name_token));
         }
         diagnostic_append(&message, "%s(", name);
-        size_t parameter_index=0;
-        for (const AstParameter *parameter=symbol->declaration->as.function.parameters;
-             parameter != NULL; parameter=parameter->next) {
+        size_t parameter_index = 0;
+        for (const AstParameter *parameter = symbol->declaration->as.function.parameters;
+             parameter != NULL; parameter = parameter->next) {
             if (parameter_index++ != 0) diagnostic_append(&message, ", ");
-            const AstType *type=&parameter->type;
+            const AstType *type = &parameter->type;
             diagnostic_type(&message, analyzer, primitive_type(symbol->source_program, type),
-                resolve_named_symbol_id(analyzer, symbol->source_program, named_type_token(symbol->source_program, type)),
-                type->pointer_depth, type->outer_pointer_depth, type->is_array, type->is_slice,
-                type->is_array ? ast_program_lexeme(symbol->source_program, type->array_length_token) : NULL);
+                            resolve_named_symbol_id(analyzer, symbol->source_program,
+                                                    named_type_token(symbol->source_program, type)),
+                            type->pointer_depth, type->outer_pointer_depth, type->is_array, type->is_slice,
+                            type->is_array
+                                ? ast_program_lexeme(symbol->source_program, type->array_length_token)
+                                : NULL);
         }
         diagnostic_append(&message, ")");
     }
     if (index == 0) diagnostic_append(&message, "<none>");
     semantic_error(analyzer, call->left->value_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
-        message.failed ? "Could not format overload diagnostic" : message.text);
+                   message.failed ? "Could not format overload diagnostic" : message.text);
     free(message.text);
 }
 
@@ -1182,14 +1264,15 @@ static int expression_is_constant_symbol(const Analyzer *analyzer,
                                          const AstExpression *expression) {
     return expression != NULL && expression->resolved_symbol_id < analyzer->model->symbol_count &&
            analyzer->model->symbols[expression->resolved_symbol_id].kind ==
-               SEMANTIC_SYMBOL_CONSTANT;
+           SEMANTIC_SYMBOL_CONSTANT;
 }
 
 static int constant_expression_allowed(const Analyzer *analyzer,
                                        const AstExpression *expression) {
     if (expression == NULL) return 0;
     if (expression->kind == AST_EXPR_LITERAL) return 1;
-    if (expression->kind == AST_EXPR_SIZEOF || expression->kind == AST_EXPR_ALIGNOF || expression->kind == AST_EXPR_TYPE_PROPERTY)
+    if (expression->kind == AST_EXPR_SIZEOF || expression->kind == AST_EXPR_ALIGNOF || expression->kind ==
+        AST_EXPR_TYPE_PROPERTY)
         return expression->folded_constant.lexeme != NULL;
     if (expression->kind == AST_EXPR_NAME)
         return same_name(analyzer->program, expression->value_token, "true") ||
@@ -1209,13 +1292,14 @@ static int constant_expression_allowed(const Analyzer *analyzer,
 }
 
 static const AstExpression *constant_initializer(const SemanticSymbol *symbol) {
-    return symbol->declaration != NULL ? symbol->declaration->as.constant.value
-                                      : (const AstExpression *) symbol->node;
+    return symbol->declaration != NULL
+               ? symbol->declaration->as.constant.value
+               : (const AstExpression *) symbol->node;
 }
 
 static double folded_number(const AstExpression *expression) {
-    const AstToken *value=&expression->folded_constant;
-    if (value->type == TOKEN_CHAR_LITERAL) return (unsigned char)value->lexeme[0];
+    const AstToken *value = &expression->folded_constant;
+    if (value->type == TOKEN_CHAR_LITERAL) return (unsigned char) value->lexeme[0];
     if (strcmp(value->lexeme, "true") == 0) return 1;
     return strtod(value->lexeme, NULL);
 }
@@ -1223,124 +1307,163 @@ static double folded_number(const AstExpression *expression) {
 static const char *folded_string(const AstExpression *expression, char buffer[64]) {
     if (expression->resolved_type == TYPE_STRING) return expression->folded_constant.lexeme;
     if (data_type_fixed_integer(expression->resolved_type)) {
-        uint64_t bits=strtoull(expression->folded_constant.lexeme,NULL,10);
-        int64_t value; memcpy(&value,&bits,sizeof(value));
-        if (data_type_unsigned(expression->resolved_type)) snprintf(buffer,64,"%llu",(unsigned long long)bits);
-        else snprintf(buffer,64,"%lld",(long long)value);
+        uint64_t bits = strtoull(expression->folded_constant.lexeme, NULL, 10);
+        int64_t value;
+        memcpy(&value, &bits, sizeof(value));
+        if (data_type_unsigned(expression->resolved_type)) snprintf(buffer, 64, "%llu", (unsigned long long) bits);
+        else snprintf(buffer, 64, "%lld", (long long) value);
         return buffer;
     }
-    double number=folded_number(expression);
+    double number = folded_number(expression);
     if (expression->resolved_type == TYPE_CHAR)
-        (void)snprintf(buffer, 64, "%c", (unsigned char)(long long)number);
+        (void) snprintf(buffer, 64, "%c", (unsigned char) (long long) number);
     else if (expression->resolved_type == TYPE_FLOAT || expression->resolved_type == TYPE_DOUBLE)
-        (void)snprintf(buffer, 64, "%f", number);
-    else (void)snprintf(buffer, 64, "%lld", (long long)number);
+        (void) snprintf(buffer, 64, "%f", number);
+    else (void) snprintf(buffer, 64, "%lld", (long long) number);
     return buffer;
 }
 
 /* Keep fixed-width constants exact: binary64 cannot represent every u64/i64. */
 static int fold_constant(Analyzer *analyzer, AstExpression *expression, DataType target);
+
 static int fold_integer_bits(Analyzer *analyzer, const AstExpression *expression, uint64_t *bits) {
     if (expression == NULL || !data_type_integral(expression->resolved_type)) return 0;
-    if ((expression->kind == AST_EXPR_SIZEOF || expression->kind == AST_EXPR_ALIGNOF || expression->kind == AST_EXPR_TYPE_PROPERTY) && expression->folded_constant.lexeme && integral_expression(expression)) {
-        *bits=strtoull(expression->folded_constant.lexeme,NULL,10);
+    if ((expression->kind == AST_EXPR_SIZEOF || expression->kind == AST_EXPR_ALIGNOF || expression->kind ==
+         AST_EXPR_TYPE_PROPERTY) && expression->folded_constant.lexeme && integral_expression(expression)) {
+        *bits = strtoull(expression->folded_constant.lexeme, NULL, 10);
     } else if (expression->kind == AST_EXPR_LITERAL) {
-        const AstToken *token = ast_program_token(analyzer->program,expression->value_token);
-        if (token->type == TOKEN_CHAR_LITERAL) *bits=(unsigned char)token->lexeme[0];
-        else *bits=strtoull(token->lexeme,NULL,10);
+        const AstToken *token = ast_program_token(analyzer->program, expression->value_token);
+        if (token->type == TOKEN_CHAR_LITERAL) *bits = (unsigned char) token->lexeme[0];
+        else *bits = strtoull(token->lexeme, NULL, 10);
     } else if (expression->kind == AST_EXPR_NAME) {
-        if (same_name(analyzer->program,expression->value_token,"true")) *bits=1;
-        else if (same_name(analyzer->program,expression->value_token,"false")) *bits=0;
+        if (same_name(analyzer->program, expression->value_token, "true")) *bits = 1;
+        else if (same_name(analyzer->program, expression->value_token, "false")) *bits = 0;
         else {
-            if (!expression_is_constant_symbol(analyzer,expression)) return 0;
-            const AstExpression *initializer=constant_initializer(&analyzer->model->symbols[expression->resolved_symbol_id]);
+            if (!expression_is_constant_symbol(analyzer, expression)) return 0;
+            const AstExpression *initializer = constant_initializer(
+                &analyzer->model->symbols[expression->resolved_symbol_id]);
             if (!initializer || !initializer->folded_constant.lexeme) return 0;
-            const AstToken *value=&initializer->folded_constant;
-            *bits=value->type == TOKEN_CHAR_LITERAL ? (unsigned char)value->lexeme[0] :
-                  !strcmp(value->lexeme,"true") ? 1 : strtoull(value->lexeme,NULL,10);
+            const AstToken *value = &initializer->folded_constant;
+            *bits = value->type == TOKEN_CHAR_LITERAL
+                        ? (unsigned char) value->lexeme[0]
+                        : !strcmp(value->lexeme, "true")
+                              ? 1
+                              : strtoull(value->lexeme, NULL, 10);
         }
     } else if (expression->kind == AST_EXPR_CAST) {
-        const AstExpression *source=expression->arguments;
+        const AstExpression *source = expression->arguments;
         if (source && (source->resolved_type == TYPE_FLOAT || source->resolved_type == TYPE_DOUBLE)) {
             if (!source->folded_constant.lexeme &&
-                !fold_constant(analyzer,(AstExpression *)source,source->resolved_type)) return 0;
-            const char *text=source->folded_constant.lexeme ? source->folded_constant.lexeme :
-                             ast_program_lexeme(analyzer->program,source->value_token);
-            double value=strtod(text,NULL);
+                !fold_constant(analyzer, (AstExpression *) source, source->resolved_type))
+                return 0;
+            const char *text = source->folded_constant.lexeme
+                                   ? source->folded_constant.lexeme
+                                   : ast_program_lexeme(analyzer->program, source->value_token);
+            double value = strtod(text, NULL);
             if (data_type_unsigned(expression->resolved_type) && data_type_bytes(expression->resolved_type) == 8) {
                 if (!(value >= 0 && value < 0x1p64)) return 0;
-                *bits=(uint64_t)value;
+                *bits = (uint64_t) value;
             } else {
                 if (!(value >= -0x1p63 && value < 0x1p63)) return 0;
-                *bits=(uint64_t)(int64_t)value;
+                *bits = (uint64_t)(int64_t)
+                value;
             }
-        } else if (!fold_integer_bits(analyzer,source,bits)) return 0;
-        if (expression->resolved_type == TYPE_BIT) *bits=(*bits != 0);
+        } else if (!fold_integer_bits(analyzer, source, bits)) return 0;
+        if (expression->resolved_type == TYPE_BIT) *bits = (*bits != 0);
         else if (expression->resolved_type == TYPE_BYTE || expression->resolved_type == TYPE_CHAR) *bits &= 255;
     } else if (expression->kind == AST_EXPR_UNARY) {
-        if (!fold_integer_bits(analyzer,expression->right,bits)) return 0;
-        if (expression->operator_type == TOKEN_MINUS) *bits=0-*bits;
-        else if (expression->operator_type == TOKEN_BANG) *bits=(*bits == 0);
+        if (!fold_integer_bits(analyzer, expression->right, bits)) return 0;
+        if (expression->operator_type == TOKEN_MINUS) *bits = 0 - *bits;
+        else if (expression->operator_type == TOKEN_BANG) *bits = (*bits == 0);
         else return 0;
     } else if (expression->kind == AST_EXPR_BINARY) {
-        uint64_t a,b;
-        if (!fold_integer_bits(analyzer,expression->left,&a)) return 0;
-        if (expression->operator_type == TOKEN_AMP_AMP && !a) { *bits=0; return 1; }
-        if (expression->operator_type == TOKEN_PIPE_PIPE && a) { *bits=1; return 1; }
-        if (!fold_integer_bits(analyzer,expression->right,&b)) return 0;
-        DataType operation=data_type_promoted_integer(expression->left->resolved_type,expression->right->resolved_type);
-        if (data_type_fixed_integer(operation)) {
-            a=data_type_normalize_integer(a,operation); b=data_type_normalize_integer(b,operation);
+        uint64_t a, b;
+        if (!fold_integer_bits(analyzer, expression->left, &a)) return 0;
+        if (expression->operator_type == TOKEN_AMP_AMP && !a) {
+            *bits = 0;
+            return 1;
         }
-        int64_t x,y; memcpy(&x,&a,sizeof(x)); memcpy(&y,&b,sizeof(y));
-        int unsign=data_type_fixed_integer(operation) && data_type_unsigned(operation);
+        if (expression->operator_type == TOKEN_PIPE_PIPE && a) {
+            *bits = 1;
+            return 1;
+        }
+        if (!fold_integer_bits(analyzer, expression->right, &b)) return 0;
+        DataType operation = data_type_promoted_integer(expression->left->resolved_type,
+                                                        expression->right->resolved_type);
+        if (data_type_fixed_integer(operation)) {
+            a = data_type_normalize_integer(a, operation);
+            b = data_type_normalize_integer(b, operation);
+        }
+        int64_t x, y;
+        memcpy(&x, &a, sizeof(x));
+        memcpy(&y, &b, sizeof(y));
+        int unsign = data_type_fixed_integer(operation) && data_type_unsigned(operation);
         switch (expression->operator_type) {
-            case TOKEN_PLUS: *bits=a+b; break;
-            case TOKEN_MINUS: *bits=a-b; break;
-            case TOKEN_STAR: *bits=a*b; break;
-            case TOKEN_SLASH: case TOKEN_PERCENT:
+            case TOKEN_PLUS: *bits = a + b;
+                break;
+            case TOKEN_MINUS: *bits = a - b;
+                break;
+            case TOKEN_STAR: *bits = a * b;
+                break;
+            case TOKEN_SLASH:
+            case TOKEN_PERCENT:
                 if (!b || (!unsign && x == INT64_MIN && y == -1)) {
-                    semantic_error(analyzer,expression->first_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,
-                                   "Invalid division in constant expression"); return 0;
+                    semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                                   "Invalid division in constant expression");
+                    return 0;
                 }
-                *bits=unsign ? (expression->operator_type == TOKEN_SLASH ? a/b : a%b) :
-                              (uint64_t)(expression->operator_type == TOKEN_SLASH ? x/y : x%y); break;
-            case TOKEN_EQUAL_EQUAL: *bits=a == b; break;
-            case TOKEN_BANG_EQUAL: *bits=a != b; break;
-            case TOKEN_LESS: *bits=unsign ? a < b : x < y; break;
-            case TOKEN_LESS_EQUAL: *bits=unsign ? a <= b : x <= y; break;
-            case TOKEN_GREATER: *bits=unsign ? a > b : x > y; break;
-            case TOKEN_GREATER_EQUAL: *bits=unsign ? a >= b : x >= y; break;
-            case TOKEN_AMP_AMP: *bits=a && b; break;
-            case TOKEN_PIPE_PIPE: *bits=a || b; break;
+                *bits = unsign
+                            ? (expression->operator_type == TOKEN_SLASH ? a / b : a % b)
+                            : (uint64_t)(expression->operator_type == TOKEN_SLASH ? x / y : x % y);
+                break;
+            case TOKEN_EQUAL_EQUAL: *bits = a == b;
+                break;
+            case TOKEN_BANG_EQUAL: *bits = a != b;
+                break;
+            case TOKEN_LESS: *bits = unsign ? a < b : x < y;
+                break;
+            case TOKEN_LESS_EQUAL: *bits = unsign ? a <= b : x <= y;
+                break;
+            case TOKEN_GREATER: *bits = unsign ? a > b : x > y;
+                break;
+            case TOKEN_GREATER_EQUAL: *bits = unsign ? a >= b : x >= y;
+                break;
+            case TOKEN_AMP_AMP: *bits = a && b;
+                break;
+            case TOKEN_PIPE_PIPE: *bits = a || b;
+                break;
             default: return 0;
         }
     } else return 0;
     if (data_type_fixed_integer(expression->resolved_type))
-        *bits=data_type_normalize_integer(*bits,expression->resolved_type);
+        *bits = data_type_normalize_integer(*bits, expression->resolved_type);
     return 1;
 }
 
 static int fold_constant(Analyzer *analyzer, AstExpression *expression, DataType target) {
     if (expression == NULL) return 0;
     if (expression->folded_constant.lexeme != NULL && target == expression->resolved_type) return 1;
-    int fixed=data_type_fixed_integer(target) || data_type_fixed_integer(expression->resolved_type) ||
-        (expression->left && data_type_fixed_integer(expression->left->resolved_type)) ||
-        (expression->right && data_type_fixed_integer(expression->right->resolved_type)) ||
-        (expression->arguments && data_type_fixed_integer(expression->arguments->resolved_type));
+    int fixed = data_type_fixed_integer(target) || data_type_fixed_integer(expression->resolved_type) ||
+                (expression->left && data_type_fixed_integer(expression->left->resolved_type)) ||
+                (expression->right && data_type_fixed_integer(expression->right->resolved_type)) ||
+                (expression->arguments && data_type_fixed_integer(expression->arguments->resolved_type));
     uint64_t bits;
-    if (fixed && data_type_integral(target) && fold_integer_bits(analyzer,expression,&bits)) {
-        if (data_type_fixed_integer(target)) bits=data_type_normalize_integer(bits,target);
+    if (fixed && data_type_integral(target) && fold_integer_bits(analyzer, expression, &bits)) {
+        if (data_type_fixed_integer(target)) bits = data_type_normalize_integer(bits, target);
         char text[64];
-        int64_t signed_value; memcpy(&signed_value,&bits,sizeof(bits));
-        if (data_type_unsigned(target)) snprintf(text,sizeof(text),"%llu",(unsigned long long)bits);
-        else snprintf(text,sizeof(text),"%lld",(long long)signed_value);
-        expression->folded_constant=(AstToken){.type=TOKEN_NUMBER,.span=expression->span,
-            .lexeme=string_interner_intern(analyzer->program->strings,text)};
-        expression->resolved_type=target;
+        int64_t signed_value;
+        memcpy(&signed_value, &bits, sizeof(bits));
+        if (data_type_unsigned(target)) snprintf(text, sizeof(text), "%llu", (unsigned long long) bits);
+        else snprintf(text, sizeof(text), "%lld", (long long) signed_value);
+        expression->folded_constant = (AstToken)
+        {
+            .type = TOKEN_NUMBER,.span = expression->span,
+            .lexeme = string_interner_intern(analyzer->program->strings, text)
+        };
+        expression->resolved_type = target;
         return expression->folded_constant.lexeme != NULL;
     }
-    AstToken value = { .span = expression->span };
+    AstToken value = {.span = expression->span};
     if (expression->kind == AST_EXPR_LITERAL) {
         value = analyzer->program->tokens[expression->value_token];
     } else if (expression->kind == AST_EXPR_NAME) {
@@ -1358,8 +1481,11 @@ static int fold_constant(Analyzer *analyzer, AstExpression *expression, DataType
             return 0;
         }
     } else {
-        AstExpression *a = expression->kind == AST_EXPR_CAST ? expression->arguments :
-                           expression->kind == AST_EXPR_UNARY ? expression->right : expression->left;
+        AstExpression *a = expression->kind == AST_EXPR_CAST
+                               ? expression->arguments
+                               : expression->kind == AST_EXPR_UNARY
+                                     ? expression->right
+                                     : expression->left;
         AstExpression *b = expression->kind == AST_EXPR_BINARY ? expression->right : NULL;
         if (a == NULL || !fold_constant(analyzer, a, a->resolved_type)) return 0;
         double x = folded_number(a);
@@ -1370,21 +1496,21 @@ static int fold_constant(Analyzer *analyzer, AstExpression *expression, DataType
             if (!shorted && !fold_constant(analyzer, b, b->resolved_type)) return 0;
             if (a->resolved_type == TYPE_STRING || b->resolved_type == TYPE_STRING) {
                 if (expression->operator_type == TOKEN_EQUAL_EQUAL || expression->operator_type == TOKEN_BANG_EQUAL) {
-                    int equal=strcmp(a->folded_constant.lexeme, b->folded_constant.lexeme)==0;
-                    value.type=TOKEN_IDENTIFIER;
-                    value.lexeme=(expression->operator_type == TOKEN_EQUAL_EQUAL ? equal : !equal) ? "true" : "false";
-                    expression->folded_constant=value;
+                    int equal = strcmp(a->folded_constant.lexeme, b->folded_constant.lexeme) == 0;
+                    value.type = TOKEN_IDENTIFIER;
+                    value.lexeme = (expression->operator_type == TOKEN_EQUAL_EQUAL ? equal : !equal) ? "true" : "false";
+                    expression->folded_constant = value;
                     return 1;
                 }
                 if (expression->operator_type != TOKEN_PLUS) goto invalid;
                 char first[64], second[64];
-                const char *left=folded_string(a, first), *right=folded_string(b, second);
+                const char *left = folded_string(a, first), *right = folded_string(b, second);
                 size_t n = strlen(left), m = strlen(right);
-                if (n > SIZE_MAX-m-1) return 0;
-                char *joined = ast_program_alloc(analyzer->program, n+m+1);
+                if (n > SIZE_MAX - m - 1) return 0;
+                char *joined = ast_program_alloc(analyzer->program, n + m + 1);
                 if (joined == NULL) return 0;
                 memcpy(joined, left, n);
-                memcpy(joined+n, right, m+1);
+                memcpy(joined + n, right, m + 1);
                 value.type = TOKEN_STRING_LITERAL;
                 value.lexeme = joined;
                 expression->folded_constant = value;
@@ -1392,35 +1518,50 @@ static int fold_constant(Analyzer *analyzer, AstExpression *expression, DataType
             }
             double y = shorted ? 0 : folded_number(b);
             int float_operation = expression->resolved_type == TYPE_FLOAT ||
-                (expression->resolved_type == TYPE_BIT &&
-                 expression->operator_type != TOKEN_AMP_AMP &&
-                 expression->operator_type != TOKEN_PIPE_PIPE &&
-                 (a->resolved_type == TYPE_FLOAT || b->resolved_type == TYPE_FLOAT) &&
-                 a->resolved_type != TYPE_DOUBLE && b->resolved_type != TYPE_DOUBLE);
+                                  (expression->resolved_type == TYPE_BIT &&
+                                   expression->operator_type != TOKEN_AMP_AMP &&
+                                   expression->operator_type != TOKEN_PIPE_PIPE &&
+                                   (a->resolved_type == TYPE_FLOAT || b->resolved_type == TYPE_FLOAT) &&
+                                   a->resolved_type != TYPE_DOUBLE && b->resolved_type != TYPE_DOUBLE);
             if (float_operation) {
                 x = (double) (float) x;
                 y = (double) (float) y;
             }
             switch (expression->operator_type) {
-                case TOKEN_PLUS: result=x+y; break;
-                case TOKEN_MINUS: result=x-y; break;
-                case TOKEN_STAR: result=x*y; break;
+                case TOKEN_PLUS: result = x + y;
+                    break;
+                case TOKEN_MINUS: result = x - y;
+                    break;
+                case TOKEN_STAR: result = x * y;
+                    break;
                 case TOKEN_SLASH:
                 case TOKEN_PERCENT:
                     if (y == 0 && expression->resolved_type != TYPE_FLOAT && expression->resolved_type != TYPE_DOUBLE) {
-                        semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                                       "Division by zero in constant expression"); return 0;
+                        semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE,
+                                       ERR_TYPE_INVALID_OPERATION,
+                                       "Division by zero in constant expression");
+                        return 0;
                     }
-                    result = expression->operator_type == TOKEN_PERCENT ?
-                        (double)((long long)x % (long long)y) : x/y; break;
-                case TOKEN_EQUAL_EQUAL: result=x==y; break;
-                case TOKEN_BANG_EQUAL: result=x!=y; break;
-                case TOKEN_LESS: result=x<y; break;
-                case TOKEN_LESS_EQUAL: result=x<=y; break;
-                case TOKEN_GREATER: result=x>y; break;
-                case TOKEN_GREATER_EQUAL: result=x>=y; break;
-                case TOKEN_AMP_AMP: result=x!=0 && y!=0; break;
-                case TOKEN_PIPE_PIPE: result=x!=0 || y!=0; break;
+                    result = expression->operator_type == TOKEN_PERCENT
+                                 ? (double) ((long long) x % (long long) y)
+                                 : x / y;
+                    break;
+                case TOKEN_EQUAL_EQUAL: result = x == y;
+                    break;
+                case TOKEN_BANG_EQUAL: result = x != y;
+                    break;
+                case TOKEN_LESS: result = x < y;
+                    break;
+                case TOKEN_LESS_EQUAL: result = x <= y;
+                    break;
+                case TOKEN_GREATER: result = x > y;
+                    break;
+                case TOKEN_GREATER_EQUAL: result = x >= y;
+                    break;
+                case TOKEN_AMP_AMP: result = x != 0 && y != 0;
+                    break;
+                case TOKEN_PIPE_PIPE: result = x != 0 || y != 0;
+                    break;
                 default: goto invalid;
             }
         } else if (expression->kind == AST_EXPR_UNARY) {
@@ -1428,13 +1569,14 @@ static int fold_constant(Analyzer *analyzer, AstExpression *expression, DataType
         } else if (expression->kind != AST_EXPR_CAST) goto invalid;
         char buffer[64];
         if (target == TYPE_FLOAT || target == TYPE_DOUBLE) {
-            snprintf(buffer, sizeof(buffer), "%.17g", target == TYPE_FLOAT ? (double)(float)result : result);
+            snprintf(buffer, sizeof(buffer), "%.17g", target == TYPE_FLOAT ? (double) (float) result : result);
             value.type = TOKEN_FLOAT_LITERAL;
         } else {
             if (target == TYPE_BIT) result = result != 0;
             if (!(result >= INT32_MIN && result <= INT32_MAX)) {
                 semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                               "Integer overflow in constant expression"); return 0;
+                               "Integer overflow in constant expression");
+                return 0;
             }
             long long integer = (long long) result;
             if (target == TYPE_BYTE || target == TYPE_CHAR) integer = (unsigned char) integer;
@@ -1446,8 +1588,10 @@ static int fold_constant(Analyzer *analyzer, AstExpression *expression, DataType
     expression->folded_constant = value;
     /* Apply an explicit binding type to literal and referenced initializers too. */
     if (target != expression->resolved_type && target != TYPE_UNKNOWN) {
-        AstExpression cast = { .kind=AST_EXPR_CAST, .arguments=expression,
-                               .resolved_type=target, .span=expression->span };
+        AstExpression cast = {
+            .kind = AST_EXPR_CAST, .arguments = expression,
+            .resolved_type = target, .span = expression->span
+        };
         if (!fold_constant(analyzer, &cast, target)) return 0;
         expression->folded_constant = cast.folded_constant;
     }
@@ -1470,23 +1614,26 @@ static void validate_builtin_arguments(Analyzer *analyzer,
     if (core != NULL) {
         const AstExpression *argument = a;
         for (size_t i = 0; i < core->argument_count; ++i, argument = argument->next) {
-            if (argument == NULL) { valid = 0; break; }
+            if (argument == NULL) {
+                valid = 0;
+                break;
+            }
             CoreValueKind kind = core->arguments[i];
             int plain = argument->resolved_pointer_depth == 0 &&
                         argument->resolved_outer_pointer_depth == 0 &&
                         !argument->resolved_is_array && !argument->resolved_is_slice;
             if (kind == CORE_BYTES)
                 valid &= argument->resolved_type == TYPE_U8 &&
-                         argument->resolved_pointer_depth == 1 &&
-                         argument->resolved_outer_pointer_depth == 0 &&
-                         !argument->resolved_is_array && !argument->resolved_is_slice;
+                        argument->resolved_pointer_depth == 1 &&
+                        argument->resolved_outer_pointer_depth == 0 &&
+                        !argument->resolved_is_array && !argument->resolved_is_slice;
             else if (kind == CORE_STRING)
                 valid &= plain && argument->resolved_type == TYPE_STRING;
             else
                 valid &= plain && integral_expression(argument);
         }
     } else if (strcmp(name, "strlen") == 0 || strcmp(name, "strdup") == 0 ||
-        strcmp(name, "io_strlen") == 0 || strcmp(name, "io_str_to_int") == 0)
+               strcmp(name, "io_strlen") == 0 || strcmp(name, "io_str_to_int") == 0)
         valid = string_expression(a);
     else if (strcmp(name, "strcmp") == 0)
         valid = string_expression(a) && string_expression(b);
@@ -1510,23 +1657,27 @@ static void validate_builtin_arguments(Analyzer *analyzer,
     if (!valid) {
         const char *expected = "builtin parameter types";
         if (strcmp(name, "strlen") == 0 || strcmp(name, "strdup") == 0 ||
-            strcmp(name, "io_strlen") == 0 || strcmp(name, "io_str_to_int") == 0) expected = "(string)";
+            strcmp(name, "io_strlen") == 0 || strcmp(name, "io_str_to_int") == 0)
+            expected = "(string)";
         else if (strcmp(name, "strcmp") == 0) expected = "(string, string)";
         else if (strcmp(name, "strcpy") == 0 || strcmp(name, "strcat") == 0) expected = "(*char, string)";
         else if (strcmp(name, "malloc") == 0 || strcmp(name, "sys_close") == 0) expected = "(integral)";
         else if (strcmp(name, "sys_open") == 0) expected = "(string, integral, integral)";
-        else if (strcmp(name, "sys_read") == 0 || strcmp(name, "sys_write") == 0) expected = "(integral, string or pointer, integral)";
+        else if (strcmp(name, "sys_read") == 0 || strcmp(name, "sys_write") == 0)
+            expected = "(integral, string or pointer, integral)";
         else if (strcmp(name, "io_int_to_str") == 0) expected = "(integral, *char, integral)";
         else if (strcmp(name, "read") == 0) expected = "(integral, string)";
-        DiagnosticText message={0};
-        diagnostic_append(&message,"Builtin argument has an incompatible type for '%s'; expected %s; supplied types:",name,expected);
-        for (const AstExpression *argument=expression->arguments; argument; argument=argument->next) {
-            char length[32]; snprintf(length,sizeof(length),"%zu",argument->resolved_array_length);
-            diagnostic_append(&message," '");
-            diagnostic_type(&message,analyzer,argument->resolved_type,argument->resolved_named_symbol_id,
-                argument->resolved_pointer_depth,argument->resolved_outer_pointer_depth,
-                argument->resolved_is_array,argument->resolved_is_slice,length);
-            diagnostic_append(&message,"'");
+        DiagnosticText message = {0};
+        diagnostic_append(&message, "Builtin argument has an incompatible type for '%s'; expected %s; supplied types:",
+                          name, expected);
+        for (const AstExpression *argument = expression->arguments; argument; argument = argument->next) {
+            char length[32];
+            snprintf(length, sizeof(length), "%zu", argument->resolved_array_length);
+            diagnostic_append(&message, " '");
+            diagnostic_type(&message, analyzer, argument->resolved_type, argument->resolved_named_symbol_id,
+                            argument->resolved_pointer_depth, argument->resolved_outer_pointer_depth,
+                            argument->resolved_is_array, argument->resolved_is_slice, length);
+            diagnostic_append(&message, "'");
         }
         semantic_error(analyzer, expression->value_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
                        message.failed ? "Builtin argument has an incompatible type" : message.text);
@@ -1538,15 +1689,17 @@ static void validate_function_arguments(Analyzer *analyzer,
                                         const AstExpression *expression,
                                         const SemanticSymbol *function) {
     if (function == NULL || function->kind != SEMANTIC_SYMBOL_FUNCTION ||
-        function->declaration == NULL) return;
+        function->declaration == NULL)
+        return;
     size_t actual = 0;
     for (const AstExpression *argument = expression->arguments;
-         argument != NULL; argument = argument->next) actual++;
+         argument != NULL; argument = argument->next)
+        actual++;
     size_t expected = parameter_count(function->declaration);
     if (actual != expected) {
         char message[128];
         (void) snprintf(message, sizeof(message),
-            "Function expects %zu arguments but received %zu", expected, actual);
+                        "Function expects %zu arguments but received %zu", expected, actual);
         semantic_error(analyzer, expression->value_token,
                        ERROR_CATEGORY_SEMANTIC, ERR_SEM_WRONG_ARG_COUNT, message);
         return;
@@ -1554,9 +1707,9 @@ static void validate_function_arguments(Analyzer *analyzer,
     const AstExpression *argument = expression->arguments;
     const AstParameter *parameter = function->declaration->as.function.parameters;
     for (; argument != NULL && parameter != NULL;
-         argument = argument->next, parameter = parameter->next) {
+           argument = argument->next, parameter = parameter->next) {
         if (!expression_to_declared_type_allowed(analyzer, argument,
-                function->source_program, &parameter->type))
+                                                 function->source_program, &parameter->type))
             conversion_error(analyzer, argument, function->source_program, &parameter->type,
                              NULL, "Cannot implicitly convert argument to parameter type");
     }
@@ -1566,46 +1719,55 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
                                 int is_callee) {
     if (expression == NULL) return;
     if (expression->kind == AST_EXPR_TYPE_INFO) {
-        if (!is_callee) semantic_error(analyzer,expression->first_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,
-            "Type metadata is compile-time only; access .name, .size or .align, or use match");
-        if (expression->left) validate_expression(analyzer,expression->left,0);
+        if (!is_callee)
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                           "Type metadata is compile-time only; access .name, .size or .align, or use match");
+        if (expression->left) validate_expression(analyzer, expression->left, 0);
         return;
     }
-    if (expression->kind == AST_EXPR_TYPE_PROPERTY) { validate_expression(analyzer,expression->left,1); return; }
-    if ((expression->kind == AST_EXPR_ENUM_CONSTRUCT || expression->kind == AST_EXPR_ENUM_ACCESS || expression->kind == AST_EXPR_MEMBER) &&
+    if (expression->kind == AST_EXPR_TYPE_PROPERTY) {
+        validate_expression(analyzer, expression->left, 1);
+        return;
+    }
+    if ((expression->kind == AST_EXPR_ENUM_CONSTRUCT || expression->kind == AST_EXPR_ENUM_ACCESS || expression->kind ==
+         AST_EXPR_MEMBER) &&
         expression->resolved_symbol_id < analyzer->model->symbol_count) {
-        const SemanticSymbol *variant=&analyzer->model->symbols[expression->resolved_symbol_id];
-        if (variant->kind == SEMANTIC_SYMBOL_ENUM_VALUE && !same_package(analyzer->program,variant->source_program) &&
-            !((const AstEnumValue *)variant->node)->is_public)
-            semantic_error(analyzer,expression->first_token,ERROR_CATEGORY_SEMANTIC,ERR_PACKAGE_PRIVATE,"Enum variant is private to its defining package");
+        const SemanticSymbol *variant = &analyzer->model->symbols[expression->resolved_symbol_id];
+        if (variant->kind == SEMANTIC_SYMBOL_ENUM_VALUE && !same_package(analyzer->program, variant->source_program) &&
+            !((const AstEnumValue *) variant->node)->is_public)
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_SEMANTIC, ERR_PACKAGE_PRIVATE,
+                           "Enum variant is private to its defining package");
     }
     if (expression->kind == AST_EXPR_CALL && expression->resolved_symbol_id < analyzer->model->symbol_count) {
-        const SemanticSymbol *called=&analyzer->model->symbols[expression->resolved_symbol_id];
-        if (called->declaration && !called->declaration->is_public && !same_package(analyzer->program,called->source_program))
-            semantic_error(analyzer,expression->first_token,ERROR_CATEGORY_SEMANTIC,ERR_PACKAGE_PRIVATE,"Function is private to its defining package");
+        const SemanticSymbol *called = &analyzer->model->symbols[expression->resolved_symbol_id];
+        if (called->declaration && !called->declaration->is_public && !same_package(
+                analyzer->program, called->source_program))
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_SEMANTIC, ERR_PACKAGE_PRIVATE,
+                           "Function is private to its defining package");
     }
     if (expression->kind == AST_EXPR_MEMBER && expression->resolved_symbol_id < analyzer->model->symbol_count) {
-        const SemanticSymbol *member=&analyzer->model->symbols[expression->resolved_symbol_id];
-        if (!same_package(analyzer->program,member->source_program) &&
-            ((member->kind == SEMANTIC_SYMBOL_FIELD && !((const AstField *)member->node)->is_public) ||
+        const SemanticSymbol *member = &analyzer->model->symbols[expression->resolved_symbol_id];
+        if (!same_package(analyzer->program, member->source_program) &&
+            ((member->kind == SEMANTIC_SYMBOL_FIELD && !((const AstField *) member->node)->is_public) ||
              (member->kind == SEMANTIC_SYMBOL_FUNCTION && member->declaration && !member->declaration->is_public)))
-            semantic_error(analyzer,expression->value_token,ERROR_CATEGORY_SEMANTIC,ERR_PACKAGE_PRIVATE,"Member is private to its defining package");
+            semantic_error(analyzer, expression->value_token, ERROR_CATEGORY_SEMANTIC, ERR_PACKAGE_PRIVATE,
+                           "Member is private to its defining package");
     }
     if (expression->kind == AST_EXPR_ENUM_ACCESS) {
         if (expression->arguments != NULL)
-            semantic_error(analyzer,expression->first_token,ERROR_CATEGORY_SEMANTIC,
-                ERR_SEM_WRONG_ARG_COUNT,"Enum payload accessor expects no arguments");
-        validate_expression(analyzer,expression->left->left,0);
-        for (AstExpression *a=expression->arguments; a; a=a->next) validate_expression(analyzer,a,0);
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_SEMANTIC,
+                           ERR_SEM_WRONG_ARG_COUNT, "Enum payload accessor expects no arguments");
+        validate_expression(analyzer, expression->left->left, 0);
+        for (AstExpression *a = expression->arguments; a; a = a->next) validate_expression(analyzer, a, 0);
         return;
     }
     if (!is_callee && expression->kind == AST_EXPR_MEMBER &&
         expression->resolved_symbol_id < analyzer->model->symbol_count &&
         analyzer->model->symbols[expression->resolved_symbol_id].kind == SEMANTIC_SYMBOL_ENUM_VALUE) {
-        const SemanticSymbol *variant=&analyzer->model->symbols[expression->resolved_symbol_id];
-        const AstEnumValue *value=variant->node;
+        const SemanticSymbol *variant = &analyzer->model->symbols[expression->resolved_symbol_id];
+        const AstEnumValue *value = variant->node;
         if (value && value->payload_types)
-            semantic_error(analyzer,expression->first_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                            "Payload variant requires constructor arguments");
     }
     if (expression->token_count > 512U && !analyzer->complexity_error_reported) {
@@ -1618,9 +1780,10 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
         analyzer->model->symbols[expression->resolved_symbol_id].kind == SEMANTIC_SYMBOL_FUNCTION) {
         const SemanticSymbol *method = &analyzer->model->symbols[expression->resolved_symbol_id];
         ErrorContext *context = error_context_create(SEVERITY_ERROR,
-            expression->span.begin.line, expression->span.begin.column,
-            ERROR_CATEGORY_SEMANTIC, ERR_SEM_METHOD_REFERENCE, analyzer->program->source_path,
-            "Methods cannot be used as values; call the method with parentheses");
+                                                     expression->span.begin.line, expression->span.begin.column,
+                                                     ERROR_CATEGORY_SEMANTIC, ERR_SEM_METHOD_REFERENCE,
+                                                     analyzer->program->source_path,
+                                                     "Methods cannot be used as values; call the method with parentheses");
         error_context_set_span(context, expression->span.end.line, expression->span.end.column);
         size_t candidates = 0;
         const char *name = ast_program_lexeme(analyzer->program, expression->value_token);
@@ -1628,11 +1791,12 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
             const SemanticSymbol *symbol = &analyzer->model->symbols[i];
             if (symbol->kind == SEMANTIC_SYMBOL_FUNCTION &&
                 symbol->owner_symbol_id == method->owner_symbol_id &&
-                same_name(symbol->source_program, symbol->name_token, name)) candidates++;
+                same_name(symbol->source_program, symbol->name_token, name))
+                candidates++;
         }
         const AstExpression *receiver = expression->left;
         int type_receiver = receiver->resolved_symbol_id < analyzer->model->symbol_count &&
-            analyzer->model->symbols[receiver->resolved_symbol_id].kind == SEMANTIC_SYMBOL_STRUCT;
+                            analyzer->model->symbols[receiver->resolved_symbol_id].kind == SEMANTIC_SYMBOL_STRUCT;
         if (candidates == 1 && method->declaration != NULL && parameter_count(method->declaration) == 0 &&
             method->declaration->as.function.is_static == type_receiver &&
             primitive_type(method->source_program, &method->declared_type) != TYPE_VOID) {
@@ -1640,9 +1804,10 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
             const AstToken *name_location = ast_program_token(analyzer->program, expression->value_token);
             if (name_location != NULL)
                 error_context_set_fix(context, name_location->span.end.line, name_location->span.end.column,
-                    name_location->span.end.line, name_location->span.end.column, "()");
-        } else error_context_set_suggestion(context,
-            "Call the method with the required arguments and a valid receiver; method references are unsupported");
+                                      name_location->span.end.line, name_location->span.end.column, "()");
+        } else
+            error_context_set_suggestion(context,
+                                         "Call the method with the required arguments and a valid receiver; method references are unsupported");
         error_report_context(global_error_handler, context);
         if (global_error_handler == NULL || !global_error_handler->buffered) error_context_free(context);
         analyzer->model->error_count++;
@@ -1651,23 +1816,26 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
     }
     if (expression->kind == AST_EXPR_ENUM_CONSTRUCT) {
         if (expression->resolved_symbol_id >= analyzer->model->symbol_count) return;
-        const SemanticSymbol *variant=&analyzer->model->symbols[expression->resolved_symbol_id];
-        const AstEnumValue *value=(const AstEnumValue *)variant->node;
-        const AstTypeArgument *payload=value->payload_types;
-        AstExpression *argument=expression->arguments;
-        for (; payload && argument; payload=payload->next,argument=argument->next) {
-            if (!expression_to_declared_type_allowed(analyzer,argument,variant->source_program,&payload->type))
-                conversion_error(analyzer,argument,variant->source_program,&payload->type,NULL,"Enum payload type mismatch");
-            validate_expression(analyzer,argument,0);
+        const SemanticSymbol *variant = &analyzer->model->symbols[expression->resolved_symbol_id];
+        const AstEnumValue *value = (const AstEnumValue *) variant->node;
+        const AstTypeArgument *payload = value->payload_types;
+        AstExpression *argument = expression->arguments;
+        for (; payload && argument; payload = payload->next, argument = argument->next) {
+            if (!expression_to_declared_type_allowed(analyzer, argument, variant->source_program, &payload->type))
+                conversion_error(analyzer, argument, variant->source_program, &payload->type, NULL,
+                                 "Enum payload type mismatch");
+            validate_expression(analyzer, argument, 0);
         }
-        if (payload || argument) semantic_error(analyzer,expression->first_token,
-            ERROR_CATEGORY_SEMANTIC,ERR_SEM_WRONG_ARG_COUNT,"Enum constructor payload argument count mismatch");
+        if (payload || argument)
+            semantic_error(analyzer, expression->first_token,
+                           ERROR_CATEGORY_SEMANTIC, ERR_SEM_WRONG_ARG_COUNT,
+                           "Enum constructor payload argument count mismatch");
         return;
     }
     if (expression->kind == AST_EXPR_CALL) {
         if (expression->left != NULL && expression->left->kind == AST_EXPR_NAME) {
             const char *name = ast_program_lexeme(analyzer->program,
-                                                   expression->left->value_token);
+                                                  expression->left->value_token);
             TokenType token_type = analyzer->program->tokens[
                 expression->left->value_token].type;
             int cast = token_type >= TOKEN_TYPE_INT && token_type <= TOKEN_TYPE_VOID;
@@ -1675,11 +1843,11 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
                 !is_builtin_name(name) && !cast) {
                 int ambiguous = 0;
                 const SemanticSymbol *viable = resolve_overload(analyzer, name,
-                    AST_SYMBOL_NONE, 0, expression->arguments, &ambiguous);
+                                                                AST_SYMBOL_NONE, 0, expression->arguments, &ambiguous);
                 (void) viable;
                 char message[MAX_TOKEN + 32];
                 const SemanticSymbol *declared = scoped_find_global(analyzer->model, analyzer->program, name,
-                    SEMANTIC_SYMBOL_FUNCTION);
+                                                                    SEMANTIC_SYMBOL_FUNCTION);
                 if (declared != NULL)
                     overload_error(analyzer, expression, name, AST_SYMBOL_NONE, 0, ambiguous);
                 else {
@@ -1691,30 +1859,31 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
                        is_builtin_name(name)) {
                 size_t actual = 0;
                 for (AstExpression *argument = expression->arguments;
-                     argument != NULL; argument = argument->next) actual++;
+                     argument != NULL; argument = argument->next)
+                    actual++;
                 size_t expected = builtin_arity(name);
                 if (expected != AST_TOKEN_NONE && actual != expected) {
                     char message[128];
                     (void) snprintf(message, sizeof(message),
-                        "Function expects %zu arguments but received %zu", expected, actual);
+                                    "Function expects %zu arguments but received %zu", expected, actual);
                     semantic_error(analyzer, expression->left->value_token,
                                    ERROR_CATEGORY_SEMANTIC, ERR_SEM_WRONG_ARG_COUNT, message);
                 } else validate_builtin_arguments(analyzer, expression, name);
             } else if (expression->resolved_symbol_id < analyzer->model->symbol_count)
                 validate_function_arguments(analyzer, expression,
-                    &analyzer->model->symbols[expression->resolved_symbol_id]);
+                                            &analyzer->model->symbols[expression->resolved_symbol_id]);
         } else validate_expression(analyzer, expression->left, 1);
         if (expression->left != NULL && expression->left->kind == AST_EXPR_MEMBER &&
             expression->resolved_symbol_id < analyzer->model->symbol_count) {
             const SemanticSymbol *method =
-                &analyzer->model->symbols[expression->resolved_symbol_id];
+                    &analyzer->model->symbols[expression->resolved_symbol_id];
             const AstExpression *receiver = expression->left->left;
             int type_receiver = receiver != NULL &&
-                receiver->resolved_symbol_id < analyzer->model->symbol_count &&
-                (analyzer->model->symbols[receiver->resolved_symbol_id].kind ==
-                     SEMANTIC_SYMBOL_STRUCT ||
-                 analyzer->model->symbols[receiver->resolved_symbol_id].kind ==
-                     SEMANTIC_SYMBOL_ENUM);
+                                receiver->resolved_symbol_id < analyzer->model->symbol_count &&
+                                (analyzer->model->symbols[receiver->resolved_symbol_id].kind ==
+                                 SEMANTIC_SYMBOL_STRUCT ||
+                                 analyzer->model->symbols[receiver->resolved_symbol_id].kind ==
+                                 SEMANTIC_SYMBOL_ENUM);
             if (method->kind == SEMANTIC_SYMBOL_FUNCTION && method->declaration != NULL &&
                 !method->declaration->as.function.is_static && type_receiver)
                 semantic_error(analyzer, expression->value_token,
@@ -1732,10 +1901,10 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
                    expression->left->left != NULL) {
             const AstExpression *receiver = expression->left->left;
             int type_receiver = receiver->resolved_symbol_id < analyzer->model->symbol_count &&
-                (analyzer->model->symbols[receiver->resolved_symbol_id].kind ==
-                     SEMANTIC_SYMBOL_STRUCT ||
-                 analyzer->model->symbols[receiver->resolved_symbol_id].kind ==
-                     SEMANTIC_SYMBOL_ENUM);
+                                (analyzer->model->symbols[receiver->resolved_symbol_id].kind ==
+                                 SEMANTIC_SYMBOL_STRUCT ||
+                                 analyzer->model->symbols[receiver->resolved_symbol_id].kind ==
+                                 SEMANTIC_SYMBOL_ENUM);
             int ambiguous = 0;
             const char *name = ast_program_lexeme(analyzer->program,
                                                   expression->left->value_token);
@@ -1745,38 +1914,41 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
                            type_receiver, ambiguous);
         }
         for (AstExpression *argument = expression->arguments; argument != NULL;
-             argument = argument->next) validate_expression(analyzer, argument, 0);
+             argument = argument->next)
+            validate_expression(analyzer, argument, 0);
         return;
     }
     validate_expression(analyzer, expression->left, 0);
     validate_expression(analyzer, expression->right, 0);
     for (AstExpression *argument = expression->arguments; argument != NULL;
-         argument = argument->next) validate_expression(analyzer, argument, 0);
+         argument = argument->next)
+        validate_expression(analyzer, argument, 0);
     if (expression->kind != AST_EXPR_NAME &&
         ((expression->left != NULL && expression->left->resolved_type == TYPE_UNKNOWN &&
           expression->left->resolved_named_symbol_id == AST_SYMBOL_NONE) ||
          (expression->right != NULL && expression->right->resolved_type == TYPE_UNKNOWN &&
-          expression->right->resolved_named_symbol_id == AST_SYMBOL_NONE))) return;
+          expression->right->resolved_named_symbol_id == AST_SYMBOL_NONE)))
+        return;
     if (expression->kind == AST_EXPR_UNARY && expression->operator_type == TOKEN_AMPERSAND &&
         !assignable_expression(analyzer, expression->right)) {
         operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                       "Address-of requires a mutable lvalue");
+                      "Address-of requires a mutable lvalue");
     } else if (expression->kind == AST_EXPR_UNARY && expression->operator_type == TOKEN_STAR &&
-        expression->right != NULL && expression->right->resolved_pointer_depth == 0 &&
-        expression->right->resolved_outer_pointer_depth == 0) {
+               expression->right != NULL && expression->right->resolved_pointer_depth == 0 &&
+               expression->right->resolved_outer_pointer_depth == 0) {
         operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                       "Dereference requires a pointer");
+                      "Dereference requires a pointer");
     } else if (expression->kind == AST_EXPR_UNARY &&
                (expression->operator_type == TOKEN_MINUS ||
                 expression->operator_type == TOKEN_BANG) &&
                !plain_numeric_expression(expression->right)) {
         operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                       "Unary numeric operator requires a numeric operand");
+                      "Unary numeric operator requires a numeric operand");
     } else if (expression->kind == AST_EXPR_UNARY &&
                expression->operator_type == TOKEN_MINUS && expression->right != NULL &&
                expression->right->resolved_type == TYPE_BIT) {
         operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                       "Boolean values do not support arithmetic");
+                      "Boolean values do not support arithmetic");
     } else if (expression->kind == AST_EXPR_BINARY && expression->left != NULL &&
                expression->right != NULL) {
         TokenType operation = expression->operator_type;
@@ -1785,44 +1957,44 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
         int equality = operation == TOKEN_EQUAL_EQUAL || operation == TOKEN_BANG_EQUAL;
         int relational = operation >= TOKEN_LESS && operation <= TOKEN_GREATER_EQUAL;
         int string_concat = operation == TOKEN_PLUS &&
-            (expression->left->resolved_type == TYPE_STRING ||
-             expression->right->resolved_type == TYPE_STRING);
+                            (expression->left->resolved_type == TYPE_STRING ||
+                             expression->right->resolved_type == TYPE_STRING);
         if ((pointer_expression(expression->left) || pointer_expression(expression->right)) &&
             !equality && !string_concat)
             operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                           "Pointer arithmetic is not supported");
+                          "Pointer arithmetic is not supported");
         if (operation == TOKEN_PERCENT &&
             (expression->left->resolved_type == TYPE_FLOAT ||
              expression->left->resolved_type == TYPE_DOUBLE ||
              expression->right->resolved_type == TYPE_FLOAT ||
              expression->right->resolved_type == TYPE_DOUBLE))
             operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                           "Remainder requires integer operands");
+                          "Remainder requires integer operands");
         if (string_concat &&
             (!(string_expression(expression->left) ||
                plain_numeric_expression(expression->left)) ||
              !(string_expression(expression->right) ||
                plain_numeric_expression(expression->right))))
             operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                           "String concatenation requires scalar operands");
+                          "String concatenation requires scalar operands");
         else if (arithmetic && !string_concat &&
                  (!plain_numeric_expression(expression->left) ||
                   !plain_numeric_expression(expression->right)))
             operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                           "Arithmetic requires numeric operands");
+                          "Arithmetic requires numeric operands");
         else if (arithmetic && !string_concat &&
                  (expression->left->resolved_type == TYPE_BIT ||
                   expression->right->resolved_type == TYPE_BIT))
             operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                           "Boolean values do not support arithmetic");
+                          "Boolean values do not support arithmetic");
         if (logical && (!plain_numeric_expression(expression->left) ||
                         !plain_numeric_expression(expression->right)))
             operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                           "Logical operators require numeric operands");
+                          "Logical operators require numeric operands");
         if (relational && (!plain_numeric_expression(expression->left) ||
                            !plain_numeric_expression(expression->right)))
             operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                           "Relational comparison requires numeric operands");
+                          "Relational comparison requires numeric operands");
         if (equality) {
             unsigned left_depth = expression->left->resolved_pointer_depth +
                                   expression->left->resolved_outer_pointer_depth;
@@ -1834,74 +2006,83 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
                           expression->right->resolved_type == TYPE_STRING &&
                           left_depth == 0 && right_depth == 0;
             int pointers = left_depth != 0 && left_depth == right_depth &&
-                !(expression->left->resolved_is_slice && !expression->left->resolved_outer_pointer_depth) &&
-                expression->left->resolved_pointer_depth == expression->right->resolved_pointer_depth &&
-                expression->left->resolved_outer_pointer_depth == expression->right->resolved_outer_pointer_depth &&
-                expression->left->resolved_array_length == expression->right->resolved_array_length &&
-                expression->left->resolved_is_array == expression->right->resolved_is_array &&
-                expression->left->resolved_is_slice == expression->right->resolved_is_slice &&
-                expression->left->resolved_type == expression->right->resolved_type &&
-                expression->left->resolved_named_symbol_id ==
-                    expression->right->resolved_named_symbol_id;
+                           !(expression->left->resolved_is_slice && !expression->left->resolved_outer_pointer_depth) &&
+                           expression->left->resolved_pointer_depth == expression->right->resolved_pointer_depth &&
+                           expression->left->resolved_outer_pointer_depth == expression->right->
+                           resolved_outer_pointer_depth &&
+                           expression->left->resolved_array_length == expression->right->resolved_array_length &&
+                           expression->left->resolved_is_array == expression->right->resolved_is_array &&
+                           expression->left->resolved_is_slice == expression->right->resolved_is_slice &&
+                           expression->left->resolved_type == expression->right->resolved_type &&
+                           expression->left->resolved_named_symbol_id ==
+                           expression->right->resolved_named_symbol_id;
             int named = left_depth == 0 && right_depth == 0 &&
-                expression->left->resolved_named_symbol_id != AST_SYMBOL_NONE &&
-                expression->left->resolved_named_symbol_id ==
-                    expression->right->resolved_named_symbol_id &&
-                expression->left->resolved_named_symbol_id < analyzer->model->symbol_count &&
-                analyzer->model->symbols[expression->left->resolved_named_symbol_id].kind ==
-                    SEMANTIC_SYMBOL_ENUM &&
-                !analyzer->model->symbols[expression->left->resolved_named_symbol_id].declaration->as.enum_decl.is_sum;
+                        expression->left->resolved_named_symbol_id != AST_SYMBOL_NONE &&
+                        expression->left->resolved_named_symbol_id ==
+                        expression->right->resolved_named_symbol_id &&
+                        expression->left->resolved_named_symbol_id < analyzer->model->symbol_count &&
+                        analyzer->model->symbols[expression->left->resolved_named_symbol_id].kind ==
+                        SEMANTIC_SYMBOL_ENUM &&
+                        !analyzer->model->symbols[expression->left->resolved_named_symbol_id].declaration->as.enum_decl.
+                        is_sum;
             if (!numeric && !strings && !pointers && !named)
                 operand_error(analyzer, expression,
-                               ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
-                               "Equality comparison requires compatible operands");
+                              ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
+                              "Equality comparison requires compatible operands");
         }
     } else if (expression->kind == AST_EXPR_INDEX && expression->left != NULL) {
         if (!pointer_expression(expression->left))
             operand_error(analyzer, expression, ERROR_CATEGORY_SEMANTIC, ERR_SEM_NOT_ARRAY,
-                           "Indexing requires an array or pointer");
+                          "Indexing requires an array or pointer");
         if (!integral_expression(expression->right))
             operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                           "Array index must be integral");
-        if (expression->resolved_type == TYPE_VOID && !expression->resolved_pointer_depth && !expression->resolved_outer_pointer_depth)
-            operand_error(analyzer,expression,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,"Indexing requires a complete non-void element type");
+                          "Array index must be integral");
+        if (expression->resolved_type == TYPE_VOID && !expression->resolved_pointer_depth && !expression->
+            resolved_outer_pointer_depth)
+            operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                          "Indexing requires a complete non-void element type");
     } else if (expression->kind == AST_EXPR_CAST) {
         const AstExpression *argument = expression->arguments;
-        int pointer_cast=argument && argument->next == NULL &&
-            (argument->resolved_pointer_depth || argument->resolved_outer_pointer_depth) &&
-            ((!argument->resolved_is_array && !argument->resolved_is_slice) || argument->resolved_outer_pointer_depth) &&
-            (expression->allocated_type.pointer_depth || expression->allocated_type.outer_pointer_depth) &&
-            ((!expression->allocated_type.is_array && !expression->allocated_type.is_slice) || expression->allocated_type.outer_pointer_depth) &&
-            known_declared_type(analyzer,&expression->allocated_type);
+        int pointer_cast = argument && argument->next == NULL &&
+                           (argument->resolved_pointer_depth || argument->resolved_outer_pointer_depth) &&
+                           ((!argument->resolved_is_array && !argument->resolved_is_slice) || argument->
+                            resolved_outer_pointer_depth) &&
+                           (expression->allocated_type.pointer_depth || expression->allocated_type.outer_pointer_depth)
+                           &&
+                           ((!expression->allocated_type.is_array && !expression->allocated_type.is_slice) || expression
+                            ->allocated_type.outer_pointer_depth) &&
+                           known_declared_type(analyzer, &expression->allocated_type);
         if (!pointer_cast && (argument == NULL || argument->next != NULL ||
-            !plain_numeric_expression(argument) ||
-            expression->resolved_type == TYPE_VOID ||
-            expression->resolved_type == TYPE_STRING ||
-            expression->resolved_type == TYPE_UNKNOWN ||
-            expression->allocated_type.pointer_depth != 0 ||
-            expression->allocated_type.outer_pointer_depth != 0 ||
-            expression->allocated_type.is_array || expression->allocated_type.is_slice))
+                              !plain_numeric_expression(argument) ||
+                              expression->resolved_type == TYPE_VOID ||
+                              expression->resolved_type == TYPE_STRING ||
+                              expression->resolved_type == TYPE_UNKNOWN ||
+                              expression->allocated_type.pointer_depth != 0 ||
+                              expression->allocated_type.outer_pointer_depth != 0 ||
+                              expression->allocated_type.is_array || expression->allocated_type.is_slice))
             operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                           "Cast requires one numeric value and a numeric target type, or two pointer types");
+                          "Cast requires one numeric value and a numeric target type, or two pointer types");
     } else if (expression->kind == AST_EXPR_SLICE) {
-        const AstExpression *data=expression->left,*length=expression->right;
-        if (!data || !data->resolved_pointer_depth || data->resolved_outer_pointer_depth || data->resolved_is_array || data->resolved_is_slice ||
+        const AstExpression *data = expression->left, *length = expression->right;
+        if (!data || !data->resolved_pointer_depth || data->resolved_outer_pointer_depth || data->resolved_is_array ||
+            data->resolved_is_slice ||
             (data->resolved_type == TYPE_VOID && data->resolved_pointer_depth == 1) || !integral_expression(length))
-            operand_error(analyzer,expression,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,"slice requires a typed element pointer and an integral length");
+            operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                          "slice requires a typed element pointer and an integral length");
     } else if (expression->kind == AST_EXPR_FREE) {
         const AstExpression *argument = expression->arguments;
         if (argument == NULL || argument->next != NULL ||
             ((!pointer_expression(argument) && argument->resolved_type != TYPE_STRING) ||
-                ((argument->resolved_is_array || argument->resolved_is_slice) && !argument->resolved_outer_pointer_depth)))
+             ((argument->resolved_is_array || argument->resolved_is_slice) && !argument->resolved_outer_pointer_depth)))
             operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                           "free requires one pointer or owned string");
+                          "free requires one pointer or owned string");
     } else if (expression->kind == AST_EXPR_RESERVE) {
         const AstType *allocated = &expression->allocated_type;
         if (!known_declared_type(analyzer, allocated) ||
             (primitive_type(analyzer->program, allocated) == TYPE_VOID &&
              allocated->pointer_depth == 0 && allocated->outer_pointer_depth == 0))
             operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                           "reserve requires one complete sized non-void type");
+                          "reserve requires one complete sized non-void type");
     }
     if (expression->kind == AST_EXPR_NAME && !is_callee &&
         expression->resolved_symbol_id == AST_SYMBOL_NONE) {
@@ -1916,12 +2097,13 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
         if (constant_integer(analyzer, expression->right, &index) &&
             expression->left->resolved_symbol_id < analyzer->model->symbol_count) {
             const SemanticSymbol *base =
-                &analyzer->model->symbols[expression->left->resolved_symbol_id];
+                    &analyzer->model->symbols[expression->left->resolved_symbol_id];
             if (base->declared_type.is_array &&
                 base->declared_type.array_length_token < analyzer->program->token_count) {
-                long long length = (long long)base->declared_type.resolved_array_length;
-                if (length == 0) length = strtoll(ast_program_lexeme(base->source_program,
-                    base->declared_type.array_length_token), NULL, 10);
+                long long length = (long long) base->declared_type.resolved_array_length;
+                if (length == 0)
+                    length = strtoll(ast_program_lexeme(base->source_program,
+                                                        base->declared_type.array_length_token), NULL, 10);
                 if (index < 0 || index >= length)
                     semantic_error(analyzer, expression->right->value_token,
                                    ERROR_CATEGORY_SEMANTIC, ERR_SEM_INDEX_OUT_OF_BOUNDS,
@@ -1940,12 +2122,12 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
     } else if (expression->kind == AST_EXPR_MEMBER && expression->left != NULL &&
                expression->resolved_symbol_id < analyzer->model->symbol_count &&
                analyzer->model->symbols[expression->resolved_symbol_id].kind ==
-                   SEMANTIC_SYMBOL_FIELD &&
+               SEMANTIC_SYMBOL_FIELD &&
                expression->left->resolved_symbol_id < analyzer->model->symbol_count &&
                (analyzer->model->symbols[expression->left->resolved_symbol_id].kind ==
-                    SEMANTIC_SYMBOL_STRUCT ||
+                SEMANTIC_SYMBOL_STRUCT ||
                 analyzer->model->symbols[expression->left->resolved_symbol_id].kind ==
-                    SEMANTIC_SYMBOL_ENUM)) {
+                SEMANTIC_SYMBOL_ENUM)) {
         semantic_error(analyzer, expression->value_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                        "Instance field requires a value receiver");
     }
@@ -1955,12 +2137,13 @@ static int statement_always_returns(const AstStatement *statement) {
     for (; statement != NULL; statement = statement->next) {
         if (statement->kind == AST_STMT_MATCH && statement->match_exhaustive) {
             if (statement->is_type_match) {
-                if (statement->selected_type_arm && statement_always_returns(statement->selected_type_arm->body)) return 1;
+                if (statement->selected_type_arm && statement_always_returns(statement->selected_type_arm->body)) return
+                        1;
                 continue;
             }
-            int all=statement->match_arms != NULL;
-            for (const AstMatchArm *a=statement->match_arms; a; a=a->next)
-                if (!statement_always_returns(a->body)) all=0;
+            int all = statement->match_arms != NULL;
+            for (const AstMatchArm *a = statement->match_arms; a; a = a->next)
+                if (!statement_always_returns(a->body)) all = 0;
             if (all) return 1;
         }
         if (statement->kind == AST_STMT_RETURN) return 1;
@@ -1968,14 +2151,16 @@ static int statement_always_returns(const AstStatement *statement) {
             return 1;
         if (statement->kind == AST_STMT_IF && statement->else_body != NULL &&
             statement_always_returns(statement->body) &&
-            statement_always_returns(statement->else_body)) return 1;
+            statement_always_returns(statement->else_body))
+            return 1;
     }
     return 0;
 }
 
 static int known_declared_type(const Analyzer *analyzer, const AstType *type) {
     if (type == NULL || type->kind == AST_TYPE_INFERRED ||
-        primitive_type(analyzer->program, type) != TYPE_UNKNOWN) return 1;
+        primitive_type(analyzer->program, type) != TYPE_UNKNOWN)
+        return 1;
     return resolve_named_symbol_id(analyzer, analyzer->program,
                                    named_type_token(analyzer->program, type)) != AST_SYMBOL_NONE;
 }
@@ -1983,14 +2168,17 @@ static int known_declared_type(const Analyzer *analyzer, const AstType *type) {
 static int aggregate_reaches(const Analyzer *analyzer, size_t current_symbol,
                              size_t target_symbol, size_t depth) {
     if (current_symbol >= analyzer->model->symbol_count ||
-        depth > analyzer->model->symbol_count) return 1;
+        depth > analyzer->model->symbol_count)
+        return 1;
     const SemanticSymbol *current = &analyzer->model->symbols[current_symbol];
     if (current->kind == SEMANTIC_SYMBOL_ENUM && current->declaration != NULL) {
-        for (const AstEnumValue *v=current->declaration->as.enum_decl.values; v; v=v->next)
-            for (const AstTypeArgument *p=v->payload_types; p; p=p->next) {
+        for (const AstEnumValue *v = current->declaration->as.enum_decl.values; v; v = v->next)
+            for (const AstTypeArgument *p = v->payload_types; p; p = p->next) {
                 if (p->type.pointer_depth || p->type.outer_pointer_depth || p->type.is_slice) continue;
-                size_t child=resolve_named_symbol_id(analyzer,current->source_program,named_type_token(current->source_program,&p->type));
-                if (child == target_symbol || (child != AST_SYMBOL_NONE && aggregate_reaches(analyzer,child,target_symbol,depth+1))) return 1;
+                size_t child = resolve_named_symbol_id(analyzer, current->source_program,
+                                                       named_type_token(current->source_program, &p->type));
+                if (child == target_symbol || (child != AST_SYMBOL_NONE && aggregate_reaches(
+                                                   analyzer, child, target_symbol, depth + 1))) return 1;
             }
         return 0;
     }
@@ -1998,12 +2186,14 @@ static int aggregate_reaches(const Analyzer *analyzer, size_t current_symbol,
     for (const AstField *field = current->declaration->as.struct_decl.fields;
          field != NULL; field = field->next) {
         if (field->type.pointer_depth != 0 || field->type.outer_pointer_depth != 0 ||
-            field->type.is_slice) continue;
+            field->type.is_slice)
+            continue;
         size_t named = named_type_token(current->source_program, &field->type);
         size_t child = resolve_named_symbol_id(analyzer, current->source_program, named);
         if (child == target_symbol ||
             (child != AST_SYMBOL_NONE &&
-             aggregate_reaches(analyzer, child, target_symbol, depth + 1U))) return 1;
+             aggregate_reaches(analyzer, child, target_symbol, depth + 1U)))
+            return 1;
     }
     return 0;
 }
@@ -2011,30 +2201,34 @@ static int aggregate_reaches(const Analyzer *analyzer, size_t current_symbol,
 static size_t semantic_symbol_slots(const Analyzer *analyzer, size_t symbol_id,
                                     size_t depth) {
     if (symbol_id >= analyzer->model->symbol_count ||
-        depth > analyzer->model->symbol_count) return SIZE_MAX;
+        depth > analyzer->model->symbol_count)
+        return SIZE_MAX;
     const SemanticSymbol *symbol = &analyzer->model->symbols[symbol_id];
     if (symbol->kind == SEMANTIC_SYMBOL_ENUM && symbol->declaration) {
-        size_t largest=0;
-        for (const AstEnumValue *v=symbol->declaration->as.enum_decl.values; v; v=v->next) {
-            size_t payload=0;
-            for (const AstTypeArgument *p=v->payload_types; p; p=p->next) {
-                size_t slots=p->type.is_slice && !p->type.outer_pointer_depth ? 2 : 1;
+        size_t largest = 0;
+        for (const AstEnumValue *v = symbol->declaration->as.enum_decl.values; v; v = v->next) {
+            size_t payload = 0;
+            for (const AstTypeArgument *p = v->payload_types; p; p = p->next) {
+                size_t slots = p->type.is_slice && !p->type.outer_pointer_depth ? 2 : 1;
                 if (!p->type.pointer_depth && !p->type.outer_pointer_depth && !p->type.is_slice) {
-                    size_t child=resolve_named_symbol_id(analyzer,symbol->source_program,named_type_token(symbol->source_program,&p->type));
-                    if (child != AST_SYMBOL_NONE) slots=semantic_symbol_slots(analyzer,child,depth+1);
+                    size_t child = resolve_named_symbol_id(analyzer, symbol->source_program,
+                                                           named_type_token(symbol->source_program, &p->type));
+                    if (child != AST_SYMBOL_NONE) slots = semantic_symbol_slots(analyzer, child, depth + 1);
                     if (p->type.is_array) {
-                        size_t length=p->type.resolved_array_length;
-                        if (!length) length=(size_t)strtoull(ast_program_lexeme(symbol->source_program,p->type.array_length_token),NULL,10);
-                        if (slots == SIZE_MAX || (length && slots > SIZE_MAX/length)) return SIZE_MAX;
-                        slots*=length;
+                        size_t length = p->type.resolved_array_length;
+                        if (!length) length = (size_t) strtoull(
+                                         ast_program_lexeme(symbol->source_program, p->type.array_length_token), NULL,
+                                         10);
+                        if (slots == SIZE_MAX || (length && slots > SIZE_MAX / length)) return SIZE_MAX;
+                        slots *= length;
                     }
                 }
-                if (slots > SIZE_MAX-payload) return SIZE_MAX;
-                payload+=slots;
+                if (slots > SIZE_MAX - payload) return SIZE_MAX;
+                payload += slots;
             }
-            if (payload > largest) largest=payload;
+            if (payload > largest) largest = payload;
         }
-        return largest == SIZE_MAX ? SIZE_MAX : largest+1;
+        return largest == SIZE_MAX ? SIZE_MAX : largest + 1;
     }
     if (symbol->kind != SEMANTIC_SYMBOL_STRUCT || symbol->declaration == NULL) return 1;
     size_t slots = 0;
@@ -2051,8 +2245,9 @@ static size_t semantic_symbol_slots(const Analyzer *analyzer, size_t symbol_id,
         if (field->type.is_array &&
             field->type.array_length_token < symbol->source_program->token_count) {
             size_t length = field->type.resolved_array_length;
-            if (length == 0) length = (size_t) strtoull(ast_program_lexeme(symbol->source_program,
-                field->type.array_length_token), NULL, 10);
+            if (length == 0)
+                length = (size_t) strtoull(ast_program_lexeme(symbol->source_program,
+                                                              field->type.array_length_token), NULL, 10);
             if (field_slots != 0 && length > SIZE_MAX / field_slots) return SIZE_MAX;
             field_slots *= length;
         }
@@ -2065,23 +2260,26 @@ static size_t semantic_symbol_slots(const Analyzer *analyzer, size_t symbol_id,
 static size_t semantic_type_slots(const Analyzer *analyzer, const AstProgram *program,
                                   const AstType *type,
                                   const AstExpression *inferred) {
-    if (type->kind == AST_TYPE_INFERRED && inferred && inferred->resolved_is_slice && !inferred->resolved_outer_pointer_depth) return 2;
+    if (type->kind == AST_TYPE_INFERRED && inferred && inferred->resolved_is_slice && !inferred->
+        resolved_outer_pointer_depth) return 2;
     if (type->outer_pointer_depth != 0 ||
         (type->pointer_depth != 0 && !type->is_array && !type->is_slice) || type->is_slice ||
         (type->kind == AST_TYPE_INFERRED && inferred != NULL &&
          (inferred->resolved_pointer_depth != 0 ||
-          inferred->resolved_outer_pointer_depth != 0))) return type->is_slice && !type->outer_pointer_depth ? 2U : 1U;
+          inferred->resolved_outer_pointer_depth != 0)))
+        return type->is_slice && !type->outer_pointer_depth ? 2U : 1U;
     size_t slots = 1;
     size_t named_symbol = type->kind == AST_TYPE_INFERRED && inferred != NULL
-        ? inferred->resolved_named_symbol_id
-        : resolve_named_symbol_id(analyzer, program, named_type_token(program, type));
+                              ? inferred->resolved_named_symbol_id
+                              : resolve_named_symbol_id(analyzer, program, named_type_token(program, type));
     if (type->pointer_depth != 0) slots = 1;
     else if (named_symbol != AST_SYMBOL_NONE)
         slots = semantic_symbol_slots(analyzer, named_symbol, 0);
     if (type->is_array && type->array_length_token < program->token_count) {
         size_t length = type->resolved_array_length;
-        if (length == 0) length = (size_t) strtoull(ast_program_lexeme(program,
-            type->array_length_token), NULL, 10);
+        if (length == 0)
+            length = (size_t) strtoull(ast_program_lexeme(program,
+                                                          type->array_length_token), NULL, 10);
         if (slots != 0 && length > SIZE_MAX / slots) return SIZE_MAX;
         slots *= length;
     }
@@ -2092,12 +2290,13 @@ static int assignable_expression(const Analyzer *analyzer,
                                  const AstExpression *expression) {
     if (expression != NULL && expression->kind == AST_EXPR_MEMBER &&
         expression->left != NULL && expression->left->resolved_is_slice &&
-        same_name(analyzer->program, expression->value_token, "length")) return 0;
+        same_name(analyzer->program, expression->value_token, "length"))
+        return 0;
     return expression != NULL &&
-        !expression_is_constant_symbol(analyzer, expression) &&
-        (expression->kind == AST_EXPR_NAME || expression->kind == AST_EXPR_INDEX ||
-         expression->kind == AST_EXPR_MEMBER ||
-         (expression->kind == AST_EXPR_UNARY && expression->operator_type == TOKEN_STAR));
+           !expression_is_constant_symbol(analyzer, expression) &&
+           (expression->kind == AST_EXPR_NAME || expression->kind == AST_EXPR_INDEX ||
+            expression->kind == AST_EXPR_MEMBER ||
+            (expression->kind == AST_EXPR_UNARY && expression->operator_type == TOKEN_STAR));
 }
 
 static void validate_array_shape(Analyzer *analyzer, AstType *type) {
@@ -2110,16 +2309,22 @@ static void validate_array_shape(Analyzer *analyzer, AstType *type) {
     const char *text = ast_program_lexeme(analyzer->program, type->array_length_token);
     if (analyzer->program->tokens[type->array_length_token].type == TOKEN_IDENTIFIER) {
         const LocalSymbol *local = find_local(analyzer, type->array_length_token);
-        const SemanticSymbol *symbol = local != NULL ? &analyzer->model->symbols[local->symbol_id] :
-            scoped_find_global(analyzer->model, analyzer->program, text, SEMANTIC_SYMBOL_CONSTANT);
-        if (symbol && symbol->kind == SEMANTIC_SYMBOL_CONSTANT && symbol->declaration && !symbol->declaration->semantic_body_checked) {
-            size_t id=symbol->id; AstProgram *saved=analyzer->program;
-            analyzer->program=(AstProgram *)symbol->source_program;
-            analyze_constant_declaration(analyzer,(AstDeclarationNode *)symbol->declaration);
-            analyzer->program=saved; symbol=&analyzer->model->symbols[id];
+        const SemanticSymbol *symbol = local != NULL
+                                           ? &analyzer->model->symbols[local->symbol_id]
+                                           : scoped_find_global(analyzer->model, analyzer->program, text,
+                                                                SEMANTIC_SYMBOL_CONSTANT);
+        if (symbol && symbol->kind == SEMANTIC_SYMBOL_CONSTANT && symbol->declaration && !symbol->declaration->
+            semantic_body_checked) {
+            size_t id = symbol->id;
+            AstProgram *saved = analyzer->program;
+            analyzer->program = (AstProgram *) symbol->source_program;
+            analyze_constant_declaration(analyzer, (AstDeclarationNode *) symbol->declaration);
+            analyzer->program = saved;
+            symbol = &analyzer->model->symbols[id];
         }
-        const AstExpression *value = symbol != NULL && symbol->kind == SEMANTIC_SYMBOL_CONSTANT ?
-            constant_initializer(symbol) : NULL;
+        const AstExpression *value = symbol != NULL && symbol->kind == SEMANTIC_SYMBOL_CONSTANT
+                                         ? constant_initializer(symbol)
+                                         : NULL;
         if (value == NULL || !data_type_integral(value->resolved_type) || value->folded_constant.lexeme == NULL) {
             semantic_error(analyzer, type->array_length_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                            "Array length must be a visible evaluated integral constant");
@@ -2131,369 +2336,471 @@ static void validate_array_shape(Analyzer *analyzer, AstType *type) {
     if (length == 0 || length > 1048576ULL)
         semantic_error(analyzer, type->array_length_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                        "Array length must be positive and fit local storage");
-    else type->resolved_array_length = (size_t)length;
-    for (size_t i=0; i<analyzer->model->symbol_count; i++) {
-        SemanticSymbol *symbol=&analyzer->model->symbols[i];
+    else type->resolved_array_length = (size_t) length;
+    for (size_t i = 0; i < analyzer->model->symbol_count; i++) {
+        SemanticSymbol *symbol = &analyzer->model->symbols[i];
         if (symbol->kind == SEMANTIC_SYMBOL_FIELD && symbol->source_program == analyzer->program &&
-            &((const AstField *)symbol->node)->type == type) symbol->declared_type=*type;
+            &((const AstField *) symbol->node)->type == type)
+            symbol->declared_type = *type;
     }
 }
 
 static size_t concrete_token(Analyzer *analyzer, TokenType kind, const char *text) {
-    AstProgram *p=analyzer->program;
-    for (size_t i=0; i<p->token_count; i++)
-        if (p->tokens[i].type == kind && !strcmp(p->tokens[i].lexeme,text)) return i;
-    const char *interned=string_interner_intern(p->strings,text);
-    if (!interned || p->token_count >= SIZE_MAX/sizeof(AstToken)-1) {
-        analyzer->allocation_failed=1; return AST_TOKEN_NONE;
+    AstProgram *p = analyzer->program;
+    for (size_t i = 0; i < p->token_count; i++)
+        if (p->tokens[i].type == kind && !strcmp(p->tokens[i].lexeme, text)) return i;
+    const char *interned = string_interner_intern(p->strings, text);
+    if (!interned || p->token_count >= SIZE_MAX / sizeof(AstToken) - 1) {
+        analyzer->allocation_failed = 1;
+        return AST_TOKEN_NONE;
     }
-    AstToken *tokens=realloc(p->tokens,(p->token_count+1)*sizeof(*tokens));
-    if (!tokens) { analyzer->allocation_failed=1; return AST_TOKEN_NONE; }
-    p->tokens=tokens; size_t index=p->token_count++;
-    tokens[index]=(AstToken){.type=kind,.lexeme=interned}; return index;
+    AstToken *tokens = realloc(p->tokens, (p->token_count + 1) * sizeof(*tokens));
+    if (!tokens) {
+        analyzer->allocation_failed = 1;
+        return AST_TOKEN_NONE;
+    }
+    p->tokens = tokens;
+    size_t index = p->token_count++;
+    tokens[index] = (AstToken)
+    {
+        .type = kind,.lexeme = interned
+    };
+    return index;
 }
-static AstType inferred_argument_type(Analyzer *analyzer,const AstExpression *value) {
-    static const char *names[]={DMM_TYPE_NAMES};
-    AstType t={.kind=AST_TYPE_NAMED,.array_length_token=AST_TOKEN_NONE,
-        .pointer_depth=value->resolved_pointer_depth,
-        .outer_pointer_depth=value->resolved_outer_pointer_depth,
-        .is_array=value->resolved_is_array,.is_slice=value->resolved_is_slice,
-        .resolved_array_length=value->resolved_array_length};
+
+static AstType inferred_argument_type(Analyzer *analyzer, const AstExpression *value) {
+    static const char *names[] = {DMM_TYPE_NAMES};
+    AstType t = {
+        .kind = AST_TYPE_NAMED, .array_length_token = AST_TOKEN_NONE,
+        .pointer_depth = value->resolved_pointer_depth,
+        .outer_pointer_depth = value->resolved_outer_pointer_depth,
+        .is_array = value->resolved_is_array, .is_slice = value->resolved_is_slice,
+        .resolved_array_length = value->resolved_array_length
+    };
     if (value->resolved_named_symbol_id < analyzer->model->symbol_count) {
-        const SemanticSymbol *type=&analyzer->model->symbols[value->resolved_named_symbol_id];
+        const SemanticSymbol *type = &analyzer->model->symbols[value->resolved_named_symbol_id];
         char canonical[4096];
-        snprintf(canonical,sizeof(canonical),"%s::%s",type->source_program->module_identity ? type->source_program->module_identity : "",
-            ast_program_lexeme(type->source_program,type->name_token));
-        t.name_token=concrete_token(analyzer,TOKEN_IDENTIFIER,type->source_program->package ? canonical : ast_program_lexeme(type->source_program,type->name_token));
+        snprintf(canonical, sizeof(canonical), "%s::%s",
+                 type->source_program->module_identity ? type->source_program->module_identity : "",
+                 ast_program_lexeme(type->source_program, type->name_token));
+        t.name_token = concrete_token(analyzer, TOKEN_IDENTIFIER,
+                                      type->source_program->package
+                                          ? canonical
+                                          : ast_program_lexeme(type->source_program, type->name_token));
     } else if (value->resolved_type < TYPE_UNKNOWN)
-        t.name_token=concrete_token(analyzer,(TokenType)(TOKEN_TYPE_INT+value->resolved_type),names[value->resolved_type]);
-    else t.name_token=AST_TOKEN_NONE;
+        t.name_token = concrete_token(analyzer, (TokenType)(TOKEN_TYPE_INT + value->resolved_type),
+                                      names[value->resolved_type]);
+    else t.name_token = AST_TOKEN_NONE;
     if (t.is_array) {
-        char length[32]; snprintf(length,sizeof(length),"%zu",t.resolved_array_length);
-        t.array_length_token=concrete_token(analyzer,TOKEN_NUMBER,length);
+        char length[32];
+        snprintf(length, sizeof(length), "%zu", t.resolved_array_length);
+        t.array_length_token = concrete_token(analyzer, TOKEN_NUMBER, length);
     }
     return t;
 }
-static void normalize_generic_type(Analyzer *analyzer,AstType *type,unsigned depth) {
+
+static void normalize_generic_type(Analyzer *analyzer, AstType *type, unsigned depth) {
     if (type->invalid_substitution) {
-        semantic_error(analyzer,type->name_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,"Generic substitution creates an unsupported nested array or slice type");
+        semantic_error(analyzer, type->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                       "Generic substitution creates an unsupported nested array or slice type");
         return;
     }
     if (type->is_array && analyzer->model->symbol_count != 0)
-        validate_array_shape(analyzer,type);
+        validate_array_shape(analyzer, type);
     if (!type->arguments) {
-        if (type->name_token < analyzer->program->token_count && strstr(ast_program_lexeme(analyzer->program,type->name_token),"::")) return;
+        if (type->name_token < analyzer->program->token_count && strstr(
+                ast_program_lexeme(analyzer->program, type->name_token), "::")) return;
         if (type->kind == AST_TYPE_NAMED && type->name_token < analyzer->program->token_count &&
             analyzer->program->tokens[type->name_token].type == TOKEN_IDENTIFIER && analyzer->program->package) {
-            const char *name=ast_program_lexeme(analyzer->program,type->name_token);
-            const DmmPackage *target=lookup_package(analyzer->program,&name);
-            if (target) for (size_t f=0;f<target->file_count;f++)
-                for (AstDeclarationNode *d=target->files[f]->root;d;d=d->next)
-                    if ((d->kind == AST_DECL_STRUCT || d->kind == AST_DECL_ENUM) && !strcmp(name,ast_program_lexeme(target->files[f],d->name_token))) {
-                        if (target != analyzer->program->package && !d->is_public) {
-                            semantic_error(analyzer,type->name_token,ERROR_CATEGORY_SEMANTIC,ERR_PACKAGE_PRIVATE,"Type is private to its defining package"); return;
+            const char *name = ast_program_lexeme(analyzer->program, type->name_token);
+            const DmmPackage *target = lookup_package(analyzer->program, &name);
+            if (target)
+                for (size_t f = 0; f < target->file_count; f++)
+                    for (AstDeclarationNode *d = target->files[f]->root; d; d = d->next)
+                        if ((d->kind == AST_DECL_STRUCT || d->kind == AST_DECL_ENUM) && !strcmp(
+                                name, ast_program_lexeme(target->files[f], d->name_token))) {
+                            if (target != analyzer->program->package && !d->is_public) {
+                                semantic_error(analyzer, type->name_token, ERROR_CATEGORY_SEMANTIC, ERR_PACKAGE_PRIVATE,
+                                               "Type is private to its defining package");
+                                return;
+                            }
+                            char canonical[4096];
+                            snprintf(canonical, sizeof(canonical), "%s::%s", target->path, name);
+                            type->name_token = concrete_token(analyzer, TOKEN_IDENTIFIER, canonical);
+                            return;
                         }
-                        char canonical[4096]; snprintf(canonical,sizeof(canonical),"%s::%s",target->path,name);
-                        type->name_token=concrete_token(analyzer,TOKEN_IDENTIFIER,canonical); return;
-                    }
         }
         return;
     }
     if (depth > 64) {
-        semantic_error(analyzer,type->name_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_COMPLEXITY_LIMIT,
-            "Generic type nesting exceeds 64 instantiations"); return;
+        semantic_error(analyzer, type->name_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_COMPLEXITY_LIMIT,
+                       "Generic type nesting exceeds 64 instantiations");
+        return;
     }
-    AstType arguments[DMM_MAX_TYPE_PARAMETERS]; size_t count=0;
-    for (AstTypeArgument *a=type->arguments; a; a=a->next) {
+    AstType arguments[DMM_MAX_TYPE_PARAMETERS];
+    size_t count = 0;
+    for (AstTypeArgument *a = type->arguments; a; a = a->next) {
         if (count == DMM_MAX_TYPE_PARAMETERS) return;
-        normalize_generic_type(analyzer,&a->type,depth+1);
-        arguments[count++]=a->type;
+        normalize_generic_type(analyzer, &a->type, depth + 1);
+        arguments[count++] = a->type;
     }
-    AstProgram *root=(AstProgram *)analyzer->model->program;
-    const char *name=ast_program_lexeme(analyzer->program,type->name_token);
-    const DmmPackage *target=lookup_package(analyzer->program,&name);
-    for (size_t i=0; i<=root->owned_import_count; i++) {
-        AstProgram *unit=i == 0 ? root : root->owned_imports[i-1];
-        if (target ? unit->package != target : !same_package(analyzer->program,unit)) continue;
-        for (AstDeclarationNode *d=unit->root; d; d=d->next) {
+    AstProgram *root = (AstProgram *) analyzer->model->program;
+    const char *name = ast_program_lexeme(analyzer->program, type->name_token);
+    const DmmPackage *target = lookup_package(analyzer->program, &name);
+    for (size_t i = 0; i <= root->owned_import_count; i++) {
+        AstProgram *unit = i == 0 ? root : root->owned_imports[i - 1];
+        if (target ? unit->package != target : !same_package(analyzer->program, unit)) continue;
+        for (AstDeclarationNode *d = unit->root; d; d = d->next) {
             if ((d->kind != AST_DECL_STRUCT && d->kind != AST_DECL_ENUM) || !d->generic_parameters ||
-                strcmp(name,ast_program_lexeme(unit,d->name_token))) continue;
-            if (!same_package(analyzer->program,unit) && !d->is_public) {
-                semantic_error(analyzer,type->name_token,ERROR_CATEGORY_SEMANTIC,ERR_PACKAGE_PRIVATE,"Generic type is private to its defining package"); return;
+                strcmp(name, ast_program_lexeme(unit, d->name_token)))
+                continue;
+            if (!same_package(analyzer->program, unit) && !d->is_public) {
+                semantic_error(analyzer, type->name_token, ERROR_CATEGORY_SEMANTIC, ERR_PACKAGE_PRIVATE,
+                               "Generic type is private to its defining package");
+                return;
             }
-            size_t expected=0;
-            for (AstGenericParameter *g=d->generic_parameters; g; g=g->next) expected++;
+            size_t expected = 0;
+            for (AstGenericParameter *g = d->generic_parameters; g; g = g->next) expected++;
             if (expected != count) {
-                semantic_error(analyzer,type->name_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INCOMPATIBLE_TYPES,
-                    "Generic type argument count does not match declaration"); return;
+                semantic_error(analyzer, type->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
+                               "Generic type argument count does not match declaration");
+                return;
             }
-            AstDeclarationNode *instance=ast_specialize_function(unit,d,arguments,count,analyzer->program);
+            AstDeclarationNode *instance = ast_specialize_function(unit, d, arguments, count, analyzer->program);
             if (!instance) {
-                semantic_error(analyzer,type->name_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_COMPLEXITY_LIMIT,
-                    "Generic aggregate specialization exceeds deterministic limits"); return;
+                semantic_error(analyzer, type->name_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_COMPLEXITY_LIMIT,
+                               "Generic aggregate specialization exceeds deterministic limits");
+                return;
             }
             char canonical[4096];
-            snprintf(canonical,sizeof(canonical),"%s::%s",unit->module_identity ? unit->module_identity : "",ast_program_lexeme(unit,instance->name_token));
-            type->name_token=concrete_token(analyzer,TOKEN_IDENTIFIER,unit->package ? canonical : ast_program_lexeme(unit,instance->name_token));
-            type->arguments=NULL;
-            AstProgram *saved=analyzer->program; analyzer->program=unit;
+            snprintf(canonical, sizeof(canonical), "%s::%s", unit->module_identity ? unit->module_identity : "",
+                     ast_program_lexeme(unit, instance->name_token));
+            type->name_token = concrete_token(analyzer, TOKEN_IDENTIFIER,
+                                              unit->package
+                                                  ? canonical
+                                                  : ast_program_lexeme(unit, instance->name_token));
+            type->arguments = NULL;
+            AstProgram *saved = analyzer->program;
+            analyzer->program = unit;
             if (instance->kind == AST_DECL_STRUCT) {
-                for (AstField *f=instance->as.struct_decl.fields; f; f=f->next)
-                    normalize_generic_type(analyzer,&f->type,depth+1);
+                for (AstField *f = instance->as.struct_decl.fields; f; f = f->next)
+                    normalize_generic_type(analyzer, &f->type, depth + 1);
             } else {
-                for (AstEnumValue *v=instance->as.enum_decl.values; v; v=v->next)
-                    for (AstTypeArgument *p=v->payload_types; p; p=p->next)
-                        normalize_generic_type(analyzer,&p->type,depth+1);
+                for (AstEnumValue *v = instance->as.enum_decl.values; v; v = v->next)
+                    for (AstTypeArgument *p = v->payload_types; p; p = p->next)
+                        normalize_generic_type(analyzer, &p->type, depth + 1);
             }
             if (instance->resolved_symbol_id == AST_SYMBOL_NONE && analyzer->model->symbol_count != 0) {
-                add_global(analyzer,instance,instance->kind == AST_DECL_STRUCT ? SEMANTIC_SYMBOL_STRUCT : SEMANTIC_SYMBOL_ENUM,AST_TOKEN_NONE);
+                add_global(analyzer, instance,
+                           instance->kind == AST_DECL_STRUCT ? SEMANTIC_SYMBOL_STRUCT : SEMANTIC_SYMBOL_ENUM,
+                           AST_TOKEN_NONE);
                 if (instance->kind == AST_DECL_STRUCT) {
-                    for (AstField *f=instance->as.struct_decl.fields; f; f=f->next)
-                        add_member(analyzer,f->name_token,instance->name_token,f->type,SEMANTIC_SYMBOL_FIELD,f,&f->resolved_symbol_id);
-                    for (AstDeclarationNode *m=instance->as.struct_decl.methods; m; m=m->next)
-                        add_global(analyzer,m,SEMANTIC_SYMBOL_FUNCTION,instance->name_token);
+                    for (AstField *f = instance->as.struct_decl.fields; f; f = f->next)
+                        add_member(analyzer, f->name_token, instance->name_token, f->type, SEMANTIC_SYMBOL_FIELD, f,
+                                   &f->resolved_symbol_id);
+                    for (AstDeclarationNode *m = instance->as.struct_decl.methods; m; m = m->next)
+                        add_global(analyzer, m, SEMANTIC_SYMBOL_FUNCTION, instance->name_token);
                 } else {
-                    AstType enum_type={.kind=AST_TYPE_NAMED,.name_token=instance->name_token,.array_length_token=AST_TOKEN_NONE};
-                    for (AstEnumValue *v=instance->as.enum_decl.values; v; v=v->next)
-                        add_member(analyzer,v->name_token,instance->name_token,enum_type,SEMANTIC_SYMBOL_ENUM_VALUE,v,&v->resolved_symbol_id);
+                    AstType enum_type = {
+                        .kind = AST_TYPE_NAMED, .name_token = instance->name_token, .array_length_token = AST_TOKEN_NONE
+                    };
+                    for (AstEnumValue *v = instance->as.enum_decl.values; v; v = v->next)
+                        add_member(analyzer, v->name_token, instance->name_token, enum_type, SEMANTIC_SYMBOL_ENUM_VALUE,
+                                   v, &v->resolved_symbol_id);
                 }
             }
-            analyzer->program=saved; return;
+            analyzer->program = saved;
+            return;
         }
     }
-    semantic_error(analyzer,type->name_token,ERROR_CATEGORY_TYPE,ERR_TYPE_UNKNOWN,"Unknown generic type");
-}
-static void normalize_expression_types(Analyzer *analyzer,AstExpression *e) {
-    for (; e; e=e->next) {
-        if (e->explicit_type_arguments) {
-            for (AstTypeArgument *argument=e->allocated_type.arguments;argument;argument=argument->next)
-                normalize_generic_type(analyzer,&argument->type,0);
-        } else if (e->kind == AST_EXPR_NAME && e->allocated_type.arguments != NULL) {
-            normalize_generic_type(analyzer,&e->allocated_type,0);
-            e->value_token=e->allocated_type.name_token;
-        } else normalize_generic_type(analyzer,&e->allocated_type,0);
-        normalize_expression_types(analyzer,e->left); normalize_expression_types(analyzer,e->right);
-        normalize_expression_types(analyzer,e->arguments);
-    }
-}
-static void normalize_statement_types(Analyzer *analyzer,AstStatement *s) {
-    for (; s; s=s->next) {
-        normalize_generic_type(analyzer,&s->type,0);
-        normalize_expression_types(analyzer,s->value); normalize_expression_types(analyzer,s->expression);
-        normalize_expression_types(analyzer,s->condition); normalize_expression_types(analyzer,s->update);
-        normalize_statement_types(analyzer,s->body); normalize_statement_types(analyzer,s->else_body);
-        normalize_statement_types(analyzer,s->initializer);
-        if (!s->value || (s->value->kind != AST_EXPR_TYPE_INFO &&
-            !(s->value->kind == AST_EXPR_MEMBER && same_name(analyzer->program,s->value->value_token,"type"))))
-            for (AstMatchArm *a=s->match_arms; a; a=a->next) normalize_statement_types(analyzer,a->body);
-    }
-}
-static void normalize_function_types(Analyzer *analyzer,AstDeclarationNode *d) {
-    normalize_generic_type(analyzer,&d->as.function.return_type,0);
-    for (AstParameter *p=d->as.function.parameters; p; p=p->next)
-        normalize_generic_type(analyzer,&p->type,0);
-    normalize_statement_types(analyzer,d->as.function.body);
+    semantic_error(analyzer, type->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN, "Unknown generic type");
 }
 
-static AstDeclarationNode *find_language_declaration(const AstProgram *root,const AstProgram *file,
-    const char *name,AstDeclarationKind kind,AstProgram **source) {
-    int canonical=strstr(name,"::") != NULL;
-    const DmmPackage *target=lookup_package(file,&name);
-    for (size_t i=0; i<=root->owned_import_count; i++) {
-        AstProgram *unit=i == 0 ? (AstProgram *)root : root->owned_imports[i-1];
-        if (target ? unit->package != target : !same_package(file,unit)) continue;
-        for (AstDeclarationNode *d=unit->root; d; d=d->next)
-            if (d->kind == kind && !strcmp(ast_program_lexeme(unit,d->name_token),name)) {
-                if (!canonical && !same_package(file,unit) && !d->is_public) {
-                    error_report(global_error_handler,SEVERITY_ERROR,0,0,ERROR_CATEGORY_SEMANTIC,
-                        ERR_PACKAGE_PRIVATE,file->source_path,"Declaration '%s' is private to package '%s'",name,unit->module_identity);
+static void normalize_expression_types(Analyzer *analyzer, AstExpression *e) {
+    for (; e; e = e->next) {
+        if (e->explicit_type_arguments) {
+            for (AstTypeArgument *argument = e->allocated_type.arguments; argument; argument = argument->next)
+                normalize_generic_type(analyzer, &argument->type, 0);
+        } else if (e->kind == AST_EXPR_NAME && e->allocated_type.arguments != NULL) {
+            normalize_generic_type(analyzer, &e->allocated_type, 0);
+            e->value_token = e->allocated_type.name_token;
+        } else normalize_generic_type(analyzer, &e->allocated_type, 0);
+        normalize_expression_types(analyzer, e->left);
+        normalize_expression_types(analyzer, e->right);
+        normalize_expression_types(analyzer, e->arguments);
+    }
+}
+
+static void normalize_statement_types(Analyzer *analyzer, AstStatement *s) {
+    for (; s; s = s->next) {
+        normalize_generic_type(analyzer, &s->type, 0);
+        normalize_expression_types(analyzer, s->value);
+        normalize_expression_types(analyzer, s->expression);
+        normalize_expression_types(analyzer, s->condition);
+        normalize_expression_types(analyzer, s->update);
+        normalize_statement_types(analyzer, s->body);
+        normalize_statement_types(analyzer, s->else_body);
+        normalize_statement_types(analyzer, s->initializer);
+        if (!s->value || (s->value->kind != AST_EXPR_TYPE_INFO &&
+                          !(s->value->kind == AST_EXPR_MEMBER && same_name(
+                                analyzer->program, s->value->value_token, "type"))))
+            for (AstMatchArm *a = s->match_arms; a; a = a->next) normalize_statement_types(analyzer, a->body);
+    }
+}
+
+static void normalize_function_types(Analyzer *analyzer, AstDeclarationNode *d) {
+    normalize_generic_type(analyzer, &d->as.function.return_type, 0);
+    for (AstParameter *p = d->as.function.parameters; p; p = p->next)
+        normalize_generic_type(analyzer, &p->type, 0);
+    normalize_statement_types(analyzer, d->as.function.body);
+}
+
+static AstDeclarationNode *find_language_declaration(const AstProgram *root, const AstProgram *file,
+                                                     const char *name, AstDeclarationKind kind, AstProgram **source) {
+    int canonical = strstr(name, "::") != NULL;
+    const DmmPackage *target = lookup_package(file, &name);
+    for (size_t i = 0; i <= root->owned_import_count; i++) {
+        AstProgram *unit = i == 0 ? (AstProgram *) root : root->owned_imports[i - 1];
+        if (target ? unit->package != target : !same_package(file, unit)) continue;
+        for (AstDeclarationNode *d = unit->root; d; d = d->next)
+            if (d->kind == kind && !strcmp(ast_program_lexeme(unit, d->name_token), name)) {
+                if (!canonical && !same_package(file, unit) && !d->is_public) {
+                    error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_SEMANTIC,
+                                 ERR_PACKAGE_PRIVATE, file->source_path, "Declaration '%s' is private to package '%s'",
+                                 name, unit->module_identity);
                     return NULL;
                 }
-                if (source) *source=unit;
+                if (source) *source = unit;
                 return d;
             }
     }
     return NULL;
 }
-static void replace_self_type(Analyzer *a,AstType *type,const AstType *self) {
-    if (type->kind == AST_TYPE_NAMED && !strcmp(ast_program_lexeme(a->program,type->name_token),"Self"))
-        type->name_token=self->name_token;
-    for (AstTypeArgument *t=type->arguments; t; t=t->next) replace_self_type(a,&t->type,self);
+
+static void replace_self_type(Analyzer *a, AstType *type, const AstType *self) {
+    if (type->kind == AST_TYPE_NAMED && !strcmp(ast_program_lexeme(a->program, type->name_token), "Self"))
+        type->name_token = self->name_token;
+    for (AstTypeArgument *t = type->arguments; t; t = t->next) replace_self_type(a, &t->type, self);
 }
-static void replace_self_expression(Analyzer *a,AstExpression *e,const AstType *self) {
-    for (; e; e=e->next) {
-        replace_self_type(a,&e->allocated_type,self);
-        replace_self_expression(a,e->left,self); replace_self_expression(a,e->right,self);
-        replace_self_expression(a,e->arguments,self);
+
+static void replace_self_expression(Analyzer *a, AstExpression *e, const AstType *self) {
+    for (; e; e = e->next) {
+        replace_self_type(a, &e->allocated_type, self);
+        replace_self_expression(a, e->left, self);
+        replace_self_expression(a, e->right, self);
+        replace_self_expression(a, e->arguments, self);
     }
 }
-static void replace_self_statement(Analyzer *a,AstStatement *s,const AstType *self) {
-    for (; s; s=s->next) {
-        replace_self_type(a,&s->type,self);
-        replace_self_expression(a,s->value,self); replace_self_expression(a,s->expression,self);
-        replace_self_expression(a,s->condition,self); replace_self_expression(a,s->update,self);
-        replace_self_statement(a,s->body,self); replace_self_statement(a,s->else_body,self);
-        replace_self_statement(a,s->initializer,self);
+
+static void replace_self_statement(Analyzer *a, AstStatement *s, const AstType *self) {
+    for (; s; s = s->next) {
+        replace_self_type(a, &s->type, self);
+        replace_self_expression(a, s->value, self);
+        replace_self_expression(a, s->expression, self);
+        replace_self_expression(a, s->condition, self);
+        replace_self_expression(a, s->update, self);
+        replace_self_statement(a, s->body, self);
+        replace_self_statement(a, s->else_body, self);
+        replace_self_statement(a, s->initializer, self);
     }
 }
-static int trait_type_matches(Analyzer *a,const AstProgram *trait_unit,AstType expected,
-    const AstType *actual,const AstType *self) {
-    if (!strcmp(ast_program_lexeme(trait_unit,expected.name_token),"Self")) {
-        expected.name_token=self->name_token;
-        return ast_concrete_type_equal(a->program,&expected,a->program,actual);
+
+static int trait_type_matches(Analyzer *a, const AstProgram *trait_unit, AstType expected,
+                              const AstType *actual, const AstType *self) {
+    if (!strcmp(ast_program_lexeme(trait_unit, expected.name_token), "Self")) {
+        expected.name_token = self->name_token;
+        return ast_concrete_type_equal(a->program, &expected, a->program, actual);
     }
-    return ast_concrete_type_equal(trait_unit,&expected,a->program,actual);
+    return ast_concrete_type_equal(trait_unit, &expected, a->program, actual);
 }
-static size_t generic_parameter_position(const AstProgram *unit,const AstDeclarationNode *declaration,const char *name) {
-    size_t index=0;
-    for (const AstGenericParameter *g=declaration->generic_parameters;g;g=g->next,index++)
-        if (!strcmp(ast_program_lexeme(unit,g->name_token),name)) return index;
+
+static size_t generic_parameter_position(const AstProgram *unit, const AstDeclarationNode *declaration,
+                                         const char *name) {
+    size_t index = 0;
+    for (const AstGenericParameter *g = declaration->generic_parameters; g; g = g->next, index++)
+        if (!strcmp(ast_program_lexeme(unit, g->name_token), name)) return index;
     return AST_SYMBOL_NONE;
 }
-static int generic_pattern_equal(const AstProgram *left_unit,const AstDeclarationNode *left,const AstType *x,
-    const AstProgram *right_unit,const AstDeclarationNode *right,const AstType *y) {
-    if (x->kind != y->kind || x->pointer_depth != y->pointer_depth || x->outer_pointer_depth != y->outer_pointer_depth ||
-        x->is_array != y->is_array || x->is_slice != y->is_slice || x->resolved_array_length != y->resolved_array_length) return 0;
-    const char *xn=ast_program_lexeme(left_unit,x->name_token),*yn=ast_program_lexeme(right_unit,y->name_token);
-    size_t xp=generic_parameter_position(left_unit,left,xn),yp=generic_parameter_position(right_unit,right,yn);
-    if (xp != yp || (xp == AST_SYMBOL_NONE && strcmp(xn,yn))) return 0;
-    const AstTypeArgument *xa=x->arguments,*ya=y->arguments;
-    for (;xa && ya;xa=xa->next,ya=ya->next)
-        if (!generic_pattern_equal(left_unit,left,&xa->type,right_unit,right,&ya->type)) return 0;
+
+static int generic_pattern_equal(const AstProgram *left_unit, const AstDeclarationNode *left, const AstType *x,
+                                 const AstProgram *right_unit, const AstDeclarationNode *right, const AstType *y) {
+    if (x->kind != y->kind || x->pointer_depth != y->pointer_depth || x->outer_pointer_depth != y->outer_pointer_depth
+        ||
+        x->is_array != y->is_array || x->is_slice != y->is_slice || x->resolved_array_length != y->
+        resolved_array_length)
+        return 0;
+    const char *xn = ast_program_lexeme(left_unit, x->name_token), *yn = ast_program_lexeme(right_unit, y->name_token);
+    size_t xp = generic_parameter_position(left_unit, left, xn), yp = generic_parameter_position(right_unit, right, yn);
+    if (xp != yp || (xp == AST_SYMBOL_NONE && strcmp(xn, yn))) return 0;
+    const AstTypeArgument *xa = x->arguments, *ya = y->arguments;
+    for (; xa && ya; xa = xa->next, ya = ya->next)
+        if (!generic_pattern_equal(left_unit, left, &xa->type, right_unit, right, &ya->type)) return 0;
     return !xa && !ya;
 }
-static int generic_signature_equal(const AstProgram *left_unit,const AstDeclarationNode *left,
-    const AstProgram *right_unit,const AstDeclarationNode *right) {
-    const AstGenericParameter *lg=left->generic_parameters,*rg=right->generic_parameters;
-    for (;lg && rg;lg=lg->next,rg=rg->next) {}
+
+static int generic_signature_equal(const AstProgram *left_unit, const AstDeclarationNode *left,
+                                   const AstProgram *right_unit, const AstDeclarationNode *right) {
+    const AstGenericParameter *lg = left->generic_parameters, *rg = right->generic_parameters;
+    for (; lg && rg; lg = lg->next, rg = rg->next) {
+    }
     if (lg || rg) return 0;
-    const AstParameter *lp=left->as.function.parameters,*rp=right->as.function.parameters;
-    for (;lp && rp;lp=lp->next,rp=rp->next)
-        if (!generic_pattern_equal(left_unit,left,&lp->type,right_unit,right,&rp->type)) return 0;
+    const AstParameter *lp = left->as.function.parameters, *rp = right->as.function.parameters;
+    for (; lp && rp; lp = lp->next, rp = rp->next)
+        if (!generic_pattern_equal(left_unit, left, &lp->type, right_unit, right, &rp->type)) return 0;
     return !lp && !rp;
 }
-static void prepare_traits(Analyzer *a,AstProgram *root) {
-    for (size_t i=0; i<=root->owned_import_count; i++) {
-        AstProgram *unit=i == 0 ? root : root->owned_imports[i-1]; a->program=unit;
-        for (AstDeclarationNode *d=unit->root; d; d=d->next) {
+
+static void prepare_traits(Analyzer *a, AstProgram *root) {
+    for (size_t i = 0; i <= root->owned_import_count; i++) {
+        AstProgram *unit = i == 0 ? root : root->owned_imports[i - 1];
+        a->program = unit;
+        for (AstDeclarationNode *d = unit->root; d; d = d->next) {
             if (d->kind != AST_DECL_IMPORT && d->kind != AST_DECL_IMPL) {
-                for (size_t j=0;j<=i;j++) {
-                    AstProgram *previous_unit=j == 0 ? root : root->owned_imports[j-1];
-                    if (!same_package(unit,previous_unit)) continue;
-                    for (AstDeclarationNode *previous=previous_unit->root;previous && previous != d;previous=previous->next)
+                for (size_t j = 0; j <= i; j++) {
+                    AstProgram *previous_unit = j == 0 ? root : root->owned_imports[j - 1];
+                    if (!same_package(unit, previous_unit)) continue;
+                    for (AstDeclarationNode *previous = previous_unit->root; previous && previous != d;
+                         previous = previous->next)
                         if ((d->generic_parameters || previous->generic_parameters) &&
-                            !strcmp(ast_program_lexeme(unit,d->name_token),ast_program_lexeme(previous_unit,previous->name_token)) &&
+                            !strcmp(ast_program_lexeme(unit, d->name_token),
+                                    ast_program_lexeme(previous_unit, previous->name_token)) &&
                             (d->kind != AST_DECL_FUNCTION || previous->kind != AST_DECL_FUNCTION ||
-                                (d->generic_parameters && previous->generic_parameters && generic_signature_equal(unit,d,previous_unit,previous))))
-                            semantic_duplicate(a,d->name_token,previous_unit,previous->name_token,"Duplicate generic declaration");
+                             (d->generic_parameters && previous->generic_parameters && generic_signature_equal(
+                                  unit, d, previous_unit, previous))))
+                            semantic_duplicate(a, d->name_token, previous_unit, previous->name_token,
+                                               "Duplicate generic declaration");
                 }
             }
-            for (AstGenericParameter *g=d->generic_parameters; g; g=g->next) {
-                for (AstGenericParameter *p=d->generic_parameters; p != g; p=p->next)
-                    if (!strcmp(ast_program_lexeme(unit,p->name_token),ast_program_lexeme(unit,g->name_token)))
-                        semantic_error(a,g->name_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_DUPLICATE_DEFINITION,
+            for (AstGenericParameter *g = d->generic_parameters; g; g = g->next) {
+                for (AstGenericParameter *p = d->generic_parameters; p != g; p = p->next)
+                    if (!strcmp(ast_program_lexeme(unit, p->name_token), ast_program_lexeme(unit, g->name_token)))
+                        semantic_error(a, g->name_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_DUPLICATE_DEFINITION,
                                        "Duplicate generic type parameter");
-                for (AstTraitBound *b=g->bounds; b; b=b->next) {
-                    if (!find_language_declaration(root,unit,ast_program_lexeme(unit,b->name_token),AST_DECL_TRAIT,NULL))
-                        semantic_error(a,b->name_token,ERROR_CATEGORY_TYPE,ERR_TYPE_UNKNOWN,"Unknown trait bound");
-                    for (AstTraitBound *p=g->bounds; p != b; p=p->next)
-                        if (!strcmp(ast_program_lexeme(unit,p->name_token),ast_program_lexeme(unit,b->name_token)))
-                            semantic_error(a,b->name_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_DUPLICATE_DEFINITION,
+                for (AstTraitBound *b = g->bounds; b; b = b->next) {
+                    if (!find_language_declaration(root, unit, ast_program_lexeme(unit, b->name_token), AST_DECL_TRAIT,
+                                                   NULL))
+                        semantic_error(a, b->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN, "Unknown trait bound");
+                    for (AstTraitBound *p = g->bounds; p != b; p = p->next)
+                        if (!strcmp(ast_program_lexeme(unit, p->name_token), ast_program_lexeme(unit, b->name_token)))
+                            semantic_error(a, b->name_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_DUPLICATE_DEFINITION,
                                            "Duplicate trait bound");
                 }
             }
             if (d->kind == AST_DECL_TRAIT) {
-                if (find_language_declaration(root,unit,ast_program_lexeme(unit,d->name_token),AST_DECL_TRAIT,NULL) != d)
-                    semantic_error(a,d->name_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_DUPLICATE_DEFINITION,
+                if (find_language_declaration(root, unit, ast_program_lexeme(unit, d->name_token), AST_DECL_TRAIT,
+                                              NULL) != d)
+                    semantic_error(a, d->name_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_DUPLICATE_DEFINITION,
                                    "Duplicate trait declaration");
-                for (AstDeclarationNode *m=d->as.trait_decl.methods; m; m=m->next)
-                    for (AstDeclarationNode *p=d->as.trait_decl.methods; p != m; p=p->next)
-                        if (!strcmp(ast_program_lexeme(unit,p->name_token),ast_program_lexeme(unit,m->name_token)))
-                            semantic_error(a,m->name_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_DUPLICATE_DEFINITION,
+                for (AstDeclarationNode *m = d->as.trait_decl.methods; m; m = m->next)
+                    for (AstDeclarationNode *p = d->as.trait_decl.methods; p != m; p = p->next)
+                        if (!strcmp(ast_program_lexeme(unit, p->name_token), ast_program_lexeme(unit, m->name_token)))
+                            semantic_error(a, m->name_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_DUPLICATE_DEFINITION,
                                            "Duplicate trait method");
             }
             if (d->generic_parameters && (d->kind == AST_DECL_STRUCT || d->kind == AST_DECL_ENUM) &&
-                find_language_declaration(root,unit,ast_program_lexeme(unit,d->name_token),d->kind,NULL) != d)
-                semantic_error(a,d->name_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_DUPLICATE_DEFINITION,
+                find_language_declaration(root, unit, ast_program_lexeme(unit, d->name_token), d->kind, NULL) != d)
+                semantic_error(a, d->name_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_DUPLICATE_DEFINITION,
                                "Duplicate generic aggregate declaration");
         }
     }
-    for (size_t i=0; i<=root->owned_import_count; i++) {
-        AstProgram *unit=i == 0 ? root : root->owned_imports[i-1]; a->program=unit;
-        for (AstDeclarationNode *d=unit->root; d; d=d->next) {
+    for (size_t i = 0; i <= root->owned_import_count; i++) {
+        AstProgram *unit = i == 0 ? root : root->owned_imports[i - 1];
+        a->program = unit;
+        for (AstDeclarationNode *d = unit->root; d; d = d->next) {
             if (d->kind != AST_DECL_IMPL) continue;
-            d->as.impl_decl.attached=0;
-            normalize_generic_type(a,&d->as.impl_decl.for_type,0);
-            const char *trait_name=ast_program_lexeme(unit,d->as.impl_decl.trait_token);
-            AstProgram *trait_unit=NULL;
-            AstDeclarationNode *trait=find_language_declaration(root,unit,trait_name,AST_DECL_TRAIT,&trait_unit);
-            d->as.impl_decl.trait_identity=trait;
-            AstDeclarationNode *owner=find_language_declaration(root,unit,
-                ast_program_lexeme(unit,d->as.impl_decl.for_type.name_token),AST_DECL_STRUCT,NULL);
+            d->as.impl_decl.attached = 0;
+            normalize_generic_type(a, &d->as.impl_decl.for_type, 0);
+            const char *trait_name = ast_program_lexeme(unit, d->as.impl_decl.trait_token);
+            AstProgram *trait_unit = NULL;
+            AstDeclarationNode *trait = find_language_declaration(root, unit, trait_name, AST_DECL_TRAIT, &trait_unit);
+            d->as.impl_decl.trait_identity = trait;
+            AstDeclarationNode *owner = find_language_declaration(root, unit,
+                                                                  ast_program_lexeme(
+                                                                      unit, d->as.impl_decl.for_type.name_token),
+                                                                  AST_DECL_STRUCT, NULL);
             if (!trait || !owner || d->as.impl_decl.for_type.pointer_depth ||
                 d->as.impl_decl.for_type.is_array || d->as.impl_decl.for_type.is_slice) {
-                semantic_error(a,d->name_token,ERROR_CATEGORY_TYPE,ERR_TYPE_UNKNOWN,
-                    "Trait implementation requires a declared trait and nominal struct type"); continue;
+                semantic_error(a, d->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN,
+                               "Trait implementation requires a declared trait and nominal struct type");
+                continue;
             }
-            int conflict=0;
-            for (size_t j=0; j<=i; j++) {
-                AstProgram *previous_unit=j == 0 ? root : root->owned_imports[j-1];
-                for (AstDeclarationNode *previous=previous_unit->root; previous; previous=previous->next) {
+            int conflict = 0;
+            for (size_t j = 0; j <= i; j++) {
+                AstProgram *previous_unit = j == 0 ? root : root->owned_imports[j - 1];
+                for (AstDeclarationNode *previous = previous_unit->root; previous; previous = previous->next) {
                     if (previous == d) break;
                     if (previous->kind == AST_DECL_IMPL &&
-                        !strcmp(ast_program_lexeme(previous_unit,previous->name_token),trait_name) &&
-                        ast_concrete_type_equal(unit,&d->as.impl_decl.for_type,previous_unit,&previous->as.impl_decl.for_type)) conflict=1;
+                        !strcmp(ast_program_lexeme(previous_unit, previous->name_token), trait_name) &&
+                        ast_concrete_type_equal(unit, &d->as.impl_decl.for_type, previous_unit,
+                                                &previous->as.impl_decl.for_type))
+                        conflict = 1;
                 }
             }
-            if (conflict) { semantic_error(a,d->name_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_DUPLICATE_DEFINITION,
-                "Duplicate or conflicting explicit trait implementation"); continue; }
-            for (AstDeclarationNode *m=d->as.impl_decl.methods; m; m=m->next) {
-                m->semantic_body_checked=0;
-                replace_self_type(a,&m->as.function.return_type,&d->as.impl_decl.for_type);
-                for (AstParameter *p=m->as.function.parameters; p; p=p->next)
-                    replace_self_type(a,&p->type,&d->as.impl_decl.for_type);
-                replace_self_statement(a,m->as.function.body,&d->as.impl_decl.for_type);
-                normalize_function_types(a,m);
-                m->as.function.owner_token=d->as.impl_decl.for_type.name_token;
-                AstDeclarationNode *required=trait->as.trait_decl.methods;
-                for (; required; required=required->next)
-                    if (!strcmp(ast_program_lexeme(trait_unit,required->name_token),ast_program_lexeme(unit,m->name_token))) break;
-                int valid=required != NULL && parameter_count(required) == parameter_count(m);
-                if (valid) valid=trait_type_matches(a,trait_unit,required->as.function.return_type,
-                    &m->as.function.return_type,&d->as.impl_decl.for_type);
-                const AstParameter *x=required ? required->as.function.parameters : NULL, *y=m->as.function.parameters;
-                for (; valid && x && y; x=x->next,y=y->next)
-                    valid=trait_type_matches(a,trait_unit,x->type,&y->type,&d->as.impl_decl.for_type);
-                if (!valid) semantic_error(a,m->name_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INCOMPATIBLE_TYPES,
-                    "Implementation method does not match its trait signature");
+            if (conflict) {
+                semantic_error(a, d->name_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_DUPLICATE_DEFINITION,
+                               "Duplicate or conflicting explicit trait implementation");
+                continue;
             }
-            for (AstDeclarationNode *required=trait->as.trait_decl.methods; required; required=required->next) {
-                int found=0;
-                for (AstDeclarationNode *m=d->as.impl_decl.methods; m; m=m->next)
-                    if (!strcmp(ast_program_lexeme(trait_unit,required->name_token),ast_program_lexeme(unit,m->name_token))) found=1;
-                if (!found) semantic_error(a,d->name_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INCOMPATIBLE_TYPES,
-                    "Explicit trait implementation is missing a required method");
+            for (AstDeclarationNode *m = d->as.impl_decl.methods; m; m = m->next) {
+                m->semantic_body_checked = 0;
+                replace_self_type(a, &m->as.function.return_type, &d->as.impl_decl.for_type);
+                for (AstParameter *p = m->as.function.parameters; p; p = p->next)
+                    replace_self_type(a, &p->type, &d->as.impl_decl.for_type);
+                replace_self_statement(a, m->as.function.body, &d->as.impl_decl.for_type);
+                normalize_function_types(a, m);
+                m->as.function.owner_token = d->as.impl_decl.for_type.name_token;
+                AstDeclarationNode *required = trait->as.trait_decl.methods;
+                for (; required; required = required->next)
+                    if (!strcmp(ast_program_lexeme(trait_unit, required->name_token),
+                                ast_program_lexeme(unit, m->name_token))) break;
+                int valid = required != NULL && parameter_count(required) == parameter_count(m);
+                if (valid)
+                    valid = trait_type_matches(a, trait_unit, required->as.function.return_type,
+                                               &m->as.function.return_type, &d->as.impl_decl.for_type);
+                const AstParameter *x = required ? required->as.function.parameters : NULL, *y = m->as.function.
+                        parameters;
+                for (; valid && x && y; x = x->next, y = y->next)
+                    valid = trait_type_matches(a, trait_unit, x->type, &y->type, &d->as.impl_decl.for_type);
+                if (!valid)
+                    semantic_error(a, m->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
+                                   "Implementation method does not match its trait signature");
+            }
+            for (AstDeclarationNode *required = trait->as.trait_decl.methods; required; required = required->next) {
+                int found = 0;
+                for (AstDeclarationNode *m = d->as.impl_decl.methods; m; m = m->next)
+                    if (!strcmp(ast_program_lexeme(trait_unit, required->name_token),
+                                ast_program_lexeme(unit, m->name_token))) found = 1;
+                if (!found)
+                    semantic_error(a, d->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
+                                   "Explicit trait implementation is missing a required method");
             }
             /* Methods remain owned by their source unit; collection handles imports correctly. */
-            d->as.impl_decl.attached=1;
+            d->as.impl_decl.attached = 1;
         }
     }
-    a->program=root;
+    a->program = root;
 }
-static int generic_bounds_satisfied(Analyzer *a,const AstProgram *declaration_unit,
-    const AstDeclarationNode *d,const AstType *arguments) {
-    AstProgram *root=(AstProgram *)a->model->program; size_t index=0;
-    for (AstGenericParameter *g=d->generic_parameters; g; g=g->next,index++) {
-        for (AstTraitBound *bound=g->bounds; bound; bound=bound->next) {
-            AstDeclarationNode *required_trait=find_language_declaration(root,declaration_unit,
-                ast_program_lexeme(declaration_unit,bound->name_token),AST_DECL_TRAIT,NULL);
-            int found=0;
-            for (size_t i=0; i<=root->owned_import_count; i++) {
-                AstProgram *unit=i == 0 ? root : root->owned_imports[i-1];
-                for (AstDeclarationNode *implementation=unit->root; implementation; implementation=implementation->next) {
+
+static int generic_bounds_satisfied(Analyzer *a, const AstProgram *declaration_unit,
+                                    const AstDeclarationNode *d, const AstType *arguments) {
+    AstProgram *root = (AstProgram *) a->model->program;
+    size_t index = 0;
+    for (AstGenericParameter *g = d->generic_parameters; g; g = g->next, index++) {
+        for (AstTraitBound *bound = g->bounds; bound; bound = bound->next) {
+            AstDeclarationNode *required_trait = find_language_declaration(root, declaration_unit,
+                                                                           ast_program_lexeme(
+                                                                               declaration_unit, bound->name_token),
+                                                                           AST_DECL_TRAIT, NULL);
+            int found = 0;
+            for (size_t i = 0; i <= root->owned_import_count; i++) {
+                AstProgram *unit = i == 0 ? root : root->owned_imports[i - 1];
+                for (AstDeclarationNode *implementation = unit->root; implementation;
+                     implementation = implementation->next) {
                     if (implementation->kind == AST_DECL_IMPL && implementation->as.impl_decl.attached &&
                         implementation->as.impl_decl.trait_identity == required_trait && required_trait &&
-                        ast_concrete_type_equal(unit,&implementation->as.impl_decl.for_type,a->program,&arguments[index])) found=1;
+                        ast_concrete_type_equal(unit, &implementation->as.impl_decl.for_type, a->program,
+                                                &arguments[index]))
+                        found = 1;
                 }
             }
             if (!found) return 0;
@@ -2502,273 +2809,362 @@ static int generic_bounds_satisfied(Analyzer *a,const AstProgram *declaration_un
     return 1;
 }
 
-static AstType argument_type_copy(Analyzer *analyzer,const AstProgram *unit,AstType type) {
-    const AstToken *token=ast_program_token(unit,type.name_token);
-    if (token) type.name_token=concrete_token(analyzer,token->type,token->lexeme);
+static AstType argument_type_copy(Analyzer *analyzer, const AstProgram *unit, AstType type) {
+    const AstToken *token = ast_program_token(unit, type.name_token);
+    if (token) type.name_token = concrete_token(analyzer, token->type, token->lexeme);
     if (type.is_array) {
-        char length[32]; snprintf(length,sizeof(length),"%zu",type.resolved_array_length);
-        type.array_length_token=concrete_token(analyzer,TOKEN_NUMBER,length);
+        char length[32];
+        snprintf(length, sizeof(length), "%zu", type.resolved_array_length);
+        type.array_length_token = concrete_token(analyzer, TOKEN_NUMBER, length);
     }
     return type;
 }
-static int unify_generic_pattern(Analyzer *analyzer,const AstProgram *pattern_unit,
-    const AstType *pattern,const AstProgram *actual_unit,AstType actual,
-    const AstDeclarationNode *declaration,AstType *substitutions,unsigned char *inferred,unsigned depth) {
+
+static int unify_generic_pattern(Analyzer *analyzer, const AstProgram *pattern_unit,
+                                 const AstType *pattern, const AstProgram *actual_unit, AstType actual,
+                                 const AstDeclarationNode *declaration, AstType *substitutions, unsigned char *inferred,
+                                 unsigned depth) {
     if (depth > 64 || actual.name_token == AST_TOKEN_NONE) return 0;
-    size_t index=0;
-    const AstGenericParameter *g=declaration->generic_parameters;
-    for (; g; g=g->next,index++)
-        if (!strcmp(ast_program_lexeme(pattern_unit,g->name_token),
-            ast_program_lexeme(pattern_unit,pattern->name_token))) break;
+    size_t index = 0;
+    const AstGenericParameter *g = declaration->generic_parameters;
+    for (; g; g = g->next, index++)
+        if (!strcmp(ast_program_lexeme(pattern_unit, g->name_token),
+                    ast_program_lexeme(pattern_unit, pattern->name_token)))
+            break;
     if (g && (actual.is_array || actual.is_slice) && !pattern->is_array && !pattern->is_slice) {
-        if (actual.outer_pointer_depth<pattern->pointer_depth+pattern->outer_pointer_depth) return 0;
-        actual.outer_pointer_depth-=pattern->pointer_depth+pattern->outer_pointer_depth;
+        if (actual.outer_pointer_depth < pattern->pointer_depth + pattern->outer_pointer_depth) return 0;
+        actual.outer_pointer_depth -= pattern->pointer_depth + pattern->outer_pointer_depth;
     } else {
-        if (actual.pointer_depth < pattern->pointer_depth || actual.outer_pointer_depth < pattern->outer_pointer_depth) return 0;
-        actual.pointer_depth-=pattern->pointer_depth;
-        actual.outer_pointer_depth-=pattern->outer_pointer_depth;
+        if (actual.pointer_depth < pattern->pointer_depth || actual.outer_pointer_depth < pattern->outer_pointer_depth)
+            return 0;
+        actual.pointer_depth -= pattern->pointer_depth;
+        actual.outer_pointer_depth -= pattern->outer_pointer_depth;
     }
     if (pattern->is_array || pattern->is_slice) {
         if (actual.outer_pointer_depth || !(actual.is_array || actual.is_slice) ||
             (pattern->is_array && (!actual.is_array ||
-             actual.resolved_array_length != pattern->resolved_array_length))) return 0;
-        actual.is_array=actual.is_slice=0; actual.resolved_array_length=0;
-        actual.array_length_token=AST_TOKEN_NONE;
+                                   actual.resolved_array_length != pattern->resolved_array_length)))
+            return 0;
+        actual.is_array = actual.is_slice = 0;
+        actual.resolved_array_length = 0;
+        actual.array_length_token = AST_TOKEN_NONE;
     }
     if (g) {
-        actual=argument_type_copy(analyzer,actual_unit,actual);
-        if (inferred[index]) return ast_concrete_type_equal(analyzer->program,
-            &substitutions[index],analyzer->program,&actual);
-        substitutions[index]=actual; inferred[index]=1; return 1;
+        actual = argument_type_copy(analyzer, actual_unit, actual);
+        if (inferred[index])
+            return ast_concrete_type_equal(analyzer->program,
+                                           &substitutions[index], analyzer->program, &actual);
+        substitutions[index] = actual;
+        inferred[index] = 1;
+        return 1;
     }
     if (actual.pointer_depth || actual.outer_pointer_depth || actual.is_array || actual.is_slice) return 0;
     if (pattern->arguments) {
-        const SemanticSymbol *symbol=scoped_find_global(analyzer->model, analyzer->program,
-            ast_program_lexeme(actual_unit,actual.name_token),SEMANTIC_SYMBOL_STRUCT);
-        if (!symbol) symbol=scoped_find_global(analyzer->model, analyzer->program,
-            ast_program_lexeme(actual_unit,actual.name_token),SEMANTIC_SYMBOL_ENUM);
-        AstProgram *root=(AstProgram *)analyzer->model->program;
-        AstDeclarationNode *origin=find_language_declaration(root,pattern_unit,
-            ast_program_lexeme(pattern_unit,pattern->name_token),AST_DECL_STRUCT,NULL);
-        if (!origin) origin=find_language_declaration(root,pattern_unit,
-            ast_program_lexeme(pattern_unit,pattern->name_token),AST_DECL_ENUM,NULL);
+        const SemanticSymbol *symbol = scoped_find_global(analyzer->model, analyzer->program,
+                                                          ast_program_lexeme(actual_unit, actual.name_token),
+                                                          SEMANTIC_SYMBOL_STRUCT);
+        if (!symbol)
+            symbol = scoped_find_global(analyzer->model, analyzer->program,
+                                        ast_program_lexeme(actual_unit, actual.name_token), SEMANTIC_SYMBOL_ENUM);
+        AstProgram *root = (AstProgram *) analyzer->model->program;
+        AstDeclarationNode *origin = find_language_declaration(root, pattern_unit,
+                                                               ast_program_lexeme(pattern_unit, pattern->name_token),
+                                                               AST_DECL_STRUCT, NULL);
+        if (!origin)
+            origin = find_language_declaration(root, pattern_unit,
+                                               ast_program_lexeme(pattern_unit, pattern->name_token), AST_DECL_ENUM,
+                                               NULL);
         if (!symbol || !symbol->declaration || !symbol->declaration->generic_origin ||
-            symbol->declaration->generic_origin != origin) return 0;
-        const AstTypeArgument *a=pattern->arguments, *b=symbol->declaration->specialization_arguments;
-        for (; a && b; a=a->next,b=b->next)
-            if (!unify_generic_pattern(analyzer,pattern_unit,&a->type,symbol->source_program,
-                b->type,declaration,substitutions,inferred,depth+1)) return 0;
+            symbol->declaration->generic_origin != origin)
+            return 0;
+        const AstTypeArgument *a = pattern->arguments, *b = symbol->declaration->specialization_arguments;
+        for (; a && b; a = a->next, b = b->next)
+            if (!unify_generic_pattern(analyzer, pattern_unit, &a->type, symbol->source_program,
+                                       b->type, declaration, substitutions, inferred, depth + 1))
+                return 0;
         return !a && !b;
     }
-    size_t expected=resolve_named_symbol_id(analyzer,pattern_unit,pattern->name_token);
-    size_t supplied=resolve_named_symbol_id(analyzer,actual_unit,actual.name_token);
+    size_t expected = resolve_named_symbol_id(analyzer, pattern_unit, pattern->name_token);
+    size_t supplied = resolve_named_symbol_id(analyzer, actual_unit, actual.name_token);
     if (expected != AST_SYMBOL_NONE || supplied != AST_SYMBOL_NONE) return expected == supplied;
-    return !strcmp(ast_program_lexeme(pattern_unit,pattern->name_token),ast_program_lexeme(actual_unit,actual.name_token));
+    return !strcmp(ast_program_lexeme(pattern_unit, pattern->name_token),
+                   ast_program_lexeme(actual_unit, actual.name_token));
 }
 
-static void instantiate_generic_candidates(Analyzer *analyzer,const char *name,
+static void instantiate_generic_candidates(Analyzer *analyzer, const char *name,
                                            const AstExpression *arguments) {
-    AstProgram *root=(AstProgram *)analyzer->model->program;
-    const DmmPackage *target=lookup_package(analyzer->program,&name);
-    for (size_t unit_index=0; unit_index<=root->owned_import_count; unit_index++) {
-        AstProgram *unit=unit_index == 0 ? root : root->owned_imports[unit_index-1];
-        if (target ? unit->package != target : !same_package(analyzer->program,unit)) continue;
-        for (AstDeclarationNode *d=unit->root; d; d=d->next) {
+    AstProgram *root = (AstProgram *) analyzer->model->program;
+    const DmmPackage *target = lookup_package(analyzer->program, &name);
+    for (size_t unit_index = 0; unit_index <= root->owned_import_count; unit_index++) {
+        AstProgram *unit = unit_index == 0 ? root : root->owned_imports[unit_index - 1];
+        if (target ? unit->package != target : !same_package(analyzer->program, unit)) continue;
+        for (AstDeclarationNode *d = unit->root; d; d = d->next) {
             if (d->kind != AST_DECL_FUNCTION || !d->generic_parameters ||
-                strcmp(ast_program_lexeme(unit,d->name_token),name)) continue;
-            AstType substitutions[DMM_MAX_TYPE_PARAMETERS]={0};
-            unsigned char inferred[DMM_MAX_TYPE_PARAMETERS]={0};
-            size_t count=0; int viable=1;
-            for (const AstGenericParameter *g=d->generic_parameters; g; g=g->next) count++;
-            const AstParameter *parameter=d->as.function.parameters;
-            const AstExpression *argument=arguments;
-            for (; viable && parameter && argument; parameter=parameter->next,argument=argument->next) {
-                AstType t=inferred_argument_type(analyzer,argument);
-                if (!contains_type_parameter(unit,&parameter->type,d)) {
-                    if (!expression_to_declared_type_allowed(analyzer,argument,unit,&parameter->type)) viable=0;
-                } else if (!unify_generic_pattern(analyzer,unit,&parameter->type,analyzer->program,t,
-                    d,substitutions,inferred,0)) viable=0;
+                strcmp(ast_program_lexeme(unit, d->name_token), name))
+                continue;
+            AstType substitutions[DMM_MAX_TYPE_PARAMETERS] = {0};
+            unsigned char inferred[DMM_MAX_TYPE_PARAMETERS] = {0};
+            size_t count = 0;
+            int viable = 1;
+            for (const AstGenericParameter *g = d->generic_parameters; g; g = g->next) count++;
+            const AstParameter *parameter = d->as.function.parameters;
+            const AstExpression *argument = arguments;
+            for (; viable && parameter && argument; parameter = parameter->next, argument = argument->next) {
+                AstType t = inferred_argument_type(analyzer, argument);
+                if (!contains_type_parameter(unit, &parameter->type, d)) {
+                    if (!expression_to_declared_type_allowed(analyzer, argument, unit, &parameter->type)) viable = 0;
+                } else if (!unify_generic_pattern(analyzer, unit, &parameter->type, analyzer->program, t,
+                                                  d, substitutions, inferred, 0))
+                    viable = 0;
             }
-            if (parameter || argument) viable=0;
-            for (size_t i=0; i<count; i++) if (!inferred[i]) viable=0;
-            if (!viable || !generic_bounds_satisfied(analyzer,unit,d,substitutions)) continue;
-            AstDeclarationNode *instance=ast_specialize_function(unit,d,substitutions,count,analyzer->program);
+            if (parameter || argument) viable = 0;
+            for (size_t i = 0; i < count; i++) if (!inferred[i]) viable = 0;
+            if (!viable || !generic_bounds_satisfied(analyzer, unit, d, substitutions)) continue;
+            AstDeclarationNode *instance = ast_specialize_function(unit, d, substitutions, count, analyzer->program);
             if (!instance) {
                 semantic_error(analyzer, analyzer->current_function_token, ERROR_CATEGORY_SEMANTIC,
-                    ERR_SEM_COMPLEXITY_LIMIT,"Generic specialization exceeds deterministic resource limits");
+                               ERR_SEM_COMPLEXITY_LIMIT,
+                               "Generic specialization exceeds deterministic resource limits");
                 continue;
             }
             if (instance->resolved_symbol_id == AST_SYMBOL_NONE) {
-                AstProgram *saved=analyzer->program; analyzer->program=unit;
-                normalize_function_types(analyzer,instance);
-                add_global(analyzer,instance,SEMANTIC_SYMBOL_FUNCTION,AST_TOKEN_NONE);
-                analyzer->program=saved;
+                AstProgram *saved = analyzer->program;
+                analyzer->program = unit;
+                normalize_function_types(analyzer, instance);
+                add_global(analyzer, instance, SEMANTIC_SYMBOL_FUNCTION, AST_TOKEN_NONE);
+                analyzer->program = saved;
             }
         }
     }
 }
 
-static const SemanticSymbol *explicit_generic_function(Analyzer *analyzer,const char *name,AstExpression *call) {
-    AstProgram *root=(AstProgram *)analyzer->model->program;
-    AstExpression *callee=call->left;
-    AstType types[DMM_MAX_TYPE_PARAMETERS]; size_t count=0;
-    for (AstTypeArgument *argument=callee->allocated_type.arguments;argument;argument=argument->next) {
+static const SemanticSymbol *explicit_generic_function(Analyzer *analyzer, const char *name, AstExpression *call) {
+    AstProgram *root = (AstProgram *) analyzer->model->program;
+    AstExpression *callee = call->left;
+    AstType types[DMM_MAX_TYPE_PARAMETERS];
+    size_t count = 0;
+    for (AstTypeArgument *argument = callee->allocated_type.arguments; argument; argument = argument->next) {
         if (count == DMM_MAX_TYPE_PARAMETERS) {
-            semantic_error(analyzer,call->first_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_COMPLEXITY_LIMIT,"Too many explicit type arguments"); return NULL;
+            semantic_error(analyzer, call->first_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_COMPLEXITY_LIMIT,
+                           "Too many explicit type arguments");
+            return NULL;
         }
-        normalize_generic_type(analyzer,&argument->type,0);
-        if (!known_declared_type(analyzer,&argument->type) || argument->type.kind == AST_TYPE_INFERRED ||
-            (primitive_type(analyzer->program,&argument->type) == TYPE_VOID && !argument->type.pointer_depth && !argument->type.outer_pointer_depth)) {
-            semantic_error(analyzer,argument->type.name_token,ERROR_CATEGORY_TYPE,ERR_TYPE_UNKNOWN,"Explicit type argument requires a complete non-void type"); return NULL;
+        normalize_generic_type(analyzer, &argument->type, 0);
+        if (!known_declared_type(analyzer, &argument->type) || argument->type.kind == AST_TYPE_INFERRED ||
+            (primitive_type(analyzer->program, &argument->type) == TYPE_VOID && !argument->type.pointer_depth && !
+             argument->type.outer_pointer_depth)) {
+            semantic_error(analyzer, argument->type.name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN,
+                           "Explicit type argument requires a complete non-void type");
+            return NULL;
         }
-        types[count++]=argument->type;
+        types[count++] = argument->type;
     }
-    size_t candidates[1024],candidate_count=0;
-    size_t value_count=0;
-    for (const AstExpression *argument=call->arguments;argument;argument=argument->next) value_count++;
-    const DmmPackage *target=lookup_package(analyzer->program,&name);
-    for (size_t i=0;i<=root->owned_import_count;i++) {
-        AstProgram *unit=i == 0 ? root : root->owned_imports[i-1];
-        if (target ? unit->package != target : !same_package(analyzer->program,unit)) continue;
-        for (AstDeclarationNode *d=unit->root;d;d=d->next) {
-            if (d->kind != AST_DECL_FUNCTION || !d->generic_parameters || strcmp(ast_program_lexeme(unit,d->name_token),name)) continue;
-            if (!same_package(analyzer->program,unit) && !d->is_public) {
-                semantic_error(analyzer,call->first_token,ERROR_CATEGORY_SEMANTIC,ERR_PACKAGE_PRIVATE,"Generic function is private to its defining package"); continue;
+    size_t candidates[1024], candidate_count = 0;
+    size_t value_count = 0;
+    for (const AstExpression *argument = call->arguments; argument; argument = argument->next) value_count++;
+    const DmmPackage *target = lookup_package(analyzer->program, &name);
+    for (size_t i = 0; i <= root->owned_import_count; i++) {
+        AstProgram *unit = i == 0 ? root : root->owned_imports[i - 1];
+        if (target ? unit->package != target : !same_package(analyzer->program, unit)) continue;
+        for (AstDeclarationNode *d = unit->root; d; d = d->next) {
+            if (d->kind != AST_DECL_FUNCTION || !d->generic_parameters || strcmp(
+                    ast_program_lexeme(unit, d->name_token), name)) continue;
+            if (!same_package(analyzer->program, unit) && !d->is_public) {
+                semantic_error(analyzer, call->first_token, ERROR_CATEGORY_SEMANTIC, ERR_PACKAGE_PRIVATE,
+                               "Generic function is private to its defining package");
+                continue;
             }
-            size_t expected=0;
-            for (AstGenericParameter *g=d->generic_parameters;g;g=g->next) expected++;
-            if (count != expected || parameter_count(d) != value_count || !generic_bounds_satisfied(analyzer,unit,d,types)) continue;
-            AstDeclarationNode *instance=ast_specialize_function(unit,d,types,count,analyzer->program);
-            if (!instance) { semantic_error(analyzer,call->first_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_COMPLEXITY_LIMIT,"Generic specialization exceeds resource limits"); continue; }
+            size_t expected = 0;
+            for (AstGenericParameter *g = d->generic_parameters; g; g = g->next) expected++;
+            if (count != expected || parameter_count(d) != value_count || !generic_bounds_satisfied(
+                    analyzer, unit, d, types)) continue;
+            AstDeclarationNode *instance = ast_specialize_function(unit, d, types, count, analyzer->program);
+            if (!instance) {
+                semantic_error(analyzer, call->first_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_COMPLEXITY_LIMIT,
+                               "Generic specialization exceeds resource limits");
+                continue;
+            }
             if (instance->resolved_symbol_id == AST_SYMBOL_NONE) {
-                AstProgram *saved=analyzer->program; analyzer->program=unit;
-                normalize_function_types(analyzer,instance);
-                add_global(analyzer,instance,SEMANTIC_SYMBOL_FUNCTION,AST_TOKEN_NONE);
-                analyzer->program=saved;
+                AstProgram *saved = analyzer->program;
+                analyzer->program = unit;
+                normalize_function_types(analyzer, instance);
+                add_global(analyzer, instance, SEMANTIC_SYMBOL_FUNCTION, AST_TOKEN_NONE);
+                analyzer->program = saved;
             }
-            const AstParameter *parameter=instance->as.function.parameters;
-            const AstExpression *argument=call->arguments; int viable=1;
-            for (;parameter && argument;parameter=parameter->next,argument=argument->next)
-                if (!expression_to_declared_type_allowed(analyzer,argument,unit,&parameter->type)) viable=0;
+            const AstParameter *parameter = instance->as.function.parameters;
+            const AstExpression *argument = call->arguments;
+            int viable = 1;
+            for (; parameter && argument; parameter = parameter->next, argument = argument->next)
+                if (!expression_to_declared_type_allowed(analyzer, argument, unit, &parameter->type)) viable = 0;
             if (!viable || parameter || argument) continue;
-            if (candidate_count == 1024) { semantic_error(analyzer,call->first_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_COMPLEXITY_LIMIT,"Too many generic overload candidates"); return NULL; }
-            candidates[candidate_count++]=instance->resolved_symbol_id;
+            if (candidate_count == 1024) {
+                semantic_error(analyzer, call->first_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_COMPLEXITY_LIMIT,
+                               "Too many generic overload candidates");
+                return NULL;
+            }
+            candidates[candidate_count++] = instance->resolved_symbol_id;
         }
     }
-    size_t selected=AST_SYMBOL_NONE;
-    for (size_t i=0;i<candidate_count;i++) {
-        const SemanticSymbol *candidate=&analyzer->model->symbols[candidates[i]]; int dominated=0;
-        for (size_t j=0;j<candidate_count;j++)
-            if (i != j && function_dominates(analyzer,&analyzer->model->symbols[candidates[j]],candidate,call->arguments)) dominated=1;
+    size_t selected = AST_SYMBOL_NONE;
+    for (size_t i = 0; i < candidate_count; i++) {
+        const SemanticSymbol *candidate = &analyzer->model->symbols[candidates[i]];
+        int dominated = 0;
+        for (size_t j = 0; j < candidate_count; j++)
+            if (i != j && function_dominates(analyzer, &analyzer->model->symbols[candidates[j]], candidate,
+                                             call->arguments)) dominated = 1;
         if (!dominated) {
-            if (selected != AST_SYMBOL_NONE) { semantic_error(analyzer,call->first_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,"Ambiguous explicit generic function call"); return NULL; }
-            selected=candidates[i];
+            if (selected != AST_SYMBOL_NONE) {
+                semantic_error(analyzer, call->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                               "Ambiguous explicit generic function call");
+                return NULL;
+            }
+            selected = candidates[i];
         }
     }
     if (selected == AST_SYMBOL_NONE) {
-        semantic_error(analyzer,call->first_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INCOMPATIBLE_TYPES,"No generic function matches the explicit type arguments, trait bounds and value arguments"); return NULL;
+        semantic_error(analyzer, call->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
+                       "No generic function matches the explicit type arguments, trait bounds and value arguments");
+        return NULL;
     }
     return &analyzer->model->symbols[selected];
 }
 
-static size_t layout_size(Analyzer *analyzer,AstType *type,size_t depth) {
-    if (depth>analyzer->model->symbol_count+64 || type->kind == AST_TYPE_INFERRED) return 0;
+static size_t layout_size(Analyzer *analyzer, AstType *type, size_t depth) {
+    if (depth > analyzer->model->symbol_count + 64 || type->kind == AST_TYPE_INFERRED) return 0;
     if (type->outer_pointer_depth) return 8;
     if (type->is_slice) return 16;
     if (type->is_array) {
-        validate_array_shape(analyzer,type);
+        validate_array_shape(analyzer, type);
         if (!type->resolved_array_length) return 0;
-        AstType element=*type; element.is_array=0;
-        size_t size=layout_size(analyzer,&element,depth+1);
-        if (!size || size>SIZE_MAX-7) return 0;
-        size=(size+7)&~(size_t)7;
-        return type->resolved_array_length>SIZE_MAX/size ? 0 : size*type->resolved_array_length;
+        AstType element = *type;
+        element.is_array = 0;
+        size_t size = layout_size(analyzer, &element, depth + 1);
+        if (!size || size > SIZE_MAX - 7) return 0;
+        size = (size + 7) & ~(size_t) 7;
+        return type->resolved_array_length > SIZE_MAX / size ? 0 : size * type->resolved_array_length;
     }
     if (type->pointer_depth) return 8;
-    DataType primitive=primitive_type(analyzer->program,type);
+    DataType primitive = primitive_type(analyzer->program, type);
     if (primitive != TYPE_UNKNOWN) return primitive == TYPE_VOID ? 0 : data_type_bytes(primitive);
-    size_t id=resolve_named_symbol_id(analyzer,analyzer->program,type->name_token);
+    size_t id = resolve_named_symbol_id(analyzer, analyzer->program, type->name_token);
     if (id == AST_SYMBOL_NONE) return 0;
-    const SemanticSymbol *symbol=&analyzer->model->symbols[id];
-    AstProgram *unit=(AstProgram *)symbol->source_program;
-    AstDeclarationNode *declaration=(AstDeclarationNode *)symbol->declaration;
+    const SemanticSymbol *symbol = &analyzer->model->symbols[id];
+    AstProgram *unit = (AstProgram *) symbol->source_program;
+    AstDeclarationNode *declaration = (AstDeclarationNode *) symbol->declaration;
     if (!declaration) return 0;
-    AstProgram *saved=analyzer->program; analyzer->program=unit;
-    size_t size=0; int valid=1;
+    AstProgram *saved = analyzer->program;
+    analyzer->program = unit;
+    size_t size = 0;
+    int valid = 1;
     if (declaration->kind == AST_DECL_STRUCT) {
-        for (AstField *field=declaration->as.struct_decl.fields;field;field=field->next) {
-            size_t bytes=layout_size(analyzer,&field->type,depth+1);
-            if (!bytes || bytes>SIZE_MAX-7) { valid=0; break; }
-            bytes=(bytes+7)&~(size_t)7;
-            if (bytes>SIZE_MAX-size) { valid=0; break; } size+=bytes;
-        }
-        if (!size) size=8;
-    } else if (declaration->kind == AST_DECL_ENUM) {
-        size_t largest=0;
-        for (AstEnumValue *variant=declaration->as.enum_decl.values;variant;variant=variant->next) {
-            size_t payload=0;
-            for (AstTypeArgument *argument=variant->payload_types;argument;argument=argument->next) {
-                size_t bytes=layout_size(analyzer,&argument->type,depth+1);
-                if (!bytes || bytes>SIZE_MAX-7) { valid=0; break; }
-                bytes=(bytes+7)&~(size_t)7;
-                if (bytes>SIZE_MAX-payload) { valid=0; break; } payload+=bytes;
+        for (AstField *field = declaration->as.struct_decl.fields; field; field = field->next) {
+            size_t bytes = layout_size(analyzer, &field->type, depth + 1);
+            if (!bytes || bytes > SIZE_MAX - 7) {
+                valid = 0;
+                break;
             }
-            if (payload>largest) largest=payload;
+            bytes = (bytes + 7) & ~(size_t) 7;
+            if (bytes > SIZE_MAX - size) {
+                valid = 0;
+                break;
+            }
+            size += bytes;
         }
-        if (largest>SIZE_MAX-8) valid=0; else size=largest+8;
-    } else valid=0;
-    analyzer->program=saved; return valid ? size : 0;
+        if (!size) size = 8;
+    } else if (declaration->kind == AST_DECL_ENUM) {
+        size_t largest = 0;
+        for (AstEnumValue *variant = declaration->as.enum_decl.values; variant; variant = variant->next) {
+            size_t payload = 0;
+            for (AstTypeArgument *argument = variant->payload_types; argument; argument = argument->next) {
+                size_t bytes = layout_size(analyzer, &argument->type, depth + 1);
+                if (!bytes || bytes > SIZE_MAX - 7) {
+                    valid = 0;
+                    break;
+                }
+                bytes = (bytes + 7) & ~(size_t) 7;
+                if (bytes > SIZE_MAX - payload) {
+                    valid = 0;
+                    break;
+                }
+                payload += bytes;
+            }
+            if (payload > largest) largest = payload;
+        }
+        if (largest > SIZE_MAX - 8) valid = 0;
+        else size = largest + 8;
+    } else valid = 0;
+    analyzer->program = saved;
+    return valid ? size : 0;
 }
 
-static void metadata_name(DiagnosticText *text,const Analyzer *analyzer,const AstProgram *unit,const AstType *type,unsigned depth) {
-    if (depth > 64) { text->failed=1; return; }
-    for (unsigned i=0;i<type->outer_pointer_depth;i++) diagnostic_append(text,"*");
-    if (type->outer_pointer_depth && (type->is_array || type->is_slice)) diagnostic_append(text,"(");
-    for (unsigned i=0;i<type->pointer_depth;i++) diagnostic_append(text,"*");
-    size_t id=resolve_named_symbol_id(analyzer,unit,named_type_token(unit,type));
+static void metadata_name(DiagnosticText *text, const Analyzer *analyzer, const AstProgram *unit, const AstType *type,
+                          unsigned depth) {
+    if (depth > 64) {
+        text->failed = 1;
+        return;
+    }
+    for (unsigned i = 0; i < type->outer_pointer_depth; i++) diagnostic_append(text, "*");
+    if (type->outer_pointer_depth && (type->is_array || type->is_slice)) diagnostic_append(text, "(");
+    for (unsigned i = 0; i < type->pointer_depth; i++) diagnostic_append(text, "*");
+    size_t id = resolve_named_symbol_id(analyzer, unit, named_type_token(unit, type));
     if (id < analyzer->model->symbol_count) {
-        const SemanticSymbol *symbol=&analyzer->model->symbols[id];
-        const AstDeclarationNode *decl=symbol->declaration;
-        const AstProgram *owner=symbol->source_program;
-        diagnostic_append(text,"%s.%s",owner->module_identity,
-            ast_program_lexeme(owner,decl && decl->generic_origin ? decl->generic_origin->name_token : symbol->name_token));
+        const SemanticSymbol *symbol = &analyzer->model->symbols[id];
+        const AstDeclarationNode *decl = symbol->declaration;
+        const AstProgram *owner = symbol->source_program;
+        diagnostic_append(text, "%s.%s", owner->module_identity,
+                          ast_program_lexeme(owner, decl && decl->generic_origin
+                                                        ? decl->generic_origin->name_token
+                                                        : symbol->name_token));
         if (decl && decl->specialization_arguments) {
-            diagnostic_append(text,"<");
-            for (const AstTypeArgument *a=decl->specialization_arguments;a;a=a->next) {
-                metadata_name(text,analyzer,owner,&a->type,depth+1);
-                if (a->next) diagnostic_append(text,",");
+            diagnostic_append(text, "<");
+            for (const AstTypeArgument *a = decl->specialization_arguments; a; a = a->next) {
+                metadata_name(text, analyzer, owner, &a->type, depth + 1);
+                if (a->next) diagnostic_append(text, ",");
             }
-            diagnostic_append(text,">");
+            diagnostic_append(text, ">");
         }
-    } else diagnostic_append(text,"%s",ast_program_lexeme(unit,type->name_token));
-    if (type->is_slice) diagnostic_append(text,"[]");
-    if (type->is_array) diagnostic_append(text,"[%zu]",type->resolved_array_length);
-    if (type->outer_pointer_depth && (type->is_array || type->is_slice)) diagnostic_append(text,")");
+    } else diagnostic_append(text, "%s", ast_program_lexeme(unit, type->name_token));
+    if (type->is_slice) diagnostic_append(text, "[]");
+    if (type->is_array) diagnostic_append(text, "[%zu]", type->resolved_array_length);
+    if (type->outer_pointer_depth && (type->is_array || type->is_slice)) diagnostic_append(text, ")");
 }
 
 static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
     if (expression == NULL) return;
     if (expression->kind == AST_EXPR_TYPE_INFO && !expression->left &&
         !expression->allocated_type.pointer_depth && !expression->allocated_type.outer_pointer_depth &&
-        !expression->allocated_type.is_array && !expression->allocated_type.is_slice && !expression->allocated_type.arguments) {
-        const SemanticSymbol *global=scoped_find_global(analyzer->model,analyzer->program,
-            ast_program_lexeme(analyzer->program,expression->value_token),SEMANTIC_SYMBOL_VARIABLE);
-        if (!global) global=scoped_find_global(analyzer->model,analyzer->program,
-            ast_program_lexeme(analyzer->program,expression->value_token),SEMANTIC_SYMBOL_CONSTANT);
-        if (global || find_local(analyzer,expression->value_token)) {
-            expression->kind=AST_EXPR_NAME; expression->allocated_type=(AstType){.kind=AST_TYPE_INFERRED,.name_token=AST_TOKEN_NONE};
+        !expression->allocated_type.is_array && !expression->allocated_type.is_slice && !expression->allocated_type.
+        arguments) {
+        const SemanticSymbol *global = scoped_find_global(analyzer->model, analyzer->program,
+                                                          ast_program_lexeme(
+                                                              analyzer->program, expression->value_token),
+                                                          SEMANTIC_SYMBOL_VARIABLE);
+        if (!global)
+            global = scoped_find_global(analyzer->model, analyzer->program,
+                                        ast_program_lexeme(analyzer->program, expression->value_token),
+                                        SEMANTIC_SYMBOL_CONSTANT);
+        if (global || find_local(analyzer, expression->value_token)) {
+            expression->kind = AST_EXPR_NAME;
+            expression->allocated_type = (AstType)
+            {
+                .kind = AST_TYPE_INFERRED,.name_token = AST_TOKEN_NONE
+            };
         }
     }
     if (expression->kind == AST_EXPR_MEMBER && expression->left && expression->left->kind == AST_EXPR_NAME &&
-        !find_local(analyzer,expression->left->value_token)) {
-        const char *alias=ast_program_lexeme(analyzer->program,expression->left->value_token);
-        for (AstDeclarationNode *d=analyzer->program->root; d; d=d->next) if (d->kind == AST_DECL_IMPORT)
-            for (AstImportPath *p=d->as.import_decl.paths; p; p=p->next) if (p->alias && !strcmp(alias,p->alias)) {
-                char qualified[2048];
-                snprintf(qualified,sizeof(qualified),"%s.%s",alias,ast_program_lexeme(analyzer->program,expression->value_token));
-                expression->value_token=concrete_token(analyzer,TOKEN_IDENTIFIER,qualified);
-                expression->kind=AST_EXPR_NAME; expression->left=NULL;
-            }
+        !find_local(analyzer, expression->left->value_token)) {
+        const char *alias = ast_program_lexeme(analyzer->program, expression->left->value_token);
+        for (AstDeclarationNode *d = analyzer->program->root; d; d = d->next)
+            if (d->kind == AST_DECL_IMPORT)
+                for (AstImportPath *p = d->as.import_decl.paths; p; p = p->next)
+                    if (p->alias && !strcmp(alias, p->alias)) {
+                        char qualified[2048];
+                        snprintf(qualified, sizeof(qualified), "%s.%s", alias,
+                                 ast_program_lexeme(analyzer->program, expression->value_token));
+                        expression->value_token = concrete_token(analyzer, TOKEN_IDENTIFIER, qualified);
+                        expression->kind = AST_EXPR_NAME;
+                        expression->left = NULL;
+                    }
     }
     analyze_expression(analyzer, expression->left);
     analyze_expression(analyzer, expression->right);
@@ -2778,17 +3174,18 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
     if (expression->kind == AST_EXPR_ENUM_ACCESS) return;
 
     if (expression->kind == AST_EXPR_ENUM_CONSTRUCT) {
-        const AstExpression *left=expression->left;
+        const AstExpression *left = expression->left;
         if (left && left->resolved_symbol_id < analyzer->model->symbol_count &&
             analyzer->model->symbols[left->resolved_symbol_id].kind == SEMANTIC_SYMBOL_ENUM_VALUE) {
-            expression->resolved_symbol_id=left->resolved_symbol_id;
-            expression->resolved_named_symbol_id=left->resolved_named_symbol_id;
-            expression->resolved_named_type_token=left->resolved_named_type_token;
+            expression->resolved_symbol_id = left->resolved_symbol_id;
+            expression->resolved_named_symbol_id = left->resolved_named_symbol_id;
+            expression->resolved_named_type_token = left->resolved_named_type_token;
         } else if (left) {
-            const AstEnumValue *variant=find_enum_value_by_symbol(analyzer,left->resolved_named_symbol_id,expression->value_token);
-            expression->resolved_symbol_id=variant ? variant->resolved_symbol_id : AST_SYMBOL_NONE;
-            expression->resolved_named_symbol_id=left->resolved_named_symbol_id;
-            expression->resolved_named_type_token=left->resolved_named_type_token;
+            const AstEnumValue *variant = find_enum_value_by_symbol(analyzer, left->resolved_named_symbol_id,
+                                                                    expression->value_token);
+            expression->resolved_symbol_id = variant ? variant->resolved_symbol_id : AST_SYMBOL_NONE;
+            expression->resolved_named_symbol_id = left->resolved_named_symbol_id;
+            expression->resolved_named_type_token = left->resolved_named_type_token;
         }
         return;
     }
@@ -2800,81 +3197,114 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
     expression->resolved_is_array = 0;
     expression->resolved_is_slice = 0;
     expression->resolved_symbol_id = AST_SYMBOL_NONE;
-    if (expression->kind == AST_EXPR_MEMBER && expression->left && same_name(analyzer->program,expression->value_token,"type")) {
+    if (expression->kind == AST_EXPR_MEMBER && expression->left && same_name(
+            analyzer->program, expression->value_token, "type")) {
         if (expression->left->kind == AST_EXPR_TYPE_INFO ||
             (expression->left->resolved_symbol_id < analyzer->model->symbol_count &&
              (analyzer->model->symbols[expression->left->resolved_symbol_id].kind == SEMANTIC_SYMBOL_STRUCT ||
               analyzer->model->symbols[expression->left->resolved_symbol_id].kind == SEMANTIC_SYMBOL_ENUM)))
-            semantic_error(analyzer,expression->value_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,"Types expose name, size and align directly; .type is for values");
-        expression->kind=AST_EXPR_TYPE_INFO;
-        expression->allocated_type=inferred_argument_type(analyzer,expression->left);
-        if (!known_declared_type(analyzer,&expression->allocated_type))
-            semantic_error(analyzer,expression->first_token,ERROR_CATEGORY_TYPE,ERR_TYPE_UNKNOWN,"Value type metadata requires a known static type");
-        expression->resolved_type=TYPE_VOID;
+            semantic_error(analyzer, expression->value_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                           "Types expose name, size and align directly; .type is for values");
+        expression->kind = AST_EXPR_TYPE_INFO;
+        expression->allocated_type = inferred_argument_type(analyzer, expression->left);
+        if (!known_declared_type(analyzer, &expression->allocated_type))
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN,
+                           "Value type metadata requires a known static type");
+        expression->resolved_type = TYPE_VOID;
     } else if (expression->kind == AST_EXPR_TYPE_INFO) {
-        normalize_generic_type(analyzer,&expression->allocated_type,0);
-        if (!known_declared_type(analyzer,&expression->allocated_type))
-            semantic_error(analyzer,expression->first_token,ERROR_CATEGORY_TYPE,ERR_TYPE_UNKNOWN,"Type metadata requires a known type");
-        expression->resolved_type=TYPE_VOID; /* Compile-time entity, never an IR value. */
+        normalize_generic_type(analyzer, &expression->allocated_type, 0);
+        if (!known_declared_type(analyzer, &expression->allocated_type))
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN,
+                           "Type metadata requires a known type");
+        expression->resolved_type = TYPE_VOID; /* Compile-time entity, never an IR value. */
     } else if (expression->kind == AST_EXPR_TYPE_PROPERTY ||
-        (expression->kind == AST_EXPR_MEMBER && expression->left && expression->left->kind == AST_EXPR_TYPE_INFO)) {
-        expression->kind=AST_EXPR_TYPE_PROPERTY;
-        const char *property=ast_program_lexeme(analyzer->program,expression->value_token);
-        AstType *type=&expression->left->allocated_type;
-        if (!strcmp(property,"name")) {
-            DiagnosticText text={0};
-            metadata_name(&text,analyzer,analyzer->program,type,0);
-            if (text.failed) analyzer->allocation_failed=1;
-            else expression->folded_constant=(AstToken){.type=TOKEN_STRING_LITERAL,
-                .lexeme=string_interner_intern(analyzer->program->strings,text.text),.span=expression->span};
-            free(text.text); expression->resolved_type=TYPE_STRING;
-        } else if (!strcmp(property,"size") || !strcmp(property,"align")) {
-            DataType primitive=primitive_type(analyzer->program,type);
-            int is_void=primitive == TYPE_VOID && !type->pointer_depth && !type->outer_pointer_depth && !type->is_array && !type->is_slice;
-            size_t size=is_void ? 0 : layout_size(analyzer,type,0);
-            if ((!size && !is_void) || size>INT64_MAX)
-                semantic_error(analyzer,expression->first_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,"Type metadata layout requires a complete, non-recursive sized type");
-            size_t align=is_void ? 1 : (!type->pointer_depth && !type->outer_pointer_depth && !type->is_array && !type->is_slice && primitive != TYPE_UNKNOWN) ? data_type_bytes(primitive) : 8;
-            char text[32]; snprintf(text,sizeof(text),"%zu",!strcmp(property,"size") ? size : align);
-            expression->folded_constant=(AstToken){.type=TOKEN_NUMBER,.lexeme=string_interner_intern(analyzer->program->strings,text),.span=expression->span};
-            expression->resolved_type=TYPE_USIZE;
-        } else semantic_error(analyzer,expression->value_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_FIELD_NOT_FOUND,"Unknown type metadata property; expected name, size or align");
+               (expression->kind == AST_EXPR_MEMBER && expression->left && expression->left->kind ==
+                AST_EXPR_TYPE_INFO)) {
+        expression->kind = AST_EXPR_TYPE_PROPERTY;
+        const char *property = ast_program_lexeme(analyzer->program, expression->value_token);
+        AstType *type = &expression->left->allocated_type;
+        if (!strcmp(property, "name")) {
+            DiagnosticText text = {0};
+            metadata_name(&text, analyzer, analyzer->program, type, 0);
+            if (text.failed) analyzer->allocation_failed = 1;
+            else expression->folded_constant = (AstToken)
+            {
+                .type = TOKEN_STRING_LITERAL,
+                .lexeme = string_interner_intern(analyzer->program->strings, text.text),.span = expression->span
+            };
+            free(text.text);
+            expression->resolved_type = TYPE_STRING;
+        } else if (!strcmp(property, "size") || !strcmp(property, "align")) {
+            DataType primitive = primitive_type(analyzer->program, type);
+            int is_void = primitive == TYPE_VOID && !type->pointer_depth && !type->outer_pointer_depth && !type->
+                          is_array && !type->is_slice;
+            size_t size = is_void ? 0 : layout_size(analyzer, type, 0);
+            if ((!size && !is_void) || size > INT64_MAX)
+                semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                               "Type metadata layout requires a complete, non-recursive sized type");
+            size_t align = is_void
+                               ? 1
+                               : (!type->pointer_depth && !type->outer_pointer_depth && !type->is_array && !type->
+                                  is_slice && primitive != TYPE_UNKNOWN)
+                                     ? data_type_bytes(primitive)
+                                     : 8;
+            char text[32];
+            snprintf(text, sizeof(text), "%zu", !strcmp(property, "size") ? size : align);
+            expression->folded_constant = (AstToken)
+            {
+                .type = TOKEN_NUMBER,.lexeme = string_interner_intern(analyzer->program->strings, text),.
+                span = expression->span
+            };
+            expression->resolved_type = TYPE_USIZE;
+        } else semantic_error(analyzer, expression->value_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_FIELD_NOT_FOUND,
+                              "Unknown type metadata property; expected name, size or align");
     } else if (expression->kind == AST_EXPR_SIZEOF || expression->kind == AST_EXPR_ALIGNOF) {
-        normalize_generic_type(analyzer,&expression->allocated_type,0);
-        size_t size=layout_size(analyzer,&expression->allocated_type,0);
-        expression->resolved_type=TYPE_USIZE;
-        if (!size || size>(size_t)INT64_MAX) {
-            semantic_error(analyzer,expression->first_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,"Layout query requires a complete, non-recursive, sized non-void type"); return;
+        normalize_generic_type(analyzer, &expression->allocated_type, 0);
+        size_t size = layout_size(analyzer, &expression->allocated_type, 0);
+        expression->resolved_type = TYPE_USIZE;
+        if (!size || size > (size_t) INT64_MAX) {
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                           "Layout query requires a complete, non-recursive, sized non-void type");
+            return;
         }
-        const AstType *type=&expression->allocated_type;
-        DataType primitive=primitive_type(analyzer->program,type);
-        size_t alignment=(!type->pointer_depth && !type->outer_pointer_depth && !type->is_array && !type->is_slice && primitive != TYPE_UNKNOWN)
-            ? data_type_bytes(primitive) : 8;
-        char text[32]; snprintf(text,sizeof(text),"%zu",expression->kind == AST_EXPR_SIZEOF ? size : alignment);
-        expression->folded_constant=(AstToken){.type=TOKEN_NUMBER,.lexeme=string_interner_intern(analyzer->program->strings,text),.span=expression->span};
+        const AstType *type = &expression->allocated_type;
+        DataType primitive = primitive_type(analyzer->program, type);
+        size_t alignment = (!type->pointer_depth && !type->outer_pointer_depth && !type->is_array && !type->is_slice &&
+                            primitive != TYPE_UNKNOWN)
+                               ? data_type_bytes(primitive)
+                               : 8;
+        char text[32];
+        snprintf(text, sizeof(text), "%zu", expression->kind == AST_EXPR_SIZEOF ? size : alignment);
+        expression->folded_constant = (AstToken)
+        {
+            .type = TOKEN_NUMBER,.lexeme = string_interner_intern(analyzer->program->strings, text),.
+            span = expression->span
+        };
     } else if (expression->kind == AST_EXPR_SLICE) {
-        const AstExpression *data=expression->left;
+        const AstExpression *data = expression->left;
         if (data) {
-            expression->resolved_type=data->resolved_type;
-            expression->resolved_named_type_token=data->resolved_named_type_token;
-            expression->resolved_named_symbol_id=data->resolved_named_symbol_id;
-            expression->resolved_pointer_depth=data->resolved_pointer_depth ? data->resolved_pointer_depth-1 : 0;
-            expression->resolved_is_slice=1;
+            expression->resolved_type = data->resolved_type;
+            expression->resolved_named_type_token = data->resolved_named_type_token;
+            expression->resolved_named_symbol_id = data->resolved_named_symbol_id;
+            expression->resolved_pointer_depth = data->resolved_pointer_depth ? data->resolved_pointer_depth - 1 : 0;
+            expression->resolved_is_slice = 1;
         }
     } else if (expression->kind == AST_EXPR_LITERAL) {
         TokenType token = expression->value_token < analyzer->program->token_count
-            ? analyzer->program->tokens[expression->value_token].type : TOKEN_ERROR;
+                              ? analyzer->program->tokens[expression->value_token].type
+                              : TOKEN_ERROR;
         if (token == TOKEN_NUMBER) {
-            unsigned long long value = strtoull(ast_program_lexeme(analyzer->program, expression->value_token),NULL,10);
+            unsigned long long value = strtoull(ast_program_lexeme(analyzer->program, expression->value_token), NULL,
+                                                10);
             expression->resolved_type = value > INT64_MAX ? TYPE_U64 : value > INT32_MAX ? TYPE_I64 : TYPE_INT;
-        }
-        else if (token == TOKEN_FLOAT_LITERAL) expression->resolved_type = TYPE_DOUBLE;
+        } else if (token == TOKEN_FLOAT_LITERAL) expression->resolved_type = TYPE_DOUBLE;
         else if (token == TOKEN_CHAR_LITERAL) expression->resolved_type = TYPE_CHAR;
         else if (token == TOKEN_STRING_LITERAL) expression->resolved_type = TYPE_STRING;
     } else if (expression->kind == AST_EXPR_NAME) {
         const char *name = ast_program_lexeme(analyzer->program, expression->value_token);
         TokenType name_type = expression->value_token < analyzer->program->token_count
-            ? analyzer->program->tokens[expression->value_token].type : TOKEN_ERROR;
+                                  ? analyzer->program->tokens[expression->value_token].type
+                                  : TOKEN_ERROR;
         if (strcmp(name, "true") == 0 || strcmp(name, "false") == 0) {
             expression->resolved_type = TYPE_BIT;
         } else if (name_type >= TOKEN_TYPE_INT && name_type <= TOKEN_TYPE_VOID) {
@@ -2902,26 +3332,28 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                 expression->resolved_is_slice = local->resolved_is_slice;
             } else {
                 const AstField *implicit_field = analyzer->current_owner_token == AST_TOKEN_NONE
-                    ? NULL : find_field(analyzer, analyzer->current_owner_token,
-                                        expression->value_token);
+                                                     ? NULL
+                                                     : find_field(analyzer, analyzer->current_owner_token,
+                                                                  expression->value_token);
                 const SemanticSymbol *structure = scoped_find_global(analyzer->model, analyzer->program, name,
-                                                                        SEMANTIC_SYMBOL_STRUCT);
+                                                                     SEMANTIC_SYMBOL_STRUCT);
                 const SemanticSymbol *enumeration = scoped_find_global(analyzer->model, analyzer->program, name,
-                                                                           SEMANTIC_SYMBOL_ENUM);
+                                                                       SEMANTIC_SYMBOL_ENUM);
                 const SemanticSymbol *function = scoped_find_global(analyzer->model, analyzer->program, name,
-                                                                       SEMANTIC_SYMBOL_FUNCTION);
+                                                                    SEMANTIC_SYMBOL_FUNCTION);
                 const SemanticSymbol *constant = scoped_find_global(analyzer->model, analyzer->program, name,
-                                                                        SEMANTIC_SYMBOL_CONSTANT);
-                if (!constant) constant=scoped_find_global(analyzer->model,analyzer->program,name,SEMANTIC_SYMBOL_VARIABLE);
+                                                                    SEMANTIC_SYMBOL_CONSTANT);
+                if (!constant) constant = scoped_find_global(analyzer->model, analyzer->program, name,
+                                                             SEMANTIC_SYMBOL_VARIABLE);
                 if (implicit_field != NULL) {
                     expression->resolved_symbol_id = implicit_field->resolved_symbol_id;
                     expression->resolved_type = primitive_type(analyzer->program,
                                                                &implicit_field->type);
                     expression->resolved_pointer_depth = implicit_field->type.pointer_depth;
                     expression->resolved_outer_pointer_depth =
-                        implicit_field->type.outer_pointer_depth;
+                            implicit_field->type.outer_pointer_depth;
                     expression->resolved_named_type_token = named_type_token(analyzer->program,
-                                                                              &implicit_field->type);
+                                                                             &implicit_field->type);
                     expression->resolved_named_symbol_id = resolve_named_symbol_id(analyzer,
                         analyzer->program, expression->resolved_named_type_token);
                     expression->resolved_is_array = implicit_field->type.is_array;
@@ -2939,22 +3371,26 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                     expression->resolved_type = primitive_type(function->source_program,
                                                                &function->declared_type);
                 } else if (constant != NULL) {
-                    size_t constant_id=constant->id;
-                    if (constant->kind == SEMANTIC_SYMBOL_CONSTANT && constant->declaration && !constant->declaration->semantic_body_checked) {
-                        AstProgram *saved=analyzer->program;
-                        analyzer->program=(AstProgram *)constant->source_program;
-                        analyze_constant_declaration(analyzer,(AstDeclarationNode *)constant->declaration);
-                        analyzer->program=saved; constant=&analyzer->model->symbols[constant_id];
-                    } else if (constant->kind == SEMANTIC_SYMBOL_CONSTANT && constant->declaration && constant->declaration->semantic_body_checked == 2) {
-                        semantic_error(analyzer,expression->value_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,"Constant initializer contains a dependency cycle");
+                    size_t constant_id = constant->id;
+                    if (constant->kind == SEMANTIC_SYMBOL_CONSTANT && constant->declaration && !constant->declaration->
+                        semantic_body_checked) {
+                        AstProgram *saved = analyzer->program;
+                        analyzer->program = (AstProgram *) constant->source_program;
+                        analyze_constant_declaration(analyzer, (AstDeclarationNode *) constant->declaration);
+                        analyzer->program = saved;
+                        constant = &analyzer->model->symbols[constant_id];
+                    } else if (constant->kind == SEMANTIC_SYMBOL_CONSTANT && constant->declaration && constant->
+                               declaration->semantic_body_checked == 2) {
+                        semantic_error(analyzer, expression->value_token, ERROR_CATEGORY_TYPE,
+                                       ERR_TYPE_INVALID_OPERATION, "Constant initializer contains a dependency cycle");
                     }
                     expression->resolved_symbol_id = constant->id;
                     expression->resolved_type = constant->resolved_type;
                     expression->resolved_pointer_depth = constant->resolved_pointer_depth;
                     expression->resolved_outer_pointer_depth =
-                        constant->resolved_outer_pointer_depth;
+                            constant->resolved_outer_pointer_depth;
                     expression->resolved_named_type_token =
-                        constant->resolved_named_type_token;
+                            constant->resolved_named_type_token;
                     expression->resolved_named_symbol_id = constant->resolved_named_symbol_id;
                     expression->resolved_is_array = constant->resolved_is_array;
                     expression->resolved_is_slice = constant->resolved_is_slice;
@@ -2967,7 +3403,7 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
             expression->resolved_type = expression->right->resolved_type;
             expression->resolved_pointer_depth = expression->right->resolved_pointer_depth;
             expression->resolved_outer_pointer_depth =
-                expression->right->resolved_outer_pointer_depth;
+                    expression->right->resolved_outer_pointer_depth;
             expression->resolved_named_type_token = expression->right->resolved_named_type_token;
             expression->resolved_named_symbol_id = expression->right->resolved_named_symbol_id;
             expression->resolved_is_array = expression->right->resolved_is_array;
@@ -2976,8 +3412,7 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                 if (expression->resolved_is_array || expression->resolved_is_slice)
                     expression->resolved_outer_pointer_depth++;
                 else expression->resolved_pointer_depth++;
-            }
-            else if (expression->operator_type == TOKEN_STAR) {
+            } else if (expression->operator_type == TOKEN_STAR) {
                 if (expression->resolved_outer_pointer_depth > 0)
                     expression->resolved_outer_pointer_depth--;
                 else if (expression->resolved_pointer_depth > 0)
@@ -3001,25 +3436,28 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                      expression->left->resolved_type == TYPE_DOUBLE &&
                      expression->left->kind == AST_EXPR_LITERAL)
                 expression->resolved_type = TYPE_FLOAT;
-            else expression->resolved_type = promoted_numeric(expression->left->resolved_type,
-                                                                expression->right->resolved_type);
+            else
+                expression->resolved_type = promoted_numeric(expression->left->resolved_type,
+                                                             expression->right->resolved_type);
         }
     } else if (expression->kind == AST_EXPR_CAST) {
-        const AstType *cast_type=&expression->allocated_type;
-        expression->resolved_type=primitive_type(analyzer->program,cast_type);
-        expression->resolved_pointer_depth=cast_type->pointer_depth;
-        expression->resolved_outer_pointer_depth=cast_type->outer_pointer_depth;
-        expression->resolved_named_type_token=named_type_token(analyzer->program,cast_type);
-        expression->resolved_named_symbol_id=resolve_named_symbol_id(analyzer,analyzer->program,expression->resolved_named_type_token);
-        expression->resolved_is_array=cast_type->is_array;
-        expression->resolved_is_slice=cast_type->is_slice;
+        const AstType *cast_type = &expression->allocated_type;
+        expression->resolved_type = primitive_type(analyzer->program, cast_type);
+        expression->resolved_pointer_depth = cast_type->pointer_depth;
+        expression->resolved_outer_pointer_depth = cast_type->outer_pointer_depth;
+        expression->resolved_named_type_token = named_type_token(analyzer->program, cast_type);
+        expression->resolved_named_symbol_id = resolve_named_symbol_id(analyzer, analyzer->program,
+                                                                       expression->resolved_named_type_token);
+        expression->resolved_is_array = cast_type->is_array;
+        expression->resolved_is_slice = cast_type->is_slice;
     } else if (expression->kind == AST_EXPR_FREE) {
         expression->resolved_type = TYPE_VOID;
     } else if (expression->kind == AST_EXPR_CALL) {
         if (expression->left != NULL && expression->left->kind == AST_EXPR_NAME) {
             const char *name = ast_program_lexeme(analyzer->program, expression->left->value_token);
             TokenType callee_type = expression->left->value_token < analyzer->program->token_count
-                ? analyzer->program->tokens[expression->left->value_token].type : TOKEN_ERROR;
+                                        ? analyzer->program->tokens[expression->left->value_token].type
+                                        : TOKEN_ERROR;
             AstType cast_type = {
                 .kind = AST_TYPE_NAMED,
                 .name_token = expression->left->value_token,
@@ -3030,10 +3468,11 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
             } else {
                 int ambiguous = 0;
                 const SemanticSymbol *function;
-                if (expression->left->explicit_type_arguments) function=explicit_generic_function(analyzer,name,expression);
+                if (expression->left->explicit_type_arguments) function = explicit_generic_function(
+                                                                   analyzer, name, expression);
                 else {
-                    instantiate_generic_candidates(analyzer,name,expression->arguments);
-                    function=resolve_overload(analyzer,name,AST_SYMBOL_NONE,0,expression->arguments,&ambiguous);
+                    instantiate_generic_candidates(analyzer, name, expression->arguments);
+                    function = resolve_overload(analyzer, name, AST_SYMBOL_NONE, 0, expression->arguments, &ambiguous);
                 }
                 (void) ambiguous;
                 if (function != NULL) {
@@ -3042,9 +3481,9 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                                                                &function->declared_type);
                     expression->resolved_pointer_depth = function->declared_type.pointer_depth;
                     expression->resolved_outer_pointer_depth =
-                        function->declared_type.outer_pointer_depth;
+                            function->declared_type.outer_pointer_depth;
                     expression->resolved_named_type_token = named_type_token(function->source_program,
-                                                                              &function->declared_type);
+                                                                             &function->declared_type);
                     expression->resolved_named_symbol_id = resolve_named_symbol_id(analyzer,
                         function->source_program, expression->resolved_named_type_token);
                     expression->resolved_is_array = function->declared_type.is_array;
@@ -3059,62 +3498,71 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                         expression->arguments->next != NULL) {
                         const AstExpression *format = expression->arguments->next;
                         const char *format_text = format->kind == AST_EXPR_LITERAL
-                            ? ast_program_lexeme(analyzer->program, format->value_token) : "";
+                                                      ? ast_program_lexeme(analyzer->program, format->value_token)
+                                                      : "";
                         expression->resolved_type = strcmp(format_text, "%c") == 0
-                            ? TYPE_CHAR : TYPE_INT;
+                                                        ? TYPE_CHAR
+                                                        : TYPE_INT;
                     }
                 } else if (expression->left->resolved_named_type_token != AST_TOKEN_NONE) {
                     expression->resolved_named_type_token =
-                        expression->left->resolved_named_type_token;
+                            expression->left->resolved_named_type_token;
                     expression->resolved_named_symbol_id =
-                        expression->left->resolved_named_symbol_id;
+                            expression->left->resolved_named_symbol_id;
                 }
             }
         } else if (expression->left != NULL && expression->left->kind == AST_EXPR_MEMBER &&
                    expression->left->left != NULL) {
             const AstExpression *receiver = expression->left->left;
             int enum_type_receiver = receiver->resolved_symbol_id < analyzer->model->symbol_count &&
-                analyzer->model->symbols[receiver->resolved_symbol_id].kind == SEMANTIC_SYMBOL_ENUM;
+                                     analyzer->model->symbols[receiver->resolved_symbol_id].kind ==
+                                     SEMANTIC_SYMBOL_ENUM;
             const AstEnumValue *access_variant = !enum_type_receiver &&
-                receiver->resolved_pointer_depth == 0 && !receiver->resolved_is_array && !receiver->resolved_is_slice
-                ? find_enum_value_by_symbol(analyzer,receiver->resolved_named_symbol_id,expression->left->value_token) : NULL;
+                                                 receiver->resolved_pointer_depth == 0 && !receiver->resolved_is_array
+                                                 && !receiver->resolved_is_slice
+                                                     ? find_enum_value_by_symbol(
+                                                         analyzer, receiver->resolved_named_symbol_id,
+                                                         expression->left->value_token)
+                                                     : NULL;
             if (access_variant != NULL) {
-                const SemanticSymbol *variant=&analyzer->model->symbols[access_variant->resolved_symbol_id];
-                const AstTypeArgument *payload=access_variant->payload_types;
-                expression->kind=AST_EXPR_ENUM_ACCESS;
-                expression->resolved_symbol_id=variant->id;
+                const SemanticSymbol *variant = &analyzer->model->symbols[access_variant->resolved_symbol_id];
+                const AstTypeArgument *payload = access_variant->payload_types;
+                expression->kind = AST_EXPR_ENUM_ACCESS;
+                expression->resolved_symbol_id = variant->id;
                 if (!payload || payload->next) {
-                    semantic_error(analyzer,expression->first_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,
-                        "Enum payload accessor requires a variant with exactly one payload");
+                    semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                                   "Enum payload accessor requires a variant with exactly one payload");
                     return;
                 }
-                expression->resolved_type=primitive_type(variant->source_program,&payload->type);
-                expression->resolved_pointer_depth=payload->type.pointer_depth;
-                expression->resolved_outer_pointer_depth=payload->type.outer_pointer_depth;
-                expression->resolved_named_type_token=named_type_token(variant->source_program,&payload->type);
-                expression->resolved_named_symbol_id=resolve_named_symbol_id(analyzer,variant->source_program,expression->resolved_named_type_token);
-                expression->resolved_is_array=payload->type.is_array;
-                expression->resolved_is_slice=payload->type.is_slice;
+                expression->resolved_type = primitive_type(variant->source_program, &payload->type);
+                expression->resolved_pointer_depth = payload->type.pointer_depth;
+                expression->resolved_outer_pointer_depth = payload->type.outer_pointer_depth;
+                expression->resolved_named_type_token = named_type_token(variant->source_program, &payload->type);
+                expression->resolved_named_symbol_id = resolve_named_symbol_id(
+                    analyzer, variant->source_program, expression->resolved_named_type_token);
+                expression->resolved_is_array = payload->type.is_array;
+                expression->resolved_is_slice = payload->type.is_slice;
                 return;
             }
             if (expression->left->resolved_symbol_id < analyzer->model->symbol_count &&
                 analyzer->model->symbols[expression->left->resolved_symbol_id].kind == SEMANTIC_SYMBOL_ENUM_VALUE) {
-                expression->kind=AST_EXPR_ENUM_CONSTRUCT;
-                expression->resolved_symbol_id=expression->left->resolved_symbol_id;
-                expression->resolved_named_symbol_id=receiver->resolved_named_symbol_id;
-                expression->resolved_named_type_token=receiver->resolved_named_type_token;
+                expression->kind = AST_EXPR_ENUM_CONSTRUCT;
+                expression->resolved_symbol_id = expression->left->resolved_symbol_id;
+                expression->resolved_named_symbol_id = receiver->resolved_named_symbol_id;
+                expression->resolved_named_type_token = receiver->resolved_named_type_token;
                 return;
             }
             int type_receiver = receiver->resolved_symbol_id < analyzer->model->symbol_count &&
-                (analyzer->model->symbols[receiver->resolved_symbol_id].kind ==
-                     SEMANTIC_SYMBOL_STRUCT ||
-                 analyzer->model->symbols[receiver->resolved_symbol_id].kind ==
-                     SEMANTIC_SYMBOL_ENUM);
+                                (analyzer->model->symbols[receiver->resolved_symbol_id].kind ==
+                                 SEMANTIC_SYMBOL_STRUCT ||
+                                 analyzer->model->symbols[receiver->resolved_symbol_id].kind ==
+                                 SEMANTIC_SYMBOL_ENUM);
             int ambiguous = 0;
             const SemanticSymbol *method = resolve_overload(analyzer,
-                ast_program_lexeme(analyzer->program, expression->left->value_token),
-                receiver->resolved_named_symbol_id, type_receiver,
-                expression->arguments, &ambiguous);
+                                                            ast_program_lexeme(
+                                                                analyzer->program, expression->left->value_token),
+                                                            receiver->resolved_named_symbol_id, type_receiver,
+                                                            expression->arguments, &ambiguous);
             (void) ambiguous;
             if (method != NULL) {
                 expression->resolved_symbol_id = method->id;
@@ -3122,11 +3570,12 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                                                            &method->declared_type);
                 expression->resolved_pointer_depth = method->declared_type.pointer_depth;
                 expression->resolved_outer_pointer_depth =
-                    method->declared_type.outer_pointer_depth;
+                        method->declared_type.outer_pointer_depth;
                 expression->resolved_named_type_token = named_type_token(method->source_program,
-                                                                          &method->declared_type);
+                                                                         &method->declared_type);
                 expression->resolved_named_symbol_id = resolve_named_symbol_id(analyzer,
-                    method->source_program, expression->resolved_named_type_token);
+                                                                               method->source_program,
+                                                                               expression->resolved_named_type_token);
                 expression->resolved_is_array = method->declared_type.is_array;
                 expression->resolved_is_slice = method->declared_type.is_slice;
             }
@@ -3135,7 +3584,7 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
         expression->resolved_type = expression->left->resolved_type;
         expression->resolved_pointer_depth = expression->left->resolved_pointer_depth;
         expression->resolved_outer_pointer_depth =
-            expression->left->resolved_outer_pointer_depth;
+                expression->left->resolved_outer_pointer_depth;
         expression->resolved_named_type_token = expression->left->resolved_named_type_token;
         expression->resolved_named_symbol_id = expression->left->resolved_named_symbol_id;
         expression->resolved_is_array = expression->left->resolved_is_array;
@@ -3155,59 +3604,64 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
             return;
         }
         if (expression->left->resolved_is_slice && !expression->left->resolved_outer_pointer_depth &&
-            same_name(analyzer->program,expression->value_token,"data")) {
-            expression->kind=AST_EXPR_SLICE_DATA;
-            expression->resolved_type=expression->left->resolved_type;
-            expression->resolved_pointer_depth=expression->left->resolved_pointer_depth+1;
-            expression->resolved_named_type_token=expression->left->resolved_named_type_token;
-            expression->resolved_named_symbol_id=expression->left->resolved_named_symbol_id;
+            same_name(analyzer->program, expression->value_token, "data")) {
+            expression->kind = AST_EXPR_SLICE_DATA;
+            expression->resolved_type = expression->left->resolved_type;
+            expression->resolved_pointer_depth = expression->left->resolved_pointer_depth + 1;
+            expression->resolved_named_type_token = expression->left->resolved_named_type_token;
+            expression->resolved_named_symbol_id = expression->left->resolved_named_symbol_id;
             return;
         }
         const AstEnumValue *value = NULL;
         if (expression->left->resolved_symbol_id < analyzer->model->symbol_count &&
             analyzer->model->symbols[expression->left->resolved_symbol_id].kind ==
-                SEMANTIC_SYMBOL_ENUM)
+            SEMANTIC_SYMBOL_ENUM)
             value = find_enum_value_by_symbol(analyzer,
-                expression->left->resolved_named_symbol_id, expression->value_token);
+                                              expression->left->resolved_named_symbol_id, expression->value_token);
         if (value != NULL) {
             expression->resolved_symbol_id = value->resolved_symbol_id;
             expression->resolved_named_type_token =
-                expression->left->resolved_named_type_token;
+                    expression->left->resolved_named_type_token;
             expression->resolved_named_symbol_id = expression->left->resolved_named_symbol_id;
-            const SemanticSymbol *enum_symbol=&analyzer->model->symbols[expression->resolved_named_symbol_id];
+            const SemanticSymbol *enum_symbol = &analyzer->model->symbols[expression->resolved_named_symbol_id];
             if (enum_symbol->declaration->as.enum_decl.is_sum && value->payload_types == NULL)
-                expression->kind=AST_EXPR_ENUM_CONSTRUCT;
+                expression->kind = AST_EXPR_ENUM_CONSTRUCT;
             return;
         }
         const SemanticSymbol *method = find_method(analyzer,
-            expression->left->resolved_named_symbol_id, expression->value_token);
+                                                   expression->left->resolved_named_symbol_id, expression->value_token);
         if (method != NULL) {
             expression->resolved_symbol_id = method->id;
             expression->resolved_type = primitive_type(method->source_program,
                                                        &method->declared_type);
             expression->resolved_pointer_depth = method->declared_type.pointer_depth;
             expression->resolved_outer_pointer_depth =
-                method->declared_type.outer_pointer_depth;
+                    method->declared_type.outer_pointer_depth;
             expression->resolved_named_type_token = named_type_token(method->source_program,
-                                                                      &method->declared_type);
+                                                                     &method->declared_type);
             expression->resolved_named_symbol_id = resolve_named_symbol_id(analyzer,
-                method->source_program, expression->resolved_named_type_token);
+                                                                           method->source_program,
+                                                                           expression->resolved_named_type_token);
             return;
         }
         const AstField *field = find_field_by_symbol(analyzer,
-            expression->left->resolved_named_symbol_id, expression->value_token);
+                                                     expression->left->resolved_named_symbol_id,
+                                                     expression->value_token);
         if (field != NULL) {
             const SemanticSymbol *field_symbol = field->resolved_symbol_id <
-                analyzer->model->symbol_count
-                    ? &analyzer->model->symbols[field->resolved_symbol_id] : NULL;
+                                                 analyzer->model->symbol_count
+                                                     ? &analyzer->model->symbols[field->resolved_symbol_id]
+                                                     : NULL;
             const AstProgram *field_program = field_symbol == NULL
-                ? analyzer->program : field_symbol->source_program;
+                                                  ? analyzer->program
+                                                  : field_symbol->source_program;
             expression->resolved_type = primitive_type(field_program, &field->type);
             expression->resolved_pointer_depth = field->type.pointer_depth;
             expression->resolved_outer_pointer_depth = field->type.outer_pointer_depth;
             expression->resolved_named_type_token = named_type_token(field_program, &field->type);
             expression->resolved_named_symbol_id = resolve_named_symbol_id(analyzer,
-                field_program, expression->resolved_named_type_token);
+                                                                           field_program,
+                                                                           expression->resolved_named_type_token);
             expression->resolved_is_array = field->type.is_array;
             expression->resolved_is_slice = field->type.is_slice;
             expression->resolved_symbol_id = field->resolved_symbol_id;
@@ -3217,9 +3671,10 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
         const AstType *reserved_type = &expression->allocated_type;
         expression->resolved_type = primitive_type(analyzer->program, reserved_type);
         expression->resolved_named_type_token = named_type_token(analyzer->program,
-                                                                  reserved_type);
+                                                                 reserved_type);
         expression->resolved_named_symbol_id = resolve_named_symbol_id(analyzer,
-            analyzer->program, expression->resolved_named_type_token);
+                                                                       analyzer->program,
+                                                                       expression->resolved_named_type_token);
         expression->resolved_pointer_depth = reserved_type->pointer_depth;
         expression->resolved_outer_pointer_depth = reserved_type->outer_pointer_depth;
         expression->resolved_is_array = reserved_type->is_array;
@@ -3229,13 +3684,14 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
         else expression->resolved_pointer_depth++;
     }
     if (expression->kind == AST_EXPR_UNARY && expression->right != NULL)
-        expression->resolved_array_length=expression->right->resolved_array_length;
+        expression->resolved_array_length = expression->right->resolved_array_length;
     else if (expression->kind == AST_EXPR_INDEX && expression->left != NULL)
-        expression->resolved_array_length=expression->resolved_is_array ? expression->left->resolved_array_length : 0;
+        expression->resolved_array_length = expression->resolved_is_array ? expression->left->resolved_array_length : 0;
     else if (expression->kind == AST_EXPR_RESERVE)
-        expression->resolved_array_length=expression->allocated_type.resolved_array_length;
+        expression->resolved_array_length = expression->allocated_type.resolved_array_length;
     else if (expression->resolved_symbol_id < analyzer->model->symbol_count)
-        expression->resolved_array_length=analyzer->model->symbols[expression->resolved_symbol_id].declared_type.resolved_array_length;
+        expression->resolved_array_length = analyzer->model->symbols[expression->resolved_symbol_id].declared_type.
+                resolved_array_length;
     if (expression->resolved_type == TYPE_UNKNOWN &&
         expression->resolved_named_type_token == AST_TOKEN_NONE &&
         expression->resolved_symbol_id == AST_SYMBOL_NONE &&
@@ -3252,96 +3708,135 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
 static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
     for (; statement != NULL; statement = statement->next) {
         if (statement->kind == AST_STMT_MATCH) {
-            analyze_expression(analyzer,statement->value);
+            analyze_expression(analyzer, statement->value);
             if (statement->value && statement->value->kind == AST_EXPR_TYPE_INFO) {
-                validate_expression(analyzer,statement->value,1);
-                statement->is_type_match=1; statement->selected_type_arm=NULL;
-                int wildcard=0;
-                for (AstMatchArm *arm=statement->match_arms;arm;arm=arm->next) {
-                    if (wildcard) semantic_error(analyzer,arm->variant_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_INVALID_DECLARATION,"Unreachable type match arm after wildcard");
-                    if (arm->bindings) semantic_error(analyzer,arm->variant_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_INVALID_DECLARATION,"Type match cannot bind enum payloads");
+                validate_expression(analyzer, statement->value, 1);
+                statement->is_type_match = 1;
+                statement->selected_type_arm = NULL;
+                int wildcard = 0;
+                for (AstMatchArm *arm = statement->match_arms; arm; arm = arm->next) {
+                    if (wildcard) semantic_error(analyzer, arm->variant_token, ERROR_CATEGORY_SEMANTIC,
+                                                 ERR_SEM_INVALID_DECLARATION,
+                                                 "Unreachable type match arm after wildcard");
+                    if (arm->bindings) semantic_error(analyzer, arm->variant_token, ERROR_CATEGORY_SEMANTIC,
+                                                      ERR_SEM_INVALID_DECLARATION,
+                                                      "Type match cannot bind enum payloads");
                     if (arm->wildcard) {
-                        wildcard=1;
-                        if (!statement->selected_type_arm) statement->selected_type_arm=arm;
+                        wildcard = 1;
+                        if (!statement->selected_type_arm) statement->selected_type_arm = arm;
                         continue;
                     }
                     if (!arm->is_type_pattern) {
-                        semantic_error(analyzer,arm->variant_token,ERROR_CATEGORY_PARSER,ERR_PARSE_INVALID_SYNTAX,"Type match requires case Type -> statement"); continue;
+                        semantic_error(analyzer, arm->variant_token, ERROR_CATEGORY_PARSER, ERR_PARSE_INVALID_SYNTAX,
+                                       "Type match requires case Type -> statement");
+                        continue;
                     }
-                    normalize_generic_type(analyzer,&arm->type,0);
-                    if (!known_declared_type(analyzer,&arm->type))
-                        semantic_error(analyzer,arm->variant_token,ERROR_CATEGORY_TYPE,ERR_TYPE_UNKNOWN,"Unknown type match pattern");
-                    for (AstMatchArm *previous=statement->match_arms;previous != arm;previous=previous->next)
-                        if (previous->is_type_pattern && !previous->wildcard && ast_concrete_type_equal(analyzer->program,&previous->type,analyzer->program,&arm->type))
-                            semantic_error(analyzer,arm->variant_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_DUPLICATE_DEFINITION,"Duplicate type match case");
-                    if (!statement->selected_type_arm && ast_concrete_type_equal(analyzer->program,&statement->value->allocated_type,analyzer->program,&arm->type)) statement->selected_type_arm=arm;
+                    normalize_generic_type(analyzer, &arm->type, 0);
+                    if (!known_declared_type(analyzer, &arm->type))
+                        semantic_error(analyzer, arm->variant_token, ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN,
+                                       "Unknown type match pattern");
+                    for (AstMatchArm *previous = statement->match_arms; previous != arm; previous = previous->next)
+                        if (previous->is_type_pattern && !previous->wildcard && ast_concrete_type_equal(
+                                analyzer->program, &previous->type, analyzer->program, &arm->type))
+                            semantic_error(analyzer, arm->variant_token, ERROR_CATEGORY_SEMANTIC,
+                                           ERR_SEM_DUPLICATE_DEFINITION, "Duplicate type match case");
+                    if (!statement->selected_type_arm && ast_concrete_type_equal(
+                            analyzer->program, &statement->value->allocated_type, analyzer->program,
+                            &arm->type)) statement->selected_type_arm = arm;
                 }
-                statement->match_exhaustive=statement->selected_type_arm != NULL;
+                statement->match_exhaustive = statement->selected_type_arm != NULL;
                 if (!statement->match_exhaustive)
-                    semantic_error(analyzer,statement->first_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_INVALID_DECLARATION,"Type match has no matching case; add a wildcard");
+                    semantic_error(analyzer, statement->first_token, ERROR_CATEGORY_SEMANTIC,
+                                   ERR_SEM_INVALID_DECLARATION, "Type match has no matching case; add a wildcard");
                 else {
-                    LocalSymbol *saved=analyzer->locals; analyzer->scope_depth++;
-                    normalize_statement_types(analyzer,statement->selected_type_arm->body);
-                    analyze_statement(analyzer,statement->selected_type_arm->body);
-                    analyzer->scope_depth--; pop_to(analyzer,saved);
+                    LocalSymbol *saved = analyzer->locals;
+                    analyzer->scope_depth++;
+                    normalize_statement_types(analyzer, statement->selected_type_arm->body);
+                    analyze_statement(analyzer, statement->selected_type_arm->body);
+                    analyzer->scope_depth--;
+                    pop_to(analyzer, saved);
                 }
                 continue;
             }
-            validate_expression(analyzer,statement->value,0);
-            size_t nominal=statement->value ? statement->value->resolved_named_symbol_id : AST_SYMBOL_NONE;
-            const SemanticSymbol *enum_symbol=nominal < analyzer->model->symbol_count ? &analyzer->model->symbols[nominal] : NULL;
+            validate_expression(analyzer, statement->value, 0);
+            size_t nominal = statement->value ? statement->value->resolved_named_symbol_id : AST_SYMBOL_NONE;
+            const SemanticSymbol *enum_symbol = nominal < analyzer->model->symbol_count
+                                                    ? &analyzer->model->symbols[nominal]
+                                                    : NULL;
             if (!enum_symbol || enum_symbol->kind != SEMANTIC_SYMBOL_ENUM || pointer_expression(statement->value)) {
-                semantic_error(analyzer,statement->first_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,"match requires an enum value");
+                semantic_error(analyzer, statement->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                               "match requires an enum value");
                 continue;
             }
-            const AstDeclarationNode *enumeration=enum_symbol->declaration;
-            const AstProgram *enum_unit=enum_symbol->source_program;
-            size_t variants=0, covered=0; int wildcard=0;
-            for (const AstEnumValue *v=enumeration->as.enum_decl.values; v; v=v->next) variants++;
-            for (AstMatchArm *arm=statement->match_arms; arm; arm=arm->next) {
-                if (arm->is_type_pattern) semantic_error(analyzer,arm->variant_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,"Type cases require a type metadata match, not an enum value");
+            const AstDeclarationNode *enumeration = enum_symbol->declaration;
+            const AstProgram *enum_unit = enum_symbol->source_program;
+            size_t variants = 0, covered = 0;
+            int wildcard = 0;
+            for (const AstEnumValue *v = enumeration->as.enum_decl.values; v; v = v->next) variants++;
+            for (AstMatchArm *arm = statement->match_arms; arm; arm = arm->next) {
+                if (arm->is_type_pattern) semantic_error(analyzer, arm->variant_token, ERROR_CATEGORY_TYPE,
+                                                         ERR_TYPE_INVALID_OPERATION,
+                                                         "Type cases require a type metadata match, not an enum value");
                 if (wildcard || covered == variants)
-                    semantic_error(analyzer,arm->variant_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_INVALID_DECLARATION,"Unreachable match arm");
-                LocalSymbol *saved=analyzer->locals; analyzer->scope_depth++;
+                    semantic_error(analyzer, arm->variant_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_INVALID_DECLARATION,
+                                   "Unreachable match arm");
+                LocalSymbol *saved = analyzer->locals;
+                analyzer->scope_depth++;
                 if (arm->wildcard) {
-                    wildcard=1;
-                    if (arm->bindings) semantic_error(analyzer,arm->variant_token,ERROR_CATEGORY_PARSER,ERR_PARSE_INVALID_SYNTAX,"Wildcard pattern cannot bind payloads");
+                    wildcard = 1;
+                    if (arm->bindings) semantic_error(analyzer, arm->variant_token, ERROR_CATEGORY_PARSER,
+                                                      ERR_PARSE_INVALID_SYNTAX,
+                                                      "Wildcard pattern cannot bind payloads");
                 } else {
-                    const AstEnumValue *v=find_enum_value_by_symbol(analyzer,nominal,arm->variant_token);
-                    if (!v) semantic_error(analyzer,arm->variant_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_FIELD_NOT_FOUND,"Unknown enum match variant");
+                    const AstEnumValue *v = find_enum_value_by_symbol(analyzer, nominal, arm->variant_token);
+                    if (!v) semantic_error(analyzer, arm->variant_token, ERROR_CATEGORY_SEMANTIC,
+                                           ERR_SEM_FIELD_NOT_FOUND, "Unknown enum match variant");
                     else {
-                        if (!same_package(analyzer->program,enum_unit) && !v->is_public)
-                            semantic_error(analyzer,arm->variant_token,ERROR_CATEGORY_SEMANTIC,ERR_PACKAGE_PRIVATE,"Enum variant is private to its defining package");
-                        arm->resolved_variant_symbol=v->resolved_symbol_id;
-                        int duplicate=0;
-                        for (AstMatchArm *previous=statement->match_arms; previous != arm; previous=previous->next)
-                            if (previous->resolved_variant_symbol == arm->resolved_variant_symbol) duplicate=1;
-                        if (duplicate) semantic_error(analyzer,arm->variant_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_DUPLICATE_DEFINITION,"Duplicate match variant");
+                        if (!same_package(analyzer->program, enum_unit) && !v->is_public)
+                            semantic_error(analyzer, arm->variant_token, ERROR_CATEGORY_SEMANTIC, ERR_PACKAGE_PRIVATE,
+                                           "Enum variant is private to its defining package");
+                        arm->resolved_variant_symbol = v->resolved_symbol_id;
+                        int duplicate = 0;
+                        for (AstMatchArm *previous = statement->match_arms; previous != arm; previous = previous->next)
+                            if (previous->resolved_variant_symbol == arm->resolved_variant_symbol) duplicate = 1;
+                        if (duplicate) semantic_error(analyzer, arm->variant_token, ERROR_CATEGORY_SEMANTIC,
+                                                      ERR_SEM_DUPLICATE_DEFINITION, "Duplicate match variant");
                         else covered++;
-                        const AstTypeArgument *p=v->payload_types; AstParameter *binding=arm->bindings;
-                        for (; p && binding; p=p->next,binding=binding->next) {
-                            binding->type=argument_type_copy(analyzer,enum_unit,p->type);
-                            validate_array_shape(analyzer,&binding->type);
-                            for (const LocalSymbol *existing=analyzer->locals; existing != saved; existing=existing->next)
-                                if (same_name(analyzer->program,existing->name_token,ast_program_lexeme(analyzer->program,binding->name_token)))
-                                    semantic_error(analyzer,binding->name_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_DUPLICATE_DEFINITION,"Duplicate pattern binding");
-                            LocalSymbol *local=push_local(analyzer,binding->name_token,binding->type,SEMANTIC_SYMBOL_LOCAL,NULL,0);
-                            if (local) binding->resolved_symbol_id=local->symbol_id;
+                        const AstTypeArgument *p = v->payload_types;
+                        AstParameter *binding = arm->bindings;
+                        for (; p && binding; p = p->next, binding = binding->next) {
+                            binding->type = argument_type_copy(analyzer, enum_unit, p->type);
+                            validate_array_shape(analyzer, &binding->type);
+                            for (const LocalSymbol *existing = analyzer->locals; existing != saved;
+                                 existing = existing->next)
+                                if (same_name(analyzer->program, existing->name_token,
+                                              ast_program_lexeme(analyzer->program, binding->name_token)))
+                                    semantic_error(analyzer, binding->name_token, ERROR_CATEGORY_SEMANTIC,
+                                                   ERR_SEM_DUPLICATE_DEFINITION, "Duplicate pattern binding");
+                            LocalSymbol *local = push_local(analyzer, binding->name_token, binding->type,
+                                                            SEMANTIC_SYMBOL_LOCAL, NULL, 0);
+                            if (local) binding->resolved_symbol_id = local->symbol_id;
                         }
-                        if (p || binding) semantic_error(analyzer,arm->variant_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_WRONG_ARG_COUNT,"Match pattern payload binding count mismatch");
+                        if (p || binding) semantic_error(analyzer, arm->variant_token, ERROR_CATEGORY_SEMANTIC,
+                                                         ERR_SEM_WRONG_ARG_COUNT,
+                                                         "Match pattern payload binding count mismatch");
                     }
                 }
-                normalize_statement_types(analyzer,arm->body);
-                analyze_statement(analyzer,arm->body); analyzer->scope_depth--; pop_to(analyzer,saved);
+                normalize_statement_types(analyzer, arm->body);
+                analyze_statement(analyzer, arm->body);
+                analyzer->scope_depth--;
+                pop_to(analyzer, saved);
             }
-            statement->match_exhaustive=wildcard || covered == variants;
-            if (!statement->match_exhaustive) semantic_error(analyzer,statement->first_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_INVALID_DECLARATION,"Non-exhaustive enum match requires every variant or a wildcard");
+            statement->match_exhaustive = wildcard || covered == variants;
+            if (!statement->match_exhaustive) semantic_error(analyzer, statement->first_token, ERROR_CATEGORY_SEMANTIC,
+                                                             ERR_SEM_INVALID_DECLARATION,
+                                                             "Non-exhaustive enum match requires every variant or a wildcard");
             continue;
         }
 
         LocalSymbol *scope = analyzer->locals;
         if (statement->kind == AST_STMT_VARIABLE) {
-            size_t errors_before=analyzer->model->error_count;
+            size_t errors_before = analyzer->model->error_count;
             validate_array_shape(analyzer, &statement->type);
             analyze_expression(analyzer, statement->value);
             validate_expression(analyzer, statement->value, 0);
@@ -3389,8 +3884,9 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                 analyzer->model->error_count == errors_before &&
                 constant_expression_allowed(analyzer, statement->value))
                 (void) fold_constant(analyzer, statement->value,
-                    statement->type.kind == AST_TYPE_INFERRED ? statement->value->resolved_type :
-                    primitive_type(analyzer->program, &statement->type));
+                                     statement->type.kind == AST_TYPE_INFERRED
+                                         ? statement->value->resolved_type
+                                         : primitive_type(analyzer->program, &statement->type));
             if (same_name(analyzer->program, statement->name_token, "true") ||
                 same_name(analyzer->program, statement->name_token, "false"))
                 semantic_error(analyzer, statement->name_token,
@@ -3426,8 +3922,7 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                 }
             }
             LocalSymbol *local = push_local(analyzer, statement->name_token, statement->type,
-                                            statement->is_const ? SEMANTIC_SYMBOL_CONSTANT :
-                                                                  SEMANTIC_SYMBOL_LOCAL,
+                                            statement->is_const ? SEMANTIC_SYMBOL_CONSTANT : SEMANTIC_SYMBOL_LOCAL,
                                             statement->value, statement->is_const);
             if (local != NULL) statement->resolved_symbol_id = local->symbol_id;
         } else if (statement->kind == AST_STMT_FOR) {
@@ -3438,8 +3933,8 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
             if (statement->condition != NULL &&
                 !plain_numeric_expression(statement->condition))
                 operand_error(analyzer, statement->condition,
-                               ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                               "Condition requires a numeric or bit expression");
+                              ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                              "Condition requires a numeric or bit expression");
             analyzer->loop_depth++;
             analyze_statement(analyzer, statement->body);
             analyzer->loop_depth--;
@@ -3459,8 +3954,8 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                 statement->condition != NULL &&
                 !plain_numeric_expression(statement->condition))
                 operand_error(analyzer, statement->condition,
-                               ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                               "Condition requires a numeric or bit expression");
+                              ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                              "Condition requires a numeric or bit expression");
             if (statement->kind == AST_STMT_ASSIGNMENT &&
                 !assignable_expression(analyzer, statement->expression))
                 semantic_error(analyzer, statement->first_token,
@@ -3483,7 +3978,7 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                 statement->expression->resolved_named_symbol_id < analyzer->model->symbol_count &&
                 analyzer->model->symbols[
                     statement->expression->resolved_named_symbol_id].kind ==
-                        SEMANTIC_SYMBOL_STRUCT &&
+                SEMANTIC_SYMBOL_STRUCT &&
                 statement->assignment_operator != TOKEN_EQUAL)
                 semantic_error(analyzer, statement->first_token,
                                ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
@@ -3492,14 +3987,14 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                 statement->assignment_operator != TOKEN_EQUAL &&
                 !plain_numeric_expression(statement->expression))
                 operand_error(analyzer, statement->expression,
-                               ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                               "Compound assignment requires a numeric target");
+                              ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                              "Compound assignment requires a numeric target");
             if (statement->kind == AST_STMT_ASSIGNMENT && statement->expression != NULL &&
                 statement->expression->resolved_type == TYPE_BIT &&
                 statement->assignment_operator != TOKEN_EQUAL)
                 operand_error(analyzer, statement->expression,
-                               ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                               "Boolean values do not support arithmetic assignment");
+                              ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                              "Boolean values do not support arithmetic assignment");
             if (statement->kind == AST_STMT_BREAK && analyzer->loop_depth == 0)
                 semantic_error(analyzer, statement->first_token,
                                ERROR_CATEGORY_SEMANTIC, ERR_SEM_BREAK_OUTSIDE_LOOP, "Break used outside a loop");
@@ -3508,7 +4003,7 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                                ERROR_CATEGORY_SEMANTIC, ERR_SEM_CONTINUE_OUTSIDE_LOOP, "Continue used outside a loop");
             if (statement->kind == AST_STMT_RETURN && analyzer->current_function != NULL) {
                 DataType expected = primitive_type(analyzer->program,
-                    &analyzer->current_function->as.function.return_type);
+                                                   &analyzer->current_function->as.function.return_type);
                 if (expected == TYPE_VOID && statement->value != NULL)
                     semantic_error(analyzer, statement->first_token,
                                    ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
@@ -3519,19 +4014,21 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                                    "Function must return a value");
                 else if (statement->value != NULL &&
                          !expression_to_declared_type_allowed(analyzer, statement->value,
-                            analyzer->program,
-                            &analyzer->current_function->as.function.return_type))
+                                                              analyzer->program,
+                                                              &analyzer->current_function->as.function.return_type))
                     conversion_error(analyzer, statement->value, analyzer->program,
-                        &analyzer->current_function->as.function.return_type,
-                        NULL, "Cannot implicitly convert returned value");
+                                     &analyzer->current_function->as.function.return_type,
+                                     NULL, "Cannot implicitly convert returned value");
             }
             analyze_statement(analyzer, statement->initializer);
             if (statement->kind == AST_STMT_WHILE) analyzer->loop_depth++;
             if (statement->kind == AST_STMT_BLOCK || statement->kind == AST_STMT_IF ||
-                statement->kind == AST_STMT_WHILE) analyzer->scope_depth++;
+                statement->kind == AST_STMT_WHILE)
+                analyzer->scope_depth++;
             analyze_statement(analyzer, statement->body);
             if (statement->kind == AST_STMT_BLOCK || statement->kind == AST_STMT_IF ||
-                statement->kind == AST_STMT_WHILE) analyzer->scope_depth--;
+                statement->kind == AST_STMT_WHILE)
+                analyzer->scope_depth--;
             if (statement->kind == AST_STMT_WHILE) analyzer->loop_depth--;
             analyze_statement(analyzer, statement->else_body);
         }
@@ -3543,7 +4040,7 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
 
 static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
     if (function->generic_parameters != NULL || function->semantic_body_checked) return;
-    function->semantic_body_checked=1;
+    function->semantic_body_checked = 1;
     LocalSymbol *saved = analyzer->locals;
     size_t saved_function = analyzer->current_function_token;
     size_t saved_function_symbol = analyzer->current_function_symbol_id;
@@ -3561,7 +4058,7 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
                        ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN, "Unknown function return type");
     validate_array_shape(analyzer, &function->as.function.return_type);
     if (function->as.function.return_type.is_array &&
-         function->as.function.return_type.outer_pointer_depth == 0)
+        function->as.function.return_type.outer_pointer_depth == 0)
         semantic_error(analyzer, function->as.function.return_type.name_token,
                        ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                        "Array return types are not supported; return a slice instead");
@@ -3584,7 +4081,7 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
                           ast_program_lexeme(analyzer->program,
                                              parameter->name_token))) {
                 semantic_duplicate(analyzer, parameter->name_token, analyzer->program, existing->name_token,
-                               "Duplicate parameter");
+                                   "Duplicate parameter");
                 break;
             }
         if (same_name(analyzer->program, parameter->name_token, "true") ||
@@ -3598,7 +4095,7 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
     }
     analyze_statement(analyzer, function->as.function.body);
     DataType return_type = primitive_type(analyzer->program,
-                                           &function->as.function.return_type);
+                                          &function->as.function.return_type);
     if (return_type != TYPE_VOID &&
         !statement_always_returns(function->as.function.body))
         semantic_error(analyzer, function->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
@@ -3614,15 +4111,18 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
 static void analyze_constant_declaration(Analyzer *analyzer,
                                          AstDeclarationNode *declaration) {
     if (declaration->semantic_body_checked) return;
-    declaration->semantic_body_checked=2;
-    size_t errors_before=analyzer->model->error_count;
+    declaration->semantic_body_checked = 2;
+    size_t errors_before = analyzer->model->error_count;
     AstExpression *value = declaration->as.constant.value;
     AstType *type = &declaration->as.constant.type;
     if (declaration->kind == AST_DECL_VARIABLE && !value) {
-        if (type->kind == AST_TYPE_INFERRED || !known_declared_type(analyzer,type) ||
-            (primitive_type(analyzer->program,type) == TYPE_VOID && !type->pointer_depth && !type->outer_pointer_depth))
-            semantic_error(analyzer,declaration->name_token,ERROR_CATEGORY_TYPE,ERR_TYPE_UNKNOWN,"Package variable needs a concrete non-void type or a constant initializer");
-        declaration->semantic_body_checked=1; return;
+        if (type->kind == AST_TYPE_INFERRED || !known_declared_type(analyzer, type) ||
+            (primitive_type(analyzer->program, type) == TYPE_VOID && !type->pointer_depth && !type->
+             outer_pointer_depth))
+            semantic_error(analyzer, declaration->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN,
+                           "Package variable needs a concrete non-void type or a constant initializer");
+        declaration->semantic_body_checked = 1;
+        return;
     }
     analyze_expression(analyzer, value);
     validate_expression(analyzer, value, 0);
@@ -3643,12 +4143,14 @@ static void analyze_constant_declaration(Analyzer *analyzer,
                          NULL, "Cannot implicitly convert constant initializer");
     if (value != NULL && analyzer->model->error_count == errors_before &&
         constant_expression_allowed(analyzer, value))
-        (void) fold_constant(analyzer, value, type->kind == AST_TYPE_INFERRED ?
-            value->resolved_type : primitive_type(analyzer->program, type));
+        (void) fold_constant(analyzer, value,
+                             type->kind == AST_TYPE_INFERRED
+                                 ? value->resolved_type
+                                 : primitive_type(analyzer->program, type));
     if (declaration->resolved_symbol_id < analyzer->model->symbol_count && value != NULL &&
         type->kind == AST_TYPE_INFERRED) {
         SemanticSymbol *symbol =
-            &analyzer->model->symbols[declaration->resolved_symbol_id];
+                &analyzer->model->symbols[declaration->resolved_symbol_id];
         symbol->resolved_type = value->resolved_type;
         symbol->resolved_pointer_depth = value->resolved_pointer_depth;
         symbol->resolved_outer_pointer_depth = value->resolved_outer_pointer_depth;
@@ -3657,28 +4159,29 @@ static void analyze_constant_declaration(Analyzer *analyzer,
         symbol->resolved_is_array = value->resolved_is_array;
         symbol->resolved_is_slice = value->resolved_is_slice;
     }
-    declaration->semantic_body_checked=1;
+    declaration->semantic_body_checked = 1;
 }
 
 static void analyze_unit_constants(Analyzer *analyzer, AstProgram *root,
-                                    AstProgram *unit, unsigned char *states) {
-    size_t index=0;
+                                   AstProgram *unit, unsigned char *states) {
+    size_t index = 0;
     if (unit != root) {
-        for (index=1; index<=root->owned_import_count; index++)
-            if (root->owned_imports[index-1] == unit) break;
+        for (index = 1; index <= root->owned_import_count; index++)
+            if (root->owned_imports[index - 1] == unit) break;
         if (index > root->owned_import_count) return;
     }
     if (states[index] != 0) return;
-    states[index]=1;
-    for (AstDeclarationNode *declaration=unit->root; declaration != NULL; declaration=declaration->next)
+    states[index] = 1;
+    for (AstDeclarationNode *declaration = unit->root; declaration != NULL; declaration = declaration->next)
         if (declaration->kind == AST_DECL_IMPORT)
-            for (AstImportPath *path=declaration->as.import_decl.paths; path != NULL; path=path->next)
+            for (AstImportPath *path = declaration->as.import_decl.paths; path != NULL; path = path->next)
                 if (path->resolved_program != NULL)
                     analyze_unit_constants(analyzer, root, path->resolved_program, states);
-    analyzer->program=unit;
-    for (AstDeclarationNode *declaration=unit->root; declaration != NULL; declaration=declaration->next)
-        if (declaration->kind == AST_DECL_CONSTANT || declaration->kind == AST_DECL_VARIABLE) analyze_constant_declaration(analyzer, declaration);
-    states[index]=2;
+    analyzer->program = unit;
+    for (AstDeclarationNode *declaration = unit->root; declaration != NULL; declaration = declaration->next)
+        if (declaration->kind == AST_DECL_CONSTANT || declaration->kind == AST_DECL_VARIABLE)
+            analyze_constant_declaration(analyzer, declaration);
+    states[index] = 2;
 }
 
 SemanticModel *semantic_analyze(AstProgram *program) {
@@ -3693,72 +4196,73 @@ SemanticModel *semantic_analyze(AstProgram *program) {
         .current_function_symbol_id = AST_SYMBOL_NONE,
         .current_owner_token = AST_TOKEN_NONE
     };
-    for (size_t i=0; i<=program->owned_import_count; i++) {
-        AstProgram *unit=i == 0 ? program : program->owned_imports[i-1];
-        analyzer.program=unit;
-        for (AstDeclarationNode *d=unit->root; d; d=d->next) {
-            d->semantic_body_checked=0;
+    for (size_t i = 0; i <= program->owned_import_count; i++) {
+        AstProgram *unit = i == 0 ? program : program->owned_imports[i - 1];
+        analyzer.program = unit;
+        for (AstDeclarationNode *d = unit->root; d; d = d->next) {
+            d->semantic_body_checked = 0;
             if (d->generic_parameters) continue;
-            if (d->kind == AST_DECL_FUNCTION) normalize_function_types(&analyzer,d);
-            else if (d->kind == AST_DECL_VARIABLE || d->kind == AST_DECL_CONSTANT) normalize_generic_type(&analyzer,&d->as.constant.type,0);
+            if (d->kind == AST_DECL_FUNCTION) normalize_function_types(&analyzer, d);
+            else if (d->kind == AST_DECL_VARIABLE || d->kind == AST_DECL_CONSTANT) normalize_generic_type(
+                &analyzer, &d->as.constant.type, 0);
             else if (d->kind == AST_DECL_ENUM) {
-                for (AstEnumValue *v=d->as.enum_decl.values; v; v=v->next)
-                    for (AstTypeArgument *p=v->payload_types; p; p=p->next)
-                        normalize_generic_type(&analyzer,&p->type,0);
-            }
-            else if (d->kind == AST_DECL_STRUCT) {
-                for (AstField *f=d->as.struct_decl.fields; f; f=f->next)
-                    normalize_generic_type(&analyzer,&f->type,0);
-                for (AstDeclarationNode *m=d->as.struct_decl.methods; m; m=m->next) {
-                    m->semantic_body_checked=0;
-                    normalize_function_types(&analyzer,m);
+                for (AstEnumValue *v = d->as.enum_decl.values; v; v = v->next)
+                    for (AstTypeArgument *p = v->payload_types; p; p = p->next)
+                        normalize_generic_type(&analyzer, &p->type, 0);
+            } else if (d->kind == AST_DECL_STRUCT) {
+                for (AstField *f = d->as.struct_decl.fields; f; f = f->next)
+                    normalize_generic_type(&analyzer, &f->type, 0);
+                for (AstDeclarationNode *m = d->as.struct_decl.methods; m; m = m->next) {
+                    m->semantic_body_checked = 0;
+                    normalize_function_types(&analyzer, m);
                 }
             }
         }
     }
-    analyzer.program=program;
-    prepare_traits(&analyzer,program);
+    analyzer.program = program;
+    prepare_traits(&analyzer, program);
     collect_declarations(&analyzer, program);
     for (size_t i = 0; i < program->owned_import_count; i++)
         collect_declarations(&analyzer, program->owned_imports[i]);
-    for (size_t i=0; i<=program->owned_import_count; i++) {
-        AstProgram *unit=i == 0 ? program : program->owned_imports[i-1]; analyzer.program=unit;
-        for (AstDeclarationNode *d=unit->root; d; d=d->next)
+    for (size_t i = 0; i <= program->owned_import_count; i++) {
+        AstProgram *unit = i == 0 ? program : program->owned_imports[i - 1];
+        analyzer.program = unit;
+        for (AstDeclarationNode *d = unit->root; d; d = d->next)
             if (d->kind == AST_DECL_IMPL && d->as.impl_decl.attached)
-                for (AstDeclarationNode *m=d->as.impl_decl.methods; m; m=m->next)
-                    add_global(&analyzer,m,SEMANTIC_SYMBOL_FUNCTION,m->as.function.owner_token);
+                for (AstDeclarationNode *m = d->as.impl_decl.methods; m; m = m->next)
+                    add_global(&analyzer, m, SEMANTIC_SYMBOL_FUNCTION, m->as.function.owner_token);
     }
     analyzer.program = program;
-    unsigned char *constant_states=calloc(program->owned_import_count+1, 1);
+    unsigned char *constant_states = calloc(program->owned_import_count + 1, 1);
     if (constant_states == NULL) {
         semantic_model_free(model);
         return NULL;
     }
     analyze_unit_constants(&analyzer, program, program, constant_states);
-    for (size_t i=0;i<program->owned_import_count;i++)
-        analyze_unit_constants(&analyzer,program,program->owned_imports[i],constant_states);
+    for (size_t i = 0; i < program->owned_import_count; i++)
+        analyze_unit_constants(&analyzer, program, program->owned_imports[i], constant_states);
     free(constant_states);
     /* Complete declaration type shapes before bodies use forward declarations. */
-    for (size_t i=0; i<model->symbol_count; i++) {
-        SemanticSymbol *symbol=&model->symbols[i];
-        analyzer.program=(AstProgram *)symbol->source_program;
+    for (size_t i = 0; i < model->symbol_count; i++) {
+        SemanticSymbol *symbol = &model->symbols[i];
+        analyzer.program = (AstProgram *) symbol->source_program;
         if (symbol->kind == SEMANTIC_SYMBOL_FIELD) {
-            AstField *field=(AstField *)symbol->node;
+            AstField *field = (AstField *) symbol->node;
             validate_array_shape(&analyzer, &field->type);
         } else if (symbol->kind == SEMANTIC_SYMBOL_VARIABLE) {
-            AstDeclarationNode *variable=(AstDeclarationNode *)symbol->declaration;
-            validate_array_shape(&analyzer,&variable->as.constant.type);
-            symbol->declared_type=variable->as.constant.type;
+            AstDeclarationNode *variable = (AstDeclarationNode *) symbol->declaration;
+            validate_array_shape(&analyzer, &variable->as.constant.type);
+            symbol->declared_type = variable->as.constant.type;
         } else if (symbol->kind == SEMANTIC_SYMBOL_FUNCTION && symbol->declaration != NULL) {
-            AstDeclarationNode *function=(AstDeclarationNode *)symbol->declaration;
+            AstDeclarationNode *function = (AstDeclarationNode *) symbol->declaration;
             validate_array_shape(&analyzer, &function->as.function.return_type);
-            symbol->declared_type=function->as.function.return_type;
-            for (AstParameter *parameter=function->as.function.parameters;
-                 parameter != NULL; parameter=parameter->next)
+            symbol->declared_type = function->as.function.return_type;
+            for (AstParameter *parameter = function->as.function.parameters;
+                 parameter != NULL; parameter = parameter->next)
                 validate_array_shape(&analyzer, &parameter->type);
         }
     }
-    analyzer.program=program;
+    analyzer.program = program;
     validate_overload_sets(&analyzer);
     for (size_t unit_index = 0; unit_index <= program->owned_import_count; unit_index++) {
         AstProgram *unit = unit_index == 0 ? program : program->owned_imports[unit_index - 1];
@@ -3808,15 +4312,17 @@ SemanticModel *semantic_analyze(AstProgram *program) {
                 }
                 size_t field_count = 0;
                 for (AstField *field = declaration->as.enum_decl.fields;
-                     field != NULL; field = field->next) field_count++;
+                     field != NULL; field = field->next)
+                    field_count++;
                 for (AstEnumValue *value = declaration->as.enum_decl.values;
                      value != NULL; value = value->next) {
-                    for (AstTypeArgument *p=value->payload_types; p; p=p->next) {
-                        if (!known_declared_type(&analyzer,&p->type) ||
-                            (primitive_type(unit,&p->type) == TYPE_VOID && !p->type.pointer_depth))
-                            semantic_error(&analyzer,p->type.name_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,
-                                "Enum payload requires a complete non-void concrete type");
-                        validate_array_shape(&analyzer,&p->type);
+                    for (AstTypeArgument *p = value->payload_types; p; p = p->next) {
+                        if (!known_declared_type(&analyzer, &p->type) ||
+                            (primitive_type(unit, &p->type) == TYPE_VOID && !p->type.pointer_depth))
+                            semantic_error(&analyzer, p->type.name_token, ERROR_CATEGORY_TYPE,
+                                           ERR_TYPE_INVALID_OPERATION,
+                                           "Enum payload requires a complete non-void concrete type");
+                        validate_array_shape(&analyzer, &p->type);
                     }
 
                     size_t argument_count = 0;
@@ -3829,21 +4335,21 @@ SemanticModel *semantic_analyze(AstProgram *program) {
                     if (argument_count != field_count) {
                         char message[128];
                         (void) snprintf(message, sizeof(message),
-                            "Enum value expects %zu arguments but received %zu",
-                            field_count, argument_count);
+                                        "Enum value expects %zu arguments but received %zu",
+                                        field_count, argument_count);
                         semantic_error(&analyzer, value->name_token,
                                        ERROR_CATEGORY_SEMANTIC, ERR_SEM_WRONG_ARG_COUNT, message);
                     } else {
                         AstExpression *argument = value->arguments;
                         AstField *field = declaration->as.enum_decl.fields;
                         for (; argument != NULL && field != NULL;
-                             argument = argument->next, field = field->next) {
+                               argument = argument->next, field = field->next) {
                             if (!enum_constant_expression(&analyzer, argument))
                                 semantic_error(&analyzer, argument->first_token,
-                                    ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                                    "Enum arguments must be compile-time scalar constants");
+                                               ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                                               "Enum arguments must be compile-time scalar constants");
                             if (!expression_to_declared_type_allowed(&analyzer, argument,
-                                                                    unit, &field->type))
+                                                                     unit, &field->type))
                                 conversion_error(&analyzer, argument, unit, &field->type, NULL,
                                                  "Cannot implicitly convert enum argument");
                         }
@@ -3852,46 +4358,51 @@ SemanticModel *semantic_analyze(AstProgram *program) {
             }
         }
     }
-    for (size_t i=0; i<model->symbol_count; i++) {
-        SemanticSymbol *symbol=&model->symbols[i];
+    for (size_t i = 0; i < model->symbol_count; i++) {
+        SemanticSymbol *symbol = &model->symbols[i];
         if (symbol->kind == SEMANTIC_SYMBOL_FUNCTION && symbol->declaration != NULL) {
-            analyzer.program=(AstProgram *)symbol->source_program;
-            analyze_function(&analyzer,(AstDeclarationNode *)symbol->declaration);
+            analyzer.program = (AstProgram *) symbol->source_program;
+            analyze_function(&analyzer, (AstDeclarationNode *) symbol->declaration);
         }
     }
-    for (size_t i=0; i<model->symbol_count; i++) {
-        const SemanticSymbol *symbol=&model->symbols[i];
-        if ((symbol->kind != SEMANTIC_SYMBOL_STRUCT && symbol->kind != SEMANTIC_SYMBOL_ENUM) || !symbol->declaration) continue;
-        analyzer.program=(AstProgram *)symbol->source_program;
-        if (aggregate_reaches(&analyzer,symbol->id,symbol->id,0))
-            semantic_error(&analyzer,symbol->name_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,
-                symbol->kind == SEMANTIC_SYMBOL_ENUM ? "Recursive enum payload requires a pointer" : "Recursive structure requires a pointer field");
-        const AstDeclarationNode *declaration=symbol->declaration;
+    for (size_t i = 0; i < model->symbol_count; i++) {
+        const SemanticSymbol *symbol = &model->symbols[i];
+        if ((symbol->kind != SEMANTIC_SYMBOL_STRUCT && symbol->kind != SEMANTIC_SYMBOL_ENUM) || !symbol->declaration)
+            continue;
+        analyzer.program = (AstProgram *) symbol->source_program;
+        if (aggregate_reaches(&analyzer, symbol->id, symbol->id, 0))
+            semantic_error(&analyzer, symbol->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                           symbol->kind == SEMANTIC_SYMBOL_ENUM
+                               ? "Recursive enum payload requires a pointer"
+                               : "Recursive structure requires a pointer field");
+        const AstDeclarationNode *declaration = symbol->declaration;
         if (declaration->generic_origin) {
-            AstType arguments[DMM_MAX_TYPE_PARAMETERS]; size_t count=0;
-            for (const AstTypeArgument *p=declaration->specialization_arguments; p && count<DMM_MAX_TYPE_PARAMETERS; p=p->next)
-                arguments[count++]=p->type;
-            if (!generic_bounds_satisfied(&analyzer,symbol->source_program,declaration->generic_origin,arguments))
-                semantic_error(&analyzer,symbol->name_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INCOMPATIBLE_TYPES,
+            AstType arguments[DMM_MAX_TYPE_PARAMETERS];
+            size_t count = 0;
+            for (const AstTypeArgument *p = declaration->specialization_arguments; p && count < DMM_MAX_TYPE_PARAMETERS;
+                 p = p->next)
+                arguments[count++] = p->type;
+            if (!generic_bounds_satisfied(&analyzer, symbol->source_program, declaration->generic_origin, arguments))
+                semantic_error(&analyzer, symbol->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
                                "Generic aggregate type arguments do not satisfy explicit trait bounds");
         }
         if (symbol->kind == SEMANTIC_SYMBOL_ENUM)
-            for (AstEnumValue *v=declaration->as.enum_decl.values; v; v=v->next)
-                for (AstTypeArgument *p=v->payload_types; p; p=p->next) {
-                    validate_array_shape(&analyzer,&p->type);
-                if (!known_declared_type(&analyzer,&p->type) ||
-                        (primitive_type(analyzer.program,&p->type) == TYPE_VOID && !p->type.pointer_depth))
-                        semantic_error(&analyzer,p->type.name_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,
+            for (AstEnumValue *v = declaration->as.enum_decl.values; v; v = v->next)
+                for (AstTypeArgument *p = v->payload_types; p; p = p->next) {
+                    validate_array_shape(&analyzer, &p->type);
+                    if (!known_declared_type(&analyzer, &p->type) ||
+                        (primitive_type(analyzer.program, &p->type) == TYPE_VOID && !p->type.pointer_depth))
+                        semantic_error(&analyzer, p->type.name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                        "Enum payload requires a complete non-void concrete type");
                 }
     }
     const SemanticSymbol *main_symbol = semantic_find_global(model, "main",
-                                                              SEMANTIC_SYMBOL_FUNCTION);
-    if (program->executable_build && program->package_name && strcmp(program->package_name,"main")) {
-        analyzer.program=program;
-        semantic_error(&analyzer,program->package_token,ERROR_CATEGORY_COMPILER,ERR_COMP_NO_MAIN_FUNCTION,
-            "Executable builds require package main");
-    } else if (program->package_name && strcmp(program->package_name,"main")) {
+                                                             SEMANTIC_SYMBOL_FUNCTION);
+    if (program->executable_build && program->package_name && strcmp(program->package_name, "main")) {
+        analyzer.program = program;
+        semantic_error(&analyzer, program->package_token, ERROR_CATEGORY_COMPILER, ERR_COMP_NO_MAIN_FUNCTION,
+                       "Executable builds require package main");
+    } else if (program->package_name && strcmp(program->package_name, "main")) {
         /* Library packages have no entry-point requirement. */
     } else if (main_symbol == NULL || main_symbol->declaration == NULL) {
         analyzer.program = program;
@@ -3901,7 +4412,7 @@ SemanticModel *semantic_analyze(AstProgram *program) {
         analyzer.program = (AstProgram *) main_symbol->source_program;
         const AstDeclarationNode *main_declaration = main_symbol->declaration;
         DataType main_type = primitive_type(main_symbol->source_program,
-            &main_declaration->as.function.return_type);
+                                            &main_declaration->as.function.return_type);
         if (main_declaration->as.function.parameters != NULL ||
             main_declaration->as.function.return_type.pointer_depth != 0 ||
             main_declaration->as.function.return_type.outer_pointer_depth != 0 ||

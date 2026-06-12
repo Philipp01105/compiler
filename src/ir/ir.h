@@ -29,7 +29,11 @@ typedef struct {
     size_t array_length;
 } IrType;
 
-typedef struct { size_t size; size_t alignment; size_t storage_slots; } IrTypeLayout;
+typedef struct {
+    size_t size;
+    size_t alignment;
+    size_t storage_slots;
+} IrTypeLayout;
 
 typedef enum {
     IR_OP_CONSTANT,
@@ -186,6 +190,7 @@ typedef struct {
     size_t global_count;
     int verified;
 } IrModule;
+
 typedef struct IrGlobal {
     const AstProgram *source_program;
     size_t symbol_id;
@@ -195,10 +200,15 @@ typedef struct IrGlobal {
 } IrGlobal;
 
 IrModule *ir_lower_program(const AstProgram *program, const SemanticModel *semantics);
+
 void ir_module_free(IrModule *module);
+
 int ir_verify_module(const IrModule *module);
+
 int ir_dump(FILE *output, const IrModule *module);
+
 int ir_type_layout(const IrModule *module, IrTypeId type, IrTypeLayout *layout);
+
 /* Internal failures retain the concrete instruction and its original source unit. */
 void ir_report_failure(const IrFunction *function, size_t instruction_index,
                        const char *stage, const char *reason);

@@ -20,7 +20,8 @@ int main(void) {
         if (first == NULL || first != second || strcmp(first, text) != 0) return 3;
     }
     if (string_interner_count(interner) != 10002U ||
-        string_interner_bytes(interner) <= string_interner_count(interner)) return 4;
+        string_interner_bytes(interner) <= string_interner_count(interner))
+        return 4;
 
     string_interner_free(interner);
     return 0;

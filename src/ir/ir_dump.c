@@ -26,25 +26,39 @@ static const char *primitive_name(DataType type) {
 }
 
 static const char *opcode_name(IrOpcode opcode) {
-    static const char *names[] = {"constant", "load", "declare", "store", "unary",
+    static const char *names[] = {
+        "constant", "load", "declare", "store", "unary",
         "binary", "call", "index", "member", "slice-length", "cast", "alloc", "free",
-        "return", "branch", "jump", "label", "phi", "enum-construct", "enum-is", "enum-payload", "trap", "slice", "slice-data"};
+        "return", "branch", "jump", "label", "phi", "enum-construct", "enum-is", "enum-payload", "trap", "slice",
+        "slice-data"
+    };
     return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_SLICE_DATA ? names[opcode] : "invalid";
 }
 
 static const char *operator_name(TokenType type) {
     switch (type) {
-        case TOKEN_PLUS: return "+"; case TOKEN_MINUS: return "-";
-        case TOKEN_STAR: return "*"; case TOKEN_SLASH: return "/";
-        case TOKEN_PERCENT: return "%"; case TOKEN_EQUAL: return "=";
-        case TOKEN_EQUAL_EQUAL: return "=="; case TOKEN_BANG_EQUAL: return "!=";
-        case TOKEN_LESS: return "<"; case TOKEN_LESS_EQUAL: return "<=";
-        case TOKEN_GREATER: return ">"; case TOKEN_GREATER_EQUAL: return ">=";
-        case TOKEN_AMP_AMP: return "&&"; case TOKEN_PIPE_PIPE: return "||";
-        case TOKEN_BANG: return "!"; case TOKEN_AMPERSAND: return "&";
-        case TOKEN_PLUS_EQUAL: return "+="; case TOKEN_MINUS_EQUAL: return "-=";
-        case TOKEN_STAR_EQUAL: return "*="; case TOKEN_SLASH_EQUAL: return "/=";
-        case TOKEN_PLUS_PLUS: return "++"; case TOKEN_MINUS_MINUS: return "--";
+        case TOKEN_PLUS: return "+";
+        case TOKEN_MINUS: return "-";
+        case TOKEN_STAR: return "*";
+        case TOKEN_SLASH: return "/";
+        case TOKEN_PERCENT: return "%";
+        case TOKEN_EQUAL: return "=";
+        case TOKEN_EQUAL_EQUAL: return "==";
+        case TOKEN_BANG_EQUAL: return "!=";
+        case TOKEN_LESS: return "<";
+        case TOKEN_LESS_EQUAL: return "<=";
+        case TOKEN_GREATER: return ">";
+        case TOKEN_GREATER_EQUAL: return ">=";
+        case TOKEN_AMP_AMP: return "&&";
+        case TOKEN_PIPE_PIPE: return "||";
+        case TOKEN_BANG: return "!";
+        case TOKEN_AMPERSAND: return "&";
+        case TOKEN_PLUS_EQUAL: return "+=";
+        case TOKEN_MINUS_EQUAL: return "-=";
+        case TOKEN_STAR_EQUAL: return "*=";
+        case TOKEN_SLASH_EQUAL: return "/=";
+        case TOKEN_PLUS_PLUS: return "++";
+        case TOKEN_MINUS_MINUS: return "--";
         default: return "-";
     }
 }
@@ -59,8 +73,9 @@ static int print_span(FILE *output, AstSourceSpan span) {
 }
 
 static int print_token(FILE *output, const AstProgram *program, size_t token) {
-    return token == AST_TOKEN_NONE ? fputc('-', output) != EOF
-                                   : quoted(output, ast_program_lexeme(program, token));
+    return token == AST_TOKEN_NONE
+               ? fputc('-', output) != EOF
+               : quoted(output, ast_program_lexeme(program, token));
 }
 
 static int dump_types(FILE *output, const IrModule *module) {
@@ -79,7 +94,8 @@ static int dump_types(FILE *output, const IrModule *module) {
                 break;
             case IR_TYPE_ARRAY:
                 if (fprintf(output, "array element=@%zu length=%zu", type->element_type,
-                            type->array_length) < 0) return 0;
+                            type->array_length) < 0)
+                    return 0;
                 break;
             case IR_TYPE_SLICE:
                 if (fprintf(output, "slice element=@%zu", type->element_type) < 0) return 0;
@@ -111,13 +127,16 @@ static int dump_instruction(FILE *output, const IrFunction *function,
         fputs(" targets=", output) == EOF ||
         !print_id(output, "L", instruction->target_a, IR_VALUE_NONE) ||
         fputc(',', output) == EOF || !print_id(output, "L", instruction->target_b, IR_VALUE_NONE) ||
-        fputs(" arguments=", output) == EOF) return 0;
+        fputs(" arguments=", output) == EOF)
+        return 0;
     if (instruction->argument_count == 0) {
         if (fputc('-', output) == EOF) return 0;
     } else if (fprintf(output, "%zu+%zu", instruction->first_argument,
-                       instruction->argument_count) < 0) return 0;
+                       instruction->argument_count) < 0)
+        return 0;
     if (instruction->opcode == IR_OP_ENUM_PAYLOAD &&
-        fprintf(output," payload-index=%zu",instruction->enum_payload_index) < 0) return 0;
+        fprintf(output, " payload-index=%zu", instruction->enum_payload_index) < 0)
+        return 0;
     if (fputs(" span=", output) == EOF || !print_span(output, instruction->span)) return 0;
     if (instruction->argument_count != 0) {
         if (fputs(" values=[", output) == EOF) return 0;
@@ -125,16 +144,19 @@ static int dump_instruction(FILE *output, const IrFunction *function,
             size_t position = instruction->first_argument + a;
             if (a != 0 && fputc(',', output) == EOF) return 0;
             if (position >= function->argument_count ||
-                !print_id(output, "%", function->arguments[position], IR_VALUE_NONE)) return 0;
+                !print_id(output, "%", function->arguments[position], IR_VALUE_NONE))
+                return 0;
         }
         if (fputc(']', output) == EOF) return 0;
     }
     if ((instruction->opcode == IR_OP_UNARY || instruction->opcode == IR_OP_BINARY ||
          instruction->opcode == IR_OP_STORE) &&
         (fputs(" operator=", output) == EOF ||
-         !quoted(output, operator_name(instruction->operator_type)))) return 0;
+         !quoted(output, operator_name(instruction->operator_type))))
+        return 0;
     if (instruction->has_immediate &&
-        fprintf(output, " immediate=0x%016llx", (unsigned long long)instruction->immediate) < 0) return 0;
+        fprintf(output, " immediate=0x%016llx", (unsigned long long) instruction->immediate) < 0)
+        return 0;
     return fputc('\n', output) != EOF;
 }
 
@@ -144,45 +166,50 @@ static int dump_aggregates(FILE *output, const IrModule *module) {
         if (fprintf(output, "struct #%zu name=", i) < 0 ||
             !print_token(output, aggregate->source_program, aggregate->name_token) ||
             fprintf(output, " symbol=%zu fields=%zu\n", aggregate->symbol_id,
-                    aggregate->field_count) < 0) return 0;
+                    aggregate->field_count) < 0)
+            return 0;
         for (size_t f = 0; f < aggregate->field_count; f++)
             if (fputs("  field name=", output) == EOF ||
                 !print_token(output, aggregate->fields[f].source_program,
                              aggregate->fields[f].name_token) ||
                 fprintf(output, " symbol=%zu type=@%zu\n", aggregate->fields[f].symbol_id,
-                        aggregate->fields[f].type_id) < 0) return 0;
+                        aggregate->fields[f].type_id) < 0)
+                return 0;
     }
     for (size_t i = 0; i < module->enum_count; i++) {
         const IrEnum *enumeration = &module->enums[i];
         if (fprintf(output, "enum #%zu name=", i) < 0 ||
             !print_token(output, enumeration->source_program, enumeration->name_token) ||
             fprintf(output, " symbol=%zu fields=%zu variants=%zu sum=%d\n", enumeration->symbol_id,
-                    enumeration->field_count, enumeration->variant_count,enumeration->is_sum) < 0) return 0;
+                    enumeration->field_count, enumeration->variant_count, enumeration->is_sum) < 0)
+            return 0;
         for (size_t field = 0; field < enumeration->field_count; field++) {
             const IrFieldDefinition *definition = &enumeration->fields[field];
             if (fputs("  field name=", output) == EOF ||
                 !print_token(output, definition->source_program, definition->name_token) ||
                 fprintf(output, " symbol=%zu type=@%zu\n", definition->symbol_id,
-                        definition->type_id) < 0) return 0;
+                        definition->type_id) < 0)
+                return 0;
         }
         for (size_t v = 0; v < enumeration->variant_count; v++) {
             const IrEnumVariant *variant = &enumeration->variants[v];
             if (fputs("  variant name=", output) == EOF ||
                 !print_token(output, variant->source_program, variant->name_token) ||
                 fprintf(output, " symbol=%zu arguments=%zu+%zu\n", variant->symbol_id,
-                        variant->first_argument, variant->argument_count) < 0) return 0;
-            for (size_t p=0; p<variant->payload_count; p++)
-                if (fprintf(output,"    payload #%zu type=@%zu\n",p,variant->payload_types[p]) < 0) return 0;
-            for (size_t p=0; p<variant->payload_count; p++)
-                if (fprintf(output,"    payload #%zu type=@%zu\n",p,variant->payload_types[p]) < 0) return 0;
-
+                        variant->first_argument, variant->argument_count) < 0)
+                return 0;
+            for (size_t p = 0; p < variant->payload_count; p++)
+                if (fprintf(output, "    payload #%zu type=@%zu\n", p, variant->payload_types[p]) < 0) return 0;
+            for (size_t p = 0; p < variant->payload_count; p++)
+                if (fprintf(output, "    payload #%zu type=@%zu\n", p, variant->payload_types[p]) < 0) return 0;
         }
         for (size_t a = 0; a < enumeration->variant_argument_count; a++) {
             const IrEnumArgument *argument = &enumeration->variant_arguments[a];
             if (fprintf(output, "  argument #%zu value=", a) < 0 ||
                 !print_token(output, enumeration->source_program, argument->token) ||
                 fprintf(output, " type=@%zu negative=%d\n", argument->type_id,
-                        argument->negative) < 0) return 0;
+                        argument->negative) < 0)
+                return 0;
         }
     }
     for (size_t i = 0; i < module->import_count; i++) {
@@ -191,7 +218,8 @@ static int dump_aggregates(FILE *output, const IrModule *module) {
         if (import->path_token != AST_TOKEN_NONE) {
             if (!print_token(output, import->source_program, import->path_token)) return 0;
         } else if (fprintf(output, "tokens:%zu+%zu", import->path_first_token,
-                           import->path_token_count) < 0) return 0;
+                           import->path_token_count) < 0)
+            return 0;
         if (fputc('\n', output) == EOF) return 0;
     }
     return 1;
@@ -204,12 +232,17 @@ int ir_dump(FILE *output, const IrModule *module) {
         fprintf(output, " verified=%d types=%zu functions=%zu structs=%zu enums=%zu imports=%zu\n",
                 module->verified, module->type_count, module->function_count,
                 module->structure_count, module->enum_count, module->import_count) < 0 ||
-        !dump_types(output, module) || !dump_aggregates(output, module)) return 0;
-    if (fputs("package identity=",output) == EOF || !quoted(output,module->program->module_identity ? module->program->module_identity : "") ||
-        fputc('\n',output) == EOF) return 0;
-    for (size_t g=0;g<module->global_count;g++) {
-        if (fprintf(output,"global #%zu symbol=%zu type=@%zu bits=%llu\n",g,module->globals[g].symbol_id,module->globals[g].type_id,
-            (unsigned long long)module->globals[g].bits) < 0) return 0;
+        !dump_types(output, module) || !dump_aggregates(output, module))
+        return 0;
+    if (fputs("package identity=", output) == EOF || !quoted(
+            output, module->program->module_identity ? module->program->module_identity : "") ||
+        fputc('\n', output) == EOF)
+        return 0;
+    for (size_t g = 0; g < module->global_count; g++) {
+        if (fprintf(output, "global #%zu symbol=%zu type=@%zu bits=%llu\n", g, module->globals[g].symbol_id,
+                    module->globals[g].type_id,
+                    (unsigned long long) module->globals[g].bits) < 0)
+            return 0;
     }
     for (size_t f = 0; f < module->function_count; f++) {
         const IrFunction *function = &module->functions[f];
@@ -219,13 +252,15 @@ int ir_dump(FILE *output, const IrModule *module) {
             !print_token(output, function->source_program, function->owner_token) ||
             fprintf(output, " return=@%zu parameters=%zu instructions=%zu\n",
                     function->return_type_id, function->parameter_count,
-                    function->instruction_count) < 0) return 0;
+                    function->instruction_count) < 0)
+            return 0;
         for (size_t p = 0; p < function->parameter_count; p++) {
             const IrParameter *parameter = &function->parameters[p];
             if (fprintf(output, "  parameter #%zu name=", p) < 0 ||
                 !print_token(output, parameter->source_program, parameter->name_token) ||
                 fprintf(output, " symbol=%zu type=@%zu receiver=%d\n", parameter->symbol_id,
-                        parameter->type_id, parameter->is_receiver) < 0) return 0;
+                        parameter->type_id, parameter->is_receiver) < 0)
+                return 0;
         }
         for (size_t i = 0; i < function->instruction_count; i++)
             if (!dump_instruction(output, function, &function->instructions[i], i)) return 0;

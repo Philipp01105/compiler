@@ -49,12 +49,15 @@ typedef struct {
     size_t error_count;
 } SemanticModel;
 
-SemanticModel *semantic_analyze(AstProgram *program);
+SemanticModel *semantic_analyze(AstProgram * program);
+
 void semantic_model_free(SemanticModel *model);
+
 const SemanticSymbol *semantic_find_global(const SemanticModel *model,
                                            const char *name,
                                            SemanticSymbolKind kind);
-const SemanticSymbol *semantic_find_in_package(const SemanticModel *model,const AstProgram *file,
-                                               const char *name,SemanticSymbolKind kind);
+
+const SemanticSymbol *semantic_find_in_package(const SemanticModel *model, const AstProgram *file,
+                                               const char *name, SemanticSymbolKind kind);
 
 #endif

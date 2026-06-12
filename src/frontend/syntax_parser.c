@@ -224,7 +224,8 @@ static AstType parse_type(SyntaxParser *parser) {
         }
         type.kind = AST_TYPE_NAMED;
         type.name_token = parser->current++;
-        if ((!parser->type_expression_end || parser->current < parser->type_expression_end) && match(parser, TOKEN_DOT)) {
+        if ((!parser->type_expression_end || parser->current < parser->type_expression_end) &&
+            match(parser, TOKEN_DOT)) {
             const char *qualifier = ast_program_lexeme(parser->program, type.name_token);
             size_t member = consume(parser, TOKEN_IDENTIFIER);
             char qualified[MAX_TOKEN];
@@ -271,7 +272,7 @@ static AstType parse_type(SyntaxParser *parser) {
             if (type.array_length_token < parser->program->token_count &&
                 parser->program->tokens[type.array_length_token].type == TOKEN_NUMBER)
                 type.resolved_array_length = (size_t) strtoull(
-                    ast_program_lexeme(parser->program, type.array_length_token),NULL, 10);
+                    ast_program_lexeme(parser->program, type.array_length_token), NULL, 10);
             (void) consume(parser, TOKEN_RBRACKET);
         }
     }
@@ -348,25 +349,28 @@ static void finish_expression(SyntaxParser *parser, AstExpression *expression) {
 }
 
 /* Recognize a type followed by .type without speculatively emitting diagnostics. */
-static int look_type(const SyntaxParser *parser,size_t *index,unsigned depth) {
+static int look_type(const SyntaxParser *parser, size_t *index, unsigned depth) {
     if (depth > AST_MAX_PARSE_DEPTH || *index >= parser->program->token_count) return 0;
-    const AstToken *tokens=parser->program->tokens;
+    const AstToken *tokens = parser->program->tokens;
     while (tokens[*index].type == TOKEN_STAR) (*index)++;
     if (tokens[*index].type == TOKEN_LPAREN) {
         (*index)++;
-        if (!look_type(parser,index,depth+1) || tokens[*index].type != TOKEN_RPAREN) return 0;
+        if (!look_type(parser, index, depth + 1) || tokens[*index].type != TOKEN_RPAREN) return 0;
         (*index)++;
     } else {
         if (!is_type_token(tokens[*index].type) && tokens[*index].type != TOKEN_IDENTIFIER) return 0;
         (*index)++;
-        if (tokens[*index].type == TOKEN_DOT && *index+1 < parser->program->token_count &&
-            tokens[*index+1].type == TOKEN_IDENTIFIER && strcmp(tokens[*index+1].lexeme,"type") &&
-            ((!strcmp(tokens[*index+1].lexeme,"name") || !strcmp(tokens[*index+1].lexeme,"size") || !strcmp(tokens[*index+1].lexeme,"align"))
-                ? (*index+2 < parser->program->token_count && tokens[*index+2].type == TOKEN_DOT) : 1)) *index+=2;
+        if (tokens[*index].type == TOKEN_DOT && *index + 1 < parser->program->token_count &&
+            tokens[*index + 1].type == TOKEN_IDENTIFIER && strcmp(tokens[*index + 1].lexeme, "type") &&
+            ((!strcmp(tokens[*index + 1].lexeme, "name") || !strcmp(tokens[*index + 1].lexeme, "size") || !strcmp(
+                  tokens[*index + 1].lexeme, "align"))
+                 ? (*index + 2 < parser->program->token_count && tokens[*index + 2].type == TOKEN_DOT)
+                 : 1))
+            *index += 2;
         if (tokens[*index].type == TOKEN_LESS) {
             (*index)++;
             do {
-                if (!look_type(parser,index,depth+1)) return 0;
+                if (!look_type(parser, index, depth + 1)) return 0;
                 if (tokens[*index].type != TOKEN_COMMA) break;
                 (*index)++;
             } while (1);
@@ -382,22 +386,26 @@ static int look_type(const SyntaxParser *parser,size_t *index,unsigned depth) {
     }
     return *index < parser->program->token_count;
 }
+
 static int type_metadata_ahead(const SyntaxParser *parser) {
-    size_t index=parser->current;
+    size_t index = parser->current;
     /* An enum variant followed by a field is a value expression. */
-    if (index+3 < parser->program->token_count &&
+    if (index + 3 < parser->program->token_count &&
         parser->program->tokens[index].type == TOKEN_IDENTIFIER &&
-        parser->program->tokens[index+1].type == TOKEN_DOT &&
-        parser->program->tokens[index+3].type == TOKEN_DOT) {
-        const char *name=parser->program->tokens[index].lexeme;
-        for (const AstDeclarationNode *d=parser->program->root;d;d=d->next)
+        parser->program->tokens[index + 1].type == TOKEN_DOT &&
+        parser->program->tokens[index + 3].type == TOKEN_DOT) {
+        const char *name = parser->program->tokens[index].lexeme;
+        for (const AstDeclarationNode *d = parser->program->root; d; d = d->next)
             if (d->kind == AST_DECL_ENUM &&
-                !strcmp(name,ast_program_lexeme(parser->program,d->name_token))) return 0;
+                !strcmp(name, ast_program_lexeme(parser->program, d->name_token)))
+                return 0;
     }
-    return look_type(parser,&index,0) && index+1 < parser->program->token_count &&
-        parser->program->tokens[index].type == TOKEN_DOT &&
-        parser->program->tokens[index+1].type == TOKEN_IDENTIFIER &&
-        (!strcmp(parser->program->tokens[index+1].lexeme,"name") || !strcmp(parser->program->tokens[index+1].lexeme,"size") || !strcmp(parser->program->tokens[index+1].lexeme,"align"));
+    return look_type(parser, &index, 0) && index + 1 < parser->program->token_count &&
+           parser->program->tokens[index].type == TOKEN_DOT &&
+           parser->program->tokens[index + 1].type == TOKEN_IDENTIFIER &&
+           (!strcmp(parser->program->tokens[index + 1].lexeme, "name") || !strcmp(
+                parser->program->tokens[index + 1].lexeme, "size") || !strcmp(
+                parser->program->tokens[index + 1].lexeme, "align"));
 }
 
 static AstExpression *parse_primary(SyntaxParser *parser) {
@@ -405,14 +413,19 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
     TokenType type = current_type(parser);
     AstExpression *expression = NULL;
     if (type_metadata_ahead(parser)) {
-        expression=new_expression(parser,AST_EXPR_TYPE_INFO,first);
-        size_t end=parser->current; (void)look_type(parser,&end,0);
-        size_t saved_end=parser->type_expression_end; parser->type_expression_end=end;
-        AstType queried=parse_type(parser);
-        parser->type_expression_end=saved_end;
-        if (expression) { expression->allocated_type=queried; expression->value_token=queried.name_token; }
+        expression = new_expression(parser, AST_EXPR_TYPE_INFO, first);
+        size_t end = parser->current;
+        (void) look_type(parser, &end, 0);
+        size_t saved_end = parser->type_expression_end;
+        parser->type_expression_end = end;
+        AstType queried = parse_type(parser);
+        parser->type_expression_end = saved_end;
+        if (expression) {
+            expression->allocated_type = queried;
+            expression->value_token = queried.name_token;
+        }
     } else if (type == TOKEN_NUMBER || type == TOKEN_FLOAT_LITERAL ||
-        type == TOKEN_CHAR_LITERAL || type == TOKEN_STRING_LITERAL) {
+               type == TOKEN_CHAR_LITERAL || type == TOKEN_STRING_LITERAL) {
         expression = new_expression(parser, AST_EXPR_LITERAL, first);
         if (expression != NULL) expression->value_token = parser->current;
         parser->current++;
@@ -780,28 +793,36 @@ static AstStatement *parse_statement_impl(SyntaxParser *parser) {
     if (match(parser, TOKEN_KEYWORD_MATCH)) {
         AstStatement *statement = new_statement(parser, AST_STMT_MATCH, first);
         (void) consume(parser, TOKEN_LPAREN);
-        size_t type_end=parser->current;
+        size_t type_end = parser->current;
         AstExpression *value;
-        if (look_type(parser,&type_end,0) && type_end+2 < parser->program->token_count &&
+        if (look_type(parser, &type_end, 0) && type_end + 2 < parser->program->token_count &&
             parser->program->tokens[type_end].type == TOKEN_RPAREN &&
-            parser->program->tokens[type_end+1].type == TOKEN_LBRACE &&
-            parser->program->tokens[type_end+2].type == TOKEN_KEYWORD_CASE) {
-            value=new_expression(parser,AST_EXPR_TYPE_INFO,parser->current);
-            size_t saved_end=parser->type_expression_end; parser->type_expression_end=type_end;
-            AstType queried=parse_type(parser); parser->type_expression_end=saved_end;
-            if (value) { value->allocated_type=queried; value->value_token=queried.name_token; finish_expression(parser,value); }
-        } else value=parse_expression(parser);
+            parser->program->tokens[type_end + 1].type == TOKEN_LBRACE &&
+            parser->program->tokens[type_end + 2].type == TOKEN_KEYWORD_CASE) {
+            value = new_expression(parser, AST_EXPR_TYPE_INFO, parser->current);
+            size_t saved_end = parser->type_expression_end;
+            parser->type_expression_end = type_end;
+            AstType queried = parse_type(parser);
+            parser->type_expression_end = saved_end;
+            if (value) {
+                value->allocated_type = queried;
+                value->value_token = queried.name_token;
+                finish_expression(parser, value);
+            }
+        } else value = parse_expression(parser);
         (void) consume(parser, TOKEN_RPAREN);
         (void) consume(parser, TOKEN_LBRACE);
         AstMatchArm *head = NULL, **tail = &head;
         while (!parser->failed && !check(parser, TOKEN_RBRACE) && !check(parser, TOKEN_EOF)) {
             size_t arm_first = parser->current;
             AstMatchArm *arm = allocate(parser, sizeof(*arm));
-            int type_pattern=match(parser,TOKEN_KEYWORD_CASE);
-            AstType pattern=inferred_type();
+            int type_pattern = match(parser, TOKEN_KEYWORD_CASE);
+            AstType pattern = inferred_type();
             size_t variant;
-            if (type_pattern) { pattern=parse_type(parser); variant=pattern.name_token; }
-            else variant=consume(parser,TOKEN_IDENTIFIER);
+            if (type_pattern) {
+                pattern = parse_type(parser);
+                variant = pattern.name_token;
+            } else variant = consume(parser, TOKEN_IDENTIFIER);
             AstParameter *bindings = NULL, **binding_tail = &bindings;
             if (!type_pattern && match(parser, TOKEN_LPAREN)) {
                 if (!check(parser, TOKEN_RPAREN))
@@ -818,13 +839,13 @@ static AstStatement *parse_statement_impl(SyntaxParser *parser) {
                     } while (match(parser, TOKEN_COMMA));
                 (void) consume(parser, TOKEN_RPAREN);
             }
-            if (type_pattern) (void)consume(parser,TOKEN_ARROW);
+            if (type_pattern) (void) consume(parser, TOKEN_ARROW);
             else (void) consume(parser, TOKEN_FAT_ARROW);
             AstStatement *body = parse_statement(parser);
             if (arm) {
                 arm->variant_token = variant;
-                arm->is_type_pattern=type_pattern;
-                arm->type=pattern;
+                arm->is_type_pattern = type_pattern;
+                arm->type = pattern;
                 arm->wildcard = !strcmp(ast_program_lexeme(parser->program, variant), "_");
                 arm->bindings = bindings;
                 arm->body = body;
@@ -1253,13 +1274,13 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
     SyntaxParser parser = {.program = program, .recover_syntax = recover_syntax};
     program->package_token = AST_TOKEN_NONE;
     if (!check(&parser, TOKEN_KEYWORD_PACKAGE))
-        parser_failure(&parser,ERR_PACKAGE_DECLARATION, "Every DMM source file must begin with 'package name;'");
+        parser_failure(&parser, ERR_PACKAGE_DECLARATION, "Every DMM source file must begin with 'package name;'");
     else {
         parser.current++;
         program->package_token = consume(&parser, TOKEN_IDENTIFIER);
         program->package_name = ast_program_lexeme(program, program->package_token);
         if (!strcmp(program->package_name, "_"))
-            parser_failure(&parser,ERR_PACKAGE_NAME, "Package name cannot be '_'");
+            parser_failure(&parser, ERR_PACKAGE_NAME, "Package name cannot be '_'");
         (void) consume(&parser, TOKEN_SEMICOLON);
     }
     AstDeclarationNode **tail = &program->root;
@@ -1278,7 +1299,7 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
         else if (check(&parser, TOKEN_KEYWORD_TRAIT)) declaration = parse_trait(&parser, 0);
         else if (check(&parser, TOKEN_KEYWORD_IMPL)) declaration = parse_trait(&parser, 1);
         else if (check(&parser, TOKEN_KEYWORD_PACKAGE))
-            parser_failure(&parser,ERR_PACKAGE_DECLARATION,
+            parser_failure(&parser, ERR_PACKAGE_DECLARATION,
                            "Package declaration must appear exactly once, before all declarations");
         else if (check(&parser, TOKEN_HASH))
             parser_failure(&parser, ERR_PARSE_INVALID_DECLARATION,
@@ -1307,7 +1328,7 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
         }
         while (declaration != NULL) {
             if (is_public && (declaration->kind == AST_DECL_IMPORT || declaration->kind == AST_DECL_IMPL))
-                parser_failure(&parser,ERR_PARSE_INVALID_DECLARATION,
+                parser_failure(&parser, ERR_PARSE_INVALID_DECLARATION,
                                "pub applies to declarations and members, not imports or implementations");
             declaration->is_public = is_public;
             AstDeclarationNode *next = declaration->next;

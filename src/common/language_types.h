@@ -44,19 +44,23 @@ static inline int data_type_integral(DataType type) {
     return type == TYPE_INT || type == TYPE_CHAR || type == TYPE_BYTE || type == TYPE_BIT ||
            (type >= TYPE_I8 && type <= TYPE_USIZE);
 }
+
 static inline int data_type_fixed_integer(DataType type) {
     return type >= TYPE_I8 && type <= TYPE_USIZE;
 }
+
 static inline int data_type_unsigned(DataType type) {
     return type == TYPE_BYTE || type == TYPE_BIT || type == TYPE_U8 || type == TYPE_U16 ||
            type == TYPE_U32 || type == TYPE_U64 || type == TYPE_USIZE;
 }
+
 static inline unsigned data_type_bytes(DataType type) {
     if (type == TYPE_CHAR || type == TYPE_BYTE || type == TYPE_BIT || type == TYPE_I8 || type == TYPE_U8) return 1;
     if (type == TYPE_I16 || type == TYPE_U16) return 2;
     if (type == TYPE_INT || type == TYPE_I32 || type == TYPE_U32 || type == TYPE_FLOAT) return 4;
     return 8;
 }
+
 static inline uint64_t data_type_normalize_integer(uint64_t bits, DataType type) {
     unsigned width = data_type_bytes(type) * 8;
     if (width == 64) return bits;
@@ -68,10 +72,11 @@ static inline uint64_t data_type_normalize_integer(uint64_t bits, DataType type)
     }
     return bits;
 }
+
 static inline DataType token_data_type(TokenType token) {
-    return token >= TOKEN_TYPE_INT && token <= TOKEN_TYPE_VOID ?
-           (DataType)(token - TOKEN_TYPE_INT) : TYPE_UNKNOWN;
+    return token >= TOKEN_TYPE_INT && token <= TOKEN_TYPE_VOID ? (DataType) (token - TOKEN_TYPE_INT) : TYPE_UNKNOWN;
 }
+
 static inline DataType data_type_promoted_integer(DataType left, DataType right) {
     if (!data_type_fixed_integer(left) && !data_type_fixed_integer(right)) return TYPE_INT;
     if (left == right) return left;
@@ -79,11 +84,17 @@ static inline DataType data_type_promoted_integer(DataType left, DataType right)
     int unsign = (data_type_unsigned(left) && a >= b) || (data_type_unsigned(right) && b >= a);
     if (width == 8 && (left == TYPE_USIZE || right == TYPE_USIZE) && unsign) return TYPE_USIZE;
     if (width == 8 && (left == TYPE_ISIZE || right == TYPE_ISIZE) && !unsign) return TYPE_ISIZE;
-    return width == 1 ? (unsign ? TYPE_U8 : TYPE_I8) : width == 2 ? (unsign ? TYPE_U16 : TYPE_I16) :
-           width == 4 ? (unsign ? TYPE_U32 : TYPE_I32) : (unsign ? TYPE_U64 : TYPE_I64);
+    return width == 1
+               ? (unsign ? TYPE_U8 : TYPE_I8)
+               : width == 2
+                     ? (unsign ? TYPE_U16 : TYPE_I16)
+                     : width == 4
+                           ? (unsign ? TYPE_U32 : TYPE_I32)
+                           : (unsign ? TYPE_U64 : TYPE_I64);
 }
 
 typedef enum { TARGET_ELF, TARGET_COFF } TargetFormat;
+
 typedef enum { SYNTAX_ATT, SYNTAX_INTEL } SyntaxMode;
 
 #endif

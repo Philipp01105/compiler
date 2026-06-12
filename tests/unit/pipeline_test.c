@@ -9,9 +9,9 @@
 
 static int control_flow_regressions(void) {
     const char *source =
-        "func main() -> int {"
-        "var condition = true && (false || true);"
-        "if (condition) { return 1; } return 0; }";
+            "func main() -> int {"
+            "var condition = true && (false || true);"
+            "if (condition) { return 1; } return 0; }";
     const FrontendOptions options = {0};
     AstProgram *program = test_parse_source(source, strlen(source), "cfg-test.dmm", &options);
     SemanticModel *semantics = program == NULL ? NULL : semantic_analyze(program);
@@ -72,7 +72,8 @@ static int control_flow_regressions(void) {
                 mutated[at] = original[constant];
                 mutated[at].result = function->next_value++;
                 memcpy(mutated + at + 1, original + at, (n - at) * sizeof(*mutated));
-                function->instructions = mutated; function->instruction_count++;
+                function->instructions = mutated;
+                function->instruction_count++;
                 if (ir_verify_module(module)) failed = 1;
                 /* PHIs must precede ordinary instructions in a join block. */
                 memcpy(mutated, original, inner * sizeof(*mutated));
@@ -80,13 +81,17 @@ static int control_flow_regressions(void) {
                 mutated[inner].result = function->next_value - 1;
                 memcpy(mutated + inner + 1, original + inner, (n - inner) * sizeof(*mutated));
                 if (ir_verify_module(module)) failed = 1;
-                function->instructions = original; function->instruction_count--;
-                function->next_value--; free(mutated);
+                function->instructions = original;
+                function->instruction_count--;
+                function->next_value--;
+                free(mutated);
             }
             if (!ir_verify_module(module)) failed = 1;
         }
     }
-    ir_module_free(module); semantic_model_free(semantics); ast_program_free(program);
+    ir_module_free(module);
+    semantic_model_free(semantics);
+    ast_program_free(program);
     if (failed) fprintf(stderr, "CFG dominance/PHI/terminator regression failed\n");
     return failed;
 }
@@ -96,7 +101,8 @@ static void report_expression(const AstProgram *program, const AstExpression *ex
     report_expression(program, expression->left);
     report_expression(program, expression->right);
     for (const AstExpression *argument = expression->arguments; argument != NULL;
-         argument = argument->next) report_expression(program, argument);
+         argument = argument->next)
+        report_expression(program, argument);
     if (expression->resolved_type == TYPE_UNKNOWN &&
         expression->resolved_named_type_token == AST_TOKEN_NONE &&
         expression->resolved_symbol_id == AST_SYMBOL_NONE &&
@@ -144,16 +150,18 @@ int main(int argc, char **argv) {
         AstProgram *program = frontend_parse_file(argv[i], &options);
         SemanticModel *semantics = semantic_analyze(program);
         IrModule *module = semantics != NULL && semantics->error_count == 0
-            ? ir_lower_program(program, semantics) : NULL;
+                               ? ir_lower_program(program, semantics)
+                               : NULL;
         int has_import = module != NULL && module->import_count != 0;
         if (strstr(argv[i], "package_import_fixture") != NULL) {
-            const AstImportPath *paths=program != NULL && program->root != NULL ?
-                program->root->as.import_decl.paths : NULL;
+            const AstImportPath *paths = program != NULL && program->root != NULL
+                                             ? program->root->as.import_decl.paths
+                                             : NULL;
             if (program == NULL || program->structured_declaration_count != 2 ||
                 program->owned_import_count != 2 || paths == NULL || paths->next != NULL ||
                 module == NULL || module->import_count != 1 || module->function_count != 3) {
                 fprintf(stderr, "grouped package import AST/IR contract failed\n");
-                failed=1;
+                failed = 1;
             }
         }
         if (semantics != NULL && semantics->unresolved_expression_count != 0)
@@ -218,7 +226,7 @@ int main(int argc, char **argv) {
         }
         if (i == 1) {
             const SemanticSymbol *add = semantic_find_global(semantics, "add",
-                                                              SEMANTIC_SYMBOL_FUNCTION);
+                                                             SEMANTIC_SYMBOL_FUNCTION);
             if (add == NULL || add->declared_type.name_token == AST_TOKEN_NONE ||
                 strcmp(ast_program_lexeme(program, add->declared_type.name_token), "int") != 0)
                 failed = 1;
@@ -294,7 +302,8 @@ int main(int argc, char **argv) {
             }
             if (!saw_resolved_load || !saw_typed_parameters || !tested_verifier ||
                 !tested_typed_verifier || !tested_return_verifier ||
-                !ir_verify_module(module)) failed = 1;
+                !ir_verify_module(module))
+                failed = 1;
         }
         for (size_t f = 0; module != NULL && f < module->function_count; f++)
             for (size_t n = 0; n < module->functions[f].instruction_count; n++) {

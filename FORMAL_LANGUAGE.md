@@ -1,6 +1,7 @@
 # DMM Formal Language
 
-This document defines DMM's lexical and syntactic grammar using Extended Backus-Naur Form (EBNF). `LANGUAGE_SPEC.md` defines the accompanying semantic rules and implementation limits.
+This document defines DMM's lexical and syntactic grammar using Extended Backus-Naur Form (EBNF). `LANGUAGE_SPEC.md`
+defines the accompanying semantic rules and implementation limits.
 
 ## Notation
 
@@ -12,7 +13,8 @@ x | y        (* alternative *)
 "text"       (* terminal text *)
 ```
 
-Whitespace separates tokens and is otherwise insignificant. A line comment begins with `//` and continues through the end of the line. A non-nesting block comment begins with `/*` and ends at the next `*/`, and may span lines.
+Whitespace separates tokens and is otherwise insignificant. A line comment begins with `//` and continues through the
+end of the line. A non-nesting block comment begins with `/*` and ends at the next `*/`, and may span lines.
 
 ## Lexical grammar
 
@@ -42,7 +44,8 @@ primitive-type  = "int" | "char" | "byte" | "bit"
                 | "i64" | "u64" | "isize" | "usize" ;
 ```
 
-`character-byte` excludes quote, backslash, and line terminators. `string-byte` excludes double quote, backslash, and line terminators. A leading sign is parsed as a unary operator rather than as part of a numeric token.
+`character-byte` excludes quote, backslash, and line terminators. `string-byte` excludes double quote, backslash, and
+line terminators. A leading sign is parsed as a unary operator rather than as part of a numeric token.
 
 ## Program grammar
 
@@ -101,10 +104,9 @@ enum-argument   = integer | floating | character | string
                 | "true" | "false" ;
 ```
 
-Enum field and member names are unique. Each value supplies exactly one
-compatible argument for every declared field. Without header fields, variant parentheses
-contain payload types rather than constant arguments. Generic nominal names followed
-by `.variant` accept type arguments in constructor expressions.
+Enum field and member names are unique. Each value supplies exactly one compatible argument for every declared field.
+Without header fields, variant parentheses contain payload types rather than constant arguments. Generic nominal names
+followed by `.variant` accept type arguments in constructor expressions.
 
 ## Statements
 
@@ -156,7 +158,8 @@ match-arm       = (identifier, ["(", [identifier, {",", identifier}], ")"] | "_"
 
 ## Expressions
 
-The grammar encodes precedence from lowest to highest. Binary operators at each level associate left-to-right; unary operators associate right-to-left.
+The grammar encodes precedence from lowest to highest. Binary operators at each level associate left-to-right; unary
+operators associate right-to-left.
 
 ```ebnf
 expression      = logical-or ;
@@ -191,13 +194,13 @@ call-expression = identifier-expression ;
 type-metadata   = type, ".", ("name" | "size" | "align") ;
 ```
 
-`expression.type` is a member expression denoting compile-time static type metadata.
-It may be followed by `.name`, `.size`, or `.align`, or used as a type-match
-scrutinee. Type matches use `case Type -> statement` and `case _ -> statement`;
-enum matches use variant patterns with `=>`. See `LANGUAGE_SPEC.md` for
-specialization and unevaluated-expression rules. `typeof` is currently reserved
-by the lexer; use `.type` for static type access.
+`expression.type` is a member expression denoting compile-time static type metadata. It may be followed by `.name`,
+`.size`, or `.align`, or used as a type-match scrutinee. Type matches use `case Type -> statement` and
+`case _ -> statement`; enum matches use variant patterns with `=>`. See `LANGUAGE_SPEC.md` for specialization and
+unevaluated-expression rules. `typeof` is currently reserved by the lexer; use `.type` for static type access.
 
 ## Context-sensitive validity
 
-The grammar describes structure only. A valid DMM program must also satisfy the rules in `LANGUAGE_SPEC.md`, including declaration-before-use and scope rules, type compatibility, valid return paths, argument matching, loop-only `break`/`continue`, object-size limits, and array-bounds requirements.
+The grammar describes structure only. A valid DMM program must also satisfy the rules in `LANGUAGE_SPEC.md`, including
+declaration-before-use and scope rules, type compatibility, valid return paths, argument matching, loop-only `break`/
+`continue`, object-size limits, and array-bounds requirements.

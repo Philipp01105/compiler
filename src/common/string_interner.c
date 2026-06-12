@@ -76,7 +76,7 @@ const char *string_interner_intern_n(StringInterner *interner, const char *text,
     if (copy == NULL) return NULL;
     memcpy(copy, text, length);
     copy[length] = '\0';
-    interner->entries[slot] = (InternedString) {copy, length, hash};
+    interner->entries[slot] = (InternedString){copy, length, hash};
     interner->count++;
     interner->bytes += length + 1U;
     return copy;

@@ -11,7 +11,9 @@ typedef struct {
     int reachable;
 } Block;
 
-typedef struct { size_t block, next; } Edge;
+typedef struct {
+    size_t block, next;
+} Edge;
 
 static int terminator(IrOpcode opcode) {
     return opcode == IR_OP_BRANCH || opcode == IR_OP_JUMP || opcode == IR_OP_TRAP || opcode == IR_OP_RETURN;
@@ -37,7 +39,8 @@ int ir_verify_control_flow(const IrFunction *function, int implicit_void_return)
     if (n > SIZE_MAX / sizeof(Block) || n > SIZE_MAX / sizeof(size_t) ||
         n > SIZE_MAX / (2 * sizeof(Edge)) ||
         function->next_label > SIZE_MAX / sizeof(size_t) ||
-        function->next_value > SIZE_MAX / sizeof(size_t)) return 0;
+        function->next_value > SIZE_MAX / sizeof(size_t))
+        return 0;
     Block *blocks = calloc(n, sizeof(*blocks));
     Edge *edges = malloc(2 * n * sizeof(*edges));
     size_t *instruction_blocks = malloc(n * sizeof(*instruction_blocks));
@@ -48,7 +51,8 @@ int ir_verify_control_flow(const IrFunction *function, int implicit_void_return)
     int valid = 0;
     if (blocks == NULL || edges == NULL || instruction_blocks == NULL || queue == NULL ||
         (function->next_label != 0 && labels == NULL) ||
-        (function->next_value != 0 && definitions == NULL)) goto done;
+        (function->next_value != 0 && definitions == NULL))
+        goto done;
     for (size_t i = 0; i < function->next_label; i++) labels[i] = IR_VALUE_NONE;
     for (size_t i = 0; i < function->next_value; i++) definitions[i] = IR_VALUE_NONE;
     size_t count = 0;
@@ -83,23 +87,26 @@ int ir_verify_control_flow(const IrFunction *function, int implicit_void_return)
         for (size_t s = 0; s < 2; s++) {
             size_t target = blocks[b].successor[s];
             if (target == IR_VALUE_NONE) continue;
-            edges[edge_count] = (Edge) {b, blocks[target].predecessor};
+            edges[edge_count] = (Edge){b, blocks[target].predecessor};
             blocks[target].predecessor = edge_count++;
             blocks[target].predecessor_count++;
         }
     }
     size_t queued = 1;
-    queue[0] = 0; blocks[0].reachable = 1;
+    queue[0] = 0;
+    blocks[0].reachable = 1;
     for (size_t q = 0; q < queued; q++)
         for (size_t s = 0; s < 2; s++) {
             size_t target = blocks[queue[q]].successor[s];
             if (target != IR_VALUE_NONE && !blocks[target].reachable) {
-                blocks[target].reachable = 1; queue[queued++] = target;
+                blocks[target].reachable = 1;
+                queue[queued++] = target;
             }
         }
     size_t words = (count + 63) / 64;
     if (blocks[count - 1].reachable && !implicit_void_return &&
-        !terminator(function->instructions[n - 1].opcode)) goto done;
+        !terminator(function->instructions[n - 1].opcode))
+        goto done;
     if (words > SIZE_MAX / sizeof(uint64_t) || count > SIZE_MAX / (words * sizeof(uint64_t))) goto done;
     dominators = calloc(count * words, sizeof(*dominators));
     row = malloc(words * sizeof(*row));
@@ -121,7 +128,8 @@ int ir_verify_control_flow(const IrFunction *function, int implicit_void_return)
                     for (size_t w = 0; w < words; w++) row[w] &= dominators[edges[e].block * words + w];
             row[b / 64] |= UINT64_C(1) << (b % 64);
             if (memcmp(row, dominators + b * words, words * sizeof(*row)) != 0) {
-                memcpy(dominators + b * words, row, words * sizeof(*row)); changed = 1;
+                memcpy(dominators + b * words, row, words * sizeof(*row));
+                changed = 1;
             }
         }
     } while (changed);
@@ -138,11 +146,14 @@ int ir_verify_control_flow(const IrFunction *function, int implicit_void_return)
                 if (pred == IR_VALUE_NONE || blocks[pred].successor[0] != b ||
                     function->instructions[blocks[pred].end - 1].opcode != IR_OP_JUMP ||
                     !available(values[a], pred, blocks[pred].end, definitions,
-                               instruction_blocks, blocks, dominators, words)) goto done;
+                               instruction_blocks, blocks, dominators, words))
+                    goto done;
             }
         } else {
-            if (instruction->operand_a != IR_VALUE_NONE) AVAILABLE(instruction->operand_a);
-            if (instruction->operand_b != IR_VALUE_NONE) AVAILABLE(instruction->operand_b);
+            if (instruction->operand_a != IR_VALUE_NONE)
+                AVAILABLE(instruction->operand_a);
+            if (instruction->operand_b != IR_VALUE_NONE)
+                AVAILABLE(instruction->operand_b);
             if (instruction->opcode == IR_OP_CALL || instruction->opcode == IR_OP_ENUM_CONSTRUCT)
                 for (size_t a = 0; a < instruction->argument_count; a++)
                     AVAILABLE(function->arguments[instruction->first_argument + a]);
@@ -151,7 +162,13 @@ int ir_verify_control_flow(const IrFunction *function, int implicit_void_return)
     }
     valid = 1;
 done:
-    free(blocks); free(edges); free(instruction_blocks); free(labels); free(definitions);
-    free(queue); free(dominators); free(row);
+    free(blocks);
+    free(edges);
+    free(instruction_blocks);
+    free(labels);
+    free(definitions);
+    free(queue);
+    free(dominators);
+    free(row);
     return valid;
 }

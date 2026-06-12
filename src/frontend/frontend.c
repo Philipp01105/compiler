@@ -47,7 +47,7 @@ static AstSourceSpan token_span(const Token *token) {
 }
 
 static AstDeclarationKind declaration_kind(TokenType first, TokenType second) {
-    if (first == TOKEN_KEYWORD_PUB) first=second;
+    if (first == TOKEN_KEYWORD_PUB) first = second;
     if (first == TOKEN_KEYWORD_IMPORT) return AST_DECL_IMPORT;
     if (first == TOKEN_KEYWORD_STRUCT) return AST_DECL_STRUCT;
     if (first == TOKEN_KEYWORD_ENUM) return AST_DECL_ENUM;
@@ -65,34 +65,41 @@ static size_t declaration_end(const AstProgram *program, size_t first) {
         first + 1 < program->token_count ? program->tokens[first + 1].type : TOKEN_EOF);
 
     if (kind == AST_DECL_IMPORT) {
-        size_t index=first;
+        size_t index = first;
         while (index < program->token_count && program->tokens[index].type != TOKEN_SEMICOLON &&
-               program->tokens[index].type != TOKEN_EOF) index++;
-        return index < program->token_count && program->tokens[index].type == TOKEN_SEMICOLON ? index+1 : index;
+               program->tokens[index].type != TOKEN_EOF)
+            index++;
+        return index < program->token_count && program->tokens[index].type == TOKEN_SEMICOLON ? index + 1 : index;
     }
     if (kind == AST_DECL_CONSTANT || kind == AST_DECL_VARIABLE) {
         size_t index = first + 1;
         if (kind == AST_DECL_CONSTANT || kind == AST_DECL_VARIABLE) {
             while (index < program->token_count &&
                    program->tokens[index].type != TOKEN_SEMICOLON &&
-                   program->tokens[index].type != TOKEN_EOF) index++;
+                   program->tokens[index].type != TOKEN_EOF)
+                index++;
             return index < program->token_count &&
-                   program->tokens[index].type == TOKEN_SEMICOLON ? index + 1 : index;
+                   program->tokens[index].type == TOKEN_SEMICOLON
+                       ? index + 1
+                       : index;
         }
         if (index < program->token_count && program->tokens[index].type == TOKEN_LPAREN) {
             while (index < program->token_count && program->tokens[index].type != TOKEN_RPAREN &&
-                   program->tokens[index].type != TOKEN_EOF) index++;
+                   program->tokens[index].type != TOKEN_EOF)
+                index++;
             return index < program->token_count ? index + 1 : index;
         }
         if (index < program->token_count && program->tokens[index].type == TOKEN_STRING_LITERAL) return index + 1;
         while (index < program->token_count && program->tokens[index].type != TOKEN_GREATER &&
-               program->tokens[index].type != TOKEN_EOF) index++;
+               program->tokens[index].type != TOKEN_EOF)
+            index++;
         return index < program->token_count ? index + 1 : index;
     }
 
     size_t index = first;
     while (index < program->token_count && program->tokens[index].type != TOKEN_LBRACE &&
-           program->tokens[index].type != TOKEN_EOF) index++;
+           program->tokens[index].type != TOKEN_EOF)
+        index++;
     if (index == program->token_count || program->tokens[index].type == TOKEN_EOF) return index;
 
     int depth = 0;
@@ -108,7 +115,8 @@ static int build_declarations(AstProgram *program) {
     size_t capacity = 0;
     size_t index = 0;
     if (program->token_count >= 3 && program->tokens[0].type == TOKEN_KEYWORD_PACKAGE &&
-        program->tokens[2].type == TOKEN_SEMICOLON) index=3;
+        program->tokens[2].type == TOKEN_SEMICOLON)
+        index = 3;
     while (index < program->token_count && program->tokens[index].type != TOKEN_EOF) {
         size_t end = declaration_end(program, index);
         if (end <= index) end = index + 1;
@@ -210,19 +218,20 @@ static int path_is_directory(const char *path) {
 static char *canonical_existing_path(const char *path) {
     char buffer[4096];
 #ifdef _WIN32
-    HANDLE handle=CreateFileA(path,0,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,NULL,OPEN_EXISTING,FILE_FLAG_BACKUP_SEMANTICS,NULL);
+    HANDLE handle = CreateFileA(path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
+                                FILE_FLAG_BACKUP_SEMANTICS, NULL);
     if (handle == INVALID_HANDLE_VALUE) return NULL;
-    DWORD count=GetFinalPathNameByHandleA(handle,buffer,(DWORD)sizeof(buffer),FILE_NAME_NORMALIZED);
+    DWORD count = GetFinalPathNameByHandleA(handle, buffer, (DWORD) sizeof(buffer), FILE_NAME_NORMALIZED);
     CloseHandle(handle);
     if (!count || count >= sizeof(buffer)) return NULL;
-    if (!strncmp(buffer,"\\\\?\\",4)) memmove(buffer,buffer+4,strlen(buffer+4)+1);
+    if (!strncmp(buffer, "\\\\?\\", 4)) memmove(buffer, buffer + 4, strlen(buffer + 4) + 1);
 #else
     if (realpath(path, buffer) == NULL) return NULL;
 #endif
     for (char *p = buffer; *p != '\0'; p++)
         if (*p == '\\') *p = '/';
-    size_t length=strlen(buffer);
-    while (length > 3 && buffer[length-1] == '/') buffer[--length]='\0';
+    size_t length = strlen(buffer);
+    while (length > 3 && buffer[length - 1] == '/') buffer[--length] = '\0';
     return copy_string(buffer);
 }
 
@@ -249,7 +258,8 @@ static int append_owned_import(AstProgram *root, AstProgram *imported) {
     if (root->owned_import_count == root->owned_import_capacity) {
         size_t next = root->owned_import_capacity == 0 ? 8 : root->owned_import_capacity * 2;
         if (next < root->owned_import_capacity ||
-            next > SIZE_MAX / sizeof(*root->owned_imports)) return 0;
+            next > SIZE_MAX / sizeof(*root->owned_imports))
+            return 0;
         AstProgram **grown = realloc(root->owned_imports, next * sizeof(*grown));
         if (grown == NULL) return 0;
         root->owned_imports = grown;
@@ -267,7 +277,8 @@ static int record_loaded_source(AstProgram *root, const char *path) {
         if (next < root->loaded_source_capacity || next > SIZE_MAX / sizeof(char *)) return 0;
         char **grown = realloc(root->loaded_source_paths, next * sizeof(*grown));
         if (grown == NULL) return 0;
-        root->loaded_source_paths = grown; root->loaded_source_capacity = next;
+        root->loaded_source_paths = grown;
+        root->loaded_source_capacity = next;
     }
     char *copy = copy_string(path);
     if (copy == NULL) return 0;
@@ -283,23 +294,29 @@ AstProgram *frontend_parse_file(const char *source_path, const FrontendOptions *
     if (strings == NULL) return NULL;
     char *canonical_source = canonical_existing_path(source_path);
     if (canonical_source && path_is_directory(canonical_source)) {
-        DIR *directory=opendir(canonical_source); struct dirent *entry; char *selected=NULL;
+        DIR *directory = opendir(canonical_source);
+        struct dirent *entry;
+        char *selected = NULL;
         if (directory) {
-            while ((entry=readdir(directory)) != NULL) {
-                size_t n=strlen(entry->d_name);
-                if (n > 4 && !strcmp(entry->d_name+n-4,".dmm")) {
-                    char *candidate=joined_path(canonical_source,entry->d_name);
-                    if (candidate && !path_is_directory(candidate) && (!selected || strcmp(candidate,selected) < 0)) {
-                        free(selected); selected=candidate;
+            while ((entry = readdir(directory)) != NULL) {
+                size_t n = strlen(entry->d_name);
+                if (n > 4 && !strcmp(entry->d_name + n - 4, ".dmm")) {
+                    char *candidate = joined_path(canonical_source, entry->d_name);
+                    if (candidate && !path_is_directory(candidate) && (!selected || strcmp(candidate, selected) < 0)) {
+                        free(selected);
+                        selected = candidate;
                     } else free(candidate);
                 }
             }
             closedir(directory);
         }
-        free(canonical_source); canonical_source=selected;
+        free(canonical_source);
+        canonical_source = selected;
         if (!canonical_source) {
-            error_report(global_error_handler,SEVERITY_ERROR,0,0,ERROR_CATEGORY_SEMANTIC,ERR_PACKAGE_NOT_FOUND,source_path,"Package directory has no DMM source files");
-            string_interner_free(strings); return NULL;
+            error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_SEMANTIC, ERR_PACKAGE_NOT_FOUND,
+                         source_path, "Package directory has no DMM source files");
+            string_interner_free(strings);
+            return NULL;
         }
     }
     AstProgram *program = parse_single_file(canonical_source == NULL ? source_path : canonical_source,
@@ -311,7 +328,8 @@ AstProgram *frontend_parse_file(const char *source_path, const FrontendOptions *
     }
     program->owns_strings = 1;
     if (!load_module_packages(program, options) && error_handler_get_error_count(global_error_handler) == 0) {
-        ast_program_free(program); return NULL;
+        ast_program_free(program);
+        return NULL;
     }
     return program;
 }
@@ -324,7 +342,7 @@ AstProgram *frontend_parse_source(const char *source, size_t length,
     StringInterner *strings = string_interner_create();
     if (strings == NULL) return NULL;
     TokenStream *stream = tokenize_source_with_interner(source == NULL ? "" : source,
-                                                         length, source_name, strings);
+                                                        length, source_name, strings);
     if (stream == NULL) {
         string_interner_free(strings);
         return NULL;

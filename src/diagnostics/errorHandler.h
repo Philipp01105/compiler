@@ -134,6 +134,7 @@ typedef struct {
 } ErrorHandler;
 
 extern ErrorHandler *global_error_handler;
+
 const char *error_handler_source_path(const char *filename);
 
 ErrorHandler *error_handler_init(void);
@@ -167,7 +168,9 @@ void error_context_set_source_line(ErrorContext *ctx, const char *source_line);
 void error_context_set_token(ErrorContext *ctx, const char *token_value);
 
 void error_context_set_suggestion(ErrorContext *ctx, const char *suggestion);
+
 void error_context_set_span(ErrorContext *ctx, int end_line, int end_column);
+
 void error_context_set_fix(ErrorContext *ctx, int line, int column,
                            int end_line, int end_column, const char *replacement);
 

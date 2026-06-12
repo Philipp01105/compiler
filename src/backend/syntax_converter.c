@@ -76,7 +76,7 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
             /* Skip % before register names */
             src++;
         } else if (*src == '$' && (isalnum((unsigned char) src[1]) || src[1] == '-' ||
-                                    src[1] == '.' || src[1] == '_')) {
+                                   src[1] == '.' || src[1] == '_')) {
             /* Skip $ before immediates */
             src++;
         } else {
@@ -100,17 +100,28 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
 
     if (strncmp(insn_start, "movq ", 5) == 0 && strstr(insn_start, "xmm") == NULL) {
         memcpy(insn_start, "mov ", 4);
-    }
-    else if (strncmp(insn_start, "movl ", 5) == 0) memcpy(insn_start, "mov ", 4);
+    } else if (strncmp(insn_start, "movl ", 5) == 0) memcpy(insn_start, "mov ", 4);
     else if (strncmp(insn_start, "movw ", 5) == 0) memcpy(insn_start, "mov ", 4);
     else if (strncmp(insn_start, "movb ", 5) == 0) memcpy(insn_start, "mov ", 4);
-    else if (strncmp(insn_start, "movzbl ", 7) == 0) { memcpy(insn_start, "movzx ", 6); src_size_qualifier = "BYTE PTR "; }
-    else if (strncmp(insn_start, "movzwl ", 7) == 0) { memcpy(insn_start, "movzx ", 6); src_size_qualifier = "WORD PTR "; }
-    else if (strncmp(insn_start, "movzlq ", 7) == 0) { memcpy(insn_start, "movzx ", 6); src_size_qualifier = "DWORD PTR "; }
-    else if (strncmp(insn_start, "movsbl ", 7) == 0) { memcpy(insn_start, "movsx ", 6); src_size_qualifier = "BYTE PTR "; }
-    else if (strncmp(insn_start, "movswl ", 7) == 0) { memcpy(insn_start, "movsx ", 6); src_size_qualifier = "WORD PTR "; }
-    else if (strncmp(insn_start, "movslq ", 7) == 0) { memcpy(insn_start, "movsx ", 6); src_size_qualifier = "DWORD PTR "; }
-    else if (strncmp(insn_start, "movss ", 6) == 0) memcpy(insn_start, "movss ", 6); /* Keep movss */
+    else if (strncmp(insn_start, "movzbl ", 7) == 0) {
+        memcpy(insn_start, "movzx ", 6);
+        src_size_qualifier = "BYTE PTR ";
+    } else if (strncmp(insn_start, "movzwl ", 7) == 0) {
+        memcpy(insn_start, "movzx ", 6);
+        src_size_qualifier = "WORD PTR ";
+    } else if (strncmp(insn_start, "movzlq ", 7) == 0) {
+        memcpy(insn_start, "movzx ", 6);
+        src_size_qualifier = "DWORD PTR ";
+    } else if (strncmp(insn_start, "movsbl ", 7) == 0) {
+        memcpy(insn_start, "movsx ", 6);
+        src_size_qualifier = "BYTE PTR ";
+    } else if (strncmp(insn_start, "movswl ", 7) == 0) {
+        memcpy(insn_start, "movsx ", 6);
+        src_size_qualifier = "WORD PTR ";
+    } else if (strncmp(insn_start, "movslq ", 7) == 0) {
+        memcpy(insn_start, "movsx ", 6);
+        src_size_qualifier = "DWORD PTR ";
+    } else if (strncmp(insn_start, "movss ", 6) == 0) memcpy(insn_start, "movss ", 6); /* Keep movss */
     else if (strncmp(insn_start, "pushq ", 6) == 0) memcpy(insn_start, "push ", 5);
     else if (strncmp(insn_start, "popq ", 5) == 0) memcpy(insn_start, "pop ", 4);
     else if (strncmp(insn_start, "addq ", 5) == 0) memcpy(insn_start, "add ", 4);
@@ -150,7 +161,7 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
             char *label_end = paren;
             char *label_start = label_end;
             while (label_start > result && (isalnum((unsigned char) label_start[-1]) || label_start[-1] == '_' ||
-                                             label_start[-1] == '.' || label_start[-1] == '-')) {
+                                            label_start[-1] == '.' || label_start[-1] == '-')) {
                 --label_start;
             }
             /* Extract label */
@@ -165,7 +176,8 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
             replacement[0] = '\0';
             if (!append_text(replacement, sizeof(replacement), &replacement_length, "[rip + ") ||
                 !append_text(replacement, sizeof(replacement), &replacement_length, label) ||
-                !append_text(replacement, sizeof(replacement), &replacement_length, "]")) return -1;
+                !append_text(replacement, sizeof(replacement), &replacement_length, "]"))
+                return -1;
 
             /* Build new string */
             size_t prefix_len = (size_t) (label_start - result);
@@ -216,7 +228,8 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
                     /* Find offset before parenthesis */
                     char *offset_end = paren;
                     char *offset_start = offset_end;
-                    while (offset_start > result && (isdigit((unsigned char) offset_start[-1]) || offset_start[-1] == '-')) {
+                    while (offset_start > result && (
+                               isdigit((unsigned char) offset_start[-1]) || offset_start[-1] == '-')) {
                         --offset_start;
                     }
                     char offset[CONVERTER_WORK_SIZE] = "";
@@ -265,7 +278,8 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
                 /* Find offset before parenthesis */
                 char *offset_end = paren;
                 char *offset_start = offset_end;
-                while (offset_start > result && (isdigit((unsigned char) offset_start[-1]) || offset_start[-1] == '-')) {
+                while (offset_start > result && (isdigit((unsigned char) offset_start[-1]) || offset_start[-1] ==
+                                                 '-')) {
                     --offset_start;
                 }
                 char offset[CONVERTER_WORK_SIZE] = "";
@@ -285,11 +299,13 @@ int convert_att_to_intel(const char *input, char *output, size_t output_size) {
                         !append_text(replacement, sizeof(replacement), &replacement_length, reg) ||
                         (offset_val >= 0 && !append_text(replacement, sizeof(replacement), &replacement_length, "+")) ||
                         !append_text(replacement, sizeof(replacement), &replacement_length, offset) ||
-                        !append_text(replacement, sizeof(replacement), &replacement_length, "]")) return -1;
+                        !append_text(replacement, sizeof(replacement), &replacement_length, "]"))
+                        return -1;
                 } else {
                     if (!append_text(replacement, sizeof(replacement), &replacement_length, "[") ||
                         !append_text(replacement, sizeof(replacement), &replacement_length, reg) ||
-                        !append_text(replacement, sizeof(replacement), &replacement_length, "]")) return -1;
+                        !append_text(replacement, sizeof(replacement), &replacement_length, "]"))
+                        return -1;
                 }
 
                 /* Build new string */

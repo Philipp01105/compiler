@@ -1,6 +1,7 @@
 # DMM Compiler
 
-DMM is an experimental compiler for a small statically typed language. It emits x86-64 assembly, native ELF/COFF objects, and ELF/PE executables with an internal linker for Linux and Windows.
+DMM is an experimental compiler for a small statically typed language. It emits x86-64 assembly, native ELF/COFF
+objects, and ELF/PE executables with an internal linker for Linux and Windows.
 
 The project is suitable for learning and experimentation. It is not yet intended for production workloads.
 
@@ -9,7 +10,8 @@ The project is suitable for learning and experimentation. It is not yet intended
 - Primitive types: `int`, `char`, `byte`, `bit`, `float`, `double`, `string`, and `void`
 - Signed/unsigned fixed-width integers `i8`/`u8` through `i64`/`u64`, and `isize`/`usize`
 - A standalone `stdlib/core` package for byte regions, raw I/O and process primitives
-- DMM stream I/O in `stdlib/stdio`, with buffered readers/writers, complete transfers and explicit errors; see [STDIO.md](STDIO.md)
+- DMM stream I/O in `stdlib/stdio`, with buffered readers/writers, complete transfers and explicit errors;
+  see [STDIO.md](STDIO.md)
 - Functions, forward calls, local variables, arrays, pointers, structs, enums, and methods
 - Inferred and explicitly instantiated generic functions, and invariant generic structs/enums
 - Compile-time `sizeof(T)` / `alignof(T)` and typed `core.alloc<T>()` / `core.alloc<T>(count)`
@@ -24,8 +26,8 @@ The project is suitable for learning and experimentation. It is not yet intended
 - Linux ELF and Windows COFF objects, ELF/PE executables, and GNU assembly output
 - Intel syntax by default, with AT&T syntax available
 - Human-readable or JSON diagnostics
-- A recursive owned AST, independent semantic model, and verified typed IR
-  separating frontend analysis from backend emission
+- A recursive owned AST, independent semantic model, and verified typed IR separating frontend analysis from backend
+  emission
 
 ## Requirements
 
@@ -33,9 +35,8 @@ The project is suitable for learning and experimentation. It is not yet intended
 - A C23 compiler
 - GCC or compatible GNU tools for assembly mode and object interoperability tests
 
-Native executable mode requires no external build tools at compilation time.
-Generated programs target x86-64 Linux or Windows without libc, CRT or a foreign
-language runtime. Linux uses direct syscalls; Windows imports only OS APIs.
+Native executable mode requires no external build tools at compilation time. Generated programs target x86-64 Linux or
+Windows without libc, CRT or a foreign language runtime. Linux uses direct syscalls; Windows imports only OS APIs.
 
 The automated suite is exercised with GCC on Linux and MinGW-w64 on Windows.
 
@@ -51,13 +52,13 @@ Enable warnings as errors with `-DDMM_STRICT_WARNINGS=ON`.
 
 ## Compile a program
 
-Each DMM project needs a `dmm.manifest`; each source file starts with `package name;`.
-The compiler accepts a source file or package directory. See [MODULE_SYSTEM.md](MODULE_SYSTEM.md)
+Each DMM project needs a `dmm.manifest`; each source file starts with `package name;`. The compiler accepts a source
+file or package directory. See [MODULE_SYSTEM.md](MODULE_SYSTEM.md)
 for package discovery, visibility, imports and local vendor dependencies.
 
 The build also provides `build/dmm` (`build/dmm.exe` on Windows). Run
-`dmm manifest sync` from a project package to synchronize direct and indirect
-dependencies in `dmm.manifest` and remove unused requirements.
+`dmm manifest sync` from a project package to synchronize direct and indirect dependencies in `dmm.manifest` and remove
+unused requirements.
 
 Emit and internally link a native executable:
 
@@ -79,11 +80,11 @@ gcc -nostdlib -no-pie -Wl,-e,__dmm_entry tests/execution/basics/hello/hello.dmm.
 
 On a multi-configuration generator, the compiler executable may be inside `build/Debug` or `build/Release`.
 
-Assembly and native object outputs embed the same compiler-owned runtime as
-internally linked executables. No runtime archive is needed. On Windows, use
+Assembly and native object outputs embed the same compiler-owned runtime as internally linked executables. No runtime
+archive is needed. On Windows, use
 `-nostdlib -Wl,--entry=__dmm_entry,--subsystem,console` and append `-lkernel32`
-after the assembly or object input. Sanitizers instrument the C compiler and
-test harnesses; emitted runtime instructions are not sanitizer-instrumented.
+after the assembly or object input. Sanitizers instrument the C compiler and test harnesses; emitted runtime
+instructions are not sanitizer-instrumented.
 
 Useful options:
 
@@ -106,46 +107,41 @@ Useful options:
 --version
 ```
 
-`--deterministic` omits the generation timestamp. `--formatError` emits one JSON document containing an `errors` array and a `summary` object. The three dump options produce versioned deterministic AST, typed-IR, and instruction-level source-map artifacts; see [DUMP_FORMATS.md](DUMP_FORMATS.md).
+`--deterministic` omits the generation timestamp. `--formatError` emits one JSON document containing an `errors` array
+and a `summary` object. The three dump options produce versioned deterministic AST, typed-IR, and instruction-level
+source-map artifacts; see [DUMP_FORMATS.md](DUMP_FORMATS.md).
 
-The compiler runs IR peephole and dataflow optimizations before code generation.
-Use `-O0` to disable them; `--dump-ir` shows the selected IR. See
+The compiler runs IR peephole and dataflow optimizations before code generation. Use `-O0` to disable them; `--dump-ir`
+shows the selected IR. See
 [IR_OPTIMIZATION.md](IR_OPTIMIZATION.md) for transformations and semantic limits.
 
-`--ide --dump-ast <path>` performs editor analysis without code generation or
-changing assembly output. It recovers from syntax errors where possible and dumps
-a validated partial AST with semantic information, even when it exits with errors.
-Malformed statements/declarations are omitted; lexer failures can prevent a dump.
-`--ide-buffer <path>` reads the root document from an editor snapshot while retaining
-the original source path for imports, AST identities, and diagnostic source context.
-Imported dependencies are still read from disk. This option requires `--ide`.
-This mode cannot be combined with assembly, IR, source-map or token output options.
+`--ide --dump-ast <path>` performs editor analysis without code generation or changing assembly output. It recovers from
+syntax errors where possible and dumps a validated partial AST with semantic information, even when it exits with
+errors. Malformed statements/declarations are omitted; lexer failures can prevent a dump.
+`--ide-buffer <path>` reads the root document from an editor snapshot while retaining the original source path for
+imports, AST identities, and diagnostic source context. Imported dependencies are still read from disk. This option
+requires `--ide`. This mode cannot be combined with assembly, IR, source-map or token output options.
 
-Source diagnostics include the file location, source line, and an underline.
-Missing semicolons point to the end of the preceding statement and include an
-insertion suggestion, even when the next token is on a later nonempty line.
-Parser and semantic diagnostics also provide `endLine`/`endColumn` in JSON;
-coordinates are one-based, the end is exclusive, and zero denotes an unavailable
-location. Columns count Unicode code points, with a tab counting as one column.
-`sourceLine` preserves UTF-8 text and tabs and excludes line terminators.
-If the source cannot be read, the diagnostic still reports its known location.
+Source diagnostics include the file location, source line, and an underline. Missing semicolons point to the end of the
+preceding statement and include an insertion suggestion, even when the next token is on a later nonempty line. Parser
+and semantic diagnostics also provide `endLine`/`endColumn` in JSON; coordinates are one-based, the end is exclusive,
+and zero denotes an unavailable location. Columns count Unicode code points, with a tab counting as one column.
+`sourceLine` preserves UTF-8 text and tabs and excludes line terminators. If the source cannot be read, the diagnostic
+still reports its known location.
 
-Type errors use `T` codes; semantic errors use `S`, parser errors `P`, filesystem
-code-generation failures `G`, and driver/import failures `C`. Older versions emitted
-several unrelated semantic and type errors with the same `S` code. See
-[DIAGNOSTICS_AUDIT.md](DIAGNOSTICS_AUDIT.md) for the current inventory and audit results.
-Related locations are included in `children`. Human output displays up to ten
-errors and reports omissions; JSON keeps all errors and includes
+Type errors use `T` codes; semantic errors use `S`, parser errors `P`, filesystem code-generation failures `G`, and
+driver/import failures `C`. Older versions emitted several unrelated semantic and type errors with the same `S` code.
+See
+[DIAGNOSTICS_AUDIT.md](DIAGNOSTICS_AUDIT.md) for the current inventory and audit results. Related locations are included
+in `children`. Human output displays up to ten errors and reports omissions; JSON keeps all errors and includes
 `summary.suppressedErrorCount` (zero in compiler JSON mode).
 
 Safe corrections are shown as `help:` text and, when available, a JSON `fix`
 object containing `filename`, `line`, `column`, `endLine`, `endColumn`, and
-`replacement`. An empty span means insert at that position; `fix: null` means
-there is no safe automatic edit. Edits are suggestions and are never applied
-by the compiler. Unsupported method references such as `node.Next` produce
-`S111`; an unambiguous zero-argument method with a valid receiver and a non-void
-return can suggest inserting `()` after the method name. Overloads, required
-arguments, void returns, or invalid receivers suppress the edit.
+`replacement`. An empty span means insert at that position; `fix: null` means there is no safe automatic edit. Edits are
+suggestions and are never applied by the compiler. Unsupported method references such as `node.Next` produce
+`S111`; an unambiguous zero-argument method with a valid receiver and a non-void return can suggest inserting `()` after
+the method name. Overloads, required arguments, void returns, or invalid receivers suppress the edit.
 
 ## Tests
 
@@ -159,17 +155,16 @@ CTest includes:
 - `tests/stress/`: generated `limit-1`, `limit`, and `limit+1` cases;
 - `tests/unit/`: lexer, optimizer, and syntax-converter unit tests;
 - architecture and AST ownership tests that enforce layer boundaries;
-- `tests/fuzz/`: libFuzzer entry points and seed corpora for the lexer, parser,
-  semantic analysis, IR lowering/verifier, and syntax converter.
+- `tests/fuzz/`: libFuzzer entry points and seed corpora for the lexer, parser, semantic analysis, IR lowering/verifier,
+  and syntax converter.
 
-Every normal DMM execution test is compiled, assembled, and run in both Intel
-and AT&T syntax. Both runs must have exit code zero, empty stderr, and output
-identical to the checked-in `.expected` file. This makes syntax equivalence a
+Every normal DMM execution test is compiled, assembled, and run in both Intel and AT&T syntax. Both runs must have exit
+code zero, empty stderr, and output identical to the checked-in `.expected` file. This makes syntax equivalence a
 standard property of every execution test rather than a separate smoke test.
 
-Test labels can select a subset, for example `ctest --test-dir build -L unit`.
-On Linux, `-DDMM_SANITIZERS=ON` instruments the compiler and unit tests and also
-links generated execution/ABI programs against ASan/UBSan runtimes. CI runs the
+Test labels can select a subset, for example `ctest --test-dir build -L unit`. On Linux, `-DDMM_SANITIZERS=ON`
+instruments the compiler and unit tests and also links generated execution/ABI programs against ASan/UBSan runtimes. CI
+runs the
 `safety` label with leak detection enabled.
 
 Clang users can build all fuzzers with:

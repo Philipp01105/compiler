@@ -86,7 +86,7 @@ static void remove_stale_output(const AstProgram *program, const char *source_fi
     /* Never delete an explicit path before validating it as a safe output. */
     if (requested_output != NULL) return;
     size_t length = strlen(source_file);
-    size_t suffix_length = strlen(suffix)+1;
+    size_t suffix_length = strlen(suffix) + 1;
     if (length > SIZE_MAX - suffix_length) return;
     char *path = malloc(length + suffix_length);
     if (path == NULL) return;
@@ -95,7 +95,8 @@ static void remove_stale_output(const AstProgram *program, const char *source_fi
     if (!artifact_conflicts_with_program(program, path) &&
         path_identity_equal(path, ast_dump) == 0 &&
         path_identity_equal(path, ir_dump) == 0 &&
-        path_identity_equal(path, source_map) == 0) (void) remove(path);
+        path_identity_equal(path, source_map) == 0)
+        (void) remove(path);
     free(path);
 }
 
@@ -166,28 +167,31 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    int command_index=1;
-    while (command_index<argc && !strcmp(argv[command_index],"--formatError")) command_index++;
-    if (command_index<argc && !strcmp(argv[command_index],"manifest")) {
-        const char *action=NULL,*directory=NULL;
-        int invalid=0;
-        for (int i=command_index+1;i<argc;i++) {
-            if (!strcmp(argv[i],"--formatError")) continue;
-            if (!action) action=argv[i];
-            else if (!directory && argv[i][0] != '-') directory=argv[i];
-            else invalid=1;
+    int command_index = 1;
+    while (command_index < argc && !strcmp(argv[command_index], "--formatError")) command_index++;
+    if (command_index < argc && !strcmp(argv[command_index], "manifest")) {
+        const char *action = NULL, *directory = NULL;
+        int invalid = 0;
+        for (int i = command_index + 1; i < argc; i++) {
+            if (!strcmp(argv[i], "--formatError")) continue;
+            if (!action) action = argv[i];
+            else if (!directory && argv[i][0] != '-') directory = argv[i];
+            else invalid = 1;
         }
-        if (invalid || !action || strcmp(action,"sync")) {
-            error_report(error_handler,SEVERITY_ERROR,0,0,ERROR_CATEGORY_COMPILER,
-                ERR_COMP_INVALID_OPTION,NULL,"Expected 'manifest sync [package_directory] [--formatError]'");
-            error_handler_flush(error_handler); error_handler_free(error_handler); return 1;
+        if (invalid || !action || strcmp(action, "sync")) {
+            error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                         ERR_COMP_INVALID_OPTION, NULL, "Expected 'manifest sync [package_directory] [--formatError]'");
+            error_handler_flush(error_handler);
+            error_handler_free(error_handler);
+            return 1;
         }
-        int ok=frontend_sync_manifest(directory ? directory : ".");
+        int ok = frontend_sync_manifest(directory ? directory : ".");
         if (!ok && !error_handler_get_error_count(error_handler))
-            error_report(error_handler,SEVERITY_ERROR,0,0,ERROR_CATEGORY_COMPILER,
-                ERR_COMP_INTERNAL_FAILURE,directory,"Manifest command failed");
-        error_handler_flush(error_handler); error_handler_free(error_handler);
-        if (ok) printf("Manifest %s complete\n",action);
+            error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                         ERR_COMP_INTERNAL_FAILURE, directory, "Manifest command failed");
+        error_handler_flush(error_handler);
+        error_handler_free(error_handler);
+        if (ok) printf("Manifest %s complete\n", action);
         return ok ? 0 : 1;
     }
 
@@ -242,12 +246,16 @@ int main(int argc, char *argv[]) {
             emission_requested = 1;
         } else if (strncmp(argv[i], "--emit=", 7) == 0) {
             emission_requested = 1;
-            const char *mode=argv[i]+7;
-            if (!strcmp(mode,"asm")) emission=BACKEND_ASSEMBLY;
-            else if (!strcmp(mode,"obj")) emission=BACKEND_OBJECT;
-            else if (!strcmp(mode,"exe")) emission=BACKEND_EXECUTABLE;
-            else { error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
-                ERR_COMP_INVALID_OPTION, NULL, "Invalid emission mode: %s (use 'asm', 'obj' or 'exe')", mode); format_error=1; }
+            const char *mode = argv[i] + 7;
+            if (!strcmp(mode, "asm")) emission = BACKEND_ASSEMBLY;
+            else if (!strcmp(mode, "obj")) emission = BACKEND_OBJECT;
+            else if (!strcmp(mode, "exe")) emission = BACKEND_EXECUTABLE;
+            else {
+                error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                             ERR_COMP_INVALID_OPTION, NULL, "Invalid emission mode: %s (use 'asm', 'obj' or 'exe')",
+                             mode);
+                format_error = 1;
+            }
         } else if (strncmp(argv[i], "--syntax=", 9) == 0) {
             const char *mode = argv[i] + 9;
             if (strcmp(mode, "intel") == 0) {
@@ -336,12 +344,15 @@ int main(int argc, char *argv[]) {
         printf("\n");
     }
 
-    if ((ide_buffer != NULL && !ide_mode) || (ide_mode && (ast_dump_path == NULL || requested_output != NULL || ir_dump_path != NULL ||
-                    source_map_path != NULL || debug_mode || show_tokens || optimization_requested || (emission_requested && emission != BACKEND_ASSEMBLY) ||
-                    output_conflicts_with_source(source_file, ast_dump_path) ||
-                    (ide_buffer != NULL && output_conflicts_with_source(ide_buffer, ast_dump_path))))) {
+    if ((ide_buffer != NULL && !ide_mode) || (
+            ide_mode && (ast_dump_path == NULL || requested_output != NULL || ir_dump_path != NULL ||
+                         source_map_path != NULL || debug_mode || show_tokens || optimization_requested || (
+                             emission_requested && emission != BACKEND_ASSEMBLY) ||
+                         output_conflicts_with_source(source_file, ast_dump_path) ||
+                         (ide_buffer != NULL && output_conflicts_with_source(ide_buffer, ast_dump_path))))) {
         error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
-            ERR_COMP_INVALID_OPTION, source_file, "--ide requires a distinct --dump-ast path and does not accept output/debug options");
+                     ERR_COMP_INVALID_OPTION, source_file,
+                     "--ide requires a distinct --dump-ast path and does not accept output/debug options");
         error_handler_flush(error_handler);
         error_handler_free(error_handler);
         return 1;
@@ -366,7 +377,7 @@ int main(int argc, char *argv[]) {
         error_handler->source_override_path = ide_buffer;
     }
     AstProgram *program = frontend_parse_file(source_file, &frontend_options);
-    if (program) program->executable_build=!ide_mode && emission == BACKEND_EXECUTABLE;
+    if (program) program->executable_build = !ide_mode && emission == BACKEND_EXECUTABLE;
     if (program == NULL) {
         error_handler_flush(error_handler);
         error_handler_free(error_handler);
@@ -396,23 +407,30 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
     }
-    if (!ide_mode) remove_stale_output(program, source_file, requested_output,
-        ast_dump_path, ir_dump_path, source_map_path, emission==BACKEND_ASSEMBLY ? ".s" : emission==BACKEND_OBJECT ?
-        (target_format==TARGET_ELF ? ".o" : ".obj") : (target_format==TARGET_ELF ? ".out" : ".exe"));
+    if (!ide_mode)
+        remove_stale_output(program, source_file, requested_output,
+                            ast_dump_path, ir_dump_path, source_map_path,
+                            emission == BACKEND_ASSEMBLY
+                                ? ".s"
+                                : emission == BACKEND_OBJECT
+                                      ? (target_format == TARGET_ELF ? ".o" : ".obj")
+                                      : (target_format == TARGET_ELF ? ".out" : ".exe"));
     if (ide_mode) {
         SemanticModel *semantics = NULL;
         if (ast_validate_program(program)) {
             semantics = semantic_analyze(program);
             if (semantics == NULL)
                 error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
-                    ERR_COMP_INTERNAL_FAILURE, source_file, "Could not build typed frontend representation for editor analysis");
+                             ERR_COMP_INTERNAL_FAILURE, source_file,
+                             "Could not build typed frontend representation for editor analysis");
             else if (!dump_file(ast_dump_path, write_ast_dump, program))
                 error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
-                    ERR_COMP_DUMP_FAILED, source_file, "Could not write editor AST information to '%s': %s", ast_dump_path,
-                    errno == 0 ? "internal serialization failure" : strerror(errno));
+                             ERR_COMP_DUMP_FAILED, source_file, "Could not write editor AST information to '%s': %s",
+                             ast_dump_path,
+                             errno == 0 ? "internal serialization failure" : strerror(errno));
         } else if (error_handler_get_error_count(error_handler) == 0) {
             error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_PARSER,
-                ERR_PARSE_INVALID_SYNTAX, source_file, "Could not construct a safe editor syntax tree");
+                         ERR_PARSE_INVALID_SYNTAX, source_file, "Could not construct a safe editor syntax tree");
         }
         int failed = error_handler_get_error_count(error_handler) != 0;
         error_handler_flush(error_handler);
@@ -458,14 +476,18 @@ int main(int argc, char *argv[]) {
         printf("\n");
     }
 
-    const char *output_suffix = emission==BACKEND_ASSEMBLY ? ".s" : emission==BACKEND_OBJECT ?
-        (target_format==TARGET_ELF ? ".o" : ".obj") : (target_format==TARGET_ELF ? ".out" : ".exe");
-    size_t suffix_length = strlen(output_suffix)+1;
+    const char *output_suffix = emission == BACKEND_ASSEMBLY
+                                    ? ".s"
+                                    : emission == BACKEND_OBJECT
+                                          ? (target_format == TARGET_ELF ? ".o" : ".obj")
+                                          : (target_format == TARGET_ELF ? ".out" : ".exe");
+    size_t suffix_length = strlen(output_suffix) + 1;
     char *generated_output = NULL;
     const char *output_filename = requested_output;
     if (output_filename == NULL) {
         size_t source_length = strlen(source_file);
-        if (source_length > SIZE_MAX - suffix_length || (generated_output = malloc(source_length + suffix_length)) == NULL) {
+        if (source_length > SIZE_MAX - suffix_length || (generated_output = malloc(source_length + suffix_length)) ==
+            NULL) {
             error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
                          ERR_COMP_INTERNAL_FAILURE, source_file, "Out of memory while creating output path");
             error_handler_flush(error_handler);
@@ -569,11 +591,12 @@ int main(int argc, char *argv[]) {
             return 1;
         }
         if (debug_mode && optimize_ir) {
-            printf("  [+] IR optimization: %zu folds, %zu constants, %zu copies, %zu dead values, %zu dead stores, %zu branches, %zu blocks, %zu addresses\n",
-                   optimization_stats.constants_folded, optimization_stats.constants_propagated,
-                   optimization_stats.copies_propagated, optimization_stats.dead_instructions,
-                   optimization_stats.dead_stores, optimization_stats.branches_folded,
-                   optimization_stats.blocks_removed, optimization_stats.addresses_simplified);
+            printf(
+                "  [+] IR optimization: %zu folds, %zu constants, %zu copies, %zu dead values, %zu dead stores, %zu branches, %zu blocks, %zu addresses\n",
+                optimization_stats.constants_folded, optimization_stats.constants_propagated,
+                optimization_stats.copies_propagated, optimization_stats.dead_instructions,
+                optimization_stats.dead_stores, optimization_stats.branches_folded,
+                optimization_stats.blocks_removed, optimization_stats.addresses_simplified);
         }
         if (ast_dump_path != NULL && !dump_file(ast_dump_path, write_ast_dump, program)) failed_dump = ast_dump_path;
         else if (ir_dump_path != NULL && !dump_file(ir_dump_path, write_ir_dump, module)) failed_dump = ir_dump_path;

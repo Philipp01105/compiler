@@ -222,7 +222,8 @@ void error_context_set_span(ErrorContext *ctx, int end_line, int end_column) {
 void error_context_set_fix(ErrorContext *ctx, int line, int column,
                            int end_line, int end_column, const char *replacement) {
     if (ctx == NULL || replacement == NULL || line < 1 || column < 1 ||
-        end_line < line || (end_line == line && end_column < column)) return;
+        end_line < line || (end_line == line && end_column < column))
+        return;
     char *copy = strdup(replacement);
     if (copy == NULL) return;
     free(ctx->fix_replacement);
@@ -263,13 +264,21 @@ static void capture_source_line(ErrorContext *ctx) {
         if (text != NULL) {
             while ((ch = fgetc(source)) != EOF && ch != '\n') {
                 if (size + 1 >= capacity) {
-                    if (capacity > (size_t)-1 / 2) { free(text); text = NULL; break; }
+                    if (capacity > (size_t) -1 / 2) {
+                        free(text);
+                        text = NULL;
+                        break;
+                    }
                     capacity *= 2;
                     char *grown = realloc(text, capacity);
-                    if (grown == NULL) { free(text); text = NULL; break; }
+                    if (grown == NULL) {
+                        free(text);
+                        text = NULL;
+                        break;
+                    }
                     text = grown;
                 }
-                text[size++] = (char)ch;
+                text[size++] = (char) ch;
             }
             if (text != NULL) {
                 while (size > 0 && text[size - 1] == '\r') size--;
@@ -289,22 +298,29 @@ static void json_escape_string(FILE *out, const char *str) {
 
     fprintf(out, "\"");
     for (const char *p = str; *p; p++) {
-        unsigned char byte = (unsigned char)*p;
+        unsigned char byte = (unsigned char) *p;
         if (byte >= 0x80) {
-            int width = byte >= 0xC2 && byte <= 0xDF ? 2 :
-                        byte >= 0xE0 && byte <= 0xEF ? 3 :
-                        byte >= 0xF0 && byte <= 0xF4 ? 4 : 0;
+            int width = byte >= 0xC2 && byte <= 0xDF
+                            ? 2
+                            : byte >= 0xE0 && byte <= 0xEF
+                                  ? 3
+                                  : byte >= 0xF0 && byte <= 0xF4
+                                        ? 4
+                                        : 0;
             unsigned value = byte & (width == 2 ? 0x1F : width == 3 ? 0x0F : 0x07);
             int valid = width != 0;
             for (int k = 1; valid && k < width; k++) {
-                unsigned char part = (unsigned char)p[k];
+                unsigned char part = (unsigned char) p[k];
                 if ((part & 0xC0) != 0x80) valid = 0;
                 else value = (value << 6) | (part & 0x3F);
             }
             if ((width == 3 && value < 0x800) || (width == 4 && value < 0x10000) ||
-                value > 0x10FFFF || (value >= 0xD800 && value <= 0xDFFF)) valid = 0;
-            if (valid) { fwrite(p, 1, (size_t)width, out); p += width - 1; }
-            else fputs("\\uFFFD", out);
+                value > 0x10FFFF || (value >= 0xD800 && value <= 0xDFFF))
+                valid = 0;
+            if (valid) {
+                fwrite(p, 1, (size_t) width, out);
+                p += width - 1;
+            } else fputs("\\uFFFD", out);
             continue;
         }
         switch (*p) {
@@ -323,7 +339,7 @@ static void json_escape_string(FILE *out, const char *str) {
             case '\t': fprintf(out, "\\t");
                 break;
             default:
-                if ((unsigned char)*p < 32) {
+                if ((unsigned char) *p < 32) {
                     fprintf(out, "\\u%04x", (unsigned char) *p);
                 } else {
                     fputc(*p, out);
@@ -377,7 +393,7 @@ static void print_source_context(
         }
         fprintf(out, "     %s|%s ", color_blue, reset);
 
-        const unsigned char *cursor = (const unsigned char *)ctx->source_line;
+        const unsigned char *cursor = (const unsigned char *) ctx->source_line;
         for (int i = 1; i < ctx->column && *cursor != 0; i++) {
             fputc(*cursor == '\t' ? '\t' : ' ', out);
             cursor++;
@@ -607,7 +623,6 @@ void error_report_context(ErrorHandler *handler, ErrorContext *ctx) {
     } else {
         print_error_context_recursive(handler, ctx, 0);
     }
-
 }
 
 void error_report(

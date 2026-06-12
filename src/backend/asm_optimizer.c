@@ -85,7 +85,10 @@ static unsigned long process_id(void) {
 #ifdef DMM_OPTIMIZER_FAULT_TEST
 static int fail_flush, fail_close, fail_replace, close_count;
 void assembly_cleanup_test_fail(int flush, int close, int replace) {
-    fail_flush = flush; fail_close = close; fail_replace = replace; close_count = 0;
+    fail_flush = flush;
+    fail_close = close;
+    fail_replace = replace;
+    close_count = 0;
 }
 int assembly_cleanup_test_close_count(void) { return close_count; }
 #endif
@@ -93,7 +96,10 @@ int assembly_cleanup_test_close_count(void) { return close_count; }
 static int flush_output(FILE *output) {
     int result = fflush(output);
 #ifdef DMM_OPTIMIZER_FAULT_TEST
-    if (fail_flush) { errno = ENOSPC; return -1; }
+    if (fail_flush) {
+        errno = ENOSPC;
+        return -1;
+    }
 #endif
     return result;
 }
@@ -102,7 +108,10 @@ static int close_output(FILE *output) {
     int result = fclose(output);
 #ifdef DMM_OPTIMIZER_FAULT_TEST
     close_count++;
-    if (fail_close) { errno = EIO; return -1; }
+    if (fail_close) {
+        errno = EIO;
+        return -1;
+    }
 #endif
     return result;
 }
@@ -126,11 +135,16 @@ static void record_error(AssemblyCleanupError *error, const char *operation,
 
 static int replace_file(const char *temporary, const char *destination) {
 #ifdef DMM_OPTIMIZER_FAULT_TEST
-    if (fail_replace) { errno = EACCES; return -1; }
+    if (fail_replace) {
+        errno = EACCES;
+        return -1;
+    }
 #endif
 #ifdef _WIN32
     return MoveFileExA(temporary, destination,
-                       MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) ? 0 : -1;
+                       MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)
+               ? 0
+               : -1;
 #else
     return rename(temporary, destination);
 #endif
@@ -143,7 +157,10 @@ int cleanup_assembly_file(const char *filename) {
 int cleanup_assembly_file_detailed(const char *filename, AssemblyCleanupError *error) {
     AssemblyCleanupError local_error = {0};
     if (error == NULL) error = &local_error;
-    *error = (AssemblyCleanupError) {0};
+    *error = (AssemblyCleanupError)
+    {
+        0
+    };
     if (filename == NULL) {
         record_error(error, "validate input path", filename, EINVAL, 0);
         return -1;
@@ -238,7 +255,7 @@ int cleanup_assembly_file_detailed(const char *filename, AssemblyCleanupError *e
 #ifdef DMM_OPTIMIZER_FAULT_TEST
         if (!fail_replace)
 #endif
-            windows_error = GetLastError();
+        windows_error = GetLastError();
 #endif
         record_error(error, "replace assembly output", filename, errno, windows_error);
         status = -1;

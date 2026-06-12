@@ -2,6 +2,7 @@
 #define DMM_BACKEND_H
 
 #include "ir.h"
+
 typedef enum { BACKEND_ASSEMBLY, BACKEND_OBJECT, BACKEND_EXECUTABLE } BackendEmission;
 
 typedef struct {

@@ -85,7 +85,7 @@ X64Instruction x64_instruction1(X64Opcode opcode, X64Width width, X64Operand val
 }
 
 X64Instruction x64_instruction2(X64Opcode opcode, X64Width width,
-                                 X64Operand destination, X64Operand source) {
+                                X64Operand destination, X64Operand source) {
     X64Instruction result = instruction(opcode, width);
     result.operands[0] = destination;
     result.operands[1] = source;
@@ -94,8 +94,8 @@ X64Instruction x64_instruction2(X64Opcode opcode, X64Width width,
 }
 
 X64Instruction x64_instruction3(X64Opcode opcode, X64Width width,
-                                 X64Operand destination, X64Operand source,
-                                 X64Operand extra) {
+                                X64Operand destination, X64Operand source,
+                                X64Operand extra) {
     X64Instruction result = x64_instruction2(opcode, width, destination, source);
     result.operands[2] = extra;
     result.operand_count = 3;
@@ -225,8 +225,8 @@ static int print_intel_memory(FILE *output, const X64Operand *value) {
     }
     if (value->displacement != 0 || !wrote) {
         if (wrote && fprintf(output, value->displacement < 0 ? " - %lld" : " + %lld",
-                             value->displacement < 0 ? -value->displacement :
-                                                       value->displacement) < 0) return 0;
+                             value->displacement < 0 ? -value->displacement : value->displacement) < 0)
+            return 0;
         if (!wrote && fprintf(output, "%lld", value->displacement) < 0) return 0;
     }
     return fputc(']', output) != EOF;
@@ -253,8 +253,7 @@ static int print_operand(FILE *output, SyntaxMode syntax, const X64Operand *valu
             return fprintf(output, syntax == SYNTAX_ATT ? "$%lld" : "%lld",
                            value->immediate) >= 0;
         case X64_OPERAND_MEMORY:
-            return syntax == SYNTAX_ATT ? print_att_memory(output, value) :
-                                          print_intel_memory(output, value);
+            return syntax == SYNTAX_ATT ? print_att_memory(output, value) : print_intel_memory(output, value);
         case X64_OPERAND_SYMBOL:
             return print_symbol(output, value);
         default:
@@ -277,15 +276,18 @@ int x64_print_instruction(FILE *output, SyntaxMode syntax,
         char source = value->operand_count > 1 ? att_suffix(value->operands[1].width) : '\0';
         char destination = value->operand_count > 0 ? att_suffix(value->operands[0].width) : '\0';
         if (source == '\0' || destination == '\0' ||
-            fputc(source, output) == EOF || fputc(destination, output) == EOF) return 0;
+            fputc(source, output) == EOF || fputc(destination, output) == EOF)
+            return 0;
     }
     char suffix = syntax == SYNTAX_ATT && descriptor->att_suffix == X64_SUFFIX_WIDTH
-        ? att_suffix(value->width) : '\0';
+                      ? att_suffix(value->width)
+                      : '\0';
     if (suffix != '\0' && fputc(suffix, output) == EOF) return 0;
     if (value->operand_count != 0 && fputc(' ', output) == EOF) return 0;
     for (size_t position = 0; position < value->operand_count; position++) {
         size_t index = syntax == SYNTAX_ATT && value->operand_count > 1
-            ? value->operand_count - position - 1 : position;
+                           ? value->operand_count - position - 1
+                           : position;
         if (position != 0 && fputs(", ", output) == EOF) return 0;
         X64Operand operand_value = value->operands[index];
         if (syntax == SYNTAX_INTEL &&

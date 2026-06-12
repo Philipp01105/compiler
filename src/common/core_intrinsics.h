@@ -7,6 +7,7 @@
 
 /* Target-independent signatures shared by semantic analysis, IR and emission. */
 typedef enum { CORE_VOID, CORE_INT, CORE_SIZE, CORE_OFFSET, CORE_BYTES, CORE_STRING } CoreValueKind;
+
 typedef struct {
     const char *source_name;
     const char *link_name;
@@ -32,7 +33,7 @@ typedef struct {
 
 static inline const CoreIntrinsic *core_intrinsic_find(const char *name) {
 #define CORE_SIGNATURE(source, link, count, result, a, b, c) {source, link, count, result, {a, b, c}},
-    static const CoreIntrinsic signatures[] = { DMM_CORE_INTRINSICS(CORE_SIGNATURE) };
+    static const CoreIntrinsic signatures[] = {DMM_CORE_INTRINSICS(CORE_SIGNATURE)};
 #undef CORE_SIGNATURE
     for (size_t i = 0; i < sizeof(signatures) / sizeof(signatures[0]); ++i)
         if (strcmp(name, signatures[i].source_name) == 0) return &signatures[i];
@@ -40,9 +41,17 @@ static inline const CoreIntrinsic *core_intrinsic_find(const char *name) {
 }
 
 static inline DataType core_value_type(CoreValueKind kind) {
-    return kind == CORE_BYTES ? TYPE_U8 : kind == CORE_STRING ? TYPE_STRING :
-           kind == CORE_SIZE ? TYPE_USIZE : kind == CORE_OFFSET ? TYPE_ISIZE :
-           kind == CORE_INT ? TYPE_INT : TYPE_VOID;
+    return kind == CORE_BYTES
+               ? TYPE_U8
+               : kind == CORE_STRING
+                     ? TYPE_STRING
+                     : kind == CORE_SIZE
+                           ? TYPE_USIZE
+                           : kind == CORE_OFFSET
+                                 ? TYPE_ISIZE
+                                 : kind == CORE_INT
+                                       ? TYPE_INT
+                                       : TYPE_VOID;
 }
 
 #endif

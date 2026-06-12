@@ -127,22 +127,33 @@ typedef struct {
 } X64Instruction;
 
 X64Operand x64_register(const char *name);
+
 X64Operand x64_sized_register(X64Width width, const char *name);
+
 X64Operand x64_immediate(long long value);
+
 X64Operand x64_memory(X64Width width, const char *base, long long displacement);
+
 X64Operand x64_indexed_memory(X64Width width, const char *base, const char *index,
                               unsigned scale, long long displacement);
+
 X64Operand x64_symbol(const char *name, size_t suffix);
+
 X64Operand x64_label(const char *name);
+
 X64Operand x64_rip_memory(X64Width width, const char *name, size_t suffix);
 
 X64Instruction x64_instruction0(X64Opcode opcode, X64Width width);
+
 X64Instruction x64_instruction1(X64Opcode opcode, X64Width width, X64Operand operand);
+
 X64Instruction x64_instruction2(X64Opcode opcode, X64Width width,
-                                 X64Operand destination, X64Operand source);
+                                X64Operand destination, X64Operand source);
+
 X64Instruction x64_instruction3(X64Opcode opcode, X64Width width,
-                                 X64Operand destination, X64Operand source,
-                                 X64Operand extra);
+                                X64Operand destination, X64Operand source,
+                                X64Operand extra);
+
 X64Instruction x64_instruction_with_source(X64Instruction instruction,
                                            size_t ir_instruction,
                                            int begin_line, int begin_column,

@@ -3,30 +3,30 @@ cmake_minimum_required(VERSION 3.21)
 include("${CMAKE_CURRENT_LIST_DIR}/standalone_link.cmake")
 get_filename_component(ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 
-if(NOT DEFINED COMPILER OR NOT EXISTS "${COMPILER}")
+if (NOT DEFINED COMPILER OR NOT EXISTS "${COMPILER}")
     message(FATAL_ERROR "Set COMPILER to a freshly built compiler executable")
-endif()
+endif ()
 
-if(NOT DEFINED ASSEMBLER)
+if (NOT DEFINED ASSEMBLER)
     find_program(ASSEMBLER NAMES gcc REQUIRED)
-endif()
+endif ()
 
-if(NOT DEFINED OUTPUT_DIR)
+if (NOT DEFINED OUTPUT_DIR)
     set(OUTPUT_DIR "${ROOT}/test_output/regression")
-endif()
+endif ()
 
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
-dmm_test_write( "${OUTPUT_DIR}/dmm.manifest" "module dmm.test/regression\ndmm 0.3\n")
+dmm_test_write("${OUTPUT_DIR}/dmm.manifest" "module dmm.test/regression\ndmm 0.3\n")
 get_filename_component(OUTPUT_DIR "${OUTPUT_DIR}" ABSOLUTE)
 get_filename_component(COMPILER "${COMPILER}" ABSOLUTE)
 
-if(NOT DEFINED TEST_STAGE)
+if (NOT DEFINED TEST_STAGE)
     set(TEST_STAGE all)
-endif()
+endif ()
 
-if(NOT DEFINED SANITIZER_FLAGS)
+if (NOT DEFINED SANITIZER_FLAGS)
     set(SANITIZER_FLAGS "")
-endif()
+endif ()
 
 function(run_case source expected syntax)
     get_filename_component(name "${source}" NAME_WE)
@@ -34,9 +34,9 @@ function(run_case source expected syntax)
     file(MAKE_DIRECTORY "${work}")
     file(COPY_FILE "${source}" "${work}/input.dmm")
     get_filename_component(source_directory "${source}" DIRECTORY)
-    if(EXISTS "${source_directory}/dmm.manifest")
+    if (EXISTS "${source_directory}/dmm.manifest")
         file(COPY_FILE "${source_directory}/dmm.manifest" "${work}/dmm.manifest")
-    endif()
+    endif ()
 
     execute_process(
             COMMAND "${COMPILER}" --emit=asm "--syntax=${syntax}" "${work}/input.dmm"
@@ -46,11 +46,11 @@ function(run_case source expected syntax)
             TIMEOUT 30
     )
 
-    if(NOT result STREQUAL "0")
+    if (NOT result STREQUAL "0")
         message(FATAL_ERROR
                 "${name}/${syntax}: compilation failed (${result})\n${output}${errors}"
         )
-    endif()
+    endif ()
 
     execute_process(
             COMMAND "${ASSEMBLER}" ${STANDALONE_FLAGS}
@@ -62,14 +62,14 @@ function(run_case source expected syntax)
             TIMEOUT 30
     )
 
-    if(NOT result STREQUAL "0")
+    if (NOT result STREQUAL "0")
         message(FATAL_ERROR
                 "${name}/${syntax}: assembly failed (${result})\n${output}${errors}"
         )
-    endif()
-    if(name STREQUAL "hello")
+    endif ()
+    if (name STREQUAL "hello")
         check_standalone_dependencies("${work}/program.exe")
-    endif()
+    endif ()
 
     execute_process(
             COMMAND "${work}/program.exe"
@@ -81,7 +81,7 @@ function(run_case source expected syntax)
     )
 
     # Store the original output for debugging.
-    dmm_test_write( "${work}/actual.out" "${output}")
+    dmm_test_write("${work}/actual.out" "${output}")
 
     # Normalize platform-specific line endings.
     #
@@ -108,7 +108,7 @@ function(run_case source expected syntax)
     string(REGEX REPLACE "\n+$" "" output "${output}")
     string(REGEX REPLACE "\n+$" "" expected "${expected}")
 
-    if(
+    if (
             NOT result STREQUAL "0"
             OR NOT output STREQUAL expected
             OR NOT errors STREQUAL ""
@@ -117,7 +117,7 @@ function(run_case source expected syntax)
                 "${name}/${syntax}: runtime/output failure (${result}); "
                 "see ${work}/actual.out\n${errors}"
         )
-    endif()
+    endif ()
 
     message(STATUS "PASS ${name}/${syntax}")
 endfunction()
@@ -127,40 +127,40 @@ endfunction()
 # Positive execution tests
 # ---------------------------------------------------------------------------
 
-if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "positive")
+if (TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "positive")
 
-    if(NOT DEFINED TEST_FILES)
+    if (NOT DEFINED TEST_FILES)
         file(
                 GLOB_RECURSE TEST_FILES
                 "${ROOT}/tests/execution/*.dmm"
                 "${ROOT}/tests/regression/*.dmm"
         )
-    endif()
+    endif ()
 
-    foreach(source IN LISTS TEST_FILES)
+    foreach (source IN LISTS TEST_FILES)
         get_filename_component(name "${source}" NAME_WE)
         get_filename_component(source_dir "${source}" DIRECTORY)
 
         set(expected_file "${source_dir}/${name}.expected")
 
-        if(NOT EXISTS "${expected_file}")
+        if (NOT EXISTS "${expected_file}")
             set(expected_file "${ROOT}/tests/expected/${name}.expected")
-        endif()
+        endif ()
 
-        if(NOT EXISTS "${expected_file}")
+        if (NOT EXISTS "${expected_file}")
             message(FATAL_ERROR
                     "Missing expected output: ${expected_file}"
             )
-        endif()
+        endif ()
 
         file(READ "${expected_file}" expected)
 
-        foreach(syntax intel att)
+        foreach (syntax intel att)
             run_case("${source}" "${expected}" "${syntax}")
-        endforeach()
-    endforeach()
+        endforeach ()
+    endforeach ()
 
-endif()
+endif ()
 
 
 # ---------------------------------------------------------------------------
@@ -168,9 +168,9 @@ endif()
 # Assemble with a renamed DMM entry point and call its functions from C.
 # ---------------------------------------------------------------------------
 
-if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "abi")
+if (TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "abi")
 
-    foreach(syntax intel att)
+    foreach (syntax intel att)
         set(work "${OUTPUT_DIR}/abi_${syntax}")
         file(MAKE_DIRECTORY "${work}")
 
@@ -187,13 +187,13 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "abi")
                 TIMEOUT 30
         )
 
-        if(NOT result STREQUAL "0")
+        if (NOT result STREQUAL "0")
             message(FATAL_ERROR "ABI compile failed: ${errors}")
-        endif()
+        endif ()
 
         file(READ "${work}/input.dmm.s" assembly)
         string(REPLACE "main" "dmm_test_entry" assembly "${assembly}")
-        dmm_test_write( "${work}/interop.s" "${assembly}")
+        dmm_test_write("${work}/interop.s" "${assembly}")
         dmm_test_abi_definitions("${work}/interop.s" abi_definitions)
 
         execute_process(
@@ -209,9 +209,9 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "abi")
                 TIMEOUT 30
         )
 
-        if(NOT result STREQUAL "0")
+        if (NOT result STREQUAL "0")
             message(FATAL_ERROR "ABI link failed: ${errors}")
-        endif()
+        endif ()
 
         execute_process(
                 COMMAND "${work}/interop.exe"
@@ -221,19 +221,19 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "abi")
                 TIMEOUT 10
         )
 
-        if(
+        if (
                 NOT result STREQUAL "0"
                 OR NOT output MATCHES "GCC ABI interop OK"
         )
             message(FATAL_ERROR
                     "ABI runtime failed (${result}): ${output}${errors}"
             )
-        endif()
+        endif ()
 
         message(STATUS "PASS gcc-interop/${syntax}")
-    endforeach()
+    endforeach ()
 
-endif()
+endif ()
 
 
 # ---------------------------------------------------------------------------
@@ -245,8 +245,8 @@ function(reject_case name source diagnostic)
     set(work "${OUTPUT_DIR}/reject_${name}")
     file(MAKE_DIRECTORY "${work}")
 
-    dmm_test_write( "${work}/input.dmm" "${source}")
-    dmm_test_write( "${work}/input.dmm.s" "stale output")
+    dmm_test_write("${work}/input.dmm" "${source}")
+    dmm_test_write("${work}/input.dmm.s" "stale output")
 
     execute_process(
             COMMAND "${COMPILER}" --emit=asm "${work}/input.dmm"
@@ -263,7 +263,7 @@ function(reject_case name source diagnostic)
 
     string(FIND "${errors}" "${diagnostic}" diagnostic_position)
 
-    if(
+    if (
             NOT result STREQUAL "1"
             OR diagnostic_position EQUAL -1
     )
@@ -271,30 +271,30 @@ function(reject_case name source diagnostic)
                 "${name}: expected rejection matching '${diagnostic}', "
                 "got ${result}; see ${work}/diagnostics.log"
         )
-    endif()
+    endif ()
 
-    if(EXISTS "${work}/input.dmm.s")
+    if (EXISTS "${work}/input.dmm.s")
         # A failed frontend can leave no source inventory to validate deletion.
         # In that case retain the old file, but never write new assembly.
         file(READ "${work}/input.dmm.s" remaining_output)
-        if(NOT remaining_output STREQUAL "stale output" OR NOT errors MATCHES "error\\[L[0-9]+\\]")
+        if (NOT remaining_output STREQUAL "stale output" OR NOT errors MATCHES "error\\[L[0-9]+\\]")
             message(FATAL_ERROR "${name}: rejected source produced assembly")
-        endif()
-    endif()
+        endif ()
+    endif ()
 
     message(STATUS "PASS rejection/${name}")
 
 endfunction()
 
 
-if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "rejection")
+if (TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "rejection")
 
     file(
             GLOB_RECURSE REJECTION_FILES
             "${ROOT}/tests/rejection/*.dmm"
     )
 
-    foreach(source IN LISTS REJECTION_FILES)
+    foreach (source IN LISTS REJECTION_FILES)
 
         get_filename_component(name "${source}" NAME_WE)
         get_filename_component(source_dir "${source}" DIRECTORY)
@@ -304,11 +304,11 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "rejection")
                 "${source_dir}/${name}.diag"
         )
 
-        if(NOT EXISTS "${diagnostic_file}")
+        if (NOT EXISTS "${diagnostic_file}")
             message(FATAL_ERROR
                     "Missing diagnostic expectation: ${diagnostic_file}"
             )
-        endif()
+        endif ()
 
         file(READ "${source}" rejection_source)
         file(READ "${diagnostic_file}" diagnostic)
@@ -321,7 +321,7 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "rejection")
                 "${diagnostic}"
         )
 
-    endforeach()
+    endforeach ()
 
     reject_case(
             large_array
@@ -489,14 +489,14 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "rejection")
             "Expression tree exceeds"
     )
 
-endif()
+endif ()
 
 
 # ---------------------------------------------------------------------------
 # Backend tests
 # ---------------------------------------------------------------------------
 
-if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
+if (TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
 
     # This fits the code buffer but exceeds the optimizer's former
     # 10,000-line limit.
@@ -516,7 +516,7 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
 
     # Cross-target assembly must use the requested target's
     # argument registers.
-    foreach(target elf coff)
+    foreach (target elf coff)
 
         dmm_test_write(
                 "${OUTPUT_DIR}/target/target.dmm"
@@ -542,24 +542,24 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
         # The typed emitter currently reserves only RBX. Callee-saved registers
         # that are never touched do not need artificial save/restore pairs.
         set(nonvolatile_registers rbx)
-        foreach(nonvolatile IN LISTS nonvolatile_registers)
+        foreach (nonvolatile IN LISTS nonvolatile_registers)
             string(FIND "${assembly}" "pushq %${nonvolatile}" saved_register)
             string(FIND "${assembly}" "popq %${nonvolatile}" restored_register)
-            if(saved_register EQUAL -1 OR restored_register EQUAL -1)
+            if (saved_register EQUAL -1 OR restored_register EQUAL -1)
                 message(FATAL_ERROR
                         "${target} backend does not preserve non-volatile ${nonvolatile}")
-            endif()
-        endforeach()
+            endif ()
+        endforeach ()
 
-        if(target STREQUAL "elf")
+        if (target STREQUAL "elf")
             set(register "%rsi")
             string(FIND "${assembly}" "call __dmm_core_snprintf" format_marker)
-            if(format_marker EQUAL -1)
+            if (format_marker EQUAL -1)
                 message(FATAL_ERROR "ELF backend bypasses the standalone formatter")
-            endif()
-        else()
+            endif ()
+        else ()
             set(register "%rdx")
-        endif()
+        endif ()
 
         string(
                 FIND
@@ -568,18 +568,18 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
                 found
         )
 
-        if(
+        if (
                 NOT result STREQUAL "0"
                 OR found EQUAL -1
         )
             message(FATAL_ERROR
                     "Wrong calling convention for ${target}: ${errors}"
             )
-        endif()
+        endif ()
 
         message(STATUS "PASS target/${target}")
 
-    endforeach()
+    endforeach ()
 
 
     # Runtime-failure programs must compile in both syntaxes and then
@@ -589,11 +589,11 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
             "${ROOT}/tests/runtime_failure/*.dmm"
     )
 
-    foreach(source IN LISTS RUNTIME_FAILURE_FILES)
+    foreach (source IN LISTS RUNTIME_FAILURE_FILES)
 
         get_filename_component(name "${source}" NAME_WE)
 
-        foreach(syntax intel att)
+        foreach (syntax intel att)
 
             set(
                     work
@@ -617,12 +617,12 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
                     TIMEOUT 30
             )
 
-            if(NOT result STREQUAL "0")
+            if (NOT result STREQUAL "0")
                 message(FATAL_ERROR
                         "${name}/${syntax}: runtime-failure source "
                         "did not compile: ${errors}"
                 )
-            endif()
+            endif ()
 
             execute_process(
                     COMMAND "${ASSEMBLER}"
@@ -634,12 +634,12 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
                     TIMEOUT 30
             )
 
-            if(NOT result STREQUAL "0")
+            if (NOT result STREQUAL "0")
                 message(FATAL_ERROR
                         "${name}/${syntax}: runtime-failure source "
                         "did not assemble: ${errors}"
                 )
-            endif()
+            endif ()
 
             execute_process(
                     COMMAND "${work}/program.exe"
@@ -649,7 +649,7 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
                     TIMEOUT 10
             )
 
-            if(
+            if (
                     result STREQUAL "0"
                     OR result MATCHES "timeout"
             )
@@ -657,15 +657,15 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
                         "${name}/${syntax}: expected prompt non-zero "
                         "runtime failure, got ${result}"
                 )
-            endif()
+            endif ()
 
             message(
                     STATUS
                     "PASS runtime-failure/${name}/${syntax}"
             )
 
-        endforeach()
+        endforeach ()
 
-    endforeach()
+    endforeach ()
 
-endif()
+endif ()

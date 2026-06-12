@@ -54,17 +54,17 @@ int main(void) {
     assert(tokens->tokens[1].end_column == tokens->tokens[1].column + 4);
     free_token_stream(tokens);
 
-    const char block[]="/* documentation\n second line */func";
-    tokens=lex(block,sizeof(block)-1);
+    const char block[] = "/* documentation\n second line */func";
+    tokens = lex(block, sizeof(block) - 1);
     assert(tokens != NULL && !tokens->has_error && tokens->tokens[0].type == TOKEN_KEYWORD_FUNC);
     assert(tokens->tokens[0].line == 2 && tokens->tokens[0].column == 16);
     free_token_stream(tokens);
-    tokens=lex("/* unfinished",13);
+    tokens = lex("/* unfinished", 13);
     assert(tokens != NULL && tokens->has_error);
     free_token_stream(tokens);
 
     const char postfix_casts[] = "3.(int) 3.5.(float) \"\\n\"";
-    tokens = lex(postfix_casts, sizeof(postfix_casts)-1);
+    tokens = lex(postfix_casts, sizeof(postfix_casts) - 1);
     assert(tokens != NULL && !tokens->has_error && tokens->count == 12);
     assert(tokens->tokens[0].type == TOKEN_NUMBER);
     assert(tokens->tokens[1].type == TOKEN_DOT);
@@ -120,7 +120,8 @@ int main(void) {
     handler->output_stream = json;
     error_handler_set_json_output(handler, 1);
     ErrorContext *invalid_utf8 = error_context_create(SEVERITY_ERROR, 1, 1,
-        ERROR_CATEGORY_LEXER, ERR_LEX_UNKNOWN_CHAR, "<unit>", "Invalid byte \xFF");
+                                                      ERROR_CATEGORY_LEXER, ERR_LEX_UNKNOWN_CHAR, "<unit>",
+                                                      "Invalid byte \xFF");
     error_context_set_source_line(invalid_utf8, "\xE0\x80 \xF4\x90\x80\x80 \xCE\xB1");
     error_report_context(handler, invalid_utf8);
     error_handler_flush(handler);
@@ -129,7 +130,7 @@ int main(void) {
     size_t size = fread(output, 1, sizeof(output) - 1, json);
     assert(size > 0 && strstr(output, "\\uFFFD") != NULL);
     assert(strstr(output, "\xCE\xB1") != NULL);
-    assert(strchr(output, (char)0xFF) == NULL && strchr(output, (char)0xE0) == NULL);
+    assert(strchr(output, (char) 0xFF) == NULL && strchr(output, (char) 0xE0) == NULL);
     fclose(json);
     handler->output_stream = stderr;
 

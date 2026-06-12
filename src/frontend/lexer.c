@@ -49,7 +49,6 @@ void free_token_stream(TokenStream *stream) {
 }
 
 void add_token(TokenStream *stream, TokenType type, const char *value, int line, int column) {
-
     if (stream == NULL) return;
 
     if (stream->count >= stream->capacity) {
@@ -76,7 +75,7 @@ void add_token(TokenStream *stream, TokenType type, const char *value, int line,
     token->line = line;
     token->column = column;
     token->end_line = line;
-    token->end_column = column + (int)strlen(value == NULL ? "" : value);
+    token->end_column = column + (int) strlen(value == NULL ? "" : value);
 
     token->value = string_interner_intern(stream->strings, value == NULL ? "" : value);
     if (token->value == NULL) {
@@ -93,7 +92,7 @@ Token peek(const TokenStream *stream) {
     if (stream->current < stream->count) {
         return stream->tokens[stream->current];
     }
-    const Token eof = {.type=TOKEN_EOF, .value=""};
+    const Token eof = {.type = TOKEN_EOF, .value = ""};
     return eof;
 }
 
@@ -102,7 +101,7 @@ Token peek_ahead(const TokenStream *stream, int offset) {
     if (pos < stream->count) {
         return stream->tokens[pos];
     }
-    Token eof = {.type=TOKEN_EOF, .value=""};
+    Token eof = {.type = TOKEN_EOF, .value = ""};
     return eof;
 }
 
@@ -110,7 +109,7 @@ Token consume(TokenStream *stream) {
     if (stream->current < stream->count) {
         return stream->tokens[stream->current++];
     }
-    Token eof = {.type=TOKEN_EOF, .value=""};
+    Token eof = {.type = TOKEN_EOF, .value = ""};
     return eof;
 }
 
@@ -135,7 +134,6 @@ int is_at_end(const TokenStream *stream) {
 }
 
 static TokenType get_keyword_type(const char *str) {
-     
     if (strcmp(str, "trait") == 0) return TOKEN_KEYWORD_TRAIT;
     if (strcmp(str, "impl") == 0) return TOKEN_KEYWORD_IMPL;
     if (strcmp(str, "match") == 0) return TOKEN_KEYWORD_MATCH;
@@ -195,7 +193,8 @@ TokenStream *tokenize_file_with_interner(const char *filename, int debug_mode,
     FILE *file = fopen(error_handler_source_path(filename), "rb");
     if (!file) {
         error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_LEXER,
-                     ERR_LEX_FILE_NOT_FOUND, filename, "Could not open source file '%s': %s", filename, strerror(errno));
+                     ERR_LEX_FILE_NOT_FOUND, filename, "Could not open source file '%s': %s", filename,
+                     strerror(errno));
         return nullptr;
     }
 
@@ -203,7 +202,8 @@ TokenStream *tokenize_file_with_interner(const char *filename, int debug_mode,
         int saved_errno = errno;
         fclose(file);
         error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_LEXER,
-                     ERR_LEX_FILE_READ_ERROR, filename, "Could not seek in source file '%s': %s", filename, strerror(saved_errno));
+                     ERR_LEX_FILE_READ_ERROR, filename, "Could not seek in source file '%s': %s", filename,
+                     strerror(saved_errno));
         return NULL;
     }
     long file_size = ftell(file);
@@ -211,7 +211,8 @@ TokenStream *tokenize_file_with_interner(const char *filename, int debug_mode,
         int saved_errno = errno;
         fclose(file);
         error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_LEXER,
-                     ERR_LEX_FILE_READ_ERROR, filename, "Could not determine source file size for '%s': %s", filename, strerror(saved_errno));
+                     ERR_LEX_FILE_READ_ERROR, filename, "Could not determine source file size for '%s': %s", filename,
+                     strerror(saved_errno));
         return NULL;
     }
 
@@ -228,7 +229,8 @@ TokenStream *tokenize_file_with_interner(const char *filename, int debug_mode,
         fclose(file);
         free(source);
         error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_LEXER,
-                     ERR_LEX_FILE_READ_ERROR, filename, "Could not read source file '%s': %s", filename, strerror(saved_errno));
+                     ERR_LEX_FILE_READ_ERROR, filename, "Could not read source file '%s': %s", filename,
+                     strerror(saved_errno));
         return NULL;
     }
     source[bytes_read] = '\0';
@@ -273,16 +275,23 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
         }
 
         if (c == '/' && i + 1 < length && source[i + 1] == '*') {
-            int start_line=line,start_col=column;
-            i+=2; column+=2;
-            while (i < length && !(source[i] == '*' && i+1 < length && source[i+1] == '/')) {
-                if (source[i++] == '\n') { line++; column=1; } else column++;
+            int start_line = line, start_col = column;
+            i += 2;
+            column += 2;
+            while (i < length && !(source[i] == '*' && i + 1 < length && source[i + 1] == '/')) {
+                if (source[i++] == '\n') {
+                    line++;
+                    column = 1;
+                } else column++;
             }
             if (i == length) {
-                error_report(global_error_handler,SEVERITY_ERROR,start_line,start_col,
-                    ERROR_CATEGORY_LEXER,ERR_LEX_INVALID_SYNTAX,filename,"Unclosed block comment");
-                stream->has_error=1;
-            } else { i+=2; column+=2; }
+                error_report(global_error_handler, SEVERITY_ERROR, start_line, start_col,
+                             ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_SYNTAX, filename, "Unclosed block comment");
+                stream->has_error = 1;
+            } else {
+                i += 2;
+                column += 2;
+            }
             continue;
         }
 
@@ -308,24 +317,31 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
                     column++;
 
                     switch (source[i]) {
-                        case 'n': str[j++] = '\n'; break;
-                        case 't': str[j++] = '\t'; break;
-                        case 'r': str[j++] = '\r'; break;
-                        case '0': str[j++] = '\0'; break;
-                        case '\\': str[j++] = '\\'; break;
-                        case '"': str[j++] = '"'; break;
-                        case '\'': str[j++] = '\''; break;
+                        case 'n': str[j++] = '\n';
+                            break;
+                        case 't': str[j++] = '\t';
+                            break;
+                        case 'r': str[j++] = '\r';
+                            break;
+                        case '0': str[j++] = '\0';
+                            break;
+                        case '\\': str[j++] = '\\';
+                            break;
+                        case '"': str[j++] = '"';
+                            break;
+                        case '\'': str[j++] = '\'';
+                            break;
                         default:
                             error_report_with_suggestion(global_error_handler, SEVERITY_ERROR, line, column - 1,
-                                         ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_ESCAPE, filename,
-                                         "Supported string escapes: \\n, \\t, \\r, \\0, \\\\, and \\\"",
-                                         "Unknown escape sequence '\\%c'", source[i]);
+                                                         ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_ESCAPE, filename,
+                                                         "Supported string escapes: \\n, \\t, \\r, \\0, \\\\, and \\\"",
+                                                         "Unknown escape sequence '\\%c'", source[i]);
                             stream->has_error = 1;
                             str[j++] = source[i];
                             break;
                     }
                 } else {
-                    unsigned char byte = (unsigned char)source[i];
+                    unsigned char byte = (unsigned char) source[i];
                     if (byte >= 0x80) {
                         str[j++] = source[i++];
                         int continuation_count = 0;
@@ -351,8 +367,14 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
                              ERROR_CATEGORY_LEXER, ERR_LEX_TOKEN_TOO_LONG, filename,
                              "Token exceeds maximum length of %d bytes", MAX_TOKEN - 1);
                 stream->has_error = 1;
-                while (i < length && source[i] != '"') { i++; column++; }
-                if (i < length) { i++; column++; }
+                while (i < length && source[i] != '"') {
+                    i++;
+                    column++;
+                }
+                if (i < length) {
+                    i++;
+                    column++;
+                }
             } else if (i < length && source[i] == '"') {
                 i++;
                 column++;
@@ -388,18 +410,25 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
                 if (i < length) {
                     char esc = source[i];
                     switch (esc) {
-                        case 'n':  ch[j++] = '\n'; break;
-                        case 't':  ch[j++] = '\t'; break;
-                        case 'r':  ch[j++] = '\r'; break;
-                        case '0':  ch[j++] = '\0'; break;
-                        case '\\': ch[j++] = '\\'; break;
-                        case '"':  ch[j++] = '"'; break;
-                        case '\'': ch[j++] = '\''; break;
+                        case 'n': ch[j++] = '\n';
+                            break;
+                        case 't': ch[j++] = '\t';
+                            break;
+                        case 'r': ch[j++] = '\r';
+                            break;
+                        case '0': ch[j++] = '\0';
+                            break;
+                        case '\\': ch[j++] = '\\';
+                            break;
+                        case '"': ch[j++] = '"';
+                            break;
+                        case '\'': ch[j++] = '\'';
+                            break;
                         default:
                             error_report_with_suggestion(global_error_handler, SEVERITY_ERROR, line, column - 1,
-                                         ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_ESCAPE, filename,
-                                         "Use a supported escape such as \\n, \\t, \\\\, or \\'",
-                                         "Unknown escape sequence '\\%c'", esc);
+                                                         ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_ESCAPE, filename,
+                                                         "Use a supported escape such as \\n, \\t, \\\\, or \\'",
+                                                         "Unknown escape sequence '\\%c'", esc);
                             stream->has_error = 1;
                             ch[j++] = esc;
                     }
@@ -438,7 +467,7 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
                                  "Character literal must contain exactly one byte; use a string for multiple characters");
                     column++; // Closing quote; UTF-8 continuation bytes do not add columns.
                     for (size_t k = i; k < end; k++)
-                        if (((unsigned char)source[k] & 0xC0) != 0x80) column++;
+                        if (((unsigned char) source[k] & 0xC0) != 0x80) column++;
                     i = end + 1;
                     stream->has_error = 1;
                     continue;
@@ -452,14 +481,14 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
             continue;
         }
 
-        if (isdigit((unsigned char)c)) {
+        if (isdigit((unsigned char) c)) {
             int start_col = column;
             char num[MAX_TOKEN];
             int j = 0;
             int has_dot = 0;
-            while (i < length && (isdigit((unsigned char)source[i]) || source[i] == '.') && j < MAX_TOKEN - 1) {
+            while (i < length && (isdigit((unsigned char) source[i]) || source[i] == '.') && j < MAX_TOKEN - 1) {
                 if (source[i] == '.') {
-                    if (i+1 < length && source[i+1] == '(') break;
+                    if (i + 1 < length && source[i + 1] == '(') break;
                     if (has_dot) break;
                     has_dot = 1;
                 }
@@ -477,7 +506,7 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
                 }
 
                 size_t exponent_start = i;
-                while (i < length && isdigit((unsigned char)source[i]) && j < MAX_TOKEN - 1) {
+                while (i < length && isdigit((unsigned char) source[i]) && j < MAX_TOKEN - 1) {
                     num[j++] = source[i++];
                     column++;
                 }
@@ -489,7 +518,7 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
                     stream->has_error = 1;
                 }
 
-                has_dot = 1;   
+                has_dot = 1;
             }
 
             num[j] = '\0';
@@ -497,7 +526,7 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
             if (!has_dot) {
                 errno = 0;
                 char *end = NULL;
-                (void)strtoull(num, &end, 10);
+                (void) strtoull(num, &end, 10);
                 if (errno == ERANGE || end == num || *end != '\0') {
                     error_report(global_error_handler, SEVERITY_ERROR, line, start_col,
                                  ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_SYNTAX, filename,
@@ -507,14 +536,19 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
             }
 
             if (i < length && (isdigit((unsigned char) source[i]) ||
-                (source[i] == '.' && !(i+1 < length && source[i+1] == '(')) ||
-                (j >= MAX_TOKEN - 2 && (source[i] == 'e' || source[i] == 'E')))) {
+                               (source[i] == '.' && !(i + 1 < length && source[i + 1] == '(')) ||
+                               (j >= MAX_TOKEN - 2 && (source[i] == 'e' || source[i] == 'E')))) {
                 error_report(global_error_handler, SEVERITY_ERROR, line, start_col,
-                             ERROR_CATEGORY_LEXER, j >= MAX_TOKEN - 2 ? ERR_LEX_TOKEN_TOO_LONG : ERR_LEX_INVALID_SYNTAX, filename,
-                             j >= MAX_TOKEN - 2 ? "Numeric token exceeds maximum length" :
-                             "Invalid numeric literal: multiple decimal points are not allowed");
+                             ERROR_CATEGORY_LEXER, j >= MAX_TOKEN - 2 ? ERR_LEX_TOKEN_TOO_LONG : ERR_LEX_INVALID_SYNTAX,
+                             filename,
+                             j >= MAX_TOKEN - 2
+                                 ? "Numeric token exceeds maximum length"
+                                 : "Invalid numeric literal: multiple decimal points are not allowed");
                 stream->has_error = 1;
-                while (i < length && (isdigit((unsigned char) source[i]) || source[i] == '.')) { i++; column++; }
+                while (i < length && (isdigit((unsigned char) source[i]) || source[i] == '.')) {
+                    i++;
+                    column++;
+                }
             }
 
             if (has_dot) {
@@ -526,12 +560,12 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
             continue;
         }
 
-        if (isalpha((unsigned char)c) || c == '_') {
+        if (isalpha((unsigned char) c) || c == '_') {
             int start_col = column;
             char ident[MAX_TOKEN];
             int j = 0;
 
-            while (i < length && (isalnum((unsigned char)source[i]) || source[i] == '_') && j < MAX_TOKEN - 1) {
+            while (i < length && (isalnum((unsigned char) source[i]) || source[i] == '_') && j < MAX_TOKEN - 1) {
                 ident[j++] = source[i++];
                 column++;
             }
@@ -543,7 +577,10 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
                              ERROR_CATEGORY_LEXER, ERR_LEX_TOKEN_TOO_LONG, filename,
                              "Token exceeds maximum length");
                 stream->has_error = 1;
-                while (i < length && (isalnum((unsigned char) source[i]) || source[i] == '_')) { i++; column++; }
+                while (i < length && (isalnum((unsigned char) source[i]) || source[i] == '_')) {
+                    i++;
+                    column++;
+                }
             }
 
             TokenType type = get_keyword_type(ident);
@@ -552,9 +589,11 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
             continue;
         }
 
-        if (i + 1 < length && source[i] == '=' && source[i+1] == '>') {
-            add_token(stream,TOKEN_FAT_ARROW,"=>",line,column);
-            i+=2; column+=2; continue;
+        if (i + 1 < length && source[i] == '=' && source[i + 1] == '>') {
+            add_token(stream, TOKEN_FAT_ARROW, "=>", line, column);
+            i += 2;
+            column += 2;
+            continue;
         }
         if (i + 1 < length) {
             char next = source[i + 1];
@@ -585,28 +624,50 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
 
         TokenType type = TOKEN_ERROR;
         switch (c) {
-            case '+': type = TOKEN_PLUS; break;
-            case '-': type = TOKEN_MINUS; break;
-            case '*': type = TOKEN_STAR; break;
-            case '/': type = TOKEN_SLASH; break;
-            case '%': type = TOKEN_PERCENT; break;
-            case '=': type = TOKEN_EQUAL; break;
-            case '<': type = TOKEN_LESS; break;
-            case '>': type = TOKEN_GREATER; break;
-            case '!': type = TOKEN_BANG; break;
-            case '(': type = TOKEN_LPAREN; break;
-            case ')': type = TOKEN_RPAREN; break;
-            case '{': type = TOKEN_LBRACE; break;
-            case '}': type = TOKEN_RBRACE; break;
-            case '[': type = TOKEN_LBRACKET; break;
-            case ']': type = TOKEN_RBRACKET; break;
-            case ';': type = TOKEN_SEMICOLON; break;
-            case ',': type = TOKEN_COMMA; break;
-            case ':': type = TOKEN_COLON; break;
-            case '.': type = TOKEN_DOT; break;
-            case '#': type = TOKEN_HASH; break;
-            case '@': type = TOKEN_AT; break;
-            case '&': type = TOKEN_AMPERSAND; break;
+            case '+': type = TOKEN_PLUS;
+                break;
+            case '-': type = TOKEN_MINUS;
+                break;
+            case '*': type = TOKEN_STAR;
+                break;
+            case '/': type = TOKEN_SLASH;
+                break;
+            case '%': type = TOKEN_PERCENT;
+                break;
+            case '=': type = TOKEN_EQUAL;
+                break;
+            case '<': type = TOKEN_LESS;
+                break;
+            case '>': type = TOKEN_GREATER;
+                break;
+            case '!': type = TOKEN_BANG;
+                break;
+            case '(': type = TOKEN_LPAREN;
+                break;
+            case ')': type = TOKEN_RPAREN;
+                break;
+            case '{': type = TOKEN_LBRACE;
+                break;
+            case '}': type = TOKEN_RBRACE;
+                break;
+            case '[': type = TOKEN_LBRACKET;
+                break;
+            case ']': type = TOKEN_RBRACKET;
+                break;
+            case ';': type = TOKEN_SEMICOLON;
+                break;
+            case ',': type = TOKEN_COMMA;
+                break;
+            case ':': type = TOKEN_COLON;
+                break;
+            case '.': type = TOKEN_DOT;
+                break;
+            case '#': type = TOKEN_HASH;
+                break;
+            case '@': type = TOKEN_AT;
+                break;
+            case '&': type = TOKEN_AMPERSAND;
+                break;
         }
 
         if (type != TOKEN_ERROR) {
@@ -617,21 +678,26 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
             continue;
         }
 
-        unsigned char byte = (unsigned char)c;
+        unsigned char byte = (unsigned char) c;
         unsigned codepoint = byte;
-        size_t width = byte >= 0xC2 && byte <= 0xDF ? 2 :
-                       byte >= 0xE0 && byte <= 0xEF ? 3 :
-                       byte >= 0xF0 && byte <= 0xF4 ? 4 : 1;
+        size_t width = byte >= 0xC2 && byte <= 0xDF
+                           ? 2
+                           : byte >= 0xE0 && byte <= 0xEF
+                                 ? 3
+                                 : byte >= 0xF0 && byte <= 0xF4
+                                       ? 4
+                                       : 1;
         int valid_utf8 = width > 1 && i + width <= length;
         if (valid_utf8) {
             codepoint = byte & (width == 2 ? 0x1F : width == 3 ? 0x0F : 0x07);
             for (size_t k = 1; k < width; k++) {
-                unsigned char part = (unsigned char)source[i + k];
+                unsigned char part = (unsigned char) source[i + k];
                 if ((part & 0xC0) != 0x80) valid_utf8 = 0;
                 codepoint = (codepoint << 6) | (part & 0x3F);
             }
             if ((width == 3 && codepoint < 0x800) || (width == 4 && codepoint < 0x10000) ||
-                codepoint > 0x10FFFF || (codepoint >= 0xD800 && codepoint <= 0xDFFF)) valid_utf8 = 0;
+                codepoint > 0x10FFFF || (codepoint >= 0xD800 && codepoint <= 0xDFFF))
+                valid_utf8 = 0;
         }
         if (valid_utf8)
             error_report(global_error_handler, SEVERITY_ERROR, line, column,

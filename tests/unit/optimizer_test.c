@@ -3,15 +3,47 @@
 #include "errorHandler.h"
 #include "ir_emitter.h"
 #include "native/linker.h"
+
 int x86_64_lower_native(const IrModule *m, TargetFormat t, NativeObject *o, FILE *f) {
-    (void)m;(void)t;(void)o;(void)f;return 0;
+    (void) m;
+    (void) t;
+    (void) o;
+    (void) f;
+    return 0;
 }
-int native_write_object(NativeObject *o,TargetFormat t,NativeBuffer *b){(void)o;(void)t;(void)b;return 0;}
-int native_link_executable(NativeObject *o,TargetFormat t,NativeBuffer *b){(void)o;(void)t;(void)b;return 0;}
-void native_object_free(NativeObject *o){(void)o;}
-void native_error(NativeObject *o,const char *s){(void)o;(void)s;}
-int native_runtime_emit(NativeObject *o,TargetFormat t){(void)o;(void)t;return 0;}
-int native_runtime_object_imports(NativeObject *o,TargetFormat t){(void)o;(void)t;return 0;}
+
+int native_write_object(NativeObject *o, TargetFormat t, NativeBuffer *b) {
+    (void) o;
+    (void) t;
+    (void) b;
+    return 0;
+}
+
+int native_link_executable(NativeObject *o, TargetFormat t, NativeBuffer *b) {
+    (void) o;
+    (void) t;
+    (void) b;
+    return 0;
+}
+
+void native_object_free(NativeObject *o) { (void) o; }
+
+void native_error(NativeObject *o, const char *s) {
+    (void) o;
+    (void) s;
+}
+
+int native_runtime_emit(NativeObject *o, TargetFormat t) {
+    (void) o;
+    (void) t;
+    return 0;
+}
+
+int native_runtime_object_imports(NativeObject *o, TargetFormat t) {
+    (void) o;
+    (void) t;
+    return 0;
+}
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,8 +54,12 @@ int native_runtime_object_imports(NativeObject *o,TargetFormat t){(void)o;(void)
 int x86_64_emit_ir_file(const IrModule *module, TargetFormat target,
                         SyntaxMode syntax, int deterministic,
                         const char *output_path, const char *source_map_path) {
-    (void) module; (void) target; (void) syntax; (void) deterministic;
-    (void) output_path; (void) source_map_path;
+    (void) module;
+    (void) target;
+    (void) syntax;
+    (void) deterministic;
+    (void) output_path;
+    (void) source_map_path;
     return 1;
 }
 
@@ -50,8 +86,8 @@ static int diagnostic_case(const char *path, int json, int flush, int close, int
     char text[16384] = {0};
     size_t count = fread(text, 1, sizeof(text) - 1, capture);
     int valid = result == 0 && count != 0 && strstr(text, "G103") != NULL &&
-        strstr(text, operation) != NULL && strstr(text, strerror(number)) != NULL &&
-        strstr(text, replace ? "optimizer_test_input.s" : ".tmp.") != NULL;
+                strstr(text, operation) != NULL && strstr(text, strerror(number)) != NULL &&
+                strstr(text, replace ? "optimizer_test_input.s" : ".tmp.") != NULL;
     if (json && strstr(text, "\"errorCode\": \"G103\"") == NULL) valid = 0;
     error_handler_free(handler);
     error_handler_set_global(NULL);
@@ -70,11 +106,15 @@ static int failure_case(const char *path, int flush, int close, int replace,
     if (cleanup_assembly_file_detailed(path, &error) != -1 ||
         error.error_number != number || errno != number ||
         strcmp(error.operation, operation) != 0 ||
-        assembly_cleanup_test_close_count() != 1) return 0;
+        assembly_cleanup_test_close_count() != 1)
+        return 0;
     if (replace ? strcmp(error.path, path) != 0 : strstr(error.path, ".tmp.") == NULL) return 0;
     if (!replace) {
         file = fopen(error.path, "rb");
-        if (file != NULL) { fclose(file); return 0; }
+        if (file != NULL) {
+            fclose(file);
+            return 0;
+        }
     }
     file = fopen(path, "rb");
     if (file == NULL) return 0;
@@ -89,11 +129,13 @@ int main(int argc, char **argv) {
     if (!failure_case(argv[1], 1, 0, 0, "flush temporary output", ENOSPC) ||
         !failure_case(argv[1], 0, 1, 0, "close temporary output", EIO) ||
         !failure_case(argv[1], 0, 0, 1, "replace assembly output", EACCES) ||
-        !failure_case(argv[1], 1, 1, 0, "flush temporary output", ENOSPC)) return 7;
+        !failure_case(argv[1], 1, 1, 0, "flush temporary output", ENOSPC))
+        return 7;
     for (int json = 0; json <= 1; json++) {
         if (!diagnostic_case(argv[1], json, 1, 0, 0, "flush temporary output", ENOSPC) ||
             !diagnostic_case(argv[1], json, 0, 1, 0, "close temporary output", EIO) ||
-            !diagnostic_case(argv[1], json, 0, 0, 1, "replace assembly output", EACCES)) return 8;
+            !diagnostic_case(argv[1], json, 0, 0, 1, "replace assembly output", EACCES))
+            return 8;
     }
     assembly_cleanup_test_fail(0, 0, 0);
     FILE *file = fopen(argv[1], "wb");
@@ -115,4 +157,5 @@ int main(int argc, char **argv) {
     remove(argv[1]);
     return count == 12051 && !saw_push ? 0 : 6;
 }
+
 /* Category: unit/backend optimizer. */
