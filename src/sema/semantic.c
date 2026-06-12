@@ -1,4 +1,5 @@
 #include "semantic.h"
+#include "semantic_internal.h"
 #include "generics.h"
 #include "core_intrinsics.h"
 
@@ -134,163 +135,14 @@ static DataType primitive_type(const AstProgram *program, const AstType *type) {
     }
 }
 
-static int same_name(const AstProgram *program, size_t token, const char *name) {
-    if (token >= program->token_count) return 0;
-    const char *lexeme = program->tokens[token].lexeme;
-    return lexeme == name || strcmp(lexeme, name) == 0;
-}
-
 static int reserved_link_name(const char *name) {
     return strncmp(name, "__dmm_", 6) == 0;
 }
 
-static uint64_t symbol_hash(const char *name, SemanticSymbolKind kind) {
-    uint64_t hash = UINT64_C(1469598103934665603);
-    for (size_t i = 0; name[i] != '\0'; i++) {
-        hash ^= (unsigned char) name[i];
-        hash *= UINT64_C(1099511628211);
-    }
-    hash ^= (uint64_t) kind + UINT64_C(0x9e3779b97f4a7c15);
-    hash *= UINT64_C(1099511628211);
-    return hash;
-}
-
-static const char *symbol_name(const SemanticSymbol *symbol) {
-    return ast_program_lexeme(symbol->source_program, symbol->name_token);
-}
-
-static int index_symbol(SemanticModel *model, size_t symbol_id) {
-    const SemanticSymbol *symbol = &model->symbols[symbol_id];
-    const char *name = symbol_name(symbol);
-    size_t mask = model->symbol_index_capacity - 1U;
-    size_t slot = (size_t) symbol_hash(name, symbol->kind) & mask;
-    while (model->symbol_index[slot] != 0) {
-        const SemanticSymbol *existing = &model->symbols[model->symbol_index[slot] - 1U];
-        if (existing->kind == symbol->kind && same_name(existing->source_program,
-                                                        existing->name_token, name))
-            return 1;
-        slot = (slot + 1U) & mask;
-    }
-    model->symbol_index[slot] = symbol_id + 1U;
-    return 1;
-}
-
-static int grow_symbol_index(SemanticModel *model) {
-    size_t capacity = model->symbol_index_capacity == 0
-                          ? 64U
-                          : model->symbol_index_capacity * 2U;
-    if (capacity < model->symbol_index_capacity ||
-        capacity > SIZE_MAX / sizeof(*model->symbol_index))
-        return 0;
-    size_t *previous = model->symbol_index;
-    model->symbol_index = calloc(capacity, sizeof(*model->symbol_index));
-    if (model->symbol_index == NULL) {
-        model->symbol_index = previous;
-        return 0;
-    }
-    model->symbol_index_capacity = capacity;
-    for (size_t i = 0; i < model->symbol_count; i++) (void) index_symbol(model, i);
-    free(previous);
-    return 1;
-}
-
-static int same_package(const AstProgram *left, const AstProgram *right) {
-    return left->package && right->package ? left->package == right->package : left == right;
-}
-
-static const DmmPackage *lookup_package(const AstProgram *file, const char **name) {
-    const char *canonical = strstr(*name, "::");
-    if (canonical && file->module) {
-        for (DmmPackage *p = file->module->graph->packages; p; p = p->next)
-            if (strlen(p->path) == (size_t) (canonical - *name) && !strncmp(
-                    p->path, *name, (size_t) (canonical - *name))) {
-                *name = canonical + 2;
-                return p;
-            }
-    }
-    const char *dot = strchr(*name, '.');
-    if (dot) {
-        for (AstDeclarationNode *d = file->root; d; d = d->next)
-            if (d->kind == AST_DECL_IMPORT)
-                for (AstImportPath *p = d->as.import_decl.paths; p; p = p->next)
-                    if (p->alias && p->resolved_program && strlen(p->alias) == (size_t) (dot - *name) &&
-                        !strncmp(p->alias, *name, (size_t) (dot - *name))) {
-                        *name = dot + 1;
-                        return p->resolved_program->package;
-                    }
-        return NULL;
-    }
-    return file->package;
-}
-
-static int symbol_matches_scope(const AstProgram *file, const SemanticSymbol *symbol, const char *name) {
-    const char *plain = name;
-    const DmmPackage *package = lookup_package(file, &plain);
-    if ((package
-             ? symbol->source_program->package != package
-             : (strchr(name, '.') || strstr(name, "::") || !same_package(file, symbol->source_program))) ||
-        symbol->owner_symbol_id != AST_SYMBOL_NONE)
-        return 0;
-    return same_name(symbol->source_program, symbol->name_token, plain);
-}
-
-static const SemanticSymbol *scoped_find_global(const SemanticModel *model, const AstProgram *file,
-                                                const char *name,
-                                                SemanticSymbolKind kind) {
-    if (!model || !name) return NULL;
-    for (size_t i = 0; i < model->symbol_count; i++) {
-        const SemanticSymbol *symbol = &model->symbols[i];
-        if (symbol->kind == kind && symbol_matches_scope(file, symbol, name)) {
-            if (!strstr(name, "::") && !same_package(file, symbol->source_program) && symbol->declaration && !symbol->
-                declaration->is_public) {
-                error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_SEMANTIC,
-                             ERR_PACKAGE_PRIVATE, file->source_path, "Symbol '%s' is private to package '%s'", name,
-                             symbol->source_program->module_identity);
-                ((SemanticModel *) model)->error_count++;
-                return NULL;
-            }
-            return symbol;
-        }
-    }
-    return NULL;
-}
-
-const SemanticSymbol *semantic_find_global(const SemanticModel *model, const char *name, SemanticSymbolKind kind) {
-    return model ? scoped_find_global(model, model->program, name, kind) : NULL;
-}
-
-const SemanticSymbol *semantic_find_in_package(const SemanticModel *model, const AstProgram *file, const char *name,
-                                               SemanticSymbolKind kind) {
-    return scoped_find_global(model, file, name, kind);
-}
-
 static int append_symbol(Analyzer *analyzer, SemanticSymbol symbol) {
-    SemanticModel *model = analyzer->model;
-    if (model->symbol_index_capacity == 0 ||
-        model->symbol_count + 1U >= model->symbol_index_capacity / 2U) {
-        if (!grow_symbol_index(model)) {
-            analyzer->allocation_failed = 1;
-            return 0;
-        }
-    }
-    if (model->symbol_count == model->symbol_capacity) {
-        size_t capacity = model->symbol_capacity == 0 ? 32 : model->symbol_capacity * 2;
-        if (capacity < model->symbol_capacity || capacity > SIZE_MAX / sizeof(*model->symbols)) {
-            analyzer->allocation_failed = 1;
-            return 0;
-        }
-        SemanticSymbol *symbols = realloc(model->symbols, capacity * sizeof(*symbols));
-        if (symbols == NULL) {
-            analyzer->allocation_failed = 1;
-            return 0;
-        }
-        model->symbols = symbols;
-        model->symbol_capacity = capacity;
-    }
-    symbol.id = model->symbol_count;
-    model->symbols[model->symbol_count++] = symbol;
-    (void) index_symbol(model, symbol.id);
-    return 1;
+    if (semantic_append_symbol(analyzer->model, symbol)) return 1;
+    analyzer->allocation_failed = 1;
+    return 0;
 }
 
 static void resolve_declared_type(const AstProgram *program, const AstType *type,

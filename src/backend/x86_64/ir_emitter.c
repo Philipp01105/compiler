@@ -1251,8 +1251,9 @@ static int emit_lvalue_address(Emitter *emitter, const IrInstruction *target,
         for (size_t g = 0; g < emitter->module->global_count; g++)
             if (emitter->module->globals[g].symbol_id == target->symbol_id) {
                 char label[4096];
-                if (!global_label(&emitter->module->semantics->symbols[target->symbol_id], label, sizeof(label))) return
-                        0;
+                if (!global_label(&emitter->module->semantics->symbols[target->symbol_id], label, sizeof(label)))
+                    return
+                            0;
                 X64Operand address = x64_rip_memory(X64_WIDTH_NONE, label, 0);
                 address.has_symbol_suffix = 0;
                 write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD, x64_register("rbx"), address);
@@ -1579,14 +1580,16 @@ static int emit_binary(Emitter *emitter, const IrInstruction *instruction) {
                         x64_register("rax"), x64_register("rcx"));
             X64Opcode condition = X64_OP_SETE;
             if (instruction->operator_type == TOKEN_BANG_EQUAL) condition = X64_OP_SETNE;
-            else if (instruction->operator_type == TOKEN_LESS) condition = fixed && data_type_unsigned(integer_type)
-                                                                               ? X64_OP_SETB
-                                                                               : X64_OP_SETL;
+            else if (instruction->operator_type == TOKEN_LESS)
+                condition = fixed && data_type_unsigned(integer_type)
+                                ? X64_OP_SETB
+                                : X64_OP_SETL;
             else if (instruction->operator_type == TOKEN_LESS_EQUAL)
                 condition = fixed && data_type_unsigned(integer_type) ? X64_OP_SETBE : X64_OP_SETLE;
-            else if (instruction->operator_type == TOKEN_GREATER) condition = fixed && data_type_unsigned(integer_type)
-                                                                                  ? X64_OP_SETA
-                                                                                  : X64_OP_SETG;
+            else if (instruction->operator_type == TOKEN_GREATER)
+                condition = fixed && data_type_unsigned(integer_type)
+                                ? X64_OP_SETA
+                                : X64_OP_SETG;
             else if (instruction->operator_type == TOKEN_GREATER_EQUAL)
                 condition = fixed && data_type_unsigned(integer_type) ? X64_OP_SETAE : X64_OP_SETGE;
             write_x64_1(emitter, condition, X64_WIDTH_NONE, x64_register("al"));
@@ -1789,14 +1792,16 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                             x64_sized_register(X64_WIDTH_QWORD, "rax"), x64_sized_register(X64_WIDTH_BYTE, "al"));
             } else if (instruction->opcode == IR_OP_ENUM_PAYLOAD) {
                 size_t slot = 1;
-                for (size_t p = 0; p < instruction->enum_payload_index; p++) slot += type_slots(emitter->module,
-                                                                                 variant->payload_types[p]);
+                for (size_t p = 0; p < instruction->enum_payload_index; p++)
+                    slot += type_slots(emitter->module,
+                                       variant->payload_types[p]);
                 write_value_load(emitter, "rax", instruction->operand_a);
                 if (type_is_structure(emitter->module, instruction->type_id) || instruction->is_array)
                     write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD, x64_register("rax"),
                                 x64_memory(X64_WIDTH_NONE, "rax", (long long) (slot * 8)));
-                else write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rax"),
-                                 x64_memory(X64_WIDTH_QWORD, "rax", (long long) (slot * 8)));
+                else
+                    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rax"),
+                                x64_memory(X64_WIDTH_QWORD, "rax", (long long) (slot * 8)));
             } else if (!enumeration->is_sum) write_immediate(emitter, "rax", (long long) tag);
             else {
                 size_t offset = aggregate_result_offset(emitter, instruction);
@@ -1894,8 +1899,9 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                 else if (parameter != NULL)
                     write_local_load(emitter, "rax", parameter_offset(emitter, parameter));
                 else if (emit_lvalue_address(emitter, instruction, index)) {
-                    if (instruction->is_array || is_inline_structure(emitter->module, instruction)) write_register_move(
-                        emitter, "rax", "rbx");
+                    if (instruction->is_array || is_inline_structure(emitter->module, instruction))
+                        write_register_move(
+                            emitter, "rax", "rbx");
                     else write_typed_indirect_load(emitter, instruction->type, instruction->pointer_depth, "rbx");
                 } else write_immediate(emitter, "rax", 0);
             }
@@ -2220,7 +2226,8 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             write_x64_1(emitter, X64_OP_JL, X64_WIDTH_NONE, x64_label(fail));
             IrTypeLayout element;
             if (!ir_type_layout(emitter->module, emitter->module->types[instruction->type_id].element_type,
-                                &element)) return 0;
+                                &element))
+                return 0;
             write_immediate(emitter, "rdx", (long long) ((uint64_t) INT64_MAX / element.size));
             write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_QWORD, x64_register("rcx"), x64_register("rdx"));
             write_x64_1(emitter, X64_OP_JG, X64_WIDTH_NONE, x64_label(fail));

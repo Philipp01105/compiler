@@ -1,4 +1,5 @@
 #include "ir_optimize.h"
+#include "ir_cfg.h"
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
@@ -12,21 +13,6 @@ typedef struct {
 } Fact;
 
 typedef struct {
-    size_t begin, end, successor[2], predecessor;
-    int reachable;
-} Block;
-
-typedef struct {
-    size_t block, next;
-} Edge;
-
-typedef struct {
-    Block *blocks;
-    Edge *edges;
-    size_t count, *owner, *labels, *definitions;
-} Graph;
-
-typedef struct {
     size_t symbol, declaration;
     IrTypeId type;
 } Local;
@@ -34,7 +20,7 @@ typedef struct {
 typedef struct {
     IrModule *module;
     IrFunction *function;
-    Graph graph;
+    IrControlFlowGraph graph;
     Local *locals;
     size_t local_count, *local_index;
     unsigned char *protected_values, *address_only, *remove;
@@ -210,73 +196,6 @@ static Fact fold_binary(TokenType op, Fact a, Fact b, DataType at, DataType bt, 
     }
 }
 
-static void free_graph(Graph *g) {
-    free(g->blocks);
-    free(g->edges);
-    free(g->owner);
-    free(g->labels);
-    free(g->definitions);
-    memset(g, 0, sizeof(*g));
-}
-
-static int graph(Graph *g, const IrFunction *f) {
-    size_t n = f->instruction_count;
-    if (!n) return 1;
-    g->blocks = calloc(n, sizeof(*g->blocks));
-    g->edges = calloc(n, 2 * sizeof(*g->edges));
-    g->owner = malloc(n * sizeof(*g->owner));
-    g->labels = malloc(f->next_label * sizeof(*g->labels));
-    g->definitions = malloc(f->next_value * sizeof(*g->definitions));
-    if (!g->blocks || !g->edges || !g->owner || (f->next_label && !g->labels) || (f->next_value && !g->definitions))
-        return 0;
-    for (size_t i = 0; i < f->next_label; ++i) g->labels[i] = IR_VALUE_NONE;
-    for (size_t i = 0; i < f->next_value; ++i) g->definitions[i] = IR_VALUE_NONE;
-    for (size_t i = 0; i < n; ++i) {
-        const IrInstruction *in = &f->instructions[i];
-        if (!i || in->opcode == IR_OP_LABEL) {
-            if (g->count) g->blocks[g->count - 1].end = i;
-            Block *b = &g->blocks[g->count++];
-            b->begin = i;
-            b->predecessor = b->successor[0] = b->successor[1] = IR_VALUE_NONE;
-        }
-        g->owner[i] = g->count - 1;
-        if (in->opcode == IR_OP_LABEL) g->labels[in->target_a] = g->count - 1;
-        if (in->result != IR_VALUE_NONE) g->definitions[in->result] = i;
-    }
-    g->blocks[g->count - 1].end = n;
-    size_t edges = 0;
-    for (size_t i = 0; i < g->count; ++i) {
-        Block *b = &g->blocks[i];
-        const IrInstruction *last = &f->instructions[b->end - 1];
-        if (last->opcode == IR_OP_BRANCH || last->opcode == IR_OP_JUMP) b->successor[0] = g->labels[last->target_a];
-        else if (last->opcode != IR_OP_RETURN && last->opcode != IR_OP_TRAP && i + 1 < g->count)
-            b->successor[0] = i + 1;
-        if (last->opcode == IR_OP_BRANCH && last->target_b != last->target_a)
-            b->successor[1] = g->labels[last->target_b];
-        for (size_t s = 0; s < 2; ++s)
-            if (b->successor[s] != IR_VALUE_NONE) {
-                Block *to = &g->blocks[b->successor[s]];
-                g->edges[edges] = (Edge){i, to->predecessor};
-                to->predecessor = edges++;
-            }
-    }
-    g->blocks[0].reachable = 1;
-    int changed;
-    do {
-        changed = 0;
-        for (size_t i = 0; i < g->count; ++i)
-            if (g->blocks[i].reachable)
-                for (size_t s = 0; s < 2; ++s) {
-                    size_t to = g->blocks[i].successor[s];
-                    if (to != IR_VALUE_NONE && !g->blocks[to].reachable) {
-                        g->blocks[to].reachable = 1;
-                        changed = 1;
-                    }
-                }
-    } while (changed);
-    return 1;
-}
-
 static const IrInstruction *definition(Pass *p, size_t v) {
     return v == IR_VALUE_NONE || p->graph.definitions[v] == IR_VALUE_NONE
                ? NULL
@@ -307,7 +226,7 @@ static int initialize(Pass *p) {
     if (symbols > SIZE_MAX / sizeof(Local) || symbols > SIZE_MAX / sizeof(size_t) ||
         values > SIZE_MAX / sizeof(Fact) || values > SIZE_MAX / sizeof(size_t))
         return 0;
-    if (!graph(&p->graph, f)) return 0;
+    if (!ir_cfg_build(f, &p->graph)) return 0;
     p->locals = calloc(symbols, sizeof(*p->locals));
     p->local_index = malloc(symbols * sizeof(*p->local_index));
     p->protected_values = calloc(values, 1);
@@ -373,7 +292,7 @@ static int initialize(Pass *p) {
 }
 
 static void release(Pass *p) {
-    free_graph(&p->graph);
+    ir_cfg_free(&p->graph);
     free(p->locals);
     free(p->local_index);
     free(p->protected_values);
@@ -466,7 +385,7 @@ static Fact stored(Pass *p, const IrInstruction *in, size_t l, Fact old) {
 
 static int analyze(Pass *p) {
     IrFunction *f = p->function;
-    Graph *g = &p->graph;
+    IrControlFlowGraph *g = &p->graph;
     size_t locals = p->local_count;
     int changed;
     do {

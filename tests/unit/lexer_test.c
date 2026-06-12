@@ -2,6 +2,7 @@
 #include "lexer.h"
 
 #include <assert.h>
+#include <limits.h>
 #include <string.h>
 
 static TokenStream *lex(const char *source, size_t length) {
@@ -19,6 +20,11 @@ int main(void) {
     assert(tokens != NULL && !tokens->has_error);
     assert(tokens->count > 1);
     assert(tokens->tokens[tokens->count - 1].type == TOKEN_EOF);
+    tokens->current = 1;
+    assert(peek_ahead(tokens, -1).type == tokens->tokens[0].type);
+    tokens->current = 0;
+    assert(peek_ahead(tokens, -1).type == TOKEN_EOF);
+    assert(peek_ahead(tokens, INT_MIN).type == TOKEN_EOF);
     free_token_stream(tokens);
 
     const char repeated[] = "var repeated:int; repeated = repeated + repeated;";

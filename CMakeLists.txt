@@ -18,7 +18,7 @@ set(DMM_FUZZ_PIPELINE_SOURCES
         src/frontend/frontend.c
         src/frontend/lexer.c
         src/frontend/syntax_parser.c
-        src/sema/semantic.c src/ast/generics.c
+        src/sema/semantic.c src/sema/semantic_symbols.c src/ast/generics.c
         src/ir/ir_optimize.c
         src/ir/ir.c
         src/ir/ir_cfg.c
@@ -52,7 +52,7 @@ add_executable(compiler
         src/frontend/lexer.h
         src/frontend/syntax_parser.c
         src/frontend/syntax_parser.h
-        src/sema/semantic.c src/ast/generics.c
+        src/sema/semantic.c src/sema/semantic_symbols.c src/ast/generics.c
         src/sema/semantic.h
         src/ir/ir.c
         src/ir/ir.h
@@ -263,12 +263,12 @@ if (BUILD_TESTING)
 
     add_executable(dmm_pipeline_test
             tests/unit/pipeline_test.c src/ast/ast.c src/frontend/frontend.c
-            src/frontend/syntax_parser.c src/frontend/lexer.c src/sema/semantic.c src/ast/generics.c
+            src/frontend/syntax_parser.c src/frontend/lexer.c src/sema/semantic.c src/sema/semantic_symbols.c src/ast/generics.c
             src/ir/ir.c src/ir/ir_cfg.c src/common/string_interner.c src/diagnostics/errorHandler.c)
     target_include_directories(dmm_pipeline_test PRIVATE ${DMM_INCLUDE_DIRS})
     add_executable(dmm_ir_optimizer_test tests/unit/ir_optimizer_test.c
             src/ast/ast.c src/frontend/frontend.c src/frontend/syntax_parser.c
-            src/frontend/lexer.c src/sema/semantic.c src/ast/generics.c src/ir/ir.c src/ir/ir_cfg.c
+            src/frontend/lexer.c src/sema/semantic.c src/sema/semantic_symbols.c src/ast/generics.c src/ir/ir.c src/ir/ir_cfg.c
             src/ir/ir_optimize.c src/common/string_interner.c src/diagnostics/errorHandler.c)
     target_include_directories(dmm_ir_optimizer_test PRIVATE ${DMM_INCLUDE_DIRS})
     add_test(NAME ir_optimizer_unit COMMAND dmm_ir_optimizer_test)

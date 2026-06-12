@@ -294,7 +294,8 @@ static void emit_label(IrBuilder *builder, size_t label, AstSourceSpan span);
 
 static size_t coerce_slice(IrBuilder *builder, size_t value, IrTypeId target, AstSourceSpan span) {
     if (target >= builder->module->type_count || builder->module->types[target].kind != IR_TYPE_SLICE || value ==
-        IR_VALUE_NONE) return value;
+        IR_VALUE_NONE)
+        return value;
     IrInstruction source = {0};
     int found = 0;
     for (size_t i = 0; i < builder->function->instruction_count; i++)
@@ -304,7 +305,8 @@ static size_t coerce_slice(IrBuilder *builder, size_t value, IrTypeId target, As
             break;
         }
     if (!found || source.type_id >= builder->module->type_count || builder->module->types[source.type_id].kind !=
-        IR_TYPE_ARRAY) return value;
+        IR_TYPE_ARRAY)
+        return value;
     size_t length = builder->module->types[source.type_id].array_length;
     IrInstruction *count = emit(builder, IR_OP_CONSTANT, span);
     if (!count) return IR_VALUE_NONE;
@@ -1221,8 +1223,9 @@ static int core_ir_type_matches(const IrModule *module, IrTypeId id,
         return type->kind == IR_TYPE_PRIMITIVE && type->primitive == TYPE_U8;
     }
     if (type->kind != IR_TYPE_PRIMITIVE) return 0;
-    if (parameter && (kind == CORE_INT || kind == CORE_SIZE || kind == CORE_OFFSET)) return
-            ir_integral_type(module, id);
+    if (parameter && (kind == CORE_INT || kind == CORE_SIZE || kind == CORE_OFFSET))
+        return
+                ir_integral_type(module, id);
     return type->primitive == core_value_type(kind);
 }
 
@@ -1258,8 +1261,9 @@ static int verify_instruction_types(const IrModule *module,
             if (!variant || !a || module->types[a->type_id].kind != IR_TYPE_NAMED ||
                 module->types[a->type_id].symbol_id != owner->symbol_id)
                 return 0;
-            if (instruction->opcode == IR_OP_ENUM_IS) return instruction->type == TYPE_BIT && ir_integral_type(
-                                                                 module, instruction->type_id);
+            if (instruction->opcode == IR_OP_ENUM_IS)
+                return instruction->type == TYPE_BIT && ir_integral_type(
+                           module, instruction->type_id);
             return instruction->enum_payload_index < variant->payload_count &&
                    instruction->type_id == variant->payload_types[instruction->enum_payload_index] &&
                    verified_payload_guard(function, instruction, index);
@@ -1453,8 +1457,10 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
         if (global->string && (module->types[global->type_id].kind != IR_TYPE_PRIMITIVE ||
                                module->types[global->type_id].primitive != TYPE_STRING))
             return 0;
-        for (size_t previous = 0; previous < g; previous++) if (
-            module->globals[previous].symbol_id == global->symbol_id) return 0;
+        for (size_t previous = 0; previous < g; previous++)
+            if (
+                module->globals[previous].symbol_id == global->symbol_id)
+                return 0;
     }
     for (size_t t = 0; t < module->type_count; t++) {
         const IrType *type = &module->types[t];

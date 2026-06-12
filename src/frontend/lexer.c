@@ -97,9 +97,9 @@ Token peek(const TokenStream *stream) {
 }
 
 Token peek_ahead(const TokenStream *stream, int offset) {
-    int pos = stream->current + offset;
-    if (pos < stream->count) {
-        return stream->tokens[pos];
+    long long position = (long long) stream->current + (long long) offset;
+    if (position >= 0 && position < stream->count) {
+        return stream->tokens[(size_t) position];
     }
     Token eof = {.type = TOKEN_EOF, .value = ""};
     return eof;
