@@ -244,26 +244,35 @@ int ir_dump(FILE *output, const IrModule *module) {
                     (unsigned long long) module->globals[g].bits) < 0)
             return 0;
     }
-    for (size_t f = 0; f < module->function_count; f++) {
-        const IrFunction *function = &module->functions[f];
-        if (fprintf(output, "function #%zu name=", f) < 0 ||
-            !print_token(output, function->source_program, function->name_token) ||
-            fprintf(output, " symbol=%zu owner=", function->symbol_id) < 0 ||
-            !print_token(output, function->source_program, function->owner_token) ||
-            fprintf(output, " return=@%zu parameters=%zu instructions=%zu\n",
-                    function->return_type_id, function->parameter_count,
-                    function->instruction_count) < 0)
+    for (size_t f = 0; f < module->function_count; f++)
+        if (!ir_dump_function(output, module, f)) return 0;
+    return !ferror(output);
+}
+
+int ir_dump_function(FILE *output, const IrModule *module, size_t function_index) {
+    if (output == NULL || module == NULL || function_index >= module->function_count) return 0;
+
+    const IrFunction *function = &module->functions[function_index];
+    if (fprintf(output, "function #%zu name=", function_index) < 0 ||
+        !print_token(output, function->source_program, function->name_token) ||
+        fprintf(output, " symbol=%zu owner=", function->symbol_id) < 0 ||
+        !print_token(output, function->source_program, function->owner_token) ||
+        fprintf(output, " return=@%zu parameters=%zu instructions=%zu\n",
+                function->return_type_id, function->parameter_count,
+                function->instruction_count) < 0)
+        return 0;
+
+    for (size_t p = 0; p < function->parameter_count; p++) {
+        const IrParameter *parameter = &function->parameters[p];
+        if (fprintf(output, "  parameter #%zu name=", p) < 0 ||
+            !print_token(output, parameter->source_program, parameter->name_token) ||
+            fprintf(output, " symbol=%zu type=@%zu receiver=%d\n", parameter->symbol_id,
+                    parameter->type_id, parameter->is_receiver) < 0)
             return 0;
-        for (size_t p = 0; p < function->parameter_count; p++) {
-            const IrParameter *parameter = &function->parameters[p];
-            if (fprintf(output, "  parameter #%zu name=", p) < 0 ||
-                !print_token(output, parameter->source_program, parameter->name_token) ||
-                fprintf(output, " symbol=%zu type=@%zu receiver=%d\n", parameter->symbol_id,
-                        parameter->type_id, parameter->is_receiver) < 0)
-                return 0;
-        }
-        for (size_t i = 0; i < function->instruction_count; i++)
-            if (!dump_instruction(output, function, &function->instructions[i], i)) return 0;
     }
+
+    for (size_t i = 0; i < function->instruction_count; i++)
+        if (!dump_instruction(output, function, &function->instructions[i], i)) return 0;
+
     return !ferror(output);
 }

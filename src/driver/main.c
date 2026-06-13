@@ -151,6 +151,16 @@ static int write_cfg_dump(FILE *output, const void *value) {
     return ir_cfg_dump(output, value);
 }
 
+typedef struct {
+    IrModule *module;
+    IrOptimizationStats *stats;
+} IrOptimizationTrace;
+
+static int write_ir_optimization_trace(FILE *output, const void *value) {
+    const IrOptimizationTrace *trace = value;
+    return ir_optimize_module_traced(trace->module, trace->stats, output);
+}
+
 int main(int argc, char *argv[]) {
     BackendEmission emission = BACKEND_EXECUTABLE;
     int emission_requested = 0;
@@ -367,6 +377,15 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    if (ir_pass_dump_path != NULL && !optimize_ir) {
+        error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                     ERR_COMP_INVALID_OPTION, source_file,
+                     "--dump-ir-passes requires IR optimization; remove -O0 or use -O1");
+        error_handler_flush(error_handler);
+        error_handler_free(error_handler);
+        return 1;
+    }
+
     if (debug_mode || show_tokens) {
         print_header(source_file);
 
@@ -378,8 +397,8 @@ int main(int argc, char *argv[]) {
 
     if ((ide_buffer != NULL && !ide_mode) || (
             ide_mode && (ast_dump_path == NULL || requested_output != NULL || token_dump_path != NULL ||
-                         symbol_dump_path != NULL || preopt_ir_dump_path != NULL || ir_dump_path != NULL ||
-                         cfg_dump_path != NULL || source_map_path != NULL || debug_mode || show_tokens ||
+                         symbol_dump_path != NULL || preopt_ir_dump_path != NULL || ir_pass_dump_path != NULL ||
+                         ir_dump_path != NULL || cfg_dump_path != NULL || source_map_path != NULL || debug_mode || show_tokens ||
                          optimization_requested || (
                              emission_requested && emission != BACKEND_ASSEMBLY) ||
                          output_conflicts_with_source(source_file, ast_dump_path) ||
@@ -420,7 +439,7 @@ int main(int argc, char *argv[]) {
     }
     const char *requested_artifacts[] = {
         requested_output, ast_dump_path, token_dump_path, symbol_dump_path, preopt_ir_dump_path,
-        ir_dump_path, cfg_dump_path, source_map_path
+        ir_pass_dump_path, ir_dump_path, cfg_dump_path, source_map_path
     };
     for (size_t i = 0; i < sizeof(requested_artifacts) / sizeof(requested_artifacts[0]); i++) {
         if (artifact_conflicts_with_program(program, requested_artifacts[i])) {
@@ -548,7 +567,7 @@ int main(int argc, char *argv[]) {
     }
     const char *artifacts[] = {
         output_filename, ast_dump_path, token_dump_path, symbol_dump_path, preopt_ir_dump_path,
-        ir_dump_path, cfg_dump_path, source_map_path
+        ir_pass_dump_path, ir_dump_path, cfg_dump_path, source_map_path
     };
     for (size_t i = 0; i < sizeof(artifacts) / sizeof(artifacts[0]); i++) {
         if (artifacts[i] != NULL && artifact_conflicts_with_program(program, artifacts[i])) {
@@ -660,9 +679,24 @@ int main(int argc, char *argv[]) {
             return 1;
         }
         IrOptimizationStats optimization_stats = {0};
-        if (optimize_ir && !ir_optimize_module(module, &optimization_stats)) {
+        int optimization_ok = 1;
+        if (optimize_ir) {
+            if (ir_pass_dump_path != NULL) {
+                IrOptimizationTrace trace = {
+                    .module = module,
+                    .stats = &optimization_stats
+                };
+                optimization_ok = dump_file(ir_pass_dump_path, write_ir_optimization_trace, &trace);
+            } else {
+                optimization_ok = ir_optimize_module(module, &optimization_stats);
+            }
+        }
+        if (!optimization_ok) {
             error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
-                         ERR_COMP_INTERNAL_FAILURE, source_file, "IR optimization or verification failed");
+                         ERR_COMP_INTERNAL_FAILURE, source_file,
+                         ir_pass_dump_path != NULL
+                             ? "IR optimization, verification, or pass trace dump failed"
+                             : "IR optimization or verification failed");
             error_handler_flush(error_handler);
             free(generated_output);
             ir_module_free(module);

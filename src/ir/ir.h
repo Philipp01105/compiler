@@ -207,6 +207,8 @@ int ir_verify_module(const IrModule *module);
 
 int ir_dump(FILE *output, const IrModule *module);
 
+int ir_dump_function(FILE *output, const IrModule *module, size_t function_index);
+
 int ir_type_layout(const IrModule *module, IrTypeId type, IrTypeLayout *layout);
 
 /* Internal failures retain the concrete instruction and its original source unit. */

@@ -917,9 +917,11 @@ static int run_pass(IrModule *module, IrFunction *function, IrOptimizationStats 
 static int trace_snapshot(FILE *trace, const IrModule *module, size_t sequence, size_t function,
                           size_t iteration, const char *pass, int changed) {
     if (trace == NULL) return 1;
+    if (module == NULL || function >= module->function_count) return 0;
     return fprintf(trace, "snapshot #%zu function=%zu iteration=%zu pass=%s changed=%d\n",
                    sequence, function, iteration, pass, changed) >= 0 &&
-           ir_dump(trace, module) && fputs("end-snapshot\n", trace) != EOF;
+           ir_dump_function(trace, module, function) &&
+           fputs("end-snapshot\n", trace) != EOF;
 }
 
 int ir_optimize_module_traced(IrModule *module, IrOptimizationStats *stats, FILE *trace) {
@@ -943,6 +945,7 @@ int ir_optimize_module_traced(IrModule *module, IrOptimizationStats *stats, FILE
                     return 0;
                 changed |= pass_changed;
             }
+            if (!trace_snapshot(trace, module, sequence++, f, iteration, "iteration-end", changed)) return 0;
             iteration++;
         } while (changed);
         if (!compact_ids(&module->functions[f])) return 0;
@@ -951,6 +954,7 @@ int ir_optimize_module_traced(IrModule *module, IrOptimizationStats *stats, FILE
     module->verified = ir_verify_module(module);
     return module->verified && (trace == NULL || !ferror(trace));
 }
+
 
 int ir_optimize_module(IrModule *module, IrOptimizationStats *stats) {
     return ir_optimize_module_traced(module, stats, NULL);
