@@ -1,6 +1,7 @@
 #ifndef DMM_IR_OPTIMIZE_H
 #define DMM_IR_OPTIMIZE_H
 #include "ir.h"
+#include <stdio.h>
 
 typedef struct {
     size_t constants_folded, constants_propagated, copies_propagated;
@@ -10,4 +11,7 @@ typedef struct {
 
 /* Requires valid typed IR; validates again after optimization. */
 int ir_optimize_module(IrModule * module, IrOptimizationStats * stats);
+
+/* Writes a validated snapshot after every pass type and fixed-point iteration. */
+int ir_optimize_module_traced(IrModule *module, IrOptimizationStats *stats, FILE *trace);
 #endif

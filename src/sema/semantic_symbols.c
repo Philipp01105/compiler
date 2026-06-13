@@ -3,6 +3,7 @@
 #include "errorHandler.h"
 
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -166,4 +167,70 @@ const SemanticSymbol *semantic_find_global(const SemanticModel *model, const cha
 const SemanticSymbol *semantic_find_in_package(const SemanticModel *model, const AstProgram *file, const char *name,
                                                SemanticSymbolKind kind) {
     return scoped_find_global(model, file, name, kind);
+}
+
+static int dump_quoted(FILE *output, const char *text) {
+    if (fputc('"', output) == EOF) return 0;
+    for (const unsigned char *p = (const unsigned char *) (text == NULL ? "" : text); *p; p++) {
+        if (*p == '"' || *p == '\\') {
+            if (fputc('\\', output) == EOF || fputc(*p, output) == EOF) return 0;
+        } else if (*p == '\n') {
+            if (fputs("\\n", output) == EOF) return 0;
+        } else if (*p == '\r') {
+            if (fputs("\\r", output) == EOF) return 0;
+        } else if (*p == '\t') {
+            if (fputs("\\t", output) == EOF) return 0;
+        } else if (*p < 0x20) {
+            if (fprintf(output, "\\x%02x", *p) < 0) return 0;
+        } else if (fputc(*p, output) == EOF) return 0;
+    }
+    return fputc('"', output) != EOF;
+}
+
+static const char *symbol_kind_name(SemanticSymbolKind kind) {
+    static const char *names[] = {
+        "function", "struct", "enum", "import", "field", "enum-value",
+        "parameter", "local", "constant", "variable"
+    };
+    return kind >= SEMANTIC_SYMBOL_FUNCTION && kind <= SEMANTIC_SYMBOL_VARIABLE ? names[kind] : "invalid";
+}
+
+static const char *resolved_type_name(DataType type) {
+    static const char *names[] = {DMM_TYPE_NAMES};
+    return type >= TYPE_INT && type <= TYPE_UNKNOWN ? names[type] : "invalid";
+}
+
+int semantic_dump(FILE *output, const SemanticModel *model) {
+    if (output == NULL || model == NULL) return 0;
+    size_t indexed = 0;
+    for (size_t i = 0; i < model->symbol_index_capacity; i++) indexed += model->symbol_index[i] != 0;
+    if (fputs("dmm-symbols-v1\nmodule path=", output) == EOF ||
+        !dump_quoted(output, model->program->source_path) ||
+        fprintf(output,
+                " symbols=%zu index-capacity=%zu indexed=%zu unresolved-expressions=%zu duplicates=%zu errors=%zu\n",
+                model->symbol_count, model->symbol_index_capacity, indexed, model->unresolved_expression_count,
+                model->duplicate_symbol_count, model->error_count) < 0)
+        return 0;
+    for (size_t i = 0; i < model->symbol_count; i++) {
+        const SemanticSymbol *symbol = &model->symbols[i];
+        if (fprintf(output, "symbol #%zu kind=%s name=", symbol->id, symbol_kind_name(symbol->kind)) < 0 ||
+            !dump_quoted(output, symbol_name(symbol)) || fputs(" source=", output) == EOF ||
+            !dump_quoted(output, symbol->source_program->source_path) ||
+            fprintf(output, " token=%zu owner=", symbol->name_token) < 0)
+            return 0;
+        if (symbol->owner_symbol_id == AST_SYMBOL_NONE) {
+            if (fputc('-', output) == EOF) return 0;
+        } else if (fprintf(output, "%zu", symbol->owner_symbol_id) < 0) return 0;
+        if (fprintf(output, " scope=%zu type=%s pointers=%u outer-pointers=%u named=",
+                    symbol->scope_depth, resolved_type_name(symbol->resolved_type),
+                    symbol->resolved_pointer_depth, symbol->resolved_outer_pointer_depth) < 0)
+            return 0;
+        if (symbol->resolved_named_symbol_id == AST_SYMBOL_NONE) {
+            if (fputc('-', output) == EOF) return 0;
+        } else if (fprintf(output, "%zu", symbol->resolved_named_symbol_id) < 0) return 0;
+        if (fprintf(output, " array=%d slice=%d declaration=%d\n", symbol->resolved_is_array,
+                    symbol->resolved_is_slice, symbol->declaration != NULL) < 0)
+            return 0;
+    }
+    return !ferror(output);
 }

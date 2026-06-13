@@ -183,3 +183,113 @@ done:
     ir_cfg_free(&graph);
     return valid;
 }
+
+static const char *cfg_opcode_name(IrOpcode opcode) {
+    static const char *names[] = {
+        "constant", "load", "declare", "store", "unary", "binary", "call", "index", "member",
+        "slice-length", "cast", "alloc", "free", "return", "branch", "jump", "label", "phi",
+        "enum-construct", "enum-is", "enum-payload", "trap", "slice", "slice-data"
+    };
+    return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_SLICE_DATA ? names[opcode] : "invalid";
+}
+
+static int cfg_quoted(FILE *output, const char *text) {
+    if (fputc('"', output) == EOF) return 0;
+    for (const unsigned char *p = (const unsigned char *) (text == NULL ? "" : text); *p; p++) {
+        if (*p == '"' || *p == '\\') {
+            if (fputc('\\', output) == EOF || fputc(*p, output) == EOF) return 0;
+        } else if (*p == '\n') {
+            if (fputs("\\n", output) == EOF) return 0;
+        } else if (*p == '\r') {
+            if (fputs("\\r", output) == EOF) return 0;
+        } else if (*p == '\t') {
+            if (fputs("\\t", output) == EOF) return 0;
+        } else if (*p < 0x20) {
+            if (fprintf(output, "\\x%02x", *p) < 0) return 0;
+        } else if (fputc(*p, output) == EOF) return 0;
+    }
+    return fputc('"', output) != EOF;
+}
+
+int ir_cfg_dump(FILE *output, const IrModule *module) {
+    if (output == NULL || module == NULL || !ir_verify_module(module) ||
+        fprintf(output, "dmm-cfg-v1\nmodule functions=%zu\n", module->function_count) < 0)
+        return 0;
+    for (size_t f = 0; f < module->function_count; f++) {
+        const IrFunction *function = &module->functions[f];
+        IrControlFlowGraph graph;
+        if (!ir_cfg_build(function, &graph)) return 0;
+        if (fprintf(output, "function #%zu name=", f) < 0 ||
+            !cfg_quoted(output, ast_program_lexeme(function->source_program, function->name_token)) ||
+            fprintf(output, " symbol=%zu blocks=%zu instructions=%zu\n", function->symbol_id, graph.count,
+                    function->instruction_count) < 0) {
+            ir_cfg_free(&graph);
+            return 0;
+        }
+        for (size_t b = 0; b < graph.count; b++) {
+            const IrCfgBlock *block = &graph.blocks[b];
+            if (fprintf(output, "  block B%zu instructions=%zu..%zu reachable=%d predecessors=[", b,
+                        block->begin, block->end, block->reachable) < 0) {
+                ir_cfg_free(&graph);
+                return 0;
+            }
+            size_t predecessor_number = 0;
+            for (size_t edge = block->predecessor; edge != IR_VALUE_NONE; edge = graph.edges[edge].next) {
+                if (predecessor_number++ != 0 && fputc(',', output) == EOF) {
+                    ir_cfg_free(&graph);
+                    return 0;
+                }
+                if (fprintf(output, "B%zu", graph.edges[edge].block) < 0) {
+                    ir_cfg_free(&graph);
+                    return 0;
+                }
+            }
+            if (fputs("] successors=[", output) == EOF) {
+                ir_cfg_free(&graph);
+                return 0;
+            }
+            int wrote_successor = 0;
+            for (size_t s = 0; s < 2; s++)
+                if (block->successor[s] != IR_VALUE_NONE) {
+                    if (wrote_successor && fputc(',', output) == EOF) {
+                        ir_cfg_free(&graph);
+                        return 0;
+                    }
+                    if (fprintf(output, "B%zu", block->successor[s]) < 0) {
+                        ir_cfg_free(&graph);
+                        return 0;
+                    }
+                    wrote_successor = 1;
+                }
+            if (fputs("]\n", output) == EOF) {
+                ir_cfg_free(&graph);
+                return 0;
+            }
+            for (size_t i = block->begin; i < block->end; i++) {
+                const IrInstruction *instruction = &function->instructions[i];
+                if (fprintf(output, "    instruction #%zu opcode=%s result=", i,
+                            cfg_opcode_name(instruction->opcode)) < 0) {
+                    ir_cfg_free(&graph);
+                    return 0;
+                }
+                if (instruction->result == IR_VALUE_NONE) {
+                    if (fputc('-', output) == EOF) {
+                        ir_cfg_free(&graph);
+                        return 0;
+                    }
+                } else if (fprintf(output, "%%%zu", instruction->result) < 0) {
+                    ir_cfg_free(&graph);
+                    return 0;
+                }
+                if (fprintf(output, " span=%d:%d-%d:%d\n", instruction->span.begin.line,
+                            instruction->span.begin.column, instruction->span.end.line,
+                            instruction->span.end.column) < 0) {
+                    ir_cfg_free(&graph);
+                    return 0;
+                }
+            }
+        }
+        ir_cfg_free(&graph);
+    }
+    return !ferror(output);
+}

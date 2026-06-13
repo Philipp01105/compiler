@@ -100,19 +100,24 @@ Useful options:
 --tokens
 --debug
 --deterministic
+--dump-tokens FILE
 --dump-ast FILE
+--dump-symbols FILE
+--dump-ir-before-opt FILE
 --dump-ir FILE
+--dump-cfg FILE
 --source-map FILE
 -o FILE
 --version
 ```
 
 `--deterministic` omits the generation timestamp. `--formatError` emits one JSON document containing an `errors` array
-and a `summary` object. The three dump options produce versioned deterministic AST, typed-IR, and instruction-level
-source-map artifacts; see [DUMP_FORMATS.md](DUMP_FORMATS.md).
+and a `summary` object. The dump options produce versioned deterministic token, AST, symbol-table, typed-IR, CFG, and
+instruction-level source-map artifacts; see [DUMP_FORMATS.md](DUMP_FORMATS.md).
 
-The compiler runs IR peephole and dataflow optimizations before code generation. Use `-O0` to disable them; `--dump-ir`
-shows the selected IR. See
+The compiler runs IR peephole and dataflow optimizations before code generation. `--dump-ir-before-opt` captures the
+lowered input to those passes, while `--dump-ir` and `--dump-cfg` show their selected output. Use `-O0` to disable the
+passes entirely. See
 [IR_OPTIMIZATION.md](IR_OPTIMIZATION.md) for transformations and semantic limits.
 
 `--ide --dump-ast <path>` performs editor analysis without code generation or changing assembly output. It recovers from

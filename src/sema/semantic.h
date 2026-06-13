@@ -2,6 +2,7 @@
 #define DMM_SEMANTIC_H
 
 #include <stddef.h>
+#include <stdio.h>
 
 #include "ast.h"
 
@@ -52,6 +53,8 @@ typedef struct {
 SemanticModel *semantic_analyze(AstProgram * program);
 
 void semantic_model_free(SemanticModel *model);
+
+int semantic_dump(FILE *output, const SemanticModel *model);
 
 const SemanticSymbol *semantic_find_global(const SemanticModel *model,
                                            const char *name,

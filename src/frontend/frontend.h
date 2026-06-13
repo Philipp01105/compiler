@@ -3,6 +3,7 @@
 
 #include "ast.h"
 #include <stddef.h>
+#include <stdio.h>
 
 typedef struct {
     int debug;
@@ -20,5 +21,8 @@ int frontend_sync_manifest(const char *package_directory);
 AstProgram *frontend_parse_source(const char *source, size_t length,
                                   const char *source_name,
                                   const FrontendOptions *options);
+
+/* Deterministic token inventory for the root and every resolved import. */
+int frontend_dump_tokens(FILE *output, const AstProgram *program);
 
 #endif

@@ -122,7 +122,7 @@ dmm_test_write("${imported}" "package imported; import \"dmm.test/generated/nest
 dmm_test_write("${source}" "import \"dmm.test/generated/imported\";\nfunc main() -> int { return imported.importedValue(); }")
 foreach (protected "${source}" "${imported}" "${nested}")
     file(SHA256 "${protected}" before)
-    foreach (option -o --dump-ast --dump-ir --source-map)
+    foreach (option -o --dump-ast --dump-tokens --dump-symbols --dump-ir-before-opt --dump-ir --dump-cfg --source-map)
         execute_process(COMMAND "${COMPILER}" --emit=asm --formatError "${option}" "${protected}" "${source}"
                 RESULT_VARIABLE result ERROR_VARIABLE diagnostic)
         file(SHA256 "${protected}" after)

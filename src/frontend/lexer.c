@@ -729,6 +729,7 @@ const char *token_type_to_string(TokenType type) {
         case TOKEN_KEYWORD_PACKAGE: return "KEYWORD_PACKAGE";
         case TOKEN_KEYWORD_PUB: return "KEYWORD_PUB";
         case TOKEN_KEYWORD_SIZEOF: return "KEYWORD_SIZEOF";
+        case TOKEN_KEYWORD_TYPEOF: return "KEYWORD_TYPEOF";
         case TOKEN_KEYWORD_CASE: return "KEYWORD_CASE";
         case TOKEN_KEYWORD_ALIGNOF: return "KEYWORD_ALIGNOF";
         case TOKEN_KEYWORD_SLICE: return "KEYWORD_SLICE";
@@ -744,8 +745,13 @@ const char *token_type_to_string(TokenType type) {
         case TOKEN_KEYWORD_BREAK: return "KEYWORD_BREAK";
         case TOKEN_KEYWORD_CONTINUE: return "KEYWORD_CONTINUE";
         case TOKEN_KEYWORD_IMPORT: return "KEYWORD_IMPORT";
+        case TOKEN_KEYWORD_STATIC: return "KEYWORD_STATIC";
         case TOKEN_KEYWORD_RESERVE: return "KEYWORD_RESERVE";
         case TOKEN_KEYWORD_FREE: return "KEYWORD_FREE";
+        case TOKEN_KEYWORD_CONST: return "KEYWORD_CONST";
+        case TOKEN_KEYWORD_TRAIT: return "KEYWORD_TRAIT";
+        case TOKEN_KEYWORD_IMPL: return "KEYWORD_IMPL";
+        case TOKEN_KEYWORD_MATCH: return "KEYWORD_MATCH";
 
         case TOKEN_TYPE_INT: return "TYPE_INT";
         case TOKEN_TYPE_I8: return "TYPE_I8";
@@ -808,9 +814,12 @@ const char *token_type_to_string(TokenType type) {
         case TOKEN_COMMA: return "COMMA";
         case TOKEN_COLON: return "COLON";
         case TOKEN_ARROW: return "ARROW";
+        case TOKEN_FAT_ARROW: return "FAT_ARROW";
         case TOKEN_DOT: return "DOT";
         case TOKEN_HASH: return "HASH";
         case TOKEN_AT: return "AT";
+        case TOKEN_COMMENT: return "COMMENT";
+        case TOKEN_NEWLINE: return "NEWLINE";
 
         case TOKEN_EOF: return "EOF";
         case TOKEN_ERROR: return "ERROR";

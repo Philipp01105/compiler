@@ -10,6 +10,7 @@
 #include <errno.h>
 #include "frontend.h"
 #include "ir.h"
+#include "ir_cfg.h"
 #include "ir_optimize.h"
 #include "semantic.h"
 #include "backend.h"
@@ -41,7 +42,12 @@ void print_usage(const char *program_name) {
     printf("  --syntax=MODE  Assembly printing syntax: att or intel (default: intel)\n");
     printf("  --target=FMT   Target format: elf or coff (default: auto-detect)\n");
     printf("  --dump-ast FILE Write the stable dmm-ast-v3 dump to FILE\n");
-    printf("  --dump-ir FILE  Write the stable dmm-ir-v2 dump to FILE\n");
+    printf("  --dump-tokens FILE Write the token inventory to FILE\n");
+    printf("  --dump-symbols FILE Write the semantic symbol table to FILE\n");
+    printf("  --dump-ir-before-opt FILE Write lowered IR before optimization to FILE\n");
+    printf("  --dump-ir-passes FILE Trace every optimization pass and iteration to FILE\n");
+    printf("  --dump-ir FILE  Write the selected typed IR to FILE\n");
+    printf("  --dump-cfg FILE Write the selected control-flow graph to FILE\n");
     printf("  --source-map FILE Write the instruction source map to FILE\n");
     printf("  -o FILE        Write the selected output to FILE\n");
     printf("  --deterministic Produce reproducible output\n");
@@ -82,7 +88,7 @@ void print_header(const char *source_file) {
 static int artifact_conflicts_with_program(const AstProgram *program, const char *path);
 
 static void remove_stale_output(const AstProgram *program, const char *source_file, const char *requested_output,
-                                const char *ast_dump, const char *ir_dump, const char *source_map, const char *suffix) {
+                                const char *const *artifacts, size_t artifact_count, const char *suffix) {
     /* Never delete an explicit path before validating it as a safe output. */
     if (requested_output != NULL) return;
     size_t length = strlen(source_file);
@@ -92,11 +98,10 @@ static void remove_stale_output(const AstProgram *program, const char *source_fi
     if (path == NULL) return;
     memcpy(path, source_file, length);
     memcpy(path + length, suffix, suffix_length);
-    if (!artifact_conflicts_with_program(program, path) &&
-        path_identity_equal(path, ast_dump) == 0 &&
-        path_identity_equal(path, ir_dump) == 0 &&
-        path_identity_equal(path, source_map) == 0)
-        (void) remove(path);
+    int conflict = artifact_conflicts_with_program(program, path);
+    for (size_t i = 0; i < artifact_count && !conflict; i++)
+        conflict = path_identity_equal(path, artifacts[i]) != 0;
+    if (!conflict) (void) remove(path);
     free(path);
 }
 
@@ -134,6 +139,18 @@ static int write_ir_dump(FILE *output, const void *value) {
     return ir_dump(output, value);
 }
 
+static int write_token_dump(FILE *output, const void *value) {
+    return frontend_dump_tokens(output, value);
+}
+
+static int write_symbol_dump(FILE *output, const void *value) {
+    return semantic_dump(output, value);
+}
+
+static int write_cfg_dump(FILE *output, const void *value) {
+    return ir_cfg_dump(output, value);
+}
+
 int main(int argc, char *argv[]) {
     BackendEmission emission = BACKEND_EXECUTABLE;
     int emission_requested = 0;
@@ -148,7 +165,12 @@ int main(int argc, char *argv[]) {
     const char *source_file = NULL;
     const char *requested_output = NULL;
     const char *ast_dump_path = NULL;
+    const char *token_dump_path = NULL;
+    const char *symbol_dump_path = NULL;
+    const char *preopt_ir_dump_path = NULL;
+    const char *ir_pass_dump_path = NULL;
     const char *ir_dump_path = NULL;
+    const char *cfg_dump_path = NULL;
     const char *source_map_path = NULL;
     SyntaxMode syntax_mode = SYNTAX_INTEL; /* Default to Intel syntax */
     TargetFormat target_format = TARGET_ELF; /* Auto-detect later */
@@ -225,7 +247,12 @@ int main(int argc, char *argv[]) {
             }
             requested_output = argv[i];
         } else if (strcmp(argv[i], "--dump-ast") == 0 ||
+                   strcmp(argv[i], "--dump-tokens") == 0 ||
+                   strcmp(argv[i], "--dump-symbols") == 0 ||
+                   strcmp(argv[i], "--dump-ir-before-opt") == 0 ||
+                   strcmp(argv[i], "--dump-ir-passes") == 0 ||
                    strcmp(argv[i], "--dump-ir") == 0 ||
+                   strcmp(argv[i], "--dump-cfg") == 0 ||
                    strcmp(argv[i], "--source-map") == 0) {
             const char *option = argv[i];
             if (++i >= argc) {
@@ -236,7 +263,12 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
             if (strcmp(option, "--dump-ast") == 0) ast_dump_path = argv[i];
+            else if (strcmp(option, "--dump-tokens") == 0) token_dump_path = argv[i];
+            else if (strcmp(option, "--dump-symbols") == 0) symbol_dump_path = argv[i];
+            else if (strcmp(option, "--dump-ir-before-opt") == 0) preopt_ir_dump_path = argv[i];
+            else if (strcmp(option, "--dump-ir-passes") == 0) ir_pass_dump_path = argv[i];
             else if (strcmp(option, "--dump-ir") == 0) ir_dump_path = argv[i];
+            else if (strcmp(option, "--dump-cfg") == 0) cfg_dump_path = argv[i];
             else source_map_path = argv[i];
         } else if (!strcmp(argv[i], "-O0") || !strcmp(argv[i], "-O1")) {
             optimize_ir = !strcmp(argv[i], "-O1");
@@ -345,8 +377,10 @@ int main(int argc, char *argv[]) {
     }
 
     if ((ide_buffer != NULL && !ide_mode) || (
-            ide_mode && (ast_dump_path == NULL || requested_output != NULL || ir_dump_path != NULL ||
-                         source_map_path != NULL || debug_mode || show_tokens || optimization_requested || (
+            ide_mode && (ast_dump_path == NULL || requested_output != NULL || token_dump_path != NULL ||
+                         symbol_dump_path != NULL || preopt_ir_dump_path != NULL || ir_dump_path != NULL ||
+                         cfg_dump_path != NULL || source_map_path != NULL || debug_mode || show_tokens ||
+                         optimization_requested || (
                              emission_requested && emission != BACKEND_ASSEMBLY) ||
                          output_conflicts_with_source(source_file, ast_dump_path) ||
                          (ide_buffer != NULL && output_conflicts_with_source(ide_buffer, ast_dump_path))))) {
@@ -384,7 +418,10 @@ int main(int argc, char *argv[]) {
         free(override_name);
         return 1;
     }
-    const char *requested_artifacts[] = {requested_output, ast_dump_path, ir_dump_path, source_map_path};
+    const char *requested_artifacts[] = {
+        requested_output, ast_dump_path, token_dump_path, symbol_dump_path, preopt_ir_dump_path,
+        ir_dump_path, cfg_dump_path, source_map_path
+    };
     for (size_t i = 0; i < sizeof(requested_artifacts) / sizeof(requested_artifacts[0]); i++) {
         if (artifact_conflicts_with_program(program, requested_artifacts[i])) {
             error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
@@ -409,7 +446,7 @@ int main(int argc, char *argv[]) {
     }
     if (!ide_mode)
         remove_stale_output(program, source_file, requested_output,
-                            ast_dump_path, ir_dump_path, source_map_path,
+                            requested_artifacts, sizeof(requested_artifacts) / sizeof(requested_artifacts[0]),
                             emission == BACKEND_ASSEMBLY
                                 ? ".s"
                                 : emission == BACKEND_OBJECT
@@ -439,6 +476,16 @@ int main(int argc, char *argv[]) {
         error_handler_free(error_handler);
         free(override_name);
         return failed;
+    }
+    if (token_dump_path != NULL && !dump_file(token_dump_path, write_token_dump, program)) {
+        error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                     ERR_COMP_DUMP_FAILED, source_file, "Could not write token dump '%s': %s", token_dump_path,
+                     errno == 0 ? "internal serialization failure" : strerror(errno));
+        error_handler_flush(error_handler);
+        ast_program_free(program);
+        error_handler_free(error_handler);
+        free(override_name);
+        return 1;
     }
     if (!program->structured_ast_complete) {
         const AstToken *token = ast_program_token(program, program->structured_error_token);
@@ -499,7 +546,10 @@ int main(int argc, char *argv[]) {
         memcpy(generated_output + source_length, output_suffix, suffix_length);
         output_filename = generated_output;
     }
-    const char *artifacts[] = {output_filename, ast_dump_path, ir_dump_path, source_map_path};
+    const char *artifacts[] = {
+        output_filename, ast_dump_path, token_dump_path, symbol_dump_path, preopt_ir_dump_path,
+        ir_dump_path, cfg_dump_path, source_map_path
+    };
     for (size_t i = 0; i < sizeof(artifacts) / sizeof(artifacts[0]); i++) {
         if (artifacts[i] != NULL && artifact_conflicts_with_program(program, artifacts[i])) {
             error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
@@ -545,15 +595,6 @@ int main(int argc, char *argv[]) {
     IrModule *module = NULL;
     if (program->structured_ast_complete) {
         semantics = semantic_analyze(program);
-        if (semantics != NULL && semantics->error_count != 0) {
-            error_handler_flush(error_handler);
-            free(generated_output);
-            semantic_model_free(semantics);
-            ast_program_free(program);
-            error_handler_free(error_handler);
-            return 1;
-        }
-        if (semantics != NULL) module = ir_lower_program(program, semantics);
         if (semantics == NULL) {
             error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
                          ERR_COMP_INTERNAL_FAILURE, source_file,
@@ -566,6 +607,32 @@ int main(int argc, char *argv[]) {
             error_handler_free(error_handler);
             return 1;
         }
+        const char *failed_dump = NULL;
+        if (ast_dump_path != NULL && !dump_file(ast_dump_path, write_ast_dump, program))
+            failed_dump = ast_dump_path;
+        else if (symbol_dump_path != NULL && !dump_file(symbol_dump_path, write_symbol_dump, semantics))
+            failed_dump = symbol_dump_path;
+        if (failed_dump != NULL) {
+            error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                         ERR_COMP_DUMP_FAILED, source_file,
+                         "Could not write requested frontend dump '%s': %s", failed_dump,
+                         errno == 0 ? "internal serialization failure" : strerror(errno));
+            error_handler_flush(error_handler);
+            free(generated_output);
+            semantic_model_free(semantics);
+            ast_program_free(program);
+            error_handler_free(error_handler);
+            return 1;
+        }
+        if (semantics->error_count != 0) {
+            error_handler_flush(error_handler);
+            free(generated_output);
+            semantic_model_free(semantics);
+            ast_program_free(program);
+            error_handler_free(error_handler);
+            return 1;
+        }
+        module = ir_lower_program(program, semantics);
         if (module == NULL) {
             error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
                          ERR_COMP_INTERNAL_FAILURE, source_file,
@@ -577,7 +644,21 @@ int main(int argc, char *argv[]) {
             error_handler_free(error_handler);
             return 1;
         }
-        const char *failed_dump = NULL;
+        if (preopt_ir_dump_path != NULL && !dump_file(preopt_ir_dump_path, write_ir_dump, module))
+            failed_dump = preopt_ir_dump_path;
+        if (failed_dump != NULL) {
+            error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                         ERR_COMP_DUMP_FAILED, source_file,
+                         "Could not write requested frontend dump '%s': %s", failed_dump,
+                         errno == 0 ? "internal serialization failure" : strerror(errno));
+            error_handler_flush(error_handler);
+            free(generated_output);
+            ir_module_free(module);
+            semantic_model_free(semantics);
+            ast_program_free(program);
+            error_handler_free(error_handler);
+            return 1;
+        }
         IrOptimizationStats optimization_stats = {0};
         if (optimize_ir && !ir_optimize_module(module, &optimization_stats)) {
             error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
@@ -598,8 +679,9 @@ int main(int argc, char *argv[]) {
                 optimization_stats.dead_stores, optimization_stats.branches_folded,
                 optimization_stats.blocks_removed, optimization_stats.addresses_simplified);
         }
-        if (ast_dump_path != NULL && !dump_file(ast_dump_path, write_ast_dump, program)) failed_dump = ast_dump_path;
-        else if (ir_dump_path != NULL && !dump_file(ir_dump_path, write_ir_dump, module)) failed_dump = ir_dump_path;
+        if (ir_dump_path != NULL && !dump_file(ir_dump_path, write_ir_dump, module)) failed_dump = ir_dump_path;
+        else if (cfg_dump_path != NULL && !dump_file(cfg_dump_path, write_cfg_dump, module))
+            failed_dump = cfg_dump_path;
         if (failed_dump != NULL) {
             error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
                          ERR_COMP_DUMP_FAILED, source_file,

@@ -1,10 +1,21 @@
 #include "ir_optimize.h"
 #include "ir_cfg.h"
+#include "ir.h"
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
 
 typedef enum { UNKNOWN, BOTTOM, CONSTANT, VALUE } FactKind;
+
+typedef enum {
+    PASS_CONTROL_FLOW,
+    PASS_CONSTANT_PROPAGATION,
+    PASS_CONSTANT_FOLDING,
+    PASS_COPY_PROPAGATION,
+    PASS_ADDRESS_SIMPLIFICATION,
+    PASS_DEAD_VALUES,
+    PASS_DEAD_STORES
+} OptimizationPass;
 
 typedef struct {
     FactKind kind;
@@ -530,17 +541,22 @@ static int same_read(const IrInstruction *a, const IrInstruction *b) {
            a->operand_b == b->operand_b && a->symbol_id == b->symbol_id && a->operator_type == b->operator_type;
 }
 
-static int rewrite(Pass *p) {
+static int rewrite(Pass *p, OptimizationPass pass) {
     IrFunction *f = p->function;
     int changed = 0;
+    if (pass == PASS_CONTROL_FLOW)
+        for (size_t block = 0; block < p->graph.count; block++)
+            if (!p->graph.blocks[block].reachable) p->stats->blocks_removed++;
     for (size_t i = 0; i < f->instruction_count; ++i) {
         IrInstruction *in = &f->instructions[i];
         if (!p->graph.blocks[p->graph.owner[i]].reachable) {
-            p->remove[i] = 1;
-            changed = 1;
+            if (pass == PASS_CONTROL_FLOW) {
+                p->remove[i] = 1;
+                changed = 1;
+            }
             continue;
         }
-        if (in->opcode == IR_OP_BRANCH) {
+        if (pass == PASS_CONTROL_FLOW && in->opcode == IR_OP_BRANCH) {
             Fact value = operand(p, in->operand_a);
             if (value.kind == CONSTANT || in->target_a == in->target_b) {
                 if (value.kind == CONSTANT && !truth(value, definition(p, in->operand_a)->type))
@@ -552,7 +568,7 @@ static int rewrite(Pass *p) {
                 changed = 1;
             }
         }
-        if (in->opcode == IR_OP_PHI) {
+        if (pass == PASS_CONTROL_FLOW && in->opcode == IR_OP_PHI) {
             int a = p->graph.blocks[p->graph.labels[in->target_a]].reachable;
             int b = p->graph.blocks[p->graph.labels[in->target_b]].reachable;
             if (!a || !b) {
@@ -565,25 +581,35 @@ static int rewrite(Pass *p) {
         }
         if (in->result == IR_VALUE_NONE || p->protected_values[in->result]) continue;
         Fact fact = p->values[in->result];
-        if (fact.kind == CONSTANT && in->opcode != IR_OP_CONSTANT && numeric(p->module, in->type_id)) {
+        int propagate_constant = pass == PASS_CONSTANT_PROPAGATION && in->opcode == IR_OP_LOAD;
+        int fold_constant = pass == PASS_CONSTANT_FOLDING && in->opcode != IR_OP_LOAD;
+        if ((propagate_constant || fold_constant) && fact.kind == CONSTANT &&
+            in->opcode != IR_OP_CONSTANT && numeric(p->module, in->type_id)) {
             if (in->opcode == IR_OP_LOAD) p->stats->constants_propagated++;
             else p->stats->constants_folded++;
             make_constant(in, fact);
             changed = 1;
             continue;
         }
-        size_t copy = fact.kind == VALUE && fact.value != in->result ? fact.value : identity(p, in);
-        const IrInstruction *source = definition(p, copy);
-        if (source && source->type_id == in->type_id) {
-            p->aliases[in->result] = resolve(p, copy);
-            p->remove[i] = 1;
-            changed = 1;
-            if (in->opcode == IR_OP_UNARY && in->operator_type == TOKEN_AMPERSAND) p->stats->addresses_simplified++;
-            else p->stats->copies_propagated++;
+        if (pass == PASS_COPY_PROPAGATION || pass == PASS_ADDRESS_SIMPLIFICATION) {
+            size_t copy = fact.kind == VALUE && fact.value != in->result ? fact.value : identity(p, in);
+            const IrInstruction *source = definition(p, copy);
+            int address_identity = in->opcode == IR_OP_UNARY && in->operator_type == TOKEN_AMPERSAND;
+            if (source && source->type_id == in->type_id &&
+                ((pass == PASS_ADDRESS_SIMPLIFICATION && address_identity) ||
+                 (pass == PASS_COPY_PROPAGATION && !address_identity))) {
+                p->aliases[in->result] = resolve(p, copy);
+                p->remove[i] = 1;
+                changed = 1;
+                if (in->opcode == IR_OP_UNARY && in->operator_type == TOKEN_AMPERSAND)
+                    p->stats->addresses_simplified++;
+                else p->stats->copies_propagated++;
+            }
         }
         /* Integer identities that produce a constant, without dropping effects
            of evaluating either operand. Floating identities are deliberately excluded. */
-        if (!p->remove[i] && in->opcode == IR_OP_BINARY && numeric(p->module, in->type_id) &&
+        if (pass == PASS_CONSTANT_FOLDING && !p->remove[i] && in->opcode == IR_OP_BINARY &&
+            numeric(p->module, in->type_id) &&
             !floating(in->type) && !floating(definition(p, in->operand_a)->type) && !floating(
                 definition(p, in->operand_b)->type)) {
             size_t a = resolve(p, in->operand_a), b = resolve(p, in->operand_b);
@@ -599,12 +625,9 @@ static int rewrite(Pass *p) {
         }
     }
     /* Repeated address/read operations within a block and memory epoch. */
-    for (size_t block = 0; block < p->graph.count; ++block) {
+    if (pass == PASS_ADDRESS_SIMPLIFICATION) for (size_t block = 0; block < p->graph.count; ++block) {
         size_t begin = p->graph.blocks[block].begin;
-        if (!p->graph.blocks[block].reachable) {
-            p->stats->blocks_removed++;
-            continue;
-        }
+        if (!p->graph.blocks[block].reachable) continue;
         for (size_t i = begin; i < p->graph.blocks[block].end; ++i) {
             IrInstruction *in = &f->instructions[i];
             if (p->remove[i]) continue;
@@ -855,42 +878,80 @@ static int compact_ids(IrFunction *f) {
     return 1;
 }
 
-int ir_optimize_module(IrModule *module, IrOptimizationStats *stats) {
+static const char *pass_name(OptimizationPass pass) {
+    static const char *names[] = {
+        "control-flow", "constant-propagation", "constant-folding", "copy-propagation",
+        "address-simplification", "dead-value-elimination", "dead-store-elimination"
+    };
+    return pass >= PASS_CONTROL_FLOW && pass <= PASS_DEAD_STORES ? names[pass] : "invalid";
+}
+
+static int run_pass(IrModule *module, IrFunction *function, IrOptimizationStats *stats,
+                    OptimizationPass pass) {
+    Pass state = {0};
+    state.module = module;
+    state.function = function;
+    state.stats = stats;
+    if (!initialize(&state)) {
+        release(&state);
+        return -1;
+    }
+    int changed;
+    if (pass <= PASS_ADDRESS_SIMPLIFICATION) {
+        analyze(&state);
+        changed = rewrite(&state, pass);
+    } else if (pass == PASS_DEAD_VALUES) {
+        changed = dead_values(&state);
+    } else {
+        changed = dead_stores(&state);
+    }
+    if (changed < 0) {
+        release(&state);
+        return -1;
+    }
+    changed |= compact(&state);
+    release(&state);
+    return changed;
+}
+
+static int trace_snapshot(FILE *trace, const IrModule *module, size_t sequence, size_t function,
+                          size_t iteration, const char *pass, int changed) {
+    if (trace == NULL) return 1;
+    return fprintf(trace, "snapshot #%zu function=%zu iteration=%zu pass=%s changed=%d\n",
+                   sequence, function, iteration, pass, changed) >= 0 &&
+           ir_dump(trace, module) && fputs("end-snapshot\n", trace) != EOF;
+}
+
+int ir_optimize_module_traced(IrModule *module, IrOptimizationStats *stats, FILE *trace) {
     IrOptimizationStats ignored = {0};
     if (!stats) stats = &ignored;
     memset(stats, 0, sizeof(*stats));
     if (!ir_verify_module(module)) return 0;
+    if (trace != NULL && fputs("dmm-ir-pass-trace-v1\n", trace) == EOF) return 0;
     module->verified = 0;
+    size_t sequence = 0;
     for (size_t f = 0; f < module->function_count; ++f) {
+        size_t iteration = 0;
+        if (!trace_snapshot(trace, module, sequence++, f, iteration, "input", 0)) return 0;
         int changed;
         do {
-            Pass p = {0};
-            p.module = module;
-            p.function = &module->functions[f];
-            p.stats = stats;
-            if (!initialize(&p)) {
-                release(&p);
-                return 0;
+            changed = 0;
+            for (OptimizationPass pass = PASS_CONTROL_FLOW; pass <= PASS_DEAD_STORES; pass++) {
+                int pass_changed = run_pass(module, &module->functions[f], stats, pass);
+                if (pass_changed < 0 ||
+                    !trace_snapshot(trace, module, sequence++, f, iteration, pass_name(pass), pass_changed))
+                    return 0;
+                changed |= pass_changed;
             }
-            analyze(&p);
-            changed = rewrite(&p);
-            int dead = dead_values(&p);
-            if (dead < 0) {
-                release(&p);
-                return 0;
-            }
-            changed |= dead;
-            dead = dead_stores(&p);
-            if (dead < 0) {
-                release(&p);
-                return 0;
-            }
-            changed |= dead;
-            changed |= compact(&p);
-            release(&p);
+            iteration++;
         } while (changed);
         if (!compact_ids(&module->functions[f])) return 0;
+        if (!trace_snapshot(trace, module, sequence++, f, iteration, "id-compaction", 1)) return 0;
     }
     module->verified = ir_verify_module(module);
-    return module->verified;
+    return module->verified && (trace == NULL || !ferror(trace));
+}
+
+int ir_optimize_module(IrModule *module, IrOptimizationStats *stats) {
+    return ir_optimize_module_traced(module, stats, NULL);
 }
