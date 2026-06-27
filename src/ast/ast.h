@@ -21,7 +21,7 @@ typedef struct {
 
 typedef enum {
     AST_DECL_IMPORT, AST_DECL_STRUCT, AST_DECL_ENUM, AST_DECL_FUNCTION,
-    AST_DECL_CONSTANT, AST_DECL_TRAIT, AST_DECL_IMPL, AST_DECL_VARIABLE, AST_DECL_INVALID
+    AST_DECL_CONSTANT, AST_DECL_INTERFACE, AST_DECL_VARIABLE, AST_DECL_INVALID
 } AstDeclarationKind;
 
 typedef enum { AST_TYPE_INFERRED, AST_TYPE_NAMED } AstTypeKind;
@@ -69,14 +69,14 @@ struct AstTypeArgument {
     AstTypeArgument *next;
 };
 
-typedef struct AstTraitBound {
+typedef struct AstInterfaceBound {
     size_t name_token;
-    struct AstTraitBound *next;
-} AstTraitBound;
+    struct AstInterfaceBound *next;
+} AstInterfaceBound;
 
 struct AstGenericParameter {
     size_t name_token;
-    AstTraitBound *bounds;
+    AstInterfaceBound *bounds;
     AstGenericParameter *next;
 };
 
@@ -236,15 +236,8 @@ struct AstDeclarationNode {
 
         struct {
             AstDeclarationNode *methods;
-        } trait_decl;
+        } interface_decl;
 
-        struct {
-            size_t trait_token;
-            AstType for_type;
-            AstDeclarationNode *methods;
-            int attached;
-            const AstDeclarationNode *trait_identity;
-        } impl_decl;
     } as;
 };
 

@@ -134,8 +134,7 @@ int is_at_end(const TokenStream *stream) {
 }
 
 static TokenType get_keyword_type(const char *str) {
-    if (strcmp(str, "trait") == 0) return TOKEN_KEYWORD_TRAIT;
-    if (strcmp(str, "impl") == 0) return TOKEN_KEYWORD_IMPL;
+    if (strcmp(str, "interface") == 0) return TOKEN_KEYWORD_INTERFACE;
     if (strcmp(str, "match") == 0) return TOKEN_KEYWORD_MATCH;
     if (strcmp(str, "func") == 0) return TOKEN_KEYWORD_FUNC;
     if (strcmp(str, "var") == 0) return TOKEN_KEYWORD_VAR;
@@ -749,8 +748,7 @@ const char *token_type_to_string(TokenType type) {
         case TOKEN_KEYWORD_RESERVE: return "KEYWORD_RESERVE";
         case TOKEN_KEYWORD_FREE: return "KEYWORD_FREE";
         case TOKEN_KEYWORD_CONST: return "KEYWORD_CONST";
-        case TOKEN_KEYWORD_TRAIT: return "KEYWORD_TRAIT";
-        case TOKEN_KEYWORD_IMPL: return "KEYWORD_IMPL";
+        case TOKEN_KEYWORD_INTERFACE: return "KEYWORD_INTERFACE";
         case TOKEN_KEYWORD_MATCH: return "KEYWORD_MATCH";
 
         case TOKEN_TYPE_INT: return "TYPE_INT";

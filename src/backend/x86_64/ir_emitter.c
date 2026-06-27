@@ -1,4 +1,5 @@
 #include "ir_emitter.h"
+#include "ir_names.h"
 #include "instruction.h"
 #include "native/encoder.h"
 #include <stdarg.h>
@@ -165,7 +166,8 @@ static int type_is_structure(const IrModule *module, IrTypeId type_id) {
         return 0;
     size_t symbol_id = module->types[type_id].symbol_id;
     if (symbol_id < module->semantics->symbol_count &&
-        module->semantics->symbols[symbol_id].kind == SEMANTIC_SYMBOL_STRUCT)
+        (module->semantics->symbols[symbol_id].kind == SEMANTIC_SYMBOL_STRUCT ||
+         module->semantics->symbols[symbol_id].kind == SEMANTIC_SYMBOL_INTERFACE))
         return 1;
     for (size_t e = 0; e < module->enum_count; e++)
         if (module->enums[e].symbol_id == symbol_id) return module->enums[e].is_sum;
@@ -236,13 +238,6 @@ static const IrFunction *called_function(const IrModule *module, size_t symbol_i
     return NULL;
 }
 
-static const IrParameter *function_receiver(const IrFunction *function) {
-    return function != NULL && function->parameter_count != 0 &&
-           function->parameters[0].is_receiver
-               ? &function->parameters[0]
-               : NULL;
-}
-
 static size_t slice_parameter_count(const IrFunction *function) {
     size_t count = 0;
     for (size_t i = 0; i < function->parameter_count; i++)
@@ -259,184 +254,6 @@ static size_t slice_length_ordinal(const IrFunction *function, size_t parameter_
     for (size_t i = 0; i < parameter_index; i++)
         if (function->parameters[i].is_slice) ordinal++;
     return ordinal;
-}
-
-static int runtime_link_name(const char *name) {
-    if (!strncmp(name, "__dmm_", 6)) return 1;
-    static const char *runtime_names[] = {
-        "printf", "putchar", "puts", "strcmp", "strcpy", "strcat", "strdup",
-        "_strdup", "malloc", "calloc", "free", "strlen", "strtoll", "scanf",
-        "snprintf", "fflush", "read", "write", "open", "close", "exit",
-        "_read", "_write", "_open", "_close", "_snprintf", "_strtoi64",
-        "__errno_location", "_errno", "__libc_start_main", "__isoc99_scanf",
-        "VirtualAlloc", "VirtualFree", "GetStdHandle", "ReadFile", "WriteFile",
-        "CreateFileA", "CloseHandle", "GetLastError", "ExitProcess"
-    };
-    for (size_t i = 0; i < sizeof(runtime_names) / sizeof(runtime_names[0]); i++)
-        if (strcmp(name, runtime_names[i]) == 0) return 1;
-    return 0;
-}
-
-static int mangle_append(char *buffer, size_t buffer_size, size_t *used,
-                         const char *text) {
-    size_t length = strlen(text);
-    if (*used > buffer_size || length >= buffer_size - *used) return 0;
-    memcpy(buffer + *used, text, length + 1U);
-    *used += length;
-    return 1;
-}
-
-static int mangle_type(const IrModule *module, IrTypeId type_id, char *buffer,
-                       size_t buffer_size, size_t *used, size_t depth) {
-    if (type_id >= module->type_count || depth > module->type_count) return 0;
-    const IrType *type = &module->types[type_id];
-    char part[96];
-    if (type->kind == IR_TYPE_PRIMITIVE) {
-        static const char *const codes[] = {
-            "i", "c", "y", "b", "f", "d", "s",
-            "t2_i8", "t2_u8", "t3_i16", "t3_u16", "t3_i32", "t3_u32",
-            "t3_i64", "t3_u64", "t5_isize", "t5_usize", "v"
-        };
-        if (type->primitive < TYPE_INT || type->primitive > TYPE_VOID) return 0;
-        return mangle_append(buffer, buffer_size, used, codes[type->primitive]);
-    }
-    if (type->kind == IR_TYPE_POINTER)
-        return mangle_append(buffer, buffer_size, used, "p") &&
-               mangle_type(module, type->element_type, buffer, buffer_size, used, depth + 1U);
-    if (type->kind == IR_TYPE_ARRAY) {
-        (void) snprintf(part, sizeof(part), "a%zu_", type->array_length);
-        return mangle_append(buffer, buffer_size, used, part) &&
-               mangle_type(module, type->element_type, buffer, buffer_size, used, depth + 1U);
-    }
-    if (type->kind == IR_TYPE_SLICE)
-        return mangle_append(buffer, buffer_size, used, "l") &&
-               mangle_type(module, type->element_type, buffer, buffer_size, used, depth + 1U);
-    if (type->kind != IR_TYPE_NAMED || type->symbol_id >= module->semantics->symbol_count)
-        return 0;
-    const SemanticSymbol *symbol = &module->semantics->symbols[type->symbol_id];
-    const char *identity = symbol->source_program->module_identity == NULL
-                               ? "."
-                               : symbol->source_program->module_identity;
-    const char *name = ast_program_lexeme(symbol->source_program, symbol->name_token);
-    (void) snprintf(part, sizeof(part), "n%zu_", strlen(identity));
-    if (!mangle_append(buffer, buffer_size, used, part)) return 0;
-    for (const unsigned char *p = (const unsigned char *) identity; *p != '\0'; p++) {
-        (void) snprintf(part, sizeof(part), "%02x", *p);
-        if (!mangle_append(buffer, buffer_size, used, part)) return 0;
-    }
-    (void) snprintf(part, sizeof(part), "_%zu_", strlen(name));
-    return mangle_append(buffer, buffer_size, used, part) &&
-           mangle_append(buffer, buffer_size, used, name);
-}
-
-static int function_is_overloaded(const IrModule *module, const IrFunction *function) {
-    const char *name = ast_program_lexeme(function->source_program, function->name_token);
-    size_t matches = 0;
-    for (size_t i = 0; i < module->function_count; i++) {
-        const IrFunction *candidate = &module->functions[i];
-        if (candidate->owner_symbol_id != function->owner_symbol_id) continue;
-        if (function->owner_symbol_id != AST_SYMBOL_NONE) {
-            const SemanticSymbol *left = &module->semantics->symbols[function->symbol_id];
-            const SemanticSymbol *right = &module->semantics->symbols[candidate->symbol_id];
-            if (left->declaration->as.function.is_static !=
-                right->declaration->as.function.is_static)
-                continue;
-        }
-        if (strcmp(ast_program_lexeme(candidate->source_program, candidate->name_token),
-                   name) == 0)
-            matches++;
-    }
-    return matches > 1;
-}
-
-static const char *function_link_name(const IrModule *module, const IrFunction *function,
-                                      char *buffer, size_t buffer_size) {
-    if (function->symbol_id < module->semantics->symbol_count) {
-        const AstDeclarationNode *declaration = module->semantics->symbols[function->symbol_id].declaration;
-        if (declaration != NULL && declaration->specialization_identity != NULL)
-            return declaration->specialization_identity;
-    }
-
-    const char *name = ast_program_lexeme(function->source_program, function->name_token);
-    if (strcmp(name, "main") == 0 && (!function->source_program->package_name ||
-                                      !strcmp(function->source_program->package_name, "main")))
-        return name;
-    if (function->owner_symbol_id == AST_SYMBOL_NONE &&
-        !function->source_program->package && !function_is_overloaded(module, function) && !runtime_link_name(name))
-        return name;
-    size_t used = 0;
-    buffer[0] = '\0';
-    char part[128];
-    if (function->owner_symbol_id == AST_SYMBOL_NONE) {
-        const char *identity = function->source_program->module_identity;
-        if (identity && function->source_program->package) {
-            if (!mangle_append(buffer, buffer_size, &used, "__dmm_p")) return NULL;
-            for (const unsigned char *p = (const unsigned char *) identity; *p; p++) {
-                snprintf(part, sizeof(part), "%02x", *p);
-                if (!mangle_append(buffer, buffer_size, &used, part)) return NULL;
-            }
-            if (!mangle_append(buffer, buffer_size, &used, "_")) return NULL;
-        }
-        (void) snprintf(part, sizeof(part), "__dmm_f%zu_", strlen(name));
-        if (!mangle_append(buffer, buffer_size, &used, part) ||
-            !mangle_append(buffer, buffer_size, &used, name))
-            return NULL;
-        (void) snprintf(part, sizeof(part), "__%zu", function->parameter_count);
-        if (!mangle_append(buffer, buffer_size, &used, part)) return NULL;
-    } else {
-        IrTypeId owner_type = IR_TYPE_NONE;
-        for (IrTypeId t = 0; t < module->type_count; t++)
-            if (module->types[t].kind == IR_TYPE_NAMED &&
-                module->types[t].symbol_id == function->owner_symbol_id) {
-                owner_type = t;
-                break;
-            }
-        if (!mangle_append(buffer, buffer_size, &used, "__dmm_m") ||
-            !mangle_type(module, owner_type, buffer, buffer_size, &used, 0))
-            return NULL;
-        const SemanticSymbol *symbol = &module->semantics->symbols[function->symbol_id];
-        (void) snprintf(part, sizeof(part), "_%c_%zu_",
-                        symbol->declaration->as.function.is_static ? 's' : 'i',
-                        strlen(name));
-        if (!mangle_append(buffer, buffer_size, &used, part) ||
-            !mangle_append(buffer, buffer_size, &used, name))
-            return NULL;
-        (void) snprintf(part, sizeof(part), "__%zu", function->parameter_count -
-                                                     (function_receiver(function) != NULL ? 1U : 0U));
-        if (!mangle_append(buffer, buffer_size, &used, part)) return NULL;
-    }
-    size_t first = function_receiver(function) != NULL ? 1U : 0U;
-    for (size_t i = first; i < function->parameter_count; i++)
-        if (!mangle_append(buffer, buffer_size, &used, "_") ||
-            !mangle_type(module, function->parameters[i].type_id, buffer,
-                         buffer_size, &used, 0))
-            return NULL;
-    return buffer;
-}
-
-static int valid_module(const IrModule *module) {
-    if (module == NULL || !module->verified || module->program == NULL ||
-        module->semantics == NULL || (module->function_count == 0 &&
-                                      (!module->program->package_name || !
-                                       strcmp(module->program->package_name, "main"))))
-        return 0;
-    for (size_t i = 0; i < module->function_count; i++) {
-        char left_buffer[4096];
-        const char *left = function_link_name(module, &module->functions[i],
-                                              left_buffer, sizeof(left_buffer));
-        if (left == NULL) return 0;
-        for (size_t j = 0; j < i; j++) {
-            char right_buffer[4096];
-            const char *right = function_link_name(module, &module->functions[j],
-                                                   right_buffer, sizeof(right_buffer));
-            if (right == NULL || strcmp(left, right) == 0) return 0;
-        }
-    }
-    const SemanticSymbol *main_symbol = semantic_find_global(module->semantics, "main",
-                                                             SEMANTIC_SYMBOL_FUNCTION);
-    if (module->program->package_name && strcmp(module->program->package_name, "main")) return 1;
-    return main_symbol != NULL && main_symbol->declaration != NULL &&
-           main_symbol->declaration->as.function.parameters == NULL;
 }
 
 static size_t value_offset(size_t value) {
@@ -929,7 +746,7 @@ static int emit_floating_binary(Emitter *emitter, const IrInstruction *instructi
 }
 
 static int emit_typed_call(Emitter *emitter, const IrInstruction *instruction,
-                           const IrFunction *callee) {
+                           const IrFunction *callee, int interface_receiver) {
     const IrFunction *caller = emitter->function;
     size_t stack_count = stack_parameter_count(callee, emitter->target);
     size_t physical_count = physical_parameter_count(callee);
@@ -957,6 +774,9 @@ static int emit_typed_call(Emitter *emitter, const IrInstruction *instruction,
         } else {
             if (value == NULL) return 0;
             write_value_load(emitter, "rax", value_id);
+            if (interface_receiver && source == 0)
+                write_x64_2(emitter, X64_OP_ADD, X64_WIDTH_QWORD,
+                            x64_register("rax"), x64_immediate(8));
             if (callee->parameters[source].is_slice && emitter->module->types[value->type_id].kind == IR_TYPE_SLICE)
                 write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rax"),
                             x64_memory(X64_WIDTH_QWORD, "rax", 0));
@@ -1001,6 +821,9 @@ static int emit_typed_call(Emitter *emitter, const IrInstruction *instruction,
         } else {
             if (value == NULL) return 0;
             write_value_load(emitter, "rax", value_id);
+            if (interface_receiver && source == 0)
+                write_x64_2(emitter, X64_OP_ADD, X64_WIDTH_QWORD,
+                            x64_register("rax"), x64_immediate(8));
             if (callee->parameters[source].is_slice && emitter->module->types[value->type_id].kind == IR_TYPE_SLICE)
                 write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rax"),
                             x64_memory(X64_WIDTH_QWORD, "rax", 0));
@@ -1041,6 +864,37 @@ static int emit_typed_call(Emitter *emitter, const IrInstruction *instruction,
                         x64_register("rax"), x64_register("xmm0"));
         write_value_store(emitter, "rax", instruction->result);
     }
+    return 1;
+}
+
+static int emit_interface_call(Emitter *emitter, const IrInstruction *instruction) {
+    if (!instruction->argument_count) return 0;
+    size_t receiver = emitter->function->arguments[instruction->first_argument];
+    size_t sequence = emitter->bounds_sequence++;
+    char end[80], next[80];
+    snprintf(end, sizeof(end), ".LIR_interface_end_%zu_%zu",
+             emitter->function_index, sequence);
+    for (size_t s = 0; s < emitter->module->structure_count; s++) {
+        size_t struct_id = emitter->module->structures[s].symbol_id;
+        size_t method_id = semantic_interface_method(emitter->module->semantics,
+                                                     instruction->symbol_id, struct_id);
+        if (method_id == AST_SYMBOL_NONE) continue;
+        const IrFunction *callee = called_function(emitter->module, method_id);
+        if (!callee) return 0;
+        snprintf(next, sizeof(next), ".LIR_interface_next_%zu_%zu_%zu",
+                 emitter->function_index, sequence, s);
+        write_value_load(emitter, "rax", receiver);
+        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                    x64_register("rax"), x64_memory(X64_WIDTH_QWORD, "rax", 0));
+        write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_QWORD,
+                    x64_register("rax"), x64_immediate((long long) (struct_id + 1)));
+        write_x64_1(emitter, X64_OP_JNE, X64_WIDTH_NONE, x64_label(next));
+        if (!emit_typed_call(emitter, instruction, callee, 1)) return 0;
+        write_x64_1(emitter, X64_OP_JMP, X64_WIDTH_NONE, x64_label(end));
+        write_labelf(emitter, "%s:\n", next);
+    }
+    write_x64_0(emitter, X64_OP_UD2);
+    write_labelf(emitter, "%s:\n", end);
     return 1;
 }
 
@@ -1944,6 +1798,27 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             if (!emit_lvalue_address(emitter, target, index)) return 0;
             if (instruction->operator_type == TOKEN_EQUAL &&
                 is_inline_structure(emitter->module, target)) {
+                const IrInstruction *source = producer(function, instruction->operand_b);
+                if (target->type_id < emitter->module->type_count && source &&
+                    source->type_id < emitter->module->type_count) {
+                    const IrType *target_type = &emitter->module->types[target->type_id];
+                    const IrType *source_type = &emitter->module->types[source->type_id];
+                    if (target_type->kind == IR_TYPE_NAMED && source_type->kind == IR_TYPE_NAMED &&
+                        semantic_implements_interface(emitter->module->semantics,
+                                                      target_type->symbol_id, source_type->symbol_id)) {
+                        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                                    x64_register("rdx"), x64_register("rbx"));
+                        write_immediate(emitter, "rax", (long long) (source_type->symbol_id + 1));
+                        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                                    x64_memory(X64_WIDTH_QWORD, "rdx", 0), x64_register("rax"));
+                        write_value_load(emitter, "rax", instruction->operand_b);
+                        write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD,
+                                    x64_register("rbx"), x64_memory(X64_WIDTH_NONE, "rdx", 8));
+                        copy_aggregate(emitter, type_slots(emitter->module, source->type_id),
+                                       "rax", "rbx");
+                        return 1;
+                    }
+                }
                 write_value_load(emitter, "rax", instruction->operand_b);
                 copy_aggregate(emitter, type_slots(emitter->module, target->type_id),
                                "rax", "rbx");
@@ -2179,12 +2054,22 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
         case IR_OP_CALL: {
             const IrFunction *callee = called_function(emitter->module, instruction->symbol_id);
             if (callee == NULL) {
+                if (instruction->symbol_id < emitter->module->semantics->symbol_count) {
+                    const SemanticSymbol *method =
+                        &emitter->module->semantics->symbols[instruction->symbol_id];
+                    if (method->kind == SEMANTIC_SYMBOL_FUNCTION &&
+                        method->owner_symbol_id < emitter->module->semantics->symbol_count &&
+                        emitter->module->semantics->symbols[method->owner_symbol_id].kind ==
+                        SEMANTIC_SYMBOL_INTERFACE)
+                        return emit_interface_call(emitter, instruction);
+                }
                 const IrInstruction *callee_value = producer(function, instruction->operand_a);
+                if (!callee_value) return 0;
                 const char *name = ast_program_lexeme(function->source_program,
                                                       callee_value->auxiliary_token);
                 return emit_builtin_call(emitter, instruction, name);
             }
-            return emit_typed_call(emitter, instruction, callee);
+            return emit_typed_call(emitter, instruction, callee, 0);
         }
         case IR_OP_INDEX:
             if (!emit_lvalue_address(emitter, instruction, index)) return 0;

@@ -10,6 +10,7 @@ typedef enum {
     SEMANTIC_SYMBOL_FUNCTION,
     SEMANTIC_SYMBOL_STRUCT,
     SEMANTIC_SYMBOL_ENUM,
+    SEMANTIC_SYMBOL_INTERFACE,
     SEMANTIC_SYMBOL_IMPORT,
     SEMANTIC_SYMBOL_FIELD,
     SEMANTIC_SYMBOL_ENUM_VALUE,
@@ -51,6 +52,11 @@ typedef struct {
 } SemanticModel;
 
 SemanticModel *semantic_analyze(AstProgram * program);
+
+int semantic_implements_interface(const SemanticModel *model, size_t interface_id,
+                                  size_t struct_id);
+size_t semantic_interface_method(const SemanticModel *model, size_t interface_method_id,
+                                 size_t struct_id);
 
 void semantic_model_free(SemanticModel *model);
 

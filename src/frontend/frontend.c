@@ -51,8 +51,7 @@ static AstDeclarationKind declaration_kind(TokenType first, TokenType second) {
     if (first == TOKEN_KEYWORD_IMPORT) return AST_DECL_IMPORT;
     if (first == TOKEN_KEYWORD_STRUCT) return AST_DECL_STRUCT;
     if (first == TOKEN_KEYWORD_ENUM) return AST_DECL_ENUM;
-    if (first == TOKEN_KEYWORD_TRAIT) return AST_DECL_TRAIT;
-    if (first == TOKEN_KEYWORD_IMPL) return AST_DECL_IMPL;
+    if (first == TOKEN_KEYWORD_INTERFACE) return AST_DECL_INTERFACE;
     if (first == TOKEN_KEYWORD_FUNC) return AST_DECL_FUNCTION;
     if (first == TOKEN_KEYWORD_CONST) return AST_DECL_CONSTANT;
     if (first == TOKEN_KEYWORD_VAR) return AST_DECL_VARIABLE;

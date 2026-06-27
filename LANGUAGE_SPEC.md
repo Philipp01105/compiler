@@ -4,8 +4,8 @@ Status: experimental. This document defines the tested source-language contract;
 
 ## Source and declarations
 
-A source file is UTF-8 text beginning with `package name;`, followed by imports, structs, enums, traits,
-implementations, constants, package variables and functions. Statements and imports end with `;`. `//` introduces a line
+A source file is UTF-8 text beginning with `package name;`, followed by imports, structs, enums, interfaces,
+constants, package variables and functions. Statements and imports end with `;`. `//` introduces a line
 comment; `/* ... */` introduces a non-nesting block comment that may span lines. Unclosed block comments are lexical
 errors. Execution begins in a parameterless `main` returning `void` or `int` in `package main`; library packages need no
 entry point.
@@ -24,7 +24,7 @@ Imports use quoted canonical package paths, for example `import "github.com/exam
 Grouped imports remain supported. File imports, angle imports and dot imports are removed. Cycles and invalid `internal`
 imports are rejected.
 
-Declarations and members are package-private by default. `pub` exports functions, structs, enums, traits, constants,
+Declarations and members are package-private by default. `pub` exports functions, structs, enums, interfaces, constants,
 variables, fields, methods and enum variants. Private declarations are visible to all files of their package. Types
 remain nominal across package and module boundaries. See [MODULE_SYSTEM.md](MODULE_SYSTEM.md) for manifest syntax,
 vendor dependencies, visibility, identities and diagnostics.
@@ -120,12 +120,16 @@ arguments. Each module permits at most 256 specializations, declarations at most
 instantiation nesting at most 64 levels. Encoded specialization identities must fit 4095 bytes. By-value recursive
 layouts require a pointer to break the cycle. Only concrete specializations reach typed IR and native emission.
 
-`trait Printable { func toString() -> string; }` declares signatures;
-`impl Printable for Person { func toString() -> string { return name; } }`
-provides an explicit implementation on a nominal struct. `Self` in signatures denotes that struct. Bounds such as
-`T:Printable + Equal` require every named implementation; matching methods alone do not satisfy a bound. Calls dispatch
-statically after specialization. Missing methods, signature mismatches and conflicting implementations are errors. Trait
-inheritance, associated types, default methods and trait objects are not supported.
+`interface Printable { func toString() -> string; }` declares signatures. A struct implements the interface when its
+instance methods have the same names, parameter types and return types. `Self` in a signature denotes the implementing
+struct. Bounds such as `T:Printable + Equal` check these methods without an implementation declaration. Generic calls
+dispatch statically after specialization. Fixed arrays and slices of an interface may hold values of different
+implementing structs. Assigning a struct to an interface element copies its value, and calls through that element
+dispatch dynamically. Interface inheritance, associated types and default methods are not supported.
+Concrete-to-interface conversion is supported for array or slice element assignment; other assignments, arguments,
+initializers and returns require an existing interface value.
+Methods whose signatures contain `Self` can be used through generic bounds but cannot be called through an interface
+array element, because the concrete receiver type is known only at runtime.
 
 A sum enum gives each variant its own payload types. Construct values with
 `Option<int>.Some(42)` or `Option<int>.None`. The representation stores a tag followed by storage for the largest
@@ -170,7 +174,7 @@ arm is analyzed for a concrete specialization, so other arms may use operations 
 generic specializations. Enum value matches retain their existing syntax and behavior.
 
 Generic functions accept explicit type arguments: `identity<i32>(value)` or `core.alloc<Node>()`. Arguments must satisfy
-the function's arity, parameter types and trait bounds. Existing inference remains available when value parameters
+the function's arity, parameter types and interface bounds. Existing inference remains available when value parameters
 determine every type argument; a return type alone does not infer one.
 
 `reserve(type)` zero-initializes one complete sized non-void object and returns a pointer to that type. It accepts a

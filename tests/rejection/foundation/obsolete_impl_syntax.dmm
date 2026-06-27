@@ -1,0 +1,5 @@
+package main;
+interface Value { func get() -> int; }
+struct Number {}
+impl Value for Number { func get() -> int { return 1; } }
+func main() -> void {}

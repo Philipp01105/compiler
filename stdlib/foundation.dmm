@@ -7,8 +7,8 @@ pub struct Cell<T> {
     pub func get() -> T { return value; }
     pub func set(newValue:T) -> void { value=newValue; }
 }
-pub trait Printable { pub func toString() -> string; }
-pub trait Equal { pub func equal(other:Self) -> bit; }
+pub interface Printable { pub func toString() -> string; }
+pub interface Equal { pub func equal(other:Self) -> bit; }
 pub func unwrapOr<T>(value:Option<T>,fallback:T) -> T {
     match (value) {
         Some(v) => return v;

@@ -1,0 +1,2 @@
+package main;
+interface A { func get() -> int; } struct S { func get() -> int { return 1; } func get() -> int { return 2; } } func main() -> void {}

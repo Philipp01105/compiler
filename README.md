@@ -17,7 +17,7 @@ The project is suitable for learning and experimentation. It is not yet intended
 - Compile-time `sizeof(T)` / `alignof(T)` and typed `core.alloc<T>()` / `core.alloc<T>(count)`
 - Compile-time type `.name` / `.size` / `.align`, unevaluated `expression.type`, and `case Type ->` matches
 - Borrowed slices usable in variables, fields, enum payloads and returns, with checked indexing
-- Explicit traits, `Self`, multiple trait bounds, and static method dispatch
+- Structural interfaces, `Self`, multiple interface bounds, and dynamic dispatch for interface arrays
 - Tagged variant payloads and exhaustive `match` statements with typed bindings
 - `if`/`else`, `for`, `while`, `break`, `continue`, and `return`
 - String operations, formatted input/output, file I/O, and explicit heap allocation/free

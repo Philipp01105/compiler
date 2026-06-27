@@ -30,5 +30,5 @@ All pipeline harnesses cap individual inputs at 64 KiB and buffer diagnostics.
 without requiring libFuzzer.
 
 CI runs all five targets with short time limits and uses writable copies of the seed corpora. Source targets also
-receive the generic/trait/sum execution fixtures. The dictionary includes type arguments, trait keywords, `Self`, and
+receive the generic/interface/sum execution fixtures. The dictionary includes type arguments, interface keywords, `Self`, and
 match patterns.

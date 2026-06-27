@@ -27,6 +27,27 @@ static int type_layout_depth(const IrModule *module, IrTypeId id, IrTypeLayout *
         slots = type->array_length * element.storage_slots;
     } else {
         int found = 0;
+        if (type->symbol_id < module->semantics->symbol_count &&
+            module->semantics->symbols[type->symbol_id].kind == SEMANTIC_SYMBOL_INTERFACE) {
+            found = 1;
+            slots = 1;
+            for (size_t s = 0; s < module->structure_count; s++) {
+                const IrAggregate *structure = &module->structures[s];
+                if (!semantic_implements_interface(module->semantics, type->symbol_id,
+                                                   structure->symbol_id)) continue;
+                size_t payload_slots = 0;
+                for (size_t f = 0; f < structure->field_count; f++) {
+                    IrTypeLayout field;
+                    if (!type_layout_depth(module, structure->fields[f].type_id, &field, depth + 1) ||
+                        field.storage_slots > SIZE_MAX - payload_slots) return 0;
+                    payload_slots += field.storage_slots;
+                }
+                if (!payload_slots) payload_slots = 1;
+                if (payload_slots > slots) slots = payload_slots;
+            }
+            if (slots == SIZE_MAX) return 0;
+            slots++;
+        }
         for (size_t s = 0; s < module->structure_count; s++) {
             const IrAggregate *structure = &module->structures[s];
             if (structure->symbol_id != type->symbol_id) continue;

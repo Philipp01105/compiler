@@ -189,7 +189,7 @@ static int dump_quoted(FILE *output, const char *text) {
 
 static const char *symbol_kind_name(SemanticSymbolKind kind) {
     static const char *names[] = {
-        "function", "struct", "enum", "import", "field", "enum-value",
+        "function", "struct", "enum", "interface", "import", "field", "enum-value",
         "parameter", "local", "constant", "variable"
     };
     return kind >= SEMANTIC_SYMBOL_FUNCTION && kind <= SEMANTIC_SYMBOL_VARIABLE ? names[kind] : "invalid";

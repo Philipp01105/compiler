@@ -276,7 +276,7 @@ static int dump_declaration(FILE *output, const AstProgram *program,
         for (const AstGenericParameter *g = declaration->generic_parameters; g; g = g->next) {
             if (g != declaration->generic_parameters && fputc(',', output) == EOF) return 0;
             if (!quoted(output, ast_program_lexeme(program, g->name_token))) return 0;
-            for (const AstTraitBound *b = g->bounds; b; b = b->next)
+            for (const AstInterfaceBound *b = g->bounds; b; b = b->next)
                 if (fputc(':', output) == EOF || !quoted(output, ast_program_lexeme(program, b->name_token))) return 0;
         }
         if (fputc(']', output) == EOF) return 0;
@@ -307,14 +307,8 @@ static int dump_declaration(FILE *output, const AstProgram *program,
         return dump_expression(output, program, declaration->as.constant.value,
                                depth + 1, "value");
     }
-    if (declaration->kind == AST_DECL_TRAIT || declaration->kind == AST_DECL_IMPL) {
-        const AstDeclarationNode *method = declaration->kind == AST_DECL_TRAIT
-                                               ? declaration->as.trait_decl.methods
-                                               : declaration->as.impl_decl.methods;
-        if (declaration->kind == AST_DECL_IMPL &&
-            (!indent(output, depth + 1) || fputs("for=", output) == EOF ||
-             !dump_type(output, program, &declaration->as.impl_decl.for_type) || fputc('\n', output) == EOF))
-            return 0;
+    if (declaration->kind == AST_DECL_INTERFACE) {
+        const AstDeclarationNode *method = declaration->as.interface_decl.methods;
         for (; method; method = method->next)
             if (!dump_declaration(output, program, method, depth + 1)) return 0;
         return 1;

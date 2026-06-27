@@ -9,7 +9,7 @@ import "stdlib";
 // - Methods accessing nested struct fields
 // - Struct composition for complex data structures
 // - Generic Point<T> coordinates
-// - Explicit Equal trait implementation with Self and a generic bound
+// - Implicit Equal interface implementation with Self and a generic bound
 // =================================================================
 
 // Helper functions
@@ -39,9 +39,6 @@ struct Point<T> {
         x = xVal;
         y = yVal;
     }
-}
-
-impl stdlib.Equal for Point<int> {
     func equal(other:Self) -> bit {
         return x == other.x && y == other.y;
     }

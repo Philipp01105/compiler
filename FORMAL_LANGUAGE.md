@@ -35,7 +35,7 @@ string          = '"', { escape | string-byte }, '"' ;
 keyword         = "func" | "var" | "return" | "for" | "if" | "else"
                 | "while" | "const" | "break" | "continue"
                 | "struct" | "enum" | "import" | "static" | "reserve"
-                | "free" | "trait" | "impl" | "match" | "package" | "pub"
+                | "free" | "interface" | "match" | "package" | "pub"
                 | "sizeof" | "alignof" | "slice" | "case" | "typeof" ;
 
 primitive-type  = "int" | "char" | "byte" | "bit"
@@ -56,7 +56,7 @@ top-level-declaration
                 = import-declaration
                 | ["pub"], (function-declaration | struct-declaration
                 | enum-declaration | constant-declaration | package-variable
-                | trait-declaration) | impl-declaration ;
+                | interface-declaration) ;
 package-variable = "var", identifier, [":", type], ["=", expression], ";" ;
 
 import-declaration
@@ -95,9 +95,8 @@ enum-field-list = enum-field, { ",", enum-field } ;
 enum-field      = ["pub"], identifier, ":", type ;
 enum-value      = ["pub"], identifier, ["(", [enum-argument-list | type-list], ")"] ;
 type-list       = type, {",", type} ;
-trait-declaration = "trait", identifier, "{", {trait-method}, "}" ;
-trait-method    = ["pub"], "func", identifier, "(", [parameter-list], ")", "->", type, ";" ;
-impl-declaration = "impl", qualified-name, "for", type, "{", {["pub"],function-declaration}, "}" ;
+interface-declaration = "interface", identifier, "{", {interface-method}, "}" ;
+interface-method = ["pub"], "func", identifier, "(", [parameter-list], ")", "->", type, ";" ;
 enum-argument-list
                 = enum-argument, { ",", enum-argument } ;
 enum-argument   = integer | floating | character | string

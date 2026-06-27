@@ -1,0 +1,4 @@
+package main;
+interface Value { func get() -> int; }
+struct Wrong { func get() -> string { return "wrong"; } }
+func main() -> void { var values:Value[1]; var wrong:Wrong; values[0] = wrong; }

@@ -19,10 +19,14 @@ set(DMM_FUZZ_PIPELINE_SOURCES
         src/frontend/lexer.c
         src/frontend/syntax_parser.c
         src/sema/semantic.c
+        src/sema/semantic_interfaces.c
+        src/sema/semantic_constants.c
+        src/sema/semantic_generics.c
         src/sema/semantic_symbols.c
         src/ast/generics.c
         src/ir/ir_optimize.c
         src/ir/ir.c
+        src/ir/ir_verify.c
         src/ir/ir_cfg.c
         src/ir/ir_dump.c
         src/diagnostics/errorHandler.c)
@@ -57,10 +61,14 @@ add_executable(compiler
         src/frontend/syntax_parser.c
         src/frontend/syntax_parser.h
         src/sema/semantic.c
+        src/sema/semantic_interfaces.c
+        src/sema/semantic_constants.c
+        src/sema/semantic_generics.c
         src/sema/semantic_symbols.c
         src/ast/generics.c
         src/sema/semantic.h
         src/ir/ir.c
+        src/ir/ir_verify.c
         src/ir/ir.h
         src/ir/ir_cfg.c
         src/ir/ir_cfg.h
@@ -76,6 +84,7 @@ add_executable(compiler
         src/backend/runtime_calls.c
         src/backend/runtime_calls.h
         src/backend/x86_64/ir_emitter.c
+        src/backend/x86_64/ir_names.c
         src/backend/x86_64/ir_emitter.h
         src/backend/x86_64/instruction.c
         src/backend/x86_64/instruction.h
@@ -353,9 +362,13 @@ if (BUILD_TESTING)
             src/frontend/syntax_parser.c
             src/frontend/lexer.c
             src/sema/semantic.c
+            src/sema/semantic_interfaces.c
+            src/sema/semantic_constants.c
+            src/sema/semantic_generics.c
             src/sema/semantic_symbols.c
             src/ast/generics.c
             src/ir/ir.c
+            src/ir/ir_verify.c
             src/ir/ir_cfg.c
             src/common/string_interner.c
             src/diagnostics/errorHandler.c)
@@ -368,9 +381,13 @@ if (BUILD_TESTING)
             src/frontend/syntax_parser.c
             src/frontend/lexer.c
             src/sema/semantic.c
+            src/sema/semantic_interfaces.c
+            src/sema/semantic_constants.c
+            src/sema/semantic_generics.c
             src/sema/semantic_symbols.c
             src/ast/generics.c
             src/ir/ir.c
+            src/ir/ir_verify.c
             src/ir/ir_cfg.c
             src/ir/ir_dump.c
             src/ir/ir_optimize.c

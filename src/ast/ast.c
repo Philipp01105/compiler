@@ -72,8 +72,7 @@ const char *ast_declaration_kind_name(AstDeclarationKind kind) {
         case AST_DECL_FUNCTION: return "function";
         case AST_DECL_CONSTANT: return "constant";
         case AST_DECL_VARIABLE: return "variable";
-        case AST_DECL_TRAIT: return "trait";
-        case AST_DECL_IMPL: return "impl";
+        case AST_DECL_INTERFACE: return "interface";
         case AST_DECL_INVALID: return "invalid";
     }
     return "invalid";
@@ -288,13 +287,9 @@ static int valid_declarations(const AstProgram *program) {
                      argument != NULL; argument = argument->next)
                     if (!valid_expression(program, argument)) return 0;
             }
-        } else if (declaration->kind == AST_DECL_TRAIT || declaration->kind == AST_DECL_IMPL) {
+        } else if (declaration->kind == AST_DECL_INTERFACE) {
             if (!valid_token(program, declaration->name_token)) return 0;
-            const AstDeclarationNode *methods = declaration->kind == AST_DECL_TRAIT
-                                                    ? declaration->as.trait_decl.methods
-                                                    : declaration->as.impl_decl.methods;
-            if (declaration->kind == AST_DECL_IMPL && !valid_type(program, &declaration->as.impl_decl.for_type, 0))
-                return 0;
+            const AstDeclarationNode *methods = declaration->as.interface_decl.methods;
             for (; methods; methods = methods->next)
                 if (!valid_function_declaration(program, methods)) return 0;
         } else {

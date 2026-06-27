@@ -1,5 +1,5 @@
 /* stdlib
-Standard DMM containers, traits, formatted output and file I/O.
+Standard DMM containers, interfaces, formatted output and file I/O.
 Includes Option, Result, Cell, Printable and Equal.
 */
 

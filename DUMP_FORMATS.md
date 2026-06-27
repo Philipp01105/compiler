@@ -38,7 +38,7 @@ fields, enum variants, statements, expressions, resolved types, stable semantic 
 type operands, and source spans are included. A dash denotes an absent optional value.
 
 Generic parameter/bound records and specialization identities are explicit. Type arguments appear recursively in type
-spellings. Trait/implementation methods retain their source ownership; enum payload and match-arm/binding records
+spellings. Interface and struct methods retain their source ownership; enum payload and match-arm/binding records
 describe the new nodes. Template declarations remain visible in AST dumps but are absent from IR. Specialized
 declarations include `generic-origin name="..."` and ordered
 `type-argument type=...` children so consumers can display source-level generic types instead of private specialization

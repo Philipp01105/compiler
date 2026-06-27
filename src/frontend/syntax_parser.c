@@ -13,7 +13,7 @@ typedef struct {
     unsigned expression_depth;
     unsigned type_depth;
     size_t type_expression_end;
-    int trait_signature;
+    int interface_signature;
     int pending_equal;
     int failed;
     int reported;
@@ -304,9 +304,9 @@ static AstGenericParameter *parse_generic_parameters(SyntaxParser *parser) {
         if (parameter != NULL) {
             parameter->name_token = name;
             if (match(parser, TOKEN_COLON)) {
-                AstTraitBound **bound = &parameter->bounds;
+                AstInterfaceBound **bound = &parameter->bounds;
                 do {
-                    AstTraitBound *b = allocate(parser, sizeof(*b));
+                    AstInterfaceBound *b = allocate(parser, sizeof(*b));
                     AstType bound_type = parse_type(parser);
                     size_t token = bound_type.name_token;
                     if (b != NULL) {
@@ -1008,7 +1008,7 @@ static AstDeclarationNode *parse_function(SyntaxParser *parser, int is_static,
     (void) consume(parser, TOKEN_ARROW);
     AstType return_type = parse_type(parser);
     AstStatement *body;
-    if (parser->trait_signature) {
+    if (parser->interface_signature) {
         body = new_statement(parser, AST_STMT_BLOCK, parser->current);
         (void) consume(parser, TOKEN_SEMICOLON);
         finish_statement(parser, body);
@@ -1211,35 +1211,26 @@ static AstDeclarationNode *parse_import(SyntaxParser *parser) {
     return declaration;
 }
 
-static AstDeclarationNode *parse_trait(SyntaxParser *parser, int implementation) {
+static AstDeclarationNode *parse_interface(SyntaxParser *parser) {
     size_t first = parser->current++;
-    AstDeclarationNode *d = new_declaration(parser, implementation ? AST_DECL_IMPL : AST_DECL_TRAIT, first);
-    size_t trait = implementation ? parse_type(parser).name_token : consume(parser, TOKEN_IDENTIFIER);
-    AstType for_type = inferred_type();
-    if (implementation) {
-        (void) consume(parser, TOKEN_KEYWORD_FOR);
-        for_type = parse_type(parser);
-    }
+    AstDeclarationNode *d = new_declaration(parser, AST_DECL_INTERFACE, first);
+    size_t interface = consume(parser, TOKEN_IDENTIFIER);
     (void) consume(parser, TOKEN_LBRACE);
     AstDeclarationNode *head = NULL, **tail = &head;
-    int saved = parser->trait_signature;
-    parser->trait_signature = !implementation;
+    int saved = parser->interface_signature;
+    parser->interface_signature = 1;
     while (!parser->failed && !check(parser, TOKEN_RBRACE) && !check(parser, TOKEN_EOF)) {
         int is_public = match(parser, TOKEN_KEYWORD_PUB);
-        AstDeclarationNode *method = parse_function(parser, 0, implementation ? for_type.name_token : trait);
+        AstDeclarationNode *method = parse_function(parser, 0, interface);
         if (method) method->is_public = is_public;
         *tail = method;
         if (method) tail = &method->next;
     }
-    parser->trait_signature = saved;
+    parser->interface_signature = saved;
     (void) consume(parser, TOKEN_RBRACE);
     if (d) {
-        d->name_token = trait;
-        if (implementation) {
-            d->as.impl_decl.trait_token = trait;
-            d->as.impl_decl.for_type = for_type;
-            d->as.impl_decl.methods = head;
-        } else d->as.trait_decl.methods = head;
+        d->name_token = interface;
+        d->as.interface_decl.methods = head;
     }
     finish_declaration(parser, d);
     return d;
@@ -1296,8 +1287,7 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
             declaration = parse_function(&parser, 0, AST_TOKEN_NONE);
         else if (check(&parser, TOKEN_KEYWORD_STRUCT)) declaration = parse_struct(&parser);
         else if (check(&parser, TOKEN_KEYWORD_ENUM)) declaration = parse_enum(&parser);
-        else if (check(&parser, TOKEN_KEYWORD_TRAIT)) declaration = parse_trait(&parser, 0);
-        else if (check(&parser, TOKEN_KEYWORD_IMPL)) declaration = parse_trait(&parser, 1);
+        else if (check(&parser, TOKEN_KEYWORD_INTERFACE)) declaration = parse_interface(&parser);
         else if (check(&parser, TOKEN_KEYWORD_PACKAGE))
             parser_failure(&parser, ERR_PACKAGE_DECLARATION,
                            "Package declaration must appear exactly once, before all declarations");
@@ -1317,7 +1307,8 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
                 TokenType token = current_type(&parser);
                 if (braces <= 0 && parser.current > first &&
                     (token == TOKEN_KEYWORD_FUNC || token == TOKEN_KEYWORD_STRUCT ||
-                     token == TOKEN_KEYWORD_ENUM || token == TOKEN_KEYWORD_IMPORT || token == TOKEN_KEYWORD_CONST))
+                     token == TOKEN_KEYWORD_ENUM || token == TOKEN_KEYWORD_INTERFACE ||
+                     token == TOKEN_KEYWORD_IMPORT || token == TOKEN_KEYWORD_CONST))
                     break;
                 if (token == TOKEN_LBRACE) braces++;
                 if (token == TOKEN_RBRACE) braces--;
@@ -1327,9 +1318,9 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
             parser.failed = 0;
         }
         while (declaration != NULL) {
-            if (is_public && (declaration->kind == AST_DECL_IMPORT || declaration->kind == AST_DECL_IMPL))
+            if (is_public && declaration->kind == AST_DECL_IMPORT)
                 parser_failure(&parser, ERR_PARSE_INVALID_DECLARATION,
-                               "pub applies to declarations and members, not imports or implementations");
+                               "pub applies to declarations and members, not imports");
             declaration->is_public = is_public;
             AstDeclarationNode *next = declaration->next;
             *tail = declaration;

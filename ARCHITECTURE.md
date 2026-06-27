@@ -27,10 +27,12 @@ backend never reparses source tokens and there is no alternate compatibility emi
 
 Generic declarations remain arena-owned templates. `src/ast/generics.c` clones concrete specializations, substitutes
 nested types and derives canonical identities. Semantic analysis infers call arguments, enforces invariant substitutions
-and explicit trait implementations, and checks each concrete body through a growing work list. The IR skips templates.
+and structural interface bounds, and checks each concrete body through a growing work list. The IR skips templates.
 Sum construction, tag tests and guarded payload extraction are explicit operations; exhaustive matches become ordinary
 branches and labels. The verifier rejects extraction without the matching guarded predecessor. Native aggregate layout
 reserves a tag slot and the largest payload, preserving by-value copying through the existing internal ABI.
+Interface array and slice elements similarly store a concrete struct tag and enough inline space for the largest
+implementing struct. Calls through these elements select the concrete method by tag at runtime.
 
 ## Ownership
 
@@ -44,15 +46,17 @@ reserves a tag slot and the largest payload, preserving by-value copying through
 - `src/ast/ast_dump.c` serializes the resolved tree as versioned `dmm-ast-v3`.
 - `src/sema` collects package/member/local symbols, resolves file-local imports and named types, validates scopes,
   calls, conversions, lvalues, returns, bounds, and control-flow placement, and annotates AST nodes with stable IDs and
-  types.
+  types. `semantic_generics.c` handles specialization and type normalization, `semantic_constants.c` evaluates
+  constant expressions, and `semantic_interfaces.c` checks structural interface conformance.
 - `src/ir` lowers typed AST nodes to explicit values and control flow, interns types, describes aggregate/enum layouts
-  and imports, and verifies every use, definition, label, type, and symbol reference.
+  and imports. `ir_verify.c` verifies every use, definition, label, type, and symbol reference.
 - `src/ir/ir_optimize.c` folds and propagates constants/copies, simplifies control flow and addresses, and removes dead
   values/stores using CFG dataflow/liveness. It preserves possible effects and traps, then verifies the resulting
   module. See [IR_OPTIMIZATION.md](IR_OPTIMIZATION.md).
 - `src/ir/ir_dump.c` serializes verified modules as versioned `dmm-ir-v3`.
 - `src/backend/x86_64` consumes only verified IR. It owns stack layout, System V and Windows x64 calling conventions,
   scalar/SSE conversion, aggregate address calculation, runtime calls, and Intel/AT&T assembly formatting.
+  `ir_names.c` builds and validates native symbol names.
 - `src/backend/asm_optimizer.c` performs the final conservative text cleanup.
 - `src/backend/native/encoder.c` encodes structured instructions directly.
 - `src/backend/native/object.c` owns sections, symbols and relocations and writes ELF64/COFF relocatable objects.

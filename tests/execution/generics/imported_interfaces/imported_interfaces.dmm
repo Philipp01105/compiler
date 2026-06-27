@@ -1,0 +1,18 @@
+package main;
+import "stdlib";
+struct Person {
+    var name:string;
+    func toString() -> string { return name; }
+    func equal(other:Self) -> bit { return name == other.name; }
+}
+func output<T:stdlib.Printable>(value:T) -> string { return value.toString(); }
+func compare<T:stdlib.Printable + stdlib.Equal>(a:T,b:T) -> bit { return a.equal(b); }
+func main() -> void {
+    var p:Person;
+    p.name = "Ada";
+    stdlib.println(output(p));
+    stdlib.println(compare(p,p));
+    var items:stdlib.Printable[1];
+    items[0] = p;
+    stdlib.println(items[0].toString());
+}

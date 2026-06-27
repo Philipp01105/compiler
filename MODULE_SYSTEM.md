@@ -111,7 +111,7 @@ declared local name. Access is qualified:
 bindings in another file of the same package. The existing grouped form remains available:
 `import ("path/a" b "path/b");`. Dot imports, blank aliases, duplicate aliases and file imports are unsupported.
 
-Declarations and members are private by default. `pub` applies to functions, structs, enums, traits, constants and
+Declarations and members are private by default. `pub` applies to functions, structs, enums, interfaces, constants and
 package variables. Fields and methods require their own `pub`; exporting a struct does not export its private members.
 Enum variants also require `pub`, for example:
 

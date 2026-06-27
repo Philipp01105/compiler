@@ -29,7 +29,7 @@ func saveAndDisplay(name:u8[], message:u8[], output:*stdio.Stream, errors:*stdio
 
 // Reuse one buffered stdin reader so read-ahead survives between prompts.
 func interact(input:*stdio.BufferedReader, output:*stdio.Stream, errors:*stdio.Stream) -> int {
-    if (!output.writeLine("DMM stream I/O demo").ok() || !output.writeString("Name: ").ok()) {
+    if (!output.writeLine("Stream demo").ok() || !output.writeString("Name: ").ok()) {
         return 1;
     }
     var name = input.readLine(1024);

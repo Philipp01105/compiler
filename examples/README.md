@@ -14,7 +14,7 @@ for `build`.
 |------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------|
 | [calculator.dmm](calculator.dmm)                     | `Result<int,string>` returns and exhaustive `match`, including division by zero                                                |
 | [guess_number.dmm](guess_number.dmm)                 | Tagged outcomes with integer payloads and arm-scoped match bindings                                                            |
-| [shapes.dmm](shapes.dmm)                             | `Point<T>` specialization, by-value copies, an explicit `Equal` implementation with `Self`, and an inferred `T:Equal` function |
+| [shapes.dmm](shapes.dmm)                             | `Point<T>` specialization, by-value copies, an implicit `Equal` implementation with `Self`, and an inferred `T:Equal` function |
 | [heap_management_demo.dmm](heap_management_demo.dmm) | Inferred generic allocation of `Cell<T>`, type-based `reserve`, and explicit `free`                                            |
 | [rock_paper_scissors.dmm](rock_paper_scissors.dmm)   | Compile-time constants for named moves                                                                                         |
 | [tictactoe.dmm](tictactoe.dmm)                       | Constant array lengths and fixed-array arguments passed as checked slices                                                      |
