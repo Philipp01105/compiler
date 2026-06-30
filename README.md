@@ -172,6 +172,26 @@ instruments the compiler and unit tests and also links generated execution/ABI p
 runs the
 `safety` label with leak detection enabled.
 
+### Runtime performance
+
+The opt-in benchmark suite compiles four workloads at `-O0` and `-O1`, checks their output, and measures only execution
+time. It uses two warmup runs and the median of seven timed runs per variant. Results, including individual samples and
+the `-O1`/`-O0` ratio, are written to `performance/report.json` in the build directory.
+
+```sh
+cmake -S . -B build -DDMM_ENABLE_PERF_TESTS=ON
+cmake --build build --target compiler
+ctest --test-dir build -R '^runtime_performance$' --output-on-failure
+```
+
+Run `python tests/performance/run.py --compiler build/compiler --output-dir build/performance` directly to adjust
+`--warmups` and `--samples`. On Windows, use `build/compiler.exe` or the executable path for your CMake generator. To
+compare a later build against a saved report from the same machine, pass `--baseline previous-report.json` and optionally
+`--max-regression-percent 10`; exceeding that `-O1` median runtime increase then returns a failure. Copy the previous
+report outside the output directory before the next run. The default CTest benchmark reports measurements without a
+timing threshold because machine load can cause noisy results. Use an idle machine and the same build configuration for
+comparisons.
+
 Clang users can build all fuzzers with:
 
 ```sh

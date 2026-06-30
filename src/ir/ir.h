@@ -80,6 +80,8 @@ typedef struct {
     /* Compiler-owned numeric literal; source tokens remain immutable. */
     int has_immediate;
     uint64_t immediate;
+    /* A dominating fixed-array access has already checked this SSA index. */
+    int bounds_check_elided;
 } IrInstruction;
 
 typedef struct {
@@ -189,6 +191,7 @@ typedef struct {
     struct IrGlobal *globals;
     size_t global_count;
     int verified;
+    int optimized;
 } IrModule;
 
 typedef struct IrGlobal {

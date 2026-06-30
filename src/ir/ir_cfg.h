@@ -28,5 +28,5 @@ void ir_cfg_free(IrControlFlowGraph *graph);
 int ir_opcode_is_terminator(IrOpcode opcode);
 int ir_cfg_dump(FILE *output, const IrModule *module);
 
-int ir_verify_control_flow(const IrFunction *function, int implicit_void_return);
+int ir_verify_control_flow(const IrModule *module, const IrFunction *function, int implicit_void_return);
 #endif

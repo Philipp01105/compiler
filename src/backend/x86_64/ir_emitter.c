@@ -1,61 +1,15 @@
-#include "ir_emitter.h"
+#include "ir_emitter_internal.h"
 #include "ir_names.h"
 #include "instruction.h"
 #include "native/encoder.h"
-#include <stdarg.h>
 #include "runtime_calls.h"
 #include "core_intrinsics.h"
-#include "native_runtime.h"
-#include "errorHandler.h"
-#include <errno.h>
 
+#include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
-#include <stdint.h>
-
-typedef struct {
-    FILE *output;
-    size_t instruction_index;
-    size_t current_ir_instruction;
-    AstSourceSpan current_span;
-    int has_source;
-    int failed;
-} SourceMapWriter;
-
-typedef struct {
-    const IrModule *module;
-    const IrFunction *function;
-    TargetFormat target;
-    SyntaxMode syntax;
-    FILE *output;
-    size_t function_index;
-    size_t declaration_count;
-    size_t frame_size;
-    size_t current_label;
-    size_t bounds_sequence;
-    SourceMapWriter *source_map;
-    NativeObject *native;
-} Emitter;
-
-static int map_quoted(FILE *output, const char *text) {
-    if (fputc('"', output) == EOF) return 0;
-    for (const unsigned char *p = (const unsigned char *) (text == NULL ? "" : text); *p; p++) {
-        if (*p == '"' || *p == '\\') {
-            if (fputc('\\', output) == EOF || fputc(*p, output) == EOF) return 0;
-        } else if (*p == '\n') {
-            if (fputs("\\n", output) == EOF) return 0;
-        } else if (*p == '\r') {
-            if (fputs("\\r", output) == EOF) return 0;
-        } else if (*p == '\t') {
-            if (fputs("\\t", output) == EOF) return 0;
-        } else if (*p < 0x20) {
-            if (fprintf(output, "\\x%02x", *p) < 0) return 0;
-        } else if (fputc(*p, output) == EOF) return 0;
-    }
-    return fputc('"', output) != EOF;
-}
 
 static void write_x64(const Emitter *emitter, X64Instruction instruction) {
     SourceMapWriter *map = emitter->source_map;
@@ -85,7 +39,7 @@ static void write_x64(const Emitter *emitter, X64Instruction instruction) {
     else (void) x64_print_instruction(emitter->output, emitter->syntax, &instruction);
 }
 
-static void write_labelf(const Emitter *emitter, const char *format, ...) {
+void write_labelf(const Emitter *emitter, const char *format, ...) {
     char name[512];
     va_list args;
     va_start(args, format);
@@ -104,16 +58,16 @@ static void write_labelf(const Emitter *emitter, const char *format, ...) {
     (void) native_define(emitter->native, name, 0, 0);
 }
 
-static void write_x64_0(const Emitter *emitter, X64Opcode opcode) {
+void write_x64_0(const Emitter *emitter, X64Opcode opcode) {
     write_x64(emitter, x64_instruction0(opcode, X64_WIDTH_NONE));
 }
 
-static void write_x64_1(const Emitter *emitter, X64Opcode opcode, X64Width width,
+void write_x64_1(const Emitter *emitter, X64Opcode opcode, X64Width width,
                         X64Operand operand) {
     write_x64(emitter, x64_instruction1(opcode, width, operand));
 }
 
-static void write_x64_2(const Emitter *emitter, X64Opcode opcode, X64Width width,
+void write_x64_2(const Emitter *emitter, X64Opcode opcode, X64Width width,
                         X64Operand destination, X64Operand source) {
     write_x64(emitter, x64_instruction2(opcode, width, destination, source));
 }
@@ -143,24 +97,24 @@ static void write_stack_address(const Emitter *emitter, const char *destination,
                 x64_memory(X64_WIDTH_NONE, "rsp", (long long) offset));
 }
 
-static int is_integral(DataType type) {
+int is_integral(DataType type) {
     return data_type_integral(type);
 }
 
-static int is_floating(DataType type) {
+int is_floating(DataType type) {
     return type == TYPE_FLOAT || type == TYPE_DOUBLE;
 }
 
-static int is_numeric(DataType type) {
+int is_numeric(DataType type) {
     return is_integral(type) || is_floating(type);
 }
 
-static int is_pointer_value(const IrInstruction *instruction) {
+int is_pointer_value(const IrInstruction *instruction) {
     return instruction != NULL &&
            (instruction->pointer_depth != 0 || instruction->is_array);
 }
 
-static int type_is_structure(const IrModule *module, IrTypeId type_id) {
+int type_is_structure(const IrModule *module, IrTypeId type_id) {
     if (type_id < module->type_count && module->types[type_id].kind == IR_TYPE_SLICE) return 1;
     if (type_id >= module->type_count || module->types[type_id].kind != IR_TYPE_NAMED)
         return 0;
@@ -174,7 +128,7 @@ static int type_is_structure(const IrModule *module, IrTypeId type_id) {
     return 0;
 }
 
-static int is_inline_structure(const IrModule *module,
+int is_inline_structure(const IrModule *module,
                                const IrInstruction *instruction) {
     return instruction != NULL && type_is_structure(module, instruction->type_id);
 }
@@ -205,7 +159,7 @@ static DataType ir_ast_type(const AstProgram *program, const AstType *type) {
     }
 }
 
-static const IrInstruction *producer(const IrFunction *function, size_t value) {
+const IrInstruction *producer(const IrFunction *function, size_t value) {
     if (value == IR_VALUE_NONE) return NULL;
     for (size_t i = 0; i < function->instruction_count; i++)
         if (function->instructions[i].result == value) return &function->instructions[i];
@@ -232,7 +186,7 @@ static const IrParameter *function_parameter(const IrFunction *function,
     return NULL;
 }
 
-static const IrFunction *called_function(const IrModule *module, size_t symbol_id) {
+const IrFunction *called_function(const IrModule *module, size_t symbol_id) {
     for (size_t i = 0; i < module->function_count; i++)
         if (module->functions[i].symbol_id == symbol_id) return &module->functions[i];
     return NULL;
@@ -245,7 +199,7 @@ static size_t slice_parameter_count(const IrFunction *function) {
     return count;
 }
 
-static size_t parameter_storage_slots(const IrFunction *function) {
+size_t parameter_storage_slots(const IrFunction *function) {
     return function->parameter_count + slice_parameter_count(function);
 }
 
@@ -260,7 +214,7 @@ static size_t value_offset(size_t value) {
     return (value + 2U) * 8U;
 }
 
-static size_t type_slots(const IrModule *module, IrTypeId type_id) {
+size_t type_slots(const IrModule *module, IrTypeId type_id) {
     IrTypeLayout layout;
     return ir_type_layout(module, type_id, &layout) ? layout.storage_slots : 0;
 }
@@ -315,7 +269,7 @@ static void write_escaped(FILE *output, const char *text) {
     }
 }
 
-static void write_cstring(const Emitter *emitter, const char *text) {
+void write_cstring(const Emitter *emitter, const char *text) {
     if (emitter->native) (void) native_bytes(emitter->native, text, strlen(text) + 1);
     else {
         fputs("    .ascii \"", emitter->output);
@@ -324,12 +278,12 @@ static void write_cstring(const Emitter *emitter, const char *text) {
     }
 }
 
-static void write_quad(const Emitter *emitter, uint64_t value) {
+void write_quad(const Emitter *emitter, uint64_t value) {
     if (emitter->native) (void) native_uint(emitter->native, value, 8);
     else fprintf(emitter->output, "    .quad 0x%016llx\n", (unsigned long long) value);
 }
 
-static void write_value_load(const Emitter *emitter, const char *reg, size_t value) {
+void write_value_load(const Emitter *emitter, const char *reg, size_t value) {
     X64Instruction instruction = x64_instruction2(X64_OP_MOV, X64_WIDTH_QWORD,
                                                   x64_register(reg), x64_memory(X64_WIDTH_QWORD, "rbp",
                                                       -(long long) value_offset(value)));
@@ -341,7 +295,7 @@ static size_t slice_length_offset(const Emitter *emitter, size_t parameter_index
             slice_length_ordinal(emitter->function, parameter_index) + 2U) * 8U;
 }
 
-static void write_value_store(const Emitter *emitter, const char *reg, size_t value) {
+void write_value_store(const Emitter *emitter, const char *reg, size_t value) {
     X64Instruction instruction = x64_instruction2(X64_OP_MOV, X64_WIDTH_QWORD,
                                                   x64_memory(X64_WIDTH_QWORD, "rbp", -(long long) value_offset(value)),
                                                   x64_register(reg));
@@ -362,7 +316,7 @@ static void write_local_store(const Emitter *emitter, const char *reg, size_t of
     write_x64(emitter, instruction);
 }
 
-static void write_immediate(const Emitter *emitter, const char *reg, long long value) {
+void write_immediate(const Emitter *emitter, const char *reg, long long value) {
     X64Instruction instruction = x64_instruction2(X64_OP_MOV, X64_WIDTH_QWORD,
                                                   x64_register(reg), x64_immediate(value));
     write_x64(emitter, instruction);
@@ -375,7 +329,7 @@ static void write_address(const Emitter *emitter, const char *reg, const char *l
     write_x64(emitter, instruction);
 }
 
-static void write_call(const Emitter *emitter, const char *name) {
+void write_call(const Emitter *emitter, const char *name) {
     char core_symbol[128];
     if (strcmp(name, "strlen") == 0 || strcmp(name, "strcmp") == 0 ||
         strcmp(name, "strcpy") == 0 || strcmp(name, "strcat") == 0 ||
@@ -399,17 +353,17 @@ static void write_call(const Emitter *emitter, const char *name) {
     }
 }
 
-static const char *argument_register(TargetFormat target, size_t index) {
+const char *argument_register(TargetFormat target, size_t index) {
     static const char *sysv[] = {"rdi", "rsi", "rdx", "rcx", "r8", "r9"};
     static const char *coff[] = {"rcx", "rdx", "r8", "r9"};
     return target == TARGET_COFF ? coff[index] : sysv[index];
 }
 
-static size_t physical_parameter_count(const IrFunction *function) {
+size_t physical_parameter_count(const IrFunction *function) {
     return function->parameter_count + slice_parameter_count(function);
 }
 
-static int physical_parameter(const IrFunction *function, size_t physical_index,
+int physical_parameter(const IrFunction *function, size_t physical_index,
                               size_t *source_index, int *is_length) {
     size_t physical = 0;
     for (size_t source = 0; source < function->parameter_count; source++) {
@@ -431,7 +385,7 @@ static int physical_parameter(const IrFunction *function, size_t physical_index,
     return 0;
 }
 
-static int physical_is_floating(const IrFunction *function, size_t physical_index) {
+int physical_is_floating(const IrFunction *function, size_t physical_index) {
     size_t source = 0;
     int is_length = 0;
     return physical_parameter(function, physical_index, &source, &is_length) &&
@@ -440,7 +394,7 @@ static int physical_is_floating(const IrFunction *function, size_t physical_inde
            is_floating(function->parameters[source].type);
 }
 
-static size_t parameter_register_index(const IrFunction *function, TargetFormat target,
+size_t parameter_register_index(const IrFunction *function, TargetFormat target,
                                        size_t physical_index) {
     if (target == TARGET_COFF)
         return physical_index < 4 ? physical_index : IR_VALUE_NONE;
@@ -460,7 +414,7 @@ static size_t stack_parameter_index(const IrFunction *function, TargetFormat tar
     return stack_index;
 }
 
-static size_t stack_parameter_count(const IrFunction *function, TargetFormat target) {
+size_t stack_parameter_count(const IrFunction *function, TargetFormat target) {
     size_t count = 0;
     for (size_t i = 0; i < physical_parameter_count(function); i++)
         if (parameter_register_index(function, target, i) == IR_VALUE_NONE) count++;
@@ -475,7 +429,7 @@ static void write_positive_frame_load(const Emitter *emitter, const char *reg,
     write_x64(emitter, instruction);
 }
 
-static void normalize_integral_parameter(const Emitter *emitter, DataType type) {
+void normalize_integral_parameter(const Emitter *emitter, DataType type) {
     if (data_type_fixed_integer(type)) {
         unsigned bytes = data_type_bytes(type);
         if (bytes == 8) return;
@@ -508,7 +462,7 @@ static void normalize_integral_parameter(const Emitter *emitter, DataType type) 
     }
 }
 
-static long long constant_value(const AstProgram *program,
+long long constant_value(const AstProgram *program,
                                 const IrInstruction *instruction) {
     const AstToken *token = ast_program_token(program, instruction->auxiliary_token);
     if (token == NULL) return 0;
@@ -518,9 +472,9 @@ static long long constant_value(const AstProgram *program,
     return (long long) strtoull(token->lexeme, NULL, 10);
 }
 
-static void load_nullable_string(Emitter *emitter, const char *reg, size_t value);
+void load_nullable_string(Emitter *emitter, const char *reg, size_t value);
 
-static int emit_string_compare(Emitter *emitter, const IrInstruction *instruction) {
+int emit_string_compare(Emitter *emitter, const IrInstruction *instruction) {
     const char *left_argument = emitter->target == TARGET_COFF ? "rcx" : "rdi";
     const char *right_argument = emitter->target == TARGET_COFF ? "rdx" : "rsi";
     int equal_result = instruction->operator_type == TOKEN_EQUAL_EQUAL;
@@ -559,12 +513,12 @@ static int emit_string_compare(Emitter *emitter, const IrInstruction *instructio
     return 1;
 }
 
-static void convert_rax(Emitter *emitter, DataType from, DataType to);
+void convert_rax(Emitter *emitter, DataType from, DataType to);
 
-static size_t aggregate_result_offset(const Emitter *emitter,
+size_t aggregate_result_offset(const Emitter *emitter,
                                       const IrInstruction *result);
 
-static void copy_aggregate(Emitter *emitter, size_t slots,
+void copy_aggregate(Emitter *emitter, size_t slots,
                            const char *source, const char *destination);
 
 static void emit_concat_operand(Emitter *emitter, const IrInstruction *value,
@@ -617,7 +571,7 @@ static void emit_concat_operand(Emitter *emitter, const IrInstruction *value,
     write_stack_address(emitter, "rax", buffer_offset);
 }
 
-static int emit_string_concat(Emitter *emitter, const IrInstruction *instruction) {
+int emit_string_concat(Emitter *emitter, const IrInstruction *instruction) {
     const IrInstruction *left = producer(emitter->function, instruction->operand_a);
     const IrInstruction *right = producer(emitter->function, instruction->operand_b);
     if (left == NULL || right == NULL) return 0;
@@ -669,282 +623,6 @@ static int emit_string_concat(Emitter *emitter, const IrInstruction *instruction
     return 1;
 }
 
-static void load_floating_value(Emitter *emitter, size_t value, DataType target,
-                                unsigned xmm) {
-    const IrInstruction *source = producer(emitter->function, value);
-    write_value_load(emitter, "rax", value);
-    convert_rax(emitter, source->type, target);
-    char destination[16];
-    (void) snprintf(destination, sizeof(destination), "xmm%u", xmm);
-    write_x64_2(emitter, target == TYPE_FLOAT ? X64_OP_MOVD : X64_OP_MOVQ,
-                X64_WIDTH_NONE, x64_register(destination),
-                x64_register(target == TYPE_FLOAT ? "eax" : "rax"));
-}
-
-static void store_floating_result(Emitter *emitter, DataType type, unsigned xmm,
-                                  size_t result) {
-    char source[16];
-    (void) snprintf(source, sizeof(source), "xmm%u", xmm);
-    write_x64_2(emitter, type == TYPE_FLOAT ? X64_OP_MOVD : X64_OP_MOVQ,
-                X64_WIDTH_NONE, x64_register(type == TYPE_FLOAT ? "eax" : "rax"),
-                x64_register(source));
-    write_value_store(emitter, "rax", result);
-}
-
-static int emit_floating_binary(Emitter *emitter, const IrInstruction *instruction,
-                                DataType operation_type) {
-    load_floating_value(emitter, instruction->operand_a, operation_type, 2);
-    load_floating_value(emitter, instruction->operand_b, operation_type, 1);
-    if (instruction->operator_type >= TOKEN_PLUS &&
-        instruction->operator_type <= TOKEN_SLASH) {
-        static const X64Opcode float_operations[] = {
-            X64_OP_ADDSS, X64_OP_SUBSS, X64_OP_MULSS, X64_OP_DIVSS
-        };
-        static const X64Opcode double_operations[] = {
-            X64_OP_ADDSD, X64_OP_SUBSD, X64_OP_MULSD, X64_OP_DIVSD
-        };
-        size_t operation = (size_t) (instruction->operator_type - TOKEN_PLUS);
-        write_x64_2(emitter, operation_type == TYPE_FLOAT
-                                 ? float_operations[operation]
-                                 : double_operations[operation],
-                    X64_WIDTH_NONE, x64_register("xmm2"), x64_register("xmm1"));
-        store_floating_result(emitter, instruction->type, 2, instruction->result);
-        return 1;
-    }
-    if (instruction->operator_type < TOKEN_EQUAL_EQUAL ||
-        instruction->operator_type > TOKEN_GREATER_EQUAL)
-        return 0;
-    write_x64_2(emitter, operation_type == TYPE_FLOAT ? X64_OP_UCOMISS : X64_OP_UCOMISD,
-                X64_WIDTH_NONE, x64_register("xmm2"), x64_register("xmm1"));
-    X64Opcode condition = X64_OP_SETE;
-    int require_ordered = 0;
-    int include_unordered = 0;
-    if (instruction->operator_type == TOKEN_BANG_EQUAL) {
-        condition = X64_OP_SETNE;
-        include_unordered = 1;
-    } else if (instruction->operator_type == TOKEN_LESS) {
-        condition = X64_OP_SETB;
-        require_ordered = 1;
-    } else if (instruction->operator_type == TOKEN_LESS_EQUAL) {
-        condition = X64_OP_SETBE;
-        require_ordered = 1;
-    } else if (instruction->operator_type == TOKEN_GREATER) condition = X64_OP_SETA;
-    else if (instruction->operator_type == TOKEN_GREATER_EQUAL) condition = X64_OP_SETAE;
-    else require_ordered = 1;
-    write_x64_1(emitter, condition, X64_WIDTH_NONE, x64_register("al"));
-    if (require_ordered || include_unordered) {
-        write_x64_1(emitter, include_unordered ? X64_OP_SETP : X64_OP_SETNP,
-                    X64_WIDTH_NONE, x64_register("dl"));
-        write_x64_2(emitter, include_unordered ? X64_OP_OR : X64_OP_AND,
-                    X64_WIDTH_BYTE, x64_register("al"), x64_register("dl"));
-    }
-    write_x64_2(emitter, X64_OP_MOVZX, X64_WIDTH_QWORD,
-                x64_sized_register(X64_WIDTH_QWORD, "rax"),
-                x64_sized_register(X64_WIDTH_BYTE, "al"));
-    write_value_store(emitter, "rax", instruction->result);
-    return 1;
-}
-
-static int emit_typed_call(Emitter *emitter, const IrInstruction *instruction,
-                           const IrFunction *callee, int interface_receiver) {
-    const IrFunction *caller = emitter->function;
-    size_t stack_count = stack_parameter_count(callee, emitter->target);
-    size_t physical_count = physical_parameter_count(callee);
-    if ((stack_count & 1U) != 0)
-        write_x64_2(emitter, X64_OP_SUB, X64_WIDTH_QWORD,
-                    x64_register("rsp"), x64_immediate(8));
-    for (size_t physical = physical_count; physical-- > 0;) {
-        if (parameter_register_index(callee, emitter->target, physical) != IR_VALUE_NONE)
-            continue;
-        size_t source = 0;
-        int is_length = 0;
-        if (!physical_parameter(callee, physical, &source, &is_length)) return 0;
-        size_t value_id = caller->arguments[instruction->first_argument + source];
-        const IrInstruction *value = producer(caller, value_id);
-        if (is_length) {
-            if (value == NULL || value->type_id >= emitter->module->type_count) return 0;
-            const IrType *value_type = &emitter->module->types[value->type_id];
-            if (value_type->kind == IR_TYPE_ARRAY)
-                write_immediate(emitter, "rax", (long long) value_type->array_length);
-            else if (value_type->kind == IR_TYPE_SLICE) {
-                write_value_load(emitter, "rax", value_id);
-                write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rax"),
-                            x64_memory(X64_WIDTH_QWORD, "rax", 8));
-            } else return 0;
-        } else {
-            if (value == NULL) return 0;
-            write_value_load(emitter, "rax", value_id);
-            if (interface_receiver && source == 0)
-                write_x64_2(emitter, X64_OP_ADD, X64_WIDTH_QWORD,
-                            x64_register("rax"), x64_immediate(8));
-            if (callee->parameters[source].is_slice && emitter->module->types[value->type_id].kind == IR_TYPE_SLICE)
-                write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rax"),
-                            x64_memory(X64_WIDTH_QWORD, "rax", 0));
-            if (callee->parameters[source].pointer_depth == 0 && !callee->parameters[source].is_array && !callee->
-                parameters[source].is_slice)
-                convert_rax(emitter, value->type, callee->parameters[source].type);
-        }
-        write_x64_1(emitter, X64_OP_PUSH, X64_WIDTH_QWORD, x64_register("rax"));
-    }
-    if (emitter->target == TARGET_COFF)
-        write_x64_2(emitter, X64_OP_SUB, X64_WIDTH_QWORD,
-                    x64_register("rsp"), x64_immediate(32));
-
-    for (size_t physical = physical_count; physical-- > 0;) {
-        size_t register_index = parameter_register_index(callee, emitter->target, physical);
-        if (register_index == IR_VALUE_NONE || !physical_is_floating(callee, physical)) continue;
-        size_t source = 0;
-        int is_length = 0;
-        if (!physical_parameter(callee, physical, &source, &is_length) || is_length) return 0;
-        size_t value_id = caller->arguments[instruction->first_argument + source];
-        load_floating_value(emitter, value_id, callee->parameters[source].type,
-                            (unsigned) register_index);
-    }
-    for (size_t physical = 0; physical < physical_count; physical++) {
-        size_t register_index = parameter_register_index(callee, emitter->target, physical);
-        if (register_index == IR_VALUE_NONE || physical_is_floating(callee, physical)) continue;
-        size_t source = 0;
-        int is_length = 0;
-        if (!physical_parameter(callee, physical, &source, &is_length)) return 0;
-        size_t value_id = caller->arguments[instruction->first_argument + source];
-        const IrInstruction *value = producer(caller, value_id);
-        if (is_length) {
-            if (value == NULL || value->type_id >= emitter->module->type_count) return 0;
-            const IrType *value_type = &emitter->module->types[value->type_id];
-            if (value_type->kind == IR_TYPE_ARRAY)
-                write_immediate(emitter, "rax", (long long) value_type->array_length);
-            else if (value_type->kind == IR_TYPE_SLICE) {
-                write_value_load(emitter, "rax", value_id);
-                write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rax"),
-                            x64_memory(X64_WIDTH_QWORD, "rax", 8));
-            } else return 0;
-        } else {
-            if (value == NULL) return 0;
-            write_value_load(emitter, "rax", value_id);
-            if (interface_receiver && source == 0)
-                write_x64_2(emitter, X64_OP_ADD, X64_WIDTH_QWORD,
-                            x64_register("rax"), x64_immediate(8));
-            if (callee->parameters[source].is_slice && emitter->module->types[value->type_id].kind == IR_TYPE_SLICE)
-                write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rax"),
-                            x64_memory(X64_WIDTH_QWORD, "rax", 0));
-            if (callee->parameters[source].pointer_depth == 0 && !callee->parameters[source].is_array && !callee->
-                parameters[source].is_slice)
-                convert_rax(emitter, value->type, callee->parameters[source].type);
-        }
-        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
-                    x64_register(argument_register(emitter->target, register_index)),
-                    x64_register("rax"));
-    }
-    char callee_buffer[4096];
-    const char *callee_name = function_link_name(emitter->module, callee, callee_buffer,
-                                                 sizeof(callee_buffer));
-    if (callee_name == NULL) return 0;
-    write_x64_1(emitter, X64_OP_CALL, X64_WIDTH_NONE,
-                x64_label(callee_name));
-    size_t cleanup = stack_count * 8U + (emitter->target == TARGET_COFF ? 32U : 0U) +
-                     (((stack_count & 1U) != 0) ? 8U : 0U);
-    if (cleanup != 0)
-        write_x64_2(emitter, X64_OP_ADD, X64_WIDTH_QWORD,
-                    x64_register("rsp"), x64_immediate((long long) cleanup));
-    if (instruction->type != TYPE_VOID) {
-        if (is_inline_structure(emitter->module, instruction)) {
-            size_t offset = aggregate_result_offset(emitter, instruction);
-            size_t slots = type_slots(emitter->module, instruction->type_id);
-            if (offset == 0 || slots == 0) return 0;
-            write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD, x64_register("rbx"),
-                        x64_memory(X64_WIDTH_NONE, "rbp", -(long long) offset));
-            copy_aggregate(emitter, slots, "rax", "rbx");
-            write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
-                        x64_register("rax"), x64_register("rbx"));
-        } else if (instruction->type == TYPE_FLOAT && !instruction->pointer_depth)
-            write_x64_2(emitter, X64_OP_MOVD, X64_WIDTH_NONE,
-                        x64_register("eax"), x64_register("xmm0"));
-        else if (instruction->type == TYPE_DOUBLE && !instruction->pointer_depth)
-            write_x64_2(emitter, X64_OP_MOVQ, X64_WIDTH_NONE,
-                        x64_register("rax"), x64_register("xmm0"));
-        write_value_store(emitter, "rax", instruction->result);
-    }
-    return 1;
-}
-
-static int emit_interface_call(Emitter *emitter, const IrInstruction *instruction) {
-    if (!instruction->argument_count) return 0;
-    size_t receiver = emitter->function->arguments[instruction->first_argument];
-    size_t sequence = emitter->bounds_sequence++;
-    char end[80], next[80];
-    snprintf(end, sizeof(end), ".LIR_interface_end_%zu_%zu",
-             emitter->function_index, sequence);
-    for (size_t s = 0; s < emitter->module->structure_count; s++) {
-        size_t struct_id = emitter->module->structures[s].symbol_id;
-        size_t method_id = semantic_interface_method(emitter->module->semantics,
-                                                     instruction->symbol_id, struct_id);
-        if (method_id == AST_SYMBOL_NONE) continue;
-        const IrFunction *callee = called_function(emitter->module, method_id);
-        if (!callee) return 0;
-        snprintf(next, sizeof(next), ".LIR_interface_next_%zu_%zu_%zu",
-                 emitter->function_index, sequence, s);
-        write_value_load(emitter, "rax", receiver);
-        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
-                    x64_register("rax"), x64_memory(X64_WIDTH_QWORD, "rax", 0));
-        write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_QWORD,
-                    x64_register("rax"), x64_immediate((long long) (struct_id + 1)));
-        write_x64_1(emitter, X64_OP_JNE, X64_WIDTH_NONE, x64_label(next));
-        if (!emit_typed_call(emitter, instruction, callee, 1)) return 0;
-        write_x64_1(emitter, X64_OP_JMP, X64_WIDTH_NONE, x64_label(end));
-        write_labelf(emitter, "%s:\n", next);
-    }
-    write_x64_0(emitter, X64_OP_UD2);
-    write_labelf(emitter, "%s:\n", end);
-    return 1;
-}
-
-static void load_nullable_string(Emitter *emitter, const char *reg, size_t value) {
-    size_t label = emitter->bounds_sequence++;
-    write_value_load(emitter, reg, value);
-    char nonnull[64];
-    (void) snprintf(nonnull, sizeof(nonnull), ".LIR_nonnull_%zu_%zu",
-                    emitter->function_index, label);
-    write_x64_2(emitter, X64_OP_TEST, X64_WIDTH_QWORD,
-                x64_register(reg), x64_register(reg));
-    write_x64_1(emitter, X64_OP_JNE, X64_WIDTH_NONE, x64_label(nonnull));
-    write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD, x64_register(reg),
-                x64_rip_memory(X64_WIDTH_NONE, ".LIR_empty_string_", 0));
-    write_labelf(emitter, ".LIR_nonnull_%zu_%zu:\n",
-                 emitter->function_index, label);
-}
-
-static int emit_builtin_call(Emitter *emitter, const IrInstruction *instruction,
-                             const char *name) {
-    const RuntimeCall *runtime = runtime_call_find(name);
-    if (runtime == NULL || instruction->argument_count != runtime->argument_count ||
-        runtime->argument_count > 3)
-        return 0;
-    const CoreIntrinsic *core = core_intrinsic_find(name);
-    for (size_t a = 0; a < runtime->argument_count; a++) {
-        size_t value = emitter->function->arguments[instruction->first_argument + a];
-        /* RAX conversions cannot clobber previously assigned argument registers. */
-        write_value_load(emitter, "rax", value);
-        const IrInstruction *argument = producer(emitter->function, value);
-        /* Compatibility byte-buffer calls consume data, not the slice descriptor. */
-        if (argument->type_id < emitter->module->type_count &&
-            emitter->module->types[argument->type_id].kind == IR_TYPE_SLICE)
-            write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
-                        x64_register("rax"), x64_memory(X64_WIDTH_QWORD, "rax", 0));
-        if (core != NULL && core->arguments[a] != CORE_BYTES)
-            convert_rax(emitter, producer(emitter->function, value)->type,
-                        core_value_type(core->arguments[a]));
-        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
-                    x64_register(argument_register(emitter->target, a)), x64_register("rax"));
-    }
-    write_call(emitter, runtime->link_name);
-    if (instruction->result != IR_VALUE_NONE) {
-        if (instruction->pointer_depth == 0 && is_integral(instruction->type))
-            normalize_integral_parameter(emitter, instruction->type);
-        write_value_store(emitter, "rax", instruction->result);
-    }
-    return 1;
-}
-
 static size_t fixed_array_length(const Emitter *emitter,
                                  const IrInstruction *base) {
     if (base == NULL) return 0;
@@ -975,7 +653,7 @@ static size_t fixed_array_length(const Emitter *emitter,
     return 0;
 }
 
-static size_t aggregate_result_offset(const Emitter *emitter,
+size_t aggregate_result_offset(const Emitter *emitter,
                                       const IrInstruction *result) {
     size_t slots_before = 0;
     for (size_t i = 0; i < emitter->function->instruction_count; i++) {
@@ -1020,7 +698,7 @@ static size_t parameter_copy_offset(const Emitter *emitter, size_t parameter_ind
             slots_before + slots + 1U) * 8U;
 }
 
-static void copy_aggregate(Emitter *emitter, size_t slots,
+void copy_aggregate(Emitter *emitter, size_t slots,
                            const char *source, const char *destination) {
     for (size_t slot = 0; slot < slots; slot++) {
         size_t offset = slot * 8U;
@@ -1083,7 +761,7 @@ static size_t aggregate_field_offset(const Emitter *emitter,
     return SIZE_MAX;
 }
 
-static int global_label(const SemanticSymbol *symbol, char *label, size_t size) {
+int global_label(const SemanticSymbol *symbol, char *label, size_t size) {
     size_t used = 0;
     label[0] = '\0';
     if (!mangle_append(label, size, &used, "__dmm_g")) return 0;
@@ -1172,7 +850,7 @@ static int emit_lvalue_address(Emitter *emitter, const IrInstruction *target,
             dynamic_length = 1;
         }
         size_t bounds_id = emitter->bounds_sequence++;
-        if (length != 0 || dynamic_length) {
+        if (!target->bounds_check_elided && (length != 0 || dynamic_length)) {
             char fail_label[64];
             (void) snprintf(fail_label, sizeof(fail_label), ".LIR_bounds_fail_%zu_%zu",
                             emitter->function_index, bounds_id);
@@ -1192,7 +870,7 @@ static int emit_lvalue_address(Emitter *emitter, const IrInstruction *target,
                     x64_register("rcx"), x64_immediate((long long) element_size));
         write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD, x64_register("rbx"),
                     x64_indexed_memory(X64_WIDTH_NONE, "rax", "rcx", 1, 0));
-        if (length != 0 || dynamic_length) {
+        if (!target->bounds_check_elided && (length != 0 || dynamic_length)) {
             char ok_label[64];
             (void) snprintf(ok_label, sizeof(ok_label), ".LIR_bounds_ok_%zu_%zu",
                             emitter->function_index, bounds_id);
@@ -1370,95 +1048,6 @@ static int emit_enum_member(Emitter *emitter, const IrInstruction *instruction) 
     return 1;
 }
 
-static int emit_binary(Emitter *emitter, const IrInstruction *instruction) {
-    const IrInstruction *left = producer(emitter->function, instruction->operand_a);
-    const IrInstruction *right = producer(emitter->function, instruction->operand_b);
-    if (left != NULL && right != NULL && instruction->type == TYPE_STRING &&
-        instruction->operator_type == TOKEN_PLUS)
-        return emit_string_concat(emitter, instruction);
-    if (left != NULL && right != NULL && left->type == TYPE_STRING &&
-        right->type == TYPE_STRING) {
-        return emit_string_compare(emitter, instruction);
-    }
-    if (left != NULL && right != NULL &&
-        (is_floating(left->type) || is_floating(right->type))) {
-        DataType operation_type = is_floating(instruction->type)
-                                      ? instruction->type
-                                      : (left->type == TYPE_DOUBLE || right->type == TYPE_DOUBLE
-                                             ? TYPE_DOUBLE
-                                             : TYPE_FLOAT);
-        return emit_floating_binary(emitter, instruction, operation_type);
-    }
-    DataType integer_type = left != NULL && right != NULL
-                                ? data_type_promoted_integer(left->type, right->type)
-                                : TYPE_INT;
-    int fixed = data_type_fixed_integer(integer_type) && !is_pointer_value(left) && !is_pointer_value(right);
-    write_value_load(emitter, "rax", instruction->operand_b);
-    if (fixed) normalize_integral_parameter(emitter, integer_type);
-    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rcx"), x64_register("rax"));
-    write_value_load(emitter, "rax", instruction->operand_a);
-    if (fixed) normalize_integral_parameter(emitter, integer_type);
-    switch (instruction->operator_type) {
-        case TOKEN_PLUS:
-            write_x64_2(emitter, X64_OP_ADD, X64_WIDTH_QWORD,
-                        x64_register("rax"), x64_register("rcx"));
-            break;
-        case TOKEN_MINUS:
-            write_x64_2(emitter, X64_OP_SUB, X64_WIDTH_QWORD,
-                        x64_register("rax"), x64_register("rcx"));
-            break;
-        case TOKEN_STAR:
-            write_x64_2(emitter, X64_OP_IMUL, X64_WIDTH_QWORD,
-                        x64_register("rax"), x64_register("rcx"));
-            break;
-        case TOKEN_SLASH:
-        case TOKEN_PERCENT:
-            if (fixed && data_type_unsigned(integer_type)) {
-                write_x64_2(emitter, X64_OP_XOR, X64_WIDTH_DWORD, x64_register("edx"), x64_register("edx"));
-                write_x64_1(emitter, X64_OP_DIV, X64_WIDTH_QWORD, x64_register("rcx"));
-            } else {
-                write_x64_0(emitter, X64_OP_CQO);
-                write_x64_1(emitter, X64_OP_IDIV, X64_WIDTH_QWORD, x64_register("rcx"));
-            }
-            if (instruction->operator_type == TOKEN_PERCENT)
-                write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
-                            x64_register("rax"), x64_register("rdx"));
-            break;
-        case TOKEN_EQUAL_EQUAL:
-        case TOKEN_BANG_EQUAL:
-        case TOKEN_LESS:
-        case TOKEN_LESS_EQUAL:
-        case TOKEN_GREATER:
-        case TOKEN_GREATER_EQUAL: {
-            write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_QWORD,
-                        x64_register("rax"), x64_register("rcx"));
-            X64Opcode condition = X64_OP_SETE;
-            if (instruction->operator_type == TOKEN_BANG_EQUAL) condition = X64_OP_SETNE;
-            else if (instruction->operator_type == TOKEN_LESS)
-                condition = fixed && data_type_unsigned(integer_type)
-                                ? X64_OP_SETB
-                                : X64_OP_SETL;
-            else if (instruction->operator_type == TOKEN_LESS_EQUAL)
-                condition = fixed && data_type_unsigned(integer_type) ? X64_OP_SETBE : X64_OP_SETLE;
-            else if (instruction->operator_type == TOKEN_GREATER)
-                condition = fixed && data_type_unsigned(integer_type)
-                                ? X64_OP_SETA
-                                : X64_OP_SETG;
-            else if (instruction->operator_type == TOKEN_GREATER_EQUAL)
-                condition = fixed && data_type_unsigned(integer_type) ? X64_OP_SETAE : X64_OP_SETGE;
-            write_x64_1(emitter, condition, X64_WIDTH_NONE, x64_register("al"));
-            write_x64_2(emitter, X64_OP_MOVZX, X64_WIDTH_QWORD,
-                        x64_sized_register(X64_WIDTH_QWORD, "rax"),
-                        x64_sized_register(X64_WIDTH_BYTE, "al"));
-            break;
-        }
-        default: return 0;
-    }
-    if (fixed && data_type_fixed_integer(instruction->type)) normalize_integral_parameter(emitter, instruction->type);
-    write_value_store(emitter, "rax", instruction->result);
-    return 1;
-}
-
 static void emit_phi_moves(Emitter *emitter, size_t destination_label) {
     const IrFunction *function = emitter->function;
     size_t label_index = function->instruction_count;
@@ -1488,133 +1077,6 @@ static void emit_phi_moves(Emitter *emitter, size_t destination_label) {
             write_value_store(emitter, "rax", phi->result);
         }
     }
-}
-
-/* Values use an eight-byte virtual slot. Floating-point values are kept as
-   their IEEE bit pattern so conversions happen only at typed IR boundaries. */
-static void convert_rax(Emitter *emitter, DataType from, DataType to) {
-    if (!is_numeric(from) || !is_numeric(to)) return;
-    if (is_integral(from) && is_integral(to)) {
-        if (data_type_fixed_integer(to) || (data_type_fixed_integer(from) && to == TYPE_INT))
-            normalize_integral_parameter(emitter, to);
-        return;
-    }
-    if (from == to) return;
-    if (data_type_unsigned(from) && data_type_bytes(from) == 8 && is_floating(to)) {
-        size_t sequence = emitter->bounds_sequence++;
-        char ordinary[96], done[96];
-        snprintf(ordinary, sizeof(ordinary), ".LIR_u64_float_%zu_%zu", emitter->function_index, sequence);
-        snprintf(done, sizeof(done), ".LIR_u64_float_done_%zu_%zu", emitter->function_index, sequence);
-        write_x64_2(emitter, X64_OP_TEST, X64_WIDTH_QWORD, x64_register("rax"), x64_register("rax"));
-        write_x64_1(emitter, X64_OP_JGE, X64_WIDTH_NONE, x64_label(ordinary));
-        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("r11"), x64_register("rax"));
-        write_x64_2(emitter, X64_OP_AND, X64_WIDTH_QWORD, x64_register("r11"), x64_immediate(1));
-        write_x64_2(emitter, X64_OP_SHR, X64_WIDTH_QWORD, x64_register("rax"), x64_immediate(1));
-        write_x64_2(emitter, X64_OP_OR, X64_WIDTH_QWORD, x64_register("rax"), x64_register("r11"));
-        write_x64_2(emitter, to == TYPE_FLOAT ? X64_OP_CVTSI2SSQ : X64_OP_CVTSI2SDQ, X64_WIDTH_NONE,
-                    x64_register("xmm0"), x64_register("rax"));
-        write_x64_2(emitter, to == TYPE_FLOAT ? X64_OP_ADDSS : X64_OP_ADDSD, X64_WIDTH_NONE, x64_register("xmm0"),
-                    x64_register("xmm0"));
-        write_x64_1(emitter, X64_OP_JMP, X64_WIDTH_NONE, x64_label(done));
-        write_labelf(emitter, "%s:\n", ordinary);
-        write_x64_2(emitter, to == TYPE_FLOAT ? X64_OP_CVTSI2SSQ : X64_OP_CVTSI2SDQ, X64_WIDTH_NONE,
-                    x64_register("xmm0"), x64_register("rax"));
-        write_labelf(emitter, "%s:\n", done);
-        write_x64_2(emitter, to == TYPE_FLOAT ? X64_OP_MOVD : X64_OP_MOVQ, X64_WIDTH_NONE,
-                    x64_register(to == TYPE_FLOAT ? "eax" : "rax"), x64_register("xmm0"));
-        return;
-    }
-    if (is_floating(from) && data_type_unsigned(to) && data_type_bytes(to) == 8) {
-        size_t sequence = emitter->bounds_sequence++;
-        char done[96];
-        snprintf(done, sizeof(done), ".LIR_float_u64_done_%zu_%zu", emitter->function_index, sequence);
-        write_x64_2(emitter, from == TYPE_FLOAT ? X64_OP_MOVD : X64_OP_MOVQ, X64_WIDTH_NONE, x64_register("xmm0"),
-                    x64_register(from == TYPE_FLOAT ? "eax" : "rax"));
-        write_x64_2(emitter, from == TYPE_FLOAT ? X64_OP_CVTTSS2SIQ : X64_OP_CVTTSD2SIQ, X64_WIDTH_NONE,
-                    x64_register("rax"), x64_register("xmm0"));
-        write_x64_2(emitter, X64_OP_TEST, X64_WIDTH_QWORD, x64_register("rax"), x64_register("rax"));
-        write_x64_1(emitter, X64_OP_JGE, X64_WIDTH_NONE, x64_label(done));
-        write_immediate(emitter, "r11", from == TYPE_FLOAT ? INT64_C(0x5f000000) : INT64_C(0x43e0000000000000));
-        write_x64_1(emitter, X64_OP_PUSH, X64_WIDTH_QWORD, x64_register("r11"));
-        write_x64_2(emitter, from == TYPE_FLOAT ? X64_OP_SUBSS : X64_OP_SUBSD, X64_WIDTH_NONE, x64_register("xmm0"),
-                    x64_memory(from == TYPE_FLOAT ? X64_WIDTH_DWORD : X64_WIDTH_QWORD, "rsp", 0));
-        write_x64_2(emitter, X64_OP_ADD, X64_WIDTH_QWORD, x64_register("rsp"), x64_immediate(8));
-        write_x64_2(emitter, from == TYPE_FLOAT ? X64_OP_CVTTSS2SIQ : X64_OP_CVTTSD2SIQ, X64_WIDTH_NONE,
-                    x64_register("rax"), x64_register("xmm0"));
-        write_immediate(emitter, "r11", (long long) UINT64_C(0x8000000000000000));
-        write_x64_2(emitter, X64_OP_OR, X64_WIDTH_QWORD, x64_register("rax"), x64_register("r11"));
-        write_labelf(emitter, "%s:\n", done);
-        return;
-    }
-    if (is_integral(from) && to == TYPE_DOUBLE) {
-        write_x64_2(emitter, X64_OP_CVTSI2SDQ, X64_WIDTH_NONE,
-                    x64_register("xmm0"), x64_register("rax"));
-        write_x64_2(emitter, X64_OP_MOVQ, X64_WIDTH_NONE,
-                    x64_register("rax"), x64_register("xmm0"));
-    } else if (is_integral(from) && to == TYPE_FLOAT) {
-        write_x64_2(emitter, X64_OP_CVTSI2SSQ, X64_WIDTH_NONE,
-                    x64_register("xmm0"), x64_register("rax"));
-        write_x64_2(emitter, X64_OP_MOVD, X64_WIDTH_NONE,
-                    x64_register("eax"), x64_register("xmm0"));
-    } else if (from == TYPE_FLOAT && to == TYPE_DOUBLE) {
-        write_x64_2(emitter, X64_OP_MOVD, X64_WIDTH_NONE,
-                    x64_register("xmm0"), x64_register("eax"));
-        write_x64_2(emitter, X64_OP_CVTSS2SD, X64_WIDTH_NONE,
-                    x64_register("xmm0"), x64_register("xmm0"));
-        write_x64_2(emitter, X64_OP_MOVQ, X64_WIDTH_NONE,
-                    x64_register("rax"), x64_register("xmm0"));
-    } else if (from == TYPE_DOUBLE && to == TYPE_FLOAT) {
-        write_x64_2(emitter, X64_OP_MOVQ, X64_WIDTH_NONE,
-                    x64_register("xmm0"), x64_register("rax"));
-        write_x64_2(emitter, X64_OP_CVTSD2SS, X64_WIDTH_NONE,
-                    x64_register("xmm0"), x64_register("xmm0"));
-        write_x64_2(emitter, X64_OP_MOVD, X64_WIDTH_NONE,
-                    x64_register("eax"), x64_register("xmm0"));
-    } else if (from == TYPE_FLOAT && is_integral(to)) {
-        write_x64_2(emitter, X64_OP_MOVD, X64_WIDTH_NONE,
-                    x64_register("xmm0"), x64_register("eax"));
-        write_x64_2(emitter, X64_OP_CVTTSS2SIQ, X64_WIDTH_NONE,
-                    x64_register("rax"), x64_register("xmm0"));
-    } else if (from == TYPE_DOUBLE && is_integral(to)) {
-        write_x64_2(emitter, X64_OP_MOVQ, X64_WIDTH_NONE,
-                    x64_register("xmm0"), x64_register("rax"));
-        write_x64_2(emitter, X64_OP_CVTTSD2SIQ, X64_WIDTH_NONE,
-                    x64_register("rax"), x64_register("xmm0"));
-    }
-    if (data_type_fixed_integer(to)) normalize_integral_parameter(emitter, to);
-}
-
-static void normalize_truth_rax(Emitter *emitter, DataType type) {
-    if (type == TYPE_FLOAT) {
-        write_x64_2(emitter, X64_OP_MOVD, X64_WIDTH_NONE,
-                    x64_register("xmm0"), x64_register("eax"));
-        write_x64_2(emitter, X64_OP_XORPS, X64_WIDTH_NONE,
-                    x64_register("xmm1"), x64_register("xmm1"));
-        write_x64_2(emitter, X64_OP_UCOMISS, X64_WIDTH_NONE,
-                    x64_register("xmm0"), x64_register("xmm1"));
-    } else if (type == TYPE_DOUBLE) {
-        write_x64_2(emitter, X64_OP_MOVQ, X64_WIDTH_NONE,
-                    x64_register("xmm0"), x64_register("rax"));
-        write_x64_2(emitter, X64_OP_XORPD, X64_WIDTH_NONE,
-                    x64_register("xmm1"), x64_register("xmm1"));
-        write_x64_2(emitter, X64_OP_UCOMISD, X64_WIDTH_NONE,
-                    x64_register("xmm0"), x64_register("xmm1"));
-    } else {
-        write_x64_2(emitter, X64_OP_TEST, X64_WIDTH_QWORD,
-                    x64_register("rax"), x64_register("rax"));
-        write_x64_1(emitter, X64_OP_SETNE, X64_WIDTH_NONE, x64_register("al"));
-        write_x64_2(emitter, X64_OP_MOVZX, X64_WIDTH_QWORD,
-                    x64_sized_register(X64_WIDTH_QWORD, "rax"),
-                    x64_sized_register(X64_WIDTH_BYTE, "al"));
-        return;
-    }
-    write_x64_1(emitter, X64_OP_SETNE, X64_WIDTH_NONE, x64_register("al"));
-    write_x64_1(emitter, X64_OP_SETP, X64_WIDTH_NONE, x64_register("dl"));
-    write_x64_2(emitter, X64_OP_OR, X64_WIDTH_BYTE,
-                x64_register("al"), x64_register("dl"));
-    write_x64_2(emitter, X64_OP_MOVZX, X64_WIDTH_QWORD,
-                x64_sized_register(X64_WIDTH_QWORD, "rax"),
-                x64_sized_register(X64_WIDTH_BYTE, "al"));
 }
 
 static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
@@ -1795,6 +1257,24 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
         }
         case IR_OP_STORE: {
             const IrInstruction *target = producer(function, instruction->operand_a);
+            if (emitter->module->optimized && target && target->opcode == IR_OP_LOAD &&
+                target->type == TYPE_INT && target->pointer_depth == 0 && !target->is_array &&
+                !target->is_slice && (instruction->operator_type == TOKEN_PLUS_EQUAL ||
+                                      instruction->operator_type == TOKEN_MINUS_EQUAL)) {
+                const IrInstruction *value = producer(function, instruction->operand_b);
+                const IrInstruction *declaration = local_declaration(function, target->symbol_id, index);
+                const IrParameter *parameter = function_parameter(function, target->symbol_id);
+                if (value && value->type == TYPE_INT && (declaration || parameter)) {
+                    size_t offset = declaration ? declaration_offset(emitter, declaration)
+                                                : parameter_offset(emitter, parameter);
+                    write_value_load(emitter, "rax", instruction->operand_b);
+                    write_x64_2(emitter, instruction->operator_type == TOKEN_PLUS_EQUAL
+                                             ? X64_OP_ADD : X64_OP_SUB, X64_WIDTH_DWORD,
+                                x64_memory(X64_WIDTH_DWORD, "rbp", -(long long) offset),
+                                x64_register("eax"));
+                    return 1;
+                }
+            }
             if (!emit_lvalue_address(emitter, target, index)) return 0;
             if (instruction->operator_type == TOKEN_EQUAL &&
                 is_inline_structure(emitter->module, target)) {
@@ -1977,21 +1457,33 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                             emitter->function_index);
             write_x64_1(emitter, X64_OP_JMP, X64_WIDTH_NONE, x64_label(epilogue));
             return 1;
-        case IR_OP_BRANCH:
+        case IR_OP_BRANCH: {
             write_value_load(emitter, "rax", instruction->operand_a);
-            normalize_truth_rax(emitter,
-                                producer(function, instruction->operand_a)->type);
-            write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_QWORD,
-                        x64_register("rax"), x64_immediate(0));
+            DataType condition_type = producer(function, instruction->operand_a)->type;
+            if (emitter->module->optimized && data_type_integral(condition_type))
+                write_x64_2(emitter, X64_OP_TEST, X64_WIDTH_QWORD,
+                            x64_register("rax"), x64_register("rax"));
+            else {
+                normalize_truth_rax(emitter, condition_type);
+                write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_QWORD,
+                            x64_register("rax"), x64_immediate(0));
+            }
             char true_label[64];
             char false_label[64];
             (void) snprintf(true_label, sizeof(true_label), ".LIR_%zu_%zu",
                             emitter->function_index, instruction->target_a);
             (void) snprintf(false_label, sizeof(false_label), ".LIR_%zu_%zu",
                             emitter->function_index, instruction->target_b);
-            write_x64_1(emitter, X64_OP_JNE, X64_WIDTH_NONE, x64_label(true_label));
-            write_x64_1(emitter, X64_OP_JMP, X64_WIDTH_NONE, x64_label(false_label));
+            if (emitter->module->optimized && index + 1 < function->instruction_count &&
+                function->instructions[index + 1].opcode == IR_OP_LABEL &&
+                function->instructions[index + 1].target_a == instruction->target_a)
+                write_x64_1(emitter, X64_OP_JE, X64_WIDTH_NONE, x64_label(false_label));
+            else {
+                write_x64_1(emitter, X64_OP_JNE, X64_WIDTH_NONE, x64_label(true_label));
+                write_x64_1(emitter, X64_OP_JMP, X64_WIDTH_NONE, x64_label(false_label));
+            }
             return 1;
+        }
         case IR_OP_JUMP:
             emit_phi_moves(emitter, instruction->target_a);
             {
@@ -2156,7 +1648,79 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
     return 0;
 }
 
-static int emit_function(Emitter *emitter) {
+/* A comparison used only by the immediately following branch needs no
+   materialized boolean or virtual stack slot. Keep this to signed int
+   operands until the other comparison domains have direct branch lowering. */
+static int emit_fused_compare_branch(Emitter *emitter, size_t index) {
+    const IrFunction *function = emitter->function;
+    if (!emitter->module->optimized || index + 1 >= function->instruction_count) return 0;
+    const IrInstruction *compare = &function->instructions[index];
+    const IrInstruction *branch = &function->instructions[index + 1];
+    if (compare->opcode != IR_OP_BINARY || compare->result == IR_VALUE_NONE ||
+        branch->opcode != IR_OP_BRANCH || branch->operand_a != compare->result) return 0;
+    const IrInstruction *left = producer(function, compare->operand_a);
+    const IrInstruction *right = producer(function, compare->operand_b);
+    if (!left || !right || left->type != TYPE_INT || right->type != TYPE_INT) return 0;
+    X64Opcode false_jump;
+    switch (compare->operator_type) {
+        case TOKEN_EQUAL_EQUAL: false_jump = X64_OP_JNE; break;
+        case TOKEN_BANG_EQUAL: false_jump = X64_OP_JE; break;
+        case TOKEN_LESS: false_jump = X64_OP_JGE; break;
+        case TOKEN_LESS_EQUAL: false_jump = X64_OP_JG; break;
+        case TOKEN_GREATER: false_jump = X64_OP_JLE; break;
+        case TOKEN_GREATER_EQUAL: false_jump = X64_OP_JL; break;
+        default: return 0;
+    }
+    for (size_t i = 0; i < function->instruction_count; i++) {
+        if (i == index + 1) continue;
+        const IrInstruction *in = &function->instructions[i];
+        if (in->operand_a == compare->result || in->operand_b == compare->result) return 0;
+        for (size_t a = 0; a < in->argument_count; a++)
+            if (function->arguments[in->first_argument + a] == compare->result) return 0;
+    }
+    write_value_load(emitter, "rax", compare->operand_b);
+    normalize_integral_parameter(emitter, TYPE_INT);
+    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rcx"), x64_register("rax"));
+    write_value_load(emitter, "rax", compare->operand_a);
+    normalize_integral_parameter(emitter, TYPE_INT);
+    write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_QWORD, x64_register("rax"), x64_register("rcx"));
+    char true_label[64], false_label[64];
+    (void) snprintf(true_label, sizeof(true_label), ".LIR_%zu_%zu",
+                    emitter->function_index, branch->target_a);
+    (void) snprintf(false_label, sizeof(false_label), ".LIR_%zu_%zu",
+                    emitter->function_index, branch->target_b);
+    if (index + 2 < function->instruction_count &&
+        function->instructions[index + 2].opcode == IR_OP_LABEL &&
+        function->instructions[index + 2].target_a == branch->target_a)
+        write_x64_1(emitter, false_jump, X64_WIDTH_NONE, x64_label(false_label));
+    else {
+        write_x64_1(emitter, false_jump, X64_WIDTH_NONE, x64_label(false_label));
+        write_x64_1(emitter, X64_OP_JMP, X64_WIDTH_NONE, x64_label(true_label));
+    }
+    return 1;
+}
+
+static int store_target_needs_no_value(const Emitter *emitter, size_t index) {
+    const IrFunction *function = emitter->function;
+    if (!emitter->module->optimized || index + 1 >= function->instruction_count) return 0;
+    const IrInstruction *load = &function->instructions[index];
+    const IrInstruction *store = &function->instructions[index + 1];
+    if (load->opcode != IR_OP_LOAD || load->result == IR_VALUE_NONE ||
+        store->opcode != IR_OP_STORE || store->operand_a != load->result ||
+        store->operand_b == load->result ||
+        (!local_declaration(function, load->symbol_id, index) &&
+         !function_parameter(function, load->symbol_id))) return 0;
+    for (size_t i = 0; i < function->instruction_count; i++) {
+        if (i == index + 1) continue;
+        const IrInstruction *in = &function->instructions[i];
+        if (in->operand_a == load->result || in->operand_b == load->result) return 0;
+        for (size_t a = 0; a < in->argument_count; a++)
+            if (function->arguments[in->first_argument + a] == load->result) return 0;
+    }
+    return 1;
+}
+
+int emit_function(Emitter *emitter) {
     FILE *output = emitter->output;
     char name_buffer[4096];
     const char *name = function_link_name(emitter->module, emitter->function, name_buffer,
@@ -2242,6 +1806,12 @@ static int emit_function(Emitter *emitter) {
             emitter->source_map->current_span = emitter->function->instructions[i].span;
             emitter->source_map->has_source = emitter->function->instructions[i].span.begin.line > 0;
         }
+        if (emit_fused_compare_branch(emitter, i)) {
+            i++;
+            if (emitter->native != NULL && emitter->native->failed) return 0;
+            continue;
+        }
+        if (store_target_needs_no_value(emitter, i)) continue;
         if (!emit_instruction(emitter, &emitter->function->instructions[i], i) ||
             (emitter->native != NULL && emitter->native->failed)) {
             ir_report_failure(emitter->function, i, "x86-64 lowering",
@@ -2265,276 +1835,4 @@ static int emit_function(Emitter *emitter) {
                                                     symbol].offset;
     } else if (emitter->target == TARGET_ELF) fprintf(output, "    .size %s, .-%s\n", name, name);
     return 1;
-}
-
-static int emit_file(Emitter *emitter, int deterministic) {
-    FILE *output = emitter->output;
-    if (!emitter->native) {
-        fputs("# Generated by Philipp01105's Compiler\n", output);
-        fprintf(output, "# Source: %s\n", emitter->module->program->source_path);
-        if (!deterministic) {
-            time_t now = time(NULL);
-            struct tm *local = localtime(&now);
-            char datetime[64] = "unknown";
-            if (local != NULL)
-                (void) strftime(datetime, sizeof(datetime),
-                                "%Y-%m-%d %H:%M:%S", local);
-            fprintf(output, "# Date: %s\n", datetime);
-        }
-        fputs("# Lowering: typed IR\n", output);
-        fprintf(output, "# Target Format: %s\n# Syntax: %s\n",
-                emitter->target == TARGET_COFF ? "COFF" : "ELF",
-                emitter->syntax == SYNTAX_INTEL ? "Intel" : "AT&T");
-        if (emitter->syntax == SYNTAX_INTEL) fputs("    .intel_syntax noprefix\n", output);
-        if (emitter->target == TARGET_COFF) {
-            fputs("    .section .rdata,\"dr\"\n", output);
-        } else {
-            fputs("    .section .rodata\n", output);
-        }
-        if (emitter->target == TARGET_COFF)
-            for (size_t r = 0; r < runtime_call_count(); r++) {
-                const RuntimeCall *runtime = runtime_call_at(r);
-                int duplicate = 0;
-                for (size_t previous = 0; previous < r; previous++)
-                    if (strcmp(runtime_call_at(previous)->link_name, runtime->link_name) == 0) duplicate = 1;
-                if (!duplicate)
-                    fprintf(output, "    .def %s; .scl 2; .type 32; .endef\n", runtime->link_name);
-            }
-    } else emitter->native->section = NATIVE_RODATA;
-    write_labelf(emitter, ".LIR_empty_string_0:\n");
-    write_cstring(emitter, "");
-    write_labelf(emitter, ".LIR_int_format_0:\n");
-    write_cstring(emitter, "%lld");
-    write_labelf(emitter, ".LIR_uint_format_0:\n");
-    write_cstring(emitter, "%u");
-    write_labelf(emitter, ".LIR_char_format_0:\n");
-    write_cstring(emitter, "%c");
-    write_labelf(emitter, ".LIR_float_format_0:\n");
-    write_cstring(emitter, "%f");
-    write_labelf(emitter, ".LIR_string_format_0:\n");
-    write_cstring(emitter, "%s");
-    for (size_t f = 0; f < emitter->module->function_count; f++) {
-        const IrFunction *function = &emitter->module->functions[f];
-        for (size_t i = 0; i < function->instruction_count; i++) {
-            const IrInstruction *instruction = &function->instructions[i];
-            if (instruction->opcode == IR_OP_CONSTANT && instruction->type == TYPE_STRING) {
-                write_labelf(emitter, ".LIR_string_%zu_%zu:\n", f,
-                             instruction->result);
-                write_cstring(emitter, ast_program_lexeme(function->source_program,
-                                                          instruction->auxiliary_token));
-            }
-        }
-    }
-    for (size_t e = 0; e < emitter->module->enum_count; e++) {
-        const IrEnum *enumeration = &emitter->module->enums[e];
-        for (size_t a = 0; a < enumeration->variant_argument_count; a++) {
-            const IrEnumArgument *argument = &enumeration->variant_arguments[a];
-            if (argument->type_id >= emitter->module->type_count) continue;
-            const IrType *type = &emitter->module->types[argument->type_id];
-            if (type->kind != IR_TYPE_PRIMITIVE || type->primitive != TYPE_STRING) continue;
-            write_labelf(emitter, ".LIR_enum_%zu_%zu:\n", e, a);
-            write_cstring(emitter, ast_program_lexeme(enumeration->source_program,
-                                                      argument->token));
-        }
-        for (size_t field = 0; field < enumeration->field_count; field++) {
-            write_labelf(emitter, ".LIR_enum_field_%zu_%zu:\n", e, field);
-            if (enumeration->fields[field].type_id >= emitter->module->type_count) return 0;
-            const IrType *field_type =
-                    &emitter->module->types[enumeration->fields[field].type_id];
-            if (field_type->kind != IR_TYPE_PRIMITIVE) return 0;
-            for (size_t variant_index = 0;
-                 variant_index < enumeration->variant_count; variant_index++) {
-                const IrEnumVariant *variant = &enumeration->variants[variant_index];
-                size_t argument_index = variant->first_argument + field;
-                if (field >= variant->argument_count ||
-                    argument_index >= enumeration->variant_argument_count)
-                    return 0;
-                const IrEnumArgument *argument =
-                        &enumeration->variant_arguments[argument_index];
-                if (field_type->primitive == TYPE_STRING) {
-                    if (emitter->native) {
-                        char symbol[128];
-                        snprintf(symbol, sizeof(symbol), ".LIR_enum_%zu_%zu", e, argument_index);
-                        (void) native_reference(emitter->native, symbol, NATIVE_ADDR64,
-                                                emitter->native->sections[NATIVE_RODATA].size, 0);
-                        write_quad(emitter, 0);
-                    } else fprintf(output, "    .quad .LIR_enum_%zu_%zu\n", e, argument_index);
-                } else if (field_type->primitive == TYPE_DOUBLE) {
-                    union {
-                        double value;
-                        uint64_t bits;
-                    } converted = {
-                        strtod(ast_program_lexeme(enumeration->source_program,
-                                                  argument->token), NULL)
-                    };
-                    if (argument->negative) converted.value = -converted.value;
-                    write_quad(emitter, converted.bits);
-                } else if (field_type->primitive == TYPE_FLOAT) {
-                    union {
-                        float value;
-                        uint32_t bits;
-                    } converted = {
-                        (float) strtod(ast_program_lexeme(enumeration->source_program,
-                                                          argument->token), NULL)
-                    };
-                    if (argument->negative) converted.value = -converted.value;
-                    write_quad(emitter, converted.bits);
-                } else {
-                    IrInstruction literal = {.auxiliary_token = argument->token};
-                    long long value = constant_value(enumeration->source_program, &literal);
-                    if (argument->negative) value = -value;
-                    write_quad(emitter, (uint64_t) value);
-                }
-            }
-        }
-    }
-    for (size_t g = 0; g < emitter->module->global_count; g++)
-        if (emitter->module->globals[g].string) {
-            write_labelf(emitter, ".LIR_global_string_%zu:\n", g);
-            write_cstring(emitter, emitter->module->globals[g].string);
-        }
-    if (emitter->native) emitter->native->section = NATIVE_DATA;
-    else fputs("    .data\n    .balign 8\n", output);
-    for (size_t g = 0; g < emitter->module->global_count; g++) {
-        const IrGlobal *global = &emitter->module->globals[g];
-        const SemanticSymbol *symbol = &emitter->module->semantics->symbols[global->symbol_id];
-        char label[4096];
-        if (!global_label(symbol, label, sizeof(label))) return 0;
-        if (emitter->native) {
-            if (!native_define(emitter->native, label, symbol->declaration->is_public, 0)) return 0;
-        } else {
-            if (symbol->declaration->is_public) fprintf(output, "    .globl %s\n", label);
-            fprintf(output, "%s:\n", label);
-        }
-        if (global->string) {
-            if (emitter->native) {
-                char string[64];
-                snprintf(string, sizeof(string), ".LIR_global_string_%zu", g);
-                native_reference(emitter->native, string, NATIVE_ADDR64, emitter->native->sections[NATIVE_DATA].size,
-                                 0);
-                write_quad(emitter, 0);
-            } else fprintf(output, "    .quad .LIR_global_string_%zu\n", g);
-        } else {
-            size_t slots = type_slots(emitter->module, global->type_id);
-            if (!slots || slots > 1048576) return 0;
-            write_quad(emitter, global->bits);
-            for (size_t slot = 1; slot < slots; slot++) write_quad(emitter, 0);
-        }
-    }
-    if (emitter->native) emitter->native->section = NATIVE_TEXT;
-    else fputs("    .text\n", output);
-    for (size_t f = 0; f < emitter->module->function_count; f++) {
-        const IrFunction *function = &emitter->module->functions[f];
-        size_t declarations = 0;
-        size_t aggregate_results = 0;
-        size_t aggregate_parameters = 0;
-        for (size_t i = 0; i < function->instruction_count; i++)
-            if (function->instructions[i].opcode == IR_OP_DECLARE) {
-                size_t slots = type_slots(emitter->module, function->instructions[i].type_id);
-                if (slots == 0 || declarations > SIZE_MAX - slots) return 0;
-                declarations += slots;
-            } else if ((function->instructions[i].opcode == IR_OP_CALL || function->instructions[i].opcode ==
-                        IR_OP_ENUM_CONSTRUCT || function->instructions[i].opcode == IR_OP_SLICE) &&
-                       is_inline_structure(emitter->module,
-                                           &function->instructions[i])) {
-                size_t slots = type_slots(emitter->module,
-                                          function->instructions[i].type_id);
-                if (slots == 0 || aggregate_results > SIZE_MAX - slots) return 0;
-                aggregate_results += slots;
-            }
-        for (size_t p = 0; p < function->parameter_count; p++) {
-            if (!type_is_structure(emitter->module, function->parameters[p].type_id)) continue;
-            size_t parameter_slots = type_slots(emitter->module,
-                                                function->parameters[p].type_id);
-            if (parameter_slots == 0 || aggregate_parameters > SIZE_MAX - parameter_slots)
-                return 0;
-            aggregate_parameters += parameter_slots;
-        }
-        size_t parameter_slots = parameter_storage_slots(function);
-        if (function->next_value > SIZE_MAX - parameter_slots ||
-            function->next_value + parameter_slots > SIZE_MAX - declarations)
-            return 0;
-        size_t slots = function->next_value + parameter_slots + declarations;
-        if (slots > SIZE_MAX - aggregate_results) return 0;
-        slots += aggregate_results;
-        if (slots > SIZE_MAX - aggregate_parameters) return 0;
-        slots += aggregate_parameters;
-        if (slots > (8U * 1024U * 1024U - 8U) / 8U) return 0;
-        size_t bytes = slots * 8U;
-        emitter->function = function;
-        emitter->function_index = f;
-        emitter->declaration_count = declarations;
-        emitter->frame_size = ((bytes + 15U) & ~(size_t) 15U) + 8U;
-        if (!emit_function(emitter)) return 0;
-    }
-    return 1;
-}
-
-int x86_64_emit_ir_file(const IrModule *module, TargetFormat target,
-                        SyntaxMode syntax, int deterministic,
-                        const char *output_path, const char *source_map_path) {
-    if (!valid_module(module) || output_path == NULL) return 0;
-    FILE *output = fopen(output_path, "w");
-    if (output == NULL) {
-        error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_CODEGEN,
-                     ERR_CODEGEN_OUTPUT_FAILED, module->program->source_path,
-                     "Could not open assembly output '%s': %s", output_path, strerror(errno));
-        return 0;
-    }
-    SourceMapWriter map = {0};
-    if (source_map_path != NULL) {
-        map.output = fopen(source_map_path, "w");
-        if (map.output == NULL) {
-            int saved_errno = errno;
-            fclose(output);
-            (void) remove(output_path);
-            error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_CODEGEN,
-                         ERR_CODEGEN_OUTPUT_FAILED, module->program->source_path,
-                         "Could not open source-map output '%s': %s", source_map_path, strerror(saved_errno));
-            return 0;
-        }
-        if (fputs("dmm-source-map-v1\nsource path=", map.output) == EOF ||
-            !map_quoted(map.output, module->program->source_path) ||
-            fputs("\n", map.output) == EOF)
-            map.failed = 1;
-    }
-    Emitter emitter = {
-        .module = module,
-        .target = target,
-        .syntax = syntax,
-        .output = output,
-        .source_map = source_map_path == NULL ? NULL : &map
-    };
-    int success = emit_file(&emitter, deterministic);
-    if (success && (!module->program->package_name || !strcmp(module->program->package_name, "main")))
-        success = native_runtime_assembly(output, target);
-    int assembly_io_error = ferror(output);
-    if (fclose(output) != 0) assembly_io_error = 1;
-    int map_io_error = map.output != NULL && ferror(map.output);
-    if (map.output != NULL && fclose(map.output) != 0) map_io_error = 1;
-    int saved_errno = errno;
-    if (assembly_io_error || map_io_error || map.failed) success = 0;
-    if (!success) (void) remove(output_path);
-    if (!success && source_map_path != NULL) (void) remove(source_map_path);
-    if (assembly_io_error || map_io_error)
-        error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_CODEGEN,
-                     ERR_CODEGEN_OUTPUT_FAILED, module->program->source_path,
-                     "Could not write %s output '%s': %s", assembly_io_error ? "assembly" : "source-map",
-                     assembly_io_error ? output_path : source_map_path, strerror(saved_errno == 0 ? EIO : saved_errno));
-    return success;
-}
-
-int x86_64_lower_native(const IrModule *module, TargetFormat target, NativeObject *object, FILE *source_map) {
-    if (!valid_module(module)) {
-        native_error(object, "Invalid IR module");
-        return 0;
-    }
-    SourceMapWriter map = {.output = source_map};
-    if (source_map) fputs("dmm-native-map-v1\n", source_map);
-    Emitter emitter = {
-        .module = module, .target = target, .native = object,
-        .source_map = source_map ? &map : NULL
-    };
-    int success = emit_file(&emitter, 1);
-    return success && !object->failed && !map.failed;
 }

@@ -1,6 +1,8 @@
 #include "ir_names.h"
 
 #include <stdio.h>
+#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 const IrParameter *function_receiver(const IrFunction *function) {
@@ -163,23 +165,50 @@ const char *function_link_name(const IrModule *module, const IrFunction *functio
     return buffer;
 }
 
+static int compare_link_names(const void *left, const void *right) {
+    return strcmp(*(const char *const *) left, *(const char *const *) right);
+}
+
 int valid_module(const IrModule *module) {
     if (module == NULL || !module->verified || module->program == NULL ||
         module->semantics == NULL || (module->function_count == 0 &&
                                       (!module->program->package_name || !
                                        strcmp(module->program->package_name, "main"))))
         return 0;
-    for (size_t i = 0; i < module->function_count; i++) {
-        char left_buffer[4096];
-        const char *left = function_link_name(module, &module->functions[i],
-                                              left_buffer, sizeof(left_buffer));
-        if (left == NULL) return 0;
-        for (size_t j = 0; j < i; j++) {
-            char right_buffer[4096];
-            const char *right = function_link_name(module, &module->functions[j],
-                                                   right_buffer, sizeof(right_buffer));
-            if (right == NULL || strcmp(left, right) == 0) return 0;
+    if (module->function_count == 1) {
+        char buffer[4096];
+        if (function_link_name(module, &module->functions[0], buffer, sizeof(buffer)) == NULL) return 0;
+    } else if (module->function_count > 1) {
+        if (module->function_count > SIZE_MAX / sizeof(char *)) return 0;
+        char **names = calloc(module->function_count, sizeof(*names));
+        if (names == NULL) return 0;
+        int valid = 1;
+        for (size_t i = 0; i < module->function_count; i++) {
+            char buffer[4096];
+            const char *name = function_link_name(module, &module->functions[i], buffer, sizeof(buffer));
+            if (name == NULL) {
+                valid = 0;
+                break;
+            }
+            size_t length = strlen(name);
+            names[i] = malloc(length + 1);
+            if (names[i] == NULL) {
+                valid = 0;
+                break;
+            }
+            memcpy(names[i], name, length + 1);
         }
+        if (valid) {
+            qsort(names, module->function_count, sizeof(*names), compare_link_names);
+            for (size_t i = 1; i < module->function_count; i++)
+                if (strcmp(names[i - 1], names[i]) == 0) {
+                    valid = 0;
+                    break;
+                }
+        }
+        for (size_t i = 0; i < module->function_count; i++) free(names[i]);
+        free(names);
+        if (!valid) return 0;
     }
     const SemanticSymbol *main_symbol = semantic_find_global(module->semantics, "main",
                                                              SEMANTIC_SYMBOL_FUNCTION);

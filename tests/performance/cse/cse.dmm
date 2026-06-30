@@ -1,0 +1,16 @@
+package main;
+import "stdlib";
+
+func work(n:int, factor:int) -> int {
+    var i=0;
+    var total=0;
+    while(i<n) {
+        var first=i*factor;
+        var second=i*factor;
+        total+=(first+second)%100;
+        i+=1;
+    }
+    return total;
+}
+
+func main() -> void { stdlib.println(work(9000000,2)); }

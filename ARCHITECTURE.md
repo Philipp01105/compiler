@@ -43,20 +43,26 @@ implementing struct. Calls through these elements select the concrete method by 
 - `src/common/string_interner.c` owns the module-wide canonical spelling table. Root files and imports share it, so
   equal source strings have pointer identity.
 - `src/ast` owns program lifetime, the shared string interner, spans, and AST storage.
+- `src/ast/ast_optimize.c` simplifies typed function bodies after semantic analysis and before IR lowering at `-O1`.
 - `src/ast/ast_dump.c` serializes the resolved tree as versioned `dmm-ast-v3`.
 - `src/sema` collects package/member/local symbols, resolves file-local imports and named types, validates scopes,
   calls, conversions, lvalues, returns, bounds, and control-flow placement, and annotates AST nodes with stable IDs and
-  types. `semantic_generics.c` handles specialization and type normalization, `semantic_constants.c` evaluates
-  constant expressions, and `semantic_interfaces.c` checks structural interface conformance.
+  types. `semantic_expressions.c` checks expressions; `semantic_analysis.c` checks statements and control flow;
+  `semantic_generics.c` handles specialization and type normalization, `semantic_constants.c` evaluates
+  constant expressions, `semantic_diagnostics.c` formats errors, `semantic_layout.c` computes aggregate storage,
+  and `semantic_interfaces.c` checks structural interface conformance.
 - `src/ir` lowers typed AST nodes to explicit values and control flow, interns types, describes aggregate/enum layouts
   and imports. `ir_verify.c` verifies every use, definition, label, type, and symbol reference.
 - `src/ir/ir_optimize.c` folds and propagates constants/copies, simplifies control flow and addresses, and removes dead
-  values/stores using CFG dataflow/liveness. It preserves possible effects and traps, then verifies the resulting
+  values/stores/functions using CFG dataflow/liveness. It also reuses dominating pure calculations and fixed-array
+  bounds checks, and hoists safe loop invariants. It preserves possible effects and traps, then verifies the resulting
   module. See [IR_OPTIMIZATION.md](IR_OPTIMIZATION.md).
 - `src/ir/ir_dump.c` serializes verified modules as versioned `dmm-ir-v3`.
 - `src/backend/x86_64` consumes only verified IR. It owns stack layout, System V and Windows x64 calling conventions,
   scalar/SSE conversion, aggregate address calculation, runtime calls, and Intel/AT&T assembly formatting.
-  `ir_names.c` builds and validates native symbol names.
+  `ir_arithmetic.c` lowers arithmetic and conversions; `ir_calls.c` lowers ABI calls and runtime calls;
+  `ir_names.c` builds and validates native symbol names;
+  `ir_output.c` writes assembly and native objects.
 - `src/backend/asm_optimizer.c` performs the final conservative text cleanup.
 - `src/backend/native/encoder.c` encodes structured instructions directly.
 - `src/backend/native/object.c` owns sections, symbols and relocations and writes ELF64/COFF relocatable objects.

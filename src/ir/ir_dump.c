@@ -157,6 +157,7 @@ static int dump_instruction(FILE *output, const IrFunction *function,
     if (instruction->has_immediate &&
         fprintf(output, " immediate=0x%016llx", (unsigned long long) instruction->immediate) < 0)
         return 0;
+    if (instruction->bounds_check_elided && fputs(" bounds-check=elided", output) == EOF) return 0;
     return fputc('\n', output) != EOF;
 }
 

@@ -3,13 +3,6 @@
 #include <stdio.h>
 #include <string.h>
 
-static size_t interface_parameter_count(const AstDeclarationNode *function) {
-    size_t count = 0;
-    for (const AstParameter *parameter = function->as.function.parameters;
-         parameter; parameter = parameter->next) count++;
-    return count;
-}
-
 static int interface_type_matches_depth(const AstProgram *interface_unit, const AstType *expected,
                                     const AstProgram *actual_unit, const AstType *actual,
                                     const AstProgram *self_unit, const AstType *self,
@@ -67,16 +60,19 @@ size_t semantic_interface_method(const SemanticModel *model, size_t interface_me
     if (required->kind != SEMANTIC_SYMBOL_FUNCTION || !required->declaration ||
         required->owner_symbol_id >= model->symbol_count ||
         model->symbols[required->owner_symbol_id].kind != SEMANTIC_SYMBOL_INTERFACE ||
-        owner->kind != SEMANTIC_SYMBOL_STRUCT) return AST_SYMBOL_NONE;
+        owner->kind != SEMANTIC_SYMBOL_STRUCT || !owner->declaration) return AST_SYMBOL_NONE;
     AstType self = {.kind = AST_TYPE_NAMED, .name_token = owner->name_token,
                     .array_length_token = AST_TOKEN_NONE};
-    for (size_t i = 0; i < model->symbol_count; i++) {
-        const SemanticSymbol *actual = &model->symbols[i];
+    const char *required_name = ast_program_lexeme(required->source_program, required->name_token);
+    size_t required_parameters = parameter_count(required->declaration);
+    for (const AstDeclarationNode *method = owner->declaration->as.struct_decl.methods;
+         method; method = method->next) {
+        if (method->resolved_symbol_id >= model->symbol_count) continue;
+        const SemanticSymbol *actual = &model->symbols[method->resolved_symbol_id];
         if (actual->kind != SEMANTIC_SYMBOL_FUNCTION || actual->owner_symbol_id != struct_id ||
             !actual->declaration || actual->declaration->as.function.is_static ||
-            !same_name(actual->source_program, actual->name_token,
-                       ast_program_lexeme(required->source_program, required->name_token)) ||
-            interface_parameter_count(actual->declaration) != interface_parameter_count(required->declaration)) continue;
+            !same_name(actual->source_program, actual->name_token, required_name) ||
+            parameter_count(actual->declaration) != required_parameters) continue;
         if (!interface_type_matches(required->source_program, required->declaration->as.function.return_type,
                                 actual->source_program, &actual->declaration->as.function.return_type,
                                 owner->source_program, &self)) continue;
@@ -85,7 +81,7 @@ size_t semantic_interface_method(const SemanticModel *model, size_t interface_me
         for (; expected && provided; expected = expected->next, provided = provided->next)
             if (!interface_type_matches(required->source_program, expected->type, actual->source_program,
                                     &provided->type, owner->source_program, &self)) break;
-        if (!expected && !provided) return i;
+        if (!expected && !provided) return actual->id;
     }
     return AST_SYMBOL_NONE;
 }

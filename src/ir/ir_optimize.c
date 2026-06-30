@@ -9,9 +9,12 @@ typedef enum { UNKNOWN, BOTTOM, CONSTANT, VALUE } FactKind;
 
 typedef enum {
     PASS_CONTROL_FLOW,
+    PASS_JUMP_THREADING,
     PASS_CONSTANT_PROPAGATION,
     PASS_CONSTANT_FOLDING,
     PASS_COPY_PROPAGATION,
+    PASS_COMMON_EXPRESSIONS,
+    PASS_LOOP_INVARIANTS,
     PASS_ADDRESS_SIMPLIFICATION,
     PASS_DEAD_VALUES,
     PASS_DEAD_STORES
@@ -34,6 +37,7 @@ typedef struct {
     IrControlFlowGraph graph;
     Local *locals;
     size_t local_count, *local_index;
+    unsigned char *written_symbols;
     unsigned char *protected_values, *address_only, *remove;
     Fact *values, *incoming, *outgoing, *scratch;
     size_t *aliases;
@@ -240,12 +244,13 @@ static int initialize(Pass *p) {
     if (!ir_cfg_build(f, &p->graph)) return 0;
     p->locals = calloc(symbols, sizeof(*p->locals));
     p->local_index = malloc(symbols * sizeof(*p->local_index));
+    p->written_symbols = calloc(symbols, 1);
     p->protected_values = calloc(values, 1);
     p->address_only = malloc(values);
     p->remove = calloc(n, 1);
     p->values = malloc(values * sizeof(*p->values));
     p->aliases = malloc(values * sizeof(*p->aliases));
-    if ((symbols && (!p->locals || !p->local_index)) || (
+    if ((symbols && (!p->locals || !p->local_index || !p->written_symbols)) || (
             values && (!p->protected_values || !p->address_only || !p->values || !p->aliases)) || (n && !p->remove))
         return 0;
     for (size_t i = 0; i < symbols; ++i) p->local_index[i] = IR_VALUE_NONE;
@@ -262,6 +267,11 @@ static int initialize(Pass *p) {
         }
     for (size_t i = 0; i < n; ++i) {
         const IrInstruction *in = &f->instructions[i];
+        if (in->opcode == IR_OP_STORE) {
+            const IrInstruction *target = definition(p, in->operand_a);
+            if (target && target->opcode == IR_OP_LOAD && target->symbol_id < symbols)
+                p->written_symbols[target->symbol_id] = 1;
+        }
         if (in->opcode == IR_OP_DECLARE && scalar(p->module, in->type_id)) {
             p->local_index[in->symbol_id] = p->local_count;
             p->locals[p->local_count++] = (Local){in->symbol_id, i, in->type_id};
@@ -306,6 +316,7 @@ static void release(Pass *p) {
     ir_cfg_free(&p->graph);
     free(p->locals);
     free(p->local_index);
+    free(p->written_symbols);
     free(p->protected_values);
     free(p->address_only);
     free(p->remove);
@@ -541,6 +552,23 @@ static int same_read(const IrInstruction *a, const IrInstruction *b) {
            a->operand_b == b->operand_b && a->symbol_id == b->symbol_id && a->operator_type == b->operator_type;
 }
 
+static size_t forwarded_label(const Pass *p, size_t label) {
+    if (label >= p->function->next_label) return label;
+    size_t block = p->graph.labels[label];
+    if (block == IR_VALUE_NONE) return label;
+    const IrCfgBlock *through = &p->graph.blocks[block];
+    if (through->end != through->begin + 2) return label;
+    const IrInstruction *jump = &p->function->instructions[through->begin + 1];
+    if (jump->opcode != IR_OP_JUMP || jump->target_a == label ||
+        jump->target_a >= p->function->next_label) return label;
+    size_t destination = p->graph.labels[jump->target_a];
+    if (destination == IR_VALUE_NONE) return label;
+    const IrCfgBlock *target = &p->graph.blocks[destination];
+    if (target->begin + 1 < target->end &&
+        p->function->instructions[target->begin + 1].opcode == IR_OP_PHI) return label;
+    return jump->target_a;
+}
+
 static int rewrite(Pass *p, OptimizationPass pass) {
     IrFunction *f = p->function;
     int changed = 0;
@@ -555,6 +583,22 @@ static int rewrite(Pass *p, OptimizationPass pass) {
                 changed = 1;
             }
             continue;
+        }
+        if (pass == PASS_JUMP_THREADING && (in->opcode == IR_OP_JUMP || in->opcode == IR_OP_BRANCH)) {
+            size_t target = forwarded_label(p, in->target_a);
+            if (target != in->target_a) {
+                in->target_a = target;
+                p->stats->jumps_threaded++;
+                changed = 1;
+            }
+            if (in->opcode == IR_OP_BRANCH) {
+                target = forwarded_label(p, in->target_b);
+                if (target != in->target_b) {
+                    in->target_b = target;
+                    p->stats->jumps_threaded++;
+                    changed = 1;
+                }
+            }
         }
         if (pass == PASS_CONTROL_FLOW && in->opcode == IR_OP_BRANCH) {
             Fact value = operand(p, in->operand_a);
@@ -878,10 +922,273 @@ static int compact_ids(IrFunction *f) {
     return 1;
 }
 
+static int cse_candidate(Pass *p, const IrInstruction *in) {
+    if (in->result == IR_VALUE_NONE) return 0;
+    if (in->opcode == IR_OP_INDEX) {
+        const IrInstruction *base = definition(p, in->operand_a);
+        return base && base->type_id < p->module->type_count &&
+               p->module->types[base->type_id].kind == IR_TYPE_ARRAY;
+    }
+    if (in->opcode == IR_OP_LOAD && in->is_array &&
+        in->type_id < p->module->type_count &&
+        p->module->types[in->type_id].kind == IR_TYPE_ARRAY &&
+        in->symbol_id < p->module->semantics->symbol_count) {
+        SemanticSymbolKind kind = p->module->semantics->symbols[in->symbol_id].kind;
+        if (kind == SEMANTIC_SYMBOL_LOCAL || kind == SEMANTIC_SYMBOL_PARAMETER) return 1;
+    }
+    if (p->protected_values[in->result]) return 0;
+    if (in->opcode == IR_OP_LOAD && in->symbol_id < p->module->semantics->symbol_count &&
+        p->module->semantics->symbols[in->symbol_id].kind == SEMANTIC_SYMBOL_PARAMETER &&
+        p->local_index[in->symbol_id] != IR_VALUE_NONE && !p->written_symbols[in->symbol_id]) {
+        return 1;
+    }
+    if (in->opcode == IR_OP_BINARY || in->opcode == IR_OP_CAST)
+        return pure(p, in);
+    if (in->opcode == IR_OP_UNARY)
+        return in->operator_type != TOKEN_STAR && in->operator_type != TOKEN_AMPERSAND;
+    return 0;
+}
+
+static size_t cse_hash(const IrInstruction *in, size_t buckets) {
+    uint64_t hash = UINT64_C(1469598103934665603);
+    hash = (hash ^ (uint64_t) in->opcode) * UINT64_C(1099511628211);
+    hash = (hash ^ (uint64_t) in->type_id) * UINT64_C(1099511628211);
+    hash = (hash ^ (uint64_t) in->operator_type) * UINT64_C(1099511628211);
+    hash = (hash ^ (uint64_t) in->operand_a) * UINT64_C(1099511628211);
+    hash = (hash ^ (uint64_t) in->operand_b) * UINT64_C(1099511628211);
+    hash = (hash ^ (uint64_t) in->symbol_id) * UINT64_C(1099511628211);
+    return (size_t) (hash % buckets);
+}
+
+static int cse_equal(const IrInstruction *left, const IrInstruction *right) {
+    return left->opcode == right->opcode && left->type_id == right->type_id &&
+           left->type == right->type && left->operator_type == right->operator_type &&
+           left->operand_a == right->operand_a && left->operand_b == right->operand_b &&
+           left->symbol_id == right->symbol_id &&
+           left->pointer_depth == right->pointer_depth && left->type_name_token == right->type_name_token &&
+           left->is_array == right->is_array && left->is_slice == right->is_slice;
+}
+
+static uint64_t *block_dominators(const Pass *p) {
+    size_t count = p->graph.count, words = (count + 63) / 64;
+    if (words && count > SIZE_MAX / words / sizeof(uint64_t)) return NULL;
+    uint64_t *dominators = calloc(count * words, sizeof(*dominators));
+    uint64_t *scratch = malloc(words * sizeof(*scratch));
+    if (!dominators || !scratch) { free(dominators); free(scratch); return NULL; }
+    for (size_t b = 0; b < count; b++) {
+        if (!p->graph.blocks[b].reachable) continue;
+        if (b == 0) dominators[0] = 1;
+        else for (size_t predecessor = 0; predecessor < count; predecessor++)
+            if (p->graph.blocks[predecessor].reachable)
+                dominators[b * words + predecessor / 64] |= UINT64_C(1) << (predecessor % 64);
+    }
+    int updated;
+    do {
+        updated = 0;
+        for (size_t b = 1; b < count; b++) {
+            if (!p->graph.blocks[b].reachable) continue;
+            for (size_t w = 0; w < words; w++) scratch[w] = UINT64_MAX;
+            for (size_t edge = p->graph.blocks[b].predecessor; edge != IR_VALUE_NONE;
+                 edge = p->graph.edges[edge].next) {
+                size_t predecessor = p->graph.edges[edge].block;
+                if (!p->graph.blocks[predecessor].reachable) continue;
+                for (size_t w = 0; w < words; w++)
+                    scratch[w] &= dominators[predecessor * words + w];
+            }
+            scratch[b / 64] |= UINT64_C(1) << (b % 64);
+            if (memcmp(scratch, dominators + b * words, words * sizeof(*scratch))) {
+                memcpy(dominators + b * words, scratch, words * sizeof(*scratch));
+                updated = 1;
+            }
+        }
+    } while (updated);
+    free(scratch);
+    return dominators;
+}
+
+static int block_dominates(const uint64_t *dominators, size_t words, size_t source, size_t target) {
+    return (dominators[target * words + source / 64] & (UINT64_C(1) << (source % 64))) != 0;
+}
+
+static int common_expressions(Pass *p) {
+    IrFunction *function = p->function;
+    size_t count = p->graph.count, n = function->instruction_count;
+    size_t words = (count + 63) / 64;
+    if (!n) return 0;
+    if (n > SIZE_MAX / sizeof(size_t)) return -1;
+    uint64_t *dominators = block_dominators(p);
+    size_t *heads = malloc(n * sizeof(*heads));
+    size_t *previous = malloc(n * sizeof(*previous));
+    if (!dominators || !heads || !previous) {
+        free(dominators); free(heads); free(previous);
+        return -1;
+    }
+    for (size_t i = 0; i < n; i++) heads[i] = IR_VALUE_NONE;
+    int changed = 0;
+    for (size_t i = 0; i < n; i++) {
+        IrInstruction *in = &function->instructions[i];
+        size_t block = p->graph.owner[i];
+        if (!p->graph.blocks[block].reachable) continue;
+        in->operand_a = resolve(p, in->operand_a);
+        in->operand_b = resolve(p, in->operand_b);
+        if (!cse_candidate(p, in)) continue;
+        size_t bucket = cse_hash(in, n);
+        for (size_t j = heads[bucket]; j != IR_VALUE_NONE; j = previous[j]) {
+            const IrInstruction *earlier = &function->instructions[j];
+            size_t owner = p->graph.owner[j];
+            if (cse_equal(in, earlier) &&
+                (owner == block || block_dominates(dominators, words, owner, block))) {
+                if (in->opcode == IR_OP_INDEX) {
+                    if (!in->bounds_check_elided) {
+                        in->bounds_check_elided = 1;
+                        p->stats->bounds_checks_reused++;
+                        changed = 1;
+                    }
+                } else {
+                    p->aliases[in->result] = resolve(p, earlier->result);
+                    p->remove[i] = 1;
+                    changed = 1;
+                    p->stats->common_expressions++;
+                }
+                break;
+            }
+        }
+        if (!p->remove[i]) {
+            previous[i] = heads[bucket];
+            heads[bucket] = i;
+        }
+    }
+    if (changed) for (size_t i = 0; i < n; i++) {
+        if (p->remove[i]) continue;
+        IrInstruction *in = &function->instructions[i];
+        in->operand_a = resolve(p, in->operand_a);
+        in->operand_b = resolve(p, in->operand_b);
+        for (size_t a = 0; a < in->argument_count; a++) {
+            size_t *value = &function->arguments[in->first_argument + a];
+            *value = resolve(p, *value);
+        }
+    }
+    free(dominators); free(heads); free(previous);
+    return changed;
+}
+
+static int loop_value_available(Pass *p, size_t value, const unsigned char *members,
+                                const unsigned char *hoist, const uint64_t *dominators,
+                                size_t words, size_t preheader, size_t insertion) {
+    if (value == IR_VALUE_NONE) return 1;
+    size_t definition_index = p->graph.definitions[value];
+    if (definition_index == IR_VALUE_NONE) return 0;
+    size_t owner = p->graph.owner[definition_index];
+    if (members[owner]) return hoist[definition_index] != 0;
+    return block_dominates(dominators, words, owner, preheader) &&
+           (owner != preheader || definition_index < insertion);
+}
+
+static int invariant_candidate(Pass *p, const IrInstruction *in) {
+    if (in->result == IR_VALUE_NONE) return 0;
+    if (in->opcode == IR_OP_CONSTANT) return 1;
+    if (in->opcode == IR_OP_LOAD) {
+        if (in->symbol_id >= p->module->semantics->symbol_count ||
+            p->module->semantics->symbols[in->symbol_id].kind != SEMANTIC_SYMBOL_PARAMETER ||
+            p->local_index[in->symbol_id] == IR_VALUE_NONE) return 0;
+        return !p->written_symbols[in->symbol_id];
+    }
+    if (in->opcode == IR_OP_UNARY)
+        return in->operator_type != TOKEN_STAR && in->operator_type != TOKEN_AMPERSAND;
+    if (in->opcode == IR_OP_CAST) {
+        const IrInstruction *source = definition(p, in->operand_a);
+        if (source && floating(source->type) && data_type_integral(in->type)) return 0;
+    }
+    return (in->opcode == IR_OP_BINARY || in->opcode == IR_OP_CAST) && pure(p, in);
+}
+
+static int hoist_loop_invariants(Pass *p) {
+    IrFunction *function = p->function;
+    size_t blocks = p->graph.count, n = function->instruction_count;
+    if (blocks < 2 || n == 0) return 0;
+    if (n > SIZE_MAX / sizeof(IrInstruction) || blocks > SIZE_MAX / sizeof(size_t)) return -1;
+    size_t words = (blocks + 63) / 64;
+    uint64_t *dominators = block_dominators(p);
+    unsigned char *members = calloc(blocks, 1), *hoist = calloc(n, 1);
+    size_t *queue = malloc(blocks * sizeof(*queue));
+    if (!dominators || !members || !hoist || !queue) {
+        free(dominators); free(members); free(hoist); free(queue);
+        return -1;
+    }
+    int changed = 0;
+    for (size_t latch = 1; latch < blocks && !changed; latch++) {
+        if (!p->graph.blocks[latch].reachable) continue;
+        for (size_t edge_index = 0; edge_index < 2 && !changed; edge_index++) {
+            size_t header = p->graph.blocks[latch].successor[edge_index];
+            if (header == IR_VALUE_NONE || header > latch ||
+                !block_dominates(dominators, words, header, latch)) continue;
+            memset(members, 0, blocks);
+            memset(hoist, 0, n);
+            size_t end = 0;
+            members[header] = 1;
+            if (header != latch) { members[latch] = 1; queue[end++] = latch; }
+            for (size_t head = 0; head < end; head++) {
+                size_t block = queue[head];
+                for (size_t edge = p->graph.blocks[block].predecessor; edge != IR_VALUE_NONE;
+                     edge = p->graph.edges[edge].next) {
+                    size_t predecessor = p->graph.edges[edge].block;
+                    if (!members[predecessor] && p->graph.blocks[predecessor].reachable) {
+                        members[predecessor] = 1;
+                        if (predecessor != header) queue[end++] = predecessor;
+                    }
+                }
+            }
+            size_t preheader = IR_VALUE_NONE;
+            for (size_t edge = p->graph.blocks[header].predecessor; edge != IR_VALUE_NONE;
+                 edge = p->graph.edges[edge].next) {
+                size_t predecessor = p->graph.edges[edge].block;
+                if (members[predecessor] || !p->graph.blocks[predecessor].reachable) continue;
+                if (preheader != IR_VALUE_NONE && preheader != predecessor) {
+                    preheader = IR_VALUE_NONE;
+                    break;
+                }
+                preheader = predecessor;
+            }
+            if (preheader == IR_VALUE_NONE) continue;
+            size_t insertion = p->graph.blocks[preheader].end;
+            if (insertion && ir_opcode_is_terminator(function->instructions[insertion - 1].opcode)) insertion--;
+            size_t selected = 0;
+            for (size_t i = p->graph.blocks[header].begin; i < n; i++) {
+                if (!members[p->graph.owner[i]]) continue;
+                const IrInstruction *in = &function->instructions[i];
+                if (!invariant_candidate(p, in) ||
+                    !loop_value_available(p, in->operand_a, members, hoist, dominators,
+                                          words, preheader, insertion) ||
+                    !loop_value_available(p, in->operand_b, members, hoist, dominators,
+                                          words, preheader, insertion)) continue;
+                hoist[i] = 1;
+                selected++;
+            }
+            if (!selected) continue;
+            IrInstruction *ordered = malloc(n * sizeof(*ordered));
+            if (!ordered) { changed = -1; break; }
+            size_t output = 0;
+            for (size_t i = 0; i <= n; i++) {
+                if (i == insertion) for (size_t j = 0; j < n; j++)
+                    if (hoist[j]) ordered[output++] = function->instructions[j];
+                if (i < n && !hoist[i]) ordered[output++] = function->instructions[i];
+            }
+            free(function->instructions);
+            function->instructions = ordered;
+            function->instruction_capacity = n;
+            p->stats->loop_invariants_hoisted += selected;
+            changed = 1;
+        }
+    }
+    free(dominators); free(members); free(hoist); free(queue);
+    return changed;
+}
+
 static const char *pass_name(OptimizationPass pass) {
     static const char *names[] = {
-        "control-flow", "constant-propagation", "constant-folding", "copy-propagation",
-        "address-simplification", "dead-value-elimination", "dead-store-elimination"
+        "control-flow", "jump-threading", "constant-propagation", "constant-folding",
+        "copy-propagation", "common-expressions", "loop-invariants", "address-simplification",
+        "dead-value-elimination", "dead-store-elimination"
     };
     return pass >= PASS_CONTROL_FLOW && pass <= PASS_DEAD_STORES ? names[pass] : "invalid";
 }
@@ -897,9 +1204,14 @@ static int run_pass(IrModule *module, IrFunction *function, IrOptimizationStats 
         return -1;
     }
     int changed;
-    if (pass <= PASS_ADDRESS_SIMPLIFICATION) {
-        analyze(&state);
+    if (pass <= PASS_ADDRESS_SIMPLIFICATION && pass != PASS_COMMON_EXPRESSIONS &&
+        pass != PASS_LOOP_INVARIANTS) {
+        if (pass != PASS_JUMP_THREADING) analyze(&state);
         changed = rewrite(&state, pass);
+    } else if (pass == PASS_COMMON_EXPRESSIONS) {
+        changed = common_expressions(&state);
+    } else if (pass == PASS_LOOP_INVARIANTS) {
+        changed = hoist_loop_invariants(&state);
     } else if (pass == PASS_DEAD_VALUES) {
         changed = dead_values(&state);
     } else {
@@ -909,9 +1221,62 @@ static int run_pass(IrModule *module, IrFunction *function, IrOptimizationStats 
         release(&state);
         return -1;
     }
-    changed |= compact(&state);
+    if (pass != PASS_LOOP_INVARIANTS) changed |= compact(&state);
     release(&state);
     return changed;
+}
+
+static int remove_dead_functions(IrModule *module, IrOptimizationStats *stats) {
+    size_t count = module->function_count;
+    size_t symbols = module->semantics->symbol_count;
+    if (symbols > SIZE_MAX / sizeof(size_t) || count > SIZE_MAX / sizeof(size_t)) return 0;
+    size_t *by_symbol = malloc(symbols * sizeof(*by_symbol));
+    size_t *queue = malloc(count * sizeof(*queue));
+    unsigned char *live = calloc(count, 1);
+    if ((symbols && !by_symbol) || (count && (!queue || !live))) {
+        free(by_symbol); free(queue); free(live);
+        return 0;
+    }
+    for (size_t i = 0; i < symbols; i++) by_symbol[i] = IR_VALUE_NONE;
+    for (size_t i = 0; i < count; i++) by_symbol[module->functions[i].symbol_id] = i;
+    size_t end = 0;
+    for (size_t i = 0; i < count; i++) {
+        const IrFunction *function = &module->functions[i];
+        const SemanticSymbol *symbol = &module->semantics->symbols[function->symbol_id];
+        const AstDeclarationNode *declaration = symbol->declaration;
+        const char *name = ast_program_lexeme(function->source_program, function->name_token);
+        if (function->owner_symbol_id != AST_SYMBOL_NONE || !declaration || declaration->is_public ||
+            !strcmp(name, "main")) {
+            live[i] = 1;
+            queue[end++] = i;
+        }
+    }
+    for (size_t head = 0; head < end; head++) {
+        const IrFunction *function = &module->functions[queue[head]];
+        for (size_t j = 0; j < function->instruction_count; j++) {
+            const IrInstruction *in = &function->instructions[j];
+            if (in->opcode != IR_OP_CALL || in->symbol_id >= symbols) continue;
+            size_t callee = by_symbol[in->symbol_id];
+            if (callee != IR_VALUE_NONE && !live[callee]) {
+                live[callee] = 1;
+                queue[end++] = callee;
+            }
+        }
+    }
+    size_t kept = 0;
+    for (size_t i = 0; i < count; i++) {
+        if (live[i]) {
+            module->functions[kept++] = module->functions[i];
+        } else {
+            free(module->functions[i].parameters);
+            free(module->functions[i].instructions);
+            free(module->functions[i].arguments);
+            stats->dead_functions++;
+        }
+    }
+    module->function_count = kept;
+    free(by_symbol); free(queue); free(live);
+    return 1;
 }
 
 static int trace_snapshot(FILE *trace, const IrModule *module, size_t sequence, size_t function,
@@ -929,6 +1294,7 @@ int ir_optimize_module_traced(IrModule *module, IrOptimizationStats *stats, FILE
     if (!stats) stats = &ignored;
     memset(stats, 0, sizeof(*stats));
     if (!ir_verify_module(module)) return 0;
+    module->optimized = 0;
     if (trace != NULL && fputs("dmm-ir-pass-trace-v1\n", trace) == EOF) return 0;
     module->verified = 0;
     size_t sequence = 0;
@@ -951,8 +1317,10 @@ int ir_optimize_module_traced(IrModule *module, IrOptimizationStats *stats, FILE
         if (!compact_ids(&module->functions[f])) return 0;
         if (!trace_snapshot(trace, module, sequence++, f, iteration, "id-compaction", 1)) return 0;
     }
+    if (!remove_dead_functions(module, stats)) return 0;
     module->verified = ir_verify_module(module);
-    return module->verified && (trace == NULL || !ferror(trace));
+    module->optimized = module->verified && (trace == NULL || !ferror(trace));
+    return module->optimized;
 }
 
 

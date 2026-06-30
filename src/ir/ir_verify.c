@@ -21,11 +21,11 @@ static int instruction_produces_value(const IrInstruction *instruction) {
 }
 
 static const IrInstruction *verified_producer(const IrFunction *function,
+                                              const IrInstruction *const *producers,
                                               size_t value, size_t before) {
-    if (value == IR_VALUE_NONE) return NULL;
-    for (size_t i = 0; i < before; i++)
-        if (function->instructions[i].result == value) return &function->instructions[i];
-    return NULL;
+    if (value == IR_VALUE_NONE || value >= function->next_value) return NULL;
+    const IrInstruction *producer = producers[value];
+    return producer && (size_t) (producer - function->instructions) < before ? producer : NULL;
 }
 
 static int ir_integral_type(const IrModule *module, IrTypeId type_id) {
@@ -106,13 +106,14 @@ static const IrEnumVariant *ir_variant(const IrModule *module, size_t symbol, co
     return NULL;
 }
 
-static int verified_payload_guard(const IrFunction *function, const IrInstruction *payload, size_t index) {
+static int verified_payload_guard(const IrFunction *function, const IrInstruction *const *producers,
+                                  const IrInstruction *payload, size_t index) {
     size_t label = index;
     while (label > 0 && function->instructions[label].opcode != IR_OP_LABEL) label--;
     if (label == 0 || function->instructions[label].target_a != payload->target_a) return 0;
     const IrInstruction *branch = &function->instructions[label - 1];
     if (branch->opcode != IR_OP_BRANCH || branch->target_a != payload->target_a) return 0;
-    const IrInstruction *test = verified_producer(function, branch->operand_a, label - 1);
+    const IrInstruction *test = verified_producer(function, producers, branch->operand_a, label - 1);
     if (!test || test->opcode != IR_OP_ENUM_IS || test->operand_a != payload->operand_a ||
         test->symbol_id != payload->symbol_id)
         return 0;
@@ -145,10 +146,11 @@ static int core_ir_type_matches(const IrModule *module, IrTypeId id,
 
 static int verify_instruction_types(const IrModule *module,
                                     const IrFunction *function,
+                                    const IrInstruction *const *producers,
                                     const IrInstruction *instruction,
                                     size_t index) {
-    const IrInstruction *a = verified_producer(function, instruction->operand_a, index);
-    const IrInstruction *b = verified_producer(function, instruction->operand_b, index);
+    const IrInstruction *a = verified_producer(function, producers, instruction->operand_a, index);
+    const IrInstruction *b = verified_producer(function, producers, instruction->operand_b, index);
     switch (instruction->opcode) {
         case IR_OP_ENUM_CONSTRUCT: {
             const IrEnum *owner = NULL;
@@ -162,7 +164,7 @@ static int verify_instruction_types(const IrModule *module,
                 return 0;
             for (size_t n = 0; n < variant->payload_count; n++) {
                 const IrInstruction *value = verified_producer(
-                    function, function->arguments[instruction->first_argument + n], index);
+                    function, producers, function->arguments[instruction->first_argument + n], index);
                 if (!value || !ir_types_assignable(module, value->type_id, variant->payload_types[n], value->opcode))
                     return 0;
             }
@@ -180,7 +182,7 @@ static int verify_instruction_types(const IrModule *module,
                            module, instruction->type_id);
             return instruction->enum_payload_index < variant->payload_count &&
                    instruction->type_id == variant->payload_types[instruction->enum_payload_index] &&
-                   verified_payload_guard(function, instruction, index);
+                   verified_payload_guard(function, producers, instruction, index);
         }
         case IR_OP_TRAP: return ir_void_type(module, instruction->type_id);
 
@@ -269,7 +271,7 @@ static int verify_instruction_types(const IrModule *module,
                     a->symbol_id != AST_SYMBOL_NONE)
                     return 0;
                 for (size_t argument = 0; argument < core->argument_count; ++argument) {
-                    const IrInstruction *value = verified_producer(function,
+                    const IrInstruction *value = verified_producer(function, producers,
                                                                    function->arguments[
                                                                        instruction->first_argument + argument], index);
                     if (value == NULL || !core_ir_type_matches(module, value->type_id,
@@ -291,7 +293,7 @@ static int verify_instruction_types(const IrModule *module,
                     if (instruction->argument_count != count ||
                         instruction->first_argument >= function->argument_count)
                         return 0;
-                    const IrInstruction *receiver = verified_producer(function,
+                    const IrInstruction *receiver = verified_producer(function, producers,
                         function->arguments[instruction->first_argument], index);
                     return receiver && receiver->type_id < module->type_count &&
                            module->types[receiver->type_id].kind == IR_TYPE_NAMED &&
@@ -302,7 +304,7 @@ static int verify_instruction_types(const IrModule *module,
                 instruction->type_id != callee->return_type_id)
                 return 0;
             for (size_t argument = 0; argument < instruction->argument_count; argument++) {
-                const IrInstruction *value = verified_producer(function,
+                const IrInstruction *value = verified_producer(function, producers,
                                                                function->arguments[
                                                                    instruction->first_argument + argument], index);
                 if (value == NULL) return 0;
@@ -507,14 +509,14 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
             for (size_t previous = 0; previous < p; previous++)
                 if (function->parameters[previous].symbol_id == parameter->symbol_id) return 0;
         }
-        if ((function->next_value != 0 && function->next_value > SIZE_MAX / sizeof(unsigned char)) ||
+        if ((function->next_value != 0 && function->next_value > SIZE_MAX / sizeof(const IrInstruction *)) ||
             (function->next_label != 0 && function->next_label > SIZE_MAX / sizeof(unsigned char)))
             return 0;
-        unsigned char *defined = calloc(function->next_value, sizeof(*defined));
+        const IrInstruction **producers = calloc(function->next_value, sizeof(*producers));
         unsigned char *labels = calloc(function->next_label, sizeof(*labels));
-        if ((defined == NULL && function->next_value != 0) ||
+        if ((producers == NULL && function->next_value != 0) ||
             (labels == NULL && function->next_label != 0)) {
-            free(defined);
+            free(producers);
             free(labels);
             return 0;
         }
@@ -537,7 +539,9 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
             if (!valid) break;
             failing_instruction = i;
             if ((instruction->has_immediate != 0 && instruction->has_immediate != 1) ||
-                (instruction->has_immediate && instruction->opcode != IR_OP_CONSTANT)) {
+                (instruction->has_immediate && instruction->opcode != IR_OP_CONSTANT) ||
+                (instruction->bounds_check_elided != 0 && instruction->bounds_check_elided != 1) ||
+                (instruction->bounds_check_elided && instruction->opcode != IR_OP_INDEX)) {
                 valid = 0;
                 break;
             }
@@ -546,7 +550,7 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                 (!produces_value && instruction->result != IR_VALUE_NONE) ||
                 (instruction->result != IR_VALUE_NONE &&
                  (instruction->result >= function->next_value ||
-                  defined[instruction->result] != 0))) {
+                  producers[instruction->result] != NULL))) {
                 valid = 0;
                 break;
             }
@@ -558,7 +562,7 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
             do { \
                 size_t required_value = (value); \
                 if (required_value == IR_VALUE_NONE || required_value >= function->next_value || \
-                    defined[required_value] == 0) valid = 0; \
+                    producers[required_value] == NULL) valid = 0; \
             } while (0)
 #define REQUIRE_LABEL(label) \
             do { \
@@ -659,14 +663,14 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
             }
 #undef REQUIRE_LABEL
 #undef REQUIRE_VALUE
-            if (valid && !verify_instruction_types(module, function, instruction, i))
+            if (valid && !verify_instruction_types(module, function, producers, instruction, i))
                 valid = 0;
             if (valid && instruction->result != IR_VALUE_NONE)
-                defined[instruction->result] = 1;
+                producers[instruction->result] = instruction;
         }
-        free(defined);
+        free(producers);
         free(labels);
-        if (!valid || !ir_verify_control_flow(function, ir_void_type(module, function->return_type_id))) {
+        if (!valid || !ir_verify_control_flow(module, function, ir_void_type(module, function->return_type_id))) {
             if (report)
                 ir_report_failure(function, valid ? IR_VALUE_NONE : failing_instruction,
                                   "IR verification",

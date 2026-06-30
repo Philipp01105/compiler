@@ -111,7 +111,7 @@ static int value_available(size_t value, size_t use_block, size_t use_index,
 }
 
 /* Called after opcode/type/value/label validation, so operand indices are safe. */
-int ir_verify_control_flow(const IrFunction *function, int implicit_void_return) {
+int ir_verify_control_flow(const IrModule *module, const IrFunction *function, int implicit_void_return) {
     size_t n = function->instruction_count;
     if (n == 0) return implicit_void_return;
     IrControlFlowGraph graph;
@@ -155,6 +155,24 @@ int ir_verify_control_flow(const IrFunction *function, int implicit_void_return)
     for (size_t i = 0; i < n; i++) {
         const IrInstruction *instruction = &function->instructions[i];
         size_t b = graph.owner[i];
+        if (instruction->bounds_check_elided) {
+            size_t base = graph.definitions[instruction->operand_a];
+            if (base == IR_VALUE_NONE || function->instructions[base].type_id >= module->type_count ||
+                module->types[function->instructions[base].type_id].kind != IR_TYPE_ARRAY) goto done;
+            int checked = 0;
+            for (size_t j = 0; j < i; j++) {
+                const IrInstruction *earlier = &function->instructions[j];
+                if (earlier->opcode != IR_OP_INDEX || earlier->bounds_check_elided ||
+                    earlier->operand_a != instruction->operand_a ||
+                    earlier->operand_b != instruction->operand_b ||
+                    earlier->type_id != instruction->type_id) continue;
+                size_t previous = graph.owner[j];
+                if ((previous == b ||
+                     (dominators[b * words + previous / 64] & (UINT64_C(1) << (previous % 64))) != 0) &&
+                    graph.blocks[previous].reachable) { checked = 1; break; }
+            }
+            if (!checked) goto done;
+        }
 #define AVAILABLE(v) do { if ((v) >= function->next_value || !value_available((v), b, i, &graph, dominators, words)) goto done; } while (0)
         if (instruction->opcode == IR_OP_PHI) {
             size_t incoming[2] = {graph.labels[instruction->target_a], graph.labels[instruction->target_b]};

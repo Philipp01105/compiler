@@ -3,6 +3,8 @@
 
 #include "semantic.h"
 
+struct CoreIntrinsic;
+
 typedef struct LocalSymbol {
     size_t name_token;
     AstType type;
@@ -34,6 +36,26 @@ typedef struct {
     int complexity_error_reported;
     int allocation_failed;
 } Analyzer;
+
+typedef struct {
+    char *text;
+    size_t used;
+    int failed;
+} DiagnosticText;
+
+void diagnostic_append(DiagnosticText *text, const char *format, ...);
+void diagnostic_type(DiagnosticText *text, const Analyzer *analyzer,
+                     DataType primitive, size_t nominal, unsigned pointers,
+                     unsigned outer, int array, int slice, const char *length);
+void operand_error(Analyzer *analyzer, const AstExpression *expression,
+                   char category, int code, const char *reason);
+void conversion_error(Analyzer *analyzer, const AstExpression *value,
+                      const AstProgram *expected_program, const AstType *expected,
+                      const AstExpression *expected_value, const char *reason);
+void overload_error(Analyzer *analyzer, const AstExpression *call,
+                    const char *name, size_t owner, int is_static, int ambiguous);
+int viable_function(const Analyzer *analyzer, const SemanticSymbol *function,
+                    const AstExpression *arguments);
 
 void semantic_error(Analyzer *analyzer, size_t token, char category, int code,
                     const char *message);
@@ -78,6 +100,40 @@ int generic_bounds_satisfied(Analyzer *analyzer, const AstProgram *declaration_u
 AstType argument_type_copy(Analyzer *analyzer, const AstProgram *unit, AstType type);
 void instantiate_generic_candidates(Analyzer *analyzer, const char *name,
                                     const AstExpression *arguments);
+int aggregate_reaches(const Analyzer *analyzer, size_t current_symbol,
+                      size_t target_symbol, size_t depth);
+size_t semantic_type_slots(const Analyzer *analyzer, const AstProgram *program,
+                           const AstType *type, const AstExpression *inferred);
+int assignable_expression(const Analyzer *analyzer, const AstExpression *expression);
+size_t layout_size(Analyzer *analyzer, AstType *type, size_t depth);
+const LocalSymbol *find_local(const Analyzer *analyzer, size_t name_token);
+void analyze_constant_declaration(Analyzer *analyzer, AstDeclarationNode *declaration);
+void analyze_expression(Analyzer *analyzer, AstExpression *expression);
+void collect_declarations(Analyzer *analyzer, AstProgram *program);
+LocalSymbol *push_local(Analyzer *analyzer, size_t name_token, AstType type,
+                        SemanticSymbolKind kind, const AstExpression *inferred, int is_constant);
+void pop_to(Analyzer *analyzer, LocalSymbol *saved);
+const AstField *find_field(const Analyzer *analyzer, size_t type_token, size_t field_token);
+const AstField *find_field_by_symbol(const Analyzer *analyzer, size_t type_symbol_id,
+                                      size_t field_token);
+const AstEnumValue *find_enum_value_by_symbol(const Analyzer *analyzer,
+                                              size_t type_symbol_id, size_t value_token);
+const SemanticSymbol *find_method(const Analyzer *analyzer, size_t owner_symbol_id,
+                                  size_t method_token);
+DataType promoted_numeric(DataType left, DataType right);
+DataType builtin_result_type(const char *name);
+int is_builtin_name(const char *name);
+void validate_overload_sets(Analyzer *analyzer);
+int expression_assignment_allowed(const Analyzer *analyzer, const AstExpression *source,
+                                  const AstExpression *target);
+int plain_numeric_expression(const AstExpression *expression);
+int pointer_expression(const AstExpression *expression);
+int enum_constant_expression(const Analyzer *analyzer, const AstExpression *expression);
+const SemanticSymbol *resolve_overload(const Analyzer *analyzer, const char *name,
+                                       size_t owner_symbol_id, int is_static,
+                                       const AstExpression *arguments, int *ambiguous);
+void validate_expression(Analyzer *analyzer, AstExpression *expression, int is_callee);
+int statement_always_returns(const AstStatement *statement);
 
 int same_name(const AstProgram *program, size_t token, const char *name);
 int same_package(const AstProgram *left, const AstProgram *right);

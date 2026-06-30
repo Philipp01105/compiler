@@ -23,6 +23,11 @@ typedef struct {
     const AstProgram *argument_program;
     size_t count;
     int failed;
+    struct {
+        size_t source;
+        size_t target;
+        int valid;
+    } token_cache[64];
 } Substitution;
 
 static void *owned(Substitution *s, size_t size) {
@@ -35,12 +40,24 @@ static size_t transplant_token(Substitution *s, size_t index) {
     const AstToken *source = ast_program_token(s->argument_program, index);
     if (!source) return AST_TOKEN_NONE;
     AstToken token = *source;
+    size_t cache_slot = index % (sizeof(s->token_cache) / sizeof(s->token_cache[0]));
+    if (s->token_cache[cache_slot].valid && s->token_cache[cache_slot].source == index)
+        return s->token_cache[cache_slot].target;
+    const char *text = string_interner_intern(s->program->strings, token.lexeme);
+    if (!text) {
+        s->failed = 1;
+        return AST_TOKEN_NONE;
+    }
     for (size_t i = 0; i < s->program->token_count; i++)
         if (s->program->tokens[i].type == token.type &&
-            strcmp(s->program->tokens[i].lexeme, token.lexeme) == 0)
+            (s->program->tokens[i].lexeme == text ||
+             strcmp(s->program->tokens[i].lexeme, text) == 0)) {
+            s->token_cache[cache_slot].source = index;
+            s->token_cache[cache_slot].target = i;
+            s->token_cache[cache_slot].valid = 1;
             return i;
-    const char *text = string_interner_intern(s->program->strings, token.lexeme);
-    if (!text || s->program->token_count >= SIZE_MAX / sizeof(AstToken) - 1) {
+        }
+    if (s->program->token_count >= SIZE_MAX / sizeof(AstToken) - 1) {
         s->failed = 1;
         return AST_TOKEN_NONE;
     }
@@ -53,6 +70,9 @@ static size_t transplant_token(Substitution *s, size_t index) {
     s->program->tokens = tokens;
     size_t result = s->program->token_count++;
     tokens[result] = token;
+    s->token_cache[cache_slot].source = index;
+    s->token_cache[cache_slot].target = result;
+    s->token_cache[cache_slot].valid = 1;
     return result;
 }
 

@@ -10,11 +10,13 @@ set(CMAKE_C_EXTENSIONS OFF)
 option(DMM_STRICT_WARNINGS "Treat compiler warnings as errors" OFF)
 option(DMM_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 option(DMM_BUILD_FUZZERS "Build libFuzzer targets (Clang only)" OFF)
+option(DMM_ENABLE_PERF_TESTS "Register opt-in runtime performance benchmarks" OFF)
 
 set(DMM_FUZZ_PIPELINE_SOURCES
         tests/fuzz/fuzz_pipeline.c
         src/common/string_interner.c
         src/ast/ast.c
+        src/ast/ast_optimize.c
         src/frontend/frontend.c
         src/frontend/lexer.c
         src/frontend/syntax_parser.c
@@ -22,6 +24,10 @@ set(DMM_FUZZ_PIPELINE_SOURCES
         src/sema/semantic_interfaces.c
         src/sema/semantic_constants.c
         src/sema/semantic_generics.c
+        src/sema/semantic_diagnostics.c
+        src/sema/semantic_layout.c
+        src/sema/semantic_analysis.c
+        src/sema/semantic_expressions.c
         src/sema/semantic_symbols.c
         src/ast/generics.c
         src/ir/ir_optimize.c
@@ -52,6 +58,8 @@ add_executable(compiler
         src/common/token.h
         src/ast/ast.c
         src/ast/ast.h
+        src/ast/ast_optimize.c
+        src/ast/ast_optimize.h
         src/ast/ast_dump.c
         src/frontend/frontend.c
         src/frontend/frontend.h
@@ -64,6 +72,10 @@ add_executable(compiler
         src/sema/semantic_interfaces.c
         src/sema/semantic_constants.c
         src/sema/semantic_generics.c
+        src/sema/semantic_diagnostics.c
+        src/sema/semantic_layout.c
+        src/sema/semantic_analysis.c
+        src/sema/semantic_expressions.c
         src/sema/semantic_symbols.c
         src/ast/generics.c
         src/sema/semantic.h
@@ -84,6 +96,9 @@ add_executable(compiler
         src/backend/runtime_calls.c
         src/backend/runtime_calls.h
         src/backend/x86_64/ir_emitter.c
+        src/backend/x86_64/ir_arithmetic.c
+        src/backend/x86_64/ir_calls.c
+        src/backend/x86_64/ir_output.c
         src/backend/x86_64/ir_names.c
         src/backend/x86_64/ir_emitter.h
         src/backend/x86_64/instruction.c
@@ -156,6 +171,18 @@ endif ()
 
 include(CTest)
 if (BUILD_TESTING)
+    if (DMM_ENABLE_PERF_TESTS)
+        find_package(Python3 COMPONENTS Interpreter REQUIRED)
+        add_test(NAME runtime_performance
+                COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_SOURCE_DIR}/tests/performance/run.py
+                --compiler $<TARGET_FILE:compiler>
+                --output-dir ${CMAKE_BINARY_DIR}/performance)
+        set_tests_properties(runtime_performance PROPERTIES
+                LABELS "performance;benchmark"
+                RUN_SERIAL TRUE
+                TIMEOUT 600)
+    endif ()
     if (UNIX)
         add_compile_definitions(_XOPEN_SOURCE=700)
     endif ()
@@ -365,6 +392,10 @@ if (BUILD_TESTING)
             src/sema/semantic_interfaces.c
             src/sema/semantic_constants.c
             src/sema/semantic_generics.c
+            src/sema/semantic_diagnostics.c
+            src/sema/semantic_layout.c
+            src/sema/semantic_analysis.c
+            src/sema/semantic_expressions.c
             src/sema/semantic_symbols.c
             src/ast/generics.c
             src/ir/ir.c
@@ -377,6 +408,7 @@ if (BUILD_TESTING)
     add_executable(dmm_ir_optimizer_test
             tests/unit/ir_optimizer_test.c
             src/ast/ast.c
+            src/ast/ast_optimize.c
             src/frontend/frontend.c
             src/frontend/syntax_parser.c
             src/frontend/lexer.c
@@ -384,6 +416,10 @@ if (BUILD_TESTING)
             src/sema/semantic_interfaces.c
             src/sema/semantic_constants.c
             src/sema/semantic_generics.c
+            src/sema/semantic_diagnostics.c
+            src/sema/semantic_layout.c
+            src/sema/semantic_analysis.c
+            src/sema/semantic_expressions.c
             src/sema/semantic_symbols.c
             src/ast/generics.c
             src/ir/ir.c

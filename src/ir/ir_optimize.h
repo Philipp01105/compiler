@@ -7,6 +7,9 @@ typedef struct {
     size_t constants_folded, constants_propagated, copies_propagated;
     size_t dead_instructions, dead_stores, branches_folded, blocks_removed;
     size_t addresses_simplified;
+    size_t common_expressions, bounds_checks_reused, jumps_threaded;
+    size_t dead_functions;
+    size_t loop_invariants_hoisted;
 } IrOptimizationStats;
 
 /* Requires valid typed IR; validates again after optimization. */
