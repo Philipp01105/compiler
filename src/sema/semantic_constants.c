@@ -311,7 +311,7 @@ int fold_constant(Analyzer *analyzer, AstExpression *expression, DataType target
                 default: goto invalid;
             }
         } else if (expression->kind == AST_EXPR_UNARY) {
-            result = expression->operator_type == TOKEN_MINUS ? -x : !x;
+            result = expression->operator_type == TOKEN_MINUS ? -x : (double) (x == 0.0);
         } else if (expression->kind != AST_EXPR_CAST) goto invalid;
         char buffer[64];
         if (target == TYPE_FLOAT || target == TYPE_DOUBLE) {

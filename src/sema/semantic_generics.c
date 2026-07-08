@@ -50,7 +50,8 @@ AstType inferred_argument_type(Analyzer *analyzer, const AstExpression *value) {
                                           ? canonical
                                           : ast_program_lexeme(type->source_program, type->name_token));
     } else if (value->resolved_type < TYPE_UNKNOWN)
-        t.name_token = concrete_token(analyzer, (TokenType)(TOKEN_TYPE_INT + value->resolved_type),
+        t.name_token = concrete_token(analyzer,
+                                      (TokenType) ((int) TOKEN_TYPE_INT + (int) value->resolved_type),
                                       names[value->resolved_type]);
     else t.name_token = AST_TOKEN_NONE;
     if (t.is_array) {
