@@ -5,35 +5,38 @@ on:
   pull_request:
 
 jobs:
-  linux:
+  linux-gcc:
+    name: Linux / GCC / tests and sanitizers
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Configure
-        run: cmake -S . -B build -DDMM_STRICT_WARNINGS=ON
-      - name: Build
-        run: cmake --build build --parallel
-      - name: Test
-        run: ctest --test-dir build --output-on-failure
-
-  sanitizers:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Configure
-        run: cmake -S . -B build -DDMM_STRICT_WARNINGS=ON -DDMM_SANITIZERS=ON
-      - name: Build
-        run: cmake --build build --parallel
-      - name: Safety tests
+      - name: Configure GCC
+        run: cmake -S . -B build-gcc -DCMAKE_C_COMPILER=gcc -DDMM_STRICT_WARNINGS=ON
+      - name: Build GCC
+        run: cmake --build build-gcc --parallel
+      - name: Test GCC
+        run: ctest --test-dir build-gcc --output-on-failure
+      - name: Configure GCC with sanitizers
+        run: cmake -S . -B build-gcc-sanitized -DCMAKE_C_COMPILER=gcc -DDMM_STRICT_WARNINGS=ON -DDMM_SANITIZERS=ON
+      - name: Build GCC with sanitizers
+        run: cmake --build build-gcc-sanitized --parallel
+      - name: Test GCC with sanitizers
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
           UBSAN_OPTIONS: halt_on_error=1
-        run: ctest --test-dir build -L safety --output-on-failure
+        run: ctest --test-dir build-gcc-sanitized -L safety --output-on-failure
 
-  fuzzers:
+  linux-clang:
+    name: Linux / Clang / tests and fuzzing
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Configure Clang
+        run: cmake -S . -B build-clang -DCMAKE_C_COMPILER=clang -DDMM_STRICT_WARNINGS=ON
+      - name: Build Clang
+        run: cmake --build build-clang --parallel
+      - name: Test Clang
+        run: ctest --test-dir build-clang --output-on-failure
       - name: Configure libFuzzer targets
         run: cmake -S . -B build-fuzz -DCMAKE_C_COMPILER=clang -DDMM_BUILD_FUZZERS=ON -DBUILD_TESTING=OFF -DDMM_STRICT_WARNINGS=ON
       - name: Build libFuzzer targets
@@ -51,18 +54,43 @@ jobs:
             "./build-fuzz/fuzz_$stage" "build-fuzz/corpus/$stage" -dict=tests/fuzz/dmm.dict -max_total_time=5 -timeout=2
           done
 
-  windows:
-    runs-on: windows-latest
+  windows-mingw:
+    name: Windows / MinGW GCC / tests
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
       - uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: UCRT64
           update: true
-          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
-      - name: Configure, build, and test
+          install: mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja
+      - name: Configure, build, and test with MinGW GCC
         shell: msys2 {0}
         run: |
-          cmake -S . -B build -G Ninja -DDMM_STRICT_WARNINGS=ON
-          cmake --build build --parallel
-          ctest --test-dir build --output-on-failure
+          cmake -S . -B build-mingw -G Ninja -DCMAKE_C_COMPILER=gcc -DDMM_STRICT_WARNINGS=ON
+          cmake --build build-mingw --parallel
+          ctest --test-dir build-mingw --output-on-failure
+
+  windows-msvc:
+    name: Windows / MSVC / tests
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        id: msys2
+        with:
+          msystem: UCRT64
+          update: true
+          install: mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-binutils
+      - name: Configure, build, and test with MSVC
+        shell: pwsh
+        run: |
+          $gcc = Join-Path '${{ steps.msys2.outputs.msys2-location }}' 'ucrt64/bin/gcc.exe'
+          if (-not (Test-Path -LiteralPath $gcc)) { throw "GNU assembler not found: $gcc" }
+          $env:PATH = "$(Split-Path -Parent $gcc);$env:PATH"
+          cmake -S . -B build-msvc -G 'Visual Studio 17 2022' -A x64 "-DDMM_ASSEMBLER=$gcc"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build-msvc --config Release --parallel
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir build-msvc -C Release --output-on-failure
+          exit $LASTEXITCODE

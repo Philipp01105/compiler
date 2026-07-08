@@ -3,17 +3,19 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+typedef union { long double floating; void *pointer; int64_t integer; } AstArenaAlignment;
+
 typedef struct AstArenaBlock {
     struct AstArenaBlock *next;
     size_t used;
     size_t capacity;
-    max_align_t alignment;
+    AstArenaAlignment alignment;
     unsigned char data[];
 } AstArenaBlock;
 
 void *ast_program_alloc(AstProgram *program, size_t size) {
     if (program == NULL || size == 0) return NULL;
-    const size_t alignment = _Alignof(max_align_t);
+    const size_t alignment = _Alignof(AstArenaAlignment);
     if (size > SIZE_MAX - (alignment - 1)) return NULL;
     size = (size + alignment - 1) & ~(alignment - 1);
     AstArenaBlock *block = program->arena;

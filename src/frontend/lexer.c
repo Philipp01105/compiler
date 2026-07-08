@@ -194,7 +194,7 @@ TokenStream *tokenize_file_with_interner(const char *filename, int debug_mode,
         error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_LEXER,
                      ERR_LEX_FILE_NOT_FOUND, filename, "Could not open source file '%s': %s", filename,
                      strerror(errno));
-        return nullptr;
+        return NULL;
     }
 
     if (fseek(file, 0, SEEK_END) != 0) {

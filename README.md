@@ -38,7 +38,11 @@ The project is suitable for learning and experimentation. It is not yet intended
 Native executable mode requires no external build tools at compilation time. Generated programs target x86-64 Linux or
 Windows without libc, CRT or a foreign language runtime. Linux uses direct syscalls; Windows imports only OS APIs.
 
-The automated suite is exercised with GCC on Linux and MinGW-w64 on Windows.
+CI builds and tests with GCC and Clang on Linux and with MinGW GCC and MSVC on Windows. The Linux GCC job also runs
+AddressSanitizer/UndefinedBehaviorSanitizer safety tests; the Linux Clang job builds and smoke-tests all five libFuzzer
+targets. MSVC tests use MinGW GCC as the assembler/linker for generated GNU assembly and interoperability fixtures;
+the DMM compiler and C unit tests themselves are built with MSVC. Pass its executable as `-DDMM_ASSEMBLER=...` when
+running the MSVC test suite locally.
 
 ## Build
 

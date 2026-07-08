@@ -14,7 +14,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <dirent.h>
 #include <ctype.h>
 #include <stdarg.h>
 #include <fcntl.h>
@@ -27,6 +26,57 @@
 #include <io.h>
 #else
 #include <unistd.h>
+#endif
+
+#ifdef _MSC_VER
+struct dirent { char d_name[MAX_PATH]; };
+typedef struct {
+    HANDLE handle;
+    WIN32_FIND_DATAA data;
+    struct dirent entry;
+    int first;
+} DIR;
+
+static DIR *opendir(const char *path) {
+    DWORD attributes = GetFileAttributesA(path);
+    if (attributes == INVALID_FILE_ATTRIBUTES || !(attributes & FILE_ATTRIBUTE_DIRECTORY)) return NULL;
+    size_t length = strlen(path);
+    if (length > SIZE_MAX - 3) return NULL;
+    char *pattern = malloc(length + 3);
+    DIR *directory = calloc(1, sizeof(*directory));
+    if (!pattern || !directory) {
+        free(pattern);
+        free(directory);
+        return NULL;
+    }
+    memcpy(pattern, path, length);
+    if (length && path[length - 1] != '/' && path[length - 1] != '\\') pattern[length++] = '/';
+    pattern[length++] = '*';
+    pattern[length] = '\0';
+    directory->handle = FindFirstFileA(pattern, &directory->data);
+    directory->first = 1;
+    free(pattern);
+    return directory;
+}
+
+static struct dirent *readdir(DIR *directory) {
+    if (!directory || directory->handle == INVALID_HANDLE_VALUE) return NULL;
+    if (directory->first) directory->first = 0;
+    else if (!FindNextFileA(directory->handle, &directory->data)) return NULL;
+    memcpy(directory->entry.d_name, directory->data.cFileName,
+           sizeof(directory->entry.d_name));
+    directory->entry.d_name[sizeof(directory->entry.d_name) - 1] = '\0';
+    return &directory->entry;
+}
+
+static int closedir(DIR *directory) {
+    if (!directory) return -1;
+    if (directory->handle != INVALID_HANDLE_VALUE) FindClose(directory->handle);
+    free(directory);
+    return 0;
+}
+#else
+#include <dirent.h>
 #endif
 
 static char *copy_string(const char *text) {

@@ -3,8 +3,13 @@
 #include "errorHandler.h"
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 #include <stdio.h>
+#ifdef _WIN32
+#include <io.h>
+#define strdup _strdup
+#else
+#include <unistd.h>
+#endif
 
 #define COLOR_RESET   "\033[0m"
 #define COLOR_RED     "\033[1;31m"
@@ -16,11 +21,14 @@
 #define COLOR_BOLD    "\033[1m"
 #define COLOR_DIM     "\033[2m"
 
-ErrorHandler *global_error_handler = nullptr;
+ErrorHandler *global_error_handler = NULL;
 
 static int is_terminal(FILE *stream) {
-    int fd = fileno(stream);
-    return isatty(fd);
+#ifdef _WIN32
+    return _isatty(_fileno(stream));
+#else
+    return isatty(fileno(stream));
+#endif
 }
 
 static const char *get_severity_label(ErrorSeverity severity) {
@@ -48,7 +56,7 @@ static const char *get_severity_color(ErrorSeverity severity) {
 ErrorHandler *error_handler_init(void) {
     ErrorHandler *handler = (ErrorHandler *) malloc(sizeof(ErrorHandler));
     if (!handler) {
-        return nullptr;
+        return NULL;
     }
 
     handler->output_stream = stderr;
@@ -63,7 +71,7 @@ ErrorHandler *error_handler_init(void) {
     handler->source_override_path = NULL;
     handler->json_output = 0;
     handler->buffered = 1;
-    handler->buffer = nullptr;
+    handler->buffer = NULL;
     handler->buffer_count = 0;
     handler->buffer_capacity = 0;
 
@@ -122,7 +130,7 @@ ErrorContext *error_context_create(
 ) {
     ErrorContext *ctx = (ErrorContext *) calloc(1, sizeof(ErrorContext));
     if (!ctx) {
-        return nullptr;
+        return NULL;
     }
 
     ctx->severity = severity;
@@ -132,13 +140,13 @@ ErrorContext *error_context_create(
     ctx->end_column = column > 0 ? column + 1 : 0;
     ctx->error_category = error_category;
     ctx->error_code = error_code;
-    ctx->filename = filename ? strdup(filename) : nullptr;
-    ctx->message = message ? strdup(message) : nullptr;
-    ctx->source_line = nullptr;
-    ctx->token_value = nullptr;
-    ctx->suggestion = nullptr;
-    ctx->parent = nullptr;
-    ctx->children = nullptr;
+    ctx->filename = filename ? strdup(filename) : NULL;
+    ctx->message = message ? strdup(message) : NULL;
+    ctx->source_line = NULL;
+    ctx->token_value = NULL;
+    ctx->suggestion = NULL;
+    ctx->parent = NULL;
+    ctx->children = NULL;
     ctx->child_count = 0;
     ctx->child_capacity = 0;
 

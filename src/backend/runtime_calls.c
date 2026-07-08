@@ -25,10 +25,10 @@ static const RuntimeCall calls[] = {
     {"sys_close", "__dmm_rt_sys_close", 1}
 };
 size_t runtime_call_count(void) { return sizeof(calls) / sizeof(calls[0]); }
-const RuntimeCall *runtime_call_at(size_t index) { return index < runtime_call_count() ? &calls[index] : nullptr; }
+const RuntimeCall *runtime_call_at(size_t index) { return index < runtime_call_count() ? &calls[index] : NULL; }
 
 const RuntimeCall *runtime_call_find(const char *source_name) {
     for (size_t i = 0; i < runtime_call_count(); i++)
         if (strcmp(calls[i].source_name, source_name) == 0) return &calls[i];
-    return nullptr;
+    return NULL;
 }
