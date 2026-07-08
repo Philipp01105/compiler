@@ -165,7 +165,8 @@ Types also expose compile-time metadata: `T.name` is a `string`, and `T.size` an
 properties support concrete types, generic parameters after specialization, pointers, arrays, and slices. Named types
 include their package identity in their name. For `void`, the size is 0 and the alignment is 1.
 
-`expression.type` accesses the static type of an expression without evaluating it; for example, `value.type.name` or
+`expression.type` accesses the static type associated with an expression without evaluating it; for example,
+`value.type.name` or
 `make_value().type.size`. Type metadata cannot be stored as a runtime value.
 
 Use `match (T)` or `match (value.type)` with `case Type -> ...` arms to select code at compile time. Only the selected

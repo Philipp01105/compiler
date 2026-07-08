@@ -5,10 +5,8 @@
 
 #include "errorHandler.h"
 
-#include <stdint.h>
 #include <stdio.h>
 #include <math.h>
-#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -179,7 +177,8 @@ void collect_declarations(Analyzer *analyzer, AstProgram *program) {
         if (declaration->generic_parameters != NULL) continue;
         if (declaration->kind == AST_DECL_IMPORT) {
             continue; /* Imports are file-local package bindings, not value symbols. */
-        } else if (declaration->kind == AST_DECL_FUNCTION && declaration->generic_parameters == NULL) {
+        }
+        if (declaration->kind == AST_DECL_FUNCTION && declaration->generic_parameters == NULL) {
             add_global(analyzer, declaration, SEMANTIC_SYMBOL_FUNCTION, AST_TOKEN_NONE);
         } else if (declaration->kind == AST_DECL_CONSTANT) {
             add_global(analyzer, declaration, SEMANTIC_SYMBOL_CONSTANT, AST_TOKEN_NONE);

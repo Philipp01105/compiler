@@ -28,8 +28,8 @@ The pass repeats these transformations until stable:
 - Jumps through blocks containing only a label and jump are redirected when the destination has no PHI. Unreachable
   intermediate blocks then disappear in the control-flow pass.
 - Common subexpressions reuse identical nontrapping computations and stable parameter loads in the same or dominated
-  blocks. Fixed-array element values are still loaded independently; only a repeated bounds check is omitted when a
-  matching access dominates it and its base and index are the same SSA values.
+  blocks. Fixed-array element values are still loaded independently; a repeated bounds check is omitted only when an
+  equivalent access dominates it and its base and index are the same SSA values.
 - Loop-invariant constants, stable parameter loads, and nontrapping calculations move to a unique preheader when every
   operand is available there. Address-taking, stores, and potentially trapping operations prevent the relevant move.
 - Dead value elimination retains effectful or potentially trapping instructions.

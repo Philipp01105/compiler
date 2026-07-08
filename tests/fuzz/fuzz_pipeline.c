@@ -54,6 +54,8 @@ static void fuzz_ir_verifier(IrModule *module, const uint8_t *data, size_t size)
             break;
         case 7: instruction->operator_type = TOKEN_ERROR;
             break;
+        default:
+            break;
     }
     (void) ir_verify_module(module);
 }

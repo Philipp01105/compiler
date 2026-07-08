@@ -505,7 +505,8 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
                     parser_failure(parser, ERR_PARSE_EXPECTED_TOKEN,
                                    "Type-first casts were removed; use expression.(type)");
                     break;
-                } else if (callee == TOKEN_KEYWORD_FREE)
+                }
+                if (callee == TOKEN_KEYWORD_FREE)
                     call_kind = AST_EXPR_FREE;
             }
             AstExpression *call = new_expression(parser, call_kind, first);

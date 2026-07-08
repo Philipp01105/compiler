@@ -351,9 +351,8 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
                         }
                         column++;
                         continue;
-                    } else {
-                        str[j++] = source[i];
                     }
+                    str[j++] = source[i];
                 }
                 i++;
                 column++;
@@ -666,6 +665,8 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
             case '@': type = TOKEN_AT;
                 break;
             case '&': type = TOKEN_AMPERSAND;
+                break;
+            default:
                 break;
         }
 

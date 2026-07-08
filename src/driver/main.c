@@ -26,7 +26,7 @@
  * print_usage - Display command line usage information
  * @program_name: Name of the program
  */
-void print_usage(const char *program_name) {
+static void print_usage(const char *program_name) {
     printf("Usage: %s [OPTIONS] <source_file>\n", program_name);
     printf("       %s manifest sync [package_directory] [--formatError]\n", program_name);
     printf("\n");
@@ -64,7 +64,7 @@ void print_usage(const char *program_name) {
     printf("\n");
 }
 
-void print_header(const char *source_file) {
+static void print_header(const char *source_file) {
     struct stat st = {0};
     (void) stat(source_file, &st);
 

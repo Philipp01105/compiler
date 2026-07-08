@@ -44,7 +44,7 @@ int native_buffer_align(NativeBuffer *buffer, size_t alignment) {
 
 void native_buffer_patch(NativeBuffer *buffer, size_t offset, uint64_t value, size_t size) {
     if (buffer == NULL || offset > buffer->size || size > buffer->size - offset || size > 8) {
-        assert(!"native binary patch is outside its destination buffer");
+        assert(false && "native binary patch is outside its destination buffer");
         abort();
     }
     for (size_t i = 0; i < size; i++) buffer->data[offset + i] = (unsigned char) (value >> (i * 8));
