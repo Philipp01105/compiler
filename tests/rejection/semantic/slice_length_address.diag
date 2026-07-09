@@ -1,1 +1,1 @@
-Address-of requires a mutable lvalue
+Borrow requires an addressable value

@@ -20,7 +20,7 @@ func main() -> void {
     stdlib.println(zero);
     var values:int[3000];
     values[2999] = 42;
-    var p:*int = &x;
+    var p:*int = (&x).(*int);
     *p = 7;
     modify(p);
     stdlib.println(x);
@@ -32,7 +32,7 @@ func main() -> void {
     var names:string[2];
     stdlib.println(empty==names[1]);
     var cursor:int=0;
-    values[index(&cursor)] += 3;
+    values[index((&cursor).(*int))] += 3;
     stdlib.println(cursor);
     stdlib.println(values[0]);
 }

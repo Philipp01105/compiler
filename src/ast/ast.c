@@ -205,6 +205,14 @@ static int valid_statement(const AstProgram *program, const AstStatement *statem
             case AST_STMT_RETURN:
                 if (statement->value != NULL && !valid_expression(program, statement->value)) return 0;
                 break;
+            case AST_STMT_DEFER:
+                if ((statement->expression == NULL) == (statement->body == NULL) ||
+                    (statement->expression != NULL &&
+                     !valid_expression(program, statement->expression)) ||
+                    (statement->body != NULL &&
+                     !valid_statement(program, statement->body)))
+                    return 0;
+                break;
             case AST_STMT_MATCH:
                 if (!valid_expression(program, statement->value) || !statement->match_arms) return 0;
                 for (const AstMatchArm *a = statement->match_arms; a; a = a->next) {
@@ -271,7 +279,11 @@ static int valid_declarations(const AstProgram *program) {
                 return 0;
         } else if (declaration->kind == AST_DECL_STRUCT) {
             if (!valid_token(program, declaration->name_token) ||
-                !valid_fields(program, declaration->as.struct_decl.fields))
+                !valid_fields(program, declaration->as.struct_decl.fields) ||
+                (!declaration->as.struct_decl.is_resource &&
+                 declaration->as.struct_decl.destructor != NULL) ||
+                (declaration->as.struct_decl.destructor != NULL &&
+                 !valid_statement(program, declaration->as.struct_decl.destructor)))
                 return 0;
             for (const AstDeclarationNode *method = declaration->as.struct_decl.methods;
                  method != NULL; method = method->next)

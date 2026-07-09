@@ -7,7 +7,7 @@ func test1_basic_deref() -> void {
     stdlib.println("[TEST 1] Basic pointer dereference");
     
     var x:int = 42;
-    var p:*int = &x;  // Get address of x
+    var p:*int = (&x).(*int);  // Explicit checked-borrow to raw-pointer boundary
     var value:int = *p;  // Dereference p to get value
     
     stdlib.print("Original value: ");
@@ -25,8 +25,8 @@ func test2_multiple_pointers() -> void {
     var a:int = 100;
     var b:int = 200;
     
-    var pa:*int = &a;
-    var pb:*int = &b;
+    var pa:*int = (&a).(*int);
+    var pb:*int = (&b).(*int);
     
     stdlib.print("First value: ");
     stdlib.println(*pa);

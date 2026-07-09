@@ -15,7 +15,7 @@ pub struct Bytes {
         length=0;
     }
 }
-func append(bytes:*Bytes, value:u8) -> bit {
+func append(bytes:&mut Bytes, value:u8) -> bit {
     if (bytes.length == bytes.storage.length) {
         var capacity:usize=64;
         if (bytes.storage.length > 0) {
@@ -67,7 +67,7 @@ pub func readLine(source:*Stream, maximum:usize) -> Bytes {
             if (bytes.length > 0 && bytes.storage[bytes.length-1] == 13) { bytes.length-=1; }
             return bytes;
         }
-        if (!append(&bytes,result.value)) { return bytes; }
+        if (!append(&mut bytes,result.value)) { return bytes; }
     }
     bytes.status=Status.LimitReached; return bytes;
 }

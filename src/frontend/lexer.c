@@ -159,6 +159,10 @@ static TokenType get_keyword_type(const char *str) {
     if (strcmp(str, "case") == 0) return TOKEN_KEYWORD_CASE;
     if (strcmp(str, "alignof") == 0) return TOKEN_KEYWORD_ALIGNOF;
     if (strcmp(str, "slice") == 0) return TOKEN_KEYWORD_SLICE;
+    if (strcmp(str, "resource") == 0) return TOKEN_KEYWORD_RESOURCE;
+    if (strcmp(str, "destructor") == 0) return TOKEN_KEYWORD_DESTRUCTOR;
+    if (strcmp(str, "defer") == 0) return TOKEN_KEYWORD_DEFER;
+    if (strcmp(str, "mut") == 0) return TOKEN_KEYWORD_MUT;
 
     if (strcmp(str, "int") == 0) return TOKEN_TYPE_INT;
     if (strcmp(str, "i8") == 0) return TOKEN_TYPE_I8;
@@ -751,6 +755,10 @@ const char *token_type_to_string(TokenType type) {
         case TOKEN_KEYWORD_CONST: return "KEYWORD_CONST";
         case TOKEN_KEYWORD_INTERFACE: return "KEYWORD_INTERFACE";
         case TOKEN_KEYWORD_MATCH: return "KEYWORD_MATCH";
+        case TOKEN_KEYWORD_RESOURCE: return "KEYWORD_RESOURCE";
+        case TOKEN_KEYWORD_DESTRUCTOR: return "KEYWORD_DESTRUCTOR";
+        case TOKEN_KEYWORD_DEFER: return "KEYWORD_DEFER";
+        case TOKEN_KEYWORD_MUT: return "KEYWORD_MUT";
 
         case TOKEN_TYPE_INT: return "TYPE_INT";
         case TOKEN_TYPE_I8: return "TYPE_I8";

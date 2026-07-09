@@ -28,6 +28,7 @@ typedef struct {
     size_t owner_symbol_id;
     AstType declared_type;
     DataType resolved_type;
+    AstBorrowKind resolved_borrow_kind;
     unsigned resolved_pointer_depth;
     unsigned resolved_outer_pointer_depth;
     size_t resolved_named_type_token;

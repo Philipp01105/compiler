@@ -1,0 +1,6 @@
+package main;
+resource struct Invalid {
+    var value:int;
+    destructor { return; }
+}
+func main() -> int { return 0; }

@@ -11,25 +11,25 @@ func identity(pointer:*(int[count])) -> *(int[count]) { return pointer; }
 
 func main() -> int {
     var values:int[count];
-    var pointer:*(int[count]) = &values;
+    var pointer:*(int[count]) = (&values).(*(int[count]));
     var reassigned:*(int[count]);
     reassigned = pointer;
     pointer = reassigned;
     if (update(identity(pointer)) != 17) { return 1; }
     if (values[2] != 17) { return 2; }
     var scalar:int = 5;
-    var p:*int = &scalar;
-    var pp:**int = &p;
+    var p:*int = (&scalar).(*int);
+    var pp:**int = (&p).(**int);
     var links:**int[count];
     links[1] = pp;
-    var grouped:*(**int[count]) = &links;
+    var grouped:*(**int[count]) = (&links).(*(**int[count]));
     **(*grouped)[1] = 23;
     if (scalar != 23) { return 3; }
     var row:Row;
     row.values[2] = 31;
-    var member_pointer:*int = &row.values[2];
-    var field_pointer:*(int[count]) = &row.values;
-    var scalar_pointer:*int = &*p;
+    var member_pointer:*int = (&row.values[2]).(*int);
+    var field_pointer:*(int[count]) = (&row.values).(*(int[count]));
+    var scalar_pointer:*int = (&*p).(*int);
     *member_pointer = 31;
     (*field_pointer)[1] = 29;
     *scalar_pointer = 23;

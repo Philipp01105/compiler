@@ -129,7 +129,20 @@ static int manifest_write(AstProgram *root, ManifestEntry *entries, size_t count
         return 0;
     }
     int ok = manifest_copy_comments(output, path);
-    if (fprintf(output, "module %s\n\ndmm %s\n", root->module->path, root->module->version) < 0) ok = 0;
+    if (fprintf(output, "module %s\n\ndmm %s\n", root->module->path, root->module->edition) < 0) ok = 0;
+    size_t feature_count = 0;
+    for (DmmFeature *feature = root->module->features; feature; feature = feature->next) feature_count++;
+    const char **features = feature_count ? malloc(feature_count * sizeof(*features)) : NULL;
+    if (feature_count && !features) ok = 0;
+    size_t feature_index = 0;
+    for (DmmFeature *feature = root->module->features; features && feature; feature = feature->next)
+        features[feature_index++] = feature->name;
+    if (features && feature_count > 1) qsort(features, feature_count, sizeof(*features), string_order);
+    if (features && fputs("\nfeatures = [\n", output) == EOF) ok = 0;
+    for (size_t i = 0; features && i < feature_count; i++)
+        if (fprintf(output, "    \"%s\",\n", features[i]) < 0) ok = 0;
+    if (features && fputs("]\n", output) == EOF) ok = 0;
+    free(features);
     size_t retained = 0;
     for (size_t i = 0; i < count; i++)
         if (entries[i].used) retained++;
@@ -236,7 +249,8 @@ int frontend_sync_manifest(const char *package_directory) {
                     if (d->kind == AST_DECL_IMPORT)
                         for (AstImportPath *import = d->as.import_decl.paths; import; import = import->next)
                             if (import->resolved_program && !strcmp(import->resolved_program->module->path,
-                                                                    target->path)) target->direct = 1;
+                                                                    target->path))
+                                target->direct = 1;
         }
     }
     if (!ok && !error_handler_get_error_count(global_error_handler))

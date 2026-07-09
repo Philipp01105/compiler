@@ -1,0 +1,6 @@
+package main;
+func bad() -> &int {
+    var value:int=1;
+    return &value;
+}
+func main() -> int { return 0; }

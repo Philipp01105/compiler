@@ -23,9 +23,9 @@ function(dmm_test_write path)
         if (text MATCHES "import \"stdlib/core\";")
             string(REGEX REPLACE "(^|[^A-Za-z0-9_.])(core_[A-Za-z0-9_]+|CORE_[A-Z0-9_]+)" "\\1core.\\2" text "${text}")
         endif ()
-        if (NOT EXISTS "${OUTPUT_DIR}/dmm.manifest")
-            file(WRITE "${OUTPUT_DIR}/dmm.manifest" "module dmm.test/generated\ndmm 0.3\n")
-        endif ()
+        # Always refresh the generated module edition so an existing test directory
+        # cannot retain a manifest from an older compiler edition.
+        file(WRITE "${OUTPUT_DIR}/dmm.manifest" "module dmm.test/generated\ndmm 2026-09-22-dev\n")
     endif ()
     file(WRITE "${path}" "${text}")
 endfunction()

@@ -29,7 +29,7 @@ func main() -> void {
     stdlib.println(identity(5000000000.(i64)) == 5000000000.(i64));
     stdlib.println(small(-1,255,-32768,65535,-123,4294967295.(u32),-5000000000.(i64),(-1).(u64),-9,5000000000.(usize)));
     var words:u16[3]; words[0]=65535; words[1]=32768; words[2]=42;
-    var pointer:*u16 = &words[0];
+    var pointer:*u16 = (&words[0]).(*u16);
     pointer[1] = 65534;
     stdlib.println(words[0] == 65535 && words[1] == 65534 && words[2] == 42);
     var large:u64 = 13835058055282163712;

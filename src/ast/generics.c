@@ -5,7 +5,8 @@
 
 int ast_concrete_type_equal(const AstProgram *a, const AstType *x,
                             const AstProgram *b, const AstType *y) {
-    if (x->kind != y->kind || x->pointer_depth != y->pointer_depth ||
+    if (x->kind != y->kind || x->borrow_kind != y->borrow_kind ||
+        x->pointer_depth != y->pointer_depth ||
         x->outer_pointer_depth != y->outer_pointer_depth || x->is_array != y->is_array ||
         x->is_slice != y->is_slice || x->resolved_array_length != y->resolved_array_length ||
         strcmp(ast_program_lexeme(a, x->name_token), ast_program_lexeme(b, y->name_token)))
@@ -287,6 +288,8 @@ AstDeclarationNode *ast_specialize_function(AstProgram *program,
             tail = &copy->next;
         }
         result->as.struct_decl.fields = head;
+        result->as.struct_decl.destructor =
+            clone_statement(&s, origin->as.struct_decl.destructor);
         result->as.struct_decl.methods = NULL;
         /* Method specialization follows the aggregate's substitution. */
         AstDeclarationNode **methods = &result->as.struct_decl.methods;

@@ -8,6 +8,125 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int move_only_symbol(const Analyzer *analyzer, size_t symbol_id,
+                            unsigned depth) {
+    if (symbol_id >= analyzer->model->symbol_count || depth > 64) return 0;
+    const SemanticSymbol *type = &analyzer->model->symbols[symbol_id];
+    if (type->kind != SEMANTIC_SYMBOL_STRUCT || type->declaration == NULL)
+        return 0;
+    if (type->declaration->as.struct_decl.is_resource) return 1;
+    for (const AstField *field = type->declaration->as.struct_decl.fields;
+         field != NULL; field = field->next) {
+        if (field->type.borrow_kind != AST_BORROW_NONE ||
+            field->type.pointer_depth != 0 ||
+            field->type.outer_pointer_depth != 0 ||
+            field->type.is_slice)
+            continue;
+        size_t nested = resolve_named_symbol_id(
+            analyzer, type->source_program,
+            named_type_token(type->source_program, &field->type));
+        if (nested != symbol_id &&
+            move_only_symbol(analyzer, nested, depth + 1))
+            return 1;
+    }
+    return 0;
+}
+
+int semantic_type_is_move_only(const Analyzer *analyzer,
+                               size_t type_symbol_id) {
+    return move_only_symbol(analyzer, type_symbol_id, 0);
+}
+
+int semantic_expression_is_move_only(const Analyzer *analyzer,
+                                     const AstExpression *expression) {
+    if (expression == NULL || expression->resolved_borrow_kind != AST_BORROW_NONE ||
+        expression->resolved_pointer_depth != 0 ||
+        expression->resolved_outer_pointer_depth != 0 ||
+        expression->resolved_is_array || expression->resolved_is_slice ||
+        expression->resolved_named_symbol_id >= analyzer->model->symbol_count)
+        return 0;
+    return semantic_type_is_move_only(analyzer,
+                                      expression->resolved_named_symbol_id);
+}
+
+static void consume_owned_expression(Analyzer *analyzer,
+                                     const AstExpression *expression) {
+    if (!semantic_expression_is_move_only(analyzer, expression)) return;
+    if (analyzer->in_destructor &&
+        expression->resolved_symbol_id < analyzer->model->symbol_count &&
+        analyzer->model->symbols[expression->resolved_symbol_id].kind ==
+            SEMANTIC_SYMBOL_FIELD) {
+        semantic_error(analyzer, expression->first_token,
+                       ERROR_CATEGORY_SEMANTIC,
+                       ERR_SEM_INVALID_DECLARATION,
+                       "A destructor cannot move ownership out of self");
+        return;
+    }
+    if (expression->kind == AST_EXPR_NAME) {
+        LocalSymbol *local =
+            find_local_by_symbol(analyzer, expression->resolved_symbol_id);
+        if (local != NULL) {
+            if (local->moved)
+                semantic_error(analyzer, expression->value_token,
+                               ERROR_CATEGORY_SEMANTIC, ERR_SEM_INVALID_DECLARATION,
+                               "Use of moved value");
+            else local->moved = 1;
+        }
+    } else if (expression->kind == AST_EXPR_MEMBER) {
+        semantic_error(analyzer, expression->value_token,
+                       ERROR_CATEGORY_SEMANTIC, ERR_SEM_INVALID_DECLARATION,
+                       "Partial moves from resource structs are not supported");
+    }
+}
+
+static void consume_call_arguments(Analyzer *analyzer,
+                                   const AstExpression *expression) {
+    if (expression == NULL) return;
+    consume_call_arguments(analyzer, expression->left);
+    consume_call_arguments(analyzer, expression->right);
+    for (const AstExpression *argument = expression->arguments;
+         argument != NULL; argument = argument->next)
+        consume_call_arguments(analyzer, argument);
+    if (expression->kind != AST_EXPR_CALL ||
+        expression->resolved_symbol_id >= analyzer->model->symbol_count)
+        return;
+    const SemanticSymbol *function =
+        &analyzer->model->symbols[expression->resolved_symbol_id];
+    if (function->kind != SEMANTIC_SYMBOL_FUNCTION ||
+        function->declaration == NULL)
+        return;
+    const AstExpression *argument = expression->arguments;
+    const AstParameter *parameter =
+        function->declaration->as.function.parameters;
+    for (; argument != NULL && parameter != NULL;
+         argument = argument->next, parameter = parameter->next)
+        if (parameter->type.borrow_kind == AST_BORROW_NONE)
+            consume_owned_expression(analyzer, argument);
+}
+
+static int safe_borrow_return_origin(const Analyzer *analyzer,
+                                     const AstExpression *expression) {
+    if (expression == NULL) return 0;
+    while (expression->kind == AST_EXPR_UNARY &&
+           expression->operator_type == TOKEN_AMPERSAND)
+        expression = expression->right;
+    while ((expression->kind == AST_EXPR_MEMBER ||
+            expression->kind == AST_EXPR_INDEX) &&
+           expression->left != NULL)
+        expression = expression->left;
+    if (expression->kind != AST_EXPR_NAME ||
+        expression->resolved_symbol_id >= analyzer->model->symbol_count)
+        return 0;
+    const SemanticSymbol *origin =
+        &analyzer->model->symbols[expression->resolved_symbol_id];
+    if (origin->scope_depth == 0 &&
+        (origin->kind == SEMANTIC_SYMBOL_VARIABLE ||
+         origin->kind == SEMANTIC_SYMBOL_CONSTANT))
+        return 1;
+    return origin->kind == SEMANTIC_SYMBOL_PARAMETER &&
+           origin->declared_type.borrow_kind != AST_BORROW_NONE;
+}
+
 static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
     for (; statement != NULL; statement = statement->next) {
         if (statement->kind == AST_STMT_MATCH) {
@@ -143,6 +262,7 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
             validate_array_shape(analyzer, &statement->type);
             analyze_expression(analyzer, statement->value);
             validate_expression(analyzer, statement->value, 0);
+            consume_call_arguments(analyzer, statement->value);
             if (!known_declared_type(analyzer, &statement->type))
                 semantic_error(analyzer, statement->type.name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN,
                                "Unknown variable type");
@@ -179,6 +299,7 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                     conversion_error(analyzer, statement->value, analyzer->program, &statement->type,
                                      NULL, "Cannot implicitly convert initializer");
             }
+            consume_owned_expression(analyzer, statement->value);
             if (statement->type.is_array && statement->type.outer_pointer_depth == 0 && statement->value != NULL)
                 semantic_error(analyzer, statement->name_token,
                                ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
@@ -245,14 +366,22 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
             pop_to(analyzer, scope);
             analyzer->scope_depth--;
         } else {
-            analyze_expression(analyzer, statement->expression);
             analyze_expression(analyzer, statement->value);
+            if (statement->kind == AST_STMT_ASSIGNMENT) {
+                analyzer->assignment_target = statement->expression;
+                analyze_expression(analyzer, statement->expression);
+                analyzer->assignment_target = NULL;
+            } else analyze_expression(analyzer, statement->expression);
             analyze_expression(analyzer, statement->condition);
             analyze_expression(analyzer, statement->update);
             validate_expression(analyzer, statement->expression, 0);
             validate_expression(analyzer, statement->value, 0);
             validate_expression(analyzer, statement->condition, 0);
             validate_expression(analyzer, statement->update, 0);
+            consume_call_arguments(analyzer, statement->expression);
+            consume_call_arguments(analyzer, statement->value);
+            consume_call_arguments(analyzer, statement->condition);
+            consume_call_arguments(analyzer, statement->update);
             if ((statement->kind == AST_STMT_IF || statement->kind == AST_STMT_WHILE) &&
                 statement->condition != NULL &&
                 !plain_numeric_expression(statement->condition))
@@ -270,6 +399,19 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                                                statement->expression))
                 conversion_error(analyzer, statement->value, NULL, NULL, statement->expression,
                                  "Cannot implicitly convert assigned value");
+            if (statement->kind == AST_STMT_ASSIGNMENT &&
+                statement->assignment_operator == TOKEN_EQUAL) {
+                consume_owned_expression(analyzer, statement->value);
+                if (statement->expression != NULL &&
+                    statement->expression->kind == AST_EXPR_NAME) {
+                    LocalSymbol *target = find_local_by_symbol(
+                        analyzer, statement->expression->resolved_symbol_id);
+                    if (target != NULL) {
+                        target->moved = 0;
+                        target->initialized = 1;
+                    }
+                }
+            }
             if (statement->kind == AST_STMT_ASSIGNMENT && statement->expression != NULL &&
                 statement->expression->resolved_is_array &&
                 statement->expression->resolved_outer_pointer_depth == 0)
@@ -298,13 +440,30 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                 operand_error(analyzer, statement->expression,
                               ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                               "Boolean values do not support arithmetic assignment");
-            if (statement->kind == AST_STMT_BREAK && analyzer->loop_depth == 0)
+            if ((statement->kind == AST_STMT_BREAK ||
+                 statement->kind == AST_STMT_CONTINUE) &&
+                analyzer->in_defer_closure)
+                semantic_error(analyzer, statement->first_token,
+                               ERROR_CATEGORY_SEMANTIC,
+                               ERR_SEM_INVALID_DECLARATION,
+                               "Deferred anonymous functions cannot alter enclosing control flow");
+            else if (statement->kind == AST_STMT_BREAK && analyzer->loop_depth == 0)
                 semantic_error(analyzer, statement->first_token,
                                ERROR_CATEGORY_SEMANTIC, ERR_SEM_BREAK_OUTSIDE_LOOP, "Break used outside a loop");
             if (statement->kind == AST_STMT_CONTINUE && analyzer->loop_depth == 0)
                 semantic_error(analyzer, statement->first_token,
                                ERROR_CATEGORY_SEMANTIC, ERR_SEM_CONTINUE_OUTSIDE_LOOP, "Continue used outside a loop");
-            if (statement->kind == AST_STMT_RETURN && analyzer->current_function != NULL) {
+            if (statement->kind == AST_STMT_RETURN &&
+                analyzer->in_defer_closure) {
+                semantic_error(analyzer, statement->first_token,
+                               ERROR_CATEGORY_SEMANTIC,
+                               ERR_SEM_INVALID_DECLARATION,
+                               "A deferred anonymous function cannot return");
+            } else if (statement->kind == AST_STMT_RETURN && analyzer->in_destructor) {
+                semantic_error(analyzer, statement->first_token,
+                               ERROR_CATEGORY_SEMANTIC, ERR_SEM_INVALID_DECLARATION,
+                               "A destructor cannot return");
+            } else if (statement->kind == AST_STMT_RETURN && analyzer->current_function != NULL) {
                 DataType expected = primitive_type(analyzer->program,
                                                    &analyzer->current_function->as.function.return_type);
                 if (expected == TYPE_VOID && statement->value != NULL)
@@ -322,13 +481,33 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                     conversion_error(analyzer, statement->value, analyzer->program,
                                      &analyzer->current_function->as.function.return_type,
                                      NULL, "Cannot implicitly convert returned value");
+                consume_owned_expression(analyzer, statement->value);
+                if (analyzer->current_function->as.function.return_type.borrow_kind !=
+                        AST_BORROW_NONE &&
+                    statement->value != NULL &&
+                    !safe_borrow_return_origin(analyzer, statement->value))
+                    semantic_error(analyzer, statement->value->first_token,
+                                   ERROR_CATEGORY_SEMANTIC, ERR_SEM_INVALID_DECLARATION,
+                                   "Returned borrow may outlive its owner");
             }
+            if (statement->kind == AST_STMT_DEFER &&
+                statement->expression != NULL &&
+                statement->expression->kind != AST_EXPR_CALL)
+                semantic_error(analyzer, statement->expression->first_token,
+                               ERROR_CATEGORY_SEMANTIC,
+                               ERR_SEM_INVALID_DECLARATION,
+                               "A deferred operation must be a function call");
             analyze_statement(analyzer, statement->initializer);
             if (statement->kind == AST_STMT_WHILE) analyzer->loop_depth++;
             if (statement->kind == AST_STMT_BLOCK || statement->kind == AST_STMT_IF ||
                 statement->kind == AST_STMT_WHILE)
                 analyzer->scope_depth++;
+            int saved_defer_closure = analyzer->in_defer_closure;
+            if (statement->kind == AST_STMT_DEFER &&
+                statement->body != NULL)
+                analyzer->in_defer_closure = 1;
             analyze_statement(analyzer, statement->body);
+            analyzer->in_defer_closure = saved_defer_closure;
             if (statement->kind == AST_STMT_BLOCK || statement->kind == AST_STMT_IF ||
                 statement->kind == AST_STMT_WHILE)
                 analyzer->scope_depth--;
@@ -397,6 +576,7 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
         if (local != NULL) parameter->resolved_symbol_id = local->symbol_id;
     }
     analyze_statement(analyzer, function->as.function.body);
+    validate_function_borrows(analyzer, function);
     DataType return_type = primitive_type(analyzer->program,
                                           &function->as.function.return_type);
     if (return_type != TYPE_VOID &&
@@ -411,6 +591,30 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
     analyzer->current_function = saved_declaration;
 }
 
+static void analyze_destructor(Analyzer *analyzer, AstDeclarationNode *resource) {
+    if (resource->as.struct_decl.destructor == NULL) return;
+    LocalSymbol *saved = analyzer->locals;
+    size_t saved_function = analyzer->current_function_token;
+    size_t saved_function_symbol = analyzer->current_function_symbol_id;
+    size_t saved_owner = analyzer->current_owner_token;
+    const AstDeclarationNode *saved_declaration = analyzer->current_function;
+    int saved_destructor = analyzer->in_destructor;
+    analyzer->current_function_token = AST_TOKEN_NONE;
+    analyzer->current_function_symbol_id = AST_SYMBOL_NONE;
+    analyzer->current_owner_token = resource->name_token;
+    analyzer->current_function = NULL;
+    analyzer->in_destructor = 1;
+    analyzer->scope_depth++;
+    analyze_statement(analyzer, resource->as.struct_decl.destructor);
+    pop_to(analyzer, saved);
+    analyzer->scope_depth--;
+    analyzer->current_function_token = saved_function;
+    analyzer->current_function_symbol_id = saved_function_symbol;
+    analyzer->current_owner_token = saved_owner;
+    analyzer->current_function = saved_declaration;
+    analyzer->in_destructor = saved_destructor;
+}
+
 void analyze_constant_declaration(Analyzer *analyzer,
                                          AstDeclarationNode *declaration) {
     if (declaration->semantic_body_checked) return;
@@ -418,6 +622,11 @@ void analyze_constant_declaration(Analyzer *analyzer,
     size_t errors_before = analyzer->model->error_count;
     AstExpression *value = declaration->as.constant.value;
     AstType *type = &declaration->as.constant.type;
+    if (declaration->kind == AST_DECL_VARIABLE &&
+        type->borrow_kind != AST_BORROW_NONE)
+        semantic_error(analyzer, type->name_token, ERROR_CATEGORY_TYPE,
+                       ERR_TYPE_INVALID_OPERATION,
+                       "Checked borrowed references cannot be stored in package variables");
     if (declaration->kind == AST_DECL_VARIABLE && !value) {
         if (type->kind == AST_TYPE_INFERRED || !known_declared_type(analyzer, type) ||
             (primitive_type(analyzer->program, type) == TYPE_VOID && !type->pointer_depth && !type->
@@ -588,8 +797,13 @@ SemanticModel *semantic_analyze(AstProgram *program) {
                         semantic_error(&analyzer, field->type.name_token,
                                        ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                        "Field cannot have type void");
+                    if (field->type.borrow_kind != AST_BORROW_NONE)
+                        semantic_error(&analyzer, field->type.name_token,
+                                       ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                                       "Checked borrowed references cannot be stored in struct fields");
                     validate_array_shape(&analyzer, &field->type);
                 }
+                analyze_destructor(&analyzer, declaration);
                 for (AstDeclarationNode *method = declaration->as.struct_decl.methods;
                      method != NULL; method = method->next)
                     analyze_function(&analyzer, method);
@@ -603,6 +817,10 @@ SemanticModel *semantic_analyze(AstProgram *program) {
                         semantic_error(&analyzer, field->type.name_token,
                                        ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                        "Slice fields are not supported");
+                    if (field->type.borrow_kind != AST_BORROW_NONE)
+                        semantic_error(&analyzer, field->type.name_token,
+                                       ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                                       "Checked borrowed references cannot be stored in enum fields");
                     if (primitive_type(unit, &field->type) == TYPE_VOID &&
                         field->type.pointer_depth == 0)
                         semantic_error(&analyzer, field->type.name_token,
@@ -737,4 +955,3 @@ SemanticModel *semantic_analyze(AstProgram *program) {
     }
     return model;
 }
-

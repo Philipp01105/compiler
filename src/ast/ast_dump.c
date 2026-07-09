@@ -48,9 +48,9 @@ static const char *expression_name(AstExpressionKind kind) {
 static const char *statement_name(AstStatementKind kind) {
     static const char *names[] = {
         "error", "block", "variable", "expression", "assignment",
-        "if", "while", "for", "return", "break", "continue", "match"
+        "if", "while", "for", "return", "break", "continue", "match", "defer"
     };
-    return kind >= AST_STMT_ERROR && kind <= AST_STMT_MATCH ? names[kind] : "invalid";
+    return kind >= AST_STMT_ERROR && kind <= AST_STMT_DEFER ? names[kind] : "invalid";
 }
 
 static const char *operator_name(TokenType type) {
@@ -95,6 +95,12 @@ static int symbol_field(FILE *output, size_t symbol) {
 
 static int dump_type(FILE *output, const AstProgram *program, const AstType *type) {
     if (type->kind == AST_TYPE_INFERRED) return fputs("inferred", output) != EOF;
+    if (type->borrow_kind == AST_BORROW_IMMUTABLE &&
+        fputc('&', output) == EOF)
+        return 0;
+    if (type->borrow_kind == AST_BORROW_MUTABLE &&
+        fputs("&mut ", output) == EOF)
+        return 0;
     for (unsigned i = 0; i < type->outer_pointer_depth; i++)
         if (fputc('*', output) == EOF) return 0;
     if (type->outer_pointer_depth != 0 && (type->is_array || type->is_slice) &&
@@ -151,6 +157,10 @@ static int dump_expression(FILE *output, const AstProgram *program,
     if ((expression->kind == AST_EXPR_UNARY || expression->kind == AST_EXPR_BINARY) &&
         (fputs(" operator=", output) == EOF ||
          !quoted(output, operator_name(expression->operator_type))))
+        return 0;
+    if (expression->kind == AST_EXPR_UNARY &&
+        expression->operator_type == TOKEN_AMPERSAND &&
+        fprintf(output, " mutable=%d", expression->mutable_borrow) < 0)
         return 0;
     if (expression->folded_constant.lexeme != NULL &&
         (fputs(" folded=", output) == EOF || !quoted(output, expression->folded_constant.lexeme)))
@@ -252,6 +262,9 @@ static int dump_declaration(FILE *output, const AstProgram *program,
     if (declaration->kind == AST_DECL_FUNCTION &&
         fprintf(output, " static=%d", declaration->as.function.is_static) < 0)
         return 0;
+    if (declaration->kind == AST_DECL_STRUCT &&
+        fprintf(output, " resource=%d", declaration->as.struct_decl.is_resource) < 0)
+        return 0;
     if (declaration->kind == AST_DECL_IMPORT) {
         if (fputs(" paths=[", output) == EOF) return 0;
         for (const AstImportPath *path = declaration->as.import_decl.paths; path != NULL; path = path->next) {
@@ -327,10 +340,15 @@ static int dump_declaration(FILE *output, const AstProgram *program,
             !symbol_field(output, field->resolved_symbol_id) || fputc('\n', output) == EOF)
             return 0;
     }
-    if (declaration->kind == AST_DECL_STRUCT)
+    if (declaration->kind == AST_DECL_STRUCT) {
+        if (declaration->as.struct_decl.destructor != NULL &&
+            !dump_statement(output, program, declaration->as.struct_decl.destructor,
+                            depth + 1, "destructor"))
+            return 0;
         for (const AstDeclarationNode *method = declaration->as.struct_decl.methods;
              method != NULL; method = method->next)
             if (!dump_declaration(output, program, method, depth + 1)) return 0;
+    }
     if (declaration->kind == AST_DECL_ENUM)
         for (const AstEnumValue *value = declaration->as.enum_decl.values;
              value != NULL; value = value->next) {

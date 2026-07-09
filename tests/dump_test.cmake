@@ -109,7 +109,7 @@ set(failed_tokens "${OUTPUT_DIR}/failed.tokens")
 set(parser_failure_source "${OUTPUT_DIR}/parser-case/parser-failure.dmm")
 file(REMOVE "${failed_tokens}")
 file(MAKE_DIRECTORY "${OUTPUT_DIR}/parser-case")
-file(WRITE "${OUTPUT_DIR}/parser-case/dmm.manifest" "module dmm.test/parser-case\ndmm 0.3\n")
+file(WRITE "${OUTPUT_DIR}/parser-case/dmm.manifest" "module dmm.test/parser-case\ndmm 2026-09-22-dev\n")
 file(WRITE "${parser_failure_source}" "package main;\nfunc main() -> void { var value:int = 1;")
 execute_process(COMMAND "${COMPILER}" --emit=asm --dump-tokens "${failed_tokens}"
         -o "${OUTPUT_DIR}/failed-parser.s" "${parser_failure_source}"
@@ -126,7 +126,7 @@ set(failed_symbols "${OUTPUT_DIR}/failed.symbols")
 set(semantic_failure_source "${OUTPUT_DIR}/semantic-case/semantic-failure.dmm")
 file(REMOVE "${failed_symbols}")
 file(MAKE_DIRECTORY "${OUTPUT_DIR}/semantic-case")
-file(WRITE "${OUTPUT_DIR}/semantic-case/dmm.manifest" "module dmm.test/semantic-case\ndmm 0.3\n")
+file(WRITE "${OUTPUT_DIR}/semantic-case/dmm.manifest" "module dmm.test/semantic-case\ndmm 2026-09-22-dev\n")
 file(WRITE "${semantic_failure_source}" "package main;\nfunc main() -> void { missing(); }\n")
 execute_process(COMMAND "${COMPILER}" --emit=asm --dump-symbols "${failed_symbols}"
         -o "${OUTPUT_DIR}/failed-semantic.s" "${semantic_failure_source}"

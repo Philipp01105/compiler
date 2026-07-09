@@ -27,6 +27,7 @@ set(DMM_FUZZ_PIPELINE_SOURCES
         src/sema/semantic_diagnostics.c
         src/sema/semantic_layout.c
         src/sema/semantic_analysis.c
+        src/sema/semantic_borrows.c
         src/sema/semantic_expressions.c
         src/sema/semantic_symbols.c
         src/ast/generics.c
@@ -75,6 +76,7 @@ add_executable(compiler
         src/sema/semantic_diagnostics.c
         src/sema/semantic_layout.c
         src/sema/semantic_analysis.c
+        src/sema/semantic_borrows.c
         src/sema/semantic_expressions.c
         src/sema/semantic_symbols.c
         src/ast/generics.c
@@ -395,6 +397,7 @@ if (BUILD_TESTING)
             src/sema/semantic_diagnostics.c
             src/sema/semantic_layout.c
             src/sema/semantic_analysis.c
+            src/sema/semantic_borrows.c
             src/sema/semantic_expressions.c
             src/sema/semantic_symbols.c
             src/ast/generics.c
@@ -419,6 +422,7 @@ if (BUILD_TESTING)
             src/sema/semantic_diagnostics.c
             src/sema/semantic_layout.c
             src/sema/semantic_analysis.c
+            src/sema/semantic_borrows.c
             src/sema/semantic_expressions.c
             src/sema/semantic_symbols.c
             src/ast/generics.c

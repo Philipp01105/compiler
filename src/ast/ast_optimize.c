@@ -234,8 +234,10 @@ static void optimize_declarations(AstProgram *program, AstDeclarationNode *decla
     for (; declaration; declaration = declaration->next) {
         if (declaration->kind == AST_DECL_FUNCTION)
             optimize_statements(program, declaration->as.function.body, stats);
-        else if (declaration->kind == AST_DECL_STRUCT)
+        else if (declaration->kind == AST_DECL_STRUCT) {
+            optimize_statements(program, declaration->as.struct_decl.destructor, stats);
             optimize_declarations(program, declaration->as.struct_decl.methods, stats);
+        }
         else if (declaration->kind == AST_DECL_INTERFACE)
             optimize_declarations(program, declaration->as.interface_decl.methods, stats);
     }

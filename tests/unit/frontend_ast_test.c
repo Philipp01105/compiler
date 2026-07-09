@@ -3,6 +3,7 @@
 #include "frontend.h"
 
 #include <stdio.h>
+#include <string.h>
 
 int main(int argc, char **argv) {
     if (argc != 2) {
@@ -56,6 +57,51 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    ast_program_free(program);
+
+    static const char resource_source[] =
+        "package main;\n"
+        "resource struct File {\n"
+        "  var handle:int;\n"
+        "  destructor { handle=0; }\n"
+        "}\n"
+        "func inspect(value:&File)->void {}\n"
+        "func modify(value:&mut File)->void {}\n"
+        "func main()->void {\n"
+        "  var value:File;\n"
+        "  var reference:&mut File=&mut value;\n"
+        "  defer inspect(&value);\n"
+        "  defer func() { inspect(&value); }\n"
+        "}\n";
+    program = frontend_parse_source(resource_source, strlen(resource_source),
+                                    "<resource-syntax>", &options);
+    const AstDeclarationNode *resource = program == NULL ? NULL : program->root;
+    const AstDeclarationNode *inspect = resource == NULL ? NULL : resource->next;
+    const AstDeclarationNode *modify = inspect == NULL ? NULL : inspect->next;
+    const AstDeclarationNode *main_function = modify == NULL ? NULL : modify->next;
+    const AstStatement *body = main_function == NULL ? NULL : main_function->as.function.body;
+    const AstStatement *variable = body == NULL ? NULL : body->body;
+    const AstStatement *reference = variable == NULL ? NULL : variable->next;
+    const AstStatement *deferred_call = reference == NULL ? NULL : reference->next;
+    const AstStatement *deferred_closure = deferred_call == NULL ? NULL : deferred_call->next;
+    if (program == NULL || !ast_validate_program(program) || resource == NULL ||
+        resource->kind != AST_DECL_STRUCT || !resource->as.struct_decl.is_resource ||
+        resource->as.struct_decl.destructor == NULL || inspect == NULL ||
+        inspect->as.function.parameters == NULL ||
+        inspect->as.function.parameters->type.borrow_kind != AST_BORROW_IMMUTABLE ||
+        modify == NULL || modify->as.function.parameters == NULL ||
+        modify->as.function.parameters->type.borrow_kind != AST_BORROW_MUTABLE ||
+        reference == NULL || reference->type.borrow_kind != AST_BORROW_MUTABLE ||
+        reference->value == NULL || !reference->value->mutable_borrow ||
+        deferred_call == NULL || deferred_call->kind != AST_STMT_DEFER ||
+        deferred_call->expression == NULL || deferred_call->body != NULL ||
+        deferred_closure == NULL || deferred_closure->kind != AST_STMT_DEFER ||
+        deferred_closure->expression != NULL || deferred_closure->body == NULL) {
+        fprintf(stderr, "resource/borrow/defer syntax AST is incomplete\n");
+        ast_program_free(program);
+        error_handler_free(errors);
+        return 1;
+    }
     ast_program_free(program);
     error_handler_free(errors);
     return 0;

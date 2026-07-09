@@ -9,7 +9,7 @@ func main() -> void {
     a[0]=99;
     match(other) { Data(items) => { stdlib.println(items[0]); stdlib.println(items[2]); } Empty => stdlib.println(0); }
     var number:int=17;
-    var pointer:Value<*int>=Value<*int>.Data(&number);
+    var pointer:Value<*int>=Value<*int>.Data((&number).(*int));
     match(pointer) { Data(p) => stdlib.println(*p); Empty => stdlib.println(0); }
     var floating:Value<double>=Value<double>.Data(2.5);
     match(floating) { Data(x) => stdlib.println(x); Empty => stdlib.println(0); }

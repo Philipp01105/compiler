@@ -1,0 +1,7 @@
+package main;
+resource struct Resource { var value:int; }
+func main() -> int {
+    var first:Resource;
+    var second=first;
+    return first.value;
+}

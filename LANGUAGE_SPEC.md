@@ -1,14 +1,29 @@
-# DMM Language Specification 0.3
+# DMM Language Specification 2026-09-22-dev
 
 Status: experimental. This document defines the tested source-language contract; undocumented behavior may change.
 
+## Edition and compatibility
+
+The current language edition is `2026-09-22-dev`. Edition identifiers use a real Gregorian date in the form
+`YYYY-MM-DD`, optionally followed by `-dev`, `-pr`, `-prerelease`, `-rc`, or `-releasecandidate`. The paired short and
+long prerelease and release-candidate suffixes have the same meaning. Years use four digits; months and days use two.
+Malformed dates are rejected.
+
+Every module declares its edition with `dmm 2026-09-22-dev`. The compiler accepts only its exact current edition,
+including the suffix. DMM is in rapid development and currently provides no backwards-compatibility, migration, or
+compatibility-mode guarantee. A stable compatibility policy is deferred until the first stable release.
+
+Experimental features are project-wide and are enabled only by the root module's `dmm.manifest`. An omitted
+`features` directive and `features = []` are equivalent. Feature names use lowercase ASCII letters, digits, and
+underscores, beginning with a letter. Unknown, malformed, and duplicate feature names are errors. Source files cannot
+enable features, and normal command-line builds cannot override the manifest.
+
 ## Source and declarations
 
-A source file is UTF-8 text beginning with `package name;`, followed by imports, structs, enums, interfaces,
-constants, package variables and functions. Statements and imports end with `;`. `//` introduces a line
-comment; `/* ... */` introduces a non-nesting block comment that may span lines. Unclosed block comments are lexical
-errors. Execution begins in a parameterless `main` returning `void` or `int` in `package main`; library packages need no
-entry point.
+A source file is UTF-8 text beginning with `package name;`, followed by imports, structs, enums, interfaces, constants,
+package variables and functions. Statements and imports end with `;`. `//` introduces a line comment; `/* ... */`
+introduces a non-nesting block comment that may span lines. Unclosed block comments are lexical errors. Execution begins
+in a parameterless `main` returning `void` or `int` in `package main`; library packages need no entry point.
 
 Each project has one `dmm.manifest` defining its module path and required language edition. One directory is one
 package; all `.dmm` files directly in it are discovered and share a declaration scope. Package identity is the module
@@ -127,9 +142,9 @@ dispatch statically after specialization. Fixed arrays and slices of an interfac
 implementing structs. Assigning a struct to an interface element copies its value, and calls through that element
 dispatch dynamically. Interface inheritance, associated types and default methods are not supported.
 Concrete-to-interface conversion is supported for array or slice element assignment; other assignments, arguments,
-initializers and returns require an existing interface value.
-Methods whose signatures contain `Self` can be used through generic bounds but cannot be called through an interface
-array element, because the concrete receiver type is known only at runtime.
+initializers and returns require an existing interface value. Methods whose signatures contain `Self` can be used
+through generic bounds but cannot be called through an interface array element, because the concrete receiver type is
+known only at runtime.
 
 A sum enum gives each variant its own payload types. Construct values with
 `Option<int>.Some(42)` or `Option<int>.None`. The representation stores a tag followed by storage for the largest

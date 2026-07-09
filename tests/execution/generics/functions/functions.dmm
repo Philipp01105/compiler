@@ -18,5 +18,5 @@ func main() -> void {
     var numbers:int[3]; numbers[0]=7;
     stdlib.println(first(numbers));
     stdlib.println(factorial(5));
-    var x:int=8; var p:*int=identity(&x); stdlib.println(*p);
+    var x:int=8; var p:*int=identity((&x).(*int)); stdlib.println(*p);
 }

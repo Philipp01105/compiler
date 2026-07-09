@@ -1,0 +1,25 @@
+package main;
+
+resource struct Pair {
+    var first:int;
+    var second:int;
+}
+
+func main() -> int {
+    var pair:Pair;
+    pair.first=1;
+    pair.second=2;
+
+    var left=&mut pair.first;
+    var right=&mut pair.second;
+    *left=10;
+    *right=20;
+
+    // Both borrows end at their last use.
+    pair.first+=1;
+    pair.second+=2;
+
+    var moved=pair;
+    pair=moved;
+    return pair.first+pair.second-33;
+}

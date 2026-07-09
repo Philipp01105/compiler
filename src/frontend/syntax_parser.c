@@ -209,6 +209,9 @@ static AstType parse_type(SyntaxParser *parser) {
         return type;
     }
     size_t first = parser->current;
+    AstBorrowKind borrow_kind = AST_BORROW_NONE;
+    if (match(parser, TOKEN_AMPERSAND))
+        borrow_kind = match(parser, TOKEN_KEYWORD_MUT) ? AST_BORROW_MUTABLE : AST_BORROW_IMMUTABLE;
     unsigned leading_pointers = 0;
     while (match(parser, TOKEN_STAR)) leading_pointers++;
     if (match(parser, TOKEN_LPAREN)) {
@@ -275,6 +278,12 @@ static AstType parse_type(SyntaxParser *parser) {
                     ast_program_lexeme(parser->program, type.array_length_token), NULL, 10);
             (void) consume(parser, TOKEN_RBRACKET);
         }
+    }
+    if (borrow_kind != AST_BORROW_NONE) {
+        if (type.borrow_kind != AST_BORROW_NONE)
+            parser_failure(parser, ERR_PARSE_INVALID_DECLARATION, "Nested checked-reference types are not supported");
+        else
+            type.borrow_kind = borrow_kind;
     }
     type.span = range_span(parser, first, parser->current);
     if (parser->pending_equal) {
@@ -599,6 +608,7 @@ static AstExpression *parse_unary(SyntaxParser *parser) {
         parser->expression_depth++;
         if (expression != NULL) {
             expression->operator_type = type;
+            if (type == TOKEN_AMPERSAND && match(parser, TOKEN_KEYWORD_MUT)) expression->mutable_borrow = 1;
             expression->right = parse_unary(parser);
         }
         parser->expression_depth--;
@@ -930,6 +940,21 @@ static AstStatement *parse_statement_impl(SyntaxParser *parser) {
         finish_statement(parser, statement);
         return statement;
     }
+    if (match(parser, TOKEN_KEYWORD_DEFER)) {
+        AstStatement *statement = new_statement(parser, AST_STMT_DEFER, first);
+        if (match(parser, TOKEN_KEYWORD_FUNC)) {
+            (void) consume(parser, TOKEN_LPAREN);
+            (void) consume(parser, TOKEN_RPAREN);
+            if (statement != NULL) statement->body = parse_block(parser);
+            else (void) parse_block(parser);
+        } else {
+            AstExpression *operation = parse_expression(parser);
+            (void) consume(parser, TOKEN_SEMICOLON);
+            if (statement != NULL) statement->expression = operation;
+        }
+        finish_statement(parser, statement);
+        return statement;
+    }
     if (match(parser, TOKEN_KEYWORD_BREAK) || match(parser, TOKEN_KEYWORD_CONTINUE)) {
         TokenType keyword = parser->program->tokens[first].type;
         AstStatement *statement = new_statement(parser,
@@ -1043,8 +1068,9 @@ static AstField *parse_field(SyntaxParser *parser) {
     return field;
 }
 
-static AstDeclarationNode *parse_struct(SyntaxParser *parser) {
+static AstDeclarationNode *parse_struct(SyntaxParser *parser, int is_resource) {
     size_t first = parser->current;
+    if (is_resource) (void) consume(parser, TOKEN_KEYWORD_RESOURCE);
     (void) consume(parser, TOKEN_KEYWORD_STRUCT);
     AstDeclarationNode *declaration = new_declaration(parser, AST_DECL_STRUCT, first);
     size_t name = consume(parser, TOKEN_IDENTIFIER);
@@ -1055,7 +1081,19 @@ static AstDeclarationNode *parse_struct(SyntaxParser *parser) {
     AstField **field_tail = &fields;
     AstDeclarationNode *methods = NULL;
     AstDeclarationNode **method_tail = &methods;
+    AstStatement *destructor = NULL;
     while (!parser->failed && !check(parser, TOKEN_RBRACE) && !check(parser, TOKEN_EOF)) {
+        if (check(parser, TOKEN_KEYWORD_DESTRUCTOR)) {
+            if (!is_resource || destructor != NULL) {
+                parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
+                               is_resource ? "A resource struct may declare only one destructor"
+                                           : "Only resource structs may declare a destructor");
+                break;
+            }
+            parser->current++;
+            destructor = parse_block(parser);
+            continue;
+        }
         int is_public = match(parser, TOKEN_KEYWORD_PUB);
         int is_static = match(parser, TOKEN_KEYWORD_STATIC);
         if (check(parser, TOKEN_KEYWORD_FUNC)) {
@@ -1077,6 +1115,8 @@ static AstDeclarationNode *parse_struct(SyntaxParser *parser) {
         declaration->name_token = name;
         declaration->as.struct_decl.fields = fields;
         declaration->as.struct_decl.methods = methods;
+        declaration->as.struct_decl.destructor = destructor;
+        declaration->as.struct_decl.is_resource = is_resource;
     }
     finish_declaration(parser, declaration);
     return declaration;
@@ -1286,7 +1326,8 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
         else if (check(&parser, TOKEN_KEYWORD_VAR)) declaration = parse_constant(&parser);
         else if (check(&parser, TOKEN_KEYWORD_FUNC))
             declaration = parse_function(&parser, 0, AST_TOKEN_NONE);
-        else if (check(&parser, TOKEN_KEYWORD_STRUCT)) declaration = parse_struct(&parser);
+        else if (check(&parser, TOKEN_KEYWORD_STRUCT)) declaration = parse_struct(&parser, 0);
+        else if (check(&parser, TOKEN_KEYWORD_RESOURCE)) declaration = parse_struct(&parser, 1);
         else if (check(&parser, TOKEN_KEYWORD_ENUM)) declaration = parse_enum(&parser);
         else if (check(&parser, TOKEN_KEYWORD_INTERFACE)) declaration = parse_interface(&parser);
         else if (check(&parser, TOKEN_KEYWORD_PACKAGE))
@@ -1307,7 +1348,7 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
             while (!check(&parser, TOKEN_EOF)) {
                 TokenType token = current_type(&parser);
                 if (braces <= 0 && parser.current > first &&
-                    (token == TOKEN_KEYWORD_FUNC || token == TOKEN_KEYWORD_STRUCT ||
+                    (token == TOKEN_KEYWORD_FUNC || token == TOKEN_KEYWORD_STRUCT || token == TOKEN_KEYWORD_RESOURCE ||
                      token == TOKEN_KEYWORD_ENUM || token == TOKEN_KEYWORD_INTERFACE ||
                      token == TOKEN_KEYWORD_IMPORT || token == TOKEN_KEYWORD_CONST))
                     break;

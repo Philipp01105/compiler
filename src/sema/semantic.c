@@ -52,7 +52,9 @@ static int append_symbol(Analyzer *analyzer, SemanticSymbol symbol) {
 static void resolve_declared_type(const AstProgram *program, const AstType *type,
                                   SemanticSymbol *symbol) {
     symbol->resolved_type = primitive_type(program, type);
-    symbol->resolved_pointer_depth = type == NULL ? 0 : type->pointer_depth;
+    symbol->resolved_borrow_kind = type == NULL ? AST_BORROW_NONE : type->borrow_kind;
+    symbol->resolved_pointer_depth =
+        type == NULL ? 0 : type->pointer_depth + (type->borrow_kind != AST_BORROW_NONE);
     symbol->resolved_outer_pointer_depth = type == NULL ? 0 : type->outer_pointer_depth;
     symbol->resolved_named_type_token = named_type_token(program, type);
     symbol->resolved_named_symbol_id = AST_SYMBOL_NONE;
@@ -241,6 +243,7 @@ LocalSymbol *push_local(Analyzer *analyzer, size_t name_token, AstType type,
     resolve_declared_type(analyzer->program, &type, &symbol);
     if (type.kind == AST_TYPE_INFERRED && inferred != NULL) {
         symbol.resolved_type = inferred->resolved_type;
+        symbol.resolved_borrow_kind = inferred->resolved_borrow_kind;
         symbol.resolved_pointer_depth = inferred->resolved_pointer_depth;
         symbol.resolved_outer_pointer_depth = inferred->resolved_outer_pointer_depth;
         symbol.resolved_named_type_token = inferred->resolved_named_type_token;
@@ -258,6 +261,7 @@ LocalSymbol *push_local(Analyzer *analyzer, size_t name_token, AstType type,
     }
     local->symbol_id = analyzer->model->symbol_count - 1;
     local->resolved_type = symbol.resolved_type;
+    local->resolved_borrow_kind = symbol.resolved_borrow_kind;
     local->resolved_pointer_depth = symbol.resolved_pointer_depth;
     local->resolved_outer_pointer_depth = symbol.resolved_outer_pointer_depth;
     local->resolved_named_type_token = symbol.resolved_named_type_token;
@@ -265,10 +269,18 @@ LocalSymbol *push_local(Analyzer *analyzer, size_t name_token, AstType type,
     local->resolved_is_array = symbol.resolved_is_array;
     local->resolved_is_slice = symbol.resolved_is_slice;
     local->is_constant = is_constant;
+    local->moved = 0;
+    local->initialized = inferred != NULL || kind == SEMANTIC_SYMBOL_PARAMETER;
     local->scope_depth = analyzer->scope_depth;
     local->next = analyzer->locals;
     analyzer->locals = local;
     return local;
+}
+
+LocalSymbol *find_local_by_symbol(Analyzer *analyzer, size_t symbol_id) {
+    for (LocalSymbol *local = analyzer->locals; local != NULL; local = local->next)
+        if (local->symbol_id == symbol_id) return local;
+    return NULL;
 }
 
 void pop_to(Analyzer *analyzer, LocalSymbol *saved) {
@@ -531,11 +543,16 @@ int expression_to_declared_type_allowed(const Analyzer *analyzer,
                                                const AstProgram *type_program,
                                                const AstType *type) {
     if (expression == NULL || type == NULL) return 0;
-    unsigned target_depth = type->pointer_depth + type->outer_pointer_depth;
+    unsigned target_depth = type->pointer_depth + type->outer_pointer_depth +
+                            (type->borrow_kind != AST_BORROW_NONE);
     unsigned source_depth = expression->resolved_pointer_depth +
                             expression->resolved_outer_pointer_depth;
     size_t target_name = named_type_token(type_program, type);
-    int matching_shape = target_depth == source_depth;
+    int matching_borrow =
+        type->borrow_kind == expression->resolved_borrow_kind ||
+        (type->borrow_kind == AST_BORROW_IMMUTABLE &&
+         expression->resolved_borrow_kind == AST_BORROW_MUTABLE);
+    int matching_shape = target_depth == source_depth && matching_borrow;
     if (type->is_slice && !type->outer_pointer_depth)
         matching_shape = type->outer_pointer_depth == 0 &&
                          expression->resolved_outer_pointer_depth == 0 &&
@@ -568,6 +585,10 @@ int expression_assignment_allowed(const Analyzer *analyzer,
                                          const AstExpression *source,
                                          const AstExpression *target) {
     if (source == NULL || target == NULL) return 0;
+    if (source->resolved_borrow_kind != target->resolved_borrow_kind &&
+        !(target->resolved_borrow_kind == AST_BORROW_IMMUTABLE &&
+          source->resolved_borrow_kind == AST_BORROW_MUTABLE))
+        return 0;
     unsigned source_depth = source->resolved_pointer_depth +
                             source->resolved_outer_pointer_depth;
     unsigned target_depth = target->resolved_pointer_depth +
@@ -1194,9 +1215,19 @@ void validate_expression(Analyzer *analyzer, AstExpression *expression,
           expression->right->resolved_named_symbol_id == AST_SYMBOL_NONE)))
         return;
     if (expression->kind == AST_EXPR_UNARY && expression->operator_type == TOKEN_AMPERSAND &&
-        !assignable_expression(analyzer, expression->right)) {
+        expression->mutable_borrow && !assignable_expression(analyzer, expression->right)) {
         operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                      "Address-of requires a mutable lvalue");
+                      "Mutable borrow requires a mutable lvalue");
+    } else if (expression->kind == AST_EXPR_UNARY &&
+               expression->operator_type == TOKEN_AMPERSAND &&
+               expression->right != NULL &&
+               expression->right->kind != AST_EXPR_NAME &&
+               expression->right->kind != AST_EXPR_MEMBER &&
+               expression->right->kind != AST_EXPR_INDEX &&
+               !(expression->right->kind == AST_EXPR_UNARY &&
+                 expression->right->operator_type == TOKEN_STAR)) {
+        operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                      "Borrow requires an addressable value");
     } else if (expression->kind == AST_EXPR_UNARY && expression->operator_type == TOKEN_STAR &&
                expression->right != NULL && expression->right->resolved_pointer_depth == 0 &&
                expression->right->resolved_outer_pointer_depth == 0) {

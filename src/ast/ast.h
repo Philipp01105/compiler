@@ -25,6 +25,7 @@ typedef enum {
 } AstDeclarationKind;
 
 typedef enum { AST_TYPE_INFERRED, AST_TYPE_NAMED } AstTypeKind;
+typedef enum { AST_BORROW_NONE, AST_BORROW_IMMUTABLE, AST_BORROW_MUTABLE } AstBorrowKind;
 
 typedef enum {
     AST_EXPR_ERROR, AST_EXPR_LITERAL, AST_EXPR_NAME, AST_EXPR_UNARY,
@@ -37,7 +38,7 @@ typedef enum {
 typedef enum {
     AST_STMT_ERROR, AST_STMT_BLOCK, AST_STMT_VARIABLE, AST_STMT_EXPRESSION,
     AST_STMT_ASSIGNMENT, AST_STMT_IF, AST_STMT_WHILE, AST_STMT_FOR,
-    AST_STMT_RETURN, AST_STMT_BREAK, AST_STMT_CONTINUE, AST_STMT_MATCH
+    AST_STMT_RETURN, AST_STMT_BREAK, AST_STMT_CONTINUE, AST_STMT_MATCH, AST_STMT_DEFER
 } AstStatementKind;
 
 /* Lossless token leaves reference source spellings owned by the module interner. */
@@ -54,6 +55,7 @@ typedef struct AstType {
     AstTypeKind kind;
     AstSourceSpan span;
     size_t name_token;
+    AstBorrowKind borrow_kind;
     unsigned pointer_depth;
     unsigned outer_pointer_depth;
     int is_array;
@@ -125,6 +127,8 @@ struct AstExpression {
     int resolved_is_slice;
     size_t resolved_array_length;
     size_t resolved_symbol_id;
+    AstBorrowKind resolved_borrow_kind;
+    int mutable_borrow;
 };
 
 struct AstStatement {
@@ -221,6 +225,8 @@ struct AstDeclarationNode {
         struct {
             AstField *fields;
             AstDeclarationNode *methods;
+            AstStatement *destructor;
+            int is_resource;
         } struct_decl;
 
         struct {
@@ -237,7 +243,6 @@ struct AstDeclarationNode {
         struct {
             AstDeclarationNode *methods;
         } interface_decl;
-
     } as;
 };
 
@@ -259,11 +264,17 @@ typedef struct DmmDependency {
     struct DmmDependency *next;
 } DmmDependency;
 
+typedef struct DmmFeature {
+    const char *name;
+    struct DmmFeature *next;
+} DmmFeature;
+
 struct DmmModule {
     DmmModule *graph;
     const char *path;
     const char *root;
-    const char *version;
+    const char *edition;
+    DmmFeature *features;
     DmmDependency *dependencies;
     DmmPackage *packages;
 };

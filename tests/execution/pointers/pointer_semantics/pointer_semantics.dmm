@@ -4,7 +4,7 @@ func write(p:*int, value:int) -> void { *p = value; }
 
 func main() -> void {
     var value:int = 10;
-    var first:*int = &value;
+    var first:*int = (&value).(*int);
     var second:*int = first;
     write(first, 41);
     *second += 1;
@@ -13,6 +13,6 @@ func main() -> void {
 
     var values:int[2];
     values[1] = 77;
-    var element:*int = &values[1];
+    var element:*int = (&values[1]).(*int);
     stdlib.println(*element);
 }

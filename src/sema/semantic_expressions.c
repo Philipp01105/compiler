@@ -101,6 +101,7 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
         return;
     }
     expression->resolved_type = TYPE_UNKNOWN;
+    expression->resolved_borrow_kind = AST_BORROW_NONE;
     expression->resolved_pointer_depth = 0;
     expression->resolved_outer_pointer_depth = 0;
     expression->resolved_named_type_token = AST_TOKEN_NONE;
@@ -234,7 +235,12 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
             const LocalSymbol *local = find_local(analyzer, expression->value_token);
             if (local != NULL) {
                 expression->resolved_symbol_id = local->symbol_id;
+                if (local->moved && analyzer->assignment_target != expression)
+                    semantic_error(analyzer, expression->value_token,
+                                   ERROR_CATEGORY_SEMANTIC, ERR_SEM_INVALID_DECLARATION,
+                                   "Use of moved value");
                 expression->resolved_type = local->resolved_type;
+                expression->resolved_borrow_kind = local->resolved_borrow_kind;
                 expression->resolved_pointer_depth = local->resolved_pointer_depth;
                 expression->resolved_outer_pointer_depth = local->resolved_outer_pointer_depth;
                 expression->resolved_named_type_token = local->resolved_named_type_token;
@@ -260,6 +266,7 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                     expression->resolved_symbol_id = implicit_field->resolved_symbol_id;
                     expression->resolved_type = primitive_type(analyzer->program,
                                                                &implicit_field->type);
+                    expression->resolved_borrow_kind = implicit_field->type.borrow_kind;
                     expression->resolved_pointer_depth = implicit_field->type.pointer_depth;
                     expression->resolved_outer_pointer_depth =
                             implicit_field->type.outer_pointer_depth;
@@ -297,6 +304,7 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                     }
                     expression->resolved_symbol_id = constant->id;
                     expression->resolved_type = constant->resolved_type;
+                    expression->resolved_borrow_kind = constant->resolved_borrow_kind;
                     expression->resolved_pointer_depth = constant->resolved_pointer_depth;
                     expression->resolved_outer_pointer_depth =
                             constant->resolved_outer_pointer_depth;
@@ -312,6 +320,7 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
         if (expression->operator_type == TOKEN_BANG) expression->resolved_type = TYPE_BIT;
         else if (expression->right != NULL) {
             expression->resolved_type = expression->right->resolved_type;
+            expression->resolved_borrow_kind = expression->right->resolved_borrow_kind;
             expression->resolved_pointer_depth = expression->right->resolved_pointer_depth;
             expression->resolved_outer_pointer_depth =
                     expression->right->resolved_outer_pointer_depth;
@@ -320,10 +329,14 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
             expression->resolved_is_array = expression->right->resolved_is_array;
             expression->resolved_is_slice = expression->right->resolved_is_slice;
             if (expression->operator_type == TOKEN_AMPERSAND) {
+                expression->resolved_borrow_kind = expression->mutable_borrow
+                                                       ? AST_BORROW_MUTABLE
+                                                       : AST_BORROW_IMMUTABLE;
                 if (expression->resolved_is_array || expression->resolved_is_slice)
                     expression->resolved_outer_pointer_depth++;
                 else expression->resolved_pointer_depth++;
             } else if (expression->operator_type == TOKEN_STAR) {
+                expression->resolved_borrow_kind = AST_BORROW_NONE;
                 if (expression->resolved_outer_pointer_depth > 0)
                     expression->resolved_outer_pointer_depth--;
                 else if (expression->resolved_pointer_depth > 0)
@@ -352,6 +365,7 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                                                              expression->right->resolved_type);
         }
     } else if (expression->kind == AST_EXPR_CAST) {
+        validate_array_shape(analyzer, &expression->allocated_type);
         const AstType *cast_type = &expression->allocated_type;
         expression->resolved_type = primitive_type(analyzer->program, cast_type);
         expression->resolved_pointer_depth = cast_type->pointer_depth;
@@ -361,6 +375,7 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                                                                        expression->resolved_named_type_token);
         expression->resolved_is_array = cast_type->is_array;
         expression->resolved_is_slice = cast_type->is_slice;
+        expression->resolved_array_length = cast_type->resolved_array_length;
     } else if (expression->kind == AST_EXPR_FREE) {
         expression->resolved_type = TYPE_VOID;
     } else if (expression->kind == AST_EXPR_CALL) {
@@ -390,6 +405,7 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                     expression->resolved_symbol_id = function->id;
                     expression->resolved_type = primitive_type(function->source_program,
                                                                &function->declared_type);
+                    expression->resolved_borrow_kind = function->declared_type.borrow_kind;
                     expression->resolved_pointer_depth = function->declared_type.pointer_depth;
                     expression->resolved_outer_pointer_depth =
                             function->declared_type.outer_pointer_depth;
@@ -446,6 +462,7 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                     return;
                 }
                 expression->resolved_type = primitive_type(variant->source_program, &payload->type);
+                expression->resolved_borrow_kind = payload->type.borrow_kind;
                 expression->resolved_pointer_depth = payload->type.pointer_depth;
                 expression->resolved_outer_pointer_depth = payload->type.outer_pointer_depth;
                 expression->resolved_named_type_token = named_type_token(variant->source_program, &payload->type);
@@ -479,6 +496,7 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                 expression->resolved_symbol_id = method->id;
                 expression->resolved_type = primitive_type(method->source_program,
                                                            &method->declared_type);
+                expression->resolved_borrow_kind = method->declared_type.borrow_kind;
                 expression->resolved_pointer_depth = method->declared_type.pointer_depth;
                 expression->resolved_outer_pointer_depth =
                         method->declared_type.outer_pointer_depth;
@@ -493,6 +511,7 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
         }
     } else if (expression->kind == AST_EXPR_INDEX && expression->left != NULL) {
         expression->resolved_type = expression->left->resolved_type;
+        expression->resolved_borrow_kind = AST_BORROW_NONE;
         expression->resolved_pointer_depth = expression->left->resolved_pointer_depth;
         expression->resolved_outer_pointer_depth =
                 expression->left->resolved_outer_pointer_depth;
@@ -567,6 +586,7 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                                                   ? analyzer->program
                                                   : field_symbol->source_program;
             expression->resolved_type = primitive_type(field_program, &field->type);
+            expression->resolved_borrow_kind = field->type.borrow_kind;
             expression->resolved_pointer_depth = field->type.pointer_depth;
             expression->resolved_outer_pointer_depth = field->type.outer_pointer_depth;
             expression->resolved_named_type_token = named_type_token(field_program, &field->type);
@@ -598,6 +618,8 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
         expression->resolved_array_length = expression->right->resolved_array_length;
     else if (expression->kind == AST_EXPR_INDEX && expression->left != NULL)
         expression->resolved_array_length = expression->resolved_is_array ? expression->left->resolved_array_length : 0;
+    else if (expression->kind == AST_EXPR_CAST)
+        expression->resolved_array_length = expression->allocated_type.resolved_array_length;
     else if (expression->kind == AST_EXPR_RESERVE)
         expression->resolved_array_length = expression->allocated_type.resolved_array_length;
     else if (expression->resolved_symbol_id < analyzer->model->symbol_count)
@@ -615,4 +637,3 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                                              expression->left->value_token))))
         analyzer->model->unresolved_expression_count++;
 }
-

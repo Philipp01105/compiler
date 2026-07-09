@@ -1,0 +1,37 @@
+package main;
+
+func append(target:*int, digit:int) -> void {
+    *target=*target*10+digit;
+}
+
+func early(target:*int) -> void {
+    defer append(target,3);
+    return;
+}
+
+func main() -> int {
+    var result:int=0;
+    var value:int=1;
+    {
+        defer append((&result).(*int),value);
+        defer func() {
+            append((&result).(*int),value);
+        }
+        value=2;
+    }
+    if (result != 21) { return 1; }
+
+    early((&result).(*int));
+    if (result != 213) { return 2; }
+
+    result=0;
+    var index:int=0;
+    while (index < 3) {
+        defer append((&result).(*int),index+1);
+        index+=1;
+        if (index == 1) { continue; }
+        if (index == 2) { break; }
+    }
+    if (result != 12) { return 3; }
+    return 0;
+}

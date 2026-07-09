@@ -1,7 +1,7 @@
 package stdio;
 import "stdlib/core";
 
-func bufferedRead(stream:*Stream, storage:u8[], position:*usize, end:*usize, active:bit, destination:u8[]) -> Transfer {
+func bufferedRead(stream:*Stream, storage:u8[], position:&mut usize, end:&mut usize, active:bit, destination:u8[]) -> Transfer {
     if (!active) { return transfer(0,Status.Closed,0); }
     if (destination.length == 0) { return transfer(0,Status.Ok,0); }
     if (*position == *end) {
@@ -29,18 +29,18 @@ pub struct BufferedReader {
         return bufferedRead(
             stream,
             storage,
-            &position,
-            &end,
+            &mut position,
+            &mut end,
             active,
             destination
         );
     }
 
     pub func readExact(destination:u8[]) -> Transfer {
-        if (destination.length == 0) { return bufferedRead(stream,storage,&position,&end,active,destination); }
+        if (destination.length == 0) { return bufferedRead(stream,storage,&mut position,&mut end,active,destination); }
         var total:usize=0;
         while (total < destination.length) {
-            var result:Transfer=bufferedRead(stream,storage,&position,&end,active,subview(destination,total,destination.length-total));
+            var result:Transfer=bufferedRead(stream,storage,&mut position,&mut end,active,subview(destination,total,destination.length-total));
             total+=result.count;
             if (!result.ok()) { return transfer(total,result.status,result.error); }
         }
@@ -48,7 +48,7 @@ pub struct BufferedReader {
     }
 
     pub func readByte() -> ByteResult {
-        var bytes:u8[1]; var result:Transfer=bufferedRead(stream,storage,&position,&end,active,bytes);
+        var bytes:u8[1]; var result:Transfer=bufferedRead(stream,storage,&mut position,&mut end,active,bytes);
         var value:ByteResult; value.status=result.status; value.error=result.error;
         if (result.count == 1) { value.value=bytes[0]; } return value;
     }
@@ -57,13 +57,13 @@ pub struct BufferedReader {
     pub func readLine(maximum:usize) -> Bytes {
         var bytes:Bytes; var one:u8[1];
         while (bytes.length < maximum) {
-            var result:Transfer=bufferedRead(stream,storage,&position,&end,active,one);
+            var result:Transfer=bufferedRead(stream,storage,&mut position,&mut end,active,one);
             if (!result.ok()) { bytes.status=result.status; bytes.error=result.error; return bytes; }
             if (one[0] == 10) {
                 if (bytes.length > 0 && bytes.storage[bytes.length-1] == 13) { bytes.length-=1; }
                 return bytes;
             }
-            if (!append(&bytes,one[0])) { return bytes; }
+            if (!append(&mut bytes,one[0])) { return bytes; }
         }
         bytes.status=Status.LimitReached; return bytes;
     }
@@ -84,7 +84,7 @@ pub func bufferedReader(stream:*Stream, capacity:usize) -> BufferedReader {
     reader.stream=stream; reader.active=true; return reader;
 }
 
-func flushBuffer(stream:*Stream, storage:u8[], pending:*usize, active:bit) -> Transfer {
+func flushBuffer(stream:*Stream, storage:u8[], pending:&mut usize, active:bit) -> Transfer {
     if (!active) { return transfer(0,Status.Closed,0); }
     if (*pending == 0) { return transfer(0,Status.Ok,0); }
     var result:Transfer=stream.writeAll(subview(storage,0,*pending));
@@ -94,7 +94,7 @@ func flushBuffer(stream:*Stream, storage:u8[], pending:*usize, active:bit) -> Tr
     }
     return result;
 }
-func bufferedWrite(stream:*Stream, storage:u8[], pending:*usize, active:bit, source:u8[]) -> Transfer {
+func bufferedWrite(stream:*Stream, storage:u8[], pending:&mut usize, active:bit, source:u8[]) -> Transfer {
     if (!active) { return transfer(0,Status.Closed,0); }
     if (!stream.canWrite()) { return transfer(0,Status.AccessDenied,0); }
     var total:usize=0;
@@ -121,22 +121,22 @@ pub struct BufferedWriter {
     pub var status:Status;
     pub func isOpen() -> bit { return active; }
     pub func bufferedBytes() -> usize { return pending; }
-    pub func write(source:u8[]) -> Transfer { return bufferedWrite(stream,storage,&pending,active,source); }
+    pub func write(source:u8[]) -> Transfer { return bufferedWrite(stream,storage,&mut pending,active,source); }
     pub func writeString(text:string) -> Transfer {
-        return bufferedWrite(stream,storage,&pending,active,slice(core.core_string_data(text),core.core_string_length(text)));
+        return bufferedWrite(stream,storage,&mut pending,active,slice(core.core_string_data(text),core.core_string_length(text)));
     }
     pub func writeLine(text:string) -> Transfer {
-        var result:Transfer=bufferedWrite(stream,storage,&pending,active,slice(core.core_string_data(text),core.core_string_length(text)));
+        var result:Transfer=bufferedWrite(stream,storage,&mut pending,active,slice(core.core_string_data(text),core.core_string_length(text)));
         if (!result.ok()) { return result; }
-        var newline:Transfer=bufferedWrite(stream,storage,&pending,active,slice(core.core_string_data("\n"),1));
+        var newline:Transfer=bufferedWrite(stream,storage,&mut pending,active,slice(core.core_string_data("\n"),1));
         return transfer(result.count+newline.count,newline.status,newline.error);
     }
     // A partial failure retains the unwritten suffix for a later flush.
-    pub func flush() -> Transfer { return flushBuffer(stream,storage,&pending,active); }
+    pub func flush() -> Transfer { return flushBuffer(stream,storage,&mut pending,active); }
     // Failed close retains the owner and pending data. Retry or explicitly discard.
     pub func close() -> Transfer {
         if (!active) { return transfer(0,Status.Ok,0); }
-        var result:Transfer=flushBuffer(stream,storage,&pending,active);
+        var result:Transfer=flushBuffer(stream,storage,&mut pending,active);
         if (!result.ok()) { return result; }
         core.release(storage); storage=slice(core.null<u8>(),0); active=false; status=Status.Closed;
         return result;
@@ -158,7 +158,7 @@ pub func bufferedWriter(stream:*Stream, capacity:usize) -> BufferedWriter {
 pub func readFile(path:string, maximum:usize) -> Bytes {
     var stream:Stream=openRead(path); var bytes:Bytes;
     if (!stream.isOpen()) { bytes.status=Status.SystemError; bytes.error=stream.lastError(); return bytes; }
-    bytes=readToEnd(&stream,maximum);
+    bytes=readToEnd((&stream).(*Stream),maximum);
     var closed:isize=stream.close();
     if (closed < 0 && bytes.status == Status.EndOfStream) { bytes.status=Status.SystemError; bytes.error=closed; }
     return bytes;

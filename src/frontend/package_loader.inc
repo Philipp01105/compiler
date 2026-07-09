@@ -7,6 +7,93 @@ typedef struct {
     size_t depth;
 } PackageLoader;
 
+#define DMM_LANGUAGE_EDITION "2026-09-22-dev"
+
+static void package_error(const AstProgram *file, size_t token, int code, const char *format, ...);
+
+static int edition_digit(const char *edition, size_t index) {
+    return isdigit((unsigned char) edition[index]);
+}
+
+static int valid_edition_identifier(const char *edition) {
+    if (!edition || strlen(edition) < 10 || edition[4] != '-' || edition[7] != '-') return 0;
+    for (size_t i = 0; i < 10; i++)
+        if (i != 4 && i != 7 && !edition_digit(edition, i)) return 0;
+    int year = (edition[0] - '0') * 1000 + (edition[1] - '0') * 100 +
+               (edition[2] - '0') * 10 + edition[3] - '0';
+    int month = (edition[5] - '0') * 10 + edition[6] - '0';
+    int day = (edition[8] - '0') * 10 + edition[9] - '0';
+    static const int month_days[] = {0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    if (year == 0 || month < 1 || month > 12) return 0;
+    int maximum = month_days[month];
+    if (month == 2 && (year % 400 == 0 || (year % 4 == 0 && year % 100 != 0))) maximum = 29;
+    if (day < 1 || day > maximum) return 0;
+    const char *suffix = edition + 10;
+    return !*suffix || !strcmp(suffix, "-dev") || !strcmp(suffix, "-pr") ||
+           !strcmp(suffix, "-prerelease") || !strcmp(suffix, "-rc") ||
+           !strcmp(suffix, "-releasecandidate");
+}
+
+static int valid_feature_name(const char *name) {
+    if (!name || !(*name >= 'a' && *name <= 'z')) return 0;
+    for (const char *p = name + 1; *p; p++)
+        if (!(*p >= 'a' && *p <= 'z') && !isdigit((unsigned char) *p) && *p != '_') return 0;
+    return strlen(name) <= 63;
+}
+
+static int supported_experimental_feature(const char *name) {
+    (void) name;
+    return 0;
+}
+
+static int add_manifest_feature(PackageLoader *loader, DmmModule *module, const char *name, const char *manifest) {
+    for (DmmFeature *feature = module->features; feature; feature = feature->next) {
+        if (!strcmp(feature->name, name)) {
+            package_error(loader->root, AST_TOKEN_NONE, ERR_MODULE_FEATURE,
+                          "Manifest '%s' enables experimental feature '%s' more than once", manifest, name);
+            return 0;
+        }
+    }
+    DmmFeature *feature = ast_program_alloc(loader->root, sizeof(*feature));
+    if (!feature) return 0;
+    feature->name = string_interner_intern(loader->root->strings, name);
+    feature->next = module->features;
+    module->features = feature;
+    return 1;
+}
+
+static int parse_manifest_features(PackageLoader *loader, DmmModule *module, char *text,
+                                   const char *manifest, int *closed) {
+    char *cursor = text;
+    while (1) {
+        while (isspace((unsigned char) *cursor)) cursor++;
+        if (*cursor == ']') {
+            cursor++;
+            while (isspace((unsigned char) *cursor)) cursor++;
+            if (*cursor) return 0;
+            *closed = 1;
+            return 1;
+        }
+        if (!*cursor) return 1;
+        if (*cursor++ != '"') return 0;
+        char *start = cursor;
+        while (*cursor && *cursor != '"') cursor++;
+        if (*cursor != '"' || (size_t) (cursor - start) > 63) return 0;
+        char saved = *cursor;
+        *cursor = '\0';
+        int valid = valid_feature_name(start) && add_manifest_feature(loader, module, start, manifest);
+        *cursor = saved;
+        if (!valid) return 0;
+        cursor++;
+        while (isspace((unsigned char) *cursor)) cursor++;
+        if (*cursor == ',') {
+            cursor++;
+            continue;
+        }
+        if (*cursor != ']') return 0;
+    }
+}
+
 static void package_error(const AstProgram *file, size_t token, int code, const char *format, ...) {
     char message[4096];
     va_list args;
@@ -70,7 +157,8 @@ static DmmModule *read_module(PackageLoader *loader, const char *directory) {
     module->graph = loader->root->module ? loader->root->module : module;
     module->root = string_interner_intern(loader->root->strings, directory);
     char line[4096];
-    int group = 0, failed = 0, in_comment = 0;
+    int group = 0, feature_group = 0, features_seen = 0;
+    int failed = 0, reported = 0, in_comment = 0;
     while (fgets(line, sizeof(line), input)) {
         for (size_t i = 0; line[i]; i++) {
             if (!in_comment && line[i] == '/' && line[i + 1] == '/') break;
@@ -91,6 +179,16 @@ static DmmModule *read_module(PackageLoader *loader, const char *directory) {
             indirect = sscanf(comment + 2, "%31s %1s", marker, extra_marker) == 1 && !strcmp(marker, "indirect");
             *comment = '\0';
         }
+        if (feature_group) {
+            int closed = 0;
+            if (!parse_manifest_features(loader, module, line, manifest, &closed)) {
+                failed = 1;
+                reported = error_handler_get_error_count(global_error_handler) != 0;
+                break;
+            }
+            if (closed) feature_group = 0;
+            continue;
+        }
         char one[1100] = {0}, two[1100] = {0}, three[1100] = {0}, extra[2] = {0};
         int count = sscanf(line, "%1099s %1099s %1099s %1s", one, two, three, extra);
         if (count <= 0) continue;
@@ -100,14 +198,33 @@ static DmmModule *read_module(PackageLoader *loader, const char *directory) {
         }
         if (!group && count == 2 && !strcmp(one, "module") && !module->path && valid_module_path(two))
             module->path = string_interner_intern(loader->root->strings, two);
-        else if (!group && count == 2 && !strcmp(one, "dmm") && !module->version) {
-            if (strcmp(two, "0.3")) {
+        else if (!group && count == 2 && !strcmp(one, "dmm") && !module->edition) {
+            if (!valid_edition_identifier(two)) {
                 package_error(loader->root, AST_TOKEN_NONE, ERR_MODULE_VERSION,
-                              "Manifest '%s' requires DMM %s; this compiler supports DMM 0.3", manifest, two);
-                failed = 1;
+                              "Manifest '%s' has invalid DMM edition '%s'; expected YYYY-MM-DD with an optional "
+                              "-dev, -pr, -prerelease, -rc, or -releasecandidate suffix", manifest, two);
+                failed = reported = 1;
                 break;
             }
-            module->version = string_interner_intern(loader->root->strings, two);
+            if (strcmp(two, DMM_LANGUAGE_EDITION)) {
+                package_error(loader->root, AST_TOKEN_NONE, ERR_MODULE_VERSION,
+                              "Manifest '%s' requires DMM %s; this compiler supports only DMM %s",
+                              manifest, two, DMM_LANGUAGE_EDITION);
+                failed = reported = 1;
+                break;
+            }
+            module->edition = string_interner_intern(loader->root->strings, two);
+        } else if (!group && count == 3 && !strcmp(one, "features") && !strcmp(two, "=") &&
+                   !features_seen && three[0] == '[') {
+            char *opening = strchr(line, '[');
+            int closed = 0;
+            features_seen = 1;
+            if (!opening || !parse_manifest_features(loader, module, opening + 1, manifest, &closed)) {
+                failed = 1;
+                reported = error_handler_get_error_count(global_error_handler) != 0;
+                break;
+            }
+            feature_group = !closed;
         } else if (!group && count == 2 && !strcmp(one, "require") && !strcmp(two, "(")) group = 1;
         else if (group || (!strcmp(one, "require") && count == 3)) {
             const char *path = group ? one : two, *version = group ? two : three;
@@ -132,11 +249,22 @@ static DmmModule *read_module(PackageLoader *loader, const char *directory) {
             break;
         }
     }
-    if (ferror(input) || group || in_comment || !module->path || !module->version || !module->root) failed = 1;
+    if (ferror(input) || group || feature_group || in_comment || !module->path || !module->edition || !module->root)
+        failed = 1;
+    if (!failed) {
+        for (DmmFeature *feature = module->features; feature; feature = feature->next) {
+            if (supported_experimental_feature(feature->name)) continue;
+            package_error(loader->root, AST_TOKEN_NONE, ERR_MODULE_FEATURE,
+                          "Manifest '%s' enables unknown experimental feature '%s'", manifest, feature->name);
+            failed = reported = 1;
+        }
+    }
     fclose(input);
-    if (failed) package_error(loader->root, AST_TOKEN_NONE, ERR_MODULE_MANIFEST,
-                              "Invalid dmm.manifest '%s': expected one valid module path, 'dmm 0.3', and versioned require entries",
-                              manifest);
+    if (failed && !reported)
+        package_error(loader->root, AST_TOKEN_NONE, ERR_MODULE_MANIFEST,
+                      "Invalid dmm.manifest '%s': expected one valid module path, 'dmm %s', "
+                      "an optional features array, and versioned require entries",
+                      manifest, DMM_LANGUAGE_EDITION);
     free(manifest);
     return failed ? NULL : module;
 }
@@ -395,8 +523,9 @@ static DmmPackage *load_package(PackageLoader *loader, DmmModule *module, const 
     }
     closedir(dir);
     if (count > 1) qsort(paths, count, sizeof(*paths), string_order);
-    if (!discovered) package_error(loader->root, AST_TOKEN_NONE, ERR_SEM_COMPLEXITY_LIMIT,
-                                   "Package discovery exceeded available resources or 1024 files");
+    if (!discovered)
+        package_error(loader->root, AST_TOKEN_NONE, ERR_SEM_COMPLEXITY_LIMIT,
+                      "Package discovery exceeded available resources or 1024 files");
     int ok = count != 0 && discovered;
     for (size_t i = 0; i < count; i++) {
         char *canonical = canonical_existing_path(paths[i]);
@@ -419,8 +548,9 @@ static DmmPackage *load_package(PackageLoader *loader, DmmModule *module, const 
     }
     free(paths);
     if (!ok) {
-        if (!count) package_error(loader->root, AST_TOKEN_NONE, ERR_PACKAGE_NOT_FOUND,
-                                  "Package '%s' has no DMM source files", path);
+        if (!count)
+            package_error(loader->root, AST_TOKEN_NONE, ERR_PACKAGE_NOT_FOUND,
+                          "Package '%s' has no DMM source files", path);
         return NULL;
     }
     package->loading = 1;

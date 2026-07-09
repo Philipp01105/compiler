@@ -64,6 +64,7 @@ typedef enum {
 #define ERR_PACKAGE_ALIAS              127
 #define ERR_MODULE_VERSION             128
 #define ERR_MODULE_DEPENDENCY          129
+#define ERR_MODULE_FEATURE             130
 
 #define ERR_CODEGEN_TOO_MANY_LITERALS   100
 #define ERR_CODEGEN_TOO_MANY_VARIABLES  101

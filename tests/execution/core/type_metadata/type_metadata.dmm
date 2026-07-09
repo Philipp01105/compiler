@@ -55,7 +55,7 @@ func main() -> int {
     if (State.size != sizeof(State) || type_name<State>() != "dmm.test/type_metadata.State") { return 11; }
     if (describe(4) != 5 || describe("hello") != 5 || describe(1.25) != -1 || selected_return<int>() != 42) { return 12; }
     var node:Node; node.value=7;
-    if (describe(node) != 7 || describe(&node) != 7) { return 13; }
+    if (describe(node) != 7 || describe((&node).(*Node)) != 7) { return 13; }
     var backing:i32[3]; var view:i32[]=backing;
     if (describe(view) != 3 || type_name<*(i32[])>() != "*(i32[])") { return 14; }
     match (Box<int>) { case Box<string> -> return 15; case Box<int> -> { } }

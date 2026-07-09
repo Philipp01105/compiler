@@ -17,7 +17,7 @@ func change(p:*int) -> int {
 }
 func address() -> double {
     var x:double=1.25;
-    var p:*double = &x;
+    var p:*double = (&x).(*double);
     x=3.5;
     return *p;
 }
@@ -29,9 +29,9 @@ func main() -> void {
     stdlib.println(choose(false));
     stdlib.println(loop(5));
     var value=7;
-    stdlib.println(change(&value));
+    stdlib.println(change((&value).(*int)));
     stdlib.println(value);
-    stdlib.println(reads(&value));
+    stdlib.println(reads((&value).(*int)));
     stdlib.println(address());
     stdlib.println(false && effect());
     stdlib.println(true || effect());

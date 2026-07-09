@@ -1,0 +1,4 @@
+package main;
+var value:int;
+var reference:&int=&value;
+func main() -> int { return 0; }

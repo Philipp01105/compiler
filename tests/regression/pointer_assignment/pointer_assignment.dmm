@@ -5,7 +5,7 @@ import "stdlib";
 func main() -> void {
     var a:int = 8;
     var x:*int;
-    var y:*int = &a;
+    var y:*int = (&a).(*int);
     x = y;
     stdlib.println(*x);
 }

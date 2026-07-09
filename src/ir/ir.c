@@ -35,12 +35,29 @@ void ir_report_failure(const IrFunction *function, size_t index,
 
 #include "type_layout.inc"
 
+typedef struct DeferredAction {
+    int captured_call;
+    IrInstruction call;
+    size_t *arguments;
+    size_t argument_count;
+    const AstStatement *body;
+    struct DeferredAction *next;
+} DeferredAction;
+
+typedef struct CleanupScope {
+    DeferredAction *actions;
+    struct CleanupScope *previous;
+} CleanupScope;
+
 typedef struct {
     IrModule *module;
     IrFunction *function;
     const AstProgram *program;
     size_t break_label;
     size_t continue_label;
+    CleanupScope *cleanup_scope;
+    CleanupScope *break_cleanup_stop;
+    CleanupScope *continue_cleanup_stop;
     int failed;
 } IrBuilder;
 
@@ -242,7 +259,8 @@ static IrTypeId type_from_ast(IrModule *module, const AstProgram *program,
                        ? type->name_token
                        : AST_TOKEN_NONE;
     return type_from_parts(module, ir_ast_type_data_type(program, type),
-                           type == NULL ? 0 : type->pointer_depth, named,
+                            type == NULL ? 0 : type->pointer_depth +
+                                (type->borrow_kind != AST_BORROW_NONE), named,
                            type != NULL && type->is_array,
                            type != NULL && type->is_slice,
                            ast_array_length(program, type),
@@ -593,6 +611,108 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
 }
 
 static void lower_statement(IrBuilder *builder, const AstStatement *statement);
+static void lower_scoped_statement(IrBuilder *builder,
+                                   const AstStatement *statement);
+
+static void emit_deferred_scope(IrBuilder *builder,
+                                const CleanupScope *scope) {
+    if (scope == NULL) return;
+    for (const DeferredAction *action = scope->actions;
+         action != NULL && !builder->failed; action = action->next) {
+        if (action->captured_call) {
+            IrInstruction *instruction =
+                emit(builder, action->call.opcode, action->call.span);
+            if (instruction == NULL) return;
+            *instruction = action->call;
+            instruction->first_argument =
+                builder->function->argument_count;
+            instruction->argument_count = action->argument_count;
+            for (size_t i = 0; i < action->argument_count; i++)
+                if (!append_argument(builder, action->arguments[i]))
+                    return;
+            if (instruction->result != IR_VALUE_NONE)
+                instruction->result = new_value(builder);
+        } else {
+            lower_scoped_statement(builder, action->body);
+        }
+    }
+}
+
+static void emit_deferred_until(IrBuilder *builder,
+                                const CleanupScope *stop) {
+    for (const CleanupScope *scope = builder->cleanup_scope;
+         scope != NULL && scope != stop && !builder->failed;
+         scope = scope->previous)
+        emit_deferred_scope(builder, scope);
+}
+
+static void free_deferred_actions(DeferredAction *action) {
+    while (action != NULL) {
+        DeferredAction *next = action->next;
+        free(action->arguments);
+        free(action);
+        action = next;
+    }
+}
+
+static void lower_scoped_statement(IrBuilder *builder,
+                                   const AstStatement *statement) {
+    CleanupScope scope = {.previous = builder->cleanup_scope};
+    builder->cleanup_scope = &scope;
+    lower_statement(builder, statement);
+    if (!block_terminated(builder->function))
+        emit_deferred_scope(builder, &scope);
+    builder->cleanup_scope = scope.previous;
+    free_deferred_actions(scope.actions);
+}
+
+static void register_deferred_action(IrBuilder *builder,
+                                     const AstStatement *statement) {
+    if (builder->cleanup_scope == NULL) {
+        builder->failed = 1;
+        return;
+    }
+    DeferredAction *action = calloc(1, sizeof(*action));
+    if (action == NULL) {
+        builder->failed = 1;
+        return;
+    }
+    if (statement->expression != NULL) {
+        size_t before = builder->function->instruction_count;
+        (void) lower_expression(builder, statement->expression);
+        if (builder->failed ||
+            builder->function->instruction_count <= before ||
+            builder->function->instructions[
+                builder->function->instruction_count - 1].opcode != IR_OP_CALL) {
+            free(action);
+            builder->failed = 1;
+            return;
+        }
+        action->captured_call = 1;
+        action->call = builder->function->instructions[
+            builder->function->instruction_count - 1];
+        action->argument_count = action->call.argument_count;
+        if (action->argument_count != 0) {
+            action->arguments =
+                calloc(action->argument_count, sizeof(*action->arguments));
+            if (action->arguments == NULL) {
+                free(action);
+                builder->failed = 1;
+                return;
+            }
+            for (size_t i = 0; i < action->argument_count; i++)
+                action->arguments[i] = builder->function->arguments[
+                    action->call.first_argument + i];
+            builder->function->argument_count =
+                action->call.first_argument;
+        }
+        builder->function->instruction_count--;
+    } else {
+        action->body = statement->body;
+    }
+    action->next = builder->cleanup_scope->actions;
+    builder->cleanup_scope->actions = action;
+}
 
 static void emit_label(IrBuilder *builder, size_t label, AstSourceSpan span) {
     IrInstruction *instruction = emit(builder, IR_OP_LABEL, span);
@@ -604,7 +724,9 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
     for (; statement != NULL && !builder->failed; statement = statement->next) {
         if (statement->kind == AST_STMT_MATCH) {
             if (statement->is_type_match) {
-                if (statement->selected_type_arm) lower_statement(builder, statement->selected_type_arm->body);
+                if (statement->selected_type_arm)
+                    lower_scoped_statement(builder,
+                                           statement->selected_type_arm->body);
                 continue;
             }
             size_t value = lower_expression(builder, statement->value);
@@ -643,7 +765,9 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
                     payload->result = new_value(builder);
                     payload->type_id = type_from_ast(builder->module, builder->program, &binding->type);
                     payload->type = ir_ast_type_data_type(builder->program, &binding->type);
-                    payload->pointer_depth = binding->type.pointer_depth + binding->type.outer_pointer_depth;
+                    payload->pointer_depth = binding->type.pointer_depth +
+                                             binding->type.outer_pointer_depth +
+                                             (binding->type.borrow_kind != AST_BORROW_NONE);
                     payload->type_name_token = binding->type.name_token;
                     payload->is_array = binding->type.is_array;
                     size_t initial = payload->result;
@@ -653,11 +777,13 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
                     local->symbol_id = binding->resolved_symbol_id;
                     local->type_id = type_from_ast(builder->module, builder->program, &binding->type);
                     local->type = ir_ast_type_data_type(builder->program, &binding->type);
-                    local->pointer_depth = binding->type.pointer_depth + binding->type.outer_pointer_depth;
+                    local->pointer_depth = binding->type.pointer_depth +
+                                           binding->type.outer_pointer_depth +
+                                           (binding->type.borrow_kind != AST_BORROW_NONE);
                     local->type_name_token = binding->type.name_token;
                     local->is_array = binding->type.is_array;
                 }
-                lower_statement(builder, arm->body);
+                lower_scoped_statement(builder, arm->body);
                 IrInstruction *jump = emit(builder, IR_OP_JUMP, arm->span);
                 if (jump) {
                     set_void_type(builder, jump);
@@ -675,7 +801,9 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
 
         if (block_terminated(builder->function)) break;
         if (statement->kind == AST_STMT_BLOCK) {
-            lower_statement(builder, statement->body);
+            lower_scoped_statement(builder, statement->body);
+        } else if (statement->kind == AST_STMT_DEFER) {
+            register_deferred_action(builder, statement);
         } else if (statement->kind == AST_STMT_VARIABLE) {
             if (statement->is_const) continue;
             size_t value = lower_expression(builder, statement->value);
@@ -693,7 +821,9 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
                                            ? type_from_expression(builder->module, builder->program, statement->value)
                                            : type_from_ast(builder->module, builder->program, &statement->type);
                 if (instruction->type_id == IR_TYPE_NONE) builder->failed = 1;
-                instruction->pointer_depth = statement->type.pointer_depth + statement->type.outer_pointer_depth;
+                instruction->pointer_depth = statement->type.pointer_depth +
+                                             statement->type.outer_pointer_depth +
+                                             (statement->type.borrow_kind != AST_BORROW_NONE);
                 instruction->type_name_token = statement->type.name_token;
                 instruction->is_array = statement->type.is_array && statement->type.outer_pointer_depth == 0;
                 instruction->is_slice = statement->type.is_slice && !statement->type.outer_pointer_depth;
@@ -726,6 +856,7 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
         } else if (statement->kind == AST_STMT_RETURN) {
             size_t value = lower_expression(builder, statement->value);
             value = coerce_slice(builder, value, builder->function->return_type_id, statement->span);
+            emit_deferred_until(builder, NULL);
             IrInstruction *instruction = emit(builder, IR_OP_RETURN, statement->span);
             if (instruction != NULL) instruction->operand_a = value;
             if (statement->value != NULL) {
@@ -739,6 +870,10 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
                                 : builder->continue_label;
             /* An unresolved target is retained for sema/diagnostic recovery;
                valid modules always resolve it to an enclosing loop label. */
+            emit_deferred_until(builder,
+                                statement->kind == AST_STMT_BREAK
+                                    ? builder->break_cleanup_stop
+                                    : builder->continue_cleanup_stop);
             IrInstruction *jump = emit(builder, IR_OP_JUMP, statement->span);
             if (jump != NULL) jump->target_a = target;
             set_void_type(builder, jump);
@@ -755,13 +890,13 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
             }
             set_void_type(builder, branch);
             emit_label(builder, then_label, statement->span);
-            lower_statement(builder, statement->body);
+            lower_scoped_statement(builder, statement->body);
             IrInstruction *jump = emit(builder, IR_OP_JUMP, statement->span);
             if (jump != NULL) jump->target_a = end_label;
             set_void_type(builder, jump);
             if (statement->else_body != NULL) {
                 emit_label(builder, else_label, statement->span);
-                lower_statement(builder, statement->else_body);
+                lower_scoped_statement(builder, statement->else_body);
             }
             emit_label(builder, end_label, statement->span);
         } else if (statement->kind == AST_STMT_WHILE || statement->kind == AST_STMT_FOR) {
@@ -773,8 +908,14 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
             size_t end_label = new_label(builder);
             size_t saved_break = builder->break_label;
             size_t saved_continue = builder->continue_label;
+            CleanupScope *saved_break_cleanup = builder->break_cleanup_stop;
+            CleanupScope *saved_continue_cleanup =
+                builder->continue_cleanup_stop;
+            CleanupScope *loop_parent_scope = builder->cleanup_scope;
             builder->break_label = end_label;
             builder->continue_label = update_label;
+            builder->break_cleanup_stop = loop_parent_scope;
+            builder->continue_cleanup_stop = loop_parent_scope;
             lower_statement(builder, statement->initializer);
             emit_label(builder, condition_label, statement->span);
             size_t condition = lower_expression(builder, statement->condition);
@@ -792,7 +933,7 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
                 set_void_type(builder, branch);
             }
             emit_label(builder, body_label, statement->span);
-            lower_statement(builder, statement->body);
+            lower_scoped_statement(builder, statement->body);
             if (statement->kind == AST_STMT_FOR) emit_label(builder, update_label, statement->span);
             lower_statement(builder, statement->else_body);
             IrInstruction *jump = emit(builder, IR_OP_JUMP, statement->span);
@@ -801,6 +942,8 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
             emit_label(builder, end_label, statement->span);
             builder->break_label = saved_break;
             builder->continue_label = saved_continue;
+            builder->break_cleanup_stop = saved_break_cleanup;
+            builder->continue_cleanup_stop = saved_continue_cleanup;
         }
     }
 }
@@ -866,7 +1009,9 @@ static int append_function(IrModule *module, const AstProgram *program,
             .symbol_id = parameter->resolved_symbol_id,
             .type = ir_ast_type_data_type(program, &parameter->type),
             .type_id = type_from_ast(module, program, &parameter->type),
-            .pointer_depth = parameter->type.pointer_depth + parameter->type.outer_pointer_depth,
+            .pointer_depth = parameter->type.pointer_depth +
+                             parameter->type.outer_pointer_depth +
+                             (parameter->type.borrow_kind != AST_BORROW_NONE),
             .type_name_token = parameter->type.name_token,
             .is_array = parameter->type.is_array && parameter->type.outer_pointer_depth == 0,
             .is_slice = parameter->type.is_slice && !parameter->type.outer_pointer_depth
@@ -880,7 +1025,7 @@ static int append_function(IrModule *module, const AstProgram *program,
         .break_label = IR_VALUE_NONE,
         .continue_label = IR_VALUE_NONE
     };
-    lower_statement(&builder, declaration->as.function.body);
+    lower_scoped_statement(&builder, declaration->as.function.body);
     if (builder.failed)
         ir_report_failure(function,
                           function->instruction_count == 0 ? IR_VALUE_NONE : function->instruction_count - 1,

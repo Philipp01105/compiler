@@ -502,8 +502,10 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                 symbol->owner_token != function->name_token ||
                 ir_ast_type_data_type(symbol->source_program, &symbol->declared_type) !=
                 parameter->type ||
-                symbol->declared_type.pointer_depth + symbol->declared_type.outer_pointer_depth != parameter->
-                pointer_depth)
+                symbol->declared_type.pointer_depth +
+                    symbol->declared_type.outer_pointer_depth +
+                    (symbol->declared_type.borrow_kind != AST_BORROW_NONE) !=
+                    parameter->pointer_depth)
                 return 0;
             if (parameter->type_id >= module->type_count) return 0;
             for (size_t previous = 0; previous < p; previous++)
@@ -680,4 +682,3 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
     }
     return 1;
 }
-

@@ -1,0 +1,9 @@
+package main;
+resource struct Resource { var value:int; }
+func consume(value:Resource) -> void {}
+func main() -> int {
+    var value:Resource;
+    var reference=&value.value;
+    consume(value);
+    return *reference;
+}

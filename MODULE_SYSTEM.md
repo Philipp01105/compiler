@@ -1,6 +1,6 @@
 # Modules, packages and imports
 
-DMM 0.3 uses one module per project, one package per directory, and one or more
+DMM 2026-09-22-dev uses one module per project, one package per directory, and one or more
 `.dmm` source files per package. Subdirectories are separate packages.
 
 ```text
@@ -20,7 +20,9 @@ package's identity. Nested module roots are excluded from the enclosing module's
 ```text
 module github.com/example/compiler
 
-dmm 0.3
+dmm 2026-09-22-dev
+
+features = []
 
 require (
     github.com/example/collections v1.2.0
@@ -28,10 +30,18 @@ require (
 ```
 
 There must be exactly one `module` directive and one `dmm` directive. Module and package paths are case-sensitive
-slash-separated identifiers. Empty components,
-`.` and `..`, backslashes and absolute paths are invalid. This compiler supports language edition `0.3`; incompatible
-editions are rejected. Dependency versions currently use `vMAJOR.MINOR.PATCH`. Duplicate requirements and malformed
-directives are rejected. `//` comments, non-nesting `/* ... */` block comments and single-line `require path version`
+slash-separated identifiers. Empty components, `.` and `..`, backslashes and absolute paths are invalid. This compiler
+supports only language edition `2026-09-22-dev`; other editions are rejected. Calendar editions must contain a real date
+as `YYYY-MM-DD`, optionally followed by `-dev`, `-pr`, `-prerelease`, `-rc`, or `-releasecandidate`. There is currently
+no backwards-compatibility mode.
+
+The optional `features = [...]` directive contains quoted experimental feature names. It may span lines, permits a
+trailing comma, and is equivalent to omission when empty. Names begin with a lowercase ASCII letter and continue with
+lowercase letters, digits, or underscores. Unknown and duplicate features are rejected. The manifest is authoritative;
+source files and normal command-line builds cannot override it.
+
+Dependency versions currently use `vMAJOR.MINOR.PATCH`. Duplicate requirements and malformed directives are rejected.
+`//` comments, non-nesting `/* ... */` block comments and single-line `require path version`
 are supported. An unclosed block comment invalidates the manifest.
 
 Package documentation lives in its enclosing module's manifest. Start a block with the exact source package name as its

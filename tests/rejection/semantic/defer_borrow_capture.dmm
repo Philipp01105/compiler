@@ -1,0 +1,8 @@
+package main;
+func main() -> int {
+    var value:int=0;
+    var reference=&mut value;
+    defer func() { *reference=1; }
+    value=2;
+    return value;
+}

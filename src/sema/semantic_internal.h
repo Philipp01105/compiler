@@ -10,6 +10,7 @@ typedef struct LocalSymbol {
     AstType type;
     size_t symbol_id;
     DataType resolved_type;
+    AstBorrowKind resolved_borrow_kind;
     unsigned resolved_pointer_depth;
     unsigned resolved_outer_pointer_depth;
     size_t resolved_named_type_token;
@@ -17,6 +18,8 @@ typedef struct LocalSymbol {
     int resolved_is_array;
     int resolved_is_slice;
     int is_constant;
+    int moved;
+    int initialized;
     size_t scope_depth;
     struct LocalSymbol *next;
 } LocalSymbol;
@@ -35,6 +38,9 @@ typedef struct {
     int storage_error_reported;
     int complexity_error_reported;
     int allocation_failed;
+    int in_destructor;
+    int in_defer_closure;
+    const AstExpression *assignment_target;
 } Analyzer;
 
 typedef struct {
@@ -107,6 +113,7 @@ size_t semantic_type_slots(const Analyzer *analyzer, const AstProgram *program,
 int assignable_expression(const Analyzer *analyzer, const AstExpression *expression);
 size_t layout_size(Analyzer *analyzer, AstType *type, size_t depth);
 const LocalSymbol *find_local(const Analyzer *analyzer, size_t name_token);
+LocalSymbol *find_local_by_symbol(Analyzer *analyzer, size_t symbol_id);
 void analyze_constant_declaration(Analyzer *analyzer, AstDeclarationNode *declaration);
 void analyze_expression(Analyzer *analyzer, AstExpression *expression);
 void collect_declarations(Analyzer *analyzer, AstProgram *program);
@@ -128,6 +135,11 @@ int expression_assignment_allowed(const Analyzer *analyzer, const AstExpression 
                                   const AstExpression *target);
 int plain_numeric_expression(const AstExpression *expression);
 int pointer_expression(const AstExpression *expression);
+int semantic_type_is_move_only(const Analyzer *analyzer, size_t type_symbol_id);
+int semantic_expression_is_move_only(const Analyzer *analyzer,
+                                     const AstExpression *expression);
+void validate_function_borrows(Analyzer *analyzer,
+                               const AstDeclarationNode *function);
 int enum_constant_expression(const Analyzer *analyzer, const AstExpression *expression);
 const SemanticSymbol *resolve_overload(const Analyzer *analyzer, const char *name,
                                        size_t owner_symbol_id, int is_static,

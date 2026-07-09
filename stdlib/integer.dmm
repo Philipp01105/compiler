@@ -11,7 +11,7 @@ pub func print_fixed_unsigned(value:u64) -> void {
     }
     position -= 1;
     digits[position] = (48.(u64) + value).(u8);
-    core.core_write(core.CORE_STDOUT, &digits[position], (20-position).(usize));
+    core.core_write(core.CORE_STDOUT, (&digits[position]).(*u8), (20-position).(usize));
 }
 pub func print_fixed_signed(value:i64) -> void {
     if (value < 0) {

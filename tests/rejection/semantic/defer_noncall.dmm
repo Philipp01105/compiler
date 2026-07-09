@@ -1,0 +1,5 @@
+package main;
+func main() -> int {
+    defer 1+2;
+    return 0;
+}
