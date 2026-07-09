@@ -130,6 +130,8 @@ typedef struct {
     size_t symbol_id;
     IrFieldDefinition *fields;
     size_t field_count;
+    unsigned type_properties;
+    int has_explicit_destructor;
 } IrAggregate;
 
 typedef struct {

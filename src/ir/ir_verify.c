@@ -429,6 +429,14 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
             structure->symbol_id >= module->semantics->symbol_count ||
             module->semantics->symbols[structure->symbol_id].kind != SEMANTIC_SYMBOL_STRUCT)
             return 0;
+        if (((structure->type_properties & SEMANTIC_TYPE_COPYABLE) != 0) ==
+            ((structure->type_properties & SEMANTIC_TYPE_MOVE_ONLY) != 0))
+            return 0;
+        if (structure->has_explicit_destructor &&
+            (structure->type_properties &
+             (SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP)) !=
+                (SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP))
+            return 0;
         for (size_t field = 0; field < structure->field_count; field++)
             if (structure->fields[field].type_id >= module->type_count ||
                 structure->fields[field].symbol_id == AST_SYMBOL_NONE)

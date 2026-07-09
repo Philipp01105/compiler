@@ -180,6 +180,8 @@ void normalize_generic_type(Analyzer *analyzer, AstType *type, unsigned depth) {
                         add_member(analyzer, v->name_token, instance->name_token, enum_type, SEMANTIC_SYMBOL_ENUM_VALUE,
                                    v, &v->resolved_symbol_id);
                 }
+                /* Late specializations must be classified before their first use. */
+                derive_type_properties(analyzer);
             }
             analyzer->program = saved;
             return;
@@ -612,4 +614,3 @@ const SemanticSymbol *explicit_generic_function(Analyzer *analyzer, const char *
     }
     return &analyzer->model->symbols[selected];
 }
-

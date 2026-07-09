@@ -1064,7 +1064,11 @@ static int append_structure(IrModule *module, const AstProgram *program,
     {
         .source_program = program,
         .name_token = declaration->name_token,
-        .symbol_id = declaration->resolved_symbol_id
+        .symbol_id = declaration->resolved_symbol_id,
+        .type_properties = semantic_symbol_type_properties(
+            module->semantics, declaration->resolved_symbol_id),
+        .has_explicit_destructor =
+            declaration->as.struct_decl.destructor != NULL
     };
     return copy_fields(module, program, declaration->as.struct_decl.fields,
                        &structure->fields, &structure->field_count);
