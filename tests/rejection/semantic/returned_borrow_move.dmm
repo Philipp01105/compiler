@@ -1,5 +1,5 @@
 package main;
-resource struct Pair { var first:int; var second:int; }
+struct Pair { var first:int; var second:int; destructor {} }
 func first(value:&Pair) -> &int { return &value.first; }
 func main() -> int {
     var pair:Pair;

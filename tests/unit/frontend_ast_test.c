@@ -61,7 +61,7 @@ int main(int argc, char **argv) {
 
     static const char resource_source[] =
         "package main;\n"
-        "resource struct File {\n"
+        "struct File {\n"
         "  var handle:int;\n"
         "  destructor { handle=0; }\n"
         "}\n"
@@ -85,7 +85,7 @@ int main(int argc, char **argv) {
     const AstStatement *deferred_call = reference == NULL ? NULL : reference->next;
     const AstStatement *deferred_closure = deferred_call == NULL ? NULL : deferred_call->next;
     if (program == NULL || !ast_validate_program(program) || resource == NULL ||
-        resource->kind != AST_DECL_STRUCT || !resource->as.struct_decl.is_resource ||
+        resource->kind != AST_DECL_STRUCT ||
         resource->as.struct_decl.destructor == NULL || inspect == NULL ||
         inspect->as.function.parameters == NULL ||
         inspect->as.function.parameters->type.borrow_kind != AST_BORROW_IMMUTABLE ||
@@ -97,7 +97,7 @@ int main(int argc, char **argv) {
         deferred_call->expression == NULL || deferred_call->body != NULL ||
         deferred_closure == NULL || deferred_closure->kind != AST_STMT_DEFER ||
         deferred_closure->expression != NULL || deferred_closure->body == NULL) {
-        fprintf(stderr, "resource/borrow/defer syntax AST is incomplete\n");
+        fprintf(stderr, "destructor/borrow/defer syntax AST is incomplete\n");
         ast_program_free(program);
         error_handler_free(errors);
         return 1;

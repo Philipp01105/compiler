@@ -96,6 +96,56 @@ static int control_flow_regressions(void) {
     return failed;
 }
 
+static int ownership_property_regressions(void) {
+    const char *source =
+        "struct File { var handle:int; destructor {} }"
+        "struct Wrapper { var file:File; }"
+        "struct Box<T> { var value:T; }"
+        "func main()->int { var copyable:Box<int>; var owned:Box<File>; return 0; }";
+    const FrontendOptions options = {0};
+    AstProgram *program = test_parse_source(source, strlen(source),
+                                            "ownership-properties.dmm", &options);
+    SemanticModel *semantics = program == NULL ? NULL : semantic_analyze(program);
+    int failed = semantics == NULL || semantics->error_count != 0;
+    int saw_file = 0, saw_wrapper = 0, saw_copyable_box = 0, saw_owned_box = 0;
+    for (size_t i = 0; semantics != NULL && i < semantics->symbol_count; i++) {
+        const SemanticSymbol *symbol = &semantics->symbols[i];
+        if (symbol->kind != SEMANTIC_SYMBOL_STRUCT || symbol->declaration == NULL)
+            continue;
+        unsigned properties = semantic_symbol_type_properties(semantics, symbol->id);
+        const AstDeclarationNode *origin = symbol->declaration->generic_origin;
+        const char *name = ast_program_lexeme(symbol->source_program, symbol->name_token);
+        if (origin == NULL && !strcmp(name, "File")) {
+            saw_file = (properties & (SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP)) ==
+                       (SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP);
+        } else if (origin == NULL && !strcmp(name, "Wrapper")) {
+            saw_wrapper = (properties & (SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP)) ==
+                          (SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP);
+        } else if (origin != NULL && !strcmp(ast_program_lexeme(symbol->source_program,
+                                                                origin->name_token), "Box")) {
+            if (properties & SEMANTIC_TYPE_MOVE_ONLY) saw_owned_box = properties & SEMANTIC_TYPE_NEEDS_DROP;
+            else saw_copyable_box = (properties & SEMANTIC_TYPE_COPYABLE) != 0 &&
+                                    (properties & SEMANTIC_TYPE_NEEDS_DROP) == 0;
+        }
+    }
+    if (!saw_file || !saw_wrapper || !saw_copyable_box || !saw_owned_box)
+        failed = 1;
+    IrModule *module = !failed ? ir_lower_program(program, semantics) : NULL;
+    int saw_ir_drop_metadata = 0;
+    for (size_t i = 0; module != NULL && i < module->structure_count; i++)
+        if (module->structures[i].has_explicit_destructor &&
+            (module->structures[i].type_properties &
+             (SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP)) ==
+                (SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP))
+            saw_ir_drop_metadata = 1;
+    if (module == NULL || !saw_ir_drop_metadata) failed = 1;
+    ir_module_free(module);
+    semantic_model_free(semantics);
+    ast_program_free(program);
+    if (failed) fprintf(stderr, "derived ownership property regression failed\n");
+    return failed;
+}
+
 static void report_expression(const AstProgram *program, const AstExpression *expression) {
     if (expression == NULL) return;
     report_expression(program, expression->left);
@@ -141,7 +191,7 @@ int main(int argc, char **argv) {
     ErrorHandler *errors = error_handler_init();
     if (errors == NULL) return 1;
     error_handler_set_global(errors);
-    int failed = control_flow_regressions();
+    int failed = control_flow_regressions() || ownership_property_regressions();
     int saw_cast = 0;
     int saw_alloc = 0;
     int saw_free = 0;

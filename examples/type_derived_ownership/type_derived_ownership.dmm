@@ -1,0 +1,26 @@
+package main;
+
+struct File {
+    var handle:int;
+
+    destructor {
+        handle=0;
+    }
+}
+
+struct Box<T> {
+    var value:T;
+}
+
+func consume(file:Box<File>) -> void {}
+
+func main() -> int {
+    var owned:Box<File>;
+    owned.value.handle=7;
+    consume(owned);
+
+    var number:Box<int>;
+    number.value=42;
+    var copy=number;
+    return copy.value-42;
+}

@@ -136,6 +136,8 @@ int expression_assignment_allowed(const Analyzer *analyzer, const AstExpression 
 int plain_numeric_expression(const AstExpression *expression);
 int pointer_expression(const AstExpression *expression);
 int semantic_type_is_move_only(const Analyzer *analyzer, size_t type_symbol_id);
+int semantic_type_needs_drop(const Analyzer *analyzer, size_t type_symbol_id);
+void derive_type_properties(Analyzer *analyzer);
 int semantic_expression_is_move_only(const Analyzer *analyzer,
                                      const AstExpression *expression);
 void validate_function_borrows(Analyzer *analyzer,

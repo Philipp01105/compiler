@@ -114,8 +114,36 @@ runtime access traps.
 Address-of accepts variables and array elements. Dereference requires a pointer. Pointer arithmetic is not part of DMM
 and is rejected.
 
-Struct arguments, assignments, and return values have by-value semantics, including nested structs and fixed arrays
-contained in structs. Struct types are nominal and cannot be assigned merely because their layouts match.
+Struct types are nominal and cannot be assigned merely because their layouts match. A struct with no destructor and
+only copyable fields is copyable; its arguments, assignments, and return values have by-value copy semantics, including
+nested structs and fixed arrays.
+
+### Derived ownership and destruction
+
+All user-defined structures use the ordinary `struct` declaration. There is no `resource struct` form. A struct may
+contain one `destructor { ... }` member. Declaring a destructor makes the type both `MOVE_ONLY` and `NEEDS_DROP`.
+These are separate semantic type properties: `COPYABLE` and `MOVE_ONLY` are mutually exclusive, while
+`NEEDS_DROP` independently records that destruction logic must run at the end of a live value's lifetime.
+
+Ownership and drop properties are derived transitively from fields. A struct is `MOVE_ONLY` when it declares a
+destructor or contains a move-only field. It is `COPYABLE` only when every field is copyable and no explicit semantic
+rule makes it move-only. A struct is `NEEDS_DROP` when it declares a destructor or contains a field that needs drop.
+Consequently a type can be `MOVE_ONLY | NEEDS_DROP`, and move-only does not by itself imply drop. Raw pointers,
+checked borrows, slices, and primitive values remain copyable non-owning values.
+
+Properties belong to concrete types. Generic aggregate specializations derive them after substitution, so
+`Box<int>` can be copyable while `Box<File>` is move-only and needs drop when `File` does.
+
+Passing, returning, or assigning a move-only value by value transfers ownership. The source becomes moved and
+uninitialized. Until a complete assignment reinitializes it, the source cannot be read, borrowed, moved again, or
+destroyed. Operations that would copy a move-only value are semantic errors.
+
+Every initialized, non-moved value with `NEEDS_DROP` is destroyed exactly once on each lifetime-ending path, including
+scope fallthrough, `return`, `break`, and `continue`. A moved-from value is not destroyed. For a struct with an
+explicit destructor, its destructor body runs first; owned fields that need drop then run in reverse declaration order.
+A struct without an explicit destructor still destroys such fields in reverse declaration order. Destructors cannot
+return or move ownership out of their receiver. Cleanup observes the same checked-borrow and field-sensitive access
+rules as ordinary code.
 
 Legacy enum member names must be unique within an enum. Legacy enum values are first-class:
 they can be stored, compared for equality, passed, and returned. Variant fields are scalar primitive types initialized
@@ -196,8 +224,9 @@ determine every type argument; a return type alone does not infer one.
 `reserve(type)` zero-initializes one complete sized non-void object and returns a pointer to that type. It accepts a
 type rather than a runtime count. `free(value)` releases a raw pointer or owned string, never a slice descriptor or
 fixed array directly. Explicit pointer-to-pointer casts such as `data.(*Node)` reinterpret the address; validity and
-alignment remain caller responsibilities. Allocations require explicit releases; `@gc` and automatic function-exit
-cleanup have been removed.
+alignment remain caller responsibilities. Raw allocations require explicit releases; `@gc` and implicit release of
+raw allocation pointers have been removed. This does not suppress type-derived destructors for initialized values with
+`NEEDS_DROP`.
 
 `stdlib/core` implements `alloc<T>() -> *T`, `alloc<T>(count:usize) -> T[]`, `null<T>() -> *T`, `release<T>(pointer:*T)`
 and `release<T>(view:T[])` in DMM over byte-region primitives. Successful allocations are zero-initialized; failure

@@ -8,33 +8,71 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int move_only_symbol(const Analyzer *analyzer, size_t symbol_id,
-                            unsigned depth) {
-    if (symbol_id >= analyzer->model->symbol_count || depth > 64) return 0;
-    const SemanticSymbol *type = &analyzer->model->symbols[symbol_id];
-    if (type->kind != SEMANTIC_SYMBOL_STRUCT || type->declaration == NULL)
-        return 0;
-    if (type->declaration->as.struct_decl.is_resource) return 1;
-    for (const AstField *field = type->declaration->as.struct_decl.fields;
-         field != NULL; field = field->next) {
-        if (field->type.borrow_kind != AST_BORROW_NONE ||
-            field->type.pointer_depth != 0 ||
-            field->type.outer_pointer_depth != 0 ||
-            field->type.is_slice)
-            continue;
-        size_t nested = resolve_named_symbol_id(
-            analyzer, type->source_program,
-            named_type_token(type->source_program, &field->type));
-        if (nested != symbol_id &&
-            move_only_symbol(analyzer, nested, depth + 1))
-            return 1;
-    }
-    return 0;
-}
-
 int semantic_type_is_move_only(const Analyzer *analyzer,
                                size_t type_symbol_id) {
-    return move_only_symbol(analyzer, type_symbol_id, 0);
+    return (semantic_symbol_type_properties(analyzer->model, type_symbol_id) &
+            SEMANTIC_TYPE_MOVE_ONLY) != 0;
+}
+
+int semantic_type_needs_drop(const Analyzer *analyzer,
+                             size_t type_symbol_id) {
+    return (semantic_symbol_type_properties(analyzer->model, type_symbol_id) &
+            SEMANTIC_TYPE_NEEDS_DROP) != 0;
+}
+
+static unsigned field_type_properties(const Analyzer *analyzer,
+                                      const AstProgram *program,
+                                      const AstType *type) {
+    if (type->borrow_kind != AST_BORROW_NONE || type->pointer_depth != 0 ||
+        type->outer_pointer_depth != 0 || type->is_slice)
+        return SEMANTIC_TYPE_COPYABLE;
+    size_t nested = resolve_named_symbol_id(
+        analyzer, program, named_type_token(program, type));
+    return semantic_symbol_type_properties(analyzer->model, nested);
+}
+
+void derive_type_properties(Analyzer *analyzer) {
+    for (size_t i = 0; i < analyzer->model->symbol_count; i++) {
+        SemanticSymbol *symbol = &analyzer->model->symbols[i];
+        if (symbol->kind != SEMANTIC_SYMBOL_STRUCT &&
+            symbol->kind != SEMANTIC_SYMBOL_ENUM)
+            continue;
+        symbol->type_properties = SEMANTIC_TYPE_COPYABLE;
+        if (symbol->kind == SEMANTIC_SYMBOL_STRUCT &&
+            symbol->declaration != NULL &&
+            symbol->declaration->as.struct_decl.destructor != NULL)
+            symbol->type_properties =
+                SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP;
+    }
+
+    int changed;
+    do {
+        changed = 0;
+        for (size_t i = 0; i < analyzer->model->symbol_count; i++) {
+            SemanticSymbol *symbol = &analyzer->model->symbols[i];
+            if ((symbol->kind != SEMANTIC_SYMBOL_STRUCT &&
+                 symbol->kind != SEMANTIC_SYMBOL_ENUM) ||
+                symbol->declaration == NULL)
+                continue;
+            unsigned derived = symbol->type_properties;
+            const AstField *field = symbol->kind == SEMANTIC_SYMBOL_STRUCT
+                                        ? symbol->declaration->as.struct_decl.fields
+                                        : symbol->declaration->as.enum_decl.fields;
+            for (; field != NULL; field = field->next) {
+                unsigned nested = field_type_properties(
+                    analyzer, symbol->source_program, &field->type);
+                if (nested & SEMANTIC_TYPE_MOVE_ONLY)
+                    derived = (derived & ~(unsigned) SEMANTIC_TYPE_COPYABLE) |
+                              SEMANTIC_TYPE_MOVE_ONLY;
+                if (nested & SEMANTIC_TYPE_NEEDS_DROP)
+                    derived |= SEMANTIC_TYPE_NEEDS_DROP;
+            }
+            if (derived != symbol->type_properties) {
+                symbol->type_properties = derived;
+                changed = 1;
+            }
+        }
+    } while (changed);
 }
 
 int semantic_expression_is_move_only(const Analyzer *analyzer,
@@ -69,13 +107,13 @@ static void consume_owned_expression(Analyzer *analyzer,
             if (local->moved)
                 semantic_error(analyzer, expression->value_token,
                                ERROR_CATEGORY_SEMANTIC, ERR_SEM_INVALID_DECLARATION,
-                               "Use of moved value");
+                       "Cannot copy or reuse move-only value after ownership was moved");
             else local->moved = 1;
         }
     } else if (expression->kind == AST_EXPR_MEMBER) {
         semantic_error(analyzer, expression->value_token,
                        ERROR_CATEGORY_SEMANTIC, ERR_SEM_INVALID_DECLARATION,
-                       "Partial moves from resource structs are not supported");
+                       "Partial moves from move-only structs are not supported");
     }
 }
 
@@ -746,6 +784,7 @@ SemanticModel *semantic_analyze(AstProgram *program) {
     collect_declarations(&analyzer, program);
     for (size_t i = 0; i < program->owned_import_count; i++)
         collect_declarations(&analyzer, program->owned_imports[i]);
+    derive_type_properties(&analyzer);
     analyzer.program = program;
     unsigned char *constant_states = calloc(program->owned_import_count + 1, 1);
     if (constant_states == NULL) {

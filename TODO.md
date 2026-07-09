@@ -68,19 +68,21 @@ required to implement these resource-safety foundations.
 
 ### Ownership and resource lifetime
 
-Accepted P1 design: owned resources are move-only, ordinary values remain copyable when all their contents are copyable,
-and borrows are checked conservatively without general lifetime parameters. Mutable borrows are exclusive and borrowing
-is field-sensitive when disjointness is provable.
+Accepted P1 design: ownership is derived from concrete types. A destructor makes an ordinary `struct` move-only and
+in need of destruction; both properties propagate through fields. Ordinary values remain copyable when all their
+contents are copyable. Borrows are checked conservatively without general lifetime parameters. Mutable borrows are
+exclusive and borrowing is field-sensitive when disjointness is provable.
 
-- [x] Add explicit `resource struct` declarations, implicit moves, transitive move-only struct classification,
-  reinitialization after a move, use-after-move diagnostics, and an initial ban on partial moves.
+- [x] Add explicit `COPYABLE`, `MOVE_ONLY`, and independent `NEEDS_DROP` type properties; derive them from normal
+  struct destructors and concrete field types (including generic specializations); add implicit moves, reinitialization
+  after a move, use-after-move diagnostics, and an initial ban on partial moves.
 - [x] Add checked `&T` / `&mut T` types, explicit borrow expressions, explicit checked-reference-to-`*T` casts,
   field-sensitive conflict checking, conservative last-use lifetimes, and deferred-closure borrow retention.
 - [x] Restrict borrowed returns to one statically provable borrowed-parameter or package-storage origin; reject checked
   references in aggregate and package-variable storage where their lifetime cannot be expressed.
 - [x] Lower LIFO `defer` calls and anonymous bodies on scope fallthrough, `return`, `break`, and `continue`;
   deferred calls capture evaluated operands and deferred anonymous bodies capture locals by reference.
-- [ ] Lower resource destructors and recursive owned-field/array-element destruction in the specified reverse order,
+- [ ] Finish backend lowering for destructors and recursive owned-field/array-element destruction in reverse order,
   suppress destruction of moved-from values, and add normal package/process cleanup.
 - [ ] Extend ownership state merging across all branches, loops, enum payloads, arrays, generic substitutions, and
   interface conversions; diagnose every invalid copy and double release.

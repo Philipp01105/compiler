@@ -262,9 +262,6 @@ static int dump_declaration(FILE *output, const AstProgram *program,
     if (declaration->kind == AST_DECL_FUNCTION &&
         fprintf(output, " static=%d", declaration->as.function.is_static) < 0)
         return 0;
-    if (declaration->kind == AST_DECL_STRUCT &&
-        fprintf(output, " resource=%d", declaration->as.struct_decl.is_resource) < 0)
-        return 0;
     if (declaration->kind == AST_DECL_IMPORT) {
         if (fputs(" paths=[", output) == EOF) return 0;
         for (const AstImportPath *path = declaration->as.import_decl.paths; path != NULL; path = path->next) {

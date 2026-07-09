@@ -86,6 +86,12 @@ content-correct. Local symbols are scoped before IR lowering. Expression annotat
 depth, named type symbol, array state, and referenced symbol. Backend emission therefore does not decide whether source
 operations are legal.
 
+Concrete struct symbols also carry explicit `COPYABLE` or `MOVE_ONLY` ownership metadata plus the independent
+`NEEDS_DROP` bit. Semantic analysis derives these properties to a fixed point from an explicit destructor and the
+properties of concrete field types. Generic templates do not receive a single guessed classification: each specialized
+aggregate is classified after type substitution. Move and borrow analysis query this metadata rather than rediscovering
+ownership rules at individual expressions.
+
 ## Typed IR
 
 IR types are primitive, named, pointer, fixed-array, or slice types. Instructions cover constants,
@@ -137,8 +143,11 @@ implemented in DMM. See [CORE_RUNTIME.md](CORE_RUNTIME.md).
 
 Runtime calls remain typed `IR_OP_CALL` instructions. Allocation/release and string concatenation call compiler-owned
 routines; bounds checks remain backend operations.
-`stdlib/io.dmm` builds higher-level I/O from typed runtime calls, while
-`print`/`println` are ordinary DMM overloads. There is no automatic cleanup.
+`stdlib/io.dmm` builds higher-level I/O from typed runtime calls, while `print`/`println` are ordinary DMM
+overloads. Raw allocation pointers are explicitly released. Type-derived cleanup is inserted for initialized
+`NEEDS_DROP` locals on every lifetime-ending edge and skips moved values. Aggregate drop glue runs an explicit
+destructor body first, then recursively drops owned fields in reverse declaration order; the same field phase is
+generated for aggregates without an explicit destructor.
 
 `ir_verify_control_flow` builds basic blocks with explicit and fallthrough edges, computes entry reachability and
 dominators, and checks that ordinary values are available at their uses. PHIs must begin a labeled join and name its two

@@ -238,7 +238,7 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                 if (local->moved && analyzer->assignment_target != expression)
                     semantic_error(analyzer, expression->value_token,
                                    ERROR_CATEGORY_SEMANTIC, ERR_SEM_INVALID_DECLARATION,
-                                   "Use of moved value");
+                                   "Cannot read, borrow, copy, or move a value after ownership was moved");
                 expression->resolved_type = local->resolved_type;
                 expression->resolved_borrow_kind = local->resolved_borrow_kind;
                 expression->resolved_pointer_depth = local->resolved_pointer_depth;

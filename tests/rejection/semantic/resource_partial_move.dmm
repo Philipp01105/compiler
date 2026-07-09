@@ -1,6 +1,6 @@
 package main;
-resource struct Inner { var value:int; }
-resource struct Outer { var inner:Inner; }
+struct Inner { var value:int; destructor {} }
+struct Outer { var inner:Inner; }
 func main() -> int {
     var outer:Outer;
     var inner=outer.inner;

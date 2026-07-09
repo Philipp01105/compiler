@@ -1,1 +1,1 @@
-Use of moved value
+Cannot read, borrow, copy, or move a value after ownership was moved

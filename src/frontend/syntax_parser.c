@@ -1068,9 +1068,8 @@ static AstField *parse_field(SyntaxParser *parser) {
     return field;
 }
 
-static AstDeclarationNode *parse_struct(SyntaxParser *parser, int is_resource) {
+static AstDeclarationNode *parse_struct(SyntaxParser *parser) {
     size_t first = parser->current;
-    if (is_resource) (void) consume(parser, TOKEN_KEYWORD_RESOURCE);
     (void) consume(parser, TOKEN_KEYWORD_STRUCT);
     AstDeclarationNode *declaration = new_declaration(parser, AST_DECL_STRUCT, first);
     size_t name = consume(parser, TOKEN_IDENTIFIER);
@@ -1084,10 +1083,9 @@ static AstDeclarationNode *parse_struct(SyntaxParser *parser, int is_resource) {
     AstStatement *destructor = NULL;
     while (!parser->failed && !check(parser, TOKEN_RBRACE) && !check(parser, TOKEN_EOF)) {
         if (check(parser, TOKEN_KEYWORD_DESTRUCTOR)) {
-            if (!is_resource || destructor != NULL) {
+            if (destructor != NULL) {
                 parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
-                               is_resource ? "A resource struct may declare only one destructor"
-                                           : "Only resource structs may declare a destructor");
+                               "A struct may declare only one destructor");
                 break;
             }
             parser->current++;
@@ -1116,7 +1114,6 @@ static AstDeclarationNode *parse_struct(SyntaxParser *parser, int is_resource) {
         declaration->as.struct_decl.fields = fields;
         declaration->as.struct_decl.methods = methods;
         declaration->as.struct_decl.destructor = destructor;
-        declaration->as.struct_decl.is_resource = is_resource;
     }
     finish_declaration(parser, declaration);
     return declaration;
@@ -1326,8 +1323,7 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
         else if (check(&parser, TOKEN_KEYWORD_VAR)) declaration = parse_constant(&parser);
         else if (check(&parser, TOKEN_KEYWORD_FUNC))
             declaration = parse_function(&parser, 0, AST_TOKEN_NONE);
-        else if (check(&parser, TOKEN_KEYWORD_STRUCT)) declaration = parse_struct(&parser, 0);
-        else if (check(&parser, TOKEN_KEYWORD_RESOURCE)) declaration = parse_struct(&parser, 1);
+        else if (check(&parser, TOKEN_KEYWORD_STRUCT)) declaration = parse_struct(&parser);
         else if (check(&parser, TOKEN_KEYWORD_ENUM)) declaration = parse_enum(&parser);
         else if (check(&parser, TOKEN_KEYWORD_INTERFACE)) declaration = parse_interface(&parser);
         else if (check(&parser, TOKEN_KEYWORD_PACKAGE))
@@ -1348,7 +1344,7 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
             while (!check(&parser, TOKEN_EOF)) {
                 TokenType token = current_type(&parser);
                 if (braces <= 0 && parser.current > first &&
-                    (token == TOKEN_KEYWORD_FUNC || token == TOKEN_KEYWORD_STRUCT || token == TOKEN_KEYWORD_RESOURCE ||
+                    (token == TOKEN_KEYWORD_FUNC || token == TOKEN_KEYWORD_STRUCT ||
                      token == TOKEN_KEYWORD_ENUM || token == TOKEN_KEYWORD_INTERFACE ||
                      token == TOKEN_KEYWORD_IMPORT || token == TOKEN_KEYWORD_CONST))
                     break;

@@ -1,1 +1,1 @@
-Partial moves from resource structs are not supported
+Partial moves from move-only structs are not supported

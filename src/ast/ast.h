@@ -226,7 +226,6 @@ struct AstDeclarationNode {
             AstField *fields;
             AstDeclarationNode *methods;
             AstStatement *destructor;
-            int is_resource;
         } struct_decl;
 
         struct {

@@ -280,8 +280,6 @@ static int valid_declarations(const AstProgram *program) {
         } else if (declaration->kind == AST_DECL_STRUCT) {
             if (!valid_token(program, declaration->name_token) ||
                 !valid_fields(program, declaration->as.struct_decl.fields) ||
-                (!declaration->as.struct_decl.is_resource &&
-                 declaration->as.struct_decl.destructor != NULL) ||
                 (declaration->as.struct_decl.destructor != NULL &&
                  !valid_statement(program, declaration->as.struct_decl.destructor)))
                 return 0;

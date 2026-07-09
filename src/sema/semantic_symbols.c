@@ -123,6 +123,17 @@ int semantic_append_symbol(SemanticModel *model, SemanticSymbol symbol) {
     return index_symbol(model, symbol.id);
 }
 
+unsigned semantic_symbol_type_properties(const SemanticModel *model,
+                                         size_t type_symbol_id) {
+    if (model == NULL || type_symbol_id >= model->symbol_count)
+        return SEMANTIC_TYPE_COPYABLE;
+    const SemanticSymbol *symbol = &model->symbols[type_symbol_id];
+    if (symbol->kind != SEMANTIC_SYMBOL_STRUCT &&
+        symbol->kind != SEMANTIC_SYMBOL_ENUM)
+        return SEMANTIC_TYPE_COPYABLE;
+    return symbol->type_properties;
+}
+
 static const SemanticSymbol *indexed_find(const SemanticModel *model, const AstProgram *file,
                                           const DmmPackage *package, const char *name, SemanticSymbolKind kind) {
     if (model->symbol_index_capacity == 0) return NULL;
@@ -228,8 +239,13 @@ int semantic_dump(FILE *output, const SemanticModel *model) {
         if (symbol->resolved_named_symbol_id == AST_SYMBOL_NONE) {
             if (fputc('-', output) == EOF) return 0;
         } else if (fprintf(output, "%zu", symbol->resolved_named_symbol_id) < 0) return 0;
-        if (fprintf(output, " array=%d slice=%d declaration=%d\n", symbol->resolved_is_array,
-                    symbol->resolved_is_slice, symbol->declaration != NULL) < 0)
+        if (fprintf(output, " array=%d slice=%d declaration=%d properties=%s%s\n",
+                    symbol->resolved_is_array, symbol->resolved_is_slice,
+                    symbol->declaration != NULL,
+                    (symbol->type_properties & SEMANTIC_TYPE_MOVE_ONLY)
+                        ? "MOVE_ONLY" : "COPYABLE",
+                    (symbol->type_properties & SEMANTIC_TYPE_NEEDS_DROP)
+                        ? "|NEEDS_DROP" : "") < 0)
             return 0;
     }
     return !ferror(output);

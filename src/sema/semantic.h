@@ -19,6 +19,16 @@ typedef enum {
     SEMANTIC_SYMBOL_CONSTANT, SEMANTIC_SYMBOL_VARIABLE
 } SemanticSymbolKind;
 
+/*
+ * Ownership and destruction are properties of a concrete semantic type.
+ * COPYABLE and MOVE_ONLY are mutually exclusive. NEEDS_DROP is orthogonal.
+ */
+typedef enum {
+    SEMANTIC_TYPE_COPYABLE = 1u << 0,
+    SEMANTIC_TYPE_MOVE_ONLY = 1u << 1,
+    SEMANTIC_TYPE_NEEDS_DROP = 1u << 2
+} SemanticTypeProperties;
+
 typedef struct {
     size_t id;
     const AstProgram *source_program;
@@ -38,6 +48,7 @@ typedef struct {
     const AstDeclarationNode *declaration;
     const void *node;
     size_t scope_depth;
+    unsigned type_properties;
 } SemanticSymbol;
 
 typedef struct {
@@ -69,5 +80,7 @@ const SemanticSymbol *semantic_find_global(const SemanticModel *model,
 
 const SemanticSymbol *semantic_find_in_package(const SemanticModel *model, const AstProgram *file,
                                                const char *name, SemanticSymbolKind kind);
+
+unsigned semantic_symbol_type_properties(const SemanticModel *model, size_t type_symbol_id);
 
 #endif

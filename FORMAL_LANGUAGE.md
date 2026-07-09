@@ -36,7 +36,8 @@ keyword         = "func" | "var" | "return" | "for" | "if" | "else"
                 | "while" | "const" | "break" | "continue"
                 | "struct" | "enum" | "import" | "static" | "reserve"
                 | "free" | "interface" | "match" | "package" | "pub"
-                | "sizeof" | "alignof" | "slice" | "case" | "typeof" ;
+                | "sizeof" | "alignof" | "slice" | "case" | "typeof"
+                | "destructor" | "defer" | "mut" ;
 
 primitive-type  = "int" | "char" | "byte" | "bit"
                 | "float" | "double" | "string" | "void"
@@ -84,7 +85,9 @@ Struct and enum members use the same function and variable declaration forms acc
 ```ebnf
 struct-declaration
                 = "struct", identifier, [generic-parameters], "{", { struct-member }, "}" ;
-struct-member   = ["pub"], (field-declaration | ["static"], function-declaration) ;
+struct-member   = ["pub"], (field-declaration | ["static"], function-declaration)
+                | destructor-declaration ;
+destructor-declaration = "destructor", block ;
 field-declaration
                 = "var", identifier, ":", type, ";" ;
 

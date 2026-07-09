@@ -1,8 +1,9 @@
 package main;
 
-resource struct Pair {
+struct Pair {
     var first:int;
     var second:int;
+    destructor {}
 }
 
 func main() -> int {

@@ -22,6 +22,7 @@ for `build`.
 | [read_demo.dmm](read_demo/read_demo.dmm)                                  | Interactive formatted input                                                                                                    |
 | [read_function_guide.dmm](read_function_guide/read_function_guide.dmm)    | Formatted read usage and supported formats                                                                                     |
 | [io_demo.dmm](io_demo/io_demo.dmm)                                        | Stream output, buffered user input, buffered file writing and read-back with explicit ownership                                |
+| [type_derived_ownership.dmm](type_derived_ownership/type_derived_ownership.dmm) | Destructor-derived move-only semantics, transitive generic ownership, and a copyable `Box<int>` specialization            |
 
 The game and calculator demos use scripted inputs. The input/read demos prompt for input. Heap allocations and
 concatenated strings remain explicitly owned; copying a container does not release or duplicate an allocation.

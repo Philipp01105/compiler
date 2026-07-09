@@ -1,5 +1,5 @@
 package main;
-resource struct Resource { var value:int; }
+struct Resource { var value:int; destructor {} }
 func main() -> int {
     var first:Resource;
     var second=first;
