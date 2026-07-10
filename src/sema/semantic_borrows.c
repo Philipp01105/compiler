@@ -9,6 +9,7 @@ typedef struct BorrowRecord {
     size_t field_symbol;
     size_t borrower_symbol;
     AstBorrowKind kind;
+    int slice_view;
     size_t scope_depth;
     int active;
     struct BorrowRecord *next;
@@ -243,9 +244,11 @@ static void check_place_access(BorrowChecker *checker,
          borrow = borrow->next) {
         if (!borrow->active ||
             !places_overlap(place.owner, place.field,
-                            borrow->owner_symbol, borrow->field_symbol))
+                             borrow->owner_symbol, borrow->field_symbol))
             continue;
         if (access == BORROW_ACCESS_WRITE) {
+            if (borrow->slice_view && expression->kind == AST_EXPR_INDEX)
+                continue;
             report_borrow_error(checker, expression->first_token,
                                 "Cannot modify or move a value while it is borrowed");
             return;
@@ -271,7 +274,9 @@ static void check_new_borrow(BorrowChecker *checker,
          borrow = borrow->next) {
         if (!borrow->active || borrow == place.through ||
             !places_overlap(place.owner, place.field,
-                            borrow->owner_symbol, borrow->field_symbol))
+                             borrow->owner_symbol, borrow->field_symbol))
+            continue;
+        if (borrow->slice_view && borrow_expression->right->kind == AST_EXPR_INDEX)
             continue;
         if (kind == AST_BORROW_MUTABLE ||
             borrow->kind == AST_BORROW_MUTABLE) {
@@ -347,7 +352,11 @@ static BorrowRecord *add_borrow(BorrowChecker *checker,
                                 size_t borrower_symbol,
                                 const AstExpression *value,
                                 size_t scope_depth) {
-    if (value == NULL || value->resolved_borrow_kind == AST_BORROW_NONE)
+    if (value == NULL)
+        return NULL;
+    int slice_view = value->resolved_is_slice &&
+                     value->resolved_borrow_kind == AST_BORROW_NONE;
+    if (!slice_view && value->resolved_borrow_kind == AST_BORROW_NONE)
         return NULL;
     BorrowPlace place;
     const AstExpression *origin = value;
@@ -370,7 +379,9 @@ static BorrowRecord *add_borrow(BorrowChecker *checker,
     borrow->owner_symbol = place.owner;
     borrow->field_symbol = place.field;
     borrow->borrower_symbol = borrower_symbol;
-    borrow->kind = value->resolved_borrow_kind;
+    borrow->kind = slice_view ? AST_BORROW_IMMUTABLE
+                              : value->resolved_borrow_kind;
+    borrow->slice_view = slice_view;
     borrow->scope_depth = scope_depth;
     borrow->active = 1;
     borrow->next = checker->borrows;

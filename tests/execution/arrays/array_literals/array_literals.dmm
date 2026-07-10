@@ -49,4 +49,10 @@ func main() -> void {
     var reassigned:int[] = [1, 2];
     reassigned = [5, 6, 7];
     stdlib.println(reassigned[2]);
+
+    var ownerAfterView:int[] = [8, 9];
+    var finishedView:int[] = ownerAfterView;
+    stdlib.println(finishedView[0]);
+    ownerAfterView = [2, 4];
+    stdlib.println(ownerAfterView[1]);
 }

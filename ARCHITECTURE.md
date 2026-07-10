@@ -124,7 +124,9 @@ scalar values use eight-byte virtual slots while indirect memory operations hono
 Contextually typed array literals lower to `array-literal` IR with an explicit pattern and final element count. Fixed
 arrays materialize inline. Slice literals materialize a two-word non-owning view plus hidden backing: local and returned
 backings use heap storage with explicit `free-slice-backing` cleanup/ownership transfer, call temporaries live through
-the call, and package literals reference static package-lifetime backing.
+the call, and package literals reference static package-lifetime backing. The borrow pass records local slice copies as
+storage-preserving views: replacing their backing owner is rejected until the copied view's conservative last use,
+while indexed element access remains valid because it does not invalidate the backing address.
 
 System V classifies integer and SSE arguments independently and spills overflow arguments in source order. Windows x64
 uses positional registers and shadow space. Platform I/O shims live in the standalone runtime generator. Both targets
