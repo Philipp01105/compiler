@@ -86,11 +86,16 @@ content-correct. Local symbols are scoped before IR lowering. Expression annotat
 depth, named type symbol, array state, and referenced symbol. Backend emission therefore does not decide whether source
 operations are legal.
 
-Concrete struct symbols also carry explicit `COPYABLE` or `MOVE_ONLY` ownership metadata plus the independent
+Concrete struct and enum symbols also carry explicit `COPYABLE` or `MOVE_ONLY` ownership metadata plus the independent
 `NEEDS_DROP` bit. Semantic analysis derives these properties to a fixed point from an explicit destructor and the
-properties of concrete field types. Generic templates do not receive a single guessed classification: each specialized
+properties of concrete field and variant-payload types. Generic templates do not receive a single guessed classification: each specialized
 aggregate is classified after type substitution. Move and borrow analysis query this metadata rather than rediscovering
 ownership rules at individual expressions.
+
+A dedicated ownership dataflow pass tracks live, moved, and uninitialized local owners. It merges branch and match-arm
+states, validates loop backedges and `break`/`continue` exits, and applies concrete specialization properties to calls,
+arrays, and enum construction. Interface storage remains copyable, so the semantic layer rejects erasure of a move-only
+concrete value rather than losing its ownership state.
 
 ## Typed IR
 
@@ -155,7 +160,8 @@ overloads. Raw allocation pointers are explicitly released. Concrete aggregate d
 the ownership bits are coherent. Lowering emits explicit `drop`, `move`, and `reinit` ownership effects. Local
 initialization flags make cleanup path-sensitive, and the existing cleanup stack emits drops on fallthrough, `return`,
 `break`, and `continue`. Compiler-generated drop glue runs an explicit destructor body first and then recursively drops
-owned fields and fixed-array elements in reverse declaration order. By-value owning parameters use the same flags and
+owned fields and fixed-array elements in reverse declaration order. Enum drop glue tests the active tag and drops only
+that variant's owned payloads in reverse payload order. By-value owning parameters use the same flags and
 are destroyed by the callee. The main package also receives a synthetic cleanup function: it drops initialized
 `NEEDS_DROP` globals in reverse declaration order, and startup invokes it after `main` returns while preserving the
 exit status. Package owners have companion initialization flags so reassignment and cleanup remain exactly once.

@@ -6,6 +6,31 @@ struct Pair {
     destructor {}
 }
 
+func branchRoundTrip(condition:int) -> int {
+    var pair:Pair;
+    pair.first=3;
+    pair.second=4;
+    if (condition) {
+        var moved=pair;
+        pair=moved;
+    } else {
+        var moved=pair;
+        pair=moved;
+    }
+    return pair.first+pair.second;
+}
+
+func loopRoundTrip() -> int {
+    var pair:Pair;
+    pair.first=5;
+    pair.second=6;
+    for (var index:int=0; index<2; index++) {
+        var moved=pair;
+        pair=moved;
+    }
+    return pair.first+pair.second;
+}
+
 func main() -> int {
     var pair:Pair;
     pair.first=1;
@@ -22,5 +47,5 @@ func main() -> int {
 
     var moved=pair;
     pair=moved;
-    return pair.first+pair.second-33;
+    return pair.first+pair.second+branchRoundTrip(0)+branchRoundTrip(1)+loopRoundTrip()-58;
 }

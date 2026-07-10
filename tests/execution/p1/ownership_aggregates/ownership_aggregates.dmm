@@ -1,0 +1,31 @@
+package main;
+import "stdlib";
+
+struct Resource {
+    var value:int;
+    destructor { stdlib.println(value); }
+}
+
+enum Holder { Empty, Pair(Resource, Resource) }
+
+func dropArray() -> void {
+    var first:Resource;
+    first.value=1;
+    var second:Resource;
+    second.value=2;
+    var values:Resource[2]=[first, second];
+}
+
+func dropEnum() -> void {
+    var first:Resource;
+    first.value=3;
+    var second:Resource;
+    second.value=4;
+    var holder:Holder=Holder.Pair(first, second);
+}
+
+func main() -> int {
+    dropArray();
+    dropEnum();
+    return 0;
+}

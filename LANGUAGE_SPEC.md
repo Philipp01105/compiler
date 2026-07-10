@@ -147,9 +147,10 @@ contain one `destructor { ... }` member. Declaring a destructor makes the type b
 These are separate semantic type properties: `COPYABLE` and `MOVE_ONLY` are mutually exclusive, while
 `NEEDS_DROP` independently records that destruction logic must run at the end of a live value's lifetime.
 
-Ownership and drop properties are derived transitively from fields. A struct is `MOVE_ONLY` when it declares a
-destructor or contains a move-only field. It is `COPYABLE` only when every field is copyable and no explicit semantic
+Ownership and drop properties are derived transitively from fields and enum variant payloads. A struct is `MOVE_ONLY`
+when it declares a destructor or contains a move-only field. It is `COPYABLE` only when every field is copyable and no explicit semantic
 rule makes it move-only. A struct is `NEEDS_DROP` when it declares a destructor or contains a field that needs drop.
+An enum is move-only or needs drop when any of its variant payloads has the corresponding property.
 Consequently a type can be `MOVE_ONLY | NEEDS_DROP`, and move-only does not by itself imply drop. Raw pointers,
 checked borrows, slices, and primitive values remain copyable non-owning values.
 
@@ -160,12 +161,22 @@ Passing, returning, or assigning a move-only value by value transfers ownership.
 uninitialized. Until a complete assignment reinitializes it, the source cannot be read, borrowed, moved again, or
 destroyed. Operations that would copy a move-only value are semantic errors.
 
+Ownership state is path-sensitive. Branch and `match` joins merge the possible live, moved, and uninitialized states.
+A loop may carry a move-only owner across its backedge only when every continuing iteration leaves that owner live; a
+consumed owner must therefore be completely reassigned before the next iteration. Fixed arrays inherit their element
+ownership properties, array literals move move-only elements into their result, and repetition syntax cannot duplicate
+a move-only pattern element. Erasing a move-only concrete value into a copyable interface container is rejected.
+
 Every initialized, non-moved value with `NEEDS_DROP` is destroyed exactly once on each lifetime-ending path, including
 scope fallthrough, `return`, `break`, and `continue`. A moved-from value is not destroyed. For a struct with an
 explicit destructor, its destructor body runs first; owned fields that need drop then run in reverse declaration order.
 A struct without an explicit destructor still destroys such fields in reverse declaration order. Destructors cannot
 return or move ownership out of their receiver. Cleanup observes the same checked-borrow and field-sensitive access
 rules as ordinary code.
+
+An enum that needs drop destroys only the active variant's owned payloads, in reverse payload order. Constructing such
+an enum transfers move-only payload arguments into it. Match payload bindings currently copy extracted payloads, so a
+move-only payload binding is rejected until consuming patterns are available.
 
 Package variables with `NEEDS_DROP` remain live until normal executable termination. After `main` returns, the
 runtime invokes compiler-generated package cleanup, which destroys initialized package owners exactly once in reverse
@@ -174,8 +185,9 @@ value initialized. Moving ownership out of package storage is rejected because a
 soundly represent package-wide moved state. The immediate `exit` intrinsic and abnormal process termination bypass
 normal package cleanup.
 
-Current implementation status: semantic ownership classification, move/reinitialization checks, checked borrows,
-generic-specialization propagation, typed-IR ownership effects, initialization flags, and native destructor/drop glue
+Current implementation status: semantic ownership classification, control-flow ownership-state merging,
+move/reinitialization checks, checked borrows, generic-specialization propagation, typed-IR ownership effects,
+initialization flags, and native struct/enum drop glue
 are implemented. Local and by-value-parameter cleanup covers scope fallthrough, `return`, `break`, and `continue`;
 recursive struct-field and fixed-array-element destruction is emitted in reverse order. Package storage participates in
 exactly-once cleanup after a normal return from `main`.

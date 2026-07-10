@@ -901,6 +901,10 @@ static int emit_ownership_effect(Emitter *emitter,
         return 1;
     }
     if (instruction->opcode != IR_OP_DROP) return 0;
+    if (instruction->operand_a != IR_VALUE_NONE) {
+        write_value_load(emitter, "rax", instruction->operand_a);
+        return emit_drop_type(emitter, instruction->type_id);
+    }
     if (declaration != NULL) {
         char skip[96];
         snprintf(skip, sizeof(skip), ".LIR_drop_skip_%zu_%zu",

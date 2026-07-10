@@ -609,7 +609,8 @@ int expression_assignment_allowed(const Analyzer *analyzer,
             !source_depth && !target_depth && !target->resolved_is_array &&
             !target->resolved_is_slice && !source->resolved_is_array && !source->resolved_is_slice &&
             semantic_implements_interface(analyzer->model, target->resolved_named_symbol_id,
-                                source->resolved_named_symbol_id)) return 1;
+                                source->resolved_named_symbol_id))
+            return !semantic_expression_is_move_only(analyzer, source);
     if (target->resolved_named_symbol_id != AST_SYMBOL_NONE ||
         source->resolved_named_symbol_id != AST_SYMBOL_NONE)
         return target->resolved_named_symbol_id != AST_SYMBOL_NONE &&

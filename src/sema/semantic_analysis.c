@@ -149,6 +149,23 @@ void derive_type_properties(Analyzer *analyzer) {
                 if (nested & SEMANTIC_TYPE_NEEDS_DROP)
                     derived |= SEMANTIC_TYPE_NEEDS_DROP;
             }
+            if (symbol->kind == SEMANTIC_SYMBOL_ENUM) {
+                for (const AstEnumValue *value =
+                         symbol->declaration->as.enum_decl.values;
+                     value != NULL; value = value->next) {
+                    for (const AstTypeArgument *payload = value->payload_types;
+                         payload != NULL; payload = payload->next) {
+                        unsigned nested = field_type_properties(
+                            analyzer, symbol->source_program, &payload->type);
+                        if (nested & SEMANTIC_TYPE_MOVE_ONLY)
+                            derived =
+                                (derived & ~(unsigned) SEMANTIC_TYPE_COPYABLE) |
+                                SEMANTIC_TYPE_MOVE_ONLY;
+                        if (nested & SEMANTIC_TYPE_NEEDS_DROP)
+                            derived |= SEMANTIC_TYPE_NEEDS_DROP;
+                    }
+                }
+            }
             if (derived != symbol->type_properties) {
                 symbol->type_properties = derived;
                 changed = 1;
@@ -188,13 +205,7 @@ static void consume_owned_expression(Analyzer *analyzer,
     if (expression->kind == AST_EXPR_NAME) {
         LocalSymbol *local =
             find_local_by_symbol(analyzer, expression->resolved_symbol_id);
-        if (local != NULL) {
-            if (local->moved)
-                semantic_error(analyzer, expression->value_token,
-                               ERROR_CATEGORY_SEMANTIC, ERR_SEM_INVALID_DECLARATION,
-                       "Cannot copy or reuse move-only value after ownership was moved");
-            else local->moved = 1;
-        } else if (expression->resolved_symbol_id <
+        if (local == NULL && expression->resolved_symbol_id <
                        analyzer->model->symbol_count &&
                    analyzer->model->symbols[
                        expression->resolved_symbol_id].kind ==
@@ -361,6 +372,13 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                         for (; p && binding; p = p->next, binding = binding->next) {
                             binding->type = argument_type_copy(analyzer, enum_unit, p->type);
                             validate_array_shape(analyzer, &binding->type);
+                            if ((field_type_properties(analyzer, analyzer->program,
+                                                       &binding->type) &
+                                 SEMANTIC_TYPE_MOVE_ONLY) != 0)
+                                semantic_error(analyzer, binding->name_token,
+                                               ERROR_CATEGORY_SEMANTIC,
+                                               ERR_SEM_INVALID_DECLARATION,
+                                               "Move-only enum payload bindings require consuming pattern support");
                             for (const LocalSymbol *existing = analyzer->locals; existing != saved;
                                  existing = existing->next)
                                 if (same_name(analyzer->program, existing->name_token,
@@ -535,9 +553,24 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
             if (statement->kind == AST_STMT_ASSIGNMENT && statement->expression != NULL &&
                 statement->value != NULL &&
                 !expression_assignment_allowed(analyzer, statement->value,
-                                               statement->expression))
-                conversion_error(analyzer, statement->value, NULL, NULL, statement->expression,
-                                 "Cannot implicitly convert assigned value");
+                                               statement->expression)) {
+                if (statement->expression->kind == AST_EXPR_INDEX &&
+                    statement->expression->resolved_named_symbol_id < analyzer->model->symbol_count &&
+                    analyzer->model->symbols[statement->expression->resolved_named_symbol_id].kind ==
+                        SEMANTIC_SYMBOL_INTERFACE &&
+                    semantic_implements_interface(analyzer->model,
+                        statement->expression->resolved_named_symbol_id,
+                        statement->value->resolved_named_symbol_id) &&
+                    semantic_expression_is_move_only(analyzer, statement->value))
+                    semantic_error(analyzer, statement->value->first_token,
+                                   ERROR_CATEGORY_SEMANTIC,
+                                   ERR_SEM_INVALID_DECLARATION,
+                                   "Cannot erase a move-only value into a copyable interface");
+                else
+                    conversion_error(analyzer, statement->value, NULL, NULL,
+                                     statement->expression,
+                                     "Cannot implicitly convert assigned value");
+            }
             if (statement->kind == AST_STMT_ASSIGNMENT &&
                 statement->assignment_operator == TOKEN_EQUAL) {
                 consume_owned_expression(analyzer, statement->value);
@@ -708,6 +741,7 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
         if (local != NULL) parameter->resolved_symbol_id = local->symbol_id;
     }
     analyze_statement(analyzer, function->as.function.body);
+    validate_function_ownership(analyzer, function);
     validate_function_borrows(analyzer, function);
     DataType return_type = primitive_type(analyzer->program,
                                           &function->as.function.return_type);

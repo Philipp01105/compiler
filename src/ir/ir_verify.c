@@ -323,9 +323,15 @@ static int verify_instruction_types(const IrModule *module,
             return 1;
         }
         case IR_OP_DROP:
-            return instruction->symbol_id < module->semantics->symbol_count &&
-                   (ir_type_properties(module, instruction->type_id) &
-                    SEMANTIC_TYPE_NEEDS_DROP) != 0;
+            if ((ir_type_properties(module, instruction->type_id) &
+                 SEMANTIC_TYPE_NEEDS_DROP) == 0)
+                return 0;
+            if (instruction->operand_a != IR_VALUE_NONE) {
+                const IrInstruction *value = verified_producer(
+                    function, producers, instruction->operand_a, index);
+                return value != NULL && value->type_id == instruction->type_id;
+            }
+            return instruction->symbol_id < module->semantics->symbol_count;
         case IR_OP_MOVE:
             return instruction->symbol_id < module->semantics->symbol_count &&
                    (ir_type_properties(module, instruction->type_id) &
@@ -517,9 +523,11 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                    (!function->is_drop_glue &&
                     module->semantics->symbols[function->symbol_id].kind !=
                     SEMANTIC_SYMBOL_FUNCTION) ||
-                   (function->is_drop_glue &&
-                    module->semantics->symbols[function->symbol_id].kind !=
-                    SEMANTIC_SYMBOL_STRUCT) ||
+                    (function->is_drop_glue &&
+                     module->semantics->symbols[function->symbol_id].kind !=
+                         SEMANTIC_SYMBOL_STRUCT &&
+                     module->semantics->symbols[function->symbol_id].kind !=
+                         SEMANTIC_SYMBOL_ENUM) ||
                    module->semantics->symbols[function->symbol_id].source_program !=
                    function->source_program ||
                    module->semantics->symbols[function->symbol_id].name_token !=
@@ -531,8 +539,10 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
             return 0;
         if (function->owner_symbol_id != AST_SYMBOL_NONE &&
             (function->owner_symbol_id >= module->semantics->symbol_count ||
-             module->semantics->symbols[function->owner_symbol_id].kind !=
-             SEMANTIC_SYMBOL_STRUCT))
+             (module->semantics->symbols[function->owner_symbol_id].kind !=
+                  SEMANTIC_SYMBOL_STRUCT &&
+              module->semantics->symbols[function->owner_symbol_id].kind !=
+                  SEMANTIC_SYMBOL_ENUM)))
             return 0;
         for (size_t p = 0; p < function->parameter_count; p++) {
             const IrParameter *parameter = &function->parameters[p];
@@ -633,9 +643,12 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                 case IR_OP_LOAD:
                 case IR_OP_ALLOC:
                 case IR_OP_LABEL:
-                case IR_OP_DROP:
                 case IR_OP_MOVE:
                 case IR_OP_REINIT:
+                    break;
+                case IR_OP_DROP:
+                    if (instruction->operand_a != IR_VALUE_NONE)
+                        REQUIRE_VALUE(instruction->operand_a);
                     break;
                 case IR_OP_FREE_SLICE_BACKING:
                     if (instruction->operand_a != IR_VALUE_NONE)

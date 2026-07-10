@@ -142,6 +142,8 @@ int semantic_expression_is_move_only(const Analyzer *analyzer,
                                      const AstExpression *expression);
 void validate_function_borrows(Analyzer *analyzer,
                                const AstDeclarationNode *function);
+void validate_function_ownership(Analyzer *analyzer,
+                                 const AstDeclarationNode *function);
 int enum_constant_expression(const Analyzer *analyzer, const AstExpression *expression);
 const SemanticSymbol *resolve_overload(const Analyzer *analyzer, const char *name,
                                        size_t owner_symbol_id, int is_static,

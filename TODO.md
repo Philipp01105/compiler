@@ -89,8 +89,8 @@ exclusive and borrowing is field-sensitive when disjointness is provable.
 - [x] Extend exactly-once cleanup and moved-state flags to owned by-value parameters.
 - [x] Add exactly-once cleanup for initialized package storage at normal process exit, in reverse declaration order;
   reject moves out of package storage because moved-state cannot be tracked soundly across functions.
-- [ ] Extend ownership state merging across all branches, loops, enum payloads, arrays, generic substitutions, and
-  interface conversions; diagnose every invalid copy and double release.
+- [x] Extend ownership state merging across all branches, loops, enum payloads, arrays, generic substitutions, and
+  interface conversions; reject unsupported move-only interface erasure and diagnose invalid copies or double release.
 - [ ] Extend the implemented local slice-copy/backing-owner tracking through arbitrary calls, returned borrowed views,
   aggregate storage, subslices, and precise mutable regions so slices participate fully in the borrow checker.
 - [x] Use explicit ownership with checked non-owning borrows as the P1 memory model; retain raw pointers as the explicit

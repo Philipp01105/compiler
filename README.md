@@ -128,7 +128,8 @@ lowered input to those passes, while `--dump-ir` and `--dump-cfg` show their sel
 passes entirely. See
 [IR_OPTIMIZATION.md](IR_OPTIMIZATION.md) for transformations and semantic limits.
 
-Ownership classification, move checking, checked borrows, generic propagation, explicit IR ownership effects, and
+Ownership classification, path-sensitive move checking across branches and loops, checked borrows, enum/array/generic
+propagation, active-payload enum cleanup, explicit IR ownership effects, and
 native drop glue for locals and owned by-value parameters are implemented. Moved-from values are skipped; destructor
 bodies run before recursively dropped fields and fixed-array elements. Initialized package owners are dropped exactly
 once in reverse declaration order after a normal return from `main`; moves out of package storage are rejected. See

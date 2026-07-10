@@ -52,7 +52,7 @@ static int array_literal_element_allowed(const Analyzer *analyzer,
         !element->resolved_is_array && !element->resolved_is_slice &&
         semantic_implements_interface(analyzer->model, target,
                                       element->resolved_named_symbol_id))
-        return 1;
+        return !semantic_expression_is_move_only(analyzer, element);
     return expression_to_declared_type_allowed(analyzer, element,
                                                analyzer->program, element_type);
 }
@@ -287,11 +287,34 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
         element_type.is_slice = 0;
         element_type.array_length_token = AST_TOKEN_NONE;
         element_type.resolved_array_length = 0;
+        size_t interface_symbol = resolve_named_symbol_id(
+            analyzer, analyzer->program,
+            named_type_token(analyzer->program, &element_type));
+        int interface_elements = interface_symbol < analyzer->model->symbol_count &&
+            analyzer->model->symbols[interface_symbol].kind == SEMANTIC_SYMBOL_INTERFACE;
         for (AstExpression *element = expression->arguments; element != NULL;
-             element = element->next)
-            if (!array_literal_element_allowed(analyzer, element, &element_type))
+             element = element->next) {
+            if (interface_elements &&
+                semantic_implements_interface(analyzer->model, interface_symbol,
+                                              element->resolved_named_symbol_id) &&
+                semantic_expression_is_move_only(analyzer, element)) {
+                semantic_error(analyzer, element->first_token, ERROR_CATEGORY_SEMANTIC,
+                               ERR_SEM_INVALID_DECLARATION,
+                               "Cannot erase a move-only value into a copyable interface");
+            } else if (!array_literal_element_allowed(analyzer, element, &element_type))
                 conversion_error(analyzer, element, analyzer->program, &element_type,
                                  NULL, "Cannot implicitly convert array literal element");
+        }
+        if (expression->right != NULL && element_count > pattern_count)
+            for (AstExpression *element = expression->arguments; element != NULL;
+                 element = element->next)
+                if (semantic_expression_is_move_only(analyzer, element)) {
+                    semantic_error(analyzer, element->first_token,
+                                   ERROR_CATEGORY_SEMANTIC,
+                                   ERR_SEM_INVALID_DECLARATION,
+                                   "Array repetition cannot duplicate a move-only element");
+                    break;
+                }
 
         expression->resolved_type = primitive_type(analyzer->program, &expected);
         expression->resolved_pointer_depth = expected.pointer_depth;
@@ -342,10 +365,6 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
             const LocalSymbol *local = find_local(analyzer, expression->value_token);
             if (local != NULL) {
                 expression->resolved_symbol_id = local->symbol_id;
-                if (local->moved && analyzer->assignment_target != expression)
-                    semantic_error(analyzer, expression->value_token,
-                                   ERROR_CATEGORY_SEMANTIC, ERR_SEM_INVALID_DECLARATION,
-                                   "Cannot read, borrow, copy, or move a value after ownership was moved");
                 expression->resolved_type = local->resolved_type;
                 expression->resolved_borrow_kind = local->resolved_borrow_kind;
                 expression->resolved_pointer_depth = local->resolved_pointer_depth;

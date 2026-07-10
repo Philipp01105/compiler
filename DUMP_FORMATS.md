@@ -54,7 +54,7 @@ code.
 
 The symbol dump lists every semantic symbol by stable ID and declaration order. Records include kind, spelling, source
 unit, token, owner, scope depth, resolved primitive/named type, pointer depth, array/slice flags, and whether a source
-declaration owns the symbol. Concrete struct records also include a `properties=` field containing `COPYABLE` or
+declaration owns the symbol. Concrete struct and enum records also include a `properties=` field containing `COPYABLE` or
 `MOVE_ONLY` and, independently, `NEEDS_DROP` when applicable. Generic templates are classified through each concrete
 specialization rather than receiving one template-wide property set. The header also reports symbol-index capacity and
 occupancy, unresolved expressions, duplicates, and semantic errors. Hash slots are intentionally omitted because their
@@ -62,7 +62,7 @@ placement is an implementation detail and may depend on process addresses.
 
 ## `dmm-ir-v3`
 
-The IR dump lists interned types and aggregate definitions before functions. In-memory struct aggregate records retain
+The IR dump lists interned types and aggregate definitions before functions. In-memory aggregate records retain
 the derived ownership properties and whether an explicit destructor exists; these fields drive verification and native
 drop-glue generation. `dmm-ir-v3` currently serializes aggregate names, symbols, and fields, but not
 those ownership fields; exposing them requires a new dump-format version. Function instructions are numbered in storage

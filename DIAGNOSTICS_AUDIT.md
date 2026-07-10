@@ -28,7 +28,8 @@ plus focused location, message, filesystem and encoding cases.
   failure to open the output.
 - Human output identifies paths even for errors without a source location. Human output limits errors to ten and
   explicitly reports omitted errors; JSON retains every error. Resetting a handler clears buffered diagnostics.
-- Ownership diagnostics distinguish use after move, unsupported partial moves, borrow conflicts, escaping borrows,
+- Ownership diagnostics distinguish use after move, unsafe loop-carried consumption, unsupported partial moves and
+  move-only enum bindings, move-only array repetition and interface erasure, borrow conflicts, escaping borrows,
   invalid destructor control flow, moves from a destructor receiver, and attempts to move ownership out of package
   storage. The removed `resource struct` spelling is a
   parser rejection; it is not retained as compatibility syntax.

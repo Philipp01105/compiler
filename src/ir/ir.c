@@ -448,8 +448,10 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         }
         size_t index = 0;
         for (const AstExpression *element = expression->arguments;
-             element != NULL; element = element->next)
+             element != NULL; element = element->next) {
             values[index++] = lower_expression(builder, element);
+            emit_move_if_owned(builder, element);
+        }
         IrInstruction *instruction = emit(builder, IR_OP_ARRAY_LITERAL,
                                           expression->span);
         if (instruction == NULL) {
@@ -1376,6 +1378,133 @@ static int append_drop_glue(IrModule *module, const IrAggregate *structure) {
     return !builder.failed;
 }
 
+static int append_enum_drop_glue(IrModule *module,
+                                 const IrEnum *enumeration) {
+    if (enumeration->symbol_id >= module->semantics->symbol_count ||
+        (semantic_symbol_type_properties(module->semantics,
+                                         enumeration->symbol_id) &
+         SEMANTIC_TYPE_NEEDS_DROP) == 0)
+        return 1;
+    if (module->function_count == module->function_capacity &&
+        !grow_array((void **) &module->functions, &module->function_capacity,
+                    sizeof(*module->functions)))
+        return 0;
+    IrFunction *function = &module->functions[module->function_count++];
+    *function = (IrFunction) {
+        .source_program = enumeration->source_program,
+        .name_token = enumeration->name_token,
+        .owner_token = enumeration->name_token,
+        .owner_symbol_id = enumeration->symbol_id,
+        .symbol_id = enumeration->symbol_id,
+        .return_type_id = type_from_parts(module, TYPE_VOID, 0,
+                                          AST_TOKEN_NONE, 0, 0, 0, 0,
+                                          enumeration->source_program,
+                                          AST_SYMBOL_NONE),
+        .is_drop_glue = 1
+    };
+    if (function->return_type_id == IR_TYPE_NONE) return 0;
+    function->parameters = calloc(1, sizeof(*function->parameters));
+    if (function->parameters == NULL) return 0;
+    function->parameter_count = 1;
+    function->parameters[0] = (IrParameter) {
+        .source_program = enumeration->source_program,
+        .name_token = enumeration->name_token,
+        .symbol_id = enumeration->symbol_id,
+        .type = TYPE_UNKNOWN,
+        .type_id = type_from_parts(module, TYPE_UNKNOWN, 1,
+                                   enumeration->name_token, 0, 0, 0, 0,
+                                   enumeration->source_program,
+                                   enumeration->symbol_id),
+        .pointer_depth = 1,
+        .type_name_token = enumeration->name_token,
+        .is_receiver = 1
+    };
+    if (function->parameters[0].type_id == IR_TYPE_NONE) return 0;
+    IrBuilder builder = {
+        .module = module,
+        .function = function,
+        .program = enumeration->source_program,
+        .break_label = IR_VALUE_NONE,
+        .continue_label = IR_VALUE_NONE
+    };
+    IrInstruction *receiver = emit(&builder, IR_OP_LOAD, (AstSourceSpan) {0});
+    if (receiver == NULL) return 0;
+    receiver->result = new_value(&builder);
+    receiver->symbol_id = enumeration->symbol_id;
+    receiver->auxiliary_token = enumeration->name_token;
+    receiver->type = TYPE_UNKNOWN;
+    receiver->type_id = type_from_parts(module, TYPE_UNKNOWN, 0,
+                                        enumeration->name_token, 0, 0, 0, 0,
+                                        enumeration->source_program,
+                                        enumeration->symbol_id);
+    if (receiver->type_id == IR_TYPE_NONE) return 0;
+    receiver->type_name_token = enumeration->name_token;
+    size_t end_label = new_label(&builder);
+    for (size_t v = 0; v < enumeration->variant_count; v++) {
+        const IrEnumVariant *variant = &enumeration->variants[v];
+        int needs_drop = 0;
+        for (size_t p = 0; p < variant->payload_count; p++)
+            if ((ir_type_properties(module, variant->payload_types[p]) &
+                 SEMANTIC_TYPE_NEEDS_DROP) != 0)
+                needs_drop = 1;
+        if (!needs_drop) continue;
+        size_t body_label = new_label(&builder);
+        size_t next_label = new_label(&builder);
+        IrInstruction *test = emit(&builder, IR_OP_ENUM_IS,
+                                   (AstSourceSpan) {0});
+        if (test == NULL) return 0;
+        test->operand_a = receiver->result;
+        test->symbol_id = variant->symbol_id;
+        test->result = new_value(&builder);
+        test->type = TYPE_BIT;
+        test->type_id = type_from_parts(module, TYPE_BIT, 0,
+                                        AST_TOKEN_NONE, 0, 0, 0, 0,
+                                        enumeration->source_program,
+                                        AST_SYMBOL_NONE);
+        IrInstruction *branch = emit(&builder, IR_OP_BRANCH,
+                                     (AstSourceSpan) {0});
+        if (branch == NULL) return 0;
+        set_void_type(&builder, branch);
+        branch->operand_a = test->result;
+        branch->target_a = body_label;
+        branch->target_b = next_label;
+        emit_label(&builder, body_label, (AstSourceSpan) {0});
+        for (size_t p = variant->payload_count; p > 0; p--) {
+            IrTypeId payload_type = variant->payload_types[p - 1];
+            if ((ir_type_properties(module, payload_type) &
+                 SEMANTIC_TYPE_NEEDS_DROP) == 0)
+                continue;
+            IrInstruction *payload = emit(&builder, IR_OP_ENUM_PAYLOAD,
+                                          (AstSourceSpan) {0});
+            if (payload == NULL) return 0;
+            payload->operand_a = receiver->result;
+            payload->symbol_id = variant->symbol_id;
+            payload->enum_payload_index = p - 1;
+            payload->target_a = body_label;
+            payload->result = new_value(&builder);
+            payload->type_id = payload_type;
+            payload->type = module->types[payload_type].kind == IR_TYPE_PRIMITIVE
+                                ? module->types[payload_type].primitive
+                                : TYPE_UNKNOWN;
+            payload->is_array = module->types[payload_type].kind == IR_TYPE_ARRAY;
+            IrInstruction *drop = emit(&builder, IR_OP_DROP,
+                                       (AstSourceSpan) {0});
+            if (drop == NULL) return 0;
+            drop->type = TYPE_VOID;
+            drop->type_id = payload_type;
+            drop->operand_a = payload->result;
+        }
+        IrInstruction *jump = emit(&builder, IR_OP_JUMP,
+                                   (AstSourceSpan) {0});
+        if (jump == NULL) return 0;
+        set_void_type(&builder, jump);
+        jump->target_a = end_label;
+        emit_label(&builder, next_label, (AstSourceSpan) {0});
+    }
+    emit_label(&builder, end_label, (AstSourceSpan) {0});
+    return !builder.failed;
+}
+
 static int append_package_cleanup(IrModule *module) {
     if (module->program->package_name != NULL &&
         strcmp(module->program->package_name, "main") != 0)
@@ -1591,6 +1720,8 @@ IrModule *ir_lower_program(const AstProgram *program, const SemanticModel *seman
         if (!lower_unit(module, program->owned_imports[i])) goto failure;
     for (size_t i = 0; i < module->structure_count; i++)
         if (!append_drop_glue(module, &module->structures[i])) goto failure;
+    for (size_t i = 0; i < module->enum_count; i++)
+        if (!append_enum_drop_glue(module, &module->enums[i])) goto failure;
     if (!append_package_cleanup(module)) goto failure;
     if (!ir_verify_module_report(module)) goto failure;
     module->verified = 1;

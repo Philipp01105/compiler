@@ -1,0 +1,8 @@
+package main;
+struct Resource { var value:int; destructor {} }
+func consume(value:Resource) -> void {}
+func main() -> int {
+    var resource:Resource;
+    if (1) { consume(resource); }
+    return resource.value;
+}

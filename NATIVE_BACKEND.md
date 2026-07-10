@@ -55,9 +55,10 @@ handles subnormals, infinity, NaN and signed zero without libc. Private runtime 
 write from intercepting platform calls. Unknown executable imports fail. Runtime operations remain typed, verified IR
 calls.
 
-Concrete struct ownership metadata reaches verified IR. The native backend lowers explicit `drop`, `move`, and `reinit`
+Concrete aggregate ownership metadata reaches verified IR. The native backend lowers explicit `drop`, `move`, and `reinit`
 effects, keeps initialization flags for `NEEDS_DROP` locals, and calls compiler-generated drop glue. Drop glue executes
-the user destructor before recursively destroying owned fields and fixed-array elements in reverse order. By-value
+the user destructor before recursively destroying owned fields and fixed-array elements in reverse order. Sum-enum
+drop glue dispatches on the active tag and destroys its owned payloads in reverse order. By-value
 owning parameters are cleaned up by the callee. `NEEDS_DROP` package globals have private initialization flags and are
 dropped by `__dmm_package_cleanup` in reverse declaration order. Native startup calls that function after a normal
 return from `main` and then exits with the preserved return value; the immediate `exit` intrinsic bypasses it.
