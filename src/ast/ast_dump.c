@@ -40,9 +40,9 @@ static const char *expression_name(AstExpressionKind kind) {
     static const char *names[] = {
         "error", "literal", "name", "unary", "binary", "call",
         "index", "member", "slice-length", "reserve", "cast", "free", "enum-construct", "enum-access",
-        "sizeof", "alignof", "slice", "slice-data", "type-info", "type-property"
+        "sizeof", "alignof", "slice", "slice-data", "type-info", "type-property", "array-literal"
     };
-    return kind >= AST_EXPR_ERROR && kind <= AST_EXPR_TYPE_PROPERTY ? names[kind] : "invalid";
+    return kind >= AST_EXPR_ERROR && kind <= AST_EXPR_ARRAY_LITERAL ? names[kind] : "invalid";
 }
 
 static const char *statement_name(AstStatementKind kind) {

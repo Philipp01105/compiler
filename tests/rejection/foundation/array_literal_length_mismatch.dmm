@@ -1,0 +1,4 @@
+package main;
+func main() -> void {
+    var values:int[4]=[1,2,3];
+}

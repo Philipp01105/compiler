@@ -1,0 +1,6 @@
+/* main
+Automatic cleanup of package-stored values after normal process termination.
+*/
+
+module dmm.example/package_cleanup
+dmm 2026-09-22-dev

@@ -1,0 +1,6 @@
+/* main
+Generic functions and structs, inferred specializations, interface bounds and interface arrays.
+*/
+
+module dmm.example/generics_and_interfaces
+dmm 2026-09-22-dev

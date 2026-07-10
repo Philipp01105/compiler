@@ -106,6 +106,10 @@ enum-argument   = integer | floating | character | string
                 | "true" | "false" ;
 ```
 
+`resource` is not a keyword or declaration modifier. It is an ordinary identifier, and the former
+`resource struct` spelling is rejected. Resource semantics are derived from the normal struct declaration's
+destructor and concrete field types.
+
 Enum field and member names are unique. Each value supplies exactly one compatible argument for every declared field.
 Without header fields, variant parentheses contain payload types rather than constant arguments. Generic nominal names
 followed by `.variant` accept type arguments in constructor expressions.
@@ -181,8 +185,12 @@ primary         = integer | floating | character | string
                 | type-metadata
                 | ("reserve" | "sizeof" | "alignof"), "(", type, ")"
                 | "slice", "(", expression, ",", expression, ")"
+                | array-literal
                 | "free"
                 | "(", expression, ")" ;
+
+array-literal   = "[", expression, {",", expression},
+                  [";", expression], "]" ;
 
 identifier-expression
                 = identifier, { postfix } ;
@@ -200,6 +208,10 @@ type-metadata   = type, ".", ("name" | "size" | "align") ;
 `.size`, or `.align`, or used as a type-match scrutinee. Type matches use `case Type -> statement` and
 `case _ -> statement`; enum matches use variant patterns with `=>`. See `LANGUAGE_SPEC.md` for specialization and
 unevaluated-expression rules. `typeof` is currently reserved by the lexer; use `.type` for static type access.
+
+Array literals require an expected fixed-array or slice type. Their prefix is nonempty. In the repetition form
+`[a,b,c;N]`, semantic analysis requires `N` to be a positive compile-time integer constant and produces exactly `N`
+elements by cycling the prefix. An ordinary fixed-array literal must contain exactly the target length.
 
 ## Context-sensitive validity
 

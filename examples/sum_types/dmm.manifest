@@ -1,0 +1,6 @@
+/* main
+Generic sum enums, qualified constructors, payload bindings, exhaustive match, Option and Result.
+*/
+
+module dmm.example/sum_types
+dmm 2026-09-22-dev

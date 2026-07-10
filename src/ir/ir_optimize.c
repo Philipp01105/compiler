@@ -541,7 +541,9 @@ static int pure(Pass *p, const IrInstruction *in) {
 }
 
 static int memory_effect(const IrInstruction *in) {
-    return in->opcode == IR_OP_STORE || in->opcode == IR_OP_DECLARE || (
+    return in->opcode == IR_OP_STORE || in->opcode == IR_OP_DECLARE ||
+           in->opcode == IR_OP_DROP || in->opcode == IR_OP_MOVE ||
+           in->opcode == IR_OP_REINIT || in->opcode == IR_OP_FREE_SLICE_BACKING || (
                in->opcode == IR_OP_CALL || in->opcode == IR_OP_ENUM_CONSTRUCT) ||
            in->opcode == IR_OP_FREE || in->opcode == IR_OP_ALLOC ||
            (in->opcode == IR_OP_BINARY && in->type == TYPE_STRING);
@@ -904,7 +906,8 @@ static int compact_ids(IrFunction *f) {
             in->target_a = labels[in->target_a];
             if (in->target_b != IR_VALUE_NONE) in->target_b = labels[in->target_b];
         }
-        if ((in->opcode == IR_OP_CALL || in->opcode == IR_OP_ENUM_CONSTRUCT)) {
+        if ((in->opcode == IR_OP_CALL || in->opcode == IR_OP_ENUM_CONSTRUCT ||
+             in->opcode == IR_OP_ARRAY_LITERAL)) {
             size_t old = in->first_argument;
             in->first_argument = na;
             for (size_t a = 0; a < in->argument_count; ++a) arguments[na++] = values[f->arguments[old + a]];
@@ -1238,14 +1241,22 @@ static int remove_dead_functions(IrModule *module, IrOptimizationStats *stats) {
         return 0;
     }
     for (size_t i = 0; i < symbols; i++) by_symbol[i] = IR_VALUE_NONE;
-    for (size_t i = 0; i < count; i++) by_symbol[module->functions[i].symbol_id] = i;
+    for (size_t i = 0; i < count; i++)
+        if (module->functions[i].symbol_id < symbols)
+            by_symbol[module->functions[i].symbol_id] = i;
     size_t end = 0;
     for (size_t i = 0; i < count; i++) {
         const IrFunction *function = &module->functions[i];
-        const SemanticSymbol *symbol = &module->semantics->symbols[function->symbol_id];
-        const AstDeclarationNode *declaration = symbol->declaration;
-        const char *name = ast_program_lexeme(function->source_program, function->name_token);
-        if (function->owner_symbol_id != AST_SYMBOL_NONE || !declaration || declaration->is_public ||
+        const SemanticSymbol *symbol = function->symbol_id < symbols
+                                           ? &module->semantics->symbols[function->symbol_id]
+                                           : NULL;
+        const AstDeclarationNode *declaration = symbol == NULL ? NULL : symbol->declaration;
+        const char *name = function->is_package_cleanup
+                               ? "__dmm_package_cleanup"
+                               : ast_program_lexeme(function->source_program,
+                                                    function->name_token);
+        if (function->is_package_cleanup ||
+            function->owner_symbol_id != AST_SYMBOL_NONE || !declaration || declaration->is_public ||
             !strcmp(name, "main")) {
             live[i] = 1;
             queue[end++] = i;

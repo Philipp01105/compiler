@@ -54,7 +54,10 @@ typedef enum {
     IR_OP_JUMP,
     IR_OP_LABEL,
     IR_OP_PHI, IR_OP_ENUM_CONSTRUCT, IR_OP_ENUM_IS, IR_OP_ENUM_PAYLOAD, IR_OP_TRAP,
-    IR_OP_SLICE, IR_OP_SLICE_DATA
+    IR_OP_SLICE, IR_OP_SLICE_DATA, IR_OP_ARRAY_LITERAL,
+    /* Ownership effects are explicit so optimization and code generation
+       preserve exactly-once destruction. */
+    IR_OP_DROP, IR_OP_MOVE, IR_OP_REINIT, IR_OP_FREE_SLICE_BACKING
 } IrOpcode;
 
 typedef struct {
@@ -66,6 +69,7 @@ typedef struct {
     size_t type_name_token;
     int is_array;
     int is_slice;
+    int owns_slice_backing;
     size_t result;
     size_t operand_a;
     size_t operand_b;
@@ -76,6 +80,8 @@ typedef struct {
     size_t target_a;
     size_t target_b;
     size_t enum_payload_index;
+    /* Materialized element count for context-typed array/slice literals. */
+    size_t element_count;
     TokenType operator_type;
     /* Compiler-owned numeric literal; source tokens remain immutable. */
     int has_immediate;
@@ -115,6 +121,8 @@ typedef struct {
     size_t argument_capacity;
     size_t next_value;
     size_t next_label;
+    int is_drop_glue;
+    int is_package_cleanup;
 } IrFunction;
 
 typedef struct {
@@ -202,6 +210,8 @@ typedef struct IrGlobal {
     IrTypeId type_id;
     uint64_t bits;
     const char *string;
+    const AstExpression *array_literal;
+    size_t literal_element_count;
 } IrGlobal;
 
 IrModule *ir_lower_program(const AstProgram *program, const SemanticModel *semantics);
@@ -215,6 +225,8 @@ int ir_dump(FILE *output, const IrModule *module);
 int ir_dump_function(FILE *output, const IrModule *module, size_t function_index);
 
 int ir_type_layout(const IrModule *module, IrTypeId type, IrTypeLayout *layout);
+
+unsigned ir_type_properties(const IrModule *module, IrTypeId type);
 
 /* Internal failures retain the concrete instruction and its original source unit. */
 void ir_report_failure(const IrFunction *function, size_t instruction_index,

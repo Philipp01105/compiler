@@ -1,0 +1,6 @@
+/* main
+Core syntax: constants, structs, methods, overloads, arrays, slices, casts and type metadata.
+*/
+
+module dmm.example/language_tour
+dmm 2026-09-22-dev

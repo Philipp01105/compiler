@@ -1,9 +1,9 @@
 # Compiler diagnostic audit
 
-Reviewed on 2026-09-13.
+Reviewed on 2026-09-23.
 
 All defined error and warning constants and reporting sites in the lexer, parser, semantic analyzer, driver, backend and
-shared renderer were reviewed. Runtime checks cover all 77 rejection fixtures in both human-readable and JSON modes,
+shared renderer were reviewed. Runtime checks cover all 131 rejection fixtures in both human-readable and JSON modes,
 plus focused location, message, filesystem and encoding cases.
 
 ## Corrections
@@ -28,6 +28,10 @@ plus focused location, message, filesystem and encoding cases.
   failure to open the output.
 - Human output identifies paths even for errors without a source location. Human output limits errors to ten and
   explicitly reports omitted errors; JSON retains every error. Resetting a handler clears buffered diagnostics.
+- Ownership diagnostics distinguish use after move, unsupported partial moves, borrow conflicts, escaping borrows,
+  invalid destructor control flow, moves from a destructor receiver, and attempts to move ownership out of package
+  storage. The removed `resource struct` spelling is a
+  parser rejection; it is not retained as compatibility syntax.
 
 ## Code inventory
 
@@ -91,7 +95,7 @@ constants are retained for compatibility; they do not imply an implemented diagn
 
 ## Validation and limits
 
-- `diagnostics_audit`: all 77 existing rejection fixtures fail as expected, produce parseable JSON with consistent
+- `diagnostics_audit`: all 131 existing rejection fixtures fail as expected, produce parseable JSON with consistent
   counts, and have matching human messages, locations and source lines. Source spans are checked for validity.
 - `diagnostics_cases`: exact codes, columns and messages for targeted failures, conversion ranges, declaration/opening
   notes, output paths and error limits.

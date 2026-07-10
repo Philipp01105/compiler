@@ -15,6 +15,7 @@ static int instruction_produces_value(const IrInstruction *instruction) {
            (opcode == IR_OP_CALL && instruction->type != TYPE_VOID) || opcode == IR_OP_INDEX ||
            opcode == IR_OP_MEMBER || opcode == IR_OP_SLICE_LENGTH ||
            opcode == IR_OP_SLICE || opcode == IR_OP_SLICE_DATA ||
+           opcode == IR_OP_ARRAY_LITERAL ||
            opcode == IR_OP_CAST || opcode == IR_OP_ALLOC ||
            opcode == IR_OP_PHI || opcode == IR_OP_ENUM_CONSTRUCT || opcode == IR_OP_ENUM_IS || opcode ==
            IR_OP_ENUM_PAYLOAD;
@@ -85,6 +86,7 @@ static int ir_types_assignable(const IrModule *module, IrTypeId source,
 }
 
 static const IrFunction *ir_called_function(const IrModule *module, size_t symbol_id) {
+    if (symbol_id == AST_SYMBOL_NONE) return NULL;
     for (size_t i = 0; i < module->function_count; i++)
         if (module->functions[i].symbol_id == symbol_id) return &module->functions[i];
     return NULL;
@@ -320,6 +322,26 @@ static int verify_instruction_types(const IrModule *module,
             }
             return 1;
         }
+        case IR_OP_DROP:
+            return instruction->symbol_id < module->semantics->symbol_count &&
+                   (ir_type_properties(module, instruction->type_id) &
+                    SEMANTIC_TYPE_NEEDS_DROP) != 0;
+        case IR_OP_MOVE:
+            return instruction->symbol_id < module->semantics->symbol_count &&
+                   (ir_type_properties(module, instruction->type_id) &
+                    SEMANTIC_TYPE_MOVE_ONLY) != 0;
+        case IR_OP_REINIT:
+            return instruction->symbol_id < module->semantics->symbol_count &&
+                   (ir_type_properties(module, instruction->type_id) &
+                    SEMANTIC_TYPE_NEEDS_DROP) != 0;
+        case IR_OP_FREE_SLICE_BACKING:
+            if (instruction->type_id >= module->type_count ||
+                module->types[instruction->type_id].kind != IR_TYPE_SLICE)
+                return 0;
+            if (a != NULL) return a->type_id == instruction->type_id;
+            return instruction->symbol_id < module->semantics->symbol_count &&
+                   module->semantics->symbols[instruction->symbol_id].kind ==
+                       SEMANTIC_SYMBOL_LOCAL;
         case IR_OP_INDEX:
             return a != NULL && b != NULL && ir_pointer_type(module, a->type_id) &&
                    ir_integral_type(module, b->type_id) &&
@@ -355,6 +377,18 @@ static int verify_instruction_types(const IrModule *module,
                    IR_TYPE_SLICE &&
                    module->types[instruction->type_id].element_type == module->types[a->type_id].element_type &&
                    ir_integral_type(module, b->type_id);
+        case IR_OP_ARRAY_LITERAL:
+            if (instruction->type_id >= module->type_count ||
+                (module->types[instruction->type_id].kind != IR_TYPE_ARRAY &&
+                 module->types[instruction->type_id].kind != IR_TYPE_SLICE) ||
+                instruction->argument_count == 0 || instruction->element_count == 0)
+                return 0;
+            for (size_t argument = 0; argument < instruction->argument_count; argument++)
+                if (verified_producer(function, producers,
+                                      function->arguments[instruction->first_argument + argument],
+                                      index) == NULL)
+                    return 0;
+            return 1;
         case IR_OP_ALLOC:
             return ir_pointer_type(module, instruction->type_id);
         case IR_OP_FREE:
@@ -469,14 +503,28 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
     }
     for (size_t f = 0; f < module->function_count; f++) {
         const IrFunction *function = &module->functions[f];
-        if (function->symbol_id == AST_SYMBOL_NONE ||
-            function->symbol_id >= module->semantics->symbol_count ||
-            module->semantics->symbols[function->symbol_id].kind !=
-            SEMANTIC_SYMBOL_FUNCTION ||
-            module->semantics->symbols[function->symbol_id].source_program !=
-            function->source_program ||
-            module->semantics->symbols[function->symbol_id].name_token !=
-            function->name_token || function->return_type_id >= module->type_count)
+        if (function->is_drop_glue && function->is_package_cleanup) return 0;
+        if (function->is_package_cleanup) {
+            if (function->symbol_id != AST_SYMBOL_NONE ||
+                function->owner_symbol_id != AST_SYMBOL_NONE ||
+                function->parameter_count != 0 ||
+                function->source_program != module->program ||
+                function->return_type_id >= module->type_count ||
+                !ir_void_type(module, function->return_type_id))
+                return 0;
+        } else if (function->symbol_id == AST_SYMBOL_NONE ||
+                   function->symbol_id >= module->semantics->symbol_count ||
+                   (!function->is_drop_glue &&
+                    module->semantics->symbols[function->symbol_id].kind !=
+                    SEMANTIC_SYMBOL_FUNCTION) ||
+                   (function->is_drop_glue &&
+                    module->semantics->symbols[function->symbol_id].kind !=
+                    SEMANTIC_SYMBOL_STRUCT) ||
+                   module->semantics->symbols[function->symbol_id].source_program !=
+                   function->source_program ||
+                   module->semantics->symbols[function->symbol_id].name_token !=
+                   function->name_token ||
+                   function->return_type_id >= module->type_count)
             return 0;
         if ((function->owner_token == AST_TOKEN_NONE) !=
             (function->owner_symbol_id == AST_SYMBOL_NONE))
@@ -585,6 +633,15 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                 case IR_OP_LOAD:
                 case IR_OP_ALLOC:
                 case IR_OP_LABEL:
+                case IR_OP_DROP:
+                case IR_OP_MOVE:
+                case IR_OP_REINIT:
+                    break;
+                case IR_OP_FREE_SLICE_BACKING:
+                    if (instruction->operand_a != IR_VALUE_NONE)
+                        REQUIRE_VALUE(instruction->operand_a);
+                    else if (instruction->symbol_id == AST_SYMBOL_NONE)
+                        valid = 0;
                     break;
                 case IR_OP_CAST:
                 case IR_OP_FREE:
@@ -629,6 +686,7 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                     break;
                 case IR_OP_TRAP: break;
                 case IR_OP_ENUM_CONSTRUCT:
+                case IR_OP_ARRAY_LITERAL:
                     if (instruction->first_argument > function->argument_count ||
                         instruction->argument_count > function->argument_count - instruction->first_argument)
                         valid = 0;

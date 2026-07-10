@@ -19,7 +19,7 @@ func saveAndDisplay(name:u8[], message:u8[], output:*stdio.Stream, errors:*stdio
     file=stdio.openRead("demo_output.txt");
     if (!file.isOpen()) { errors.writeLine("Could not reopen the file for reading."); return 1; }
     if (!output.writeLine("Saved to demo_output.txt. Reading it back:").ok()) { file.close(); return 1; }
-    var scratch:u8[256];
+    var scratch:u8[256]=[0;256];
 
     var copied=stdio.copy((&file).(*stdio.Stream),output,scratch);
     closed=file.close();

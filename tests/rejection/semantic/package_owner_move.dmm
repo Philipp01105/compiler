@@ -1,0 +1,13 @@
+package main;
+
+struct Resource {
+    var value:int;
+    destructor {}
+}
+
+var shared:Resource;
+
+func main() -> int {
+    var moved=shared;
+    return 0;
+}

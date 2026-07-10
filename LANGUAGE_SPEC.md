@@ -52,19 +52,41 @@ their signedness and width; `isize`/`usize` are signed/unsigned pointer-width in
 targets). Existing `int`, `char` and `byte` retain their 32-bit signed, 8-bit signed and 8-bit unsigned memory/ABI
 representations. The new spellings are distinct primitive types for overload resolution and generic specialization.
 `void` is valid only as a function return type. Fixed arrays use `var name:type[length];`. Repeated prefix stars form
-pointers, such as `**int`; grouped types distinguish `*(int[4])` from `*int[4]`. Whole-array assignment is not
-supported.
+pointers, such as `**int`; grouped types distinguish `*(int[4])` from `*int[4]`. Whole-array assignment is supported
+when both sides have the same fixed-array type.
 
 Fixed-size array parameters such as `values:float[2]` accept arrays with exactly the declared length and element type.
 They borrow the caller's storage, so element mutations are visible to the caller. Their ABI passes one data pointer;
 indexing uses the statically known bound. A slice does not implicitly convert to a fixed-size array parameter.
 
-`T[]` slices are borrowed views containing a data pointer and an element count. They may be parameters, local bindings,
-fields, enum payloads, package variables and return values. A matching fixed array converts to a slice without copying
-its elements. Assignment and return copy the view; they do not transfer ownership or extend the underlying storage
-lifetime. Package variables may be zero-initialized slices; runtime package initializers remain unsupported.
+`T[]` slices are non-owning, copyable views containing a data pointer and an element count. They may be parameters,
+local bindings, fields, enum payloads, package variables and return values. A matching fixed array converts to a slice
+without copying its elements. Ordinary assignment and return copy the view; they do not duplicate the underlying
+storage.
 `.length:usize` and `.data:*T` are read-only properties. Indexing checks the current count, including negative indices.
 Slice equality is not defined.
+
+Array literals are contextually typed. The surrounding declaration, assignment target, parameter, or return type must
+unambiguously provide either `T[N]` or `T[]`; `var values=[1,2,3];` is therefore invalid. Examples:
+
+```dmm
+var fixed:int[4]=[0,1,2,3];
+var view:int[]=[0,1,2,3,4];
+consume([1,2,3]);       // consume's parameter supplies the type
+fixed=[4,5,6,7];
+```
+
+Every element must convert to `T`. This includes concrete values stored in an interface array or slice when each value
+implements the expected interface. `[a,b,c;N]` creates exactly the positive compile-time count `N` by cyclically
+repeating the nonempty prefix and truncating its final repetition. For a fixed array, `N` (or the number of ordinary
+elements) must equal the declared length; for a slice it determines the hidden backing length.
+
+A local slice literal creates hidden owning backing storage and a visible non-owning slice. The backing lifetime is tied
+to the receiving lvalue and remains live for dependent copied slices and sub-slices. A literal used only as a call
+argument remains alive through the complete call. A function returning a newly created slice transfers the hidden
+backing owner to the receiving context while the visible `T[]` remains a copyable view. Package slice literals use
+static package-lifetime backing storage. Package array/slice literal elements currently must be compile-time non-string
+primitive values because general runtime package initialization remains unsupported.
 
 `slice(pointer, count)` constructs a view from a typed non-void raw pointer and an integral count. Zero permits a null
 pointer; negative counts, nonzero counts with null pointers and byte-size overflow trap. The caller ensures the region
@@ -144,6 +166,19 @@ explicit destructor, its destructor body runs first; owned fields that need drop
 A struct without an explicit destructor still destroys such fields in reverse declaration order. Destructors cannot
 return or move ownership out of their receiver. Cleanup observes the same checked-borrow and field-sensitive access
 rules as ordinary code.
+
+Package variables with `NEEDS_DROP` remain live until normal executable termination. After `main` returns, the
+runtime invokes compiler-generated package cleanup, which destroys initialized package owners exactly once in reverse
+declaration order while preserving `main`'s exit status. Reassignment drops the previous live value and marks the new
+value initialized. Moving ownership out of package storage is rejected because a single function's move analysis cannot
+soundly represent package-wide moved state. The immediate `exit` intrinsic and abnormal process termination bypass
+normal package cleanup.
+
+Current implementation status: semantic ownership classification, move/reinitialization checks, checked borrows,
+generic-specialization propagation, typed-IR ownership effects, initialization flags, and native destructor/drop glue
+are implemented. Local and by-value-parameter cleanup covers scope fallthrough, `return`, `break`, and `continue`;
+recursive struct-field and fixed-array-element destruction is emitted in reverse order. Package storage participates in
+exactly-once cleanup after a normal return from `main`.
 
 Legacy enum member names must be unique within an enum. Legacy enum values are first-class:
 they can be stored, compared for equality, passed, and returned. Variant fields are scalar primitive types initialized
@@ -243,9 +278,10 @@ them; an empty line is `stdlib.println("")`. Calls evaluate their arguments befo
 importing higher-level library functions. See [CORE_RUNTIME.md](CORE_RUNTIME.md) for signatures and ownership contracts.
 
 `"stdlib/stdio"` provides synchronous byte-oriented file and standard streams, buffered readers/writers,
-complete-transfer loops, bounded owned byte/line reads and decimal integer output. Stream and buffer owners require
-explicit close or release and must not be copied. EOF, partial progress and OS errors are reported as typed library
-results. See [STDIO.md](STDIO.md) for the API and lifecycle rules.
+complete-transfer loops, bounded owned byte/line reads and decimal integer output. Its current wrappers predate
+destructor-backed ownership, so callers must follow their explicit close/release contract and must not manually copy
+owners. EOF, partial progress and OS errors are reported as typed library results. See [STDIO.md](STDIO.md) for the API
+and lifecycle rules.
 
 Function overloads differ by ordered parameter types, never return type. Exact matches beat promotions and other allowed
 numeric conversions. A candidate must be no worse in every argument and better in at least one; ties are ambiguous.

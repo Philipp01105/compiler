@@ -38,6 +38,8 @@ void write_cstring(const Emitter *emitter, const char *text);
 void write_quad(const Emitter *emitter, uint64_t value);
 long long constant_value(const AstProgram *program, const IrInstruction *instruction);
 int global_label(const SemanticSymbol *symbol, char *label, size_t size);
+int global_drop_flag_label(const SemanticSymbol *symbol, char *label,
+                           size_t size);
 int emit_function(Emitter *emitter);
 
 void write_x64_0(const Emitter *emitter, X64Opcode opcode);

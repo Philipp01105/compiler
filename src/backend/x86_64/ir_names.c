@@ -81,6 +81,7 @@ static int mangle_type(const IrModule *module, IrTypeId type_id, char *buffer,
 }
 
 static int function_is_overloaded(const IrModule *module, const IrFunction *function) {
+    if (function->is_drop_glue || function->is_package_cleanup) return 0;
     const char *name = ast_program_lexeme(function->source_program, function->name_token);
     size_t matches = 0;
     for (size_t i = 0; i < module->function_count; i++) {
@@ -102,6 +103,22 @@ static int function_is_overloaded(const IrModule *module, const IrFunction *func
 
 const char *function_link_name(const IrModule *module, const IrFunction *function,
                                       char *buffer, size_t buffer_size) {
+    if (function->is_package_cleanup) return "__dmm_package_cleanup";
+    if (function->is_drop_glue) {
+        IrTypeId owner_type = IR_TYPE_NONE;
+        for (IrTypeId t = 0; t < module->type_count; t++)
+            if (module->types[t].kind == IR_TYPE_NAMED &&
+                module->types[t].symbol_id == function->owner_symbol_id) {
+                owner_type = t;
+                break;
+            }
+        size_t used = 0;
+        buffer[0] = '\0';
+        return mangle_append(buffer, buffer_size, &used, "__dmm_drop_") &&
+               mangle_type(module, owner_type, buffer, buffer_size, &used, 0)
+                   ? buffer
+                   : NULL;
+    }
     if (function->symbol_id < module->semantics->symbol_count) {
         const AstDeclarationNode *declaration = module->semantics->symbols[function->symbol_id].declaration;
         if (declaration != NULL && declaration->specialization_identity != NULL)
@@ -216,4 +233,3 @@ int valid_module(const IrModule *module) {
     return main_symbol != NULL && main_symbol->declaration != NULL &&
            main_symbol->declaration->as.function.parameters == NULL;
 }
-

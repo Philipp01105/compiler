@@ -115,7 +115,8 @@ int is_pointer_value(const IrInstruction *instruction) {
 }
 
 int type_is_structure(const IrModule *module, IrTypeId type_id) {
-    if (type_id < module->type_count && module->types[type_id].kind == IR_TYPE_SLICE) return 1;
+    if (type_id < module->type_count &&
+        module->types[type_id].kind == IR_TYPE_SLICE) return 1;
     if (type_id >= module->type_count || module->types[type_id].kind != IR_TYPE_NAMED)
         return 0;
     size_t symbol_id = module->types[type_id].symbol_id;
@@ -187,6 +188,7 @@ static const IrParameter *function_parameter(const IrFunction *function,
 }
 
 const IrFunction *called_function(const IrModule *module, size_t symbol_id) {
+    if (symbol_id == AST_SYMBOL_NONE) return NULL;
     for (size_t i = 0; i < module->function_count; i++)
         if (module->functions[i].symbol_id == symbol_id) return &module->functions[i];
     return NULL;
@@ -201,6 +203,33 @@ static size_t slice_parameter_count(const IrFunction *function) {
 
 size_t parameter_storage_slots(const IrFunction *function) {
     return function->parameter_count + slice_parameter_count(function);
+}
+
+static size_t parameter_drop_slots(const IrModule *module,
+                                   const IrFunction *function) {
+    size_t count = 0;
+    for (size_t i = 0; i < function->parameter_count; i++)
+        if (!function->parameters[i].is_receiver &&
+            (ir_type_properties(module, function->parameters[i].type_id) &
+             SEMANTIC_TYPE_NEEDS_DROP))
+            count++;
+    return count;
+}
+
+static size_t parameter_flag_offset(const Emitter *emitter,
+                                    const IrParameter *parameter) {
+    size_t ordinal = 0;
+    for (size_t i = 0; i < emitter->function->parameter_count; i++) {
+        const IrParameter *candidate = &emitter->function->parameters[i];
+        if (candidate == parameter)
+            return (emitter->function->next_value +
+                    parameter_storage_slots(emitter->function) + ordinal + 2U) * 8U;
+        if (!candidate->is_receiver &&
+            (ir_type_properties(emitter->module, candidate->type_id) &
+             SEMANTIC_TYPE_NEEDS_DROP))
+            ordinal++;
+    }
+    return 0;
 }
 
 static size_t slice_length_ordinal(const IrFunction *function, size_t parameter_index) {
@@ -219,10 +248,34 @@ size_t type_slots(const IrModule *module, IrTypeId type_id) {
     return ir_type_layout(module, type_id, &layout) ? layout.storage_slots : 0;
 }
 
+static size_t declaration_offset(const Emitter *emitter,
+                                 const IrInstruction *declaration);
+
 static size_t declaration_slots(const Emitter *emitter,
                                 const IrInstruction *declaration) {
     size_t slots = type_slots(emitter->module, declaration->type_id);
+    if (ir_type_properties(emitter->module, declaration->type_id) &
+        SEMANTIC_TYPE_NEEDS_DROP)
+        slots++;
+    if (declaration->is_slice) slots++;
     return slots;
+}
+
+static size_t declaration_slice_owner_offset(
+    const Emitter *emitter, const IrInstruction *declaration) {
+    size_t offset = declaration_offset(emitter, declaration) -
+                    type_slots(emitter->module, declaration->type_id) * 8U;
+    if (ir_type_properties(emitter->module, declaration->type_id) &
+        SEMANTIC_TYPE_NEEDS_DROP)
+        offset -= 8U;
+    return offset;
+}
+
+static size_t declaration_flag_offset(const Emitter *emitter,
+                                      const IrInstruction *declaration) {
+    size_t offset = declaration_offset(emitter, declaration);
+    size_t data_slots = type_slots(emitter->module, declaration->type_id);
+    return offset - data_slots * 8U;
 }
 
 static size_t declaration_offset(const Emitter *emitter,
@@ -233,6 +286,7 @@ static size_t declaration_offset(const Emitter *emitter,
         if (candidate->opcode != IR_OP_DECLARE) continue;
         if (candidate == declaration)
             return (emitter->function->next_value + parameter_storage_slots(emitter->function) +
+                    parameter_drop_slots(emitter->module, emitter->function) +
                     slots_before + declaration_slots(emitter, candidate) + 1U) * 8U;
         slots_before += declaration_slots(emitter, candidate);
     }
@@ -659,13 +713,15 @@ size_t aggregate_result_offset(const Emitter *emitter,
     for (size_t i = 0; i < emitter->function->instruction_count; i++) {
         const IrInstruction *candidate = &emitter->function->instructions[i];
         if ((candidate->opcode != IR_OP_CALL && candidate->opcode != IR_OP_ENUM_CONSTRUCT && candidate->opcode !=
-             IR_OP_SLICE) || !is_inline_structure(emitter->module,
-                                                  candidate))
+             IR_OP_SLICE && candidate->opcode != IR_OP_ARRAY_LITERAL) ||
+            (!is_inline_structure(emitter->module, candidate) &&
+             !candidate->is_array))
             continue;
         size_t slots = type_slots(emitter->module, candidate->type_id);
         if (candidate == result)
             return (emitter->function->next_value +
                     parameter_storage_slots(emitter->function) +
+                    parameter_drop_slots(emitter->module, emitter->function) +
                     emitter->declaration_count + slots_before + slots + 1U) * 8U;
         slots_before += slots;
     }
@@ -677,8 +733,9 @@ static size_t aggregate_result_slots(const Emitter *emitter) {
     for (size_t i = 0; i < emitter->function->instruction_count; i++) {
         const IrInstruction *instruction = &emitter->function->instructions[i];
         if ((instruction->opcode == IR_OP_CALL || instruction->opcode == IR_OP_ENUM_CONSTRUCT || instruction->opcode ==
-             IR_OP_SLICE) &&
-            is_inline_structure(emitter->module, instruction))
+             IR_OP_SLICE || instruction->opcode == IR_OP_ARRAY_LITERAL) &&
+            (is_inline_structure(emitter->module, instruction) ||
+             instruction->is_array))
             result += type_slots(emitter->module, instruction->type_id);
     }
     return result;
@@ -694,6 +751,7 @@ static size_t parameter_copy_offset(const Emitter *emitter, size_t parameter_ind
     size_t slots = type_slots(emitter->module,
                               emitter->function->parameters[parameter_index].type_id);
     return (emitter->function->next_value + parameter_storage_slots(emitter->function) +
+            parameter_drop_slots(emitter->module, emitter->function) +
             emitter->declaration_count + aggregate_result_slots(emitter) +
             slots_before + slots + 1U) * 8U;
 }
@@ -761,6 +819,173 @@ static size_t aggregate_field_offset(const Emitter *emitter,
     return SIZE_MAX;
 }
 
+static int emit_drop_type(Emitter *emitter, IrTypeId type_id) {
+    if (type_id >= emitter->module->type_count) return 0;
+    const IrType *type = &emitter->module->types[type_id];
+    if (type->kind == IR_TYPE_ARRAY) {
+        IrTypeLayout element;
+        if (!ir_type_layout(emitter->module, type->element_type, &element))
+            return 0;
+        /* Keep the array base in an aligned, call-safe stack slot while
+           recursively destroying elements in reverse order. */
+        write_register_move(emitter, "rbx", "rax");
+        write_x64_1(emitter, X64_OP_PUSH, X64_WIDTH_QWORD,
+                    x64_register("rbx"));
+        write_x64_1(emitter, X64_OP_PUSH, X64_WIDTH_QWORD,
+                    x64_register("rbx"));
+        for (size_t i = type->array_length; i > 0; i--) {
+            write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                        x64_register("rbx"),
+                        x64_memory(X64_WIDTH_QWORD, "rsp", 0));
+            write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD,
+                        x64_register("rax"),
+                        x64_memory(X64_WIDTH_NONE, "rbx",
+                                   (long long) ((i - 1) * element.size)));
+            if (!emit_drop_type(emitter, type->element_type)) return 0;
+        }
+        write_x64_2(emitter, X64_OP_ADD, X64_WIDTH_QWORD,
+                    x64_register("rsp"), x64_immediate(16));
+        return 1;
+    }
+    if (type->kind != IR_TYPE_NAMED) return 1;
+    const IrFunction *glue = called_function(emitter->module,
+                                             type->symbol_id);
+    if (glue == NULL || !glue->is_drop_glue) return 0;
+    char buffer[4096];
+    const char *name = function_link_name(emitter->module, glue, buffer,
+                                          sizeof(buffer));
+    if (name == NULL) return 0;
+    write_register_move(emitter,
+                        emitter->target == TARGET_COFF ? "rcx" : "rdi",
+                        "rax");
+    write_call(emitter, name);
+    return 1;
+}
+
+static int emit_ownership_effect(Emitter *emitter,
+                                 const IrInstruction *instruction,
+                                 size_t index) {
+    const SemanticSymbol *symbol =
+        instruction->symbol_id < emitter->module->semantics->symbol_count
+            ? &emitter->module->semantics->symbols[instruction->symbol_id]
+            : NULL;
+    const IrInstruction *declaration = local_declaration(
+        emitter->function, instruction->symbol_id, index);
+    const IrParameter *parameter = function_parameter(
+        emitter->function, instruction->symbol_id);
+    const IrGlobal *global = NULL;
+    for (size_t g = 0; g < emitter->module->global_count; g++)
+        if (emitter->module->globals[g].symbol_id == instruction->symbol_id) {
+            global = &emitter->module->globals[g];
+            break;
+        }
+    if (instruction->opcode == IR_OP_MOVE ||
+        instruction->opcode == IR_OP_REINIT) {
+        if (declaration == NULL && parameter == NULL && global == NULL) return 0;
+        write_immediate(emitter, "rax",
+                        instruction->opcode == IR_OP_REINIT ? 1 : 0);
+        if (global != NULL) {
+            char flag[4096];
+            if (!global_drop_flag_label(symbol, flag, sizeof(flag))) return 0;
+            X64Operand flag_memory =
+                x64_rip_memory(X64_WIDTH_QWORD, flag, 0);
+            flag_memory.has_symbol_suffix = 0;
+            write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                        flag_memory,
+                        x64_register("rax"));
+        } else
+            write_local_store(emitter, "rax",
+                              declaration != NULL
+                                  ? declaration_flag_offset(emitter, declaration)
+                                  : parameter_flag_offset(emitter, parameter));
+        return 1;
+    }
+    if (instruction->opcode != IR_OP_DROP) return 0;
+    if (declaration != NULL) {
+        char skip[96];
+        snprintf(skip, sizeof(skip), ".LIR_drop_skip_%zu_%zu",
+                 emitter->function_index, index);
+        size_t flag = declaration_flag_offset(emitter, declaration);
+        write_local_load(emitter, "rax", flag);
+        write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_QWORD,
+                    x64_register("rax"), x64_immediate(0));
+        write_x64_1(emitter, X64_OP_JE, X64_WIDTH_NONE, x64_label(skip));
+        write_immediate(emitter, "rax", 0);
+        write_local_store(emitter, "rax", flag);
+        write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD,
+                    x64_register("rax"),
+                    x64_memory(X64_WIDTH_NONE, "rbp",
+                               -(long long) declaration_offset(emitter,
+                                                               declaration)));
+        if (!emit_drop_type(emitter, instruction->type_id)) return 0;
+        write_labelf(emitter, "%s:\n", skip);
+        return 1;
+    }
+    if (parameter != NULL && !parameter->is_receiver) {
+        char skip[96];
+        snprintf(skip, sizeof(skip), ".LIR_drop_skip_%zu_%zu",
+                 emitter->function_index, index);
+        size_t flag = parameter_flag_offset(emitter, parameter);
+        write_local_load(emitter, "rax", flag);
+        write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_QWORD,
+                    x64_register("rax"), x64_immediate(0));
+        write_x64_1(emitter, X64_OP_JE, X64_WIDTH_NONE, x64_label(skip));
+        write_immediate(emitter, "rax", 0);
+        write_local_store(emitter, "rax", flag);
+        write_local_load(emitter, "rax", parameter_offset(emitter, parameter));
+        if (!emit_drop_type(emitter, instruction->type_id)) return 0;
+        write_labelf(emitter, "%s:\n", skip);
+        return 1;
+    }
+    if (global != NULL) {
+        char flag[4096], label[4096], skip[96];
+        if (!global_drop_flag_label(symbol, flag, sizeof(flag)) ||
+            !global_label(symbol, label, sizeof(label)))
+            return 0;
+        snprintf(skip, sizeof(skip), ".LIR_drop_skip_%zu_%zu",
+                 emitter->function_index, index);
+        X64Operand flag_memory =
+            x64_rip_memory(X64_WIDTH_QWORD, flag, 0);
+        flag_memory.has_symbol_suffix = 0;
+        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                    x64_register("rax"),
+                    flag_memory);
+        write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_QWORD,
+                    x64_register("rax"), x64_immediate(0));
+        write_x64_1(emitter, X64_OP_JE, X64_WIDTH_NONE, x64_label(skip));
+        write_immediate(emitter, "rax", 0);
+        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                    flag_memory,
+                    x64_register("rax"));
+        X64Operand global_memory =
+            x64_rip_memory(X64_WIDTH_NONE, label, 0);
+        global_memory.has_symbol_suffix = 0;
+        write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD,
+                    x64_register("rax"), global_memory);
+        if (!emit_drop_type(emitter, instruction->type_id)) return 0;
+        write_labelf(emitter, "%s:\n", skip);
+        return 1;
+    }
+    if (symbol != NULL && symbol->kind == SEMANTIC_SYMBOL_FIELD &&
+        emitter->function->is_drop_glue) {
+        const IrParameter *receiver = function_receiver(emitter->function);
+        const IrAggregate *aggregate = aggregate_for_symbol(
+            emitter->module, emitter->function->owner_symbol_id);
+        size_t offset = aggregate == NULL
+                            ? SIZE_MAX
+                            : aggregate_field_offset(emitter, aggregate,
+                                                     instruction->symbol_id);
+        if (receiver == NULL || offset == SIZE_MAX) return 0;
+        write_local_load(emitter, "rax", parameter_offset(emitter, receiver));
+        if (offset != 0)
+            write_x64_2(emitter, X64_OP_ADD, X64_WIDTH_QWORD,
+                        x64_register("rax"),
+                        x64_immediate((long long) offset));
+        return emit_drop_type(emitter, instruction->type_id);
+    }
+    return 0;
+}
+
 int global_label(const SemanticSymbol *symbol, char *label, size_t size) {
     size_t used = 0;
     label[0] = '\0';
@@ -774,6 +999,16 @@ int global_label(const SemanticSymbol *symbol, char *label, size_t size) {
     return mangle_append(label, size, &used, "_") && mangle_append(label, size, &used,
                                                                    ast_program_lexeme(
                                                                        symbol->source_program, symbol->name_token));
+}
+
+int global_drop_flag_label(const SemanticSymbol *symbol, char *label,
+                           size_t size) {
+    size_t used = 0;
+    char global[4096];
+    if (!global_label(symbol, global, sizeof(global)) ||
+        !mangle_append(label, size, &used, global))
+        return 0;
+    return mangle_append(label, size, &used, "__drop_flag");
 }
 
 static int emit_lvalue_address(Emitter *emitter, const IrInstruction *target,
@@ -1230,7 +1465,7 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
         case IR_OP_DECLARE: {
             size_t offset = declaration_offset(emitter, instruction);
             if (instruction->is_array || is_inline_structure(emitter->module, instruction)) {
-                size_t slots = declaration_slots(emitter, instruction);
+                size_t slots = type_slots(emitter->module, instruction->type_id);
                 if (instruction->operand_a != IR_VALUE_NONE &&
                     (instruction->is_array || is_inline_structure(emitter->module, instruction))) {
                     write_value_load(emitter, "rax", instruction->operand_a);
@@ -1243,6 +1478,21 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                     for (size_t slot = 0; slot < slots; slot++)
                         write_local_store(emitter, "rax", offset - slot * 8U);
                 }
+                if (ir_type_properties(emitter->module, instruction->type_id) &
+                    SEMANTIC_TYPE_NEEDS_DROP) {
+                    write_immediate(emitter, "rax", 1);
+                    write_local_store(emitter, "rax",
+                                      declaration_flag_offset(emitter,
+                                                              instruction));
+                }
+                if (instruction->is_slice) {
+                    if (instruction->owns_slice_backing)
+                        write_local_load(emitter, "rax", offset);
+                    else write_immediate(emitter, "rax", 0);
+                    write_local_store(emitter, "rax",
+                                      declaration_slice_owner_offset(
+                                          emitter, instruction));
+                }
                 return 1;
             }
             if (instruction->operand_a == IR_VALUE_NONE) write_immediate(emitter, "rax", 0);
@@ -1253,8 +1503,19 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                     convert_rax(emitter, value->type, instruction->type);
             }
             write_local_store(emitter, "rax", offset);
+            if (ir_type_properties(emitter->module, instruction->type_id) &
+                SEMANTIC_TYPE_NEEDS_DROP) {
+                write_immediate(emitter, "rax", 1);
+                write_local_store(emitter, "rax",
+                                  declaration_flag_offset(emitter,
+                                                          instruction));
+            }
             return 1;
         }
+        case IR_OP_DROP:
+        case IR_OP_MOVE:
+        case IR_OP_REINIT:
+            return emit_ownership_effect(emitter, instruction, index);
         case IR_OP_STORE: {
             const IrInstruction *target = producer(function, instruction->operand_a);
             if (emitter->module->optimized && target && target->opcode == IR_OP_LOAD &&
@@ -1277,7 +1538,7 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             }
             if (!emit_lvalue_address(emitter, target, index)) return 0;
             if (instruction->operator_type == TOKEN_EQUAL &&
-                is_inline_structure(emitter->module, target)) {
+                (target->is_array || is_inline_structure(emitter->module, target))) {
                 const IrInstruction *source = producer(function, instruction->operand_b);
                 if (target->type_id < emitter->module->type_count && source &&
                     source->type_id < emitter->module->type_count) {
@@ -1302,6 +1563,21 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                 write_value_load(emitter, "rax", instruction->operand_b);
                 copy_aggregate(emitter, type_slots(emitter->module, target->type_id),
                                "rax", "rbx");
+                if (target->is_slice && target->opcode == IR_OP_LOAD) {
+                    const IrInstruction *declaration = local_declaration(
+                        function, target->symbol_id, index);
+                    if (declaration != NULL) {
+                        if (instruction->owns_slice_backing)
+                            write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                                        x64_register("rax"),
+                                        x64_memory(X64_WIDTH_QWORD, "rbx", 0));
+                        else write_immediate(emitter, "rax", 0);
+                        write_local_store(
+                            emitter, "rax",
+                            declaration_slice_owner_offset(emitter,
+                                                           declaration));
+                    }
+                }
                 return 1;
             }
             write_typed_indirect_load(emitter, target->type, target->pointer_depth, "rbx");
@@ -1625,6 +1901,86 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             write_value_store(emitter, "rbx", instruction->result);
             return 1;
         }
+        case IR_OP_ARRAY_LITERAL: {
+            if (instruction->type_id >= emitter->module->type_count ||
+                instruction->argument_count == 0 || instruction->element_count == 0)
+                return 0;
+            const IrType *container = &emitter->module->types[instruction->type_id];
+            if (container->kind != IR_TYPE_ARRAY && container->kind != IR_TYPE_SLICE)
+                return 0;
+            IrTypeLayout element_layout;
+            if (!ir_type_layout(emitter->module, container->element_type,
+                                &element_layout) || element_layout.storage_slots == 0)
+                return 0;
+            if (container->kind == IR_TYPE_SLICE) {
+                write_immediate(emitter, emitter->target == TARGET_COFF ? "rcx" : "rdi",
+                                (long long) instruction->element_count);
+                write_immediate(emitter, emitter->target == TARGET_COFF ? "rdx" : "rsi",
+                                (long long) element_layout.size);
+                write_call(emitter, "calloc");
+                write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                            x64_register("r10"), x64_register("rax"));
+            } else {
+                size_t offset = aggregate_result_offset(emitter, instruction);
+                write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD,
+                            x64_register("r10"),
+                            x64_memory(X64_WIDTH_NONE, "rbp", -(long long) offset));
+            }
+            for (size_t element = 0; element < instruction->element_count; element++) {
+                size_t value_id = function->arguments[
+                    instruction->first_argument + element % instruction->argument_count];
+                const IrInstruction *value = producer(function, value_id);
+                if (value == NULL) return 0;
+                size_t byte_offset = element * element_layout.size;
+                const IrType *target = &emitter->module->types[container->element_type];
+                const IrType *source = value->type_id < emitter->module->type_count
+                                           ? &emitter->module->types[value->type_id]
+                                           : NULL;
+                if (target->kind == IR_TYPE_NAMED && source != NULL &&
+                    source->kind == IR_TYPE_NAMED &&
+                    semantic_implements_interface(emitter->module->semantics,
+                                                  target->symbol_id,
+                                                  source->symbol_id)) {
+                    write_immediate(emitter, "rax", (long long) (source->symbol_id + 1U));
+                    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                                x64_memory(X64_WIDTH_QWORD, "r10", (long long) byte_offset),
+                                x64_register("rax"));
+                    write_value_load(emitter, "rax", value_id);
+                    write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD,
+                                x64_register("rdx"),
+                                x64_memory(X64_WIDTH_NONE, "r10", (long long) byte_offset + 8));
+                    copy_aggregate(emitter, type_slots(emitter->module, value->type_id),
+                                   "rax", "rdx");
+                } else if (element_layout.storage_slots > 1U ||
+                           type_is_structure(emitter->module, container->element_type)) {
+                    write_value_load(emitter, "rax", value_id);
+                    write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD,
+                                x64_register("rdx"),
+                                x64_memory(X64_WIDTH_NONE, "r10", (long long) byte_offset));
+                    copy_aggregate(emitter, element_layout.storage_slots, "rax", "rdx");
+                } else {
+                    write_value_load(emitter, "rax", value_id);
+                    if (target->kind == IR_TYPE_PRIMITIVE)
+                        convert_rax(emitter, value->type, target->primitive);
+                    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                                x64_memory(X64_WIDTH_QWORD, "r10", (long long) byte_offset),
+                                x64_register("rax"));
+                }
+            }
+            if (container->kind == IR_TYPE_SLICE) {
+                size_t descriptor = aggregate_result_offset(emitter, instruction);
+                write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD,
+                            x64_register("rbx"),
+                            x64_memory(X64_WIDTH_NONE, "rbp", -(long long) descriptor));
+                write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                            x64_memory(X64_WIDTH_QWORD, "rbx", 0), x64_register("r10"));
+                write_immediate(emitter, "rax", (long long) instruction->element_count);
+                write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                            x64_memory(X64_WIDTH_QWORD, "rbx", 8), x64_register("rax"));
+                write_value_store(emitter, "rbx", instruction->result);
+            } else write_value_store(emitter, "r10", instruction->result);
+            return 1;
+        }
         case IR_OP_ALLOC: {
             size_t slots = 1;
             if (instruction->type_id < emitter->module->type_count) {
@@ -1637,6 +1993,28 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                             (long long) (slots * 8U));
             write_call(emitter, "calloc");
             write_value_store(emitter, "rax", instruction->result);
+            return 1;
+        }
+        case IR_OP_FREE_SLICE_BACKING: {
+            const char *argument = emitter->target == TARGET_COFF ? "rcx" : "rdi";
+            if (instruction->operand_a != IR_VALUE_NONE) {
+                write_value_load(emitter, "rax", instruction->operand_a);
+                write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                            x64_register(argument),
+                            x64_memory(X64_WIDTH_QWORD, "rax", 0));
+            } else {
+                const IrInstruction *declaration = local_declaration(
+                    function, instruction->symbol_id, index);
+                if (declaration == NULL) return 0;
+                write_local_load(emitter, argument,
+                                 declaration_slice_owner_offset(
+                                     emitter, declaration));
+                write_immediate(emitter, "rax", 0);
+                write_local_store(emitter, "rax",
+                                  declaration_slice_owner_offset(
+                                      emitter, declaration));
+            }
+            write_call(emitter, "free");
             return 1;
         }
         case IR_OP_FREE:
@@ -1728,12 +2106,15 @@ int emit_function(Emitter *emitter) {
     if (name == NULL) return 0;
     emitter->current_label = IR_VALUE_NONE;
     emitter->bounds_sequence = 0;
+    int exported = !emitter->function->is_drop_glue &&
+                   !emitter->function->is_package_cleanup &&
+                   (emitter->module->semantics->symbols[
+                        emitter->function->symbol_id].declaration->is_public ||
+                    !strcmp(name, "main"));
     if (emitter->native) {
-        const SemanticSymbol *symbol = &emitter->module->semantics->symbols[emitter->function->symbol_id];
-        if (!native_define(emitter->native, name, symbol->declaration->is_public || !strcmp(name, "main"), 1)) return 0;
+        if (!native_define(emitter->native, name, exported, 1)) return 0;
     } else {
-        const SemanticSymbol *symbol = &emitter->module->semantics->symbols[emitter->function->symbol_id];
-        if (symbol->declaration->is_public || !strcmp(name, "main")) fprintf(output, "    .globl %s\n", name);
+        if (exported) fprintf(output, "    .globl %s\n", name);
         if (emitter->target == TARGET_COFF)
             fprintf(output, "    .def %s; .scl 2; .type 32; .endef\n", name);
         else
@@ -1799,6 +2180,16 @@ int emit_function(Emitter *emitter) {
         write_local_store(emitter, "rax", is_length
                                               ? slice_length_offset(emitter, p)
                                               : parameter_offset(emitter, parameter));
+    }
+    for (size_t p = 0; p < emitter->function->parameter_count; p++) {
+        const IrParameter *parameter = &emitter->function->parameters[p];
+        if (parameter->is_receiver ||
+            !(ir_type_properties(emitter->module, parameter->type_id) &
+              SEMANTIC_TYPE_NEEDS_DROP))
+            continue;
+        write_immediate(emitter, "rax", 1);
+        write_local_store(emitter, "rax",
+                          parameter_flag_offset(emitter, parameter));
     }
     for (size_t i = 0; i < emitter->function->instruction_count; i++) {
         if (emitter->source_map != NULL) {

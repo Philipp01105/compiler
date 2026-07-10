@@ -467,6 +467,30 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
             expression->left = data;
             expression->right = length;
         }
+    } else if (match(parser, TOKEN_LBRACKET)) {
+        expression = new_expression(parser, AST_EXPR_ARRAY_LITERAL, first);
+        AstExpression *elements = NULL, **tail = &elements;
+        if (check(parser, TOKEN_RBRACKET)) {
+            parser_failure(parser, ERR_PARSE_EXPECTED_TOKEN,
+                           "Array literal requires a non-empty element pattern");
+        } else {
+            do {
+                AstExpression *element = parse_expression(parser);
+                if (tail != NULL) {
+                    *tail = element;
+                    if (element != NULL) tail = &element->next;
+                }
+                if (!match(parser, TOKEN_COMMA)) break;
+            } while (!parser->failed && !check(parser, TOKEN_RBRACKET) &&
+                     !check(parser, TOKEN_SEMICOLON));
+        }
+        AstExpression *repeat = NULL;
+        if (match(parser, TOKEN_SEMICOLON)) repeat = parse_expression(parser);
+        (void) consume(parser, TOKEN_RBRACKET);
+        if (expression != NULL) {
+            expression->arguments = elements;
+            expression->right = repeat;
+        }
     } else if (match(parser, TOKEN_LPAREN)) {
         expression = parse_expression(parser);
         (void) consume(parser, TOKEN_RPAREN);

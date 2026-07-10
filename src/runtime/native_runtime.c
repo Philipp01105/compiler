@@ -518,13 +518,23 @@ int native_runtime_emit(NativeObject *object, TargetFormat target) {
     if (target == TARGET_COFF) {
         stack(&r, X64_OP_SUB, 40);
         op1(&r, X64_OP_CALL, x64_label("main"));
-        op2(&r, X64_OP_MOV, X64_WIDTH_DWORD, x64_register("ecx"), x64_register("eax"));
+        op2(&r, X64_OP_MOV, X64_WIDTH_QWORD,
+            x64_memory(X64_WIDTH_QWORD, "rsp", 32), x64_register("rax"));
+        op1(&r, X64_OP_CALL, x64_label("__dmm_package_cleanup"));
+        op2(&r, X64_OP_MOV, X64_WIDTH_DWORD, x64_register("ecx"),
+            x64_memory(X64_WIDTH_DWORD, "rsp", 32));
         op1(&r, X64_OP_CALL, x64_label("__dmm_os_ExitProcess"));
         op0(&r, X64_OP_UD2);
     } else {
         constant(&r, X64_OP_AND, "rsp", -16);
         op1(&r, X64_OP_CALL, x64_label("main"));
-        mov(&r, "rdi", "rax");
+        stack(&r, X64_OP_SUB, 16);
+        op2(&r, X64_OP_MOV, X64_WIDTH_QWORD,
+            x64_memory(X64_WIDTH_QWORD, "rsp", 0), x64_register("rax"));
+        op1(&r, X64_OP_CALL, x64_label("__dmm_package_cleanup"));
+        op2(&r, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rdi"),
+            x64_memory(X64_WIDTH_QWORD, "rsp", 0));
+        stack(&r, X64_OP_ADD, 16);
         imm(&r, "rax", 60);
         op0(&r, X64_OP_SYSCALL);
         op0(&r, X64_OP_UD2);
@@ -588,7 +598,8 @@ int native_runtime_assembly(FILE *output, TargetFormat target) {
             if (relocation) {
                 NativeSymbol *symbol = &object.symbols[relocation->symbol];
                 const char *name = symbol->name;
-                if (!symbol->defined && strcmp(name, "main")) {
+                if (!symbol->defined && strcmp(name, "main") &&
+                    strcmp(name, "__dmm_package_cleanup")) {
                     name = native_runtime_import(name, target);
                     if (!name) {
                         native_object_free(&object);

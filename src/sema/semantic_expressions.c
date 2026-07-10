@@ -40,6 +40,42 @@ static void metadata_name(DiagnosticText *text, const Analyzer *analyzer, const 
     if (type->outer_pointer_depth && (type->is_array || type->is_slice)) diagnostic_append(text, ")");
 }
 
+static int array_literal_element_allowed(const Analyzer *analyzer,
+                                         const AstExpression *element,
+                                         const AstType *element_type) {
+    size_t target = resolve_named_symbol_id(analyzer, analyzer->program,
+                                            named_type_token(analyzer->program, element_type));
+    if (target < analyzer->model->symbol_count &&
+        analyzer->model->symbols[target].kind == SEMANTIC_SYMBOL_INTERFACE &&
+        element->resolved_pointer_depth == 0 &&
+        element->resolved_outer_pointer_depth == 0 &&
+        !element->resolved_is_array && !element->resolved_is_slice &&
+        semantic_implements_interface(analyzer->model, target,
+                                      element->resolved_named_symbol_id))
+        return 1;
+    return expression_to_declared_type_allowed(analyzer, element,
+                                               analyzer->program, element_type);
+}
+
+static void contextualize_direct_call_literals(Analyzer *analyzer,
+                                               AstExpression *call) {
+    if (call == NULL || call->kind != AST_EXPR_CALL || call->left == NULL ||
+        call->left->kind != AST_EXPR_NAME) return;
+    const char *name = ast_program_lexeme(analyzer->program,
+                                         call->left->value_token);
+    const SemanticSymbol *function = scoped_find_global(
+        analyzer->model, analyzer->program, name, SEMANTIC_SYMBOL_FUNCTION);
+    if (function == NULL || function->declaration == NULL ||
+        function->declaration->generic_parameters != NULL) return;
+    AstExpression *argument = call->arguments;
+    const AstParameter *parameter =
+        function->declaration->as.function.parameters;
+    for (; argument != NULL && parameter != NULL;
+         argument = argument->next, parameter = parameter->next)
+        if (argument->kind == AST_EXPR_ARRAY_LITERAL)
+            argument->allocated_type = parameter->type;
+}
+
 void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
     if (expression == NULL) return;
     if (expression->kind == AST_EXPR_TYPE_INFO && !expression->left &&
@@ -79,6 +115,7 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
     }
     analyze_expression(analyzer, expression->left);
     analyze_expression(analyzer, expression->right);
+    contextualize_direct_call_literals(analyzer, expression);
     for (AstExpression *argument = expression->arguments; argument != NULL; argument = argument->next)
         analyze_expression(analyzer, argument);
 
@@ -109,6 +146,7 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
     expression->resolved_is_array = 0;
     expression->resolved_is_slice = 0;
     expression->resolved_symbol_id = AST_SYMBOL_NONE;
+    expression->owns_slice_backing = 0;
     if (expression->kind == AST_EXPR_MEMBER && expression->left && same_name(
             analyzer->program, expression->value_token, "type")) {
         if (expression->left->kind == AST_EXPR_TYPE_INFO ||
@@ -201,6 +239,75 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
             expression->resolved_pointer_depth = data->resolved_pointer_depth ? data->resolved_pointer_depth - 1 : 0;
             expression->resolved_is_slice = 1;
         }
+    } else if (expression->kind == AST_EXPR_ARRAY_LITERAL) {
+        AstType expected = expression->allocated_type;
+        normalize_generic_type(analyzer, &expected, 0);
+        validate_array_shape(analyzer, &expected);
+        if (expected.kind == AST_TYPE_INFERRED ||
+            (!expected.is_array && !expected.is_slice) ||
+            expected.outer_pointer_depth != 0) {
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE,
+                           ERR_TYPE_UNKNOWN,
+                           "Array literal requires an expected fixed-array or slice type");
+            return;
+        }
+
+        size_t pattern_count = 0;
+        for (const AstExpression *element = expression->arguments; element != NULL;
+             element = element->next)
+            pattern_count++;
+        size_t element_count = pattern_count;
+        if (expression->right != NULL) {
+            if (!constant_expression_allowed(analyzer, expression->right) ||
+                !fold_constant(analyzer, expression->right, TYPE_USIZE)) {
+                semantic_error(analyzer, expression->right->first_token,
+                               ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                               "Array literal repetition count must be a positive compile-time integer constant");
+                element_count = 0;
+            } else {
+                const char *text = expression->right->folded_constant.lexeme;
+                char *end = NULL;
+                unsigned long long value = strtoull(text ? text : "", &end, 10);
+                if (text == NULL || end == text || *end != '\0' || value == 0 ||
+                    value > SIZE_MAX) {
+                    semantic_error(analyzer, expression->right->first_token,
+                                   ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                                   "Array literal repetition count must be a positive compile-time integer constant");
+                    element_count = 0;
+                } else element_count = (size_t) value;
+            }
+        }
+        if (expected.is_array && element_count != expected.resolved_array_length)
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE,
+                           ERR_TYPE_INCOMPATIBLE_TYPES,
+                           "Array literal element count must match the fixed-array length");
+
+        AstType element_type = expected;
+        element_type.is_array = 0;
+        element_type.is_slice = 0;
+        element_type.array_length_token = AST_TOKEN_NONE;
+        element_type.resolved_array_length = 0;
+        for (AstExpression *element = expression->arguments; element != NULL;
+             element = element->next)
+            if (!array_literal_element_allowed(analyzer, element, &element_type))
+                conversion_error(analyzer, element, analyzer->program, &element_type,
+                                 NULL, "Cannot implicitly convert array literal element");
+
+        expression->resolved_type = primitive_type(analyzer->program, &expected);
+        expression->resolved_pointer_depth = expected.pointer_depth;
+        expression->resolved_outer_pointer_depth = expected.outer_pointer_depth;
+        expression->resolved_borrow_kind = expected.borrow_kind;
+        expression->resolved_is_array = expected.is_array;
+        expression->resolved_is_slice = expected.is_slice;
+        expression->resolved_array_length = expected.is_array
+                                                ? expected.resolved_array_length
+                                                : 0;
+        expression->literal_element_count = element_count;
+        expression->owns_slice_backing = expected.is_slice;
+        expression->resolved_named_type_token = named_type_token(analyzer->program, &expected);
+        expression->resolved_named_symbol_id = resolve_named_symbol_id(
+            analyzer, analyzer->program, expression->resolved_named_type_token);
+        expression->allocated_type = expected;
     } else if (expression->kind == AST_EXPR_LITERAL) {
         TokenType token = expression->value_token < analyzer->program->token_count
                               ? analyzer->program->tokens[expression->value_token].type
@@ -508,6 +615,14 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                 expression->resolved_is_array = method->declared_type.is_array;
                 expression->resolved_is_slice = method->declared_type.is_slice;
             }
+        }
+        if (expression->resolved_symbol_id < analyzer->model->symbol_count) {
+            const SemanticSymbol *callee =
+                &analyzer->model->symbols[expression->resolved_symbol_id];
+            if (callee->kind == SEMANTIC_SYMBOL_FUNCTION &&
+                callee->declaration != NULL &&
+                callee->declaration->as.function.returns_owned_slice_backing)
+                expression->owns_slice_backing = 1;
         }
     } else if (expression->kind == AST_EXPR_INDEX && expression->left != NULL) {
         expression->resolved_type = expression->left->resolved_type;

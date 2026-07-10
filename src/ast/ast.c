@@ -124,6 +124,15 @@ static int valid_expression(const AstProgram *program, const AstExpression *expr
         case AST_EXPR_CALL:
             if (!valid_expression(program, expression->left)) return 0;
             break;
+        case AST_EXPR_ARRAY_LITERAL:
+            if (expression->arguments == NULL) return 0;
+            for (const AstExpression *element = expression->arguments;
+                 element != NULL; element = element->next)
+                if (!valid_expression(program, element)) return 0;
+            if (expression->right != NULL &&
+                !valid_expression(program, expression->right))
+                return 0;
+            break;
         case AST_EXPR_MEMBER:
         case AST_EXPR_SLICE_LENGTH:
         case AST_EXPR_SLICE_DATA:

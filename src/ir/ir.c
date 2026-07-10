@@ -6,6 +6,7 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 void ir_report_failure(const IrFunction *function, size_t index,
                        const char *stage, const char *reason) {
@@ -37,7 +38,12 @@ void ir_report_failure(const IrFunction *function, size_t index,
 
 typedef struct DeferredAction {
     int captured_call;
+    int drop_local;
+    int free_slice_backing;
     IrInstruction call;
+    IrTypeId drop_type_id;
+    size_t drop_symbol_id;
+    AstSourceSpan drop_span;
     size_t *arguments;
     size_t argument_count;
     const AstStatement *body;
@@ -349,6 +355,9 @@ static size_t coerce_slice(IrBuilder *builder, size_t value, IrTypeId target, As
     return slice->result;
 }
 
+static void emit_move_if_owned(IrBuilder *builder,
+                               const AstExpression *expression);
+
 static size_t lower_expression(IrBuilder *builder, const AstExpression *expression) {
     if (expression == NULL) return IR_VALUE_NONE;
     if (expression->kind == AST_EXPR_ENUM_ACCESS) {
@@ -427,6 +436,38 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
             builder->program = saved;
             return result;
         }
+    }
+    if (expression->kind == AST_EXPR_ARRAY_LITERAL) {
+        size_t count = 0;
+        for (const AstExpression *element = expression->arguments;
+             element != NULL; element = element->next) count++;
+        size_t *values = count == 0 ? NULL : calloc(count, sizeof(*values));
+        if (values == NULL && count != 0) {
+            builder->failed = 1;
+            return IR_VALUE_NONE;
+        }
+        size_t index = 0;
+        for (const AstExpression *element = expression->arguments;
+             element != NULL; element = element->next)
+            values[index++] = lower_expression(builder, element);
+        IrInstruction *instruction = emit(builder, IR_OP_ARRAY_LITERAL,
+                                          expression->span);
+        if (instruction == NULL) {
+            free(values);
+            return IR_VALUE_NONE;
+        }
+        instruction->result = new_value(builder);
+        instruction->first_argument = builder->function->argument_count;
+        instruction->argument_count = count;
+        for (size_t element = 0; element < count; element++)
+            if (!append_argument(builder, values[element])) {
+                free(values);
+                return IR_VALUE_NONE;
+            }
+        free(values);
+        instruction->element_count = expression->literal_element_count;
+        set_expression_type(builder, instruction, expression);
+        return instruction->result;
     }
     int method_call = expression->kind == AST_EXPR_CALL && expression->left != NULL &&
                       expression->left->kind == AST_EXPR_MEMBER &&
@@ -519,6 +560,7 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         case AST_EXPR_ALIGNOF:
         case AST_EXPR_TYPE_INFO:
         case AST_EXPR_TYPE_PROPERTY: return IR_VALUE_NONE;
+        case AST_EXPR_ARRAY_LITERAL: return IR_VALUE_NONE;
         case AST_EXPR_RESERVE: opcode = IR_OP_ALLOC;
             break;
         case AST_EXPR_CAST: opcode = IR_OP_CAST;
@@ -556,6 +598,8 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         for (const AstExpression *argument = expression->arguments;
              argument != NULL; argument = argument->next) {
             size_t value = lower_expression(builder, argument);
+            int consumes = parameter == NULL ||
+                           parameter->type.borrow_kind == AST_BORROW_NONE;
             if (parameter || payload) {
                 const AstType *type = parameter ? &parameter->type : &payload->type;
                 value = coerce_slice(builder, value, type_from_ast(builder->module, type_unit, type), argument->span);
@@ -563,6 +607,7 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
                 else payload = payload->next;
             }
             values[argument_index++] = value;
+            if (consumes) emit_move_if_owned(builder, argument);
         }
         first_argument = builder->function->argument_count;
         for (size_t i = 0; i < argument_count; i++) {
@@ -607,7 +652,24 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         instruction->first_argument = first_argument;
         instruction->argument_count = argument_count;
     }
-    return instruction->result;
+    size_t result = instruction->result;
+    if (expression->kind == AST_EXPR_CALL) {
+        size_t argument_index = has_receiver ? 1 : 0;
+        for (const AstExpression *argument = expression->arguments;
+             argument != NULL; argument = argument->next, argument_index++) {
+            if (!argument->owns_slice_backing) continue;
+            IrInstruction *cleanup = emit(builder, IR_OP_FREE_SLICE_BACKING,
+                                          argument->span);
+            if (cleanup == NULL) return IR_VALUE_NONE;
+            cleanup->type = TYPE_VOID;
+            cleanup->type_id = type_from_expression(builder->module,
+                                                    builder->program,
+                                                    argument);
+            cleanup->operand_a = builder->function->arguments[
+                first_argument + argument_index];
+        }
+    }
+    return result;
 }
 
 static void lower_statement(IrBuilder *builder, const AstStatement *statement);
@@ -619,7 +681,21 @@ static void emit_deferred_scope(IrBuilder *builder,
     if (scope == NULL) return;
     for (const DeferredAction *action = scope->actions;
          action != NULL && !builder->failed; action = action->next) {
-        if (action->captured_call) {
+        if (action->free_slice_backing) {
+            IrInstruction *instruction = emit(builder, IR_OP_FREE_SLICE_BACKING,
+                                               action->drop_span);
+            if (instruction == NULL) return;
+            instruction->type_id = action->drop_type_id;
+            instruction->symbol_id = action->drop_symbol_id;
+            instruction->type = TYPE_VOID;
+        } else if (action->drop_local) {
+            IrInstruction *instruction = emit(builder, IR_OP_DROP,
+                                               action->drop_span);
+            if (instruction == NULL) return;
+            instruction->type_id = action->drop_type_id;
+            instruction->symbol_id = action->drop_symbol_id;
+            instruction->type = TYPE_VOID;
+        } else if (action->captured_call) {
             IrInstruction *instruction =
                 emit(builder, action->call.opcode, action->call.span);
             if (instruction == NULL) return;
@@ -636,6 +712,79 @@ static void emit_deferred_scope(IrBuilder *builder,
             lower_scoped_statement(builder, action->body);
         }
     }
+}
+
+static void register_slice_backing_cleanup(IrBuilder *builder,
+                                           size_t symbol_id,
+                                           IrTypeId type_id,
+                                           AstSourceSpan span) {
+    if (builder->cleanup_scope == NULL) {
+        builder->failed = 1;
+        return;
+    }
+    DeferredAction *action = calloc(1, sizeof(*action));
+    if (action == NULL) {
+        builder->failed = 1;
+        return;
+    }
+    action->free_slice_backing = 1;
+    action->drop_type_id = type_id;
+    action->drop_symbol_id = symbol_id;
+    action->drop_span = span;
+    action->next = builder->cleanup_scope->actions;
+    builder->cleanup_scope->actions = action;
+}
+
+static int type_needs_drop(const IrBuilder *builder, IrTypeId type) {
+    return (ir_type_properties(builder->module, type) &
+            SEMANTIC_TYPE_NEEDS_DROP) != 0;
+}
+
+static void register_local_drop(IrBuilder *builder, size_t symbol_id,
+                                IrTypeId type_id, AstSourceSpan span) {
+    if (!type_needs_drop(builder, type_id)) return;
+    if (builder->cleanup_scope == NULL) {
+        builder->failed = 1;
+        return;
+    }
+    DeferredAction *action = calloc(1, sizeof(*action));
+    if (action == NULL) {
+        builder->failed = 1;
+        return;
+    }
+    action->drop_local = 1;
+    action->drop_type_id = type_id;
+    action->drop_symbol_id = symbol_id;
+    action->drop_span = span;
+    action->next = builder->cleanup_scope->actions;
+    builder->cleanup_scope->actions = action;
+}
+
+static int expression_moves_ownership(const IrBuilder *builder,
+                                      const AstExpression *expression) {
+    if (expression == NULL || expression->kind != AST_EXPR_NAME ||
+        expression->resolved_borrow_kind != AST_BORROW_NONE ||
+        expression->resolved_pointer_depth != 0 ||
+        expression->resolved_outer_pointer_depth != 0 ||
+        expression->resolved_is_slice ||
+        expression->resolved_named_symbol_id >= builder->module->semantics->symbol_count)
+        return 0;
+    return (semantic_symbol_type_properties(
+                builder->module->semantics,
+                expression->resolved_named_symbol_id) &
+            SEMANTIC_TYPE_MOVE_ONLY) != 0;
+}
+
+static void emit_move_if_owned(IrBuilder *builder,
+                               const AstExpression *expression) {
+    if (!expression_moves_ownership(builder, expression)) return;
+    IrInstruction *instruction = emit(builder, IR_OP_MOVE, expression->span);
+    if (instruction == NULL) return;
+    instruction->type = TYPE_VOID;
+    instruction->type_id = type_from_expression(builder->module,
+                                                builder->program,
+                                                expression);
+    instruction->symbol_id = expression->resolved_symbol_id;
 }
 
 static void emit_deferred_until(IrBuilder *builder,
@@ -837,6 +986,16 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
                     instruction->is_slice = statement->value->resolved_is_slice && !statement->value->
                                             resolved_outer_pointer_depth;
                 }
+                emit_move_if_owned(builder, statement->value);
+                instruction->owns_slice_backing = statement->value != NULL &&
+                                                   statement->value->owns_slice_backing;
+                register_local_drop(builder, instruction->symbol_id,
+                                    instruction->type_id, statement->span);
+                if (instruction->is_slice)
+                    register_slice_backing_cleanup(builder,
+                                                   instruction->symbol_id,
+                                                   instruction->type_id,
+                                                   statement->span);
             }
         } else if (statement->kind == AST_STMT_ASSIGNMENT) {
             size_t target = lower_expression(builder, statement->expression);
@@ -844,18 +1003,80 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
             value = coerce_slice(builder, value,
                                  type_from_expression(builder->module, builder->program, statement->expression),
                                  statement->span);
+            IrTypeId target_type = type_from_expression(builder->module,
+                                                        builder->program,
+                                                        statement->expression);
+            if (statement->assignment_operator == TOKEN_EQUAL &&
+                statement->expression != NULL &&
+                statement->expression->kind == AST_EXPR_NAME &&
+                statement->expression->resolved_is_slice &&
+                statement->expression->resolved_symbol_id <
+                    builder->module->semantics->symbol_count &&
+                builder->module->semantics->symbols[
+                    statement->expression->resolved_symbol_id].kind ==
+                    SEMANTIC_SYMBOL_LOCAL) {
+                IrInstruction *release = emit(builder,
+                                              IR_OP_FREE_SLICE_BACKING,
+                                              statement->span);
+                if (release != NULL) {
+                    release->type = TYPE_VOID;
+                    release->type_id = target_type;
+                    release->symbol_id =
+                        statement->expression->resolved_symbol_id;
+                }
+            }
+            if (statement->assignment_operator == TOKEN_EQUAL &&
+                statement->expression != NULL &&
+                statement->expression->kind == AST_EXPR_NAME &&
+                type_needs_drop(builder, target_type)) {
+                IrInstruction *drop = emit(builder, IR_OP_DROP, statement->span);
+                if (drop != NULL) {
+                    drop->type = TYPE_VOID;
+                    drop->type_id = target_type;
+                    drop->symbol_id = statement->expression->resolved_symbol_id;
+                }
+            }
             IrInstruction *instruction = emit(builder, IR_OP_STORE, statement->span);
             if (instruction != NULL) {
                 instruction->operand_a = target;
                 instruction->operand_b = value;
                 instruction->operator_type = statement->assignment_operator;
+                instruction->owns_slice_backing =
+                    statement->value != NULL &&
+                    statement->value->owns_slice_backing;
             }
             set_expression_type(builder, instruction, statement->expression);
+            emit_move_if_owned(builder, statement->value);
+            if (statement->assignment_operator == TOKEN_EQUAL &&
+                statement->expression != NULL &&
+                statement->expression->kind == AST_EXPR_NAME &&
+                type_needs_drop(builder, target_type)) {
+                IrInstruction *reinit = emit(builder, IR_OP_REINIT, statement->span);
+                if (reinit != NULL) {
+                    reinit->type = TYPE_VOID;
+                    reinit->type_id = target_type;
+                    reinit->symbol_id = statement->expression->resolved_symbol_id;
+                }
+            }
         } else if (statement->kind == AST_STMT_EXPRESSION) {
-            (void) lower_expression(builder, statement->expression);
+            size_t value = lower_expression(builder, statement->expression);
+            if (statement->expression != NULL &&
+                statement->expression->owns_slice_backing) {
+                IrInstruction *cleanup = emit(builder,
+                                              IR_OP_FREE_SLICE_BACKING,
+                                              statement->span);
+                if (cleanup != NULL) {
+                    cleanup->type = TYPE_VOID;
+                    cleanup->type_id = type_from_expression(
+                        builder->module, builder->program,
+                        statement->expression);
+                    cleanup->operand_a = value;
+                }
+            }
         } else if (statement->kind == AST_STMT_RETURN) {
             size_t value = lower_expression(builder, statement->value);
             value = coerce_slice(builder, value, builder->function->return_type_id, statement->span);
+            emit_move_if_owned(builder, statement->value);
             emit_deferred_until(builder, NULL);
             IrInstruction *instruction = emit(builder, IR_OP_RETURN, statement->span);
             if (instruction != NULL) instruction->operand_a = value;
@@ -1025,7 +1246,20 @@ static int append_function(IrModule *module, const AstProgram *program,
         .break_label = IR_VALUE_NONE,
         .continue_label = IR_VALUE_NONE
     };
-    lower_scoped_statement(&builder, declaration->as.function.body);
+    CleanupScope parameter_scope = {0};
+    builder.cleanup_scope = &parameter_scope;
+    for (size_t i = 0; i < function->parameter_count; i++) {
+        const IrParameter *parameter = &function->parameters[i];
+        if (!parameter->is_receiver)
+            register_local_drop(&builder, parameter->symbol_id,
+                                parameter->type_id,
+                                declaration->span);
+    }
+    lower_statement(&builder, declaration->as.function.body);
+    if (!block_terminated(function))
+        emit_deferred_scope(&builder, &parameter_scope);
+    free_deferred_actions(parameter_scope.actions);
+    builder.cleanup_scope = NULL;
     if (builder.failed)
         ir_report_failure(function,
                           function->instruction_count == 0 ? IR_VALUE_NONE : function->instruction_count - 1,
@@ -1072,6 +1306,122 @@ static int append_structure(IrModule *module, const AstProgram *program,
     };
     return copy_fields(module, program, declaration->as.struct_decl.fields,
                        &structure->fields, &structure->field_count);
+}
+
+static int append_drop_glue(IrModule *module, const IrAggregate *structure) {
+    if ((structure->type_properties & SEMANTIC_TYPE_NEEDS_DROP) == 0)
+        return 1;
+    if (structure->symbol_id >= module->semantics->symbol_count) return 0;
+    const SemanticSymbol *symbol =
+        &module->semantics->symbols[structure->symbol_id];
+    const AstDeclarationNode *declaration = symbol->declaration;
+    if (declaration == NULL || declaration->kind != AST_DECL_STRUCT) return 0;
+    if (module->function_count == module->function_capacity &&
+        !grow_array((void **) &module->functions, &module->function_capacity,
+                    sizeof(*module->functions)))
+        return 0;
+    IrFunction *function = &module->functions[module->function_count++];
+    *function = (IrFunction) {
+        .source_program = structure->source_program,
+        .name_token = structure->name_token,
+        .owner_token = structure->name_token,
+        .owner_symbol_id = structure->symbol_id,
+        .symbol_id = structure->symbol_id,
+        .return_type_id = type_from_parts(module, TYPE_VOID, 0,
+                                          AST_TOKEN_NONE, 0, 0, 0, 0,
+                                          structure->source_program,
+                                          AST_SYMBOL_NONE),
+        .is_drop_glue = 1
+    };
+    if (function->return_type_id == IR_TYPE_NONE) return 0;
+    function->parameters = calloc(1, sizeof(*function->parameters));
+    if (function->parameters == NULL) return 0;
+    function->parameter_count = 1;
+    function->parameters[0] = (IrParameter) {
+        .source_program = structure->source_program,
+        .name_token = structure->name_token,
+        .symbol_id = structure->symbol_id,
+        .type = TYPE_UNKNOWN,
+        .type_id = type_from_parts(module, TYPE_UNKNOWN, 1,
+                                   structure->name_token, 0, 0, 0, 0,
+                                   structure->source_program,
+                                   structure->symbol_id),
+        .pointer_depth = 1,
+        .type_name_token = structure->name_token,
+        .is_receiver = 1
+    };
+    if (function->parameters[0].type_id == IR_TYPE_NONE) return 0;
+    IrBuilder builder = {
+        .module = module,
+        .function = function,
+        .program = structure->source_program,
+        .break_label = IR_VALUE_NONE,
+        .continue_label = IR_VALUE_NONE
+    };
+    if (declaration->as.struct_decl.destructor != NULL)
+        lower_scoped_statement(&builder,
+                               declaration->as.struct_decl.destructor);
+    for (size_t i = structure->field_count; i > 0 && !builder.failed; i--) {
+        const IrFieldDefinition *field = &structure->fields[i - 1];
+        if ((ir_type_properties(module, field->type_id) &
+             SEMANTIC_TYPE_NEEDS_DROP) == 0)
+            continue;
+        IrInstruction *drop = emit(&builder, IR_OP_DROP, declaration->span);
+        if (drop != NULL) {
+            drop->type = TYPE_VOID;
+            drop->type_id = field->type_id;
+            drop->symbol_id = field->symbol_id;
+        }
+    }
+    return !builder.failed;
+}
+
+static int append_package_cleanup(IrModule *module) {
+    if (module->program->package_name != NULL &&
+        strcmp(module->program->package_name, "main") != 0)
+        return 1;
+    if (module->function_count == module->function_capacity &&
+        !grow_array((void **) &module->functions, &module->function_capacity,
+                    sizeof(*module->functions)))
+        return 0;
+    IrFunction *function = &module->functions[module->function_count++];
+    *function = (IrFunction) {
+        .source_program = module->program,
+        .name_token = module->program->package_token != AST_TOKEN_NONE
+                          ? module->program->package_token
+                          : 0,
+        .owner_token = AST_TOKEN_NONE,
+        .owner_symbol_id = AST_SYMBOL_NONE,
+        .symbol_id = AST_SYMBOL_NONE,
+        .return_type_id = type_from_parts(module, TYPE_VOID, 0,
+                                          AST_TOKEN_NONE, 0, 0, 0, 0,
+                                          module->program,
+                                          AST_SYMBOL_NONE),
+        .is_package_cleanup = 1
+    };
+    if (function->return_type_id == IR_TYPE_NONE) return 0;
+    IrBuilder builder = {
+        .module = module,
+        .function = function,
+        .program = module->program,
+        .break_label = IR_VALUE_NONE,
+        .continue_label = IR_VALUE_NONE
+    };
+    for (size_t i = module->global_count; i > 0; i--) {
+        const IrGlobal *global = &module->globals[i - 1];
+        if ((ir_type_properties(module, global->type_id) &
+             SEMANTIC_TYPE_NEEDS_DROP) == 0)
+            continue;
+        IrInstruction *drop = emit(&builder, IR_OP_DROP,
+                                   module->semantics->symbols[
+                                       global->symbol_id].declaration->span);
+        if (drop != NULL) {
+            drop->type = TYPE_VOID;
+            drop->type_id = global->type_id;
+            drop->symbol_id = global->symbol_id;
+        }
+    }
+    return !builder.failed;
 }
 
 static int append_enum(IrModule *module, const AstProgram *program,
@@ -1185,22 +1535,27 @@ static int lower_unit(IrModule *module, const AstProgram *program) {
                                  : type_from_ast(module, program, &declaration->as.constant.type);
             const AstExpression *value = declaration->as.constant.value;
             if (value) {
-                if (!value->folded_constant.lexeme) return 0;
-                const char *text = value->folded_constant.lexeme;
-                if (symbol->resolved_type == TYPE_STRING) global.string = text;
-                else if (symbol->resolved_type == TYPE_DOUBLE) {
+                if (value->kind == AST_EXPR_ARRAY_LITERAL) {
+                    global.array_literal = value;
+                    global.literal_element_count = value->literal_element_count;
+                } else {
+                    if (!value->folded_constant.lexeme) return 0;
+                    const char *text = value->folded_constant.lexeme;
+                    if (symbol->resolved_type == TYPE_STRING) global.string = text;
+                    else if (symbol->resolved_type == TYPE_DOUBLE) {
                     union {
                         double f;
                         uint64_t u;
                     } bits = {.f = strtod(text, NULL)};
                     global.bits = bits.u;
-                } else if (symbol->resolved_type == TYPE_FLOAT) {
+                    } else if (symbol->resolved_type == TYPE_FLOAT) {
                     union {
                         float f;
                         uint32_t u;
                     } bits = {.f = (float) strtod(text, NULL)};
                     global.bits = bits.u;
-                } else global.bits = (uint64_t) strtoull(text, NULL, 10);
+                    } else global.bits = (uint64_t) strtoull(text, NULL, 10);
+                }
             }
             module->globals[module->global_count++] = global;
         }
@@ -1234,6 +1589,9 @@ IrModule *ir_lower_program(const AstProgram *program, const SemanticModel *seman
     if (!lower_unit(module, program)) goto failure;
     for (size_t i = 0; i < program->owned_import_count; i++)
         if (!lower_unit(module, program->owned_imports[i])) goto failure;
+    for (size_t i = 0; i < module->structure_count; i++)
+        if (!append_drop_glue(module, &module->structures[i])) goto failure;
+    if (!append_package_cleanup(module)) goto failure;
     if (!ir_verify_module_report(module)) goto failure;
     module->verified = 1;
     return module;

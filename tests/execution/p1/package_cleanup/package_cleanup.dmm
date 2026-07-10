@@ -1,0 +1,25 @@
+package main;
+import "stdlib";
+
+struct FirstResource {
+    var value:int;
+
+    destructor {
+        stdlib.println(1);
+    }
+}
+
+struct SecondResource {
+    var value:int;
+
+    destructor {
+        stdlib.println(2);
+    }
+}
+
+var first:FirstResource;
+var second:SecondResource;
+
+func main() -> int {
+    return 0;
+}

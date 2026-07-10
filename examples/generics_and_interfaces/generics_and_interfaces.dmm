@@ -1,0 +1,66 @@
+package main;
+import "stdlib";
+
+interface Measurable {
+    func measure(scale:int) -> int;
+}
+
+struct Width {
+    var value:int;
+
+    func measure(scale:int) -> int {
+        return value*scale;
+    }
+}
+
+struct Rectangle {
+    var width:int;
+    var height:int;
+
+    func measure(scale:int) -> int {
+        return width*height*scale;
+    }
+}
+
+struct Box<T> {
+    var value:T;
+}
+
+func identity<T>(value:T) -> T {
+    return value;
+}
+
+func measure<T:Measurable>(value:T, scale:int) -> int {
+    return value.measure(scale);
+}
+
+func dynamicTotal(values:Measurable[]) -> int {
+    return values[0].measure(1)+values[1].measure(1);
+}
+
+func main() -> int {
+    var number:Box<int>;
+    number.value=42;
+    var copy=identity(number);
+
+    var width:Width;
+    width.value=3;
+    var rectangle:Rectangle;
+    rectangle.width=4;
+    rectangle.height=5;
+
+    // Method shape implies interface implementation; no impl declaration exists.
+    var values:Measurable[2]=[width,rectangle];
+    var views:Measurable[]=[width,rectangle];
+
+    stdlib.println(copy.value);
+    stdlib.println(measure(width,2));
+    stdlib.println(dynamicTotal(values));
+    stdlib.println(dynamicTotal(views));
+    stdlib.println(Box<int>.name);
+
+    if (copy.value != 42 || measure(width,2) != 6 || dynamicTotal(values) != 23) {
+        return 1;
+    }
+    return 0;
+}

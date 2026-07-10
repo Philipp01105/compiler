@@ -1,0 +1,44 @@
+package main;
+import "stdlib";
+
+struct Cell<T> {
+    var value:T;
+}
+
+func allocateCell<T>(value:T) -> *Cell<T> {
+    var cell:*Cell<T> = reserve(Cell<T>);
+    cell.value = value;
+    return cell;
+}
+
+func sum(values:i32[]) -> i32 {
+    var total:i32 = 0;
+    for (var index:int = 0; index < values.length; index+=1) {
+        total += values[index];
+    }
+    return total;
+}
+
+func main() -> int {
+    var storage:i32[4]=[1,2,3,4];
+
+    var all:i32[]=storage;
+    var generated:i32[]=[1,2;4];
+    var tail:i32[]=slice((&storage[1]).(*i32),3);
+    tail[0]=20;
+
+    var cell:*Cell<i32>=allocateCell(sum(all));
+    stdlib.println(cell.value);
+    stdlib.println(sum(generated));
+    stdlib.println(sizeof(Cell<i32>));
+    stdlib.println(alignof(Cell<i32>));
+
+    if (storage[1] != 20 || tail.length != 3 || cell.value != 28 || sum(generated) != 6) {
+        free(cell);
+        return 1;
+    }
+
+    // reserve returns raw owned storage; free releases it exactly once.
+    free(cell);
+    return 0;
+}

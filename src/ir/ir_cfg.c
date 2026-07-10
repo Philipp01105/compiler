@@ -188,7 +188,8 @@ int ir_verify_control_flow(const IrModule *module, const IrFunction *function, i
         } else {
             if (instruction->operand_a != IR_VALUE_NONE) AVAILABLE(instruction->operand_a);
             if (instruction->operand_b != IR_VALUE_NONE) AVAILABLE(instruction->operand_b);
-            if (instruction->opcode == IR_OP_CALL || instruction->opcode == IR_OP_ENUM_CONSTRUCT)
+            if (instruction->opcode == IR_OP_CALL || instruction->opcode == IR_OP_ENUM_CONSTRUCT ||
+                instruction->opcode == IR_OP_ARRAY_LITERAL)
                 for (size_t a = 0; a < instruction->argument_count; a++)
                     AVAILABLE(function->arguments[instruction->first_argument + a]);
         }
@@ -206,9 +207,10 @@ static const char *cfg_opcode_name(IrOpcode opcode) {
     static const char *names[] = {
         "constant", "load", "declare", "store", "unary", "binary", "call", "index", "member",
         "slice-length", "cast", "alloc", "free", "return", "branch", "jump", "label", "phi",
-        "enum-construct", "enum-is", "enum-payload", "trap", "slice", "slice-data"
+        "enum-construct", "enum-is", "enum-payload", "trap", "slice", "slice-data", "array-literal",
+        "drop", "move", "reinit", "free-slice-backing"
     };
-    return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_SLICE_DATA ? names[opcode] : "invalid";
+    return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_FREE_SLICE_BACKING ? names[opcode] : "invalid";
 }
 
 static int cfg_quoted(FILE *output, const char *text) {

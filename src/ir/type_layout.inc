@@ -90,3 +90,23 @@ static int type_layout_depth(const IrModule *module, IrTypeId id, IrTypeLayout *
 int ir_type_layout(const IrModule *module, IrTypeId type, IrTypeLayout *layout) {
     return module && layout && type_layout_depth(module, type, layout, 0);
 }
+
+static unsigned ir_type_properties_depth(const IrModule *module, IrTypeId id,
+                                         size_t depth) {
+    if (module == NULL || id >= module->type_count || depth > module->type_count)
+        return 0;
+    const IrType *type = &module->types[id];
+    if (type->kind == IR_TYPE_POINTER || type->kind == IR_TYPE_SLICE ||
+        type->kind == IR_TYPE_PRIMITIVE)
+        return SEMANTIC_TYPE_COPYABLE;
+    if (type->kind == IR_TYPE_ARRAY)
+        return ir_type_properties_depth(module, type->element_type, depth + 1);
+    for (size_t i = 0; i < module->structure_count; i++)
+        if (module->structures[i].symbol_id == type->symbol_id)
+            return module->structures[i].type_properties;
+    return semantic_symbol_type_properties(module->semantics, type->symbol_id);
+}
+
+unsigned ir_type_properties(const IrModule *module, IrTypeId type) {
+    return ir_type_properties_depth(module, type, 0);
+}

@@ -8,6 +8,88 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int returned_slice_expression_owns(const SemanticModel *model,
+                                          const AstExpression *expression) {
+    if (expression == NULL || !expression->resolved_is_slice) return 0;
+    if (expression->owns_slice_backing) return 1;
+    if (expression->kind != AST_EXPR_CALL ||
+        expression->resolved_symbol_id >= model->symbol_count) return 0;
+    const SemanticSymbol *callee = &model->symbols[expression->resolved_symbol_id];
+    return callee->kind == SEMANTIC_SYMBOL_FUNCTION &&
+           callee->declaration != NULL &&
+           callee->declaration->as.function.returns_owned_slice_backing;
+}
+
+static int statement_returns_owned_slice(const SemanticModel *model,
+                                         const AstStatement *statement) {
+    for (; statement != NULL; statement = statement->next) {
+        if (statement->kind == AST_STMT_RETURN &&
+            returned_slice_expression_owns(model, statement->value)) return 1;
+        if (statement_returns_owned_slice(model, statement->body) ||
+            statement_returns_owned_slice(model, statement->else_body) ||
+            statement_returns_owned_slice(model, statement->initializer)) return 1;
+        for (const AstMatchArm *arm = statement->match_arms;
+             arm != NULL; arm = arm->next)
+            if (statement_returns_owned_slice(model, arm->body)) return 1;
+    }
+    return 0;
+}
+
+static void refresh_owned_slice_expression(const SemanticModel *model,
+                                           AstExpression *expression) {
+    for (; expression != NULL; expression = expression->next) {
+        refresh_owned_slice_expression(model, expression->left);
+        refresh_owned_slice_expression(model, expression->right);
+        refresh_owned_slice_expression(model, expression->arguments);
+        if (expression->kind == AST_EXPR_CALL &&
+            returned_slice_expression_owns(model, expression))
+            expression->owns_slice_backing = 1;
+    }
+}
+
+static void refresh_owned_slice_statements(const SemanticModel *model,
+                                           AstStatement *statement) {
+    for (; statement != NULL; statement = statement->next) {
+        refresh_owned_slice_expression(model, statement->expression);
+        refresh_owned_slice_expression(model, statement->value);
+        refresh_owned_slice_expression(model, statement->condition);
+        refresh_owned_slice_expression(model, statement->update);
+        refresh_owned_slice_statements(model, statement->body);
+        refresh_owned_slice_statements(model, statement->else_body);
+        refresh_owned_slice_statements(model, statement->initializer);
+        for (AstMatchArm *arm = statement->match_arms;
+             arm != NULL; arm = arm->next)
+            refresh_owned_slice_statements(model, arm->body);
+    }
+}
+
+static void finalize_owned_slice_returns(SemanticModel *model) {
+    int changed;
+    do {
+        changed = 0;
+        for (size_t i = 0; i < model->symbol_count; i++) {
+            SemanticSymbol *symbol = &model->symbols[i];
+            AstDeclarationNode *function = symbol->kind == SEMANTIC_SYMBOL_FUNCTION
+                                               ? (AstDeclarationNode *) symbol->declaration
+                                               : NULL;
+            if (function == NULL ||
+                function->as.function.returns_owned_slice_backing) continue;
+            if (statement_returns_owned_slice(model,
+                                              function->as.function.body)) {
+                function->as.function.returns_owned_slice_backing = 1;
+                changed = 1;
+            }
+        }
+    } while (changed);
+    for (size_t i = 0; i < model->symbol_count; i++) {
+        SemanticSymbol *symbol = &model->symbols[i];
+        if (symbol->kind == SEMANTIC_SYMBOL_FUNCTION &&
+            symbol->declaration != NULL)
+            refresh_owned_slice_statements(
+                model, symbol->declaration->as.function.body);
+    }
+}
+
 int semantic_type_is_move_only(const Analyzer *analyzer,
                                size_t type_symbol_id) {
     return (semantic_symbol_type_properties(analyzer->model, type_symbol_id) &
@@ -80,11 +162,14 @@ int semantic_expression_is_move_only(const Analyzer *analyzer,
     if (expression == NULL || expression->resolved_borrow_kind != AST_BORROW_NONE ||
         expression->resolved_pointer_depth != 0 ||
         expression->resolved_outer_pointer_depth != 0 ||
-        expression->resolved_is_array || expression->resolved_is_slice ||
-        expression->resolved_named_symbol_id >= analyzer->model->symbol_count)
+        expression->resolved_is_slice)
         return 0;
-    return semantic_type_is_move_only(analyzer,
-                                      expression->resolved_named_symbol_id);
+    if (expression->resolved_named_symbol_id < analyzer->model->symbol_count)
+        return semantic_type_is_move_only(analyzer,
+                                          expression->resolved_named_symbol_id);
+    return expression->resolved_symbol_id < analyzer->model->symbol_count &&
+           (analyzer->model->symbols[expression->resolved_symbol_id].
+                type_properties & SEMANTIC_TYPE_MOVE_ONLY) != 0;
 }
 
 static void consume_owned_expression(Analyzer *analyzer,
@@ -109,6 +194,15 @@ static void consume_owned_expression(Analyzer *analyzer,
                                ERROR_CATEGORY_SEMANTIC, ERR_SEM_INVALID_DECLARATION,
                        "Cannot copy or reuse move-only value after ownership was moved");
             else local->moved = 1;
+        } else if (expression->resolved_symbol_id <
+                       analyzer->model->symbol_count &&
+                   analyzer->model->symbols[
+                       expression->resolved_symbol_id].kind ==
+                       SEMANTIC_SYMBOL_VARIABLE) {
+            semantic_error(analyzer, expression->value_token,
+                           ERROR_CATEGORY_SEMANTIC,
+                           ERR_SEM_INVALID_DECLARATION,
+                           "Cannot move ownership out of package storage");
         }
     } else if (expression->kind == AST_EXPR_MEMBER) {
         semantic_error(analyzer, expression->value_token,
@@ -298,6 +392,9 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
         if (statement->kind == AST_STMT_VARIABLE) {
             size_t errors_before = analyzer->model->error_count;
             validate_array_shape(analyzer, &statement->type);
+            if (statement->value != NULL &&
+                statement->value->kind == AST_EXPR_ARRAY_LITERAL)
+                statement->value->allocated_type = statement->type;
             analyze_expression(analyzer, statement->value);
             validate_expression(analyzer, statement->value, 0);
             consume_call_arguments(analyzer, statement->value);
@@ -338,10 +435,6 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                                      NULL, "Cannot implicitly convert initializer");
             }
             consume_owned_expression(analyzer, statement->value);
-            if (statement->type.is_array && statement->type.outer_pointer_depth == 0 && statement->value != NULL)
-                semantic_error(analyzer, statement->name_token,
-                               ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                               "Arrays cannot be initialized by assignment");
             if (statement->is_const && statement->value != NULL &&
                 analyzer->model->error_count == errors_before &&
                 constant_expression_allowed(analyzer, statement->value))
@@ -404,12 +497,20 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
             pop_to(analyzer, scope);
             analyzer->scope_depth--;
         } else {
-            analyze_expression(analyzer, statement->value);
             if (statement->kind == AST_STMT_ASSIGNMENT) {
                 analyzer->assignment_target = statement->expression;
                 analyze_expression(analyzer, statement->expression);
                 analyzer->assignment_target = NULL;
             } else analyze_expression(analyzer, statement->expression);
+            if (statement->value != NULL &&
+                statement->value->kind == AST_EXPR_ARRAY_LITERAL) {
+                if (statement->kind == AST_STMT_ASSIGNMENT && statement->expression != NULL)
+                    statement->value->allocated_type = inferred_argument_type(analyzer, statement->expression);
+                else if (statement->kind == AST_STMT_RETURN && analyzer->current_function != NULL)
+                    statement->value->allocated_type =
+                        analyzer->current_function->as.function.return_type;
+            }
+            analyze_expression(analyzer, statement->value);
             analyze_expression(analyzer, statement->condition);
             analyze_expression(analyzer, statement->update);
             validate_expression(analyzer, statement->expression, 0);
@@ -450,12 +551,6 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                     }
                 }
             }
-            if (statement->kind == AST_STMT_ASSIGNMENT && statement->expression != NULL &&
-                statement->expression->resolved_is_array &&
-                statement->expression->resolved_outer_pointer_depth == 0)
-                semantic_error(analyzer, statement->first_token,
-                               ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                               "Arrays cannot be assigned as values");
             if (statement->kind == AST_STMT_ASSIGNMENT && statement->expression != NULL &&
                 statement->expression->resolved_named_symbol_id != AST_SYMBOL_NONE &&
                 statement->expression->resolved_named_symbol_id < analyzer->model->symbol_count &&
@@ -502,6 +597,10 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                                ERROR_CATEGORY_SEMANTIC, ERR_SEM_INVALID_DECLARATION,
                                "A destructor cannot return");
             } else if (statement->kind == AST_STMT_RETURN && analyzer->current_function != NULL) {
+                if (statement->value != NULL && statement->value->resolved_is_slice &&
+                    statement->value->owns_slice_backing)
+                    ((AstDeclarationNode *) analyzer->current_function)->as.function.
+                        returns_owned_slice_backing = 1;
                 DataType expected = primitive_type(analyzer->program,
                                                    &analyzer->current_function->as.function.return_type);
                 if (expected == TYPE_VOID && statement->value != NULL)
@@ -577,11 +676,6 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
         semantic_error(analyzer, function->as.function.return_type.name_token,
                        ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN, "Unknown function return type");
     validate_array_shape(analyzer, &function->as.function.return_type);
-    if (function->as.function.return_type.is_array &&
-        function->as.function.return_type.outer_pointer_depth == 0)
-        semantic_error(analyzer, function->as.function.return_type.name_token,
-                       ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                       "Array return types are not supported; return a slice instead");
     analyzer->scope_depth++;
     for (AstParameter *parameter = function->as.function.parameters;
          parameter != NULL; parameter = parameter->next) {
@@ -674,17 +768,34 @@ void analyze_constant_declaration(Analyzer *analyzer,
         declaration->semantic_body_checked = 1;
         return;
     }
+    if (value != NULL && value->kind == AST_EXPR_ARRAY_LITERAL)
+        value->allocated_type = *type;
     analyze_expression(analyzer, value);
     validate_expression(analyzer, value, 0);
-    if (value == NULL || !constant_expression_allowed(analyzer, value))
+    if (declaration->kind == AST_DECL_VARIABLE && value != NULL &&
+        value->kind == AST_EXPR_ARRAY_LITERAL) {
+        DataType element_type = primitive_type(analyzer->program, type);
+        int static_elements = element_type != TYPE_UNKNOWN &&
+                              element_type != TYPE_STRING;
+        for (AstExpression *element = value->arguments;
+             element != NULL && static_elements; element = element->next)
+            static_elements = constant_expression_allowed(analyzer, element);
+        if (!static_elements)
+            semantic_error(analyzer, declaration->name_token,
+                           ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                           "Package array literals require compile-time non-string primitive elements");
+    }
+    if (declaration->kind == AST_DECL_CONSTANT &&
+        (value == NULL || !constant_expression_allowed(analyzer, value)))
         semantic_error(analyzer, declaration->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                        "Constant initializer is not a constant expression");
     if (!known_declared_type(analyzer, type))
         semantic_error(analyzer, type->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN,
                        "Unknown constant type");
-    if (type->pointer_depth != 0 || type->outer_pointer_depth != 0 ||
-        type->is_array || type->is_slice ||
-        (value != NULL && value->resolved_named_symbol_id != AST_SYMBOL_NONE))
+    if (declaration->kind == AST_DECL_CONSTANT &&
+        (type->pointer_depth != 0 || type->outer_pointer_depth != 0 ||
+         type->is_array || type->is_slice ||
+         (value != NULL && value->resolved_named_symbol_id != AST_SYMBOL_NONE)))
         semantic_error(analyzer, declaration->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                        "Constants require a primitive or string type");
     if (type->kind != AST_TYPE_INFERRED && value != NULL &&
@@ -806,6 +917,12 @@ SemanticModel *semantic_analyze(AstProgram *program) {
             AstDeclarationNode *variable = (AstDeclarationNode *) symbol->declaration;
             validate_array_shape(&analyzer, &variable->as.constant.type);
             symbol->declared_type = variable->as.constant.type;
+            symbol->resolved_named_symbol_id = resolve_named_symbol_id(
+                &analyzer, symbol->source_program,
+                named_type_token(symbol->source_program,
+                                 &symbol->declared_type));
+            symbol->type_properties = field_type_properties(
+                &analyzer, symbol->source_program, &symbol->declared_type);
         } else if (symbol->kind == SEMANTIC_SYMBOL_FUNCTION && symbol->declaration != NULL) {
             AstDeclarationNode *function = (AstDeclarationNode *) symbol->declaration;
             validate_array_shape(&analyzer, &function->as.function.return_type);
@@ -930,6 +1047,7 @@ SemanticModel *semantic_analyze(AstProgram *program) {
             analyze_function(&analyzer, (AstDeclarationNode *) symbol->declaration);
         }
     }
+    finalize_owned_slice_returns(model);
     for (size_t i = 0; i < model->symbol_count; i++) {
         const SemanticSymbol *symbol = &model->symbols[i];
         if ((symbol->kind != SEMANTIC_SYMBOL_STRUCT && symbol->kind != SEMANTIC_SYMBOL_ENUM) || !symbol->declaration)

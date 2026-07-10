@@ -1,0 +1,6 @@
+/* main
+LIFO defer cleanup, eager argument capture, reference capture and cleanup on return.
+*/
+
+module dmm.example/defer_cleanup
+dmm 2026-09-22-dev

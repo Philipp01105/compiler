@@ -32,7 +32,7 @@ typedef enum {
     AST_EXPR_BINARY, AST_EXPR_CALL, AST_EXPR_INDEX, AST_EXPR_MEMBER,
     AST_EXPR_SLICE_LENGTH, AST_EXPR_RESERVE, AST_EXPR_CAST, AST_EXPR_FREE, AST_EXPR_ENUM_CONSTRUCT,
     AST_EXPR_ENUM_ACCESS, AST_EXPR_SIZEOF, AST_EXPR_ALIGNOF, AST_EXPR_SLICE, AST_EXPR_SLICE_DATA,
-    AST_EXPR_TYPE_INFO, AST_EXPR_TYPE_PROPERTY
+    AST_EXPR_TYPE_INFO, AST_EXPR_TYPE_PROPERTY, AST_EXPR_ARRAY_LITERAL
 } AstExpressionKind;
 
 typedef enum {
@@ -126,6 +126,10 @@ struct AstExpression {
     int resolved_is_array;
     int resolved_is_slice;
     size_t resolved_array_length;
+    /* Concrete materialized length of an array literal; not part of slice type identity. */
+    size_t literal_element_count;
+    /* Sema-proven ownership of compiler-created slice backing storage. */
+    int owns_slice_backing;
     size_t resolved_symbol_id;
     AstBorrowKind resolved_borrow_kind;
     int mutable_borrow;
@@ -220,6 +224,7 @@ struct AstDeclarationNode {
             AstStatement *body;
             int is_static;
             size_t owner_token;
+            int returns_owned_slice_backing;
         } function;
 
         struct {

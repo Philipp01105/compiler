@@ -53,7 +53,9 @@ required to implement these resource-safety foundations.
 
 - [ ] Support nested arrays and slices throughout parsing, type checking, constant evaluation, lowering, ABI
   classification, and code generation.
-- [ ] Decide and specify whole-array assignment and equality, including padding and element-wise semantics.
+- [x] Implement and specify contextual fixed-array assignment by value; array equality remains undefined.
+- [x] Add contextually typed fixed-array/slice literals, cyclic repetition, local and package backing storage, call
+  temporaries, and returned hidden-backing ownership transfer.
 - [ ] Add subslicing and a deliberate rule for slice equality and ordering.
 - [ ] Add function types and non-capturing function pointers.
 - [ ] Add closures only after capture lifetime and ownership rules are specified.
@@ -82,8 +84,11 @@ exclusive and borrowing is field-sensitive when disjointness is provable.
   references in aggregate and package-variable storage where their lifetime cannot be expressed.
 - [x] Lower LIFO `defer` calls and anonymous bodies on scope fallthrough, `return`, `break`, and `continue`;
   deferred calls capture evaluated operands and deferred anonymous bodies capture locals by reference.
-- [ ] Finish backend lowering for destructors and recursive owned-field/array-element destruction in reverse order,
-  suppress destruction of moved-from values, and add normal package/process cleanup.
+- [x] Lower local-value destructors and recursive owned-field/array-element destruction in reverse order; use explicit
+  IR ownership effects and runtime initialization flags to suppress destruction of moved-from locals.
+- [x] Extend exactly-once cleanup and moved-state flags to owned by-value parameters.
+- [x] Add exactly-once cleanup for initialized package storage at normal process exit, in reverse declaration order;
+  reject moves out of package storage because moved-state cannot be tracked soundly across functions.
 - [ ] Extend ownership state merging across all branches, loops, enum payloads, arrays, generic substitutions, and
   interface conversions; diagnose every invalid copy and double release.
 - [ ] Track slice provenance and mutable regions through construction, copying, calls, returns, and storage so slices

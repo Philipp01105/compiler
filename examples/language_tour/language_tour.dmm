@@ -1,0 +1,55 @@
+package main;
+import "stdlib";
+
+const VALUE_COUNT:int=4;
+
+struct Counter {
+    var value:int;
+
+    func add(amount:int) -> void {
+        value+=amount;
+    }
+
+    func current() -> int {
+        return value;
+    }
+}
+
+func describe(value:int) -> string {
+    return "integer";
+}
+
+func describe(value:double) -> string {
+    return "double";
+}
+
+func sum(values:int[]) -> int {
+    var total:int=0;
+    for (var index:int=0; index < values.length; index+=1) {
+        total+=values[index];
+    }
+    return total;
+}
+
+func main() -> int {
+    var values:int[VALUE_COUNT]=[2,4,6,8];
+
+    // A fixed array converts to a checked slice without copying its elements.
+    var view:int[]=values;
+    var total:int=sum([2,4,6,8]);
+    var average:double=total.(double)/view.length.(double);
+
+    var counter:Counter;
+    counter.add(total);
+    counter.add(-5);
+
+    stdlib.println(describe(total));
+    stdlib.println(describe(average));
+    stdlib.println(counter.current());
+    stdlib.println(Counter.name);
+    stdlib.println(Counter.size);
+    stdlib.println(Counter.align);
+
+    if (average != 5.0 || counter.current() != 15) { return 1; }
+    return 0;
+}

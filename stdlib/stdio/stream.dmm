@@ -67,7 +67,8 @@ func writeAllTo(fd:int, active:bit, writable:bit, source:u8[]) -> Transfer {
 }
 
 // Explicitly owned descriptor, or a borrowed descriptor for standard streams.
-// Do not copy an owning Stream: DMM does not yet enforce move-only resources.
+// Stream has no destructor yet and is therefore copyable; do not copy an owning
+// instance, and close it explicitly. Destructor-backed wrappers are move-only.
 pub struct Stream {
     var fd:int;
     var active:bit;

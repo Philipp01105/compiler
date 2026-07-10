@@ -1,26 +1,76 @@
 package main;
+import "stdlib";
 
+// An explicit destructor makes an ordinary struct MOVE_ONLY | NEEDS_DROP.
 struct File {
     var handle:int;
 
     destructor {
+        stdlib.println("dropping File");
+        stdlib.println(handle);
         handle=0;
     }
 }
 
+// Ownership is derived separately for every concrete specialization:
+// Box<int> is copyable, while Box<File> is move-only and needs drop.
 struct Box<T> {
     var value:T;
 }
 
-func consume(file:Box<File>) -> void {}
+// This struct has no destructor of its own. File's properties propagate through
+// both fields, and the generated drop glue destroys second before first.
+struct FilePair {
+    var first:File;
+    var second:File;
+}
+
+// Here T describes the complete argument. Passing Box<File> infers
+// T=Box<File>, so T.name includes both Box and File.
+func consumeValue<T>(value:T) -> void {
+    stdlib.println("consumeValue T:");
+    stdlib.println(T.name);
+} // value is destroyed here when its concrete type needs drop.
+
+// Here Box is already part of the parameter pattern. Passing Box<File> infers
+// only the inner T=File. The complete parameter type is still Box<File>.
+func consumeBox<T>(value:Box<T>) -> void {
+    stdlib.println("consumeBox inner T:");
+    stdlib.println(T.name);
+    stdlib.println("consumeBox parameter type:");
+    stdlib.println(value.type.name);
+} // value is also destroyed here.
 
 func main() -> int {
+    // Box<int> is copyable. Updating the copy leaves the original unchanged.
+    var number:Box<int>;
+    number.value=41;
+    var copy=number;
+    copy.value+=1;
+    if (number.value != 41 || copy.value != 42) { return 1; }
+
+    // Box<File> derives MOVE_ONLY | NEEDS_DROP from its concrete field type.
     var owned:Box<File>;
     owned.value.handle=7;
-    consume(owned);
+    consumeValue(owned);
+    // owned is moved here. Reading, borrowing, moving, or dropping it again
+    // would be rejected unless the complete variable were reassigned first.
+    var replacement:Box<File>;
+    replacement.value.handle=8;
+    owned=replacement;
 
-    var number:Box<int>;
-    number.value=42;
-    var copy=number;
-    return copy.value-42;
-}
+    var secondOwner:Box<File>;
+    secondOwner.value.handle=9;
+    consumeBox(secondOwner);
+
+    // Mutable borrows of disjoint fields may overlap. Their lifetimes end after
+    // the last dereference, before the containing move-only value is dropped.
+    var pair:FilePair;
+    var firstHandle=&mut pair.first.handle;
+    var secondHandle=&mut pair.second.handle;
+    *firstHandle=1;
+    *secondHandle=2;
+
+    stdlib.println("leaving main");
+    return 0;
+} // pair drops second (2) then first (1); reassigned owned drops File(8).

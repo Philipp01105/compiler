@@ -54,16 +54,25 @@ code.
 
 The symbol dump lists every semantic symbol by stable ID and declaration order. Records include kind, spelling, source
 unit, token, owner, scope depth, resolved primitive/named type, pointer depth, array/slice flags, and whether a source
-declaration owns the symbol. The header also reports symbol-index capacity and occupancy, unresolved expressions,
-duplicates, and semantic errors. Hash slots are intentionally omitted because their placement is an implementation
-detail and may depend on process addresses.
+declaration owns the symbol. Concrete struct records also include a `properties=` field containing `COPYABLE` or
+`MOVE_ONLY` and, independently, `NEEDS_DROP` when applicable. Generic templates are classified through each concrete
+specialization rather than receiving one template-wide property set. The header also reports symbol-index capacity and
+occupancy, unresolved expressions, duplicates, and semantic errors. Hash slots are intentionally omitted because their
+placement is an implementation detail and may depend on process addresses.
 
 ## `dmm-ir-v3`
 
-The IR dump lists interned types and aggregate definitions before functions. Function instructions are numbered in
-storage order. Values use `%N`, types use
+The IR dump lists interned types and aggregate definitions before functions. In-memory struct aggregate records retain
+the derived ownership properties and whether an explicit destructor exists; these fields drive verification and native
+drop-glue generation. `dmm-ir-v3` currently serializes aggregate names, symbols, and fields, but not
+those ownership fields; exposing them requires a new dump-format version. Function instructions are numbered in storage
+order. Values use `%N`, types use
 `@N`, and control-flow labels use `LN`. Each instruction records its opcode, result, type, operands, symbol/token
-references, argument slice, operator, and source span. Enum payload constants and imported-unit references are explicit.
+references, argument slice, operator, and source span. Contextual literals appear as `array-literal` with their pattern
+arguments and final element count. Ownership cleanup appears as effectful `drop`, `move`, `reinit`, and
+`free-slice-backing` instructions, including inside compiler-generated cleanup/drop-glue functions. Executable main packages also contain
+a synthetic package-cleanup function whose reverse-order `drop` effects target `NEEDS_DROP` globals. Enum payload
+constants and imported-unit references are explicit.
 Numeric constants produced by optimization include `immediate=0x...` with their 64-bit integer value or IEEE
 floating-point bits. A fixed-array index may carry `bounds-check=elided` when an earlier dominating access checked the
 same SSA base and index. Original source tokens remain unchanged. Dumps describe optimized IR by default; use `-O0` for the

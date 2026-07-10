@@ -93,4 +93,8 @@ descriptors copied from an already released allocation must not be released. Bou
 validity or track lifetimes.
 
 The compiler provides layout queries, descriptor operations, bounds checks and explicit raw pointer casts. Typed
-allocation, ownership conventions and future buffers and collections are implemented in DMM.
+allocation, ownership conventions and future buffers and collections are implemented in DMM. Raw pointers remain
+copyable non-owning values in the type system: `NEEDS_DROP` on a wrapper does not implicitly free a raw allocation
+unless that wrapper's destructor does so. Native drop glue handles local, by-value, and package-stored owning wrappers,
+but the current allocation wrappers do not declare destructors; they must therefore continue to call `release`
+explicitly.

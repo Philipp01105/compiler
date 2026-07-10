@@ -121,6 +121,10 @@ function names, and explicitly marks generated ABI, prologue, cleanup, and epilo
 Virtual values, parameters, and locals receive frame offsets before instructions are emitted. Large frames are probed a
 page at a time. Fixed arrays and aggregate storage live directly in the frame and are copied by value; pointers and
 scalar values use eight-byte virtual slots while indirect memory operations honor their actual element width.
+Contextually typed array literals lower to `array-literal` IR with an explicit pattern and final element count. Fixed
+arrays materialize inline. Slice literals materialize a two-word non-owning view plus hidden backing: local and returned
+backings use heap storage with explicit `free-slice-backing` cleanup/ownership transfer, call temporaries live through
+the call, and package literals reference static package-lifetime backing.
 
 System V classifies integer and SSE arguments independently and spills overflow arguments in source order. Windows x64
 uses positional registers and shadow space. Platform I/O shims live in the standalone runtime generator. Both targets
@@ -144,10 +148,15 @@ implemented in DMM. See [CORE_RUNTIME.md](CORE_RUNTIME.md).
 Runtime calls remain typed `IR_OP_CALL` instructions. Allocation/release and string concatenation call compiler-owned
 routines; bounds checks remain backend operations.
 `stdlib/io.dmm` builds higher-level I/O from typed runtime calls, while `print`/`println` are ordinary DMM
-overloads. Raw allocation pointers are explicitly released. Type-derived cleanup is inserted for initialized
-`NEEDS_DROP` locals on every lifetime-ending edge and skips moved values. Aggregate drop glue runs an explicit
-destructor body first, then recursively drops owned fields in reverse declaration order; the same field phase is
-generated for aggregates without an explicit destructor.
+overloads. Raw allocation pointers are explicitly released. Concrete aggregate definitions carry
+`COPYABLE`/`MOVE_ONLY`, `NEEDS_DROP`, and explicit-destructor metadata into verified IR. The verifier checks that
+the ownership bits are coherent. Lowering emits explicit `drop`, `move`, and `reinit` ownership effects. Local
+initialization flags make cleanup path-sensitive, and the existing cleanup stack emits drops on fallthrough, `return`,
+`break`, and `continue`. Compiler-generated drop glue runs an explicit destructor body first and then recursively drops
+owned fields and fixed-array elements in reverse declaration order. By-value owning parameters use the same flags and
+are destroyed by the callee. The main package also receives a synthetic cleanup function: it drops initialized
+`NEEDS_DROP` globals in reverse declaration order, and startup invokes it after `main` returns while preserving the
+exit status. Package owners have companion initialization flags so reassignment and cleanup remain exactly once.
 
 `ir_verify_control_flow` builds basic blocks with explicit and fallthrough edges, computes entry reachability and
 dominators, and checks that ordinary values are available at their uses. PHIs must begin a labeled join and name its two

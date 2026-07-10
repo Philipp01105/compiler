@@ -50,9 +50,12 @@ Failed opens return a closed `Stream`. A default-initialized stream is closed. F
 (subject to umask); Windows ignores mode bits. Closing a standard-stream wrapper does not close the OS standard
 descriptor. A failed close invalidates the wrapper too: retrying a reused descriptor is unsafe.
 
-Owners must not be copied: DMM currently copies structs and does not enforce move-only resources. Close each owning
-stream exactly once, and keep streams alive and at a stable address while buffered adapters borrow them. Do not close or
-reuse descriptors behind a live wrapper. There are no implicit destructors.
+The language now derives move-only and `NEEDS_DROP` properties from a normal struct's destructor and fields. The
+current `Stream`, buffered-adapter, and `Bytes` library definitions do not yet declare destructors, however. Native drop
+glue is emitted for local, by-value, and package-stored owners, including normal process-exit cleanup for package
+storage. Until the library wrappers are migrated, do not manually copy owners: close or release each one
+exactly once, keep streams alive at a stable address while adapters borrow them, and do not close or reuse descriptors
+behind a live wrapper.
 
 ## Transfers and errors
 

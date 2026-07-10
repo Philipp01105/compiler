@@ -33,6 +33,7 @@ The pass repeats these transformations until stable:
 - Loop-invariant constants, stable parameter loads, and nontrapping calculations move to a unique preheader when every
   operand is available there. Address-taking, stores, and potentially trapping operations prevent the relevant move.
 - Dead value elimination retains effectful or potentially trapping instructions.
+- Hidden slice-backing release is an effectful memory operation and is never removed or reordered across calls.
 - Backward CFG liveness removes dead and overwritten stores to unescaped locals. Declarations disappear only after every
   storage reference disappears.
 - Address/dereference cancellation and repeated address/load simplification within a basic block and memory epoch.
@@ -58,6 +59,12 @@ Taking a local's address excludes it from storage dataflow and dead-store elimin
 Indirect writes invalidate memory facts; calls, writes, allocation and release end load-reuse epochs. Heap/field stores
 remain. Unused bounds checks and dereferences remain unless a specific rewrite proves an access redundant. There is no
 whole-program alias analysis.
+
+Aggregate ownership metadata is semantic input, not an optimization inference. Passes preserve
+`COPYABLE`/`MOVE_ONLY`, the independent `NEEDS_DROP` bit, and explicit-destructor metadata. `drop`, `move`, and
+`reinit` instructions are observable memory effects and may be removed or reordered only when ownership/liveness proves
+that doing so preserves exactly-once destruction. The synthetic package-cleanup function is a liveness root even though
+it has no source-level semantic symbol.
 
 ## Validation
 

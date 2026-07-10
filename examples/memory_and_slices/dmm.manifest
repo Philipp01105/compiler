@@ -1,0 +1,6 @@
+/* main
+Fixed arrays, checked slices, explicit checked-borrow to raw-pointer casts, generic allocation and layout queries.
+*/
+
+module dmm.example/memory_and_slices
+dmm 2026-09-22-dev

@@ -101,7 +101,10 @@ static int ownership_property_regressions(void) {
         "struct File { var handle:int; destructor {} }"
         "struct Wrapper { var file:File; }"
         "struct Box<T> { var value:T; }"
-        "func main()->int { var copyable:Box<int>; var owned:Box<File>; return 0; }";
+        "var package_file:File;"
+        "var package_wrapper:Wrapper;"
+        "func main()->int { var copyable:Box<int>; var owned:Box<File>; "
+        "var moved=owned; owned=moved; return 0; }";
     const FrontendOptions options = {0};
     AstProgram *program = test_parse_source(source, strlen(source),
                                             "ownership-properties.dmm", &options);
@@ -138,7 +141,30 @@ static int ownership_property_regressions(void) {
              (SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP)) ==
                 (SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP))
             saw_ir_drop_metadata = 1;
-    if (module == NULL || !saw_ir_drop_metadata) failed = 1;
+    int saw_drop_glue = 0, saw_package_cleanup = 0;
+    int saw_drop = 0, saw_move = 0, saw_reinit = 0;
+    for (size_t f = 0; module != NULL && f < module->function_count; f++) {
+        const IrFunction *function = &module->functions[f];
+        if (function->is_drop_glue) saw_drop_glue = 1;
+        if (function->is_package_cleanup) {
+            saw_package_cleanup = function->instruction_count == 2 &&
+                                  function->instructions[0].opcode == IR_OP_DROP &&
+                                  function->instructions[1].opcode == IR_OP_DROP &&
+                                  function->instructions[0].symbol_id ==
+                                      module->globals[1].symbol_id &&
+                                  function->instructions[1].symbol_id ==
+                                      module->globals[0].symbol_id;
+        }
+        for (size_t i = 0; i < function->instruction_count; i++) {
+            saw_drop |= function->instructions[i].opcode == IR_OP_DROP;
+            saw_move |= function->instructions[i].opcode == IR_OP_MOVE;
+            saw_reinit |= function->instructions[i].opcode == IR_OP_REINIT;
+        }
+    }
+    if (module == NULL || !saw_ir_drop_metadata || !saw_drop_glue ||
+        !saw_package_cleanup ||
+        !saw_drop || !saw_move || !saw_reinit)
+        failed = 1;
     ir_module_free(module);
     semantic_model_free(semantics);
     ast_program_free(program);
@@ -209,7 +235,7 @@ int main(int argc, char **argv) {
                                              : NULL;
             if (program == NULL || program->structured_declaration_count != 2 ||
                 program->owned_import_count != 2 || paths == NULL || paths->next != NULL ||
-                module == NULL || module->import_count != 1 || module->function_count != 3) {
+                module == NULL || module->import_count != 1 || module->function_count != 4) {
                 fprintf(stderr, "grouped package import AST/IR contract failed\n");
                 failed = 1;
             }

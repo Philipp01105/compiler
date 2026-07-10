@@ -31,6 +31,8 @@ static int initialize(Image *image) {
     NativeObject *o = &image->object;
     native_define(o, "main", 1, 1);
     native_uint(o, 0xc3, 1);
+    native_define(o, "__dmm_package_cleanup", 0, 1);
+    native_uint(o, 0xc3, 1);
     if (!native_runtime_emit(o, target)) return 0;
     for (size_t i = 0; i < o->symbol_count; ++i) {
         NativeSymbol *s = &o->symbols[i];

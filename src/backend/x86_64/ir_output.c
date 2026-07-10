@@ -29,6 +29,58 @@ int map_quoted(FILE *output, const char *text) {
     return fputc('"', output) != EOF;
 }
 
+static int write_sized_bits(Emitter *emitter, uint64_t bits, size_t size) {
+    if (size != 1 && size != 2 && size != 4 && size != 8) return 0;
+    if (emitter->native) return native_uint(emitter->native, bits, size);
+    const char *directive = size == 1 ? ".byte" : size == 2 ? ".short" :
+                            size == 4 ? ".long" : ".quad";
+    return fprintf(emitter->output, "    %s 0x%llx\n", directive,
+                   (unsigned long long) bits) >= 0;
+}
+
+static int emit_global_literal_elements(Emitter *emitter,
+                                        const IrGlobal *global) {
+    if (global->array_literal == NULL ||
+        global->type_id >= emitter->module->type_count) return 0;
+    const IrType *container = &emitter->module->types[global->type_id];
+    if ((container->kind != IR_TYPE_ARRAY && container->kind != IR_TYPE_SLICE) ||
+        container->element_type >= emitter->module->type_count) return 0;
+    const IrType *element_type = &emitter->module->types[container->element_type];
+    IrTypeLayout layout;
+    if (element_type->kind != IR_TYPE_PRIMITIVE ||
+        !ir_type_layout(emitter->module, container->element_type, &layout)) return 0;
+    size_t pattern_count = 0;
+    for (const AstExpression *element = global->array_literal->arguments;
+         element != NULL; element = element->next) pattern_count++;
+    if (pattern_count == 0) return 0;
+    for (size_t index = 0; index < global->literal_element_count; index++) {
+        const AstExpression *element = global->array_literal->arguments;
+        for (size_t pattern = index % pattern_count; pattern > 0; pattern--)
+            element = element->next;
+        const char *text = element->folded_constant.lexeme != NULL
+                               ? element->folded_constant.lexeme
+                               : ast_program_lexeme(global->source_program,
+                                                    element->value_token);
+        uint64_t bits;
+        if (element_type->primitive == TYPE_DOUBLE) {
+            union { double value; uint64_t bits; } converted = {strtod(text, NULL)};
+            bits = converted.bits;
+        } else if (element_type->primitive == TYPE_FLOAT) {
+            union { float value; uint32_t bits; } converted = {(float) strtod(text, NULL)};
+            bits = converted.bits;
+        } else if (element_type->primitive == TYPE_STRING) {
+            return 0;
+        } else {
+            IrInstruction literal = {.auxiliary_token = element->value_token};
+            bits = (uint64_t) constant_value(global->source_program, &literal);
+            if (element->folded_constant.lexeme != NULL)
+                bits = (uint64_t) strtoll(text, NULL, 0);
+        }
+        if (!write_sized_bits(emitter, bits, layout.size)) return 0;
+    }
+    return 1;
+}
+
 
 static int emit_file(Emitter *emitter, int deterministic) {
     FILE *output = emitter->output;
@@ -163,13 +215,37 @@ static int emit_file(Emitter *emitter, int deterministic) {
         const SemanticSymbol *symbol = &emitter->module->semantics->symbols[global->symbol_id];
         char label[4096];
         if (!global_label(symbol, label, sizeof(label))) return 0;
+        const IrType *global_type = global->type_id < emitter->module->type_count
+                                        ? &emitter->module->types[global->type_id]
+                                        : NULL;
+        if (global->array_literal != NULL && global_type != NULL &&
+            global_type->kind == IR_TYPE_SLICE) {
+            char backing[64];
+            snprintf(backing, sizeof(backing), ".LIR_global_backing_%zu", g);
+            if (emitter->native) {
+                if (!native_define(emitter->native, backing, 0, 0)) return 0;
+            } else fprintf(output, "%s:\n", backing);
+            if (!emit_global_literal_elements(emitter, global)) return 0;
+        }
         if (emitter->native) {
             if (!native_define(emitter->native, label, symbol->declaration->is_public, 0)) return 0;
         } else {
             if (symbol->declaration->is_public) fprintf(output, "    .globl %s\n", label);
             fprintf(output, "%s:\n", label);
         }
-        if (global->string) {
+        if (global->array_literal != NULL && global_type != NULL &&
+            global_type->kind == IR_TYPE_SLICE) {
+            char backing[64];
+            snprintf(backing, sizeof(backing), ".LIR_global_backing_%zu", g);
+            if (emitter->native) {
+                native_reference(emitter->native, backing, NATIVE_ADDR64,
+                                 emitter->native->sections[NATIVE_DATA].size, 0);
+                write_quad(emitter, 0);
+            } else fprintf(output, "    .quad %s\n", backing);
+            write_quad(emitter, global->literal_element_count);
+        } else if (global->array_literal != NULL) {
+            if (!emit_global_literal_elements(emitter, global)) return 0;
+        } else if (global->string) {
             if (emitter->native) {
                 char string[64];
                 snprintf(string, sizeof(string), ".LIR_global_string_%zu", g);
@@ -183,6 +259,15 @@ static int emit_file(Emitter *emitter, int deterministic) {
             write_quad(emitter, global->bits);
             for (size_t slot = 1; slot < slots; slot++) write_quad(emitter, 0);
         }
+        if (ir_type_properties(emitter->module, global->type_id) &
+            SEMANTIC_TYPE_NEEDS_DROP) {
+            char flag[4096];
+            if (!global_drop_flag_label(symbol, flag, sizeof(flag))) return 0;
+            if (emitter->native) {
+                if (!native_define(emitter->native, flag, 0, 0)) return 0;
+            } else fprintf(output, "%s:\n", flag);
+            write_quad(emitter, 1);
+        }
     }
     if (emitter->native) emitter->native->section = NATIVE_TEXT;
     else fputs("    .text\n", output);
@@ -194,12 +279,19 @@ static int emit_file(Emitter *emitter, int deterministic) {
         for (size_t i = 0; i < function->instruction_count; i++)
             if (function->instructions[i].opcode == IR_OP_DECLARE) {
                 size_t slots = type_slots(emitter->module, function->instructions[i].type_id);
+                if (ir_type_properties(emitter->module,
+                                       function->instructions[i].type_id) &
+                    SEMANTIC_TYPE_NEEDS_DROP)
+                    slots++;
+                if (function->instructions[i].is_slice) slots++;
                 if (slots == 0 || declarations > SIZE_MAX - slots) return 0;
                 declarations += slots;
             } else if ((function->instructions[i].opcode == IR_OP_CALL || function->instructions[i].opcode ==
-                        IR_OP_ENUM_CONSTRUCT || function->instructions[i].opcode == IR_OP_SLICE) &&
-                       is_inline_structure(emitter->module,
-                                           &function->instructions[i])) {
+                        IR_OP_ENUM_CONSTRUCT || function->instructions[i].opcode == IR_OP_SLICE ||
+                        function->instructions[i].opcode == IR_OP_ARRAY_LITERAL) &&
+                       (is_inline_structure(emitter->module,
+                                            &function->instructions[i]) ||
+                        function->instructions[i].is_array)) {
                 size_t slots = type_slots(emitter->module,
                                           function->instructions[i].type_id);
                 if (slots == 0 || aggregate_results > SIZE_MAX - slots) return 0;
@@ -214,6 +306,12 @@ static int emit_file(Emitter *emitter, int deterministic) {
             aggregate_parameters += parameter_slots;
         }
         size_t parameter_slots = parameter_storage_slots(function);
+        for (size_t p = 0; p < function->parameter_count; p++)
+            if (!function->parameters[p].is_receiver &&
+                (ir_type_properties(emitter->module,
+                                    function->parameters[p].type_id) &
+                 SEMANTIC_TYPE_NEEDS_DROP))
+                parameter_slots++;
         if (function->next_value > SIZE_MAX - parameter_slots ||
             function->next_value + parameter_slots > SIZE_MAX - declarations)
             return 0;
@@ -301,4 +399,3 @@ int x86_64_lower_native(const IrModule *module, TargetFormat target, NativeObjec
     int success = emit_file(&emitter, 1);
     return success && !object->failed && !map.failed;
 }
-

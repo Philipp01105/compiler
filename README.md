@@ -14,9 +14,13 @@ The project is suitable for learning and experimentation. It is not yet intended
   see [STDIO.md](STDIO.md)
 - Functions, forward calls, local variables, arrays, pointers, structs, enums, and methods
 - Inferred and explicitly instantiated generic functions, and invariant generic structs/enums
+- Type-derived ownership for ordinary structs: explicit destructors and owned fields produce concrete
+  `COPYABLE`/`MOVE_ONLY` and independent `NEEDS_DROP` properties, including per-specialization generic results
+- Implicit moves with moved-value diagnostics, checked immutable/exclusive mutable borrows, and field-sensitive conflicts
 - Compile-time `sizeof(T)` / `alignof(T)` and typed `core.alloc<T>()` / `core.alloc<T>(count)`
 - Compile-time type `.name` / `.size` / `.align`, unevaluated `expression.type`, and `case Type ->` matches
-- Borrowed slices usable in variables, fields, enum payloads and returns, with checked indexing
+- Contextually typed fixed-array and slice literals, cyclic repetition, hidden slice backing ownership, returned-backing
+  transfer, package-lifetime literal backing, and checked indexing
 - Structural interfaces, `Self`, multiple interface bounds, and dynamic dispatch for interface arrays
 - Tagged variant payloads and exhaustive `match` statements with typed bindings
 - `if`/`else`, `for`, `while`, `break`, `continue`, and `return`
@@ -123,6 +127,12 @@ The compiler runs IR peephole and dataflow optimizations before code generation.
 lowered input to those passes, while `--dump-ir` and `--dump-cfg` show their selected output. Use `-O0` to disable the
 passes entirely. See
 [IR_OPTIMIZATION.md](IR_OPTIMIZATION.md) for transformations and semantic limits.
+
+Ownership classification, move checking, checked borrows, generic propagation, explicit IR ownership effects, and
+native drop glue for locals and owned by-value parameters are implemented. Moved-from values are skipped; destructor
+bodies run before recursively dropped fields and fixed-array elements. Initialized package owners are dropped exactly
+once in reverse declaration order after a normal return from `main`; moves out of package storage are rejected. See
+[LANGUAGE_SPEC.md](LANGUAGE_SPEC.md) and [TODO.md](TODO.md).
 
 `--ide --dump-ast <path>` performs editor analysis without code generation or changing assembly output. It recovers from
 syntax errors where possible and dumps a validated partial AST with semantic information, even when it exits with

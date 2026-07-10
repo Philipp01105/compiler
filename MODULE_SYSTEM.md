@@ -137,6 +137,15 @@ pub struct Cell<T> {
 pub var count:int = 0;
 ```
 
+Ownership is part of the resolved concrete type, not its export spelling. Imported structs therefore retain their
+derived `COPYABLE`/`MOVE_ONLY` and independent `NEEDS_DROP` properties across package boundaries. Generic structs
+derive those properties separately for each concrete specialization after type substitution.
+
+For an executable main package, globals from the resolved package graph that require destruction participate in the
+compiler-generated normal-exit cleanup and are dropped in reverse lowered declaration order. Library packages do not
+emit executable startup. Moving an owner out of package storage is rejected; borrowing and in-place reassignment remain
+available under the ordinary borrow and exactly-once drop rules.
+
 Package variables have shared writable storage. Initializers currently require constant primitive or string expressions;
 explicitly typed variables may instead be zero-initialized, including arrays, pointers and aggregate values. Runtime
 initialization functions and arbitrary package initializer expressions are future work. Slice variables store a

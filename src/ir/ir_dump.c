@@ -30,9 +30,9 @@ static const char *opcode_name(IrOpcode opcode) {
         "constant", "load", "declare", "store", "unary",
         "binary", "call", "index", "member", "slice-length", "cast", "alloc", "free",
         "return", "branch", "jump", "label", "phi", "enum-construct", "enum-is", "enum-payload", "trap", "slice",
-        "slice-data"
+        "slice-data", "array-literal", "drop", "move", "reinit", "free-slice-backing"
     };
-    return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_SLICE_DATA ? names[opcode] : "invalid";
+    return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_FREE_SLICE_BACKING ? names[opcode] : "invalid";
 }
 
 static const char *operator_name(TokenType type) {
