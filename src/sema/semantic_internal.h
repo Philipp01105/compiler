@@ -17,6 +17,9 @@ typedef struct LocalSymbol {
     size_t resolved_named_symbol_id;
     int resolved_is_array;
     int resolved_is_slice;
+    AstType resolved_ast_type;
+    const AstProgram *resolved_type_program;
+    int has_resolved_ast_type;
     int is_constant;
     int moved;
     int initialized;

@@ -1,0 +1,8 @@
+package main;
+func forward(values:int[]) -> int[] { return values; }
+func main() -> void {
+    var owner:int[] = [1, 2, 3];
+    var view:int[] = forward(owner);
+    owner = [4, 5, 6];
+    var value:int = view[0];
+}

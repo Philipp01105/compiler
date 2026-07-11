@@ -51,15 +51,19 @@ The primitive types are `int`, `char`, `byte`, `bit`, `float`, `double`, `string
 their signedness and width; `isize`/`usize` are signed/unsigned pointer-width integers (64 bits on both supported
 targets). Existing `int`, `char` and `byte` retain their 32-bit signed, 8-bit signed and 8-bit unsigned memory/ABI
 representations. The new spellings are distinct primitive types for overload resolution and generic specialization.
-`void` is valid only as a function return type. Fixed arrays use `var name:type[length];`. Repeated prefix stars form
-pointers, such as `**int`; grouped types distinguish `*(int[4])` from `*int[4]`. Whole-array assignment is supported
-when both sides have the same fixed-array type.
+`void` is valid only as a function return type. Fixed arrays use `var name:type[length];`. Array and slice postfixes may
+be repeated and are applied from left to right: `int[2][3]` is an outer length-3 array whose elements are length-2
+arrays, while `int[2][]` is a slice of length-2 arrays. Repeated prefix stars form pointers, such as `**int`; grouped
+types distinguish `*(int[4])` from `*int[4]`. Whole-array assignment is supported when both sides have the same complete
+fixed-array type.
 
-Fixed-size array parameters such as `values:float[2]` accept arrays with exactly the declared length and element type.
-They borrow the caller's storage, so element mutations are visible to the caller. Their ABI passes one data pointer;
-indexing uses the statically known bound. A slice does not implicitly convert to a fixed-size array parameter.
+Fixed-size array parameters such as `values:float[2]` accept arrays with exactly the declared lengths and element types
+at every nesting level. They borrow the caller's storage, so element mutations are visible to the caller. Their ABI
+passes one data pointer; indexing uses the statically known bound and recursively computed element stride. A slice does
+not implicitly convert to a fixed-size array parameter.
 
-`T[]` slices are non-owning, copyable views containing a data pointer and an element count. They may be parameters,
+`T[]` slices are non-owning, copyable views containing a data pointer and an element count. `T` may itself be an array
+or slice type. They may be parameters,
 local bindings, fields, enum payloads, package variables and return values. A matching fixed array converts to a slice
 without copying its elements. Ordinary assignment and return copy the view; they do not duplicate the underlying
 storage.
@@ -88,10 +92,17 @@ backing owner to the receiving context while the visible `T[]` remains a copyabl
 static package-lifetime backing storage. Package array/slice literal elements currently must be compile-time non-string
 primitive values because general runtime package initialization remains unsupported.
 
-`slice(pointer, count)` constructs a view from a typed non-void raw pointer and an integral count. Zero permits a null
-pointer; negative counts, nonzero counts with null pointers and byte-size overflow trap. The caller ensures the region
-is valid, aligned and alive. Slice parameters use pointer and length ABI lanes in source-parameter order; stored and
-returned slices use a two-word descriptor.
+The borrow checker propagates a slice view's backing owner through local copies, aggregate fields, returned views and
+calls whose returned origin is statically provable. Chained views retain the original owner. That owner cannot be moved,
+reassigned or mutated while a dependent view remains live; the view's conservative lifetime ends after its last use.
+For mutable borrows, different constant element indices are disjoint regions. Dynamic indices and whole slices are
+treated as overlapping. A view-returning instance method on a move-only owner conservatively borrows the whole receiver
+when a more precise returned field cannot yet be established.
+
+`slice(pointer, count)` constructs a view from a typed non-void raw pointer and an integral count, including a pointer
+to an array or slice element type. Zero permits a null pointer; negative counts, nonzero counts with null pointers and
+byte-size overflow trap. The caller ensures the region is valid, aligned and alive. Slice parameters use pointer and
+length ABI lanes in source-parameter order; stored and returned slices use a two-word descriptor.
 
 Integral types may convert among themselves or to floating point, and `float`
 may widen to `double`. Conversions to fixed-width integers keep the low bits and sign- or zero-extend according to the
@@ -192,6 +203,18 @@ are implemented. Local and by-value-parameter cleanup covers scope fallthrough, 
 recursive struct-field and fixed-array-element destruction is emitted in reverse order. Package storage participates in
 exactly-once cleanup after a normal return from `main`.
 
+The `stdlib` package provides destructor-backed owning collections. `Bytes.allocate(capacity)` owns a growable byte
+region; `Buffer<T>.allocate(count)` owns a fixed-length region; and `List<T>.allocate(capacity)` owns a growable logical
+sequence. Each owner is move-only, exposes `ok()` and an `error:AllocationError`, and releases its allocation exactly
+once. `Bytes.push` and `List<T>.push` return `AllocationError`; the variants are `None`, `OutOfMemory`, and
+`CapacityOverflow`. Their `view()` methods return borrowed slices, so any operation that can relocate or release the
+owner is rejected while the view is live. `Buffer<T>` and `List<T>` currently require copyable element types for
+`get`, `set`, growth, and destruction; dynamic element drop is not yet part of their contract.
+
+`stdlib.String.clone(text)` creates a move-only owned string and reports allocation failure through the same typed
+status. `String.view() -> string` returns a non-owning string view tied to the `String` receiver, and `length()` reports
+its byte length. Moving, replacing, or destroying the owner while that view remains live is rejected.
+
 Legacy enum member names must be unique within an enum. Legacy enum values are first-class:
 they can be stored, compared for equality, passed, and returned. Variant fields are scalar primitive types initialized
 by compile-time literals and can be read through member access. Unknown enum members are a compile error.
@@ -280,8 +303,9 @@ and `release<T>(view:T[])` in DMM over byte-region primitives. Successful alloca
 returns null or an empty null slice. Release an allocation base exactly once, and never release a borrowed view into
 local, global or interior storage. See `CORE_RUNTIME.md`.
 
-Types support one array or slice constructor, with pointer levels inside and outside it. Nested arrays and slices are
-not supported.
+Nested fixed arrays use recursive row-major storage with no hidden descriptors. Nested slices retain one two-word
+descriptor for each slice value. Layout, generic identity, overload matching, argument and return classification,
+ownership properties, and reverse-order destruction all use the complete recursive element type.
 
 `stdlib.print(value)` and `stdlib.println(value)` are ordinary overloaded stdlib functions. Import `"stdlib"` to use
 them; an empty line is `stdlib.println("")`. Calls evaluate their arguments before entering the output function.

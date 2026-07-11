@@ -11,6 +11,10 @@ int ast_concrete_type_equal(const AstProgram *a, const AstType *x,
         x->is_slice != y->is_slice || x->resolved_array_length != y->resolved_array_length ||
         strcmp(ast_program_lexeme(a, x->name_token), ast_program_lexeme(b, y->name_token)))
         return 0;
+    if ((x->element_type == NULL) != (y->element_type == NULL)) return 0;
+    if (x->element_type != NULL &&
+        !ast_concrete_type_equal(a, x->element_type, b, y->element_type))
+        return 0;
     const AstTypeArgument *u = x->arguments, *v = y->arguments;
     for (; u && v; u = u->next, v = v->next)
         if (!ast_concrete_type_equal(a, &u->type, b, &v->type)) return 0;
@@ -80,6 +84,11 @@ static size_t transplant_token(Substitution *s, size_t index) {
 static AstType concrete_copy(Substitution *s, AstType type) {
     type.name_token = transplant_token(s, type.name_token);
     if (type.is_array) type.array_length_token = transplant_token(s, type.array_length_token);
+    if (type.element_type != NULL) {
+        AstType *element = owned(s, sizeof(*element));
+        if (element != NULL) *element = concrete_copy(s, *type.element_type);
+        type.element_type = element;
+    }
     AstTypeArgument *head = NULL, **tail = &head;
     for (const AstTypeArgument *a = type.arguments; a; a = a->next) {
         AstTypeArgument *copy = owned(s, sizeof(*copy));
@@ -93,6 +102,12 @@ static AstType concrete_copy(Substitution *s, AstType type) {
 }
 
 static AstType substitute_type(Substitution *s, AstType type) {
+    if (type.element_type != NULL) {
+        AstType *element = owned(s, sizeof(*element));
+        if (element != NULL) *element = substitute_type(s, *type.element_type);
+        type.element_type = element;
+        return type;
+    }
     const AstGenericParameter *parameter = s->origin->generic_parameters;
     for (size_t i = 0; parameter && i < s->count; parameter = parameter->next, i++) {
         if (type.kind == AST_TYPE_NAMED &&
@@ -105,7 +120,22 @@ static AstType substitute_type(Substitution *s, AstType type) {
             else result.pointer_depth += type.pointer_depth;
             result.outer_pointer_depth += type.outer_pointer_depth;
             if (type.is_array || type.is_slice) {
-                if (result.is_array || result.is_slice) result.invalid_substitution = 1;
+                if (result.is_array || result.is_slice) {
+                    AstType *element = owned(s, sizeof(*element));
+                    if (element == NULL) {
+                        result.invalid_substitution = 1;
+                        return result;
+                    }
+                    *element = result;
+                    element->outer_pointer_depth -=
+                            type.outer_pointer_depth;
+                    if (type.borrow_kind != AST_BORROW_NONE)
+                        element->borrow_kind = type.borrow_kind;
+                    result.borrow_kind = AST_BORROW_NONE;
+                    result.pointer_depth = 0;
+                    result.outer_pointer_depth = type.outer_pointer_depth;
+                    result.element_type = element;
+                }
                 result.is_array = type.is_array;
                 result.is_slice = type.is_slice;
                 result.array_length_token = type.array_length_token;

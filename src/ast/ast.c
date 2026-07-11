@@ -80,6 +80,22 @@ const char *ast_declaration_kind_name(AstDeclarationKind kind) {
     return "invalid";
 }
 
+AstType ast_type_element(const AstType *type) {
+    AstType result = {0};
+    result.kind = AST_TYPE_INFERRED;
+    result.name_token = AST_TOKEN_NONE;
+    result.array_length_token = AST_TOKEN_NONE;
+    if (type == NULL) return result;
+    if (type->element_type != NULL) return *type->element_type;
+    result = *type;
+    result.is_array = 0;
+    result.is_slice = 0;
+    result.array_length_token = AST_TOKEN_NONE;
+    result.resolved_array_length = 0;
+    result.element_type = NULL;
+    return result;
+}
+
 static int valid_token(const AstProgram *program, size_t token) {
     return token != AST_TOKEN_NONE && token < program->token_count;
 }
@@ -89,6 +105,9 @@ static int valid_type_depth(const AstProgram *program, const AstType *type, int 
     if (type->kind == AST_TYPE_INFERRED) return allow_inferred;
     if (type->kind != AST_TYPE_NAMED || !valid_token(program, type->name_token)) return 0;
     if (type->is_array && !valid_token(program, type->array_length_token)) return 0;
+    if (type->element_type != NULL &&
+        !valid_type_depth(program, type->element_type, 0, depth + 1))
+        return 0;
     unsigned count = 0;
     for (const AstTypeArgument *argument = type->arguments; argument; argument = argument->next)
         if (++count > 16 || !valid_type_depth(program, &argument->type, 0, depth + 1)) return 0;

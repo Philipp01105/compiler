@@ -103,11 +103,15 @@ int semantic_type_needs_drop(const Analyzer *analyzer,
 }
 
 static unsigned field_type_properties(const Analyzer *analyzer,
-                                      const AstProgram *program,
-                                      const AstType *type) {
+                                       const AstProgram *program,
+                                       const AstType *type) {
     if (type->borrow_kind != AST_BORROW_NONE || type->pointer_depth != 0 ||
         type->outer_pointer_depth != 0 || type->is_slice)
         return SEMANTIC_TYPE_COPYABLE;
+    if (type->is_array) {
+        AstType element = ast_type_element(type);
+        return field_type_properties(analyzer, program, &element);
+    }
     size_t nested = resolve_named_symbol_id(
         analyzer, program, named_type_token(program, type));
     return semantic_symbol_type_properties(analyzer->model, nested);
@@ -781,6 +785,30 @@ static void analyze_destructor(Analyzer *analyzer, AstDeclarationNode *resource)
     analyzer->in_destructor = saved_destructor;
 }
 
+static int package_array_literal_static(const Analyzer *analyzer,
+                                        const AstExpression *literal,
+                                        const AstType *type) {
+    if (literal == NULL || literal->kind != AST_EXPR_ARRAY_LITERAL ||
+        type == NULL || (!type->is_array && !type->is_slice))
+        return 0;
+    AstType element_type = ast_type_element(type);
+    if (element_type.is_slice) return 0;
+    DataType primitive = primitive_type(analyzer->program, &element_type);
+    for (const AstExpression *element = literal->arguments;
+         element != NULL; element = element->next) {
+        if (element->kind == AST_EXPR_ARRAY_LITERAL) {
+            if (!package_array_literal_static(analyzer, element,
+                                              &element_type))
+                return 0;
+        } else if (element_type.is_array || element_type.is_slice ||
+                   primitive == TYPE_UNKNOWN || primitive == TYPE_STRING ||
+                   !constant_expression_allowed(analyzer, element))
+            return 0;
+    }
+    return literal->right == NULL ||
+           constant_expression_allowed(analyzer, literal->right);
+}
+
 void analyze_constant_declaration(Analyzer *analyzer,
                                          AstDeclarationNode *declaration) {
     if (declaration->semantic_body_checked) return;
@@ -808,13 +836,7 @@ void analyze_constant_declaration(Analyzer *analyzer,
     validate_expression(analyzer, value, 0);
     if (declaration->kind == AST_DECL_VARIABLE && value != NULL &&
         value->kind == AST_EXPR_ARRAY_LITERAL) {
-        DataType element_type = primitive_type(analyzer->program, type);
-        int static_elements = element_type != TYPE_UNKNOWN &&
-                              element_type != TYPE_STRING;
-        for (AstExpression *element = value->arguments;
-             element != NULL && static_elements; element = element->next)
-            static_elements = constant_expression_allowed(analyzer, element);
-        if (!static_elements)
+        if (!package_array_literal_static(analyzer, value, type))
             semantic_error(analyzer, declaration->name_token,
                            ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                            "Package array literals require compile-time non-string primitive elements");

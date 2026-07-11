@@ -14,6 +14,18 @@ static void metadata_name(DiagnosticText *text, const Analyzer *analyzer, const 
         text->failed = 1;
         return;
     }
+    if (type->element_type != NULL) {
+        for (unsigned i = 0;
+             i < type->pointer_depth + type->outer_pointer_depth +
+                     (type->borrow_kind != AST_BORROW_NONE);
+             i++)
+            diagnostic_append(text, "*");
+        metadata_name(text, analyzer, unit, type->element_type, depth + 1);
+        if (type->is_slice) diagnostic_append(text, "[]");
+        else if (type->is_array)
+            diagnostic_append(text, "[%zu]", type->resolved_array_length);
+        return;
+    }
     for (unsigned i = 0; i < type->outer_pointer_depth; i++) diagnostic_append(text, "*");
     if (type->outer_pointer_depth && (type->is_array || type->is_slice)) diagnostic_append(text, "(");
     for (unsigned i = 0; i < type->pointer_depth; i++) diagnostic_append(text, "*");
@@ -55,6 +67,66 @@ static int array_literal_element_allowed(const Analyzer *analyzer,
         return !semantic_expression_is_move_only(analyzer, element);
     return expression_to_declared_type_allowed(analyzer, element,
                                                analyzer->program, element_type);
+}
+
+static void set_expression_declared_type(Analyzer *analyzer,
+                                         AstExpression *expression,
+                                         const AstProgram *program,
+                                         const AstType *type) {
+    if (expression == NULL || type == NULL) return;
+    expression->resolved_type = primitive_type(program, type);
+    expression->resolved_borrow_kind = type->borrow_kind;
+    expression->resolved_pointer_depth = type->pointer_depth +
+                                         (type->borrow_kind != AST_BORROW_NONE);
+    expression->resolved_outer_pointer_depth = type->outer_pointer_depth;
+    expression->resolved_named_type_token = named_type_token(program, type);
+    expression->resolved_named_symbol_id = resolve_named_symbol_id(
+        analyzer, program, expression->resolved_named_type_token);
+    expression->resolved_is_array = type->is_array;
+    expression->resolved_is_slice = type->is_slice;
+    expression->resolved_array_length = type->resolved_array_length;
+    expression->resolved_ast_type = *type;
+    expression->resolved_type_program = program;
+    expression->has_resolved_ast_type = 1;
+}
+
+static int dereference_ast_type(AstType *type) {
+    if (type->borrow_kind != AST_BORROW_NONE) {
+        type->borrow_kind = AST_BORROW_NONE;
+        return 1;
+    }
+    if (type->outer_pointer_depth != 0) {
+        type->outer_pointer_depth--;
+        return 1;
+    }
+    if (type->pointer_depth != 0) {
+        type->pointer_depth--;
+        return 1;
+    }
+    return 0;
+}
+
+static AstType slice_of_type(Analyzer *analyzer, AstType element) {
+    if (element.is_array || element.is_slice) {
+        AstType *nested = ast_program_alloc(analyzer->program,
+                                           sizeof(*nested));
+        if (nested == NULL) {
+            analyzer->allocation_failed = 1;
+            element.invalid_substitution = 1;
+            return element;
+        }
+        *nested = element;
+        element.element_type = nested;
+        element.borrow_kind = AST_BORROW_NONE;
+        element.pointer_depth = 0;
+        element.outer_pointer_depth = 0;
+        element.is_array = 0;
+        element.is_slice = 0;
+        element.array_length_token = AST_TOKEN_NONE;
+        element.resolved_array_length = 0;
+    }
+    element.is_slice = 1;
+    return element;
 }
 
 static void contextualize_direct_call_literals(Analyzer *analyzer,
@@ -116,6 +188,15 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
     analyze_expression(analyzer, expression->left);
     analyze_expression(analyzer, expression->right);
     contextualize_direct_call_literals(analyzer, expression);
+    if (expression->kind == AST_EXPR_ARRAY_LITERAL &&
+        expression->allocated_type.kind != AST_TYPE_INFERRED &&
+        (expression->allocated_type.is_array || expression->allocated_type.is_slice)) {
+        AstType element_type = ast_type_element(&expression->allocated_type);
+        for (AstExpression *argument = expression->arguments;
+             argument != NULL; argument = argument->next)
+            if (argument->kind == AST_EXPR_ARRAY_LITERAL)
+                argument->allocated_type = element_type;
+    }
     for (AstExpression *argument = expression->arguments; argument != NULL; argument = argument->next)
         analyze_expression(analyzer, argument);
 
@@ -145,6 +226,8 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
     expression->resolved_named_symbol_id = AST_SYMBOL_NONE;
     expression->resolved_is_array = 0;
     expression->resolved_is_slice = 0;
+    expression->has_resolved_ast_type = 0;
+    expression->resolved_type_program = NULL;
     expression->resolved_symbol_id = AST_SYMBOL_NONE;
     expression->owns_slice_backing = 0;
     if (expression->kind == AST_EXPR_MEMBER && expression->left && same_name(
@@ -233,11 +316,26 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
     } else if (expression->kind == AST_EXPR_SLICE) {
         const AstExpression *data = expression->left;
         if (data) {
-            expression->resolved_type = data->resolved_type;
-            expression->resolved_named_type_token = data->resolved_named_type_token;
-            expression->resolved_named_symbol_id = data->resolved_named_symbol_id;
-            expression->resolved_pointer_depth = data->resolved_pointer_depth ? data->resolved_pointer_depth - 1 : 0;
-            expression->resolved_is_slice = 1;
+            if (data->has_resolved_ast_type) {
+                AstType element = data->resolved_ast_type;
+                (void) dereference_ast_type(&element);
+                AstType slice = slice_of_type(analyzer, element);
+                set_expression_declared_type(
+                    analyzer, expression,
+                    data->resolved_type_program != NULL
+                        ? data->resolved_type_program : analyzer->program,
+                    &slice);
+            } else {
+                expression->resolved_type = data->resolved_type;
+                expression->resolved_named_type_token =
+                        data->resolved_named_type_token;
+                expression->resolved_named_symbol_id =
+                        data->resolved_named_symbol_id;
+                expression->resolved_pointer_depth =
+                        data->resolved_pointer_depth
+                            ? data->resolved_pointer_depth - 1 : 0;
+                expression->resolved_is_slice = 1;
+            }
         }
     } else if (expression->kind == AST_EXPR_ARRAY_LITERAL) {
         AstType expected = expression->allocated_type;
@@ -282,11 +380,7 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                            ERR_TYPE_INCOMPATIBLE_TYPES,
                            "Array literal element count must match the fixed-array length");
 
-        AstType element_type = expected;
-        element_type.is_array = 0;
-        element_type.is_slice = 0;
-        element_type.array_length_token = AST_TOKEN_NONE;
-        element_type.resolved_array_length = 0;
+        AstType element_type = ast_type_element(&expected);
         size_t interface_symbol = resolve_named_symbol_id(
             analyzer, analyzer->program,
             named_type_token(analyzer->program, &element_type));
@@ -316,15 +410,8 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                     break;
                 }
 
-        expression->resolved_type = primitive_type(analyzer->program, &expected);
-        expression->resolved_pointer_depth = expected.pointer_depth;
-        expression->resolved_outer_pointer_depth = expected.outer_pointer_depth;
-        expression->resolved_borrow_kind = expected.borrow_kind;
-        expression->resolved_is_array = expected.is_array;
-        expression->resolved_is_slice = expected.is_slice;
-        expression->resolved_array_length = expected.is_array
-                                                ? expected.resolved_array_length
-                                                : 0;
+        set_expression_declared_type(analyzer, expression, analyzer->program,
+                                     &expected);
         expression->literal_element_count = element_count;
         expression->owns_slice_backing = expected.is_slice;
         expression->resolved_named_type_token = named_type_token(analyzer->program, &expected);
@@ -365,14 +452,23 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
             const LocalSymbol *local = find_local(analyzer, expression->value_token);
             if (local != NULL) {
                 expression->resolved_symbol_id = local->symbol_id;
-                expression->resolved_type = local->resolved_type;
-                expression->resolved_borrow_kind = local->resolved_borrow_kind;
-                expression->resolved_pointer_depth = local->resolved_pointer_depth;
-                expression->resolved_outer_pointer_depth = local->resolved_outer_pointer_depth;
-                expression->resolved_named_type_token = local->resolved_named_type_token;
-                expression->resolved_named_symbol_id = local->resolved_named_symbol_id;
-                expression->resolved_is_array = local->resolved_is_array;
-                expression->resolved_is_slice = local->resolved_is_slice;
+                if (local->has_resolved_ast_type)
+                    set_expression_declared_type(analyzer, expression,
+                                                 local->resolved_type_program,
+                                                 &local->resolved_ast_type);
+                else {
+                    expression->resolved_type = local->resolved_type;
+                    expression->resolved_borrow_kind = local->resolved_borrow_kind;
+                    expression->resolved_pointer_depth = local->resolved_pointer_depth;
+                    expression->resolved_outer_pointer_depth =
+                            local->resolved_outer_pointer_depth;
+                    expression->resolved_named_type_token =
+                            local->resolved_named_type_token;
+                    expression->resolved_named_symbol_id =
+                            local->resolved_named_symbol_id;
+                    expression->resolved_is_array = local->resolved_is_array;
+                    expression->resolved_is_slice = local->resolved_is_slice;
+                }
             } else {
                 const AstField *implicit_field = analyzer->current_owner_token == AST_TOKEN_NONE
                                                      ? NULL
@@ -390,18 +486,9 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                                                              SEMANTIC_SYMBOL_VARIABLE);
                 if (implicit_field != NULL) {
                     expression->resolved_symbol_id = implicit_field->resolved_symbol_id;
-                    expression->resolved_type = primitive_type(analyzer->program,
-                                                               &implicit_field->type);
-                    expression->resolved_borrow_kind = implicit_field->type.borrow_kind;
-                    expression->resolved_pointer_depth = implicit_field->type.pointer_depth;
-                    expression->resolved_outer_pointer_depth =
-                            implicit_field->type.outer_pointer_depth;
-                    expression->resolved_named_type_token = named_type_token(analyzer->program,
-                                                                             &implicit_field->type);
-                    expression->resolved_named_symbol_id = resolve_named_symbol_id(analyzer,
-                        analyzer->program, expression->resolved_named_type_token);
-                    expression->resolved_is_array = implicit_field->type.is_array;
-                    expression->resolved_is_slice = implicit_field->type.is_slice;
+                    set_expression_declared_type(analyzer, expression,
+                                                 analyzer->program,
+                                                 &implicit_field->type);
                 } else if (structure != NULL) {
                     expression->resolved_symbol_id = structure->id;
                     expression->resolved_named_type_token = structure->name_token;
@@ -429,16 +516,27 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                                        ERR_TYPE_INVALID_OPERATION, "Constant initializer contains a dependency cycle");
                     }
                     expression->resolved_symbol_id = constant->id;
-                    expression->resolved_type = constant->resolved_type;
-                    expression->resolved_borrow_kind = constant->resolved_borrow_kind;
-                    expression->resolved_pointer_depth = constant->resolved_pointer_depth;
-                    expression->resolved_outer_pointer_depth =
-                            constant->resolved_outer_pointer_depth;
-                    expression->resolved_named_type_token =
-                            constant->resolved_named_type_token;
-                    expression->resolved_named_symbol_id = constant->resolved_named_symbol_id;
-                    expression->resolved_is_array = constant->resolved_is_array;
-                    expression->resolved_is_slice = constant->resolved_is_slice;
+                    if (constant->declared_type.kind != AST_TYPE_INFERRED)
+                        set_expression_declared_type(analyzer, expression,
+                                                     constant->source_program,
+                                                     &constant->declared_type);
+                    else {
+                        expression->resolved_type = constant->resolved_type;
+                        expression->resolved_borrow_kind =
+                                constant->resolved_borrow_kind;
+                        expression->resolved_pointer_depth =
+                                constant->resolved_pointer_depth;
+                        expression->resolved_outer_pointer_depth =
+                                constant->resolved_outer_pointer_depth;
+                        expression->resolved_named_type_token =
+                                constant->resolved_named_type_token;
+                        expression->resolved_named_symbol_id =
+                                constant->resolved_named_symbol_id;
+                        expression->resolved_is_array =
+                                constant->resolved_is_array;
+                        expression->resolved_is_slice =
+                                constant->resolved_is_slice;
+                    }
                 }
             }
         }
@@ -454,6 +552,9 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
             expression->resolved_named_symbol_id = expression->right->resolved_named_symbol_id;
             expression->resolved_is_array = expression->right->resolved_is_array;
             expression->resolved_is_slice = expression->right->resolved_is_slice;
+            expression->resolved_ast_type = expression->right->resolved_ast_type;
+            expression->resolved_type_program = expression->right->resolved_type_program;
+            expression->has_resolved_ast_type = expression->right->has_resolved_ast_type;
             if (expression->operator_type == TOKEN_AMPERSAND) {
                 expression->resolved_borrow_kind = expression->mutable_borrow
                                                        ? AST_BORROW_MUTABLE
@@ -461,12 +562,27 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                 if (expression->resolved_is_array || expression->resolved_is_slice)
                     expression->resolved_outer_pointer_depth++;
                 else expression->resolved_pointer_depth++;
+                if (expression->has_resolved_ast_type) {
+                    expression->resolved_ast_type.borrow_kind =
+                        expression->resolved_borrow_kind;
+                }
             } else if (expression->operator_type == TOKEN_STAR) {
                 expression->resolved_borrow_kind = AST_BORROW_NONE;
                 if (expression->resolved_outer_pointer_depth > 0)
                     expression->resolved_outer_pointer_depth--;
                 else if (expression->resolved_pointer_depth > 0)
                     expression->resolved_pointer_depth--;
+                if (expression->has_resolved_ast_type) {
+                    if (expression->resolved_ast_type.borrow_kind !=
+                        AST_BORROW_NONE)
+                        expression->resolved_ast_type.borrow_kind =
+                            AST_BORROW_NONE;
+                    else if (expression->resolved_ast_type.outer_pointer_depth >
+                             0)
+                        expression->resolved_ast_type.outer_pointer_depth--;
+                    else if (expression->resolved_ast_type.pointer_depth > 0)
+                        expression->resolved_ast_type.pointer_depth--;
+                }
             }
         }
     } else if (expression->kind == AST_EXPR_BINARY) {
@@ -493,15 +609,8 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
     } else if (expression->kind == AST_EXPR_CAST) {
         validate_array_shape(analyzer, &expression->allocated_type);
         const AstType *cast_type = &expression->allocated_type;
-        expression->resolved_type = primitive_type(analyzer->program, cast_type);
-        expression->resolved_pointer_depth = cast_type->pointer_depth;
-        expression->resolved_outer_pointer_depth = cast_type->outer_pointer_depth;
-        expression->resolved_named_type_token = named_type_token(analyzer->program, cast_type);
-        expression->resolved_named_symbol_id = resolve_named_symbol_id(analyzer, analyzer->program,
-                                                                       expression->resolved_named_type_token);
-        expression->resolved_is_array = cast_type->is_array;
-        expression->resolved_is_slice = cast_type->is_slice;
-        expression->resolved_array_length = cast_type->resolved_array_length;
+        set_expression_declared_type(analyzer, expression, analyzer->program,
+                                     cast_type);
     } else if (expression->kind == AST_EXPR_FREE) {
         expression->resolved_type = TYPE_VOID;
     } else if (expression->kind == AST_EXPR_CALL) {
@@ -529,18 +638,9 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                 (void) ambiguous;
                 if (function != NULL) {
                     expression->resolved_symbol_id = function->id;
-                    expression->resolved_type = primitive_type(function->source_program,
-                                                               &function->declared_type);
-                    expression->resolved_borrow_kind = function->declared_type.borrow_kind;
-                    expression->resolved_pointer_depth = function->declared_type.pointer_depth;
-                    expression->resolved_outer_pointer_depth =
-                            function->declared_type.outer_pointer_depth;
-                    expression->resolved_named_type_token = named_type_token(function->source_program,
-                                                                             &function->declared_type);
-                    expression->resolved_named_symbol_id = resolve_named_symbol_id(analyzer,
-                        function->source_program, expression->resolved_named_type_token);
-                    expression->resolved_is_array = function->declared_type.is_array;
-                    expression->resolved_is_slice = function->declared_type.is_slice;
+                    set_expression_declared_type(analyzer, expression,
+                                                 function->source_program,
+                                                 &function->declared_type);
                 } else if (is_builtin_name(name)) {
                     expression->resolved_type = builtin_result_type(name);
                     if (strcmp(name, "malloc") == 0)
@@ -587,15 +687,9 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                                    "Enum payload accessor requires a variant with exactly one payload");
                     return;
                 }
-                expression->resolved_type = primitive_type(variant->source_program, &payload->type);
-                expression->resolved_borrow_kind = payload->type.borrow_kind;
-                expression->resolved_pointer_depth = payload->type.pointer_depth;
-                expression->resolved_outer_pointer_depth = payload->type.outer_pointer_depth;
-                expression->resolved_named_type_token = named_type_token(variant->source_program, &payload->type);
-                expression->resolved_named_symbol_id = resolve_named_symbol_id(
-                    analyzer, variant->source_program, expression->resolved_named_type_token);
-                expression->resolved_is_array = payload->type.is_array;
-                expression->resolved_is_slice = payload->type.is_slice;
+                set_expression_declared_type(analyzer, expression,
+                                             variant->source_program,
+                                             &payload->type);
                 return;
             }
             if (expression->left->resolved_symbol_id < analyzer->model->symbol_count &&
@@ -620,19 +714,9 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
             (void) ambiguous;
             if (method != NULL) {
                 expression->resolved_symbol_id = method->id;
-                expression->resolved_type = primitive_type(method->source_program,
-                                                           &method->declared_type);
-                expression->resolved_borrow_kind = method->declared_type.borrow_kind;
-                expression->resolved_pointer_depth = method->declared_type.pointer_depth;
-                expression->resolved_outer_pointer_depth =
-                        method->declared_type.outer_pointer_depth;
-                expression->resolved_named_type_token = named_type_token(method->source_program,
-                                                                         &method->declared_type);
-                expression->resolved_named_symbol_id = resolve_named_symbol_id(analyzer,
-                                                                               method->source_program,
-                                                                               expression->resolved_named_type_token);
-                expression->resolved_is_array = method->declared_type.is_array;
-                expression->resolved_is_slice = method->declared_type.is_slice;
+                set_expression_declared_type(analyzer, expression,
+                                             method->source_program,
+                                             &method->declared_type);
             }
         }
         if (expression->resolved_symbol_id < analyzer->model->symbol_count) {
@@ -644,6 +728,18 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                 expression->owns_slice_backing = 1;
         }
     } else if (expression->kind == AST_EXPR_INDEX && expression->left != NULL) {
+        if (expression->left->has_resolved_ast_type &&
+            (expression->left->resolved_ast_type.is_array ||
+             expression->left->resolved_ast_type.is_slice) &&
+            expression->left->resolved_ast_type.outer_pointer_depth == 0) {
+            AstType element = ast_type_element(
+                &expression->left->resolved_ast_type);
+            set_expression_declared_type(
+                analyzer, expression,
+                expression->left->resolved_type_program != NULL
+                    ? expression->left->resolved_type_program : analyzer->program,
+                &element);
+        } else {
         expression->resolved_type = expression->left->resolved_type;
         expression->resolved_borrow_kind = AST_BORROW_NONE;
         expression->resolved_pointer_depth = expression->left->resolved_pointer_depth;
@@ -660,6 +756,7 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
             expression->resolved_is_slice = 0;
         } else if (expression->resolved_pointer_depth > 0)
             expression->resolved_pointer_depth--;
+        }
     } else if (expression->kind == AST_EXPR_MEMBER && expression->left != NULL) {
         if (expression->left->resolved_is_slice && !expression->left->resolved_outer_pointer_depth &&
             same_name(analyzer->program, expression->value_token, "length")) {
@@ -670,10 +767,27 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
         if (expression->left->resolved_is_slice && !expression->left->resolved_outer_pointer_depth &&
             same_name(analyzer->program, expression->value_token, "data")) {
             expression->kind = AST_EXPR_SLICE_DATA;
-            expression->resolved_type = expression->left->resolved_type;
-            expression->resolved_pointer_depth = expression->left->resolved_pointer_depth + 1;
-            expression->resolved_named_type_token = expression->left->resolved_named_type_token;
-            expression->resolved_named_symbol_id = expression->left->resolved_named_symbol_id;
+            if (expression->left->has_resolved_ast_type) {
+                AstType element = ast_type_element(
+                    &expression->left->resolved_ast_type);
+                if (element.is_array || element.is_slice)
+                    element.outer_pointer_depth++;
+                else element.pointer_depth++;
+                set_expression_declared_type(
+                    analyzer, expression,
+                    expression->left->resolved_type_program != NULL
+                        ? expression->left->resolved_type_program
+                        : analyzer->program,
+                    &element);
+            } else {
+                expression->resolved_type = expression->left->resolved_type;
+                expression->resolved_pointer_depth =
+                        expression->left->resolved_pointer_depth + 1;
+                expression->resolved_named_type_token =
+                        expression->left->resolved_named_type_token;
+                expression->resolved_named_symbol_id =
+                        expression->left->resolved_named_symbol_id;
+            }
             return;
         }
         const AstEnumValue *value = NULL;
@@ -719,38 +833,28 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
             const AstProgram *field_program = field_symbol == NULL
                                                   ? analyzer->program
                                                   : field_symbol->source_program;
-            expression->resolved_type = primitive_type(field_program, &field->type);
-            expression->resolved_borrow_kind = field->type.borrow_kind;
-            expression->resolved_pointer_depth = field->type.pointer_depth;
-            expression->resolved_outer_pointer_depth = field->type.outer_pointer_depth;
-            expression->resolved_named_type_token = named_type_token(field_program, &field->type);
-            expression->resolved_named_symbol_id = resolve_named_symbol_id(analyzer,
-                                                                           field_program,
-                                                                           expression->resolved_named_type_token);
-            expression->resolved_is_array = field->type.is_array;
-            expression->resolved_is_slice = field->type.is_slice;
+            set_expression_declared_type(analyzer, expression, field_program,
+                                         &field->type);
             expression->resolved_symbol_id = field->resolved_symbol_id;
         }
     } else if (expression->kind == AST_EXPR_RESERVE) {
         validate_array_shape(analyzer, &expression->allocated_type);
         const AstType *reserved_type = &expression->allocated_type;
-        expression->resolved_type = primitive_type(analyzer->program, reserved_type);
-        expression->resolved_named_type_token = named_type_token(analyzer->program,
-                                                                 reserved_type);
-        expression->resolved_named_symbol_id = resolve_named_symbol_id(analyzer,
-                                                                       analyzer->program,
-                                                                       expression->resolved_named_type_token);
-        expression->resolved_pointer_depth = reserved_type->pointer_depth;
-        expression->resolved_outer_pointer_depth = reserved_type->outer_pointer_depth;
-        expression->resolved_is_array = reserved_type->is_array;
-        expression->resolved_is_slice = reserved_type->is_slice;
+        set_expression_declared_type(analyzer, expression, analyzer->program,
+                                     reserved_type);
         if (reserved_type->is_array || reserved_type->is_slice)
             expression->resolved_outer_pointer_depth++;
         else expression->resolved_pointer_depth++;
+        if (expression->has_resolved_ast_type) {
+            if (reserved_type->is_array || reserved_type->is_slice)
+                expression->resolved_ast_type.outer_pointer_depth++;
+            else expression->resolved_ast_type.pointer_depth++;
+        }
     }
     if (expression->kind == AST_EXPR_UNARY && expression->right != NULL)
         expression->resolved_array_length = expression->right->resolved_array_length;
-    else if (expression->kind == AST_EXPR_INDEX && expression->left != NULL)
+    else if (expression->kind == AST_EXPR_INDEX && expression->left != NULL &&
+             !expression->has_resolved_ast_type)
         expression->resolved_array_length = expression->resolved_is_array ? expression->left->resolved_array_length : 0;
     else if (expression->kind == AST_EXPR_CAST)
         expression->resolved_array_length = expression->allocated_type.resolved_array_length;

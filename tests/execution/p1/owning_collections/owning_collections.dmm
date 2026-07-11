@@ -1,0 +1,21 @@
+package main;
+import "stdlib";
+func main() -> int {
+    var buffer:stdlib.Buffer<int>=stdlib.Buffer<int>.allocate(3);
+    if (!buffer.ok()) { return 3; }
+    buffer.set(0,7);
+    var view:int[]=buffer.view();
+    if (buffer.length()!=3 || view[0]!=7) { return 1; }
+
+    var bytes:stdlib.Bytes=stdlib.Bytes.allocate(0);
+    if (bytes.push(65)!=stdlib.AllocationError.None || bytes.view()[0]!=65) { return 5; }
+
+    var list:stdlib.List<int>=stdlib.List<int>.allocate(0);
+    if (list.push(11)!=stdlib.AllocationError.None || list.get(0)!=11) { return 6; }
+
+    var text:stdlib.String=stdlib.String.clone("hello");
+    if (!text.ok()) { return 4; }
+    if (text.view()!="hello" || text.length()!=5) { return 2; }
+    stdlib.println(0);
+    return 0;
+}

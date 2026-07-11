@@ -30,6 +30,36 @@ size_t concrete_token(Analyzer *analyzer, TokenType kind, const char *text) {
     return index;
 }
 
+static AstType expression_shape_copy(Analyzer *analyzer,
+                                     const AstType *shape,
+                                     const AstType *base) {
+    AstType result = *shape;
+    result.kind = base->kind;
+    result.name_token = base->name_token;
+    result.arguments = base->arguments;
+    if (result.is_array) {
+        char length[32];
+        snprintf(length, sizeof(length), "%zu",
+                 result.resolved_array_length);
+        result.array_length_token = concrete_token(analyzer, TOKEN_NUMBER,
+                                                   length);
+    } else result.array_length_token = AST_TOKEN_NONE;
+    result.element_type = NULL;
+    if (shape->element_type != NULL) {
+        AstType *element = ast_program_alloc(analyzer->program,
+                                            sizeof(*element));
+        if (element == NULL) {
+            analyzer->allocation_failed = 1;
+            result.invalid_substitution = 1;
+        } else {
+            *element = expression_shape_copy(analyzer, shape->element_type,
+                                             base);
+            result.element_type = element;
+        }
+    }
+    return result;
+}
+
 AstType inferred_argument_type(Analyzer *analyzer, const AstExpression *value) {
     static const char *names[] = {DMM_TYPE_NAMES};
     AstType t = {
@@ -59,6 +89,8 @@ AstType inferred_argument_type(Analyzer *analyzer, const AstExpression *value) {
         snprintf(length, sizeof(length), "%zu", t.resolved_array_length);
         t.array_length_token = concrete_token(analyzer, TOKEN_NUMBER, length);
     }
+    if (value->has_resolved_ast_type)
+        t = expression_shape_copy(analyzer, &value->resolved_ast_type, &t);
     return t;
 }
 
@@ -68,6 +100,8 @@ void normalize_generic_type(Analyzer *analyzer, AstType *type, unsigned depth) {
                        "Generic substitution creates an unsupported nested array or slice type");
         return;
     }
+    if (type->element_type != NULL)
+        normalize_generic_type(analyzer, type->element_type, depth + 1);
     if (type->is_array && analyzer->model->symbol_count != 0)
         validate_array_shape(analyzer, type);
     if (!type->arguments) {

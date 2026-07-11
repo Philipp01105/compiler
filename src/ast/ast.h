@@ -62,6 +62,12 @@ typedef struct AstType {
     int is_slice;
     size_t array_length_token;
     size_t resolved_array_length;
+    /*
+     * A second postfix container wraps the type constructed so far.  The
+     * outer node keeps the newest []/[N], while element_type points inward.
+     * A single container remains in the legacy flat fields for compatibility.
+     */
+    struct AstType *element_type;
     AstTypeArgument *arguments;
     int invalid_substitution;
 } AstType;
@@ -128,6 +134,10 @@ struct AstExpression {
     size_t resolved_array_length;
     /* Concrete materialized length of an array literal; not part of slice type identity. */
     size_t literal_element_count;
+    /* Complete resolved shape for nested array/slice expressions. */
+    AstType resolved_ast_type;
+    const struct AstProgram *resolved_type_program;
+    int has_resolved_ast_type;
     /* Sema-proven ownership of compiler-created slice backing storage. */
     int owns_slice_backing;
     size_t resolved_symbol_id;
@@ -331,6 +341,9 @@ const AstToken *ast_program_token(const AstProgram *program, size_t index);
 const char *ast_program_lexeme(const AstProgram *program, size_t index);
 
 const char *ast_declaration_kind_name(AstDeclarationKind kind);
+
+/* Returns the type produced by indexing one array/slice layer. */
+AstType ast_type_element(const AstType *type);
 
 int ast_validate_program(const AstProgram *program);
 

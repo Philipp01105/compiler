@@ -38,6 +38,82 @@ static int write_sized_bits(Emitter *emitter, uint64_t bits, size_t size) {
                    (unsigned long long) bits) >= 0;
 }
 
+static int write_zero_bytes(Emitter *emitter, size_t count) {
+    while (count != 0) {
+        size_t width = count >= 8 ? 8 : count >= 4 ? 4 : count >= 2 ? 2 : 1;
+        if (!write_sized_bits(emitter, 0, width)) return 0;
+        count -= width;
+    }
+    return 1;
+}
+
+static int emit_global_literal_value(Emitter *emitter,
+                                     const AstProgram *program,
+                                     const AstExpression *value,
+                                     IrTypeId type_id,
+                                     size_t *written) {
+    if (value == NULL || type_id >= emitter->module->type_count) return 0;
+    const IrType *type = &emitter->module->types[type_id];
+    if (type->kind == IR_TYPE_ARRAY || type->kind == IR_TYPE_SLICE) {
+        if (value->kind != AST_EXPR_ARRAY_LITERAL ||
+            type->element_type >= emitter->module->type_count)
+            return 0;
+        const IrType *element_type =
+            &emitter->module->types[type->element_type];
+        if (element_type->kind == IR_TYPE_SLICE) return 0;
+        IrTypeLayout element_layout;
+        if (!ir_type_layout(emitter->module, type->element_type,
+                            &element_layout))
+            return 0;
+        size_t pattern_count = 0;
+        for (const AstExpression *element = value->arguments;
+             element != NULL; element = element->next)
+            pattern_count++;
+        if (pattern_count == 0) return 0;
+        size_t count = value->literal_element_count;
+        for (size_t index = 0; index < count; index++) {
+            const AstExpression *element = value->arguments;
+            for (size_t pattern = index % pattern_count; pattern > 0;
+                 pattern--)
+                element = element->next;
+            size_t element_written = 0;
+            if (!emit_global_literal_value(emitter, program, element,
+                                           type->element_type,
+                                           &element_written) ||
+                element_written > element_layout.size ||
+                !write_zero_bytes(emitter,
+                                  element_layout.size - element_written))
+                return 0;
+        }
+        *written = count * element_layout.size;
+        return 1;
+    }
+    if (type->kind != IR_TYPE_PRIMITIVE) return 0;
+    IrTypeLayout layout;
+    if (!ir_type_layout(emitter->module, type_id, &layout)) return 0;
+    const char *text = value->folded_constant.lexeme != NULL
+                           ? value->folded_constant.lexeme
+                           : ast_program_lexeme(program, value->value_token);
+    uint64_t bits;
+    if (type->primitive == TYPE_DOUBLE) {
+        union { double value; uint64_t bits; } converted = {strtod(text, NULL)};
+        bits = converted.bits;
+    } else if (type->primitive == TYPE_FLOAT) {
+        union { float value; uint32_t bits; } converted = {(float) strtod(text, NULL)};
+        bits = converted.bits;
+    } else if (type->primitive == TYPE_STRING) {
+        return 0;
+    } else {
+        IrInstruction literal = {.auxiliary_token = value->value_token};
+        bits = (uint64_t) constant_value(program, &literal);
+        if (value->folded_constant.lexeme != NULL)
+            bits = (uint64_t) strtoll(text, NULL, 0);
+    }
+    if (!write_sized_bits(emitter, bits, layout.size)) return 0;
+    *written = layout.size;
+    return 1;
+}
+
 static int emit_global_literal_elements(Emitter *emitter,
                                         const IrGlobal *global) {
     if (global->array_literal == NULL ||
@@ -45,40 +121,10 @@ static int emit_global_literal_elements(Emitter *emitter,
     const IrType *container = &emitter->module->types[global->type_id];
     if ((container->kind != IR_TYPE_ARRAY && container->kind != IR_TYPE_SLICE) ||
         container->element_type >= emitter->module->type_count) return 0;
-    const IrType *element_type = &emitter->module->types[container->element_type];
-    IrTypeLayout layout;
-    if (element_type->kind != IR_TYPE_PRIMITIVE ||
-        !ir_type_layout(emitter->module, container->element_type, &layout)) return 0;
-    size_t pattern_count = 0;
-    for (const AstExpression *element = global->array_literal->arguments;
-         element != NULL; element = element->next) pattern_count++;
-    if (pattern_count == 0) return 0;
-    for (size_t index = 0; index < global->literal_element_count; index++) {
-        const AstExpression *element = global->array_literal->arguments;
-        for (size_t pattern = index % pattern_count; pattern > 0; pattern--)
-            element = element->next;
-        const char *text = element->folded_constant.lexeme != NULL
-                               ? element->folded_constant.lexeme
-                               : ast_program_lexeme(global->source_program,
-                                                    element->value_token);
-        uint64_t bits;
-        if (element_type->primitive == TYPE_DOUBLE) {
-            union { double value; uint64_t bits; } converted = {strtod(text, NULL)};
-            bits = converted.bits;
-        } else if (element_type->primitive == TYPE_FLOAT) {
-            union { float value; uint32_t bits; } converted = {(float) strtod(text, NULL)};
-            bits = converted.bits;
-        } else if (element_type->primitive == TYPE_STRING) {
-            return 0;
-        } else {
-            IrInstruction literal = {.auxiliary_token = element->value_token};
-            bits = (uint64_t) constant_value(global->source_program, &literal);
-            if (element->folded_constant.lexeme != NULL)
-                bits = (uint64_t) strtoll(text, NULL, 0);
-        }
-        if (!write_sized_bits(emitter, bits, layout.size)) return 0;
-    }
-    return 1;
+    size_t written = 0;
+    return emit_global_literal_value(emitter, global->source_program,
+                                     global->array_literal, global->type_id,
+                                     &written);
 }
 
 

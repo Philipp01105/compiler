@@ -257,12 +257,19 @@ static AstType parse_type(SyntaxParser *parser) {
             (void) consume(parser, TOKEN_GREATER);
         }
     }
-    if (match(parser, TOKEN_LBRACKET)) {
+    while (match(parser, TOKEN_LBRACKET)) {
         if (type.is_array || type.is_slice) {
-            parser_failure(parser, ERR_PARSE_EXPECTED_TOKEN,
-                           "Nested array and slice types are not supported");
-            parser->type_depth--;
-            return type;
+            AstType *element = allocate(parser, sizeof(*element));
+            if (element == NULL) break;
+            *element = type;
+            type.element_type = element;
+            type.borrow_kind = AST_BORROW_NONE;
+            type.pointer_depth = 0;
+            type.outer_pointer_depth = 0;
+            type.is_array = 0;
+            type.is_slice = 0;
+            type.array_length_token = AST_TOKEN_NONE;
+            type.resolved_array_length = 0;
         }
         if (match(parser, TOKEN_RBRACKET)) {
             type.is_slice = 1;

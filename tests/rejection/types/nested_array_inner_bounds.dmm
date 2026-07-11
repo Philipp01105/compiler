@@ -1,0 +1,5 @@
+package main;
+func main() -> void {
+    var values:int[2][3];
+    var value:int=values[0][2];
+}

@@ -1,0 +1,8 @@
+package main;
+import "stdlib";
+func main() -> void {
+    var text:stdlib.String=stdlib.String.clone("old");
+    var view:string=text.view();
+    text=stdlib.String.clone("new");
+    stdlib.println(view);
+}

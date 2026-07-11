@@ -68,6 +68,15 @@ static int move_only_symbol(const OwnershipChecker *checker, size_t symbol) {
     if (symbol >= checker->count) return 0;
     const SemanticSymbol *value =
         &checker->analyzer->model->symbols[symbol];
+    /*
+     * Flow state exists for storage bindings, not type/member declarations.
+     * In particular, a static call such as Owner.make() names a move-only
+     * struct type, but does not read or consume an Owner value.
+     */
+    if (value->kind != SEMANTIC_SYMBOL_LOCAL &&
+        value->kind != SEMANTIC_SYMBOL_PARAMETER &&
+        value->kind != SEMANTIC_SYMBOL_VARIABLE)
+        return 0;
     if (value->resolved_borrow_kind != AST_BORROW_NONE ||
         value->resolved_pointer_depth != 0 ||
         value->resolved_outer_pointer_depth != 0 || value->resolved_is_slice)

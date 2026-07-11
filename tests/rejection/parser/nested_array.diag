@@ -1,1 +1,1 @@
-Nested array and slice types are not supported
+Array literal element count must match the fixed-array length

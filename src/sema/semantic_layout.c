@@ -6,8 +6,19 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int type_directly_embeds_value(const AstType *type) {
+    if (type == NULL || type->outer_pointer_depth != 0 || type->is_slice)
+        return 0;
+    if (type->is_array) {
+        AstType element = ast_type_element(type);
+        return type_directly_embeds_value(&element);
+    }
+    return type->borrow_kind == AST_BORROW_NONE &&
+           type->pointer_depth == 0;
+}
+
 int aggregate_reaches(const Analyzer *analyzer, size_t current_symbol,
-                             size_t target_symbol, size_t depth) {
+                              size_t target_symbol, size_t depth) {
     if (current_symbol >= analyzer->model->symbol_count ||
         depth > analyzer->model->symbol_count)
         return 1;
@@ -15,7 +26,7 @@ int aggregate_reaches(const Analyzer *analyzer, size_t current_symbol,
     if (current->kind == SEMANTIC_SYMBOL_ENUM && current->declaration != NULL) {
         for (const AstEnumValue *v = current->declaration->as.enum_decl.values; v; v = v->next)
             for (const AstTypeArgument *p = v->payload_types; p; p = p->next) {
-                if (p->type.pointer_depth || p->type.outer_pointer_depth || p->type.is_slice) continue;
+                if (!type_directly_embeds_value(&p->type)) continue;
                 size_t child = resolve_named_symbol_id(analyzer, current->source_program,
                                                        named_type_token(current->source_program, &p->type));
                 if (child == target_symbol || (child != AST_SYMBOL_NONE && aggregate_reaches(
@@ -26,8 +37,7 @@ int aggregate_reaches(const Analyzer *analyzer, size_t current_symbol,
     if (current->kind != SEMANTIC_SYMBOL_STRUCT || current->declaration == NULL) return 0;
     for (const AstField *field = current->declaration->as.struct_decl.fields;
          field != NULL; field = field->next) {
-        if (field->type.pointer_depth != 0 || field->type.outer_pointer_depth != 0 ||
-            field->type.is_slice)
+        if (!type_directly_embeds_value(&field->type))
             continue;
         size_t named = named_type_token(current->source_program, &field->type);
         size_t child = resolve_named_symbol_id(analyzer, current->source_program, named);
@@ -37,6 +47,39 @@ int aggregate_reaches(const Analyzer *analyzer, size_t current_symbol,
             return 1;
     }
     return 0;
+}
+
+static size_t semantic_symbol_slots(const Analyzer *analyzer, size_t symbol_id,
+                                    size_t depth);
+
+static size_t declared_type_slots(const Analyzer *analyzer,
+                                  const AstProgram *program,
+                                  const AstType *type, size_t depth) {
+    if (type == NULL || depth > analyzer->model->symbol_count + 64)
+        return SIZE_MAX;
+    if (type->outer_pointer_depth != 0) return 1;
+    if (type->is_slice) return 2;
+    if (type->is_array) {
+        AstType element = ast_type_element(type);
+        size_t slots = declared_type_slots(analyzer, program, &element,
+                                           depth + 1);
+        size_t length = type->resolved_array_length;
+        if (length == 0 && type->array_length_token < program->token_count)
+            length = (size_t) strtoull(
+                ast_program_lexeme(program, type->array_length_token), NULL,
+                10);
+        if (slots == SIZE_MAX || (slots != 0 && length > SIZE_MAX / slots))
+            return SIZE_MAX;
+        return slots * length;
+    }
+    if (type->pointer_depth != 0 ||
+        type->borrow_kind != AST_BORROW_NONE)
+        return 1;
+    size_t named = resolve_named_symbol_id(
+        analyzer, program, named_type_token(program, type));
+    return named == AST_SYMBOL_NONE
+               ? 1
+               : semantic_symbol_slots(analyzer, named, depth + 1);
 }
 
 static size_t semantic_symbol_slots(const Analyzer *analyzer, size_t symbol_id,
@@ -59,20 +102,8 @@ static size_t semantic_symbol_slots(const Analyzer *analyzer, size_t symbol_id,
         for (const AstEnumValue *v = symbol->declaration->as.enum_decl.values; v; v = v->next) {
             size_t payload = 0;
             for (const AstTypeArgument *p = v->payload_types; p; p = p->next) {
-                size_t slots = p->type.is_slice && !p->type.outer_pointer_depth ? 2 : 1;
-                if (!p->type.pointer_depth && !p->type.outer_pointer_depth && !p->type.is_slice) {
-                    size_t child = resolve_named_symbol_id(analyzer, symbol->source_program,
-                                                           named_type_token(symbol->source_program, &p->type));
-                    if (child != AST_SYMBOL_NONE) slots = semantic_symbol_slots(analyzer, child, depth + 1);
-                    if (p->type.is_array) {
-                        size_t length = p->type.resolved_array_length;
-                        if (!length) length = (size_t) strtoull(
-                                         ast_program_lexeme(symbol->source_program, p->type.array_length_token), NULL,
-                                         10);
-                        if (slots == SIZE_MAX || (length && slots > SIZE_MAX / length)) return SIZE_MAX;
-                        slots *= length;
-                    }
-                }
+                size_t slots = declared_type_slots(
+                    analyzer, symbol->source_program, &p->type, depth + 1);
                 if (slots > SIZE_MAX - payload) return SIZE_MAX;
                 payload += slots;
             }
@@ -84,23 +115,8 @@ static size_t semantic_symbol_slots(const Analyzer *analyzer, size_t symbol_id,
     size_t slots = 0;
     for (const AstField *field = symbol->declaration->as.struct_decl.fields;
          field != NULL; field = field->next) {
-        size_t field_slots = field->type.is_slice && !field->type.outer_pointer_depth ? 2 : 1;
-        if (field->type.pointer_depth == 0 && field->type.outer_pointer_depth == 0 &&
-            !field->type.is_slice) {
-            size_t named = named_type_token(symbol->source_program, &field->type);
-            size_t child = resolve_named_symbol_id(analyzer, symbol->source_program, named);
-            if (child != AST_SYMBOL_NONE)
-                field_slots = semantic_symbol_slots(analyzer, child, depth + 1U);
-        }
-        if (field->type.is_array &&
-            field->type.array_length_token < symbol->source_program->token_count) {
-            size_t length = field->type.resolved_array_length;
-            if (length == 0)
-                length = (size_t) strtoull(ast_program_lexeme(symbol->source_program,
-                                                              field->type.array_length_token), NULL, 10);
-            if (field_slots != 0 && length > SIZE_MAX / field_slots) return SIZE_MAX;
-            field_slots *= length;
-        }
+        size_t field_slots = declared_type_slots(
+            analyzer, symbol->source_program, &field->type, depth + 1);
         if (slots > SIZE_MAX - field_slots) return SIZE_MAX;
         slots += field_slots;
     }
@@ -108,8 +124,15 @@ static size_t semantic_symbol_slots(const Analyzer *analyzer, size_t symbol_id,
 }
 
 size_t semantic_type_slots(const Analyzer *analyzer, const AstProgram *program,
-                                  const AstType *type,
-                                  const AstExpression *inferred) {
+                                   const AstType *type,
+                                   const AstExpression *inferred) {
+    if (type->kind == AST_TYPE_INFERRED && inferred != NULL &&
+        inferred->has_resolved_ast_type)
+        return declared_type_slots(
+            analyzer,
+            inferred->resolved_type_program != NULL
+                ? inferred->resolved_type_program : program,
+            &inferred->resolved_ast_type, 0);
     if (type->kind == AST_TYPE_INFERRED && inferred && inferred->resolved_is_slice && !inferred->
         resolved_outer_pointer_depth) return 2;
     if (type->outer_pointer_depth != 0 ||
@@ -118,22 +141,7 @@ size_t semantic_type_slots(const Analyzer *analyzer, const AstProgram *program,
          (inferred->resolved_pointer_depth != 0 ||
           inferred->resolved_outer_pointer_depth != 0)))
         return type->is_slice && !type->outer_pointer_depth ? 2U : 1U;
-    size_t slots = 1;
-    size_t named_symbol = type->kind == AST_TYPE_INFERRED && inferred != NULL
-                              ? inferred->resolved_named_symbol_id
-                              : resolve_named_symbol_id(analyzer, program, named_type_token(program, type));
-    if (type->pointer_depth != 0) slots = 1;
-    else if (named_symbol != AST_SYMBOL_NONE)
-        slots = semantic_symbol_slots(analyzer, named_symbol, 0);
-    if (type->is_array && type->array_length_token < program->token_count) {
-        size_t length = type->resolved_array_length;
-        if (length == 0)
-            length = (size_t) strtoull(ast_program_lexeme(program,
-                                                          type->array_length_token), NULL, 10);
-        if (slots != 0 && length > SIZE_MAX / slots) return SIZE_MAX;
-        slots *= length;
-    }
-    return slots;
+    return declared_type_slots(analyzer, program, type, 0);
 }
 
 int assignable_expression(const Analyzer *analyzer,
@@ -150,6 +158,8 @@ int assignable_expression(const Analyzer *analyzer,
 }
 
 void validate_array_shape(Analyzer *analyzer, AstType *type) {
+    if (type != NULL && type->element_type != NULL)
+        validate_array_shape(analyzer, type->element_type);
     if (type == NULL || !type->is_array) return;
     if (type->array_length_token >= analyzer->program->token_count) {
         semantic_error(analyzer, type->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
@@ -202,8 +212,7 @@ size_t layout_size(Analyzer *analyzer, AstType *type, size_t depth) {
     if (type->is_array) {
         validate_array_shape(analyzer, type);
         if (!type->resolved_array_length) return 0;
-        AstType element = *type;
-        element.is_array = 0;
+        AstType element = ast_type_element(type);
         size_t size = layout_size(analyzer, &element, depth + 1);
         if (!size || size > SIZE_MAX - 7) return 0;
         size = (size + 7) & ~(size_t) 7;
@@ -266,4 +275,3 @@ size_t layout_size(Analyzer *analyzer, AstType *type, size_t depth) {
     analyzer->program = saved;
     return valid ? size : 0;
 }
-

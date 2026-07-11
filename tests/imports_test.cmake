@@ -195,6 +195,10 @@ source("origins/api/box.dmm" "package api; pub struct Box<T> { pub var value:T; 
 source("origins/api/wrap.dmm" "package api; pub struct Wrap<T> { pub var value:T; }")
 source("origins/main.dmm" "package main; import \"example.com/origins/api\"; func extract<T>(x:api.Box<T>) -> T { return x.value; } func main() -> int { var box:api.Box<int>; box.value=9; var wrap:api.Wrap<int>; wrap.value=2; return extract(box)-wrap.value; }")
 build(origins . 7)
+module(nested_types)
+source("nested_types/api/api.dmm" "package api; pub func middle(values:int[2][3]) -> int[2] { return values[1]; } pub func sum(values:int[2][3]) -> int { return values[0][1]+values[2][0]; }")
+source("nested_types/main.dmm" "package main; import \"example.com/nested_types/api\"; func main() -> int { var values:int[2][3]=[[1,2],[3,4],[5,6]]; var row:int[2]=api.middle(values); return api.sum(values)+row[1]-11; }")
+build(nested_types . 0)
 # Nested modules and executable packages cannot masquerade as libraries.
 module(nested)
 source("nested/child/dmm.manifest" "module example.com/other\ndmm 2026-09-22-dev\n")

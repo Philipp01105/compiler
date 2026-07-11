@@ -51,7 +51,7 @@ required to implement these resource-safety foundations.
 
 ### Types, values, and memory
 
-- [ ] Support nested arrays and slices throughout parsing, type checking, constant evaluation, lowering, ABI
+- [x] Support nested arrays and slices throughout parsing, type checking, constant evaluation, lowering, ABI
   classification, and code generation.
 - [x] Implement and specify contextual fixed-array assignment by value; array equality remains undefined.
 - [x] Add contextually typed fixed-array/slice literals, cyclic repetition, local and package backing storage, call
@@ -91,11 +91,11 @@ exclusive and borrowing is field-sensitive when disjointness is provable.
   reject moves out of package storage because moved-state cannot be tracked soundly across functions.
 - [x] Extend ownership state merging across all branches, loops, enum payloads, arrays, generic substitutions, and
   interface conversions; reject unsupported move-only interface erasure and diagnose invalid copies or double release.
-- [ ] Extend the implemented local slice-copy/backing-owner tracking through arbitrary calls, returned borrowed views,
+- [x] Extend the implemented local slice-copy/backing-owner tracking through arbitrary calls, returned borrowed views,
   aggregate storage, subslices, and precise mutable regions so slices participate fully in the borrow checker.
 - [x] Use explicit ownership with checked non-owning borrows as the P1 memory model; retain raw pointers as the explicit
   unchecked boundary.
-- [ ] Provide move-safe owning `Bytes`, `Buffer<T>`, `List<T>`, and `String` types, with explicit
+- [x] Provide move-safe owning `Bytes`, `Buffer<T>`, `List<T>`, and `String` types, with explicit
   `String.view() -> string` borrowing and typed allocation failures.
 
 ### Generics, interfaces, and sum types

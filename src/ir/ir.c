@@ -260,6 +260,32 @@ static size_t ast_array_length(const AstProgram *program, const AstType *type) {
 
 static IrTypeId type_from_ast(IrModule *module, const AstProgram *program,
                               const AstType *type) {
+    if (type != NULL && type->element_type != NULL) {
+        IrTypeId result = type_from_ast(module, program, type->element_type);
+        if (result == IR_TYPE_NONE) return result;
+        IrType container = {
+            .kind = type->is_slice ? IR_TYPE_SLICE : IR_TYPE_ARRAY,
+            .primitive = TYPE_UNKNOWN,
+            .symbol_id = AST_SYMBOL_NONE,
+            .element_type = result,
+            .array_length = ast_array_length(program, type)
+        };
+        result = intern_type(module, container);
+        for (unsigned depth = 0;
+             result != IR_TYPE_NONE &&
+             depth < type->pointer_depth + type->outer_pointer_depth +
+                         (type->borrow_kind != AST_BORROW_NONE);
+             depth++) {
+            IrType pointer = {
+                .kind = IR_TYPE_POINTER,
+                .primitive = TYPE_UNKNOWN,
+                .symbol_id = AST_SYMBOL_NONE,
+                .element_type = result
+            };
+            result = intern_type(module, pointer);
+        }
+        return result;
+    }
     size_t named = type != NULL && type->name_token < program->token_count &&
                    program->tokens[type->name_token].type == TOKEN_IDENTIFIER
                        ? type->name_token
@@ -276,6 +302,12 @@ static IrTypeId type_from_ast(IrModule *module, const AstProgram *program,
 
 static IrTypeId type_from_expression(IrModule *module, const AstProgram *program,
                                      const AstExpression *expression) {
+    if (expression->has_resolved_ast_type &&
+        expression->resolved_ast_type.element_type != NULL)
+        return type_from_ast(module,
+                             expression->resolved_type_program != NULL
+                                 ? expression->resolved_type_program : program,
+                             &expression->resolved_ast_type);
     return type_from_parts(module, expression->resolved_type,
                            expression->resolved_pointer_depth,
                            expression->resolved_named_type_token,

@@ -221,8 +221,8 @@ void collect_declarations(Analyzer *analyzer, AstProgram *program) {
 }
 
 LocalSymbol *push_local(Analyzer *analyzer, size_t name_token, AstType type,
-                               SemanticSymbolKind kind, const AstExpression *inferred,
-                               int is_constant) {
+                                SemanticSymbolKind kind, const AstExpression *inferred,
+                                int is_constant) {
     LocalSymbol *local = malloc(sizeof(*local));
     if (local == NULL) {
         analyzer->allocation_failed = 1;
@@ -268,6 +268,18 @@ LocalSymbol *push_local(Analyzer *analyzer, size_t name_token, AstType type,
     local->resolved_named_symbol_id = symbol.resolved_named_symbol_id;
     local->resolved_is_array = symbol.resolved_is_array;
     local->resolved_is_slice = symbol.resolved_is_slice;
+    local->has_resolved_ast_type = 0;
+    local->resolved_type_program = NULL;
+    if (type.kind == AST_TYPE_INFERRED && inferred != NULL &&
+        inferred->has_resolved_ast_type) {
+        local->resolved_ast_type = inferred->resolved_ast_type;
+        local->resolved_type_program = inferred->resolved_type_program;
+        local->has_resolved_ast_type = 1;
+    } else if (type.kind != AST_TYPE_INFERRED) {
+        local->resolved_ast_type = type;
+        local->resolved_type_program = analyzer->program;
+        local->has_resolved_ast_type = 1;
+    }
     local->is_constant = is_constant;
     local->moved = 0;
     local->initialized = inferred != NULL || kind == SEMANTIC_SYMBOL_PARAMETER;
@@ -543,6 +555,30 @@ int expression_to_declared_type_allowed(const Analyzer *analyzer,
                                                const AstProgram *type_program,
                                                const AstType *type) {
     if (expression == NULL || type == NULL) return 0;
+    if (type->element_type != NULL ||
+        (expression->has_resolved_ast_type &&
+         expression->resolved_ast_type.element_type != NULL)) {
+        if (!expression->has_resolved_ast_type ||
+            !(type->is_array || type->is_slice) ||
+            !(expression->resolved_ast_type.is_array ||
+              expression->resolved_ast_type.is_slice))
+            return 0;
+        if (type->is_array &&
+            (!expression->resolved_ast_type.is_array ||
+             type->resolved_array_length !=
+                 expression->resolved_ast_type.resolved_array_length))
+            return 0;
+        if (type->is_slice && expression->resolved_ast_type.outer_pointer_depth != 0)
+            return 0;
+        AstType target_element = ast_type_element(type);
+        AstType source_element = ast_type_element(
+            &expression->resolved_ast_type);
+        const AstProgram *source_program =
+            expression->resolved_type_program != NULL
+                ? expression->resolved_type_program : analyzer->program;
+        return ast_concrete_type_equal(type_program, &target_element,
+                                       source_program, &source_element);
+    }
     unsigned target_depth = type->pointer_depth + type->outer_pointer_depth +
                             (type->borrow_kind != AST_BORROW_NONE);
     unsigned source_depth = expression->resolved_pointer_depth +
@@ -585,6 +621,35 @@ int expression_assignment_allowed(const Analyzer *analyzer,
                                          const AstExpression *source,
                                          const AstExpression *target) {
     if (source == NULL || target == NULL) return 0;
+    if ((source->has_resolved_ast_type &&
+         source->resolved_ast_type.element_type != NULL) ||
+        (target->has_resolved_ast_type &&
+         target->resolved_ast_type.element_type != NULL)) {
+        if (!source->has_resolved_ast_type || !target->has_resolved_ast_type)
+            return 0;
+        const AstProgram *source_program = source->resolved_type_program != NULL
+                                               ? source->resolved_type_program
+                                               : analyzer->program;
+        const AstProgram *target_program = target->resolved_type_program != NULL
+                                               ? target->resolved_type_program
+                                               : analyzer->program;
+        if (target->resolved_ast_type.is_slice &&
+            target->resolved_ast_type.outer_pointer_depth == 0 &&
+            source->resolved_ast_type.outer_pointer_depth == 0 &&
+            (source->resolved_ast_type.is_array ||
+             source->resolved_ast_type.is_slice)) {
+            AstType source_element = ast_type_element(
+                &source->resolved_ast_type);
+            AstType target_element = ast_type_element(
+                &target->resolved_ast_type);
+            return ast_concrete_type_equal(source_program, &source_element,
+                                           target_program, &target_element);
+        }
+        return ast_concrete_type_equal(source_program,
+                                       &source->resolved_ast_type,
+                                       target_program,
+                                       &target->resolved_ast_type);
+    }
     if (source->resolved_borrow_kind != target->resolved_borrow_kind &&
         !(target->resolved_borrow_kind == AST_BORROW_IMMUTABLE &&
           source->resolved_borrow_kind == AST_BORROW_MUTABLE))
@@ -1360,9 +1425,37 @@ void validate_expression(Analyzer *analyzer, AstExpression *expression,
                           "Cast requires one numeric value and a numeric target type, or two pointer types");
     } else if (expression->kind == AST_EXPR_SLICE) {
         const AstExpression *data = expression->left, *length = expression->right;
-        if (!data || !data->resolved_pointer_depth || data->resolved_outer_pointer_depth || data->resolved_is_array ||
-            data->resolved_is_slice ||
-            (data->resolved_type == TYPE_VOID && data->resolved_pointer_depth == 1) || !integral_expression(length))
+        int typed_pointer = data != NULL &&
+                            data->resolved_pointer_depth != 0 &&
+                            data->resolved_outer_pointer_depth == 0 &&
+                            !data->resolved_is_array &&
+                            !data->resolved_is_slice &&
+                            !(data->resolved_type == TYPE_VOID &&
+                              data->resolved_pointer_depth == 1);
+        if (data != NULL && data->has_resolved_ast_type) {
+            AstType pointed = data->resolved_ast_type;
+            int dereferenced = 0;
+            if (pointed.borrow_kind != AST_BORROW_NONE) {
+                pointed.borrow_kind = AST_BORROW_NONE;
+                dereferenced = 1;
+            } else if (pointed.outer_pointer_depth != 0) {
+                pointed.outer_pointer_depth--;
+                dereferenced = 1;
+            } else if (pointed.pointer_depth != 0) {
+                pointed.pointer_depth--;
+                dereferenced = 1;
+            }
+            typed_pointer = dereferenced &&
+                            !(primitive_type(
+                                  data->resolved_type_program != NULL
+                                      ? data->resolved_type_program
+                                      : analyzer->program,
+                                  &pointed) == TYPE_VOID &&
+                              !pointed.is_array && !pointed.is_slice &&
+                              pointed.pointer_depth == 0 &&
+                              pointed.outer_pointer_depth == 0);
+        }
+        if (!typed_pointer || !integral_expression(length))
             operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                           "slice requires a typed element pointer and an integral length");
     } else if (expression->kind == AST_EXPR_FREE) {
@@ -1391,7 +1484,19 @@ void validate_expression(Analyzer *analyzer, AstExpression *expression,
     } else if (expression->kind == AST_EXPR_INDEX && expression->left != NULL) {
         long long index = 0;
         if (constant_integer(analyzer, expression->right, &index) &&
-            expression->left->resolved_symbol_id < analyzer->model->symbol_count) {
+            expression->left->has_resolved_ast_type &&
+            expression->left->resolved_ast_type.is_array &&
+            expression->left->resolved_ast_type.outer_pointer_depth == 0) {
+            long long length = (long long)
+                expression->left->resolved_ast_type.resolved_array_length;
+            if (length != 0 && (index < 0 || index >= length))
+                semantic_error(analyzer, expression->right->value_token,
+                               ERROR_CATEGORY_TYPE,
+                               ERR_TYPE_INVALID_OPERATION,
+                               "Array index is outside declared bounds");
+        } else if (constant_integer(analyzer, expression->right, &index) &&
+                   expression->left->resolved_symbol_id <
+                       analyzer->model->symbol_count) {
             const SemanticSymbol *base =
                     &analyzer->model->symbols[expression->left->resolved_symbol_id];
             if (base->declared_type.is_array &&

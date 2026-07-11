@@ -95,6 +95,20 @@ static int symbol_field(FILE *output, size_t symbol) {
 
 static int dump_type(FILE *output, const AstProgram *program, const AstType *type) {
     if (type->kind == AST_TYPE_INFERRED) return fputs("inferred", output) != EOF;
+    if (type->element_type != NULL) {
+        if (type->borrow_kind == AST_BORROW_IMMUTABLE && fputc('&', output) == EOF)
+            return 0;
+        if (type->borrow_kind == AST_BORROW_MUTABLE && fputs("&mut ", output) == EOF)
+            return 0;
+        for (unsigned i = 0; i < type->outer_pointer_depth + type->pointer_depth; i++)
+            if (fputc('*', output) == EOF) return 0;
+        if (!dump_type(output, program, type->element_type)) return 0;
+        if (type->is_array && fprintf(output, "[%s]",
+                                      ast_program_lexeme(program, type->array_length_token)) < 0)
+            return 0;
+        if (type->is_slice && fputs("[]", output) == EOF) return 0;
+        return 1;
+    }
     if (type->borrow_kind == AST_BORROW_IMMUTABLE &&
         fputc('&', output) == EOF)
         return 0;

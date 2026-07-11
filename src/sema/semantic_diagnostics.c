@@ -119,6 +119,34 @@ void diagnostic_type(DiagnosticText *text, const Analyzer *analyzer,
     if (outer != 0 && (array || slice)) diagnostic_append(text, ")");
 }
 
+static void diagnostic_ast_type(DiagnosticText *text, const Analyzer *analyzer,
+                                const AstProgram *program,
+                                const AstType *type) {
+    if (type->element_type != NULL) {
+        for (unsigned i = 0;
+             i < type->pointer_depth + type->outer_pointer_depth +
+                     (type->borrow_kind != AST_BORROW_NONE);
+             i++)
+            diagnostic_append(text, "*");
+        diagnostic_ast_type(text, analyzer, program, type->element_type);
+        if (type->is_slice) diagnostic_append(text, "[]");
+        else if (type->is_array)
+            diagnostic_append(text, "[%zu]", type->resolved_array_length);
+        return;
+    }
+    const char *length = type->is_array
+                             ? ast_program_lexeme(program,
+                                                  type->array_length_token)
+                             : NULL;
+    diagnostic_type(text, analyzer, primitive_type(program, type),
+                    resolve_named_symbol_id(
+                        analyzer, program, named_type_token(program, type)),
+                    type->pointer_depth +
+                        (type->borrow_kind != AST_BORROW_NONE),
+                    type->outer_pointer_depth, type->is_array,
+                    type->is_slice, length);
+}
+
 /* Preserve the rule text while showing every supplied operand's complete shape. */
 void operand_error(Analyzer *analyzer, const AstExpression *expression,
                           char category, int code, const char *reason) {
@@ -160,9 +188,20 @@ void conversion_error(Analyzer *analyzer, const AstExpression *value,
         const SemanticSymbol *symbol = &analyzer->model->symbols[value->resolved_symbol_id];
         length = ast_program_lexeme(symbol->source_program, symbol->declared_type.array_length_token);
     }
-    diagnostic_type(&message, analyzer, value->resolved_type, value->resolved_named_symbol_id,
-                    value->resolved_pointer_depth, value->resolved_outer_pointer_depth,
-                    value->resolved_is_array, value->resolved_is_slice, length);
+    if (value->has_resolved_ast_type &&
+        value->resolved_ast_type.element_type != NULL)
+        diagnostic_ast_type(
+            &message, analyzer,
+            value->resolved_type_program != NULL
+                ? value->resolved_type_program : analyzer->program,
+            &value->resolved_ast_type);
+    else
+        diagnostic_type(&message, analyzer, value->resolved_type,
+                        value->resolved_named_symbol_id,
+                        value->resolved_pointer_depth,
+                        value->resolved_outer_pointer_depth,
+                        value->resolved_is_array, value->resolved_is_slice,
+                        length);
     diagnostic_append(&message, "', expected '");
     if (expected_value != NULL) {
         const char *expected_length = NULL;
@@ -175,15 +214,25 @@ void conversion_error(Analyzer *analyzer, const AstExpression *value,
             free(message.text);
             return;
         }
-        diagnostic_type(&message, analyzer, expected_value->resolved_type, expected_value->resolved_named_symbol_id,
-                        expected_value->resolved_pointer_depth, expected_value->resolved_outer_pointer_depth,
-                        expected_value->resolved_is_array, expected_value->resolved_is_slice, expected_length);
+        if (expected_value->has_resolved_ast_type &&
+            expected_value->resolved_ast_type.element_type != NULL)
+            diagnostic_ast_type(
+                &message, analyzer,
+                expected_value->resolved_type_program != NULL
+                    ? expected_value->resolved_type_program
+                    : analyzer->program,
+                &expected_value->resolved_ast_type);
+        else
+            diagnostic_type(&message, analyzer,
+                            expected_value->resolved_type,
+                            expected_value->resolved_named_symbol_id,
+                            expected_value->resolved_pointer_depth,
+                            expected_value->resolved_outer_pointer_depth,
+                            expected_value->resolved_is_array,
+                            expected_value->resolved_is_slice,
+                            expected_length);
     } else
-        diagnostic_type(&message, analyzer, primitive_type(expected_program, expected),
-                        resolve_named_symbol_id(analyzer, expected_program,
-                                                named_type_token(expected_program, expected)),
-                        expected->pointer_depth, expected->outer_pointer_depth, expected->is_array, expected->is_slice,
-                        ast_program_lexeme(expected_program, expected->array_length_token));
+        diagnostic_ast_type(&message, analyzer, expected_program, expected);
     diagnostic_append(&message, "'");
     semantic_error_at(analyzer, value->first_token,
                       value->token_count == 0 ? value->first_token : value->first_token + value->token_count - 1,
@@ -212,9 +261,20 @@ void overload_error(Analyzer *analyzer, const AstExpression *call,
             if (symbol->declared_type.is_array)
                 length = ast_program_lexeme(symbol->source_program, symbol->declared_type.array_length_token);
         }
-        diagnostic_type(&message, analyzer, argument->resolved_type, argument->resolved_named_symbol_id,
-                        argument->resolved_pointer_depth, argument->resolved_outer_pointer_depth,
-                        argument->resolved_is_array, argument->resolved_is_slice, length);
+        if (argument->has_resolved_ast_type &&
+            argument->resolved_ast_type.element_type != NULL)
+            diagnostic_ast_type(
+                &message, analyzer,
+                argument->resolved_type_program != NULL
+                    ? argument->resolved_type_program : analyzer->program,
+                &argument->resolved_ast_type);
+        else
+            diagnostic_type(&message, analyzer, argument->resolved_type,
+                            argument->resolved_named_symbol_id,
+                            argument->resolved_pointer_depth,
+                            argument->resolved_outer_pointer_depth,
+                            argument->resolved_is_array,
+                            argument->resolved_is_slice, length);
     }
     diagnostic_append(&message, ambiguous ? "); viable signatures: " : "); available signatures: ");
     index = 0;
@@ -237,13 +297,8 @@ void overload_error(Analyzer *analyzer, const AstExpression *call,
              parameter != NULL; parameter = parameter->next) {
             if (parameter_index++ != 0) diagnostic_append(&message, ", ");
             const AstType *type = &parameter->type;
-            diagnostic_type(&message, analyzer, primitive_type(symbol->source_program, type),
-                            resolve_named_symbol_id(analyzer, symbol->source_program,
-                                                    named_type_token(symbol->source_program, type)),
-                            type->pointer_depth, type->outer_pointer_depth, type->is_array, type->is_slice,
-                            type->is_array
-                                ? ast_program_lexeme(symbol->source_program, type->array_length_token)
-                                : NULL);
+            diagnostic_ast_type(&message, analyzer, symbol->source_program,
+                                type);
         }
         diagnostic_append(&message, ")");
     }
@@ -252,4 +307,3 @@ void overload_error(Analyzer *analyzer, const AstExpression *call,
                    message.failed ? "Could not format overload diagnostic" : message.text);
     free(message.text);
 }
-
