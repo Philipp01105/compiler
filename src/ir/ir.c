@@ -582,6 +582,8 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
             break;
         case AST_EXPR_INDEX: opcode = IR_OP_INDEX;
             break;
+        case AST_EXPR_SUBSLICE: opcode = IR_OP_SUBSLICE;
+            break;
         case AST_EXPR_MEMBER: opcode = IR_OP_MEMBER;
             break;
         case AST_EXPR_SLICE_LENGTH: opcode = IR_OP_SLICE_LENGTH;
@@ -652,6 +654,14 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         }
         free(values);
     }
+    size_t subslice_end = IR_VALUE_NONE;
+    size_t subslice_argument = IR_VALUE_NONE;
+    if (expression->kind == AST_EXPR_SUBSLICE &&
+        expression->arguments != NULL) {
+        subslice_end = lower_expression(builder, expression->arguments);
+        subslice_argument = builder->function->argument_count;
+        if (!append_argument(builder, subslice_end)) return IR_VALUE_NONE;
+    }
     IrInstruction *instruction = emit(builder, opcode, expression->span);
     if (instruction == NULL) return IR_VALUE_NONE;
     if (!((opcode == IR_OP_CALL || opcode == IR_OP_FREE) &&
@@ -663,6 +673,11 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
     instruction->symbol_id = expression->resolved_symbol_id;
     instruction->operator_type = expression->operator_type;
     set_expression_type(builder, instruction, expression);
+    if (expression->kind == AST_EXPR_SUBSLICE &&
+        expression->arguments != NULL) {
+        instruction->first_argument = subslice_argument;
+        instruction->argument_count = 1;
+    }
     if (expression->kind == AST_EXPR_RESERVE) {
         IrTypeId allocated = type_from_ast(builder->module, builder->program,
                                            &expression->allocated_type);

@@ -44,6 +44,7 @@ typedef enum {
     IR_OP_BINARY,
     IR_OP_CALL,
     IR_OP_INDEX,
+    IR_OP_SUBSLICE,
     IR_OP_MEMBER,
     IR_OP_SLICE_LENGTH,
     IR_OP_CAST,

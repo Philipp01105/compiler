@@ -567,10 +567,25 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
             (void) consume(parser, TOKEN_RPAREN);
             expression = call;
         } else if (match(parser, TOKEN_LBRACKET)) {
+            AstExpression *start = check(parser, TOKEN_COLON)
+                                       ? NULL : parse_expression(parser);
+            if (match(parser, TOKEN_COLON)) {
+                AstExpression *subslice =
+                    new_expression(parser, AST_EXPR_SUBSLICE, first);
+                if (subslice != NULL) {
+                    subslice->left = expression;
+                    subslice->right = start;
+                    if (!check(parser, TOKEN_RBRACKET))
+                        subslice->arguments = parse_expression(parser);
+                }
+                (void) consume(parser, TOKEN_RBRACKET);
+                expression = subslice;
+                continue;
+            }
             AstExpression *index = new_expression(parser, AST_EXPR_INDEX, first);
             if (index != NULL) {
                 index->left = expression;
-                index->right = parse_expression(parser);
+                index->right = start;
             }
             (void) consume(parser, TOKEN_RBRACKET);
             expression = index;

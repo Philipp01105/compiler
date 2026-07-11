@@ -1353,7 +1353,7 @@ void validate_expression(Analyzer *analyzer, AstExpression *expression,
             operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                           "Logical operators require numeric operands");
         if (relational && (!plain_numeric_expression(expression->left) ||
-                           !plain_numeric_expression(expression->right)))
+                            !plain_numeric_expression(expression->right)))
             operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                           "Relational comparison requires numeric operands");
         if (equality) {
@@ -1365,7 +1365,18 @@ void validate_expression(Analyzer *analyzer, AstExpression *expression,
                           plain_numeric_expression(expression->right);
             int strings = expression->left->resolved_type == TYPE_STRING &&
                           expression->right->resolved_type == TYPE_STRING &&
-                          left_depth == 0 && right_depth == 0;
+                           left_depth == 0 && right_depth == 0;
+            int slices = expression->left->resolved_is_slice &&
+                         expression->right->resolved_is_slice &&
+                         expression->left->resolved_outer_pointer_depth == 0 &&
+                         expression->right->resolved_outer_pointer_depth == 0 &&
+                         expression->left->has_resolved_ast_type &&
+                         expression->right->has_resolved_ast_type &&
+                         ast_concrete_type_equal(
+                             expression->left->resolved_type_program,
+                             &expression->left->resolved_ast_type,
+                             expression->right->resolved_type_program,
+                             &expression->right->resolved_ast_type);
             int pointers = left_depth != 0 && left_depth == right_depth &&
                            !(expression->left->resolved_is_slice && !expression->left->resolved_outer_pointer_depth) &&
                            expression->left->resolved_pointer_depth == expression->right->resolved_pointer_depth &&
@@ -1386,11 +1397,29 @@ void validate_expression(Analyzer *analyzer, AstExpression *expression,
                         SEMANTIC_SYMBOL_ENUM &&
                         !analyzer->model->symbols[expression->left->resolved_named_symbol_id].declaration->as.enum_decl.
                         is_sum;
-            if (!numeric && !strings && !pointers && !named)
+            if (!numeric && !strings && !pointers && !named && !slices)
                 operand_error(analyzer, expression,
                               ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
                               "Equality comparison requires compatible operands");
         }
+    } else if (expression->kind == AST_EXPR_SUBSLICE &&
+               expression->left != NULL) {
+        if ((!expression->left->resolved_is_array &&
+             !expression->left->resolved_is_slice) ||
+            expression->left->resolved_outer_pointer_depth != 0)
+            operand_error(analyzer, expression, ERROR_CATEGORY_SEMANTIC,
+                          ERR_SEM_NOT_ARRAY,
+                          "Subslicing requires an array or slice");
+        if (expression->right != NULL &&
+            !integral_expression(expression->right))
+            operand_error(analyzer, expression, ERROR_CATEGORY_TYPE,
+                          ERR_TYPE_INVALID_OPERATION,
+                          "Subslice start must be integral");
+        if (expression->arguments != NULL &&
+            !integral_expression(expression->arguments))
+            operand_error(analyzer, expression, ERROR_CATEGORY_TYPE,
+                          ERR_TYPE_INVALID_OPERATION,
+                          "Subslice end must be integral");
     } else if (expression->kind == AST_EXPR_INDEX && expression->left != NULL) {
         if (!pointer_expression(expression->left))
             operand_error(analyzer, expression, ERROR_CATEGORY_SEMANTIC, ERR_SEM_NOT_ARRAY,

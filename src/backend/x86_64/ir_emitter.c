@@ -713,7 +713,8 @@ size_t aggregate_result_offset(const Emitter *emitter,
     for (size_t i = 0; i < emitter->function->instruction_count; i++) {
         const IrInstruction *candidate = &emitter->function->instructions[i];
         if ((candidate->opcode != IR_OP_CALL && candidate->opcode != IR_OP_ENUM_CONSTRUCT && candidate->opcode !=
-             IR_OP_SLICE && candidate->opcode != IR_OP_ARRAY_LITERAL) ||
+             IR_OP_SLICE && candidate->opcode != IR_OP_SUBSLICE &&
+             candidate->opcode != IR_OP_ARRAY_LITERAL) ||
             (!is_inline_structure(emitter->module, candidate) &&
              !candidate->is_array))
             continue;
@@ -733,7 +734,8 @@ static size_t aggregate_result_slots(const Emitter *emitter) {
     for (size_t i = 0; i < emitter->function->instruction_count; i++) {
         const IrInstruction *instruction = &emitter->function->instructions[i];
         if ((instruction->opcode == IR_OP_CALL || instruction->opcode == IR_OP_ENUM_CONSTRUCT || instruction->opcode ==
-             IR_OP_SLICE || instruction->opcode == IR_OP_ARRAY_LITERAL) &&
+             IR_OP_SLICE || instruction->opcode == IR_OP_SUBSLICE ||
+             instruction->opcode == IR_OP_ARRAY_LITERAL) &&
             (is_inline_structure(emitter->module, instruction) ||
              instruction->is_array))
             result += type_slots(emitter->module, instruction->type_id);
@@ -1853,6 +1855,101 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                                           instruction->pointer_depth, "rbx");
             write_value_store(emitter, "rax", instruction->result);
             return 1;
+        case IR_OP_SUBSLICE: {
+            const IrInstruction *base =
+                producer(function, instruction->operand_a);
+            if (base == NULL || base->type_id >= emitter->module->type_count ||
+                instruction->type_id >= emitter->module->type_count)
+                return 0;
+            const IrType *base_type =
+                &emitter->module->types[base->type_id];
+            const IrType *result_type =
+                &emitter->module->types[instruction->type_id];
+            if ((base_type->kind != IR_TYPE_ARRAY &&
+                 base_type->kind != IR_TYPE_SLICE) ||
+                result_type->kind != IR_TYPE_SLICE)
+                return 0;
+            IrTypeLayout element;
+            if (!ir_type_layout(emitter->module, result_type->element_type,
+                                &element))
+                return 0;
+            size_t sequence = emitter->bounds_sequence++;
+            char fail[80], valid[80];
+            snprintf(fail, sizeof(fail), ".LIR_subslice_fail_%zu_%zu",
+                     emitter->function_index, sequence);
+            snprintf(valid, sizeof(valid), ".LIR_subslice_valid_%zu_%zu",
+                     emitter->function_index, sequence);
+            write_value_load(emitter, "rax", instruction->operand_a);
+            if (base_type->kind == IR_TYPE_SLICE) {
+                write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                            x64_register("rdx"),
+                            x64_memory(X64_WIDTH_QWORD, "rax", 8));
+                write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                            x64_register("rax"),
+                            x64_memory(X64_WIDTH_QWORD, "rax", 0));
+            } else {
+                write_immediate(emitter, "rdx",
+                                (long long) base_type->array_length);
+            }
+            if (instruction->operand_b == IR_VALUE_NONE)
+                write_immediate(emitter, "rcx", 0);
+            else
+                write_value_load(emitter, "rcx", instruction->operand_b);
+            if (instruction->argument_count == 0)
+                write_register_move(emitter, "r8", "rdx");
+            else
+                write_value_load(
+                    emitter, "r8",
+                    function->arguments[instruction->first_argument]);
+            write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_QWORD,
+                        x64_register("rcx"), x64_immediate(0));
+            write_x64_1(emitter, X64_OP_JL, X64_WIDTH_NONE,
+                        x64_label(fail));
+            write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_QWORD,
+                        x64_register("r8"), x64_register("rcx"));
+            write_x64_1(emitter, X64_OP_JL, X64_WIDTH_NONE,
+                        x64_label(fail));
+            write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_QWORD,
+                        x64_register("r8"), x64_register("rdx"));
+            write_x64_1(emitter, X64_OP_JG, X64_WIDTH_NONE,
+                        x64_label(fail));
+            write_x64_2(emitter, X64_OP_IMUL, X64_WIDTH_QWORD,
+                        x64_register("rcx"),
+                        x64_immediate((long long) element.size));
+            write_x64_2(emitter, X64_OP_ADD, X64_WIDTH_QWORD,
+                        x64_register("rax"), x64_register("rcx"));
+            /* Recover the unscaled start to form the result length. */
+            if (instruction->operand_b == IR_VALUE_NONE)
+                write_immediate(emitter, "r9", 0);
+            else
+                write_value_load(emitter, "r9", instruction->operand_b);
+            if (instruction->argument_count == 0)
+                write_register_move(emitter, "r8", "rdx");
+            else
+                write_value_load(
+                    emitter, "r8",
+                    function->arguments[instruction->first_argument]);
+            write_x64_2(emitter, X64_OP_SUB, X64_WIDTH_QWORD,
+                        x64_register("r8"), x64_register("r9"));
+            size_t offset = aggregate_result_offset(emitter, instruction);
+            write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD,
+                        x64_register("rbx"),
+                        x64_memory(X64_WIDTH_NONE, "rbp",
+                                   -(long long) offset));
+            write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                        x64_memory(X64_WIDTH_QWORD, "rbx", 0),
+                        x64_register("rax"));
+            write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                        x64_memory(X64_WIDTH_QWORD, "rbx", 8),
+                        x64_register("r8"));
+            write_value_store(emitter, "rbx", instruction->result);
+            write_x64_1(emitter, X64_OP_JMP, X64_WIDTH_NONE,
+                        x64_label(valid));
+            write_labelf(emitter, "%s:\n", fail);
+            write_x64_0(emitter, X64_OP_UD2);
+            write_labelf(emitter, "%s:\n", valid);
+            return 1;
+        }
         case IR_OP_MEMBER:
             if (emit_enum_member(emitter, instruction)) return 1;
             if (!emit_lvalue_address(emitter, instruction, index)) return 0;

@@ -727,6 +727,31 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                 callee->declaration->as.function.returns_owned_slice_backing)
                 expression->owns_slice_backing = 1;
         }
+    } else if (expression->kind == AST_EXPR_SUBSLICE &&
+               expression->left != NULL) {
+        if (expression->left->has_resolved_ast_type &&
+            (expression->left->resolved_ast_type.is_array ||
+             expression->left->resolved_ast_type.is_slice) &&
+            expression->left->resolved_ast_type.outer_pointer_depth == 0) {
+            AstType element =
+                ast_type_element(&expression->left->resolved_ast_type);
+            AstType result = slice_of_type(analyzer, element);
+            set_expression_declared_type(
+                analyzer, expression,
+                expression->left->resolved_type_program != NULL
+                    ? expression->left->resolved_type_program
+                    : analyzer->program,
+                &result);
+        } else {
+            expression->resolved_type = expression->left->resolved_type;
+            expression->resolved_pointer_depth =
+                expression->left->resolved_pointer_depth;
+            expression->resolved_named_type_token =
+                expression->left->resolved_named_type_token;
+            expression->resolved_named_symbol_id =
+                expression->left->resolved_named_symbol_id;
+            expression->resolved_is_slice = 1;
+        }
     } else if (expression->kind == AST_EXPR_INDEX && expression->left != NULL) {
         if (expression->left->has_resolved_ast_type &&
             (expression->left->resolved_ast_type.is_array ||

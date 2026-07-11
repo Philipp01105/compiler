@@ -39,7 +39,7 @@ static const char *data_type_name(DataType type) {
 static const char *expression_name(AstExpressionKind kind) {
     static const char *names[] = {
         "error", "literal", "name", "unary", "binary", "call",
-        "index", "member", "slice-length", "reserve", "cast", "free", "enum-construct", "enum-access",
+        "index", "subslice", "member", "slice-length", "reserve", "cast", "free", "enum-construct", "enum-access",
         "sizeof", "alignof", "slice", "slice-data", "type-info", "type-property", "array-literal"
     };
     return kind >= AST_EXPR_ERROR && kind <= AST_EXPR_ARRAY_LITERAL ? names[kind] : "invalid";

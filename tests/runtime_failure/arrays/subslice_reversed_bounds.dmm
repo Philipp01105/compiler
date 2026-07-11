@@ -1,0 +1,9 @@
+package main;
+
+func main() -> int {
+    var values:int[4]=[1,2,3,4];
+    var start:int=3;
+    var end:int=1;
+    var invalid:int[]=values[start:end];
+    return invalid.length;
+}

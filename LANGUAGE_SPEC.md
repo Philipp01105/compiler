@@ -68,7 +68,13 @@ local bindings, fields, enum payloads, package variables and return values. A ma
 without copying its elements. Ordinary assignment and return copy the view; they do not duplicate the underlying
 storage.
 `.length:usize` and `.data:*T` are read-only properties. Indexing checks the current count, including negative indices.
-Slice equality is not defined.
+`value[start:end]` creates a non-owning slice over the half-open range `[start,end)`; `value[:end]`,
+`value[start:]`, and `value[:]` default the omitted bound to zero or the source length. Fixed arrays and slices may be
+sub-sliced. Evaluation traps unless `0 <= start <= end <= length`.
+
+`==` and `!=` are defined for two slices with the same complete type. They compare lengths and then the stored
+element representations in sequence; therefore pointer-like elements compare their stored addresses. Slice ordering
+with `<`, `<=`, `>`, or `>=` is not defined and is rejected.
 
 Array literals are contextually typed. The surrounding declaration, assignment target, parameter, or return type must
 unambiguously provide either `T[N]` or `T[]`; `var values=[1,2,3];` is therefore invalid. Examples:

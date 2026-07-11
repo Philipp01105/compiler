@@ -32,6 +32,13 @@ func main() -> void {
     var ragged:int[][]=[[14,15],[16,17,18]];
     var fixed_views:int[][2]=[[19,20],[21,22,23]];
     var singleton_rows:int[2][]=singleton(values[1]);
+    var flat:int[5]=[1,2,3,4,5];
+    var middle_view:int[]=flat[1:4];
+    var prefix_view:int[]=flat[:2];
+    var suffix_view:int[]=flat[3:];
+    var full_view:int[]=flat[:];
+    middle_view[0]=20;
+    var same_middle:int[]=[20,3,4];
 
     stdlib.println(global_values[1][0]);
     stdlib.println(values[1][0]);
@@ -48,4 +55,10 @@ func main() -> void {
     stdlib.println(fixed_views[1][1]);
     stdlib.println(singleton_rows[0][0]);
     stdlib.println(sizeof(int[2][3]));
+    stdlib.println(middle_view.length);
+    stdlib.println(prefix_view[1]);
+    stdlib.println(suffix_view[1]);
+    stdlib.println(full_view[1]);
+    stdlib.println(middle_view==same_middle);
+    stdlib.println(middle_view!=prefix_view);
 }

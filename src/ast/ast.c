@@ -138,6 +138,15 @@ static int valid_expression(const AstProgram *program, const AstExpression *expr
                 !valid_expression(program, expression->right))
                 return 0;
             break;
+        case AST_EXPR_SUBSLICE:
+            if (!valid_expression(program, expression->left) ||
+                (expression->right != NULL &&
+                 !valid_expression(program, expression->right)) ||
+                (expression->arguments != NULL &&
+                 (!valid_expression(program, expression->arguments) ||
+                  expression->arguments->next != NULL)))
+                return 0;
+            break;
         case AST_EXPR_ENUM_CONSTRUCT:
         case AST_EXPR_ENUM_ACCESS:
         case AST_EXPR_CALL:

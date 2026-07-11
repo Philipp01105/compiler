@@ -279,7 +279,8 @@ static int initialize(Pass *p) {
         if (in->opcode == IR_OP_STORE) protect(p, in->operand_a);
         if (in->opcode == IR_OP_UNARY && in->operator_type == TOKEN_AMPERSAND) protect(p, in->operand_b);
         if (in->opcode == IR_OP_MEMBER || in->opcode == IR_OP_SLICE_LENGTH || in->opcode == IR_OP_SLICE_DATA || in->
-            opcode == IR_OP_SLICE) protect(p, in->operand_a);
+            opcode == IR_OP_SLICE || in->opcode == IR_OP_SUBSLICE)
+            protect(p, in->operand_a);
         if ((in->opcode == IR_OP_CALL || in->opcode == IR_OP_ENUM_CONSTRUCT)) {
             protect(p, in->operand_a);
             if (in->symbol_id != AST_SYMBOL_NONE)
@@ -907,7 +908,9 @@ static int compact_ids(IrFunction *f) {
             if (in->target_b != IR_VALUE_NONE) in->target_b = labels[in->target_b];
         }
         if ((in->opcode == IR_OP_CALL || in->opcode == IR_OP_ENUM_CONSTRUCT ||
-             in->opcode == IR_OP_ARRAY_LITERAL)) {
+             in->opcode == IR_OP_ARRAY_LITERAL ||
+             in->opcode == IR_OP_SUBSLICE) &&
+            in->argument_count != 0) {
             size_t old = in->first_argument;
             in->first_argument = na;
             for (size_t a = 0; a < in->argument_count; ++a) arguments[na++] = values[f->arguments[old + a]];

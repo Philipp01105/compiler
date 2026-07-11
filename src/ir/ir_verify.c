@@ -12,7 +12,8 @@ static int instruction_produces_value(const IrInstruction *instruction) {
     IrOpcode opcode = instruction->opcode;
     return opcode == IR_OP_CONSTANT || opcode == IR_OP_LOAD ||
            opcode == IR_OP_UNARY || opcode == IR_OP_BINARY ||
-           (opcode == IR_OP_CALL && instruction->type != TYPE_VOID) || opcode == IR_OP_INDEX ||
+           (opcode == IR_OP_CALL && instruction->type != TYPE_VOID) ||
+           opcode == IR_OP_INDEX || opcode == IR_OP_SUBSLICE ||
            opcode == IR_OP_MEMBER || opcode == IR_OP_SLICE_LENGTH ||
            opcode == IR_OP_SLICE || opcode == IR_OP_SLICE_DATA ||
            opcode == IR_OP_ARRAY_LITERAL ||
@@ -352,6 +353,25 @@ static int verify_instruction_types(const IrModule *module,
             return a != NULL && b != NULL && ir_pointer_type(module, a->type_id) &&
                    ir_integral_type(module, b->type_id) &&
                    module->types[a->type_id].element_type == instruction->type_id;
+        case IR_OP_SUBSLICE: {
+            if (a == NULL || a->type_id >= module->type_count ||
+                instruction->type_id >= module->type_count ||
+                (module->types[a->type_id].kind != IR_TYPE_ARRAY &&
+                 module->types[a->type_id].kind != IR_TYPE_SLICE) ||
+                module->types[instruction->type_id].kind != IR_TYPE_SLICE ||
+                module->types[a->type_id].element_type !=
+                    module->types[instruction->type_id].element_type ||
+                (b != NULL && !ir_integral_type(module, b->type_id)) ||
+                instruction->argument_count > 1)
+                return 0;
+            if (instruction->argument_count == 0) return 1;
+            if (instruction->first_argument >= function->argument_count)
+                return 0;
+            const IrInstruction *end = verified_producer(
+                function, producers,
+                function->arguments[instruction->first_argument], index);
+            return end != NULL && ir_integral_type(module, end->type_id);
+        }
         case IR_OP_MEMBER:
             return a != NULL && instruction->symbol_id < module->semantics->symbol_count &&
                    (module->semantics->symbols[instruction->symbol_id].kind ==
@@ -678,6 +698,19 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                 case IR_OP_INDEX:
                     REQUIRE_VALUE(instruction->operand_a);
                     REQUIRE_VALUE(instruction->operand_b);
+                    break;
+                case IR_OP_SUBSLICE:
+                    REQUIRE_VALUE(instruction->operand_a);
+                    if (instruction->operand_b != IR_VALUE_NONE)
+                        REQUIRE_VALUE(instruction->operand_b);
+                    if (instruction->argument_count > 1 ||
+                        (instruction->argument_count == 1 &&
+                         instruction->first_argument >=
+                             function->argument_count))
+                        valid = 0;
+                    else if (instruction->argument_count == 1)
+                        REQUIRE_VALUE(function->arguments[
+                            instruction->first_argument]);
                     break;
                 case IR_OP_PHI:
                     REQUIRE_VALUE(instruction->operand_a);

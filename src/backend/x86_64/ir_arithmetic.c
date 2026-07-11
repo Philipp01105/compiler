@@ -79,10 +79,93 @@ static int emit_floating_binary(Emitter *emitter, const IrInstruction *instructi
     return 1;
 }
 
+static int emit_slice_compare(Emitter *emitter,
+                              const IrInstruction *instruction,
+                              const IrInstruction *left,
+                              const IrInstruction *right) {
+    if (left->type_id >= emitter->module->type_count ||
+        right->type_id >= emitter->module->type_count ||
+        emitter->module->types[left->type_id].kind != IR_TYPE_SLICE ||
+        emitter->module->types[right->type_id].kind != IR_TYPE_SLICE ||
+        instruction->operator_type < TOKEN_EQUAL_EQUAL ||
+        instruction->operator_type > TOKEN_BANG_EQUAL)
+        return 0;
+    IrTypeId element_type =
+        emitter->module->types[left->type_id].element_type;
+    if (element_type !=
+        emitter->module->types[right->type_id].element_type)
+        return 0;
+    IrTypeLayout element;
+    if (!ir_type_layout(emitter->module, element_type, &element))
+        return 0;
+    size_t sequence = emitter->bounds_sequence++;
+    char loop[96], equal[96], unequal[96], done[96];
+    snprintf(loop, sizeof(loop), ".LIR_slice_cmp_loop_%zu_%zu",
+             emitter->function_index, sequence);
+    snprintf(equal, sizeof(equal), ".LIR_slice_cmp_equal_%zu_%zu",
+             emitter->function_index, sequence);
+    snprintf(unequal, sizeof(unequal), ".LIR_slice_cmp_unequal_%zu_%zu",
+             emitter->function_index, sequence);
+    snprintf(done, sizeof(done), ".LIR_slice_cmp_done_%zu_%zu",
+             emitter->function_index, sequence);
+    write_value_load(emitter, "r10", instruction->operand_a);
+    write_value_load(emitter, "r11", instruction->operand_b);
+    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                x64_register("rcx"),
+                x64_memory(X64_WIDTH_QWORD, "r10", 8));
+    write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_QWORD,
+                x64_register("rcx"),
+                x64_memory(X64_WIDTH_QWORD, "r11", 8));
+    write_x64_1(emitter, X64_OP_JNE, X64_WIDTH_NONE,
+                x64_label(unequal));
+    write_x64_2(emitter, X64_OP_IMUL, X64_WIDTH_QWORD,
+                x64_register("rcx"),
+                x64_immediate((long long) element.size));
+    write_x64_1(emitter, X64_OP_JE, X64_WIDTH_NONE, x64_label(equal));
+    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                x64_register("r10"),
+                x64_memory(X64_WIDTH_QWORD, "r10", 0));
+    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                x64_register("r11"),
+                x64_memory(X64_WIDTH_QWORD, "r11", 0));
+    write_labelf(emitter, "%s:\n", loop);
+    write_x64_2(emitter, X64_OP_MOVZX, X64_WIDTH_QWORD,
+                x64_sized_register(X64_WIDTH_QWORD, "rax"),
+                x64_memory(X64_WIDTH_BYTE, "r10", 0));
+    write_x64_2(emitter, X64_OP_MOVZX, X64_WIDTH_QWORD,
+                x64_sized_register(X64_WIDTH_QWORD, "rdx"),
+                x64_memory(X64_WIDTH_BYTE, "r11", 0));
+    write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_BYTE,
+                x64_sized_register(X64_WIDTH_BYTE, "al"),
+                x64_sized_register(X64_WIDTH_BYTE, "dl"));
+    write_x64_1(emitter, X64_OP_JNE, X64_WIDTH_NONE,
+                x64_label(unequal));
+    write_x64_1(emitter, X64_OP_INC, X64_WIDTH_QWORD,
+                x64_register("r10"));
+    write_x64_1(emitter, X64_OP_INC, X64_WIDTH_QWORD,
+                x64_register("r11"));
+    write_x64_1(emitter, X64_OP_DEC, X64_WIDTH_QWORD,
+                x64_register("rcx"));
+    write_x64_1(emitter, X64_OP_JNE, X64_WIDTH_NONE, x64_label(loop));
+    write_labelf(emitter, "%s:\n", equal);
+    write_immediate(emitter, "rax",
+                    instruction->operator_type == TOKEN_EQUAL_EQUAL);
+    write_x64_1(emitter, X64_OP_JMP, X64_WIDTH_NONE, x64_label(done));
+    write_labelf(emitter, "%s:\n", unequal);
+    write_immediate(emitter, "rax",
+                    instruction->operator_type == TOKEN_BANG_EQUAL);
+    write_labelf(emitter, "%s:\n", done);
+    write_value_store(emitter, "rax", instruction->result);
+    return 1;
+}
+
 
 int emit_binary(Emitter *emitter, const IrInstruction *instruction) {
     const IrInstruction *left = producer(emitter->function, instruction->operand_a);
     const IrInstruction *right = producer(emitter->function, instruction->operand_b);
+    if (left != NULL && right != NULL && left->is_slice &&
+        right->is_slice)
+        return emit_slice_compare(emitter, instruction, left, right);
     if (left != NULL && right != NULL && instruction->type == TYPE_STRING &&
         instruction->operator_type == TOKEN_PLUS)
         return emit_string_concat(emitter, instruction);
@@ -296,4 +379,3 @@ void normalize_truth_rax(Emitter *emitter, DataType type) {
                 x64_sized_register(X64_WIDTH_QWORD, "rax"),
                 x64_sized_register(X64_WIDTH_BYTE, "al"));
 }
-

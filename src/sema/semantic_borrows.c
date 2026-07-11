@@ -104,7 +104,8 @@ static int expression_place(const AstExpression *expression,
             place->field = expression->resolved_symbol_id;
         return 1;
     }
-    if (expression->kind == AST_EXPR_INDEX)
+    if (expression->kind == AST_EXPR_INDEX ||
+        expression->kind == AST_EXPR_SUBSLICE)
         return expression_place(expression->left, place);
     if (expression->kind == AST_EXPR_SLICE_DATA)
         return expression_place(expression->left, place);

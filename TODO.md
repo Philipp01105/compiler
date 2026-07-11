@@ -56,7 +56,7 @@ required to implement these resource-safety foundations.
 - [x] Implement and specify contextual fixed-array assignment by value; array equality remains undefined.
 - [x] Add contextually typed fixed-array/slice literals, cyclic repetition, local and package backing storage, call
   temporaries, and returned hidden-backing ownership transfer.
-- [ ] Add subslicing and a deliberate rule for slice equality and ordering.
+- [x] Add subslicing and a deliberate rule for slice equality and ordering.
 - [ ] Add function types and non-capturing function pointers.
 - [ ] Add closures only after capture lifetime and ownership rules are specified.
 - [ ] Add a never type so terminating operations such as `exit` and `trap` participate correctly in control-flow typing.
