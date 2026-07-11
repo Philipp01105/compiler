@@ -136,6 +136,12 @@ else ()
     endif ()
 endif ()
 
+# MinGW's default PE stack is smaller than the Unix default. Keep the parser's
+# documented 512-node nesting boundary usable under both GCC and Clang.
+if (WIN32 AND NOT MSVC)
+    target_link_options(compiler PRIVATE -Wl,--stack,8388608)
+endif ()
+
 if (DMM_SANITIZERS)
     if (MSVC OR WIN32)
         message(FATAL_ERROR "DMM_SANITIZERS currently requires GCC or Clang on a Unix-like platform")

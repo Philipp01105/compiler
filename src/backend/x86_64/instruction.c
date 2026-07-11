@@ -290,6 +290,11 @@ int x64_print_instruction(FILE *output, SyntaxMode syntax,
                            : position;
         if (position != 0 && fputs(", ", output) == EOF) return 0;
         X64Operand operand_value = value->operands[index];
+        if (syntax == SYNTAX_ATT &&
+            (value->opcode == X64_OP_CALL || value->opcode == X64_OP_JMP) &&
+            operand_value.kind != X64_OPERAND_SYMBOL &&
+            fputc('*', output) == EOF)
+            return 0;
         if (syntax == SYNTAX_INTEL &&
             (value->opcode == X64_OP_MOVSX || value->opcode == X64_OP_MOVZX) && index == 1 &&
             operand_value.kind == X64_OPERAND_MEMORY && operand_value.width == X64_WIDTH_NONE)

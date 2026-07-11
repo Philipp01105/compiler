@@ -686,27 +686,36 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
 
 static AstExpression *parse_unary(SyntaxParser *parser) {
     if (type_metadata_ahead(parser)) return parse_primary(parser);
-    TokenType type = current_type(parser);
-    if (type == TOKEN_BANG || type == TOKEN_MINUS || type == TOKEN_AMPERSAND ||
-        type == TOKEN_STAR) {
-        if (parser->expression_depth >= AST_MAX_PARSE_DEPTH) {
+    AstExpression *operators[AST_MAX_PARSE_DEPTH];
+    size_t count = 0;
+    for (;;) {
+        TokenType type = current_type(parser);
+        if (type != TOKEN_BANG && type != TOKEN_MINUS &&
+            type != TOKEN_AMPERSAND && type != TOKEN_STAR)
+            break;
+        if (parser->expression_depth + count >= AST_MAX_PARSE_DEPTH) {
             parser_failure(parser, ERR_PARSE_TOO_MANY_ERRORS,
                            "Expression tree exceeds maximum depth");
             return NULL;
         }
         size_t first = parser->current++;
         AstExpression *expression = new_expression(parser, AST_EXPR_UNARY, first);
-        parser->expression_depth++;
         if (expression != NULL) {
             expression->operator_type = type;
             if (type == TOKEN_AMPERSAND && match(parser, TOKEN_KEYWORD_MUT)) expression->mutable_borrow = 1;
-            expression->right = parse_unary(parser);
         }
-        parser->expression_depth--;
-        finish_expression(parser, expression);
-        return expression;
+        operators[count++] = expression;
     }
-    return parse_primary(parser);
+    parser->expression_depth += (unsigned) count;
+    AstExpression *expression = parse_primary(parser);
+    parser->expression_depth -= (unsigned) count;
+    while (count != 0) {
+        AstExpression *unary = operators[--count];
+        if (unary != NULL) unary->right = expression;
+        finish_expression(parser, unary);
+        expression = unary;
+    }
+    return expression;
 }
 
 static int precedence(TokenType type) {
