@@ -198,8 +198,11 @@ static AstType inferred_type(void) {
 
 static int is_type_token(TokenType type) {
     return type == TOKEN_IDENTIFIER ||
+           type == TOKEN_KEYWORD_FUNC ||
            (type >= TOKEN_TYPE_INT && type <= TOKEN_TYPE_VOID);
 }
+
+static AstGenericParameter *parse_generic_parameters(SyntaxParser *parser);
 
 static AstType parse_type(SyntaxParser *parser) {
     AstType type = inferred_type();
@@ -219,6 +222,38 @@ static AstType parse_type(SyntaxParser *parser) {
         (void) consume(parser, TOKEN_RPAREN);
         if (type.is_array || type.is_slice) type.outer_pointer_depth += leading_pointers;
         else type.pointer_depth += leading_pointers;
+    } else if (match(parser, TOKEN_KEYWORD_FUNC)) {
+        type.kind = AST_TYPE_FUNCTION;
+        type.name_token = first;
+        type.pointer_depth = leading_pointers;
+        type.function_generic_parameters = parse_generic_parameters(parser);
+        (void) consume(parser, TOKEN_LPAREN);
+        AstTypeArgument **tail = &type.function_parameters;
+        size_t count = 0;
+        if (!check(parser, TOKEN_RPAREN)) {
+            do {
+                if (++count > 16) {
+                    parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
+                                   "Function types allow at most 16 parameters");
+                    break;
+                }
+                AstTypeArgument *parameter = allocate(parser, sizeof(*parameter));
+                AstType value = parse_type(parser);
+                if (parameter != NULL) {
+                    parameter->type = value;
+                    *tail = parameter;
+                    tail = &parameter->next;
+                }
+            } while (match(parser, TOKEN_COMMA));
+        }
+        (void) consume(parser, TOKEN_RPAREN);
+        (void) consume(parser, TOKEN_ARROW);
+        AstType *result = allocate(parser, sizeof(*result));
+        AstType result_value = parse_type(parser);
+        if (result != NULL) {
+            *result = result_value;
+            type.function_return_type = result;
+        }
     } else {
         if (!is_type_token(current_type(parser))) {
             parser_failure(parser, ERR_PARSE_EXPECTED_TOKEN, "Unknown type: expected a type name");
@@ -522,11 +557,20 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
             if (t == TOKEN_EOF || t == TOKEN_SEMICOLON) break;
         } while (look < parser->program->token_count && depth != 0);
         if (depth == 0 && look < parser->program->token_count &&
-            (parser->program->tokens[look].type == TOKEN_DOT || parser->program->tokens[look].type == TOKEN_LPAREN)) {
+            (parser->program->tokens[look].type == TOKEN_DOT ||
+             parser->program->tokens[look].type == TOKEN_LPAREN ||
+             parser->program->tokens[look].type == TOKEN_SEMICOLON ||
+             parser->program->tokens[look].type == TOKEN_COMMA ||
+             parser->program->tokens[look].type == TOKEN_RPAREN ||
+             parser->program->tokens[look].type == TOKEN_RBRACKET)) {
             size_t saved = parser->current;
             parser->current = expression->value_token;
             expression->allocated_type = parse_type(parser);
-            expression->explicit_type_arguments = parser->program->tokens[look].type == TOKEN_LPAREN;
+            expression->explicit_type_arguments =
+                parser->program->tokens[look].type == TOKEN_LPAREN;
+            expression->explicit_generic_reference =
+                parser->program->tokens[look].type != TOKEN_LPAREN &&
+                parser->program->tokens[look].type != TOKEN_DOT;
             if (parser->current <= saved) parser->failed = 1;
         }
     }
@@ -552,6 +596,7 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
             AstExpression *call = new_expression(parser, call_kind, first);
             AstExpression **tail = call == NULL ? NULL : &call->arguments;
             if (call != NULL) {
+                expression->direct_call_target = 1;
                 call->left = call_kind == AST_EXPR_CALL ? expression : NULL;
                 call->value_token = expression->value_token;
             }

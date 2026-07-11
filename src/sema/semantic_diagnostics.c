@@ -134,6 +134,36 @@ static void diagnostic_ast_type(DiagnosticText *text, const Analyzer *analyzer,
             diagnostic_append(text, "[%zu]", type->resolved_array_length);
         return;
     }
+    if (type->kind == AST_TYPE_FUNCTION) {
+        for (unsigned i = 0; i < type->pointer_depth + type->outer_pointer_depth; i++)
+            diagnostic_append(text, "*");
+        diagnostic_append(text, "func");
+        if (type->function_generic_parameters) {
+            diagnostic_append(text, "<");
+            for (const AstGenericParameter *g = type->function_generic_parameters; g; g = g->next) {
+                diagnostic_append(text, "%s", ast_program_lexeme(program, g->name_token));
+                if (g->bounds) {
+                    diagnostic_append(text, ": ");
+                    for (const AstInterfaceBound *bound = g->bounds; bound; bound = bound->next) {
+                        diagnostic_append(text, "%s", ast_program_lexeme(program, bound->name_token));
+                        if (bound->next) diagnostic_append(text, " + ");
+                    }
+                }
+                if (g->next) diagnostic_append(text, ", ");
+            }
+            diagnostic_append(text, ">");
+        }
+        diagnostic_append(text, "(");
+        for (const AstTypeArgument *parameter = type->function_parameters; parameter; parameter = parameter->next) {
+            diagnostic_ast_type(text, analyzer, program, &parameter->type);
+            if (parameter->next) diagnostic_append(text, ", ");
+        }
+        diagnostic_append(text, ") -> ");
+        if (type->function_return_type)
+            diagnostic_ast_type(text, analyzer, program, type->function_return_type);
+        else diagnostic_append(text, "unknown");
+        return;
+    }
     const char *length = type->is_array
                              ? ast_program_lexeme(program,
                                                   type->array_length_token)
@@ -180,7 +210,8 @@ void conversion_error(Analyzer *analyzer, const AstExpression *value,
                              const AstProgram *expected_program, const AstType *expected,
                              const AstExpression *expected_value, const char *reason) {
     // An unresolved value already has a name/type diagnostic; avoid a follow-up conversion error.
-    if (value->resolved_type == TYPE_UNKNOWN && value->resolved_named_symbol_id == AST_SYMBOL_NONE) return;
+    if (value->resolved_type == TYPE_UNKNOWN && value->resolved_named_symbol_id == AST_SYMBOL_NONE &&
+        !(value->has_resolved_ast_type && value->resolved_ast_type.kind == AST_TYPE_FUNCTION)) return;
     DiagnosticText message = {0};
     diagnostic_append(&message, "%s; got '", reason);
     const char *length = NULL;
@@ -189,7 +220,8 @@ void conversion_error(Analyzer *analyzer, const AstExpression *value,
         length = ast_program_lexeme(symbol->source_program, symbol->declared_type.array_length_token);
     }
     if (value->has_resolved_ast_type &&
-        value->resolved_ast_type.element_type != NULL)
+        (value->resolved_ast_type.element_type != NULL ||
+         value->resolved_ast_type.kind == AST_TYPE_FUNCTION))
         diagnostic_ast_type(
             &message, analyzer,
             value->resolved_type_program != NULL
@@ -215,7 +247,8 @@ void conversion_error(Analyzer *analyzer, const AstExpression *value,
             return;
         }
         if (expected_value->has_resolved_ast_type &&
-            expected_value->resolved_ast_type.element_type != NULL)
+            (expected_value->resolved_ast_type.element_type != NULL ||
+             expected_value->resolved_ast_type.kind == AST_TYPE_FUNCTION))
             diagnostic_ast_type(
                 &message, analyzer,
                 expected_value->resolved_type_program != NULL

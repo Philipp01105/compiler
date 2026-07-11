@@ -122,7 +122,32 @@ static int dump_type(FILE *output, const AstProgram *program, const AstType *typ
         return 0;
     for (unsigned i = 0; i < type->pointer_depth; i++)
         if (fputc('*', output) == EOF) return 0;
-    if (fputs(ast_program_lexeme(program, type->name_token), output) == EOF) return 0;
+    if (type->kind == AST_TYPE_FUNCTION) {
+        if (fputs("func", output) == EOF) return 0;
+        if (type->function_generic_parameters) {
+            if (fputc('<', output) == EOF) return 0;
+            for (const AstGenericParameter *generic = type->function_generic_parameters; generic;
+                 generic = generic->next) {
+                if (fputs(ast_program_lexeme(program, generic->name_token), output) == EOF) return 0;
+                if (generic->bounds) {
+                    if (fputc(':', output) == EOF) return 0;
+                    for (const AstInterfaceBound *bound = generic->bounds; bound; bound = bound->next) {
+                        if (fputs(ast_program_lexeme(program, bound->name_token), output) == EOF) return 0;
+                        if (bound->next && fputc('+', output) == EOF) return 0;
+                    }
+                }
+                if (generic->next && fputc(',', output) == EOF) return 0;
+            }
+            if (fputc('>', output) == EOF) return 0;
+        }
+        if (fputc('(', output) == EOF) return 0;
+        for (const AstTypeArgument *parameter = type->function_parameters; parameter; parameter = parameter->next) {
+            if (!dump_type(output, program, &parameter->type)) return 0;
+            if (parameter->next && fputc(',', output) == EOF) return 0;
+        }
+        if (fputs(") -> ", output) == EOF || type->function_return_type == NULL ||
+            !dump_type(output, program, type->function_return_type)) return 0;
+    } else if (fputs(ast_program_lexeme(program, type->name_token), output) == EOF) return 0;
     if (type->arguments) {
         if (fputc('<', output) == EOF) return 0;
         for (const AstTypeArgument *argument = type->arguments; argument; argument = argument->next) {

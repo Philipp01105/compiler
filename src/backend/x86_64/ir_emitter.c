@@ -190,7 +190,18 @@ static const IrParameter *function_parameter(const IrFunction *function,
 const IrFunction *called_function(const IrModule *module, size_t symbol_id) {
     if (symbol_id == AST_SYMBOL_NONE) return NULL;
     for (size_t i = 0; i < module->function_count; i++)
-        if (module->functions[i].symbol_id == symbol_id) return &module->functions[i];
+        if (module->functions[i].symbol_id == symbol_id &&
+            module->functions[i].interface_thunk_symbol_id == AST_SYMBOL_NONE)
+            return &module->functions[i];
+    return NULL;
+}
+
+const IrFunction *addressed_function(const IrModule *module, size_t symbol_id) {
+    const IrFunction *function = called_function(module, symbol_id);
+    if (function != NULL) return function;
+    for (size_t i = 0; i < module->function_count; i++)
+        if (module->functions[i].interface_thunk_symbol_id == symbol_id)
+            return &module->functions[i];
     return NULL;
 }
 
@@ -1434,6 +1445,21 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                 write_value_store(emitter, "rax", instruction->result);
             }
             return 1;
+        case IR_OP_FUNCTION_ADDRESS: {
+            const IrFunction *addressed = addressed_function(emitter->module,
+                                                           instruction->symbol_id);
+            if (addressed == NULL) return 0;
+            char buffer[4096];
+            const char *name = function_link_name(emitter->module, addressed,
+                                                  buffer, sizeof(buffer));
+            if (name == NULL) return 0;
+            X64Operand address = x64_rip_memory(X64_WIDTH_NONE, name, 0);
+            address.has_symbol_suffix = 0;
+            write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD,
+                        x64_register("rax"), address);
+            write_value_store(emitter, "rax", instruction->result);
+            return 1;
+        }
         case IR_OP_LOAD: {
             const char *name = ast_program_lexeme(function->source_program,
                                                   instruction->auxiliary_token);
@@ -1828,6 +1854,13 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
         case IR_OP_CALL: {
             const IrFunction *callee = called_function(emitter->module, instruction->symbol_id);
             if (callee == NULL) {
+                const IrInstruction *callee_value = producer(function,
+                                                              instruction->operand_a);
+                if (callee_value && callee_value->type_id < emitter->module->type_count &&
+                    emitter->module->types[callee_value->type_id].kind == IR_TYPE_FUNCTION)
+                    return emit_indirect_typed_call(emitter, instruction,
+                                                    instruction->operand_a,
+                                                    callee_value->type_id);
                 if (instruction->symbol_id < emitter->module->semantics->symbol_count) {
                     const SemanticSymbol *method =
                         &emitter->module->semantics->symbols[instruction->symbol_id];
@@ -1837,13 +1870,13 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                         SEMANTIC_SYMBOL_INTERFACE)
                         return emit_interface_call(emitter, instruction);
                 }
-                const IrInstruction *callee_value = producer(function, instruction->operand_a);
                 if (!callee_value) return 0;
                 const char *name = ast_program_lexeme(function->source_program,
                                                       callee_value->auxiliary_token);
                 return emit_builtin_call(emitter, instruction, name);
             }
-            return emit_typed_call(emitter, instruction, callee, 0);
+            return emit_typed_call(emitter, instruction, callee, 0,
+                                   IR_VALUE_NONE);
         }
         case IR_OP_INDEX:
             if (!emit_lvalue_address(emitter, instruction, index)) return 0;

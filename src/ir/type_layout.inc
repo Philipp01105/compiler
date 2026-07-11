@@ -6,7 +6,7 @@ static int type_layout_depth(const IrModule *module, IrTypeId id, IrTypeLayout *
     {
         .size = 8,.alignment = 8,.storage_slots = 1
     };
-    if (type->kind == IR_TYPE_POINTER) return 1;
+    if (type->kind == IR_TYPE_POINTER || type->kind == IR_TYPE_FUNCTION) return 1;
     if (type->kind == IR_TYPE_SLICE) {
         layout->size = 16;
         layout->storage_slots = 2;
@@ -96,7 +96,7 @@ static unsigned ir_type_properties_depth(const IrModule *module, IrTypeId id,
     if (module == NULL || id >= module->type_count || depth > module->type_count)
         return 0;
     const IrType *type = &module->types[id];
-    if (type->kind == IR_TYPE_POINTER || type->kind == IR_TYPE_SLICE ||
+    if (type->kind == IR_TYPE_POINTER || type->kind == IR_TYPE_FUNCTION || type->kind == IR_TYPE_SLICE ||
         type->kind == IR_TYPE_PRIMITIVE)
         return SEMANTIC_TYPE_COPYABLE;
     if (type->kind == IR_TYPE_ARRAY)

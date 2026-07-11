@@ -57,7 +57,8 @@ required to implement these resource-safety foundations.
 - [x] Add contextually typed fixed-array/slice literals, cyclic repetition, local and package backing storage, call
   temporaries, and returned hidden-backing ownership transfer.
 - [x] Add subslicing and a deliberate rule for slice equality and ordering.
-- [ ] Add function types and non-capturing function pointers.
+- [x] Add monomorphic function types and non-capturing callable values, plus compile-time polymorphic callable
+  identities, contextual specialization, indirect calls, storage, equality, and null-call traps.
 - [ ] Add closures only after capture lifetime and ownership rules are specified.
 - [ ] Add a never type so terminating operations such as `exit` and `trap` participate correctly in control-flow typing.
 - [ ] Support aggregate constants and compile-time construction of arrays, structs, enums, and tagged variants.
@@ -113,7 +114,7 @@ exclusive and borrowing is field-sensitive when disjointness is provable.
 
 ### Functions, control flow, and error handling
 
-- [ ] Add first-class callbacks once function types are available.
+- [x] Add first-class non-capturing callbacks through parameters and return values.
 - [ ] Standardize `Option`/`Result`-style error propagation and concise propagation syntax.
 - [ ] Evaluate expression forms for `if`, blocks, and `match` without compromising definite-return analysis.
 - [ ] Add labeled loop control where nested loops require it.

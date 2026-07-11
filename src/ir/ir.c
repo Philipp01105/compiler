@@ -173,7 +173,7 @@ DataType ir_ast_type_data_type(const AstProgram *program, const AstType *type) {
 static int same_ir_type(const IrType *left, const IrType *right) {
     return left->kind == right->kind && left->primitive == right->primitive &&
            left->symbol_id == right->symbol_id && left->element_type == right->element_type &&
-           left->array_length == right->array_length;
+           left->array_length == right->array_length && left->signature_id == right->signature_id;
 }
 
 static IrTypeId intern_type(IrModule *module, IrType type) {
@@ -286,6 +286,63 @@ static IrTypeId type_from_ast(IrModule *module, const AstProgram *program,
         }
         return result;
     }
+    if (type != NULL && type->kind == AST_TYPE_FUNCTION) {
+        if (type->function_generic_parameters != NULL) return IR_TYPE_NONE;
+        size_t count = 0;
+        for (const AstTypeArgument *parameter = type->function_parameters; parameter; parameter = parameter->next)
+            count++;
+        IrTypeId *parameters = count ? calloc(count, sizeof(*parameters)) : NULL;
+        if (count && parameters == NULL) return IR_TYPE_NONE;
+        size_t index = 0;
+        for (const AstTypeArgument *parameter = type->function_parameters; parameter; parameter = parameter->next)
+            parameters[index++] = type_from_ast(module, program, &parameter->type);
+        IrTypeId result = type_from_ast(module, program, type->function_return_type);
+        if (result == IR_TYPE_NONE) { free(parameters); return IR_TYPE_NONE; }
+        size_t signature = 0;
+        for (; signature < module->signature_count; signature++) {
+            const IrFunctionSignature *candidate = &module->signatures[signature];
+            if (candidate->parameter_count != count || candidate->return_type != result) continue;
+            size_t p = 0;
+            for (; p < count && candidate->parameter_types[p] == parameters[p]; p++) {}
+            if (p == count) break;
+        }
+        if (signature == module->signature_count) {
+            if (module->signature_count == module->signature_capacity &&
+                !grow_array((void **) &module->signatures, &module->signature_capacity,
+                            sizeof(*module->signatures))) { free(parameters); return IR_TYPE_NONE; }
+            module->signatures[module->signature_count++] = (IrFunctionSignature) {
+                .parameter_types = parameters, .parameter_count = count, .return_type = result
+            };
+        } else free(parameters);
+        IrTypeId value = intern_type(module, (IrType) {
+            .kind = IR_TYPE_FUNCTION, .primitive = TYPE_UNKNOWN,
+            .symbol_id = AST_SYMBOL_NONE, .element_type = IR_TYPE_NONE,
+            .signature_id = signature
+        });
+        if (value == IR_TYPE_NONE) return value;
+        if (type->is_array || type->is_slice)
+            value = intern_type(module, (IrType) {
+            .kind = type->is_slice ? IR_TYPE_SLICE : IR_TYPE_ARRAY,
+            .primitive = TYPE_UNKNOWN,
+            .symbol_id = AST_SYMBOL_NONE,
+            .element_type = value,
+            .array_length = ast_array_length(program, type)
+            });
+        for (unsigned depth = 0;
+             value != IR_TYPE_NONE &&
+             depth < type->pointer_depth + type->outer_pointer_depth +
+                         (type->borrow_kind != AST_BORROW_NONE);
+             depth++) {
+            IrType pointer = {
+                .kind = IR_TYPE_POINTER,
+                .primitive = TYPE_UNKNOWN,
+                .symbol_id = AST_SYMBOL_NONE,
+                .element_type = value
+            };
+            value = intern_type(module, pointer);
+        }
+        return value;
+    }
     size_t named = type != NULL && type->name_token < program->token_count &&
                    program->tokens[type->name_token].type == TOKEN_IDENTIFIER
                        ? type->name_token
@@ -303,7 +360,8 @@ static IrTypeId type_from_ast(IrModule *module, const AstProgram *program,
 static IrTypeId type_from_expression(IrModule *module, const AstProgram *program,
                                      const AstExpression *expression) {
     if (expression->has_resolved_ast_type &&
-        expression->resolved_ast_type.element_type != NULL)
+        (expression->resolved_ast_type.element_type != NULL ||
+         expression->resolved_ast_type.kind == AST_TYPE_FUNCTION))
         return type_from_ast(module,
                              expression->resolved_type_program != NULL
                                  ? expression->resolved_type_program : program,
@@ -515,7 +573,17 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
     size_t receiver = has_receiver
                           ? lower_expression(builder, expression->left->left)
                           : IR_VALUE_NONE;
-    size_t left = (method_call || expression->kind == AST_EXPR_ENUM_CONSTRUCT)
+    int direct_call = expression->kind == AST_EXPR_CALL &&
+                      expression->resolved_symbol_id < builder->module->semantics->symbol_count &&
+                      builder->module->semantics->symbols[expression->resolved_symbol_id].kind == SEMANTIC_SYMBOL_FUNCTION;
+    int function_reference = expression->kind == AST_EXPR_MEMBER &&
+                             expression->resolved_symbol_id < builder->module->semantics->symbol_count &&
+                             builder->module->semantics->symbols[expression->resolved_symbol_id].kind ==
+                                 SEMANTIC_SYMBOL_FUNCTION &&
+                             expression->has_resolved_ast_type &&
+                             expression->resolved_ast_type.kind == AST_TYPE_FUNCTION;
+    size_t left = (method_call || expression->kind == AST_EXPR_ENUM_CONSTRUCT || direct_call ||
+                   function_reference)
                       ? IR_VALUE_NONE
                       : lower_expression(builder, expression->left);
     if (expression->kind == AST_EXPR_BINARY &&
@@ -569,7 +637,10 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
     switch (expression->kind) {
         case AST_EXPR_LITERAL: opcode = IR_OP_CONSTANT;
             break;
-        case AST_EXPR_NAME: opcode = IR_OP_LOAD;
+        case AST_EXPR_NAME:
+            opcode = expression->resolved_symbol_id < builder->module->semantics->symbol_count &&
+                     builder->module->semantics->symbols[expression->resolved_symbol_id].kind == SEMANTIC_SYMBOL_FUNCTION
+                         ? IR_OP_FUNCTION_ADDRESS : IR_OP_LOAD;
             break;
         case AST_EXPR_UNARY: opcode = IR_OP_UNARY;
             break;
@@ -584,7 +655,9 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
             break;
         case AST_EXPR_SUBSLICE: opcode = IR_OP_SUBSLICE;
             break;
-        case AST_EXPR_MEMBER: opcode = IR_OP_MEMBER;
+        case AST_EXPR_MEMBER: opcode = function_reference
+                                           ? IR_OP_FUNCTION_ADDRESS
+                                           : IR_OP_MEMBER;
             break;
         case AST_EXPR_SLICE_LENGTH: opcode = IR_OP_SLICE_LENGTH;
             break;
@@ -609,10 +682,23 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
     size_t first_argument = IR_VALUE_NONE;
     size_t argument_count = 0;
     if (expression->kind == AST_EXPR_CALL || expression->kind == AST_EXPR_ENUM_CONSTRUCT) {
+        const AstParameter *physical_parameter = NULL;
+        if (expression->kind == AST_EXPR_CALL &&
+            expression->resolved_symbol_id < builder->module->semantics->symbol_count) {
+            const SemanticSymbol *target =
+                &builder->module->semantics->symbols[expression->resolved_symbol_id];
+            if (target->declaration != NULL)
+                physical_parameter = target->declaration->as.function.parameters;
+        }
         if (has_receiver) argument_count++;
         for (const AstExpression *argument = expression->arguments;
-             argument != NULL; argument = argument->next)
-            argument_count++;
+             argument != NULL; argument = argument->next) {
+            int erased = physical_parameter != NULL &&
+                         physical_parameter->compile_time_value != NULL;
+            if (!erased) argument_count++;
+            if (physical_parameter != NULL)
+                physical_parameter = physical_parameter->next;
+        }
         size_t *values = argument_count == 0 ? NULL : calloc(argument_count, sizeof(*values));
         if (values == NULL && argument_count != 0) {
             builder->failed = 1;
@@ -633,6 +719,10 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         }
         for (const AstExpression *argument = expression->arguments;
              argument != NULL; argument = argument->next) {
+            if (parameter != NULL && parameter->compile_time_value != NULL) {
+                parameter = parameter->next;
+                continue;
+            }
             size_t value = lower_expression(builder, argument);
             int consumes = parameter == NULL ||
                            parameter->type.borrow_kind == AST_BORROW_NONE;
@@ -704,18 +794,33 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
     size_t result = instruction->result;
     if (expression->kind == AST_EXPR_CALL) {
         size_t argument_index = has_receiver ? 1 : 0;
+        const AstParameter *parameter = NULL;
+        if (expression->resolved_symbol_id < builder->module->semantics->symbol_count) {
+            const SemanticSymbol *target =
+                &builder->module->semantics->symbols[expression->resolved_symbol_id];
+            if (target->declaration != NULL)
+                parameter = target->declaration->as.function.parameters;
+        }
         for (const AstExpression *argument = expression->arguments;
-             argument != NULL; argument = argument->next, argument_index++) {
-            if (!argument->owns_slice_backing) continue;
-            IrInstruction *cleanup = emit(builder, IR_OP_FREE_SLICE_BACKING,
-                                          argument->span);
-            if (cleanup == NULL) return IR_VALUE_NONE;
-            cleanup->type = TYPE_VOID;
-            cleanup->type_id = type_from_expression(builder->module,
-                                                    builder->program,
-                                                    argument);
-            cleanup->operand_a = builder->function->arguments[
-                first_argument + argument_index];
+             argument != NULL; argument = argument->next) {
+            int erased = parameter != NULL &&
+                         parameter->compile_time_value != NULL;
+            if (!erased) {
+                if (argument->owns_slice_backing) {
+                    IrInstruction *cleanup = emit(builder,
+                                                  IR_OP_FREE_SLICE_BACKING,
+                                                  argument->span);
+                    if (cleanup == NULL) return IR_VALUE_NONE;
+                    cleanup->type = TYPE_VOID;
+                    cleanup->type_id = type_from_expression(builder->module,
+                                                            builder->program,
+                                                            argument);
+                    cleanup->operand_a = builder->function->arguments[
+                        first_argument + argument_index];
+                }
+                argument_index++;
+            }
+            if (parameter != NULL) parameter = parameter->next;
         }
     }
     return result;
@@ -1004,6 +1109,12 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
             register_deferred_action(builder, statement);
         } else if (statement->kind == AST_STMT_VARIABLE) {
             if (statement->is_const) continue;
+            const AstType *runtime_type = statement->type.kind == AST_TYPE_INFERRED && statement->value &&
+                                          statement->value->has_resolved_ast_type
+                                              ? &statement->value->resolved_ast_type : &statement->type;
+            if (runtime_type->kind == AST_TYPE_FUNCTION &&
+                runtime_type->function_generic_parameters != NULL)
+                continue;
             size_t value = lower_expression(builder, statement->value);
             if (statement->type.kind != AST_TYPE_INFERRED)
                 value = coerce_slice(builder, value, type_from_ast(builder->module, builder->program, &statement->type),
@@ -1232,6 +1343,7 @@ static int append_function(IrModule *module, const AstProgram *program,
         .owner_token = declaration->as.function.owner_token,
         .owner_symbol_id = AST_SYMBOL_NONE,
         .symbol_id = AST_SYMBOL_NONE,
+        .interface_thunk_symbol_id = AST_SYMBOL_NONE,
         .return_type = declaration->as.function.return_type,
         .return_type_id = type_from_ast(module, program, &declaration->as.function.return_type)
     };
@@ -1246,7 +1358,8 @@ static int append_function(IrModule *module, const AstProgram *program,
     }
     for (const AstParameter *parameter = declaration->as.function.parameters;
          parameter != NULL; parameter = parameter->next)
-        function->parameter_count++;
+        if (parameter->compile_time_value == NULL)
+            function->parameter_count++;
     int has_receiver = function->owner_symbol_id != AST_SYMBOL_NONE &&
                        !declaration->as.function.is_static;
     if (has_receiver) function->parameter_count++;
@@ -1270,7 +1383,8 @@ static int append_function(IrModule *module, const AstProgram *program,
         if (receiver->type_id == IR_TYPE_NONE) return 0;
     }
     for (const AstParameter *parameter = declaration->as.function.parameters;
-         parameter != NULL; parameter = parameter->next, parameter_index++) {
+         parameter != NULL; parameter = parameter->next) {
+        if (parameter->compile_time_value != NULL) continue;
         IrParameter *ir_parameter = &function->parameters[parameter_index];
         *ir_parameter = (IrParameter)
         {
@@ -1287,6 +1401,7 @@ static int append_function(IrModule *module, const AstProgram *program,
             .is_slice = parameter->type.is_slice && !parameter->type.outer_pointer_depth
         };
         if (ir_parameter->type_id == IR_TYPE_NONE) return 0;
+        parameter_index++;
     }
     IrBuilder builder = {
         .module = module,
@@ -1314,6 +1429,112 @@ static int append_function(IrModule *module, const AstProgram *program,
                           function->instruction_count == 0 ? IR_VALUE_NONE : function->instruction_count - 1,
                           "IR lowering", "could not lower the typed source tree");
     return !builder.failed;
+}
+
+static int append_interface_thunk(IrModule *module, const AstProgram *program,
+                                  const AstDeclarationNode *method) {
+    size_t before = module->function_count;
+    if (!append_function(module, program, method) ||
+        module->function_count != before + 1)
+        return 0;
+    IrFunction *function = &module->functions[before];
+    size_t method_symbol = function->symbol_id;
+    if (method_symbol == AST_SYMBOL_NONE) return 0;
+    function->interface_thunk_symbol_id = method_symbol;
+    for (size_t i = 1; i < function->parameter_count; i++)
+        if (function->parameters[i].symbol_id == AST_SYMBOL_NONE)
+            function->parameters[i].symbol_id = module->semantics->symbol_count + i;
+
+    IrBuilder builder = {
+        .module = module,
+        .function = function,
+        .program = program,
+        .break_label = IR_VALUE_NONE,
+        .continue_label = IR_VALUE_NONE
+    };
+    size_t first_argument = function->argument_count;
+    for (size_t i = 0; i < function->parameter_count; i++) {
+        const IrParameter *parameter = &function->parameters[i];
+        IrInstruction *load = emit(&builder, IR_OP_LOAD, method->span);
+        if (load == NULL) return 0;
+        load->result = new_value(&builder);
+        load->symbol_id = parameter->symbol_id;
+        load->auxiliary_token = parameter->name_token;
+        load->type = parameter->type;
+        load->type_id = parameter->type_id;
+        load->pointer_depth = parameter->pointer_depth;
+        load->type_name_token = parameter->type_name_token;
+        load->is_array = parameter->is_array;
+        load->is_slice = parameter->is_slice;
+        if (!append_argument(&builder, load->result)) return 0;
+    }
+    IrInstruction *call = emit(&builder, IR_OP_CALL, method->span);
+    if (call == NULL) return 0;
+    call->symbol_id = method_symbol;
+    call->first_argument = first_argument;
+    call->argument_count = function->parameter_count;
+    call->type = ir_ast_type_data_type(program, &method->as.function.return_type);
+    call->type_id = function->return_type_id;
+    call->pointer_depth = method->as.function.return_type.pointer_depth +
+                          method->as.function.return_type.outer_pointer_depth +
+                          (method->as.function.return_type.borrow_kind != AST_BORROW_NONE);
+    call->type_name_token = method->as.function.return_type.name_token;
+    call->is_array = method->as.function.return_type.is_array;
+    call->is_slice = method->as.function.return_type.is_slice;
+    if (call->type != TYPE_VOID || call->pointer_depth != 0)
+        call->result = new_value(&builder);
+
+    IrInstruction *return_instruction = emit(&builder, IR_OP_RETURN, method->span);
+    if (return_instruction == NULL) return 0;
+    return_instruction->operand_a = call->result;
+    return_instruction->type = call->type;
+    return_instruction->type_id = call->type_id;
+    return_instruction->pointer_depth = call->pointer_depth;
+    return_instruction->type_name_token = call->type_name_token;
+    return_instruction->is_array = call->is_array;
+    return_instruction->is_slice = call->is_slice;
+    return !builder.failed;
+}
+
+static int append_referenced_interface_thunks(IrModule *module) {
+    size_t symbol_count = module->semantics->symbol_count;
+    unsigned char *referenced = calloc(symbol_count, sizeof(*referenced));
+    if (referenced == NULL && symbol_count != 0) return 0;
+    size_t source_function_count = module->function_count;
+    for (size_t f = 0; f < source_function_count; f++)
+        for (size_t i = 0; i < module->functions[f].instruction_count; i++) {
+            const IrInstruction *instruction = &module->functions[f].instructions[i];
+            if (instruction->opcode != IR_OP_FUNCTION_ADDRESS ||
+                instruction->symbol_id >= symbol_count) continue;
+            const SemanticSymbol *method = &module->semantics->symbols[instruction->symbol_id];
+            if (method->kind == SEMANTIC_SYMBOL_FUNCTION &&
+                method->owner_symbol_id < symbol_count &&
+                module->semantics->symbols[method->owner_symbol_id].kind ==
+                    SEMANTIC_SYMBOL_INTERFACE)
+                referenced[instruction->symbol_id] = 1;
+        }
+    for (size_t g = 0; g < module->global_count; g++) {
+        size_t id = module->globals[g].function_symbol_id;
+        if (id >= symbol_count) continue;
+        const SemanticSymbol *method = &module->semantics->symbols[id];
+        if (method->kind == SEMANTIC_SYMBOL_FUNCTION &&
+            method->owner_symbol_id < symbol_count &&
+            module->semantics->symbols[method->owner_symbol_id].kind ==
+                SEMANTIC_SYMBOL_INTERFACE)
+            referenced[id] = 1;
+    }
+    for (size_t id = 0; id < symbol_count; id++) {
+        if (!referenced[id]) continue;
+        const SemanticSymbol *method = &module->semantics->symbols[id];
+        if (method->declaration == NULL ||
+            !append_interface_thunk(module, method->source_program,
+                                    method->declaration)) {
+            free(referenced);
+            return 0;
+        }
+    }
+    free(referenced);
+    return 1;
 }
 
 static int copy_fields(IrModule *module, const AstProgram *program, const AstField *fields,
@@ -1376,6 +1597,7 @@ static int append_drop_glue(IrModule *module, const IrAggregate *structure) {
         .owner_token = structure->name_token,
         .owner_symbol_id = structure->symbol_id,
         .symbol_id = structure->symbol_id,
+        .interface_thunk_symbol_id = AST_SYMBOL_NONE,
         .return_type_id = type_from_parts(module, TYPE_VOID, 0,
                                           AST_TOKEN_NONE, 0, 0, 0, 0,
                                           structure->source_program,
@@ -1443,6 +1665,7 @@ static int append_enum_drop_glue(IrModule *module,
         .owner_token = enumeration->name_token,
         .owner_symbol_id = enumeration->symbol_id,
         .symbol_id = enumeration->symbol_id,
+        .interface_thunk_symbol_id = AST_SYMBOL_NONE,
         .return_type_id = type_from_parts(module, TYPE_VOID, 0,
                                           AST_TOKEN_NONE, 0, 0, 0, 0,
                                           enumeration->source_program,
@@ -1569,6 +1792,7 @@ static int append_package_cleanup(IrModule *module) {
         .owner_token = AST_TOKEN_NONE,
         .owner_symbol_id = AST_SYMBOL_NONE,
         .symbol_id = AST_SYMBOL_NONE,
+        .interface_thunk_symbol_id = AST_SYMBOL_NONE,
         .return_type_id = type_from_parts(module, TYPE_VOID, 0,
                                           AST_TOKEN_NONE, 0, 0, 0, 0,
                                           module->program,
@@ -1704,14 +1928,19 @@ static int lower_unit(IrModule *module, const AstProgram *program) {
             if (!grown) return 0;
             module->globals = grown;
             const SemanticSymbol *symbol = &module->semantics->symbols[declaration->resolved_symbol_id];
-            IrGlobal global = {.source_program = program, .symbol_id = symbol->id};
+            IrGlobal global = {.source_program = program, .symbol_id = symbol->id,
+                               .function_symbol_id = AST_SYMBOL_NONE};
             global.type_id = declaration->as.constant.type.kind == AST_TYPE_INFERRED
                                  ? type_from_parts(module, symbol->resolved_type, 0, AST_TOKEN_NONE, 0, 0, 0, 0,
                                                    program, AST_SYMBOL_NONE)
                                  : type_from_ast(module, program, &declaration->as.constant.type);
             const AstExpression *value = declaration->as.constant.value;
             if (value) {
-                if (value->kind == AST_EXPR_ARRAY_LITERAL) {
+                if (value->has_resolved_ast_type && value->resolved_ast_type.kind == AST_TYPE_FUNCTION &&
+                    value->resolved_symbol_id < module->semantics->symbol_count &&
+                    module->semantics->symbols[value->resolved_symbol_id].kind == SEMANTIC_SYMBOL_FUNCTION) {
+                    global.function_symbol_id = value->resolved_symbol_id;
+                } else if (value->kind == AST_EXPR_ARRAY_LITERAL) {
                     global.array_literal = value;
                     global.literal_element_count = value->literal_element_count;
                 } else {
@@ -1742,9 +1971,20 @@ static int lower_unit(IrModule *module, const AstProgram *program) {
             return 0;
         if (declaration->kind == AST_DECL_ENUM && !append_enum(module, program, declaration))
             return 0;
-        if (declaration->kind == AST_DECL_FUNCTION && declaration->generic_parameters == NULL &&
-            !append_function(module, program, declaration))
-            return 0;
+        if (declaration->kind == AST_DECL_FUNCTION && declaration->generic_parameters == NULL) {
+            int requires_specialization =
+                declaration->as.function.return_type.kind == AST_TYPE_FUNCTION &&
+                declaration->as.function.return_type.function_generic_parameters != NULL;
+            for (const AstParameter *parameter = declaration->as.function.parameters;
+                 parameter != NULL; parameter = parameter->next)
+                if (parameter->type.kind == AST_TYPE_FUNCTION &&
+                    parameter->type.function_generic_parameters != NULL &&
+                    parameter->compile_time_value == NULL)
+                    requires_specialization = 1;
+            if (!requires_specialization &&
+                !append_function(module, program, declaration))
+                return 0;
+        }
         if (declaration->kind == AST_DECL_STRUCT) {
             for (const AstDeclarationNode *method = declaration->as.struct_decl.methods;
                  method != NULL; method = method->next)
@@ -1765,6 +2005,7 @@ IrModule *ir_lower_program(const AstProgram *program, const SemanticModel *seman
     if (!lower_unit(module, program)) goto failure;
     for (size_t i = 0; i < program->owned_import_count; i++)
         if (!lower_unit(module, program->owned_imports[i])) goto failure;
+    if (!append_referenced_interface_thunks(module)) goto failure;
     for (size_t i = 0; i < module->structure_count; i++)
         if (!append_drop_glue(module, &module->structures[i])) goto failure;
     for (size_t i = 0; i < module->enum_count; i++)
@@ -1796,8 +2037,11 @@ void ir_module_free(IrModule *module) {
         free(module->enums[i].variants);
         free(module->enums[i].variant_arguments);
     }
+    for (size_t i = 0; i < module->signature_count; i++)
+        free(module->signatures[i].parameter_types);
     free(module->functions);
     free(module->types);
+    free(module->signatures);
     free(module->structures);
     free(module->enums);
     free(module->imports);

@@ -102,6 +102,13 @@ void normalize_generic_type(Analyzer *analyzer, AstType *type, unsigned depth) {
     }
     if (type->element_type != NULL)
         normalize_generic_type(analyzer, type->element_type, depth + 1);
+    if (type->kind == AST_TYPE_FUNCTION) {
+        for (AstTypeArgument *parameter = type->function_parameters; parameter; parameter = parameter->next)
+            normalize_generic_type(analyzer, &parameter->type, depth + 1);
+        if (type->function_return_type)
+            normalize_generic_type(analyzer, type->function_return_type, depth + 1);
+        return;
+    }
     if (type->is_array && analyzer->model->symbol_count != 0)
         validate_array_shape(analyzer, type);
     if (!type->arguments) {
@@ -226,7 +233,7 @@ void normalize_generic_type(Analyzer *analyzer, AstType *type, unsigned depth) {
 
 static void normalize_expression_types(Analyzer *analyzer, AstExpression *e) {
     for (; e; e = e->next) {
-        if (e->explicit_type_arguments) {
+        if (e->explicit_type_arguments || e->explicit_generic_reference) {
             for (AstTypeArgument *argument = e->allocated_type.arguments; argument; argument = argument->next)
                 normalize_generic_type(analyzer, &argument->type, 0);
         } else if (e->kind == AST_EXPR_NAME && e->allocated_type.arguments != NULL) {
@@ -560,7 +567,8 @@ void instantiate_generic_candidates(Analyzer *analyzer, const char *name,
 
 const SemanticSymbol *explicit_generic_function(Analyzer *analyzer, const char *name, AstExpression *call) {
     AstProgram *root = (AstProgram *) analyzer->model->program;
-    AstExpression *callee = call->left;
+    int reference = call->kind != AST_EXPR_CALL;
+    AstExpression *callee = reference ? call : call->left;
     AstType types[DMM_MAX_TYPE_PARAMETERS];
     size_t count = 0;
     for (AstTypeArgument *argument = callee->allocated_type.arguments; argument; argument = argument->next) {
@@ -596,7 +604,7 @@ const SemanticSymbol *explicit_generic_function(Analyzer *analyzer, const char *
             }
             size_t expected = 0;
             for (AstGenericParameter *g = d->generic_parameters; g; g = g->next) expected++;
-            if (count != expected || parameter_count(d) != value_count || !generic_bounds_satisfied(
+            if (count != expected || (!reference && parameter_count(d) != value_count) || !generic_bounds_satisfied(
                     analyzer, unit, d, types)) continue;
             AstDeclarationNode *instance = ast_specialize_function(unit, d, types, count, analyzer->program);
             if (!instance) {
@@ -614,9 +622,11 @@ const SemanticSymbol *explicit_generic_function(Analyzer *analyzer, const char *
             const AstParameter *parameter = instance->as.function.parameters;
             const AstExpression *argument = call->arguments;
             int viable = 1;
-            for (; parameter && argument; parameter = parameter->next, argument = argument->next)
-                if (!expression_to_declared_type_allowed(analyzer, argument, unit, &parameter->type)) viable = 0;
-            if (!viable || parameter || argument) continue;
+            if (!reference) {
+                for (; parameter && argument; parameter = parameter->next, argument = argument->next)
+                    if (!expression_to_declared_type_allowed(analyzer, argument, unit, &parameter->type)) viable = 0;
+                if (!viable || parameter || argument) continue;
+            }
             if (candidate_count == 1024) {
                 semantic_error(analyzer, call->first_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_COMPLEXITY_LIMIT,
                                "Too many generic overload candidates");
@@ -626,6 +636,11 @@ const SemanticSymbol *explicit_generic_function(Analyzer *analyzer, const char *
         }
     }
     size_t selected = AST_SYMBOL_NONE;
+    if (reference && candidate_count > 1) {
+        semantic_error(analyzer, call->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                       "Ambiguous explicit generic function reference");
+        return NULL;
+    }
     for (size_t i = 0; i < candidate_count; i++) {
         const SemanticSymbol *candidate = &analyzer->model->symbols[candidates[i]];
         int dominated = 0;

@@ -1265,11 +1265,22 @@ static int remove_dead_functions(IrModule *module, IrOptimizationStats *stats) {
             queue[end++] = i;
         }
     }
+    for (size_t i = 0; i < module->global_count; i++) {
+        size_t symbol = module->globals[i].function_symbol_id;
+        if (symbol >= symbols) continue;
+        size_t function = by_symbol[symbol];
+        if (function != IR_VALUE_NONE && !live[function]) {
+            live[function] = 1;
+            queue[end++] = function;
+        }
+    }
     for (size_t head = 0; head < end; head++) {
         const IrFunction *function = &module->functions[queue[head]];
         for (size_t j = 0; j < function->instruction_count; j++) {
             const IrInstruction *in = &function->instructions[j];
-            if (in->opcode != IR_OP_CALL || in->symbol_id >= symbols) continue;
+            if ((in->opcode != IR_OP_CALL &&
+                 in->opcode != IR_OP_FUNCTION_ADDRESS) ||
+                in->symbol_id >= symbols) continue;
             size_t callee = by_symbol[in->symbol_id];
             if (callee != IR_VALUE_NONE && !live[callee]) {
                 live[callee] = 1;
@@ -1315,6 +1326,14 @@ int ir_optimize_module_traced(IrModule *module, IrOptimizationStats *stats, FILE
     for (size_t f = 0; f < module->function_count; ++f) {
         size_t iteration = 0;
         if (!trace_snapshot(trace, module, sequence++, f, iteration, "input", 0)) return 0;
+        /* Interface dispatch thunks use compiler-private parameter identities
+           outside the semantic symbol table and are already minimal. */
+        if (module->functions[f].interface_thunk_symbol_id != AST_SYMBOL_NONE) {
+            if (!compact_ids(&module->functions[f])) return 0;
+            if (!trace_snapshot(trace, module, sequence++, f, iteration,
+                                "id-compaction", 1)) return 0;
+            continue;
+        }
         int changed;
         do {
             changed = 0;

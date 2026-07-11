@@ -291,6 +291,20 @@ static int emit_file(Emitter *emitter, int deterministic) {
             write_quad(emitter, global->literal_element_count);
         } else if (global->array_literal != NULL) {
             if (!emit_global_literal_elements(emitter, global)) return 0;
+        } else if (global->function_symbol_id != AST_SYMBOL_NONE) {
+            const IrFunction *addressed = addressed_function(emitter->module,
+                                                           global->function_symbol_id);
+            if (addressed == NULL) return 0;
+            char function_buffer[4096];
+            const char *function_name = function_link_name(emitter->module, addressed,
+                                                           function_buffer,
+                                                           sizeof(function_buffer));
+            if (function_name == NULL) return 0;
+            if (emitter->native) {
+                native_reference(emitter->native, function_name, NATIVE_ADDR64,
+                                 emitter->native->sections[NATIVE_DATA].size, 0);
+                write_quad(emitter, 0);
+            } else fprintf(output, "    .quad %s\n", function_name);
         } else if (global->string) {
             if (emitter->native) {
                 char string[64];

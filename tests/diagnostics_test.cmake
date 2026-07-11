@@ -56,9 +56,8 @@ string(REPLACE "func Next() -> *Node { return next; }" "static func Next() -> in
 dmm_test_write("${source}" "${static_source}")
 execute_process(COMMAND "${COMPILER}" --formatError "${source}"
         RESULT_VARIABLE result ERROR_VARIABLE diagnostics ENCODING UTF-8)
-string(JSON replacement GET "${diagnostics}" errors 0 fix replacement)
-if (result EQUAL 0 OR NOT replacement STREQUAL "()")
-    message(FATAL_ERROR "Valid static receiver did not get a safe fix: ${diagnostics}")
+if (NOT result EQUAL 0)
+    message(FATAL_ERROR "Type-qualified static callable value was rejected: ${diagnostics}")
 endif ()
 
 foreach (declaration IN ITEMS

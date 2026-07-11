@@ -431,10 +431,21 @@ int is_builtin_name(const char *name) {
 static int same_declared_type(const Analyzer *analyzer,
                               const AstProgram *left_program, const AstType *left,
                               const AstProgram *right_program, const AstType *right) {
-    if (left->pointer_depth != right->pointer_depth ||
+    if (left->kind != right->kind || left->pointer_depth != right->pointer_depth ||
         left->outer_pointer_depth != right->outer_pointer_depth ||
         left->is_array != right->is_array || left->is_slice != right->is_slice)
         return 0;
+    if (left->kind == AST_TYPE_FUNCTION) {
+        const AstTypeArgument *a = left->function_parameters;
+        const AstTypeArgument *b = right->function_parameters;
+        for (; a && b; a = a->next, b = b->next)
+            if (!same_declared_type(analyzer, left_program, &a->type,
+                                    right_program, &b->type)) return 0;
+        return a == NULL && b == NULL && left->function_return_type &&
+               right->function_return_type &&
+               same_declared_type(analyzer, left_program, left->function_return_type,
+                                  right_program, right->function_return_type);
+    }
     DataType left_primitive = primitive_type(left_program, left);
     DataType right_primitive = primitive_type(right_program, right);
     if (left_primitive != TYPE_UNKNOWN || right_primitive != TYPE_UNKNOWN) {
@@ -555,6 +566,25 @@ int expression_to_declared_type_allowed(const Analyzer *analyzer,
                                                const AstProgram *type_program,
                                                const AstType *type) {
     if (expression == NULL || type == NULL) return 0;
+    if (type->kind == AST_TYPE_FUNCTION && !type->is_array && !type->is_slice &&
+        type->pointer_depth == 0 && type->outer_pointer_depth == 0) {
+        if (!expression->has_resolved_ast_type ||
+            expression->resolved_ast_type.kind != AST_TYPE_FUNCTION ||
+            expression->resolved_ast_type.is_array ||
+            expression->resolved_ast_type.is_slice ||
+            expression->resolved_ast_type.pointer_depth != 0 ||
+            expression->resolved_ast_type.outer_pointer_depth != 0) return 0;
+        const AstProgram *source_program = expression->resolved_type_program != NULL
+                                               ? expression->resolved_type_program
+                                               : analyzer->program;
+        if (type->function_generic_parameters != NULL ||
+            expression->resolved_ast_type.function_generic_parameters != NULL)
+            return ast_polymorphic_callable_compatible(
+                type_program, type, source_program,
+                &expression->resolved_ast_type);
+        return ast_concrete_type_equal(type_program, type, source_program,
+                                       &expression->resolved_ast_type);
+    }
     if (type->element_type != NULL ||
         (expression->has_resolved_ast_type &&
          expression->resolved_ast_type.element_type != NULL)) {
@@ -621,6 +651,29 @@ int expression_assignment_allowed(const Analyzer *analyzer,
                                          const AstExpression *source,
                                          const AstExpression *target) {
     if (source == NULL || target == NULL) return 0;
+    if (source->has_resolved_ast_type && target->has_resolved_ast_type &&
+        (source->resolved_ast_type.kind == AST_TYPE_FUNCTION ||
+         target->resolved_ast_type.kind == AST_TYPE_FUNCTION) &&
+        !source->resolved_ast_type.is_array &&
+        !source->resolved_ast_type.is_slice &&
+        !target->resolved_ast_type.is_array &&
+        !target->resolved_ast_type.is_slice &&
+        source->resolved_ast_type.pointer_depth == 0 &&
+        source->resolved_ast_type.outer_pointer_depth == 0 &&
+        target->resolved_ast_type.pointer_depth == 0 &&
+        target->resolved_ast_type.outer_pointer_depth == 0) {
+        const AstProgram *source_program = source->resolved_type_program != NULL
+                                               ? source->resolved_type_program : analyzer->program;
+        const AstProgram *target_program = target->resolved_type_program != NULL
+                                               ? target->resolved_type_program : analyzer->program;
+        if (source->resolved_ast_type.function_generic_parameters != NULL ||
+            target->resolved_ast_type.function_generic_parameters != NULL)
+            return ast_polymorphic_callable_compatible(
+                target_program, &target->resolved_ast_type,
+                source_program, &source->resolved_ast_type);
+        return ast_concrete_type_equal(source_program, &source->resolved_ast_type,
+                                       target_program, &target->resolved_ast_type);
+    }
     if ((source->has_resolved_ast_type &&
          source->resolved_ast_type.element_type != NULL) ||
         (target->has_resolved_ast_type &&
@@ -808,13 +861,19 @@ int contains_type_parameter(const AstProgram *unit, const AstType *type, const A
         if (!strcmp(ast_program_lexeme(unit, g->name_token), ast_program_lexeme(unit, type->name_token))) return 1;
     for (const AstTypeArgument *a = type->arguments; a; a = a->next)
         if (contains_type_parameter(unit, &a->type, origin)) return 1;
+    for (const AstTypeArgument *a = type->function_parameters; a; a = a->next)
+        if (contains_type_parameter(unit, &a->type, origin)) return 1;
+    if (type->function_return_type && contains_type_parameter(unit, type->function_return_type, origin)) return 1;
     return 0;
 }
 
 static int type_mentions(const AstProgram *unit, const AstType *type, const char *name) {
-    if (!strcmp(ast_program_lexeme(unit, type->name_token), name)) return 1;
+    if (type->kind == AST_TYPE_NAMED && !strcmp(ast_program_lexeme(unit, type->name_token), name)) return 1;
     for (const AstTypeArgument *a = type->arguments; a; a = a->next)
         if (type_mentions(unit, &a->type, name)) return 1;
+    for (const AstTypeArgument *a = type->function_parameters; a; a = a->next)
+        if (type_mentions(unit, &a->type, name)) return 1;
+    if (type->function_return_type && type_mentions(unit, type->function_return_type, name)) return 1;
     return 0;
 }
 
@@ -1037,6 +1096,29 @@ static void validate_function_arguments(Analyzer *analyzer,
     }
 }
 
+static void validate_callable_arguments(Analyzer *analyzer,
+                                        const AstExpression *expression,
+                                        const AstType *callable,
+                                        const AstProgram *program) {
+    const AstTypeArgument *parameter = callable->function_parameters;
+    const AstExpression *argument = expression->arguments;
+    size_t expected = 0, actual = 0;
+    for (const AstTypeArgument *p = parameter; p; p = p->next) expected++;
+    for (const AstExpression *a = argument; a; a = a->next) actual++;
+    if (expected != actual) {
+        char message[128];
+        (void) snprintf(message, sizeof(message),
+                        "Callable expects %zu arguments but received %zu", expected, actual);
+        semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_SEMANTIC,
+                       ERR_SEM_WRONG_ARG_COUNT, message);
+        return;
+    }
+    for (; parameter && argument; parameter = parameter->next, argument = argument->next)
+        if (!expression_to_declared_type_allowed(analyzer, argument, program, &parameter->type))
+            conversion_error(analyzer, argument, program, &parameter->type, NULL,
+                             "Cannot implicitly convert argument to callable parameter type");
+}
+
 void validate_expression(Analyzer *analyzer, AstExpression *expression,
                                 int is_callee) {
     if (expression == NULL) return;
@@ -1101,6 +1183,12 @@ void validate_expression(Analyzer *analyzer, AstExpression *expression,
         expression->resolved_symbol_id < analyzer->model->symbol_count &&
         analyzer->model->symbols[expression->resolved_symbol_id].kind == SEMANTIC_SYMBOL_FUNCTION) {
         const SemanticSymbol *method = &analyzer->model->symbols[expression->resolved_symbol_id];
+        const AstExpression *receiver = expression->left;
+        int type_receiver = receiver->resolved_symbol_id < analyzer->model->symbol_count &&
+            (analyzer->model->symbols[receiver->resolved_symbol_id].kind == SEMANTIC_SYMBOL_STRUCT ||
+             analyzer->model->symbols[receiver->resolved_symbol_id].kind == SEMANTIC_SYMBOL_ENUM ||
+             analyzer->model->symbols[receiver->resolved_symbol_id].kind == SEMANTIC_SYMBOL_INTERFACE);
+        if (type_receiver) return;
         ErrorContext *context = error_context_create(SEVERITY_ERROR,
                                                      expression->span.begin.line, expression->span.begin.column,
                                                      ERROR_CATEGORY_SEMANTIC, ERR_SEM_METHOD_REFERENCE,
@@ -1116,9 +1204,6 @@ void validate_expression(Analyzer *analyzer, AstExpression *expression,
                 same_name(symbol->source_program, symbol->name_token, name))
                 candidates++;
         }
-        const AstExpression *receiver = expression->left;
-        int type_receiver = receiver->resolved_symbol_id < analyzer->model->symbol_count &&
-                            analyzer->model->symbols[receiver->resolved_symbol_id].kind == SEMANTIC_SYMBOL_STRUCT;
         if (candidates == 1 && method->declaration != NULL && parameter_count(method->declaration) == 0 &&
             method->declaration->as.function.is_static == type_receiver &&
             primitive_type(method->source_program, &method->declared_type) != TYPE_VOID) {
@@ -1155,6 +1240,14 @@ void validate_expression(Analyzer *analyzer, AstExpression *expression,
         return;
     }
     if (expression->kind == AST_EXPR_CALL) {
+        if (expression->left != NULL && expression->left->has_resolved_ast_type &&
+            expression->left->resolved_ast_type.kind == AST_TYPE_FUNCTION &&
+            expression->left->resolved_ast_type.function_generic_parameters == NULL) {
+            validate_callable_arguments(analyzer, expression,
+                &expression->left->resolved_ast_type,
+                expression->left->resolved_type_program != NULL
+                    ? expression->left->resolved_type_program : analyzer->program);
+        }
         if (expression->left != NULL && expression->left->kind == AST_EXPR_NAME) {
             const char *name = ast_program_lexeme(analyzer->program,
                                                   expression->left->value_token);
@@ -1162,6 +1255,8 @@ void validate_expression(Analyzer *analyzer, AstExpression *expression,
                 expression->left->value_token].type;
             int cast = token_type >= TOKEN_TYPE_INT && token_type <= TOKEN_TYPE_VOID;
             if (expression->resolved_symbol_id == AST_SYMBOL_NONE &&
+                !(expression->left->has_resolved_ast_type &&
+                  expression->left->resolved_ast_type.kind == AST_TYPE_FUNCTION) &&
                 !is_builtin_name(name) && !cast) {
                 int ambiguous = 0;
                 const SemanticSymbol *viable = resolve_overload(analyzer, name,
@@ -1232,7 +1327,10 @@ void validate_expression(Analyzer *analyzer, AstExpression *expression,
                                         method);
         } else if (expression->left != NULL &&
                    expression->left->kind == AST_EXPR_MEMBER &&
-                   expression->left->left != NULL) {
+                   expression->left->left != NULL &&
+                   !(expression->left->has_resolved_ast_type &&
+                     expression->left->resolved_ast_type.kind ==
+                         AST_TYPE_FUNCTION)) {
             const AstExpression *receiver = expression->left->left;
             int type_receiver = receiver->resolved_symbol_id < analyzer->model->symbol_count &&
                                 (analyzer->model->symbols[receiver->resolved_symbol_id].kind ==
@@ -1274,6 +1372,26 @@ void validate_expression(Analyzer *analyzer, AstExpression *expression,
     for (AstExpression *argument = expression->arguments; argument != NULL;
          argument = argument->next)
         validate_expression(analyzer, argument, 0);
+    if (expression->kind == AST_EXPR_BINARY && expression->left && expression->right &&
+        ((expression->left->has_resolved_ast_type &&
+          expression->left->resolved_ast_type.kind == AST_TYPE_FUNCTION) ||
+         (expression->right->has_resolved_ast_type &&
+          expression->right->resolved_ast_type.kind == AST_TYPE_FUNCTION))) {
+        int equality = expression->operator_type == TOKEN_EQUAL_EQUAL ||
+                       expression->operator_type == TOKEN_BANG_EQUAL;
+        const AstProgram *left_program = expression->left->resolved_type_program != NULL
+                                             ? expression->left->resolved_type_program : analyzer->program;
+        const AstProgram *right_program = expression->right->resolved_type_program != NULL
+                                              ? expression->right->resolved_type_program : analyzer->program;
+        if (!equality || !expression->left->has_resolved_ast_type ||
+            !expression->right->has_resolved_ast_type ||
+            !ast_concrete_type_equal(left_program, &expression->left->resolved_ast_type,
+                                     right_program, &expression->right->resolved_ast_type))
+            operand_error(analyzer, expression, ERROR_CATEGORY_TYPE,
+                          ERR_TYPE_INVALID_OPERATION,
+                          "Callable values support only == and != with the same signature");
+        return;
+    }
     if (expression->kind != AST_EXPR_NAME &&
         ((expression->left != NULL && expression->left->resolved_type == TYPE_UNKNOWN &&
           expression->left->resolved_named_symbol_id == AST_SYMBOL_NONE) ||
@@ -1496,6 +1614,9 @@ void validate_expression(Analyzer *analyzer, AstExpression *expression,
                           "free requires one pointer or owned string");
     } else if (expression->kind == AST_EXPR_RESERVE) {
         const AstType *allocated = &expression->allocated_type;
+        if (ast_type_contains_polymorphic_callable(allocated))
+            operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                          "Polymorphic callable values cannot be allocated");
         if (!known_declared_type(analyzer, allocated) ||
             (primitive_type(analyzer->program, allocated) == TYPE_VOID &&
              allocated->pointer_depth == 0 && allocated->outer_pointer_depth == 0))
@@ -1506,10 +1627,18 @@ void validate_expression(Analyzer *analyzer, AstExpression *expression,
         expression->resolved_symbol_id == AST_SYMBOL_NONE) {
         const char *name = ast_program_lexeme(analyzer->program, expression->value_token);
         TokenType type = analyzer->program->tokens[expression->value_token].type;
+        if (expression->resolved_callable != NULL) return;
         if (strcmp(name, "true") != 0 && strcmp(name, "false") != 0 &&
             !is_builtin_name(name) && !(type >= TOKEN_TYPE_INT && type <= TOKEN_TYPE_VOID))
             semantic_error(analyzer, expression->value_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_UNDEFINED_VARIABLE,
                            "Undefined variable");
+    } else if (expression->kind == AST_EXPR_NAME && !is_callee &&
+               expression->resolved_symbol_id < analyzer->model->symbol_count &&
+               analyzer->model->symbols[expression->resolved_symbol_id].kind == SEMANTIC_SYMBOL_FUNCTION &&
+               !expression->has_resolved_ast_type) {
+        semantic_error(analyzer, expression->value_token, ERROR_CATEGORY_TYPE,
+                       ERR_TYPE_INVALID_OPERATION,
+                       "Overloaded function reference requires an expected callable type");
     } else if (expression->kind == AST_EXPR_INDEX && expression->left != NULL) {
         long long index = 0;
         if (constant_integer(analyzer, expression->right, &index) &&
@@ -1587,12 +1716,40 @@ int statement_always_returns(const AstStatement *statement) {
     return 0;
 }
 
-int known_declared_type(const Analyzer *analyzer, const AstType *type) {
+static int known_declared_type_with_binders(const Analyzer *analyzer,
+                                            const AstType *type,
+                                            const AstGenericParameter *binders) {
     if (type == NULL || type->kind == AST_TYPE_INFERRED ||
         primitive_type(analyzer->program, type) != TYPE_UNKNOWN)
         return 1;
+    if (type->kind == AST_TYPE_NAMED) {
+        const char *name = ast_program_lexeme(analyzer->program,
+                                              type->name_token);
+        for (const AstGenericParameter *generic = binders; generic;
+             generic = generic->next)
+            if (!strcmp(name, ast_program_lexeme(analyzer->program,
+                                                 generic->name_token)))
+                return 1;
+    }
+    if (type->kind == AST_TYPE_FUNCTION) {
+        const AstGenericParameter *nested = type->function_generic_parameters != NULL
+                                                ? type->function_generic_parameters
+                                                : binders;
+        if (type->function_return_type == NULL ||
+            !known_declared_type_with_binders(analyzer,
+                                              type->function_return_type,
+                                              nested)) return 0;
+        for (const AstTypeArgument *parameter = type->function_parameters; parameter; parameter = parameter->next)
+            if (!known_declared_type_with_binders(analyzer, &parameter->type,
+                                                  nested)) return 0;
+        return 1;
+    }
     return resolve_named_symbol_id(analyzer, analyzer->program,
                                    named_type_token(analyzer->program, type)) != AST_SYMBOL_NONE;
+}
+
+int known_declared_type(const Analyzer *analyzer, const AstType *type) {
+    return known_declared_type_with_binders(analyzer, type, NULL);
 }
 
 void semantic_model_free(SemanticModel *model) {

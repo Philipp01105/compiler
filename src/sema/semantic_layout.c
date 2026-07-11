@@ -57,6 +57,7 @@ static size_t declared_type_slots(const Analyzer *analyzer,
                                   const AstType *type, size_t depth) {
     if (type == NULL || depth > analyzer->model->symbol_count + 64)
         return SIZE_MAX;
+    if (type->kind == AST_TYPE_FUNCTION) return type->function_generic_parameters ? 0 : 1;
     if (type->outer_pointer_depth != 0) return 1;
     if (type->is_slice) return 2;
     if (type->is_array) {
@@ -207,6 +208,7 @@ void validate_array_shape(Analyzer *analyzer, AstType *type) {
 
 size_t layout_size(Analyzer *analyzer, AstType *type, size_t depth) {
     if (depth > analyzer->model->symbol_count + 64 || type->kind == AST_TYPE_INFERRED) return 0;
+    if (type->kind == AST_TYPE_FUNCTION) return type->function_generic_parameters ? 0 : 8;
     if (type->outer_pointer_depth) return 8;
     if (type->is_slice) return 16;
     if (type->is_array) {

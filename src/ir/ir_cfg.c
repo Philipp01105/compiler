@@ -205,7 +205,7 @@ done:
 
 static const char *cfg_opcode_name(IrOpcode opcode) {
     static const char *names[] = {
-        "constant", "load", "declare", "store", "unary", "binary", "call", "index", "member",
+        "constant", "function-address", "load", "declare", "store", "unary", "binary", "call", "index", "subslice", "member",
         "slice-length", "cast", "alloc", "free", "return", "branch", "jump", "label", "phi",
         "enum-construct", "enum-is", "enum-payload", "trap", "slice", "slice-data", "array-literal",
         "drop", "move", "reinit", "free-slice-backing"

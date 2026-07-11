@@ -23,6 +23,9 @@ int constant_expression_allowed(const Analyzer *analyzer,
     if (expression->kind == AST_EXPR_NAME)
         return same_name(analyzer->program, expression->value_token, "true") ||
                same_name(analyzer->program, expression->value_token, "false") ||
+               (expression->has_resolved_ast_type &&
+                expression->resolved_ast_type.kind == AST_TYPE_FUNCTION &&
+                expression->resolved_callable != NULL) ||
                expression_is_constant_symbol(analyzer, expression);
     if (expression->kind == AST_EXPR_CAST)
         return expression->arguments != NULL && expression->arguments->next == NULL &&
@@ -189,6 +192,23 @@ static int fold_integer_bits(Analyzer *analyzer, const AstExpression *expression
 int fold_constant(Analyzer *analyzer, AstExpression *expression, DataType target) {
     if (expression == NULL) return 0;
     if (expression->folded_constant.lexeme != NULL && target == expression->resolved_type) return 1;
+    if (expression->kind == AST_EXPR_BINARY && expression->left && expression->right &&
+        expression->left->resolved_callable && expression->right->resolved_callable &&
+        (expression->operator_type == TOKEN_EQUAL_EQUAL ||
+         expression->operator_type == TOKEN_BANG_EQUAL)) {
+        int equal = expression->left->resolved_callable == expression->right->resolved_callable &&
+                    expression->left->resolved_callable_program ==
+                        expression->right->resolved_callable_program;
+        if (expression->operator_type == TOKEN_BANG_EQUAL) equal = !equal;
+        expression->folded_constant = (AstToken) {
+            .type = TOKEN_IDENTIFIER,
+            .span = expression->span,
+            .lexeme = string_interner_intern(analyzer->program->strings,
+                                              equal ? "true" : "false")
+        };
+        expression->resolved_type = TYPE_BIT;
+        return expression->folded_constant.lexeme != NULL;
+    }
     int fixed = data_type_fixed_integer(target) || data_type_fixed_integer(expression->resolved_type) ||
                 (expression->left && data_type_fixed_integer(expression->left->resolved_type)) ||
                 (expression->right && data_type_fixed_integer(expression->right->resolved_type)) ||

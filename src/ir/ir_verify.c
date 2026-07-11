@@ -10,7 +10,7 @@ static int ir_verify_module_internal(const IrModule *module, int report);
 
 static int instruction_produces_value(const IrInstruction *instruction) {
     IrOpcode opcode = instruction->opcode;
-    return opcode == IR_OP_CONSTANT || opcode == IR_OP_LOAD ||
+    return opcode == IR_OP_CONSTANT || opcode == IR_OP_FUNCTION_ADDRESS || opcode == IR_OP_LOAD ||
            opcode == IR_OP_UNARY || opcode == IR_OP_BINARY ||
            (opcode == IR_OP_CALL && instruction->type != TYPE_VOID) ||
            opcode == IR_OP_INDEX || opcode == IR_OP_SUBSLICE ||
@@ -194,7 +194,12 @@ static int verify_instruction_types(const IrModule *module,
                         ? ir_numeric_type(module, instruction->type_id)
                         : instruction->auxiliary_token < function->source_program->token_count) &&
                    (ir_numeric_type(module, instruction->type_id) ||
-                    ir_string_type(module, instruction->type_id));
+                   ir_string_type(module, instruction->type_id));
+        case IR_OP_FUNCTION_ADDRESS:
+            return instruction->symbol_id < module->semantics->symbol_count &&
+                   module->semantics->symbols[instruction->symbol_id].kind == SEMANTIC_SYMBOL_FUNCTION &&
+                   instruction->type_id < module->type_count &&
+                   module->types[instruction->type_id].kind == IR_TYPE_FUNCTION;
         case IR_OP_LOAD:
             return instruction->auxiliary_token < function->source_program->token_count;
         case IR_OP_DECLARE:
@@ -260,6 +265,21 @@ static int verify_instruction_types(const IrModule *module,
                       ir_floating_type(module, b->type_id)));
         }
         case IR_OP_CALL: {
+            if (a != NULL && a->type_id < module->type_count &&
+                module->types[a->type_id].kind == IR_TYPE_FUNCTION) {
+                const IrType *callable = &module->types[a->type_id];
+                if (callable->signature_id >= module->signature_count) return 0;
+                const IrFunctionSignature *signature = &module->signatures[callable->signature_id];
+                if (instruction->argument_count != signature->parameter_count ||
+                    instruction->type_id != signature->return_type) return 0;
+                for (size_t argument = 0; argument < signature->parameter_count; argument++) {
+                    const IrInstruction *value = verified_producer(function, producers,
+                        function->arguments[instruction->first_argument + argument], index);
+                    if (value == NULL || !ir_types_assignable(module, value->type_id,
+                            signature->parameter_types[argument], value->opcode)) return 0;
+                }
+                return 1;
+            }
             if (instruction->symbol_id == AST_SYMBOL_NONE) {
                 if (instruction->auxiliary_token >= function->source_program->token_count) return 0;
                 const CoreIntrinsic *core = core_intrinsic_find(ast_program_lexeme(
@@ -298,9 +318,16 @@ static int verify_instruction_types(const IrModule *module,
                         return 0;
                     const IrInstruction *receiver = verified_producer(function, producers,
                         function->arguments[instruction->first_argument], index);
-                    return receiver && receiver->type_id < module->type_count &&
-                           module->types[receiver->type_id].kind == IR_TYPE_NAMED &&
-                           module->types[receiver->type_id].symbol_id == method->owner_symbol_id;
+                    if (receiver == NULL || receiver->type_id >= module->type_count)
+                        return 0;
+                    const IrType *receiver_type = &module->types[receiver->type_id];
+                    if (receiver_type->kind == IR_TYPE_POINTER) {
+                        if (receiver_type->element_type >= module->type_count)
+                            return 0;
+                        receiver_type = &module->types[receiver_type->element_type];
+                    }
+                    return receiver_type->kind == IR_TYPE_NAMED &&
+                           receiver_type->symbol_id == method->owner_symbol_id;
                 }
             }
             if (callee == NULL || instruction->argument_count != callee->parameter_count ||
@@ -461,7 +488,7 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
     }
     for (size_t t = 0; t < module->type_count; t++) {
         const IrType *type = &module->types[t];
-        if (type->kind < IR_TYPE_PRIMITIVE || type->kind > IR_TYPE_SLICE) return 0;
+        if (type->kind < IR_TYPE_PRIMITIVE || type->kind > IR_TYPE_FUNCTION) return 0;
         if (type->kind == IR_TYPE_PRIMITIVE &&
             type->primitive != TYPE_UNKNOWN &&
             (type->primitive < TYPE_INT || type->primitive > TYPE_VOID))
@@ -482,6 +509,14 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
               module->semantics->symbols[type->symbol_id].kind != SEMANTIC_SYMBOL_ENUM &&
               module->semantics->symbols[type->symbol_id].kind != SEMANTIC_SYMBOL_INTERFACE)))
             return 0;
+        if (type->kind == IR_TYPE_FUNCTION) {
+            if (type->signature_id >= module->signature_count) return 0;
+            const IrFunctionSignature *signature = &module->signatures[type->signature_id];
+            if (signature->return_type >= t ||
+                (signature->parameter_count && signature->parameter_types == NULL)) return 0;
+            for (size_t p = 0; p < signature->parameter_count; p++)
+                if (signature->parameter_types[p] >= t) return 0;
+        }
     }
     for (size_t s = 0; s < module->structure_count; s++) {
         const IrAggregate *structure = &module->structures[s];
@@ -529,7 +564,9 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
     }
     for (size_t f = 0; f < module->function_count; f++) {
         const IrFunction *function = &module->functions[f];
-        if (function->is_drop_glue && function->is_package_cleanup) return 0;
+        if ((function->is_drop_glue && function->is_package_cleanup) ||
+            (function->interface_thunk_symbol_id != AST_SYMBOL_NONE &&
+             (function->is_drop_glue || function->is_package_cleanup))) return 0;
         if (function->is_package_cleanup) {
             if (function->symbol_id != AST_SYMBOL_NONE ||
                 function->owner_symbol_id != AST_SYMBOL_NONE ||
@@ -538,6 +575,16 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                 function->return_type_id >= module->type_count ||
                 !ir_void_type(module, function->return_type_id))
                 return 0;
+        } else if (function->interface_thunk_symbol_id != AST_SYMBOL_NONE) {
+            size_t method_id = function->interface_thunk_symbol_id;
+            if (function->symbol_id != method_id ||
+                method_id >= module->semantics->symbol_count ||
+                module->semantics->symbols[method_id].kind != SEMANTIC_SYMBOL_FUNCTION ||
+                module->semantics->symbols[method_id].source_program != function->source_program ||
+                module->semantics->symbols[method_id].name_token != function->name_token ||
+                function->return_type_id >= module->type_count) {
+                return 0;
+            }
         } else if (function->symbol_id == AST_SYMBOL_NONE ||
                    function->symbol_id >= module->semantics->symbol_count ||
                    (!function->is_drop_glue &&
@@ -562,22 +609,38 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
              (module->semantics->symbols[function->owner_symbol_id].kind !=
                   SEMANTIC_SYMBOL_STRUCT &&
               module->semantics->symbols[function->owner_symbol_id].kind !=
-                  SEMANTIC_SYMBOL_ENUM)))
+                  SEMANTIC_SYMBOL_ENUM &&
+              !(function->interface_thunk_symbol_id != AST_SYMBOL_NONE &&
+                module->semantics->symbols[function->owner_symbol_id].kind ==
+                    SEMANTIC_SYMBOL_INTERFACE)))) {
             return 0;
+        }
         for (size_t p = 0; p < function->parameter_count; p++) {
             const IrParameter *parameter = &function->parameters[p];
             if (parameter->is_receiver) {
                 if (p != 0 || function->owner_symbol_id == AST_SYMBOL_NONE ||
                     parameter->symbol_id != function->owner_symbol_id ||
                     parameter->pointer_depth != 1 ||
-                    parameter->type_id >= module->type_count)
+                    parameter->type_id >= module->type_count) {
                     return 0;
+                }
                 continue;
             }
             const SemanticSymbol *symbol = parameter->symbol_id <
                                            module->semantics->symbol_count
                                                ? &module->semantics->symbols[parameter->symbol_id]
                                                : NULL;
+            if (function->interface_thunk_symbol_id != AST_SYMBOL_NONE) {
+                if (parameter->source_program == NULL ||
+                    parameter->name_token >= parameter->source_program->token_count ||
+                    parameter->symbol_id < module->semantics->symbol_count ||
+                    parameter->type_id >= module->type_count)
+                    return 0;
+                for (size_t previous = 0; previous < p; previous++)
+                    if (function->parameters[previous].symbol_id == parameter->symbol_id)
+                        return 0;
+                continue;
+            }
             if (parameter->source_program == NULL ||
                 parameter->name_token >= parameter->source_program->token_count ||
                 parameter->symbol_id == AST_SYMBOL_NONE ||
@@ -591,8 +654,9 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                 symbol->declared_type.pointer_depth +
                     symbol->declared_type.outer_pointer_depth +
                     (symbol->declared_type.borrow_kind != AST_BORROW_NONE) !=
-                    parameter->pointer_depth)
+                parameter->pointer_depth) {
                 return 0;
+            }
             if (parameter->type_id >= module->type_count) return 0;
             for (size_t previous = 0; previous < p; previous++)
                 if (function->parameters[previous].symbol_id == parameter->symbol_id) return 0;
@@ -660,6 +724,7 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
             } while (0)
             switch (instruction->opcode) {
                 case IR_OP_CONSTANT:
+                case IR_OP_FUNCTION_ADDRESS:
                 case IR_OP_LOAD:
                 case IR_OP_ALLOC:
                 case IR_OP_LABEL:
@@ -745,7 +810,8 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                         REQUIRE_VALUE(instruction->operand_a);
                     else if (instruction->symbol_id == AST_SYMBOL_NONE)
                         valid = 0;
-                    if (instruction->symbol_id != AST_SYMBOL_NONE &&
+                    if (instruction->operand_a == IR_VALUE_NONE &&
+                        instruction->symbol_id != AST_SYMBOL_NONE &&
                         (instruction->symbol_id >= module->semantics->symbol_count ||
                          module->semantics->symbols[instruction->symbol_id].kind !=
                          SEMANTIC_SYMBOL_FUNCTION))

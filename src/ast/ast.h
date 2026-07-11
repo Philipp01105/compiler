@@ -24,7 +24,7 @@ typedef enum {
     AST_DECL_CONSTANT, AST_DECL_INTERFACE, AST_DECL_VARIABLE, AST_DECL_INVALID
 } AstDeclarationKind;
 
-typedef enum { AST_TYPE_INFERRED, AST_TYPE_NAMED } AstTypeKind;
+typedef enum { AST_TYPE_INFERRED, AST_TYPE_NAMED, AST_TYPE_FUNCTION } AstTypeKind;
 typedef enum { AST_BORROW_NONE, AST_BORROW_IMMUTABLE, AST_BORROW_MUTABLE } AstBorrowKind;
 
 typedef enum {
@@ -69,6 +69,11 @@ typedef struct AstType {
      */
     struct AstType *element_type;
     AstTypeArgument *arguments;
+    /* Function types use type-only parameters and an explicit result type.
+       Generic parameters make the value compile-time-only until specialized. */
+    AstGenericParameter *function_generic_parameters;
+    AstTypeArgument *function_parameters;
+    struct AstType *function_return_type;
     int invalid_substitution;
 } AstType;
 
@@ -122,6 +127,8 @@ struct AstExpression {
     AstExpression *next;
     AstType allocated_type;
     int explicit_type_arguments;
+    int explicit_generic_reference;
+    int direct_call_target;
     /* Sema-owned folded constant spelling, separate from the source tree. */
     AstToken folded_constant;
     DataType resolved_type;
@@ -141,6 +148,9 @@ struct AstExpression {
     /* Sema-proven ownership of compiler-created slice backing storage. */
     int owns_slice_backing;
     size_t resolved_symbol_id;
+    /* Declaration identity for compile-time polymorphic callable values. */
+    const struct AstDeclarationNode *resolved_callable;
+    const struct AstProgram *resolved_callable_program;
     AstBorrowKind resolved_borrow_kind;
     int mutable_borrow;
 };
@@ -185,6 +195,7 @@ struct AstParameter {
     AstSourceSpan span;
     size_t name_token;
     AstType type;
+    AstExpression *compile_time_value;
     size_t resolved_symbol_id;
     AstParameter *next;
 };
@@ -344,6 +355,7 @@ const char *ast_declaration_kind_name(AstDeclarationKind kind);
 
 /* Returns the type produced by indexing one array/slice layer. */
 AstType ast_type_element(const AstType *type);
+int ast_type_contains_polymorphic_callable(const AstType *type);
 
 int ast_validate_program(const AstProgram *program);
 

@@ -417,8 +417,28 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
             if (statement->value != NULL &&
                 statement->value->kind == AST_EXPR_ARRAY_LITERAL)
                 statement->value->allocated_type = statement->type;
+            if (statement->value != NULL && statement->value->kind == AST_EXPR_NAME &&
+                statement->type.kind == AST_TYPE_FUNCTION &&
+                !statement->value->explicit_type_arguments &&
+                !statement->value->explicit_generic_reference)
+                statement->value->allocated_type = statement->type;
             analyze_expression(analyzer, statement->value);
             validate_expression(analyzer, statement->value, 0);
+            const AstType *effective_type = statement->type.kind == AST_TYPE_INFERRED &&
+                                            statement->value && statement->value->has_resolved_ast_type
+                                                ? &statement->value->resolved_ast_type : &statement->type;
+            if (ast_type_contains_polymorphic_callable(effective_type)) {
+                if (effective_type->kind != AST_TYPE_FUNCTION || effective_type->pointer_depth ||
+                    effective_type->outer_pointer_depth || effective_type->borrow_kind != AST_BORROW_NONE ||
+                    effective_type->is_array || effective_type->is_slice)
+                    semantic_error(analyzer, statement->name_token, ERROR_CATEGORY_TYPE,
+                                   ERR_TYPE_INVALID_OPERATION,
+                                   "Polymorphic callable values cannot have runtime storage or indirection");
+                if (statement->value == NULL)
+                    semantic_error(analyzer, statement->name_token, ERROR_CATEGORY_TYPE,
+                                   ERR_TYPE_INVALID_OPERATION,
+                                   "Polymorphic callable locals require an initializer");
+            }
             consume_call_arguments(analyzer, statement->value);
             if (!known_declared_type(analyzer, &statement->type))
                 semantic_error(analyzer, statement->type.name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN,
@@ -459,7 +479,8 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
             consume_owned_expression(analyzer, statement->value);
             if (statement->is_const && statement->value != NULL &&
                 analyzer->model->error_count == errors_before &&
-                constant_expression_allowed(analyzer, statement->value))
+                constant_expression_allowed(analyzer, statement->value) &&
+                effective_type->kind != AST_TYPE_FUNCTION)
                 (void) fold_constant(analyzer, statement->value,
                                      statement->type.kind == AST_TYPE_INFERRED
                                          ? statement->value->resolved_type
@@ -741,7 +762,8 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
                            ERROR_CATEGORY_SEMANTIC, ERR_SEM_INVALID_DECLARATION,
                            "Reserved name cannot be declared");
         LocalSymbol *local = push_local(analyzer, parameter->name_token, parameter->type,
-                                        SEMANTIC_SYMBOL_PARAMETER, NULL, 0);
+                                        SEMANTIC_SYMBOL_PARAMETER,
+                                        parameter->compile_time_value, 0);
         if (local != NULL) parameter->resolved_symbol_id = local->symbol_id;
     }
     analyze_statement(analyzer, function->as.function.body);
@@ -817,6 +839,11 @@ void analyze_constant_declaration(Analyzer *analyzer,
     AstExpression *value = declaration->as.constant.value;
     AstType *type = &declaration->as.constant.type;
     if (declaration->kind == AST_DECL_VARIABLE &&
+        ast_type_contains_polymorphic_callable(type))
+        semantic_error(analyzer, declaration->name_token, ERROR_CATEGORY_TYPE,
+                       ERR_TYPE_INVALID_OPERATION,
+                       "Package variables cannot store polymorphic callable values");
+    if (declaration->kind == AST_DECL_VARIABLE &&
         type->borrow_kind != AST_BORROW_NONE)
         semantic_error(analyzer, type->name_token, ERROR_CATEGORY_TYPE,
                        ERR_TYPE_INVALID_OPERATION,
@@ -834,6 +861,12 @@ void analyze_constant_declaration(Analyzer *analyzer,
         value->allocated_type = *type;
     analyze_expression(analyzer, value);
     validate_expression(analyzer, value, 0);
+    if (declaration->kind == AST_DECL_VARIABLE && value != NULL &&
+        value->has_resolved_ast_type &&
+        ast_type_contains_polymorphic_callable(&value->resolved_ast_type))
+        semantic_error(analyzer, declaration->name_token, ERROR_CATEGORY_TYPE,
+                       ERR_TYPE_INVALID_OPERATION,
+                       "Package variables cannot store polymorphic callable values");
     if (declaration->kind == AST_DECL_VARIABLE && value != NULL &&
         value->kind == AST_EXPR_ARRAY_LITERAL) {
         if (!package_array_literal_static(analyzer, value, type))
@@ -859,7 +892,9 @@ void analyze_constant_declaration(Analyzer *analyzer,
         conversion_error(analyzer, value, analyzer->program, type,
                          NULL, "Cannot implicitly convert constant initializer");
     if (value != NULL && analyzer->model->error_count == errors_before &&
-        constant_expression_allowed(analyzer, value))
+        constant_expression_allowed(analyzer, value) &&
+        !(value->has_resolved_ast_type &&
+          value->resolved_ast_type.kind == AST_TYPE_FUNCTION))
         (void) fold_constant(analyzer, value,
                              type->kind == AST_TYPE_INFERRED
                                  ? value->resolved_type
@@ -1001,6 +1036,10 @@ SemanticModel *semantic_analyze(AstProgram *program) {
             else if (declaration->kind == AST_DECL_STRUCT) {
                 for (AstField *field = declaration->as.struct_decl.fields;
                      field != NULL; field = field->next) {
+                    if (ast_type_contains_polymorphic_callable(&field->type))
+                        semantic_error(&analyzer, field->name_token, ERROR_CATEGORY_TYPE,
+                                       ERR_TYPE_INVALID_OPERATION,
+                                       "Struct fields cannot store polymorphic callable values");
                     if (!known_declared_type(&analyzer, &field->type))
                         semantic_error(&analyzer, field->type.name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN,
                                        "Unknown field type");
@@ -1052,6 +1091,10 @@ SemanticModel *semantic_analyze(AstProgram *program) {
                 for (AstEnumValue *value = declaration->as.enum_decl.values;
                      value != NULL; value = value->next) {
                     for (AstTypeArgument *p = value->payload_types; p; p = p->next) {
+                        if (ast_type_contains_polymorphic_callable(&p->type))
+                            semantic_error(&analyzer, p->type.name_token, ERROR_CATEGORY_TYPE,
+                                           ERR_TYPE_INVALID_OPERATION,
+                                           "Enum payloads cannot store polymorphic callable values");
                         if (!known_declared_type(&analyzer, &p->type) ||
                             (primitive_type(unit, &p->type) == TYPE_VOID && !p->type.pointer_depth))
                             semantic_error(&analyzer, p->type.name_token, ERROR_CATEGORY_TYPE,

@@ -18,7 +18,8 @@ typedef enum {
     IR_TYPE_NAMED,
     IR_TYPE_POINTER,
     IR_TYPE_ARRAY,
-    IR_TYPE_SLICE
+    IR_TYPE_SLICE,
+    IR_TYPE_FUNCTION
 } IrTypeKind;
 
 typedef struct {
@@ -27,7 +28,14 @@ typedef struct {
     size_t symbol_id;
     IrTypeId element_type;
     size_t array_length;
+    size_t signature_id;
 } IrType;
+
+typedef struct {
+    IrTypeId *parameter_types;
+    size_t parameter_count;
+    IrTypeId return_type;
+} IrFunctionSignature;
 
 typedef struct {
     size_t size;
@@ -37,6 +45,7 @@ typedef struct {
 
 typedef enum {
     IR_OP_CONSTANT,
+    IR_OP_FUNCTION_ADDRESS,
     IR_OP_LOAD,
     IR_OP_DECLARE,
     IR_OP_STORE,
@@ -110,6 +119,8 @@ typedef struct {
     size_t owner_token;
     size_t owner_symbol_id;
     size_t symbol_id;
+    /* Semantic interface method implemented by this addressable dispatch thunk. */
+    size_t interface_thunk_symbol_id;
     AstType return_type;
     IrTypeId return_type_id;
     IrParameter *parameters;
@@ -190,6 +201,9 @@ typedef struct {
     IrType *types;
     size_t type_count;
     size_t type_capacity;
+    IrFunctionSignature *signatures;
+    size_t signature_count;
+    size_t signature_capacity;
     IrAggregate *structures;
     size_t structure_count;
     size_t structure_capacity;
@@ -213,6 +227,7 @@ typedef struct IrGlobal {
     const char *string;
     const AstExpression *array_literal;
     size_t literal_element_count;
+    size_t function_symbol_id;
 } IrGlobal;
 
 IrModule *ir_lower_program(const AstProgram *program, const SemanticModel *semantics);

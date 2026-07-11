@@ -96,6 +96,17 @@ AstType ast_type_element(const AstType *type) {
     return result;
 }
 
+int ast_type_contains_polymorphic_callable(const AstType *type) {
+    if (type == NULL) return 0;
+    if (type->kind == AST_TYPE_FUNCTION && type->function_generic_parameters != NULL) return 1;
+    if (ast_type_contains_polymorphic_callable(type->element_type)) return 1;
+    for (const AstTypeArgument *argument = type->arguments; argument; argument = argument->next)
+        if (ast_type_contains_polymorphic_callable(&argument->type)) return 1;
+    for (const AstTypeArgument *parameter = type->function_parameters; parameter; parameter = parameter->next)
+        if (ast_type_contains_polymorphic_callable(&parameter->type)) return 1;
+    return ast_type_contains_polymorphic_callable(type->function_return_type);
+}
+
 static int valid_token(const AstProgram *program, size_t token) {
     return token != AST_TOKEN_NONE && token < program->token_count;
 }
@@ -103,7 +114,16 @@ static int valid_token(const AstProgram *program, size_t token) {
 static int valid_type_depth(const AstProgram *program, const AstType *type, int allow_inferred, unsigned depth) {
     if (depth > 512) return 0;
     if (type->kind == AST_TYPE_INFERRED) return allow_inferred;
-    if (type->kind != AST_TYPE_NAMED || !valid_token(program, type->name_token)) return 0;
+    if (type->kind == AST_TYPE_FUNCTION) {
+        if (!valid_token(program, type->name_token) || type->function_return_type == NULL ||
+            !valid_type_depth(program, type->function_return_type, 0, depth + 1)) return 0;
+        unsigned parameter_count = 0, generic_count = 0;
+        for (const AstTypeArgument *parameter = type->function_parameters; parameter; parameter = parameter->next)
+            if (++parameter_count > 16 || !valid_type_depth(program, &parameter->type, 0, depth + 1)) return 0;
+        for (const AstGenericParameter *parameter = type->function_generic_parameters; parameter;
+             parameter = parameter->next)
+            if (++generic_count > 16 || !valid_token(program, parameter->name_token)) return 0;
+    } else if (type->kind != AST_TYPE_NAMED || !valid_token(program, type->name_token)) return 0;
     if (type->is_array && !valid_token(program, type->array_length_token)) return 0;
     if (type->element_type != NULL &&
         !valid_type_depth(program, type->element_type, 0, depth + 1))

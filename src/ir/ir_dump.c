@@ -27,7 +27,7 @@ static const char *primitive_name(DataType type) {
 
 static const char *opcode_name(IrOpcode opcode) {
     static const char *names[] = {
-        "constant", "load", "declare", "store", "unary",
+        "constant", "function-address", "load", "declare", "store", "unary",
         "binary", "call", "index", "subslice", "member", "slice-length", "cast", "alloc", "free",
         "return", "branch", "jump", "label", "phi", "enum-construct", "enum-is", "enum-payload", "trap", "slice",
         "slice-data", "array-literal", "drop", "move", "reinit", "free-slice-backing"
@@ -100,6 +100,17 @@ static int dump_types(FILE *output, const IrModule *module) {
             case IR_TYPE_SLICE:
                 if (fprintf(output, "slice element=@%zu", type->element_type) < 0) return 0;
                 break;
+            case IR_TYPE_FUNCTION: {
+                if (type->signature_id >= module->signature_count) return 0;
+                const IrFunctionSignature *signature = &module->signatures[type->signature_id];
+                if (fputs("function (", output) == EOF) return 0;
+                for (size_t p = 0; p < signature->parameter_count; p++) {
+                    if (fprintf(output, "@%zu", signature->parameter_types[p]) < 0) return 0;
+                    if (p + 1 < signature->parameter_count && fputc(',', output) == EOF) return 0;
+                }
+                if (fprintf(output, ")->@%zu", signature->return_type) < 0) return 0;
+                break;
+            }
             default: return 0;
         }
         if (fputc('\n', output) == EOF) return 0;

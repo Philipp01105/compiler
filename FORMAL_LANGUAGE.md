@@ -71,8 +71,9 @@ function-declaration
 parameter-list  = parameter, { ",", parameter } ;
 parameter       = identifier, ":", type ;
 return-type     = type ;
-type            = {"*"}, (primitive-type | qualified-name, [type-arguments] | "(", type, ")"),
+type            = {"*"}, (function-type | primitive-type | qualified-name, [type-arguments] | "(", type, ")"),
                   ["[", [integer | identifier], "]"] ;
+function-type   = "func", [generic-parameters], "(", [type-list], ")", "->", type ;
 type-arguments  = "<", type, {",", type}, ">" ;
 generic-parameters = "<", generic-parameter, {",", generic-parameter}, ">" ;
 generic-parameter = identifier, [":", qualified-name, {"+", qualified-name}] ;
@@ -195,7 +196,7 @@ array-literal   = "[", expression, {",", expression},
 identifier-expression
                 = identifier, { postfix } ;
 postfix         = "(", [argument-list], ")"
-                | type-arguments, "(", [argument-list], ")"
+                | type-arguments, ["(", [argument-list], ")"]
                 | "[", expression, "]"
                 | ".", identifier
                 | ".", "(", type, ")" ;

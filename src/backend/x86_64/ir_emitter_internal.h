@@ -51,6 +51,7 @@ int is_numeric(DataType type);
 int is_pointer_value(const IrInstruction *instruction);
 const IrInstruction *producer(const IrFunction *function, size_t value);
 const IrFunction *called_function(const IrModule *module, size_t symbol_id);
+const IrFunction *addressed_function(const IrModule *module, size_t symbol_id);
 void write_value_load(const Emitter *emitter, const char *reg, size_t value);
 void write_value_store(const Emitter *emitter, const char *reg, size_t value);
 void write_immediate(const Emitter *emitter, const char *reg, long long value);
@@ -70,7 +71,10 @@ int emit_string_compare(Emitter *emitter, const IrInstruction *instruction);
 int emit_string_concat(Emitter *emitter, const IrInstruction *instruction);
 int emit_binary(Emitter *emitter, const IrInstruction *instruction);
 void normalize_truth_rax(Emitter *emitter, DataType type);
-int emit_typed_call(Emitter *emitter, const IrInstruction *instruction, const IrFunction *callee, int interface_receiver);
+int emit_typed_call(Emitter *emitter, const IrInstruction *instruction, const IrFunction *callee,
+                    int interface_receiver, size_t indirect_value);
+int emit_indirect_typed_call(Emitter *emitter, const IrInstruction *instruction,
+                             size_t callable_value, IrTypeId callable_type);
 int emit_interface_call(Emitter *emitter, const IrInstruction *instruction);
 void load_nullable_string(Emitter *emitter, const char *reg, size_t value);
 int emit_builtin_call(Emitter *emitter, const IrInstruction *instruction, const char *name);

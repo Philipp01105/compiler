@@ -62,6 +62,19 @@ static int mangle_type(const IrModule *module, IrTypeId type_id, char *buffer,
     if (type->kind == IR_TYPE_SLICE)
         return mangle_append(buffer, buffer_size, used, "l") &&
                mangle_type(module, type->element_type, buffer, buffer_size, used, depth + 1U);
+    if (type->kind == IR_TYPE_FUNCTION) {
+        if (type->signature_id >= module->signature_count ||
+            !mangle_append(buffer, buffer_size, used, "q")) return 0;
+        const IrFunctionSignature *signature = &module->signatures[type->signature_id];
+        (void) snprintf(part, sizeof(part), "%zu_", signature->parameter_count);
+        if (!mangle_append(buffer, buffer_size, used, part)) return 0;
+        for (size_t i = 0; i < signature->parameter_count; i++)
+            if (!mangle_type(module, signature->parameter_types[i], buffer,
+                             buffer_size, used, depth + 1U)) return 0;
+        return mangle_append(buffer, buffer_size, used, "r") &&
+               mangle_type(module, signature->return_type, buffer,
+                           buffer_size, used, depth + 1U);
+    }
     if (type->kind != IR_TYPE_NAMED || type->symbol_id >= module->semantics->symbol_count)
         return 0;
     const SemanticSymbol *symbol = &module->semantics->symbols[type->symbol_id];
@@ -104,6 +117,11 @@ static int function_is_overloaded(const IrModule *module, const IrFunction *func
 const char *function_link_name(const IrModule *module, const IrFunction *function,
                                       char *buffer, size_t buffer_size) {
     if (function->is_package_cleanup) return "__dmm_package_cleanup";
+    if (function->interface_thunk_symbol_id != AST_SYMBOL_NONE) {
+        (void) snprintf(buffer, buffer_size, "__dmm_interface_thunk_%zu",
+                        function->interface_thunk_symbol_id);
+        return buffer;
+    }
     if (function->is_drop_glue) {
         IrTypeId owner_type = IR_TYPE_NONE;
         for (IrTypeId t = 0; t < module->type_count; t++)

@@ -8,8 +8,62 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int signature_parameter(const IrModule *module, IrTypeId id,
+                               IrParameter *parameter) {
+    if (id >= module->type_count) return 0;
+    parameter->type_id = id;
+    const IrType *type = &module->types[id];
+    if (type->kind == IR_TYPE_PRIMITIVE) parameter->type = type->primitive;
+    else if (type->kind == IR_TYPE_FUNCTION) parameter->type = TYPE_UNKNOWN;
+    else if (type->kind == IR_TYPE_NAMED) parameter->type = TYPE_UNKNOWN;
+    else if (type->kind == IR_TYPE_ARRAY || type->kind == IR_TYPE_SLICE) {
+        if (!signature_parameter(module, type->element_type, parameter)) return 0;
+        parameter->type_id = id;
+        parameter->is_array = type->kind == IR_TYPE_ARRAY;
+        parameter->is_slice = type->kind == IR_TYPE_SLICE;
+    } else if (type->kind == IR_TYPE_POINTER) {
+        if (!signature_parameter(module, type->element_type, parameter)) return 0;
+        parameter->type_id = id;
+        parameter->pointer_depth++;
+    } else return 0;
+    return 1;
+}
+
+int emit_indirect_typed_call(Emitter *emitter, const IrInstruction *instruction,
+                             size_t callable_value, IrTypeId callable_type) {
+    if (callable_type >= emitter->module->type_count) return 0;
+    const IrType *type = &emitter->module->types[callable_type];
+    if (type->kind != IR_TYPE_FUNCTION ||
+        type->signature_id >= emitter->module->signature_count) return 0;
+    const IrFunctionSignature *signature =
+        &emitter->module->signatures[type->signature_id];
+    IrParameter *parameters = signature->parameter_count
+                                  ? calloc(signature->parameter_count,
+                                           sizeof(*parameters))
+                                  : NULL;
+    if (signature->parameter_count && parameters == NULL) return 0;
+    IrFunction callee = {
+        .parameters = parameters,
+        .parameter_count = signature->parameter_count,
+        .return_type_id = signature->return_type
+    };
+    int valid = 1;
+    for (size_t i = 0; i < signature->parameter_count; i++)
+        if (!signature_parameter(emitter->module,
+                                 signature->parameter_types[i],
+                                 &parameters[i])) {
+            valid = 0;
+            break;
+        }
+    int emitted = valid && emit_typed_call(emitter, instruction, &callee, 0,
+                                           callable_value);
+    free(parameters);
+    return emitted;
+}
+
 int emit_typed_call(Emitter *emitter, const IrInstruction *instruction,
-                           const IrFunction *callee, int interface_receiver) {
+                           const IrFunction *callee, int interface_receiver,
+                           size_t indirect_value) {
     const IrFunction *caller = emitter->function;
     size_t stack_count = stack_parameter_count(callee, emitter->target);
     size_t physical_count = physical_parameter_count(callee);
@@ -98,12 +152,25 @@ int emit_typed_call(Emitter *emitter, const IrInstruction *instruction,
                     x64_register(argument_register(emitter->target, register_index)),
                     x64_register("rax"));
     }
-    char callee_buffer[4096];
-    const char *callee_name = function_link_name(emitter->module, callee, callee_buffer,
-                                                 sizeof(callee_buffer));
-    if (callee_name == NULL) return 0;
-    write_x64_1(emitter, X64_OP_CALL, X64_WIDTH_NONE,
-                x64_label(callee_name));
+    if (indirect_value != IR_VALUE_NONE) {
+        write_value_load(emitter, "r11", indirect_value);
+        write_x64_2(emitter, X64_OP_TEST, X64_WIDTH_QWORD,
+                    x64_register("r11"), x64_register("r11"));
+        size_t sequence = emitter->bounds_sequence++;
+        char valid[80];
+        snprintf(valid, sizeof(valid), ".LIR_callable_valid_%zu_%zu",
+                 emitter->function_index, sequence);
+        write_x64_1(emitter, X64_OP_JNE, X64_WIDTH_NONE, x64_label(valid));
+        write_x64_0(emitter, X64_OP_UD2);
+        write_labelf(emitter, "%s:\n", valid);
+        write_x64_1(emitter, X64_OP_CALL, X64_WIDTH_NONE, x64_register("r11"));
+    } else {
+        char callee_buffer[4096];
+        const char *callee_name = function_link_name(emitter->module, callee, callee_buffer,
+                                                     sizeof(callee_buffer));
+        if (callee_name == NULL) return 0;
+        write_x64_1(emitter, X64_OP_CALL, X64_WIDTH_NONE, x64_label(callee_name));
+    }
     size_t cleanup = stack_count * 8U + (emitter->target == TARGET_COFF ? 32U : 0U) +
                      (((stack_count & 1U) != 0) ? 8U : 0U);
     if (cleanup != 0)
@@ -152,7 +219,7 @@ int emit_interface_call(Emitter *emitter, const IrInstruction *instruction) {
         write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_QWORD,
                     x64_register("rax"), x64_immediate((long long) (struct_id + 1)));
         write_x64_1(emitter, X64_OP_JNE, X64_WIDTH_NONE, x64_label(next));
-        if (!emit_typed_call(emitter, instruction, callee, 1)) return 0;
+        if (!emit_typed_call(emitter, instruction, callee, 1, IR_VALUE_NONE)) return 0;
         write_x64_1(emitter, X64_OP_JMP, X64_WIDTH_NONE, x64_label(end));
         write_labelf(emitter, "%s:\n", next);
     }

@@ -57,6 +57,25 @@ arrays, while `int[2][]` is a slice of length-2 arrays. Repeated prefix stars fo
 types distinguish `*(int[4])` from `*int[4]`. Whole-array assignment is supported when both sides have the same complete
 fixed-array type.
 
+Function types describe non-capturing callable values. A monomorphic type such as
+`func(int,string) -> bit` is one machine-word function address. A polymorphic type such as
+`func<T:Printable,U>(T,U) -> T` is a compile-time template identity whose type-parameter names are alpha-renamed when
+types are compared. A source template is compatible with a target when their parameter and return shapes match and
+the source requires no bounds beyond those guaranteed by the target.
+
+A bare top-level function name, static method, or type-qualified instance method is a callable value. An unbound
+instance method takes `*Owner` as its first parameter; selecting an instance method from a value remains invalid.
+Overloaded names require an expected function type. Generic functions may remain polymorphic (`var f=identity`), be
+explicitly specialized (`identity<int>`), or specialize from a monomorphic expected type
+(`var f:func(int) -> int=identity`). Calls through a null monomorphic callable trap.
+
+Monomorphic callable values may be stored in locals, constants, package variables, fields, enum payloads, arrays, and
+slices, and may be passed and returned. They compare only with `==` and `!=`, and only at the same signature.
+Polymorphic callable identities are compile-time-only: they may occur in inferred or explicitly typed local constants,
+compile-time callable parameters, and callable returns, but not in runtime aggregate or package storage. A function
+returning a polymorphic callable must return one template identity on every path. Passing such an identity specializes
+the receiving function and erases that compile-time parameter from the emitted ABI.
+
 Fixed-size array parameters such as `values:float[2]` accept arrays with exactly the declared lengths and element types
 at every nesting level. They borrow the caller's storage, so element mutations are visible to the caller. Their ABI
 passes one data pointer; indexing uses the statically known bound and recursively computed element stride. A slice does
