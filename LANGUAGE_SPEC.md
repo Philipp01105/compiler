@@ -149,6 +149,17 @@ constants used as fixed-array lengths. Constants have no mutable storage and can
 addressed. Legacy integer constant overflow and invalid constant division are compilation errors; fixed-width constant
 arithmetic uses the wrapping rules above and is evaluated with exact integer bits.
 
+`var name:type = expression;` at package scope may use an arbitrary well-typed runtime expression. Compile-time
+primitive, string and fixed-array values are emitted directly; the remaining expressions run once before `main`.
+Imported packages initialize before packages that import them, independent packages use canonical package-path order,
+and declarations within a package use the loader's deterministic file and declaration order. Direct dependencies among
+package-variable initializers must be acyclic. A package variable without an initializer begins as the zero value of its
+explicit type.
+
+Runtime-created slice backing and move-only values transfer into package storage. Destruction flags become live only
+after an initializer succeeds. On normal return from `main`, initialized package owners are destroyed and owned slice
+backing is released in reverse initialization order. The terminating `exit` intrinsic bypasses this normal-exit cleanup.
+
 ## Control flow and expressions
 
 DMM supports blocks, `if`/`else`, `for`, `while`, `break`, `continue`, and `return`. `break` and `continue` are valid

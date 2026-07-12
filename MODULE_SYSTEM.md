@@ -140,16 +140,20 @@ Ownership is part of the resolved concrete type, not its export spelling. Import
 derived `COPYABLE`/`MOVE_ONLY` and independent `NEEDS_DROP` properties across package boundaries. Generic structs
 derive those properties separately for each concrete specialization after type substitution.
 
-For an executable main package, globals from the resolved package graph that require destruction participate in the
-compiler-generated normal-exit cleanup and are dropped in reverse lowered declaration order. Library packages do not
-emit executable startup. Moving an owner out of package storage is rejected; borrowing and in-place reassignment remain
-available under the ordinary borrow and exactly-once drop rules.
+For an executable main package, package-variable initialization follows the resolved package graph: dependencies run
+before importers, independent packages are ordered by canonical package path, and files/declarations retain their
+deterministic loader order. Each package is initialized once and `main` runs last. Direct package-variable dependency
+cycles are rejected; import cycles continue to report their complete package path.
 
-Package variables have shared writable storage. Initializers currently require constant primitive or string expressions;
-explicitly typed variables may instead be zero-initialized, including arrays, pointers and aggregate values. Runtime
-initialization functions and arbitrary package initializer expressions are future work. Slice variables store a
-pointer/count descriptor; they may be zero-initialized and assigned at runtime. Views do not own or extend the lifetime
-of their storage.
+Package variables have shared writable storage. Their initializers may contain arbitrary well-typed runtime expressions;
+compile-time primitive, string and fixed-array values remain static data, and explicitly typed variables without an
+initializer begin as zero. Runtime-created slice backing and move-only values transfer into package storage. Moving an
+owner back out of package storage remains rejected; borrowing and in-place reassignment follow the ordinary borrow and
+exactly-once drop rules.
+
+For an executable main package, initialized owners participate in compiler-generated normal-exit cleanup in reverse
+initialization order. Slice backing owned by a package variable is released by the same cleanup path. Library packages
+do not emit executable startup.
 
 Only `package main` is executable. It requires exactly one non-generic, parameterless `main` returning `int` or `void`.
 Other packages are libraries and can emit assembly or relocatable objects without an entry point. Executable builds of a

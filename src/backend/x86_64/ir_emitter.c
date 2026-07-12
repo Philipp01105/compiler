@@ -25,7 +25,12 @@ static void write_x64(const Emitter *emitter, X64Instruction instruction) {
                             ? ""
                             : ast_program_lexeme(emitter->function->source_program, emitter->function->name_token)) ||
             fputs(" source=", map->output) == EOF ||
-            !map_quoted(map->output, emitter->function == NULL ? "" : emitter->function->source_program->source_path)) {
+            !map_quoted(map->output,
+                        map->current_program != NULL
+                            ? map->current_program->source_path
+                            : emitter->function == NULL
+                                  ? ""
+                                  : emitter->function->source_program->source_path)) {
             map->failed = 1;
         } else if (instruction.has_source) {
             if (fprintf(map->output, " ir=%zu span=%d:%d-%d:%d\n", instruction.ir_instruction,
@@ -1028,6 +1033,16 @@ int global_drop_flag_label(const SemanticSymbol *symbol, char *label,
     return mangle_append(label, size, &used, "__drop_flag");
 }
 
+int global_slice_owner_label(const SemanticSymbol *symbol, char *label,
+                             size_t size) {
+    size_t used = 0;
+    char global[4096];
+    if (!global_label(symbol, global, sizeof(global)) ||
+        !mangle_append(label, size, &used, global))
+        return 0;
+    return mangle_append(label, size, &used, "__slice_owner");
+}
+
 static int emit_lvalue_address(Emitter *emitter, const IrInstruction *target,
                                size_t instruction_index) {
     if (target == NULL) return 0;
@@ -1423,7 +1438,10 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                 if (instruction->has_immediate) {
                     write_immediate(emitter, "rax", (long long) instruction->immediate);
                 } else if (is_floating(instruction->type)) {
-                    const char *text = ast_program_lexeme(function->source_program,
+                    const AstProgram *program = instruction->source_program != NULL
+                                                    ? instruction->source_program
+                                                    : function->source_program;
+                    const char *text = ast_program_lexeme(program,
                                                           instruction->auxiliary_token);
                     union {
                         double floating;
@@ -1439,7 +1457,10 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                         write_immediate(emitter, "rax", (long long) single.bits);
                     } else write_immediate(emitter, "rax", (long long) value.bits);
                 } else {
-                    write_immediate(emitter, "rax", constant_value(function->source_program,
+                    const AstProgram *program = instruction->source_program != NULL
+                                                    ? instruction->source_program
+                                                    : function->source_program;
+                    write_immediate(emitter, "rax", constant_value(program,
                                                                    instruction));
                 }
                 write_value_store(emitter, "rax", instruction->result);
@@ -1461,7 +1482,10 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             return 1;
         }
         case IR_OP_LOAD: {
-            const char *name = ast_program_lexeme(function->source_program,
+            const AstProgram *program = instruction->source_program != NULL
+                                            ? instruction->source_program
+                                            : function->source_program;
+            const char *name = ast_program_lexeme(program,
                                                   instruction->auxiliary_token);
             if (strcmp(name, "true") == 0 || strcmp(name, "false") == 0)
                 write_immediate(emitter, "rax", strcmp(name, "true") == 0 ? 1 : 0);
@@ -1608,6 +1632,29 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                             emitter, "rax",
                             declaration_slice_owner_offset(emitter,
                                                            declaration));
+                    } else if (target->symbol_id <
+                               emitter->module->semantics->symbol_count &&
+                               emitter->module->semantics->symbols[
+                                   target->symbol_id].kind ==
+                                   SEMANTIC_SYMBOL_VARIABLE) {
+                        char owner[4096];
+                        if (!global_slice_owner_label(
+                                &emitter->module->semantics->symbols[
+                                    target->symbol_id],
+                                owner, sizeof(owner)))
+                            return 0;
+                        X64Operand owner_memory =
+                            x64_rip_memory(X64_WIDTH_QWORD, owner, 0);
+                        owner_memory.has_symbol_suffix = 0;
+                        if (instruction->owns_slice_backing)
+                            write_x64_2(emitter, X64_OP_MOV,
+                                        X64_WIDTH_QWORD,
+                                        x64_register("rax"),
+                                        x64_memory(X64_WIDTH_QWORD,
+                                                   "rbx", 0));
+                        else write_immediate(emitter, "rax", 0);
+                        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                                    owner_memory, x64_register("rax"));
                     }
                 }
                 return 1;
@@ -1871,7 +1918,10 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                         return emit_interface_call(emitter, instruction);
                 }
                 if (!callee_value) return 0;
-                const char *name = ast_program_lexeme(function->source_program,
+                const AstProgram *program = callee_value->source_program != NULL
+                                                ? callee_value->source_program
+                                                : function->source_program;
+                const char *name = ast_program_lexeme(program,
                                                       callee_value->auxiliary_token);
                 return emit_builtin_call(emitter, instruction, name);
             }
@@ -2139,14 +2189,34 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             } else {
                 const IrInstruction *declaration = local_declaration(
                     function, instruction->symbol_id, index);
-                if (declaration == NULL) return 0;
-                write_local_load(emitter, argument,
-                                 declaration_slice_owner_offset(
-                                     emitter, declaration));
-                write_immediate(emitter, "rax", 0);
-                write_local_store(emitter, "rax",
-                                  declaration_slice_owner_offset(
-                                      emitter, declaration));
+                if (declaration != NULL) {
+                    write_local_load(emitter, argument,
+                                     declaration_slice_owner_offset(
+                                         emitter, declaration));
+                    write_immediate(emitter, "rax", 0);
+                    write_local_store(emitter, "rax",
+                                      declaration_slice_owner_offset(
+                                          emitter, declaration));
+                } else if (instruction->symbol_id <
+                               emitter->module->semantics->symbol_count &&
+                           emitter->module->semantics->symbols[
+                               instruction->symbol_id].kind ==
+                               SEMANTIC_SYMBOL_VARIABLE) {
+                    char owner[4096];
+                    if (!global_slice_owner_label(
+                            &emitter->module->semantics->symbols[
+                                instruction->symbol_id],
+                            owner, sizeof(owner)))
+                        return 0;
+                    X64Operand owner_memory =
+                        x64_rip_memory(X64_WIDTH_QWORD, owner, 0);
+                    owner_memory.has_symbol_suffix = 0;
+                    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                                x64_register(argument), owner_memory);
+                    write_immediate(emitter, "rax", 0);
+                    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                                owner_memory, x64_register("rax"));
+                } else return 0;
             }
             write_call(emitter, "free");
             return 1;
@@ -2234,6 +2304,8 @@ static int store_target_needs_no_value(const Emitter *emitter, size_t index) {
 
 int emit_function(Emitter *emitter) {
     FILE *output = emitter->output;
+    if (emitter->source_map != NULL)
+        emitter->source_map->current_program = emitter->function->source_program;
     char name_buffer[4096];
     const char *name = function_link_name(emitter->module, emitter->function, name_buffer,
                                           sizeof(name_buffer));
@@ -2241,6 +2313,7 @@ int emit_function(Emitter *emitter) {
     emitter->current_label = IR_VALUE_NONE;
     emitter->bounds_sequence = 0;
     int exported = !emitter->function->is_drop_glue &&
+                   !emitter->function->is_package_init &&
                    !emitter->function->is_package_cleanup &&
                    (emitter->module->semantics->symbols[
                         emitter->function->symbol_id].declaration->is_public ||
@@ -2329,6 +2402,10 @@ int emit_function(Emitter *emitter) {
         if (emitter->source_map != NULL) {
             emitter->source_map->current_ir_instruction = i;
             emitter->source_map->current_span = emitter->function->instructions[i].span;
+            emitter->source_map->current_program =
+                emitter->function->instructions[i].source_program != NULL
+                    ? emitter->function->instructions[i].source_program
+                    : emitter->function->source_program;
             emitter->source_map->has_source = emitter->function->instructions[i].span.begin.line > 0;
         }
         if (emit_fused_compare_branch(emitter, i)) {

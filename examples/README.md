@@ -26,7 +26,7 @@ standard output.
 | [ownership_and_borrows](ownership_and_borrows/ownership_and_borrows.dmm) | Copy versus move, destructor propagation through generics, reinitialization, disjoint mutable borrows and reverse field drop |
 | [defer_cleanup](defer_cleanup/defer_cleanup.dmm) | LIFO `defer`, eager call capture, anonymous-body reference capture and cleanup on return, `continue` and `break` |
 | [owning_collections](owning_collections/owning_collections.dmm) | Move-only `Bytes`, `Buffer<T>`, `List<T>` and `String`, including growth, borrowed views and automatic destruction |
-| [packages](packages/packages.dmm) | A public API in a second package, an import alias, module-relative resolution and package-owner cleanup after `main` |
+| [packages](packages/packages.dmm) | A public API in a second package, an import alias, module-relative resolution, runtime package initialization and package-owner cleanup after `main` |
 | [file_io](file_io/file_io.dmm) | A deterministic file round-trip with streams, transfer statuses, byte views and explicit cleanup of current I/O wrappers |
 
 ## Coverage map

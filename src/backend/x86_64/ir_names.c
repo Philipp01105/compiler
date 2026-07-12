@@ -94,7 +94,8 @@ static int mangle_type(const IrModule *module, IrTypeId type_id, char *buffer,
 }
 
 static int function_is_overloaded(const IrModule *module, const IrFunction *function) {
-    if (function->is_drop_glue || function->is_package_cleanup) return 0;
+    if (function->is_drop_glue || function->is_package_init ||
+        function->is_package_cleanup) return 0;
     const char *name = ast_program_lexeme(function->source_program, function->name_token);
     size_t matches = 0;
     for (size_t i = 0; i < module->function_count; i++) {
@@ -116,6 +117,7 @@ static int function_is_overloaded(const IrModule *module, const IrFunction *func
 
 const char *function_link_name(const IrModule *module, const IrFunction *function,
                                       char *buffer, size_t buffer_size) {
+    if (function->is_package_init) return "__dmm_package_init";
     if (function->is_package_cleanup) return "__dmm_package_cleanup";
     if (function->interface_thunk_symbol_id != AST_SYMBOL_NONE) {
         (void) snprintf(buffer, buffer_size, "__dmm_interface_thunk_%zu",

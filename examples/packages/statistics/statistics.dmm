@@ -16,6 +16,13 @@ struct PackageLifetime {
 // Package-stored values live until normal process termination.
 var lifetime:PackageLifetime;
 
+func initializeBaseline() -> Summary {
+    return summarize([3,5,7]);
+}
+
+// This initializer executes after imported dependencies and before main.
+pub var baseline:Summary=initializeBaseline();
+
 pub func summarize(values:int[]) -> Summary {
     var result:Summary;
     if (values.length == 0) { return result; }

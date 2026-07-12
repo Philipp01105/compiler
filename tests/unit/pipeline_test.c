@@ -141,11 +141,12 @@ static int ownership_property_regressions(void) {
              (SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP)) ==
                 (SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP))
             saw_ir_drop_metadata = 1;
-    int saw_drop_glue = 0, saw_package_cleanup = 0;
+    int saw_drop_glue = 0, saw_package_init = 0, saw_package_cleanup = 0;
     int saw_drop = 0, saw_move = 0, saw_reinit = 0;
     for (size_t f = 0; module != NULL && f < module->function_count; f++) {
         const IrFunction *function = &module->functions[f];
         if (function->is_drop_glue) saw_drop_glue = 1;
+        if (function->is_package_init) saw_package_init = 1;
         if (function->is_package_cleanup) {
             saw_package_cleanup = function->instruction_count == 2 &&
                                   function->instructions[0].opcode == IR_OP_DROP &&
@@ -162,6 +163,7 @@ static int ownership_property_regressions(void) {
         }
     }
     if (module == NULL || !saw_ir_drop_metadata || !saw_drop_glue ||
+        !saw_package_init ||
         !saw_package_cleanup ||
         !saw_drop || !saw_move || !saw_reinit)
         failed = 1;
@@ -235,7 +237,7 @@ int main(int argc, char **argv) {
                                              : NULL;
             if (program == NULL || program->structured_declaration_count != 2 ||
                 program->owned_import_count != 2 || paths == NULL || paths->next != NULL ||
-                module == NULL || module->import_count != 1 || module->function_count != 4) {
+                module == NULL || module->import_count != 1 || module->function_count != 5) {
                 fprintf(stderr, "grouped package import AST/IR contract failed\n");
                 failed = 1;
             }

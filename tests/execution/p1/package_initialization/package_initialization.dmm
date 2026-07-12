@@ -1,0 +1,35 @@
+package main;
+import "stdlib";
+
+struct Resource {
+    var id:int;
+
+    destructor {
+        stdlib.println(id);
+    }
+}
+
+func calculate(value:int) -> int {
+    stdlib.println(value);
+    return value;
+}
+
+func acquire(id:int) -> Resource {
+    var resource:Resource;
+    resource.id=id;
+    return resource;
+}
+
+func sequence(first:int) -> int[] {
+    return [first, first+1];
+}
+
+var first:int=calculate(1);
+var second:int=calculate(first+1);
+var resource:Resource=acquire(9);
+var values:int[]=sequence(second);
+
+func main() -> int {
+    stdlib.println(values[1]);
+    return 0;
+}

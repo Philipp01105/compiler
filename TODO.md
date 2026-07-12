@@ -58,7 +58,7 @@ required to implement these resource-safety foundations.
 - [ ] Add closures only after capture lifetime and ownership rules are specified.
 - [ ] Add a never type so terminating operations such as `exit` and `trap` participate correctly in control-flow typing.
 - [ ] Support aggregate constants and compile-time construction of arrays, structs, enums, and tagged variants.
-- [ ] Support runtime initialization of package variables with deterministic cross-package ordering and cycle
+- [x] Support runtime initialization of package variables with deterministic cross-package ordering and cycle
   diagnostics.
 - [ ] Define nullability explicitly instead of encoding absence through unchecked pointer conventions.
 - [ ] Decide whether pointer arithmetic is a supported unsafe operation; otherwise keep rejecting it with targeted

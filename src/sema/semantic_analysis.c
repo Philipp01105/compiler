@@ -87,6 +87,10 @@ static void finalize_owned_slice_returns(SemanticModel *model) {
             symbol->declaration != NULL)
             refresh_owned_slice_statements(
                 model, symbol->declaration->as.function.body);
+        else if (symbol->kind == SEMANTIC_SYMBOL_VARIABLE &&
+                 symbol->declaration != NULL)
+            refresh_owned_slice_expression(
+                model, symbol->declaration->as.constant.value);
     }
 }
 
@@ -807,30 +811,6 @@ static void analyze_destructor(Analyzer *analyzer, AstDeclarationNode *resource)
     analyzer->in_destructor = saved_destructor;
 }
 
-static int package_array_literal_static(const Analyzer *analyzer,
-                                        const AstExpression *literal,
-                                        const AstType *type) {
-    if (literal == NULL || literal->kind != AST_EXPR_ARRAY_LITERAL ||
-        type == NULL || (!type->is_array && !type->is_slice))
-        return 0;
-    AstType element_type = ast_type_element(type);
-    if (element_type.is_slice) return 0;
-    DataType primitive = primitive_type(analyzer->program, &element_type);
-    for (const AstExpression *element = literal->arguments;
-         element != NULL; element = element->next) {
-        if (element->kind == AST_EXPR_ARRAY_LITERAL) {
-            if (!package_array_literal_static(analyzer, element,
-                                              &element_type))
-                return 0;
-        } else if (element_type.is_array || element_type.is_slice ||
-                   primitive == TYPE_UNKNOWN || primitive == TYPE_STRING ||
-                   !constant_expression_allowed(analyzer, element))
-            return 0;
-    }
-    return literal->right == NULL ||
-           constant_expression_allowed(analyzer, literal->right);
-}
-
 void analyze_constant_declaration(Analyzer *analyzer,
                                          AstDeclarationNode *declaration) {
     if (declaration->semantic_body_checked) return;
@@ -867,13 +847,6 @@ void analyze_constant_declaration(Analyzer *analyzer,
         semantic_error(analyzer, declaration->name_token, ERROR_CATEGORY_TYPE,
                        ERR_TYPE_INVALID_OPERATION,
                        "Package variables cannot store polymorphic callable values");
-    if (declaration->kind == AST_DECL_VARIABLE && value != NULL &&
-        value->kind == AST_EXPR_ARRAY_LITERAL) {
-        if (!package_array_literal_static(analyzer, value, type))
-            semantic_error(analyzer, declaration->name_token,
-                           ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                           "Package array literals require compile-time non-string primitive elements");
-    }
     if (declaration->kind == AST_DECL_CONSTANT &&
         (value == NULL || !constant_expression_allowed(analyzer, value)))
         semantic_error(analyzer, declaration->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
@@ -934,6 +907,62 @@ static void analyze_unit_constants(Analyzer *analyzer, AstProgram *root,
         if (declaration->kind == AST_DECL_CONSTANT || declaration->kind == AST_DECL_VARIABLE)
             analyze_constant_declaration(analyzer, declaration);
     states[index] = 2;
+}
+
+static void check_package_initializer_cycle(Analyzer *analyzer, size_t symbol_id,
+                                            unsigned char *states);
+
+static void check_initializer_expression(Analyzer *analyzer,
+                                         const AstProgram *package_program,
+                                         const AstExpression *expression,
+                                         unsigned char *states) {
+    for (const AstExpression *current = expression; current != NULL;
+         current = current->next) {
+        if (current->resolved_symbol_id < analyzer->model->symbol_count) {
+            const SemanticSymbol *dependency =
+                &analyzer->model->symbols[current->resolved_symbol_id];
+            if (dependency->kind == SEMANTIC_SYMBOL_VARIABLE &&
+                same_package(package_program, dependency->source_program)) {
+                if (states[dependency->id] == 1)
+                    semantic_error(analyzer, current->value_token,
+                                   ERROR_CATEGORY_TYPE,
+                                   ERR_TYPE_INVALID_OPERATION,
+                                   "Package variable initializer contains a dependency cycle");
+                else if (states[dependency->id] == 0)
+                    check_package_initializer_cycle(analyzer, dependency->id,
+                                                    states);
+            }
+        }
+        check_initializer_expression(analyzer, package_program, current->left,
+                                     states);
+        check_initializer_expression(analyzer, package_program, current->right,
+                                     states);
+        check_initializer_expression(analyzer, package_program,
+                                     current->arguments, states);
+    }
+}
+
+static void check_package_initializer_cycle(Analyzer *analyzer, size_t symbol_id,
+                                            unsigned char *states) {
+    if (symbol_id >= analyzer->model->symbol_count || states[symbol_id] != 0)
+        return;
+    const SemanticSymbol *symbol = &analyzer->model->symbols[symbol_id];
+    if (symbol->kind != SEMANTIC_SYMBOL_VARIABLE || symbol->declaration == NULL)
+        return;
+    states[symbol_id] = 1;
+    check_initializer_expression(analyzer, symbol->source_program,
+                                 symbol->declaration->as.constant.value, states);
+    states[symbol_id] = 2;
+}
+
+static int check_package_initializer_cycles(Analyzer *analyzer) {
+    unsigned char *states = calloc(analyzer->model->symbol_count, 1);
+    if (states == NULL && analyzer->model->symbol_count != 0) return 0;
+    for (size_t i = 0; i < analyzer->model->symbol_count; i++)
+        if (analyzer->model->symbols[i].kind == SEMANTIC_SYMBOL_VARIABLE)
+            check_package_initializer_cycle(analyzer, i, states);
+    free(states);
+    return 1;
 }
 
 SemanticModel *semantic_analyze(AstProgram *program) {
@@ -997,6 +1026,10 @@ SemanticModel *semantic_analyze(AstProgram *program) {
     for (size_t i = 0; i < program->owned_import_count; i++)
         analyze_unit_constants(&analyzer, program, program->owned_imports[i], constant_states);
     free(constant_states);
+    if (!check_package_initializer_cycles(&analyzer)) {
+        semantic_model_free(model);
+        return NULL;
+    }
     /* Complete declaration type shapes before bodies use forward declarations. */
     for (size_t i = 0; i < model->symbol_count; i++) {
         SemanticSymbol *symbol = &model->symbols[i];

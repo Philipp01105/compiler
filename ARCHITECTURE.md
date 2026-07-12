@@ -165,9 +165,12 @@ initialization flags make cleanup path-sensitive, and the existing cleanup stack
 `break`, and `continue`. Compiler-generated drop glue runs an explicit destructor body first and then recursively drops
 owned fields and fixed-array elements in reverse declaration order. Enum drop glue tests the active tag and drops only
 that variant's owned payloads in reverse payload order. By-value owning parameters use the same flags and
-are destroyed by the callee. The main package also receives a synthetic cleanup function: it drops initialized
-`NEEDS_DROP` globals in reverse declaration order, and startup invokes it after `main` returns while preserving the
-exit status. Package owners have companion initialization flags so reassignment and cleanup remain exactly once.
+are destroyed by the callee. The main package receives synthetic package initialization and cleanup functions. IR
+lowering orders the resolved package graph dependency-first with canonical-path tie-breaking, then emits runtime global
+initializers before `main`. Cleanup drops initialized `NEEDS_DROP` globals and releases owned global slice backing in
+reverse initialization order after `main`, while preserving its exit status. Package owners have companion
+initialization flags that become live only after successful initialization, so reassignment and cleanup remain exactly
+once.
 
 `ir_verify_control_flow` builds basic blocks with explicit and fallthrough edges, computes entry reachability and
 dominators, and checks that ordinary values are available at their uses. PHIs must begin a labeled join and name its two

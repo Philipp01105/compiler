@@ -12,8 +12,10 @@ func main() -> int {
     stdlib.println(summary.maximum);
     stdlib.println(summary.total);
     stdlib.println(analytics.average(summary,SAMPLE_COUNT.(usize)));
+    stdlib.println(analytics.baseline.total);
 
-    if (summary.minimum != 4 || summary.maximum != 9 || summary.total != 30) {
+    if (summary.minimum != 4 || summary.maximum != 9 || summary.total != 30 ||
+        analytics.baseline.total != 15) {
         return 1;
     }
     return 0;

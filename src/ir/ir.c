@@ -99,6 +99,7 @@ static IrInstruction *emit(IrBuilder *builder, IrOpcode opcode, AstSourceSpan sp
     IrInstruction *instruction = &function->instructions[function->instruction_count++];
     *instruction = (IrInstruction)
     {
+        .source_program = function->is_package_init ? builder->program : NULL,
         .opcode = opcode,
         .span = span,
         .type = TYPE_VOID,
@@ -1172,9 +1173,12 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
                 statement->expression->resolved_is_slice &&
                 statement->expression->resolved_symbol_id <
                     builder->module->semantics->symbol_count &&
-                builder->module->semantics->symbols[
-                    statement->expression->resolved_symbol_id].kind ==
-                    SEMANTIC_SYMBOL_LOCAL) {
+                (builder->module->semantics->symbols[
+                     statement->expression->resolved_symbol_id].kind ==
+                     SEMANTIC_SYMBOL_LOCAL ||
+                 builder->module->semantics->symbols[
+                     statement->expression->resolved_symbol_id].kind ==
+                     SEMANTIC_SYMBOL_VARIABLE)) {
                 IrInstruction *release = emit(builder,
                                               IR_OP_FREE_SLICE_BACKING,
                                               statement->span);
@@ -1775,6 +1779,94 @@ static int append_enum_drop_glue(IrModule *module,
     return !builder.failed;
 }
 
+static void set_global_instruction_type(const IrModule *module,
+                                        const IrGlobal *global,
+                                        IrInstruction *instruction) {
+    const SemanticSymbol *symbol =
+        &module->semantics->symbols[global->symbol_id];
+    const IrType *type = &module->types[global->type_id];
+    instruction->type_id = global->type_id;
+    instruction->type = type->kind == IR_TYPE_PRIMITIVE
+                            ? type->primitive
+                            : TYPE_UNKNOWN;
+    instruction->pointer_depth = symbol->resolved_pointer_depth +
+                                 symbol->resolved_outer_pointer_depth;
+    instruction->type_name_token = symbol->resolved_named_type_token;
+    instruction->is_array = type->kind == IR_TYPE_ARRAY;
+    instruction->is_slice = type->kind == IR_TYPE_SLICE;
+}
+
+static int append_package_init(IrModule *module) {
+    if (module->program->package_name != NULL &&
+        strcmp(module->program->package_name, "main") != 0)
+        return 1;
+    if (module->function_count == module->function_capacity &&
+        !grow_array((void **) &module->functions, &module->function_capacity,
+                    sizeof(*module->functions)))
+        return 0;
+    IrFunction *function = &module->functions[module->function_count++];
+    *function = (IrFunction) {
+        .source_program = module->program,
+        .name_token = module->program->package_token != AST_TOKEN_NONE
+                          ? module->program->package_token
+                          : 0,
+        .owner_token = AST_TOKEN_NONE,
+        .owner_symbol_id = AST_SYMBOL_NONE,
+        .symbol_id = AST_SYMBOL_NONE,
+        .interface_thunk_symbol_id = AST_SYMBOL_NONE,
+        .return_type_id = type_from_parts(module, TYPE_VOID, 0,
+                                          AST_TOKEN_NONE, 0, 0, 0, 0,
+                                          module->program,
+                                          AST_SYMBOL_NONE),
+        .is_package_init = 1
+    };
+    if (function->return_type_id == IR_TYPE_NONE) return 0;
+    IrBuilder builder = {
+        .module = module,
+        .function = function,
+        .program = module->program,
+        .break_label = IR_VALUE_NONE,
+        .continue_label = IR_VALUE_NONE
+    };
+    for (size_t i = 0; i < module->global_count && !builder.failed; i++) {
+        IrGlobal *global = &module->globals[i];
+        const AstExpression *initializer = global->runtime_initializer;
+        if (initializer == NULL) continue;
+        builder.program = global->source_program;
+        size_t value = lower_expression(&builder, initializer);
+        value = coerce_slice(&builder, value, global->type_id,
+                             initializer->span);
+
+        IrInstruction *target = emit(&builder, IR_OP_LOAD,
+                                     initializer->span);
+        if (target == NULL) break;
+        target->result = new_value(&builder);
+        target->auxiliary_token = function->name_token;
+        target->symbol_id = global->symbol_id;
+        set_global_instruction_type(module, global, target);
+
+        IrInstruction *store = emit(&builder, IR_OP_STORE,
+                                    initializer->span);
+        if (store == NULL) break;
+        store->operand_a = target->result;
+        store->operand_b = value;
+        store->operator_type = TOKEN_EQUAL;
+        store->owns_slice_backing = global->owns_slice_backing;
+        set_global_instruction_type(module, global, store);
+        emit_move_if_owned(&builder, initializer);
+
+        if (type_needs_drop(&builder, global->type_id)) {
+            IrInstruction *reinit = emit(&builder, IR_OP_REINIT,
+                                         initializer->span);
+            if (reinit == NULL) break;
+            reinit->type = TYPE_VOID;
+            reinit->type_id = global->type_id;
+            reinit->symbol_id = global->symbol_id;
+        }
+    }
+    return !builder.failed;
+}
+
 static int append_package_cleanup(IrModule *module) {
     if (module->program->package_name != NULL &&
         strcmp(module->program->package_name, "main") != 0)
@@ -1809,6 +1901,17 @@ static int append_package_cleanup(IrModule *module) {
     };
     for (size_t i = module->global_count; i > 0; i--) {
         const IrGlobal *global = &module->globals[i - 1];
+        if (module->types[global->type_id].kind == IR_TYPE_SLICE) {
+            IrInstruction *release = emit(&builder,
+                                          IR_OP_FREE_SLICE_BACKING,
+                                          module->semantics->symbols[
+                                              global->symbol_id].declaration->span);
+            if (release != NULL) {
+                release->type = TYPE_VOID;
+                release->type_id = global->type_id;
+                release->symbol_id = global->symbol_id;
+            }
+        }
         if ((ir_type_properties(module, global->type_id) &
              SEMANTIC_TYPE_NEEDS_DROP) == 0)
             continue;
@@ -1918,6 +2021,122 @@ static int append_import(IrModule *module, const AstProgram *program,
     return 1;
 }
 
+typedef struct {
+    const DmmPackage **packages;
+    unsigned char *states;
+    const DmmPackage **ordered;
+    size_t count;
+    size_t ordered_count;
+} PackageOrder;
+
+static int package_path_order(const void *left, const void *right) {
+    const DmmPackage *const *a = left;
+    const DmmPackage *const *b = right;
+    return strcmp((*a)->path, (*b)->path);
+}
+
+static size_t package_order_index(const PackageOrder *order,
+                                  const DmmPackage *package) {
+    for (size_t i = 0; i < order->count; i++)
+        if (order->packages[i] == package) return i;
+    return SIZE_MAX;
+}
+
+static int visit_package(PackageOrder *order, const DmmPackage *package) {
+    size_t index = package_order_index(order, package);
+    if (index == SIZE_MAX) return 0;
+    if (order->states[index] == 2) return 1;
+    if (order->states[index] == 1) return 0;
+    order->states[index] = 1;
+
+    const DmmPackage **dependencies = order->count == 0
+                                         ? NULL
+                                         : calloc(order->count,
+                                                  sizeof(*dependencies));
+    if (dependencies == NULL && order->count != 0) return 0;
+    size_t dependency_count = 0;
+    for (size_t f = 0; f < package->file_count; f++) {
+        const AstProgram *file = package->files[f];
+        for (const AstDeclarationNode *declaration = file->root;
+             declaration != NULL; declaration = declaration->next) {
+            if (declaration->kind != AST_DECL_IMPORT) continue;
+            for (const AstImportPath *path = declaration->as.import_decl.paths;
+                 path != NULL; path = path->next) {
+                const DmmPackage *dependency = path->resolved_program == NULL
+                                                   ? NULL
+                                                   : path->resolved_program->package;
+                if (dependency == NULL || dependency == package) continue;
+                size_t existing = 0;
+                while (existing < dependency_count &&
+                       dependencies[existing] != dependency)
+                    existing++;
+                if (existing == dependency_count)
+                    dependencies[dependency_count++] = dependency;
+            }
+        }
+    }
+    if (dependency_count > 1)
+        qsort(dependencies, dependency_count, sizeof(*dependencies),
+              package_path_order);
+    int ok = 1;
+    for (size_t i = 0; i < dependency_count && ok; i++)
+        ok = visit_package(order, dependencies[i]);
+    free(dependencies);
+    if (!ok) return 0;
+    order->states[index] = 2;
+    order->ordered[order->ordered_count++] = package;
+    return 1;
+}
+
+static int build_package_order(const AstProgram *program,
+                               PackageOrder *order) {
+    if (program->package == NULL || program->module == NULL) return 0;
+    for (const DmmPackage *package = program->module->packages;
+         package != NULL; package = package->next)
+        order->count++;
+    order->packages = order->count == 0
+                          ? NULL
+                          : calloc(order->count, sizeof(*order->packages));
+    order->states = order->count == 0
+                        ? NULL
+                        : calloc(order->count, sizeof(*order->states));
+    order->ordered = order->count == 0
+                         ? NULL
+                         : calloc(order->count, sizeof(*order->ordered));
+    if (order->count != 0 &&
+        (order->packages == NULL || order->states == NULL ||
+         order->ordered == NULL))
+        return 0;
+    size_t index = 0;
+    for (const DmmPackage *package = program->module->packages;
+         package != NULL; package = package->next)
+        order->packages[index++] = package;
+    return visit_package(order, program->package);
+}
+
+static void free_package_order(PackageOrder *order) {
+    free(order->packages);
+    free(order->states);
+    free(order->ordered);
+    *order = (PackageOrder) {0};
+}
+
+static int static_array_initializer(const AstExpression *literal) {
+    if (literal == NULL || literal->kind != AST_EXPR_ARRAY_LITERAL) return 0;
+    for (const AstExpression *element = literal->arguments;
+         element != NULL; element = element->next) {
+        if (element->kind == AST_EXPR_ARRAY_LITERAL) {
+            if (!static_array_initializer(element)) return 0;
+        } else if (element->resolved_type == TYPE_STRING ||
+                   (element->kind != AST_EXPR_LITERAL &&
+                    element->folded_constant.lexeme == NULL))
+            return 0;
+    }
+    return literal->right == NULL ||
+           literal->right->kind == AST_EXPR_LITERAL ||
+           literal->right->folded_constant.lexeme != NULL;
+}
+
 static int lower_unit(IrModule *module, const AstProgram *program) {
     if (!program->structured_ast_complete) return 0;
     for (const AstDeclarationNode *declaration = program->root;
@@ -1940,11 +2159,11 @@ static int lower_unit(IrModule *module, const AstProgram *program) {
                     value->resolved_symbol_id < module->semantics->symbol_count &&
                     module->semantics->symbols[value->resolved_symbol_id].kind == SEMANTIC_SYMBOL_FUNCTION) {
                     global.function_symbol_id = value->resolved_symbol_id;
-                } else if (value->kind == AST_EXPR_ARRAY_LITERAL) {
+                } else if (value->kind == AST_EXPR_ARRAY_LITERAL &&
+                           static_array_initializer(value)) {
                     global.array_literal = value;
                     global.literal_element_count = value->literal_element_count;
-                } else {
-                    if (!value->folded_constant.lexeme) return 0;
+                } else if (value->folded_constant.lexeme != NULL) {
                     const char *text = value->folded_constant.lexeme;
                     if (symbol->resolved_type == TYPE_STRING) global.string = text;
                     else if (symbol->resolved_type == TYPE_DOUBLE) {
@@ -1960,6 +2179,9 @@ static int lower_unit(IrModule *module, const AstProgram *program) {
                     } bits = {.f = (float) strtod(text, NULL)};
                     global.bits = bits.u;
                     } else global.bits = (uint64_t) strtoull(text, NULL, 10);
+                } else {
+                    global.runtime_initializer = value;
+                    global.owns_slice_backing = value->owns_slice_backing;
                 }
             }
             module->globals[module->global_count++] = global;
@@ -2002,14 +2224,30 @@ IrModule *ir_lower_program(const AstProgram *program, const SemanticModel *seman
     if (module == NULL) return NULL;
     module->program = program;
     module->semantics = semantics;
-    if (!lower_unit(module, program)) goto failure;
-    for (size_t i = 0; i < program->owned_import_count; i++)
-        if (!lower_unit(module, program->owned_imports[i])) goto failure;
+    PackageOrder order = {0};
+    if (program->package != NULL && program->module != NULL) {
+        if (!build_package_order(program, &order)) {
+            free_package_order(&order);
+            goto failure;
+        }
+        for (size_t p = 0; p < order.ordered_count; p++)
+            for (size_t f = 0; f < order.ordered[p]->file_count; f++)
+                if (!lower_unit(module, order.ordered[p]->files[f])) {
+                    free_package_order(&order);
+                    goto failure;
+                }
+        free_package_order(&order);
+    } else {
+        if (!lower_unit(module, program)) goto failure;
+        for (size_t i = 0; i < program->owned_import_count; i++)
+            if (!lower_unit(module, program->owned_imports[i])) goto failure;
+    }
     if (!append_referenced_interface_thunks(module)) goto failure;
     for (size_t i = 0; i < module->structure_count; i++)
         if (!append_drop_glue(module, &module->structures[i])) goto failure;
     for (size_t i = 0; i < module->enum_count; i++)
         if (!append_enum_drop_glue(module, &module->enums[i])) goto failure;
+    if (!append_package_init(module)) goto failure;
     if (!append_package_cleanup(module)) goto failure;
     if (!ir_verify_module_report(module)) goto failure;
     module->verified = 1;

@@ -181,7 +181,10 @@ static int emit_file(Emitter *emitter, int deterministic) {
             if (instruction->opcode == IR_OP_CONSTANT && instruction->type == TYPE_STRING) {
                 write_labelf(emitter, ".LIR_string_%zu_%zu:\n", f,
                              instruction->result);
-                write_cstring(emitter, ast_program_lexeme(function->source_program,
+                const AstProgram *program = instruction->source_program != NULL
+                                                ? instruction->source_program
+                                                : function->source_program;
+                write_cstring(emitter, ast_program_lexeme(program,
                                                           instruction->auxiliary_token));
             }
         }
@@ -326,7 +329,15 @@ static int emit_file(Emitter *emitter, int deterministic) {
             if (emitter->native) {
                 if (!native_define(emitter->native, flag, 0, 0)) return 0;
             } else fprintf(output, "%s:\n", flag);
-            write_quad(emitter, 1);
+            write_quad(emitter, global->runtime_initializer == NULL ? 1 : 0);
+        }
+        if (global_type != NULL && global_type->kind == IR_TYPE_SLICE) {
+            char owner[4096];
+            if (!global_slice_owner_label(symbol, owner, sizeof(owner))) return 0;
+            if (emitter->native) {
+                if (!native_define(emitter->native, owner, 0, 0)) return 0;
+            } else fprintf(output, "%s:\n", owner);
+            write_quad(emitter, 0);
         }
     }
     if (emitter->native) emitter->native->section = NATIVE_TEXT;

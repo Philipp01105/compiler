@@ -331,7 +331,10 @@ static void release(Pass *p) {
 static Fact constant(Pass *p, const IrInstruction *in) {
     if (!numeric(p->module, in->type_id)) return unknown();
     if (in->has_immediate) return literal(in->immediate);
-    const AstToken *token = ast_program_token(p->function->source_program, in->auxiliary_token);
+    const AstProgram *program = in->source_program != NULL
+                                    ? in->source_program
+                                    : p->function->source_program;
+    const AstToken *token = ast_program_token(program, in->auxiliary_token);
     if (!token) return unknown();
     if (floating(in->type)) return real(strtod(token->lexeme, NULL), in->type);
     if (token->type == TOKEN_CHAR_LITERAL) return literal((unsigned char) token->lexeme[0]);
@@ -347,7 +350,10 @@ static Fact expression(Pass *p, const IrInstruction *in) {
     const IrInstruction *ad = definition(p, in->operand_a), *bd = definition(p, in->operand_b);
     if (in->opcode == IR_OP_CONSTANT) return constant(p, in);
     if (in->opcode == IR_OP_LOAD) {
-        const char *name = ast_program_lexeme(p->function->source_program, in->auxiliary_token);
+        const AstProgram *program = in->source_program != NULL
+                                        ? in->source_program
+                                        : p->function->source_program;
+        const char *name = ast_program_lexeme(program, in->auxiliary_token);
         if (!strcmp(name, "true")) return literal(1);
         if (!strcmp(name, "false")) return literal(0);
     }
@@ -1254,11 +1260,13 @@ static int remove_dead_functions(IrModule *module, IrOptimizationStats *stats) {
                                            ? &module->semantics->symbols[function->symbol_id]
                                            : NULL;
         const AstDeclarationNode *declaration = symbol == NULL ? NULL : symbol->declaration;
-        const char *name = function->is_package_cleanup
-                               ? "__dmm_package_cleanup"
+        const char *name = function->is_package_init
+                               ? "__dmm_package_init"
+                               : function->is_package_cleanup
+                                     ? "__dmm_package_cleanup"
                                : ast_program_lexeme(function->source_program,
                                                     function->name_token);
-        if (function->is_package_cleanup ||
+        if (function->is_package_init || function->is_package_cleanup ||
             function->owner_symbol_id != AST_SYMBOL_NONE || !declaration || declaration->is_public ||
             !strcmp(name, "main")) {
             live[i] = 1;

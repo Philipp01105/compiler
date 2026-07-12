@@ -66,6 +66,8 @@ static int make_object(NativeObject *o) {
     CHECK(native_define(o,"main",1,1));
     X64Instruction ret = x64_instruction0(X64_OP_RET, X64_WIDTH_NONE);
     CHECK(native_encode(o,&ret));
+    CHECK(native_define(o,"__dmm_package_init",0,1));
+    CHECK(native_encode(o,&ret));
     CHECK(native_define(o,"__dmm_package_cleanup",0,1));
     CHECK(native_encode(o,&ret));
     o->section = NATIVE_RODATA;

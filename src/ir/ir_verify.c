@@ -374,8 +374,10 @@ static int verify_instruction_types(const IrModule *module,
                 return 0;
             if (a != NULL) return a->type_id == instruction->type_id;
             return instruction->symbol_id < module->semantics->symbol_count &&
-                   module->semantics->symbols[instruction->symbol_id].kind ==
-                       SEMANTIC_SYMBOL_LOCAL;
+                   (module->semantics->symbols[instruction->symbol_id].kind ==
+                        SEMANTIC_SYMBOL_LOCAL ||
+                    module->semantics->symbols[instruction->symbol_id].kind ==
+                        SEMANTIC_SYMBOL_VARIABLE);
         case IR_OP_INDEX:
             return a != NULL && b != NULL && ir_pointer_type(module, a->type_id) &&
                    ir_integral_type(module, b->type_id) &&
@@ -564,10 +566,13 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
     }
     for (size_t f = 0; f < module->function_count; f++) {
         const IrFunction *function = &module->functions[f];
-        if ((function->is_drop_glue && function->is_package_cleanup) ||
+        if ((function->is_drop_glue &&
+             (function->is_package_init || function->is_package_cleanup)) ||
+            (function->is_package_init && function->is_package_cleanup) ||
             (function->interface_thunk_symbol_id != AST_SYMBOL_NONE &&
-             (function->is_drop_glue || function->is_package_cleanup))) return 0;
-        if (function->is_package_cleanup) {
+             (function->is_drop_glue || function->is_package_init ||
+              function->is_package_cleanup))) return 0;
+        if (function->is_package_init || function->is_package_cleanup) {
             if (function->symbol_id != AST_SYMBOL_NONE ||
                 function->owner_symbol_id != AST_SYMBOL_NONE ||
                 function->parameter_count != 0 ||

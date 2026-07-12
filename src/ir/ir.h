@@ -71,6 +71,7 @@ typedef enum {
 } IrOpcode;
 
 typedef struct {
+    const AstProgram *source_program;
     IrOpcode opcode;
     AstSourceSpan span;
     DataType type;
@@ -134,6 +135,7 @@ typedef struct {
     size_t next_value;
     size_t next_label;
     int is_drop_glue;
+    int is_package_init;
     int is_package_cleanup;
 } IrFunction;
 
@@ -226,8 +228,10 @@ typedef struct IrGlobal {
     uint64_t bits;
     const char *string;
     const AstExpression *array_literal;
+    const AstExpression *runtime_initializer;
     size_t literal_element_count;
     size_t function_symbol_id;
+    int owns_slice_backing;
 } IrGlobal;
 
 IrModule *ir_lower_program(const AstProgram *program, const SemanticModel *semantics);

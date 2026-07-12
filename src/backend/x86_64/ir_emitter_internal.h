@@ -9,6 +9,7 @@ typedef struct {
     size_t instruction_index;
     size_t current_ir_instruction;
     AstSourceSpan current_span;
+    const AstProgram *current_program;
     int has_source;
     int failed;
 } SourceMapWriter;
@@ -40,6 +41,8 @@ long long constant_value(const AstProgram *program, const IrInstruction *instruc
 int global_label(const SemanticSymbol *symbol, char *label, size_t size);
 int global_drop_flag_label(const SemanticSymbol *symbol, char *label,
                            size_t size);
+int global_slice_owner_label(const SemanticSymbol *symbol, char *label,
+                             size_t size);
 int emit_function(Emitter *emitter);
 
 void write_x64_0(const Emitter *emitter, X64Opcode opcode);
