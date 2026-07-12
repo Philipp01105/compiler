@@ -77,6 +77,16 @@ model. The normative rules and current restrictions are maintained in [LANGUAGE_
 - [ ] Generalize concrete-to-interface conversion beyond array and slice elements.
 - [ ] Permit interface values in variables, parameters, returns, fields, variants, and collections with one consistent
   representation.
+- [ ] Add Rust-inspired, opt-in runtime type tests and safe downcasts for interface values without introducing general
+  runtime reflection.
+    - Carry only an opaque concrete-type identity where downcasting is explicitly supported; do not retain field names,
+      method metadata, layouts, or a global runtime type registry.
+    - Specify checked equivalents of `is<T>`, shared and exclusive borrowed downcasts, and an owning downcast whose
+      failure returns the original interface value instead of losing or duplicating ownership.
+    - Make type identity deterministic across packages and separately specify its ABI behavior across library and
+      dynamic-linking boundaries; do not derive safety from display names or unchecked pointer casts.
+    - Integrate borrow lifetimes, move-only values, destruction, nullability, and `Option`/`Result` failure forms, with
+      exhaustive positive, negative, ownership, and cross-module tests.
 - [ ] Design interface inheritance, associated types, and default methods.
 - [ ] Define object-safe `Self` rules and support valid dynamic dispatch through interface elements.
 - [ ] Improve generic inference, constraint diagnostics, specialization controls, and duplicate-instantiation
