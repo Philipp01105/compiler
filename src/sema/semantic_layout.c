@@ -222,7 +222,8 @@ size_t layout_size(Analyzer *analyzer, AstType *type, size_t depth) {
     }
     if (type->pointer_depth) return 8;
     DataType primitive = primitive_type(analyzer->program, type);
-    if (primitive != TYPE_UNKNOWN) return primitive == TYPE_VOID ? 0 : data_type_bytes(primitive);
+    if (primitive != TYPE_UNKNOWN)
+        return data_type_has_value(primitive) ? data_type_bytes(primitive) : 0;
     size_t id = resolve_named_symbol_id(analyzer, analyzer->program, type->name_token);
     if (id == AST_SYMBOL_NONE) return 0;
     const SemanticSymbol *symbol = &analyzer->model->symbols[id];

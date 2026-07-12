@@ -181,6 +181,7 @@ static TokenType get_keyword_type(const char *str) {
     if (strcmp(str, "double") == 0) return TOKEN_TYPE_DOUBLE;
     if (strcmp(str, "string") == 0) return TOKEN_TYPE_STRING;
     if (strcmp(str, "void") == 0) return TOKEN_TYPE_VOID;
+    if (strcmp(str, "never") == 0) return TOKEN_TYPE_NEVER;
 
     return TOKEN_IDENTIFIER;
 }
@@ -776,6 +777,7 @@ const char *token_type_to_string(TokenType type) {
         case TOKEN_TYPE_DOUBLE: return "TYPE_DOUBLE";
         case TOKEN_TYPE_STRING: return "TYPE_STRING";
         case TOKEN_TYPE_VOID: return "TYPE_VOID";
+        case TOKEN_TYPE_NEVER: return "TYPE_NEVER";
 
         case TOKEN_IDENTIFIER: return "IDENTIFIER";
         case TOKEN_NUMBER: return "NUMBER";

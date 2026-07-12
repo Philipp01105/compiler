@@ -176,7 +176,7 @@ int emit_typed_call(Emitter *emitter, const IrInstruction *instruction,
     if (cleanup != 0)
         write_x64_2(emitter, X64_OP_ADD, X64_WIDTH_QWORD,
                     x64_register("rsp"), x64_immediate((long long) cleanup));
-    if (instruction->type != TYPE_VOID) {
+    if (data_type_has_value(instruction->type)) {
         if (is_inline_structure(emitter->module, instruction)) {
             size_t offset = aggregate_result_offset(emitter, instruction);
             size_t slots = type_slots(emitter->module, instruction->type_id);

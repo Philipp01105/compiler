@@ -175,8 +175,9 @@ once.
 `ir_verify_control_flow` builds basic blocks with explicit and fallthrough edges, computes entry reachability and
 dominators, and checks that ordinary values are available at their uses. PHIs must begin a labeled join and name its two
 actual jump predecessors; each value must be available on the corresponding edge. Instructions cannot follow a
-terminator before a new label. Reachable non-void exits require a return; void bodies retain their implicit-return
-convention.
+terminator before a new label. Calls returning `never` have no SSA result and are followed by a defensive trap
+terminator, making their non-fallthrough behavior explicit to CFG verification and optimization. Reachable non-void
+exits require either a return or a terminating path; void bodies retain their implicit-return convention.
 
 ## Tests
 

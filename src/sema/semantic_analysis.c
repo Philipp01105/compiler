@@ -8,6 +8,26 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int invalid_never_type(const AstProgram *program, const AstType *type,
+                              int allow_direct_return) {
+    if (type == NULL) return 0;
+    if (primitive_type(program, type) == TYPE_NEVER)
+        return !allow_direct_return || type->pointer_depth != 0 ||
+               type->outer_pointer_depth != 0 ||
+               type->borrow_kind != AST_BORROW_NONE || type->is_array ||
+               type->is_slice;
+    if (type->kind == AST_TYPE_FUNCTION) {
+        for (const AstTypeArgument *parameter = type->function_parameters;
+             parameter != NULL; parameter = parameter->next)
+            if (invalid_never_type(program, &parameter->type, 0)) return 1;
+        if (invalid_never_type(program, type->function_return_type, 1)) return 1;
+    }
+    for (const AstTypeArgument *argument = type->arguments;
+         argument != NULL; argument = argument->next)
+        if (invalid_never_type(program, &argument->type, 0)) return 1;
+    return 0;
+}
+
 static int returned_slice_expression_owns(const SemanticModel *model,
                                           const AstExpression *expression) {
     if (expression == NULL || !expression->resolved_is_slice) return 0;
@@ -473,6 +493,13 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                 semantic_error(analyzer, statement->type.name_token,
                                ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                "Variable cannot have type void");
+            if ((statement->type.kind != AST_TYPE_INFERRED &&
+                 invalid_never_type(analyzer->program, &statement->type, 0)) ||
+                (statement->type.kind == AST_TYPE_INFERRED && statement->value != NULL &&
+                 statement->value->resolved_type == TYPE_NEVER))
+                semantic_error(analyzer, statement->name_token,
+                               ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                               "Variable cannot have type never");
             if (statement->type.kind != AST_TYPE_INFERRED && statement->value != NULL) {
                 if (!expression_to_declared_type_allowed(analyzer, statement->value,
                                                          analyzer->program,
@@ -665,7 +692,11 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                         returns_owned_slice_backing = 1;
                 DataType expected = primitive_type(analyzer->program,
                                                    &analyzer->current_function->as.function.return_type);
-                if (expected == TYPE_VOID && statement->value != NULL)
+                if (expected == TYPE_NEVER)
+                    semantic_error(analyzer, statement->first_token,
+                                   ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
+                                   "Never-returning function cannot use return");
+                else if (expected == TYPE_VOID && statement->value != NULL)
                     semantic_error(analyzer, statement->first_token,
                                    ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
                                    "Void function cannot return a value");
@@ -737,6 +768,11 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
     if (!known_declared_type(analyzer, &function->as.function.return_type))
         semantic_error(analyzer, function->as.function.return_type.name_token,
                        ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN, "Unknown function return type");
+    if (invalid_never_type(analyzer->program,
+                           &function->as.function.return_type, 1))
+        semantic_error(analyzer, function->as.function.return_type.name_token,
+                       ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                       "never is only valid as a direct function return type");
     validate_array_shape(analyzer, &function->as.function.return_type);
     analyzer->scope_depth++;
     for (AstParameter *parameter = function->as.function.parameters;
@@ -750,6 +786,10 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
             semantic_error(analyzer, parameter->type.name_token,
                            ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                            "Parameter cannot have type void");
+        if (invalid_never_type(analyzer->program, &parameter->type, 0))
+            semantic_error(analyzer, parameter->type.name_token,
+                           ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                           "Parameter cannot have type never");
         for (const LocalSymbol *existing = analyzer->locals; existing != NULL;
              existing = existing->next)
             if (existing->scope_depth == analyzer->scope_depth &&
@@ -776,9 +816,11 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
     DataType return_type = primitive_type(analyzer->program,
                                           &function->as.function.return_type);
     if (return_type != TYPE_VOID &&
-        !statement_always_returns(function->as.function.body))
+        statement_may_fall_through(function->as.function.body))
         semantic_error(analyzer, function->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
-                       "Function does not return on all paths");
+                       return_type == TYPE_NEVER
+                           ? "Never-returning function can complete normally"
+                           : "Function does not return on all paths");
     pop_to(analyzer, saved);
     analyzer->scope_depth--;
     analyzer->current_function_token = saved_function;
@@ -828,6 +870,12 @@ void analyze_constant_declaration(Analyzer *analyzer,
         semantic_error(analyzer, type->name_token, ERROR_CATEGORY_TYPE,
                        ERR_TYPE_INVALID_OPERATION,
                        "Checked borrowed references cannot be stored in package variables");
+    if (invalid_never_type(analyzer->program, type, 0) ||
+        (type->kind == AST_TYPE_INFERRED && value != NULL &&
+         value->resolved_type == TYPE_NEVER))
+        semantic_error(analyzer, declaration->name_token, ERROR_CATEGORY_TYPE,
+                       ERR_TYPE_INVALID_OPERATION,
+                       "Package value cannot have type never");
     if (declaration->kind == AST_DECL_VARIABLE && !value) {
         if (type->kind == AST_TYPE_INFERRED || !known_declared_type(analyzer, type) ||
             (primitive_type(analyzer->program, type) == TYPE_VOID && !type->pointer_depth && !type->
@@ -1081,6 +1129,10 @@ SemanticModel *semantic_analyze(AstProgram *program) {
                         semantic_error(&analyzer, field->type.name_token,
                                        ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                        "Field cannot have type void");
+                    if (invalid_never_type(unit, &field->type, 0))
+                        semantic_error(&analyzer, field->type.name_token,
+                                       ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                                       "Field cannot have type never");
                     if (field->type.borrow_kind != AST_BORROW_NONE)
                         semantic_error(&analyzer, field->type.name_token,
                                        ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
@@ -1110,6 +1162,10 @@ SemanticModel *semantic_analyze(AstProgram *program) {
                         semantic_error(&analyzer, field->type.name_token,
                                        ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                        "Enum field cannot have type void");
+                    if (invalid_never_type(unit, &field->type, 0))
+                        semantic_error(&analyzer, field->type.name_token,
+                                       ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                                       "Enum field cannot have type never");
                     if (primitive_type(unit, &field->type) == TYPE_UNKNOWN ||
                         field->type.pointer_depth != 0 || field->type.is_array)
                         semantic_error(&analyzer, field->type.name_token,
@@ -1129,7 +1185,8 @@ SemanticModel *semantic_analyze(AstProgram *program) {
                                            ERR_TYPE_INVALID_OPERATION,
                                            "Enum payloads cannot store polymorphic callable values");
                         if (!known_declared_type(&analyzer, &p->type) ||
-                            (primitive_type(unit, &p->type) == TYPE_VOID && !p->type.pointer_depth))
+                            (primitive_type(unit, &p->type) == TYPE_VOID && !p->type.pointer_depth) ||
+                            invalid_never_type(unit, &p->type, 0))
                             semantic_error(&analyzer, p->type.name_token, ERROR_CATEGORY_TYPE,
                                            ERR_TYPE_INVALID_OPERATION,
                                            "Enum payload requires a complete non-void concrete type");
@@ -1206,7 +1263,8 @@ SemanticModel *semantic_analyze(AstProgram *program) {
                 for (AstTypeArgument *p = v->payload_types; p; p = p->next) {
                     validate_array_shape(&analyzer, &p->type);
                     if (!known_declared_type(&analyzer, &p->type) ||
-                        (primitive_type(analyzer.program, &p->type) == TYPE_VOID && !p->type.pointer_depth))
+                        (primitive_type(analyzer.program, &p->type) == TYPE_VOID && !p->type.pointer_depth) ||
+                        invalid_never_type(analyzer.program, &p->type, 0))
                         semantic_error(&analyzer, p->type.name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                        "Enum payload requires a complete non-void concrete type");
                 }

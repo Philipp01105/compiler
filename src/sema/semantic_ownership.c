@@ -407,6 +407,9 @@ static OwnershipFlow check_statements(OwnershipChecker *checker,
                 break;
             case AST_STMT_EXPRESSION:
                 read_expression(checker, &flow, statement->expression);
+                if (statement->expression != NULL &&
+                    statement->expression->resolved_type == TYPE_NEVER)
+                    flow.reachable = 0;
                 break;
             case AST_STMT_DEFER:
                 read_expression(checker, &flow, statement->expression);
@@ -428,7 +431,9 @@ static OwnershipFlow check_statements(OwnershipChecker *checker,
                     consume_expression(checker, &flow, statement->value);
                 else
                     read_expression(checker, &flow, statement->value);
-                flow = run_deferred(checker, flow, defers, NULL);
+                if (statement->value == NULL ||
+                    statement->value->resolved_type != TYPE_NEVER)
+                    flow = run_deferred(checker, flow, defers, NULL);
                 flow.reachable = 0;
                 break;
             case AST_STMT_BREAK:
@@ -453,6 +458,11 @@ static OwnershipFlow check_statements(OwnershipChecker *checker,
                 break;
             case AST_STMT_IF: {
                 read_expression(checker, &flow, statement->condition);
+                if (statement->condition != NULL &&
+                    statement->condition->resolved_type == TYPE_NEVER) {
+                    flow.reachable = 0;
+                    break;
+                }
                 OwnershipFlow then_flow = flow_clone(checker, &flow);
                 OwnershipFlow else_flow = flow_clone(checker, &flow);
                 then_flow = check_statements(checker, statement->body,

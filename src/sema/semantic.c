@@ -35,6 +35,7 @@ DataType primitive_type(const AstProgram *program, const AstType *type) {
         case TOKEN_TYPE_DOUBLE: return TYPE_DOUBLE;
         case TOKEN_TYPE_STRING: return TYPE_STRING;
         case TOKEN_TYPE_VOID: return TYPE_VOID;
+        case TOKEN_TYPE_NEVER: return TYPE_NEVER;
         default: return TYPE_UNKNOWN;
     }
 }
@@ -527,6 +528,7 @@ static size_t builtin_arity(const char *name) {
 
 static int implicit_conversion_allowed(DataType from, unsigned from_pointers,
                                        DataType to, unsigned to_pointers) {
+    if (from == TYPE_NEVER && from_pointers == 0) return 1;
     if (from_pointers != 0 || to_pointers != 0)
         return from_pointers == to_pointers && (from == to || from == TYPE_UNKNOWN ||
                                                 to == TYPE_UNKNOWN);
@@ -1253,7 +1255,7 @@ void validate_expression(Analyzer *analyzer, AstExpression *expression,
                                                   expression->left->value_token);
             TokenType token_type = analyzer->program->tokens[
                 expression->left->value_token].type;
-            int cast = token_type >= TOKEN_TYPE_INT && token_type <= TOKEN_TYPE_VOID;
+            int cast = token_type >= TOKEN_TYPE_INT && token_type <= TOKEN_TYPE_NEVER;
             if (expression->resolved_symbol_id == AST_SYMBOL_NONE &&
                 !(expression->left->has_resolved_ast_type &&
                   expression->left->resolved_ast_type.kind == AST_TYPE_FUNCTION) &&
@@ -1629,7 +1631,7 @@ void validate_expression(Analyzer *analyzer, AstExpression *expression,
         TokenType type = analyzer->program->tokens[expression->value_token].type;
         if (expression->resolved_callable != NULL) return;
         if (strcmp(name, "true") != 0 && strcmp(name, "false") != 0 &&
-            !is_builtin_name(name) && !(type >= TOKEN_TYPE_INT && type <= TOKEN_TYPE_VOID))
+            !is_builtin_name(name) && !(type >= TOKEN_TYPE_INT && type <= TOKEN_TYPE_NEVER))
             semantic_error(analyzer, expression->value_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_UNDEFINED_VARIABLE,
                            "Undefined variable");
     } else if (expression->kind == AST_EXPR_NAME && !is_callee &&
@@ -1692,28 +1694,41 @@ void validate_expression(Analyzer *analyzer, AstExpression *expression,
     }
 }
 
-int statement_always_returns(const AstStatement *statement) {
+int statement_may_fall_through(const AstStatement *statement) {
     for (; statement != NULL; statement = statement->next) {
+        if (statement->kind == AST_STMT_EXPRESSION && statement->expression != NULL &&
+            statement->expression->resolved_type == TYPE_NEVER)
+            return 0;
+        if ((statement->kind == AST_STMT_VARIABLE || statement->kind == AST_STMT_ASSIGNMENT) &&
+            statement->value != NULL && statement->value->resolved_type == TYPE_NEVER)
+            return 0;
+        if ((statement->kind == AST_STMT_IF || statement->kind == AST_STMT_WHILE ||
+             statement->kind == AST_STMT_FOR) && statement->condition != NULL &&
+            statement->condition->resolved_type == TYPE_NEVER)
+            return 0;
         if (statement->kind == AST_STMT_MATCH && statement->match_exhaustive) {
             if (statement->is_type_match) {
-                if (statement->selected_type_arm && statement_always_returns(statement->selected_type_arm->body)) return
-                        1;
+                if (statement->selected_type_arm &&
+                    !statement_may_fall_through(statement->selected_type_arm->body))
+                    return 0;
                 continue;
             }
-            int all = statement->match_arms != NULL;
+            int any_fallthrough = statement->match_arms == NULL;
             for (const AstMatchArm *a = statement->match_arms; a; a = a->next)
-                if (!statement_always_returns(a->body)) all = 0;
-            if (all) return 1;
+                if (statement_may_fall_through(a->body)) any_fallthrough = 1;
+            if (!any_fallthrough) return 0;
         }
-        if (statement->kind == AST_STMT_RETURN) return 1;
-        if (statement->kind == AST_STMT_BLOCK && statement_always_returns(statement->body))
-            return 1;
+        if (statement->kind == AST_STMT_RETURN || statement->kind == AST_STMT_BREAK ||
+            statement->kind == AST_STMT_CONTINUE)
+            return 0;
+        if (statement->kind == AST_STMT_BLOCK && !statement_may_fall_through(statement->body))
+            return 0;
         if (statement->kind == AST_STMT_IF && statement->else_body != NULL &&
-            statement_always_returns(statement->body) &&
-            statement_always_returns(statement->else_body))
-            return 1;
+            !statement_may_fall_through(statement->body) &&
+            !statement_may_fall_through(statement->else_body))
+            return 0;
     }
-    return 0;
+    return 1;
 }
 
 static int known_declared_type_with_binders(const Analyzer *analyzer,

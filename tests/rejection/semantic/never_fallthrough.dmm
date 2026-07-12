@@ -1,0 +1,5 @@
+package main;
+func fail(condition:bit) -> never {
+    if (condition) { while (condition) {} }
+}
+func main() -> void {}

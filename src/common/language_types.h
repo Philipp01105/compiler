@@ -18,7 +18,7 @@ typedef enum {
     TOKEN_TYPE_FLOAT, TOKEN_TYPE_DOUBLE, TOKEN_TYPE_STRING,
     TOKEN_TYPE_I8, TOKEN_TYPE_U8, TOKEN_TYPE_I16, TOKEN_TYPE_U16,
     TOKEN_TYPE_I32, TOKEN_TYPE_U32, TOKEN_TYPE_I64, TOKEN_TYPE_U64,
-    TOKEN_TYPE_ISIZE, TOKEN_TYPE_USIZE, TOKEN_TYPE_VOID,
+    TOKEN_TYPE_ISIZE, TOKEN_TYPE_USIZE, TOKEN_TYPE_VOID, TOKEN_TYPE_NEVER,
     TOKEN_IDENTIFIER, TOKEN_NUMBER, TOKEN_FLOAT_LITERAL, TOKEN_CHAR_LITERAL,
     TOKEN_STRING_LITERAL, TOKEN_PLUS, TOKEN_MINUS, TOKEN_STAR, TOKEN_SLASH,
     TOKEN_PERCENT, TOKEN_EQUAL, TOKEN_EQUAL_EQUAL, TOKEN_BANG_EQUAL,
@@ -35,11 +35,11 @@ typedef enum {
 typedef enum {
     TYPE_INT, TYPE_CHAR, TYPE_BYTE, TYPE_BIT, TYPE_FLOAT, TYPE_DOUBLE,
     TYPE_STRING, TYPE_I8, TYPE_U8, TYPE_I16, TYPE_U16, TYPE_I32, TYPE_U32,
-    TYPE_I64, TYPE_U64, TYPE_ISIZE, TYPE_USIZE, TYPE_VOID, TYPE_UNKNOWN
+    TYPE_I64, TYPE_U64, TYPE_ISIZE, TYPE_USIZE, TYPE_VOID, TYPE_NEVER, TYPE_UNKNOWN
 } DataType;
 
 #define DMM_TYPE_NAMES "int", "char", "byte", "bit", "float", "double", "string", \
-    "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "isize", "usize", "void", "unknown"
+    "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "isize", "usize", "void", "never", "unknown"
 
 static inline int data_type_integral(DataType type) {
     return type == TYPE_INT || type == TYPE_CHAR || type == TYPE_BYTE || type == TYPE_BIT ||
@@ -75,7 +75,11 @@ static inline uint64_t data_type_normalize_integer(uint64_t bits, DataType type)
 }
 
 static inline DataType token_data_type(TokenType token) {
-    return token >= TOKEN_TYPE_INT && token <= TOKEN_TYPE_VOID ? (DataType) (token - TOKEN_TYPE_INT) : TYPE_UNKNOWN;
+    return token >= TOKEN_TYPE_INT && token <= TOKEN_TYPE_NEVER ? (DataType) (token - TOKEN_TYPE_INT) : TYPE_UNKNOWN;
+}
+
+static inline int data_type_has_value(DataType type) {
+    return type != TYPE_VOID && type != TYPE_NEVER;
 }
 
 static inline DataType data_type_promoted_integer(DataType left, DataType right) {

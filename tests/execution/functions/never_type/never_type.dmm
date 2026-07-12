@@ -1,0 +1,36 @@
+package main;
+
+import "stdlib/core";
+
+func stop() -> never {
+    core.core_trap();
+}
+
+func invoke(stopFunction:func() -> never) -> never {
+    stopFunction();
+}
+
+func impossibleValue() -> int {
+    return stop();
+}
+
+func checked(value:int) -> int {
+    if (value < 0) {
+        stop();
+    }
+    return value + 1;
+}
+
+func selected(flag:bit) -> int {
+    if (flag) {
+        return 7;
+    }
+    core.core_exit(9);
+}
+
+func main() -> int {
+    var stopper:func() -> never=stop;
+    if (checked(41) != 42) { return 1; }
+    if (selected(true) != 7) { return 2; }
+    return 0;
+}

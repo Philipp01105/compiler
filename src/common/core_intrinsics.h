@@ -6,7 +6,7 @@
 #include <string.h>
 
 /* Target-independent signatures shared by semantic analysis, IR and emission. */
-typedef enum { CORE_VOID, CORE_INT, CORE_SIZE, CORE_OFFSET, CORE_BYTES, CORE_STRING } CoreValueKind;
+typedef enum { CORE_VOID, CORE_NEVER, CORE_INT, CORE_SIZE, CORE_OFFSET, CORE_BYTES, CORE_STRING } CoreValueKind;
 
 typedef struct {
     const char *source_name;
@@ -28,8 +28,8 @@ typedef struct {
     X("__dmm_intrinsic_write", "__dmm_rt_sys_write", 3, CORE_OFFSET, CORE_INT, CORE_BYTES, CORE_SIZE) \
     X("__dmm_intrinsic_open", "__dmm_rt_sys_open", 3, CORE_INT, CORE_STRING, CORE_INT, CORE_INT) \
     X("__dmm_intrinsic_close", "__dmm_rt_sys_close", 1, CORE_INT, CORE_INT, CORE_VOID, CORE_VOID) \
-    X("__dmm_intrinsic_exit", "__dmm_core_exit", 1, CORE_VOID, CORE_INT, CORE_VOID, CORE_VOID) \
-    X("__dmm_intrinsic_trap", "__dmm_core_trap", 0, CORE_VOID, CORE_VOID, CORE_VOID, CORE_VOID)
+    X("__dmm_intrinsic_exit", "__dmm_core_exit", 1, CORE_NEVER, CORE_INT, CORE_VOID, CORE_VOID) \
+    X("__dmm_intrinsic_trap", "__dmm_core_trap", 0, CORE_NEVER, CORE_VOID, CORE_VOID, CORE_VOID)
 
 static inline const CoreIntrinsic *core_intrinsic_find(const char *name) {
 #define CORE_SIGNATURE(source, link, count, result, a, b, c) {source, link, count, result, {a, b, c}},
@@ -41,7 +41,9 @@ static inline const CoreIntrinsic *core_intrinsic_find(const char *name) {
 }
 
 static inline DataType core_value_type(CoreValueKind kind) {
-    return kind == CORE_BYTES
+    return kind == CORE_NEVER
+               ? TYPE_NEVER
+               : kind == CORE_BYTES
                ? TYPE_U8
                : kind == CORE_STRING
                      ? TYPE_STRING

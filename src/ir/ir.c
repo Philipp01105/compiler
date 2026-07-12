@@ -167,6 +167,7 @@ DataType ir_ast_type_data_type(const AstProgram *program, const AstType *type) {
         case TOKEN_TYPE_DOUBLE: return TYPE_DOUBLE;
         case TOKEN_TYPE_STRING: return TYPE_STRING;
         case TOKEN_TYPE_VOID: return TYPE_VOID;
+        case TOKEN_TYPE_NEVER: return TYPE_NEVER;
         default: return TYPE_UNKNOWN;
     }
 }
@@ -756,7 +757,7 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
     IrInstruction *instruction = emit(builder, opcode, expression->span);
     if (instruction == NULL) return IR_VALUE_NONE;
     if (!((opcode == IR_OP_CALL || opcode == IR_OP_FREE) &&
-          expression->resolved_type == TYPE_VOID))
+          !data_type_has_value(expression->resolved_type)))
         instruction->result = new_value(builder);
     instruction->operand_a = left;
     instruction->operand_b = right;
@@ -823,6 +824,13 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
             }
             if (parameter != NULL) parameter = parameter->next;
         }
+    }
+    if (expression->kind == AST_EXPR_CALL &&
+        expression->resolved_type == TYPE_NEVER) {
+        IrInstruction *unreachable = emit(builder, IR_OP_TRAP,
+                                          expression->span);
+        if (unreachable != NULL) set_void_type(builder, unreachable);
+        return IR_VALUE_NONE;
     }
     return result;
 }
@@ -1239,6 +1247,7 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
             }
         } else if (statement->kind == AST_STMT_RETURN) {
             size_t value = lower_expression(builder, statement->value);
+            if (block_terminated(builder->function)) continue;
             value = coerce_slice(builder, value, builder->function->return_type_id, statement->span);
             emit_move_if_owned(builder, statement->value);
             emit_deferred_until(builder, NULL);
@@ -1267,6 +1276,7 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
             size_t else_label = new_label(builder);
             size_t end_label = new_label(builder);
             size_t condition = lower_expression(builder, statement->condition);
+            if (block_terminated(builder->function)) continue;
             IrInstruction *branch = emit(builder, IR_OP_BRANCH, statement->span);
             if (branch != NULL) {
                 branch->operand_a = condition;

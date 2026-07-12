@@ -1,7 +1,17 @@
 package main;
 import "stdlib";
+import "stdlib/core";
 
 const SCORE_COUNT:int=5;
+
+func invalidScore() -> never {
+    core.core_trap();
+}
+
+func checkedScore(value:int) -> int {
+    if (value < 0 || value > 100) { invalidScore(); }
+    return value;
+}
 
 struct ScoreCard {
     var scores:int[SCORE_COUNT];
@@ -36,7 +46,7 @@ func passedEveryScore(scores:int[]) -> bit {
 
 func main() -> int {
     var card:ScoreCard;
-    card.scores=[72,88,91,67,82];
+    card.scores=[checkedScore(72),88,91,67,82];
 
     // Fixed arrays retain their length in the type and borrow as checked slices.
     var view:int[]=card.scores;

@@ -199,7 +199,7 @@ static AstType inferred_type(void) {
 static int is_type_token(TokenType type) {
     return type == TOKEN_IDENTIFIER ||
            type == TOKEN_KEYWORD_FUNC ||
-           (type >= TOKEN_TYPE_INT && type <= TOKEN_TYPE_VOID);
+           (type >= TOKEN_TYPE_INT && type <= TOKEN_TYPE_NEVER);
 }
 
 static AstGenericParameter *parse_generic_parameters(SyntaxParser *parser);
@@ -585,7 +585,7 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
             if (expression->kind == AST_EXPR_NAME &&
                 expression->value_token < parser->program->token_count) {
                 TokenType callee = parser->program->tokens[expression->value_token].type;
-                if (callee >= TOKEN_TYPE_INT && callee <= TOKEN_TYPE_VOID) {
+                if (callee >= TOKEN_TYPE_INT && callee <= TOKEN_TYPE_NEVER) {
                     parser_failure(parser, ERR_PARSE_EXPECTED_TOKEN,
                                    "Type-first casts were removed; use expression.(type)");
                     break;

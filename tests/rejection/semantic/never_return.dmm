@@ -1,0 +1,3 @@
+package main;
+func fail() -> never { return; }
+func main() -> void {}

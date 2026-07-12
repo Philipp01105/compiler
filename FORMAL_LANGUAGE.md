@@ -40,7 +40,7 @@ keyword         = "func" | "var" | "return" | "for" | "if" | "else"
                 | "destructor" | "defer" | "mut" ;
 
 primitive-type  = "int" | "char" | "byte" | "bit"
-                | "float" | "double" | "string" | "void"
+                | "float" | "double" | "string" | "void" | "never"
                 | "i8" | "u8" | "i16" | "u16" | "i32" | "u32"
                 | "i64" | "u64" | "isize" | "usize" ;
 ```

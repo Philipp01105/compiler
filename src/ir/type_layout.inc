@@ -13,7 +13,7 @@ static int type_layout_depth(const IrModule *module, IrTypeId id, IrTypeLayout *
         return 1;
     }
     if (type->kind == IR_TYPE_PRIMITIVE) {
-        if (type->primitive == TYPE_VOID || type->primitive == TYPE_UNKNOWN) return 0;
+        if (!data_type_has_value(type->primitive) || type->primitive == TYPE_UNKNOWN) return 0;
         layout->size = data_type_bytes(type->primitive);
         layout->alignment = layout->size;
         return 1;

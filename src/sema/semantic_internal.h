@@ -152,7 +152,7 @@ const SemanticSymbol *resolve_overload(const Analyzer *analyzer, const char *nam
                                        size_t owner_symbol_id, int is_static,
                                        const AstExpression *arguments, int *ambiguous);
 void validate_expression(Analyzer *analyzer, AstExpression *expression, int is_callee);
-int statement_always_returns(const AstStatement *statement);
+int statement_may_fall_through(const AstStatement *statement);
 
 int same_name(const AstProgram *program, size_t token, const char *name);
 int same_package(const AstProgram *left, const AstProgram *right);

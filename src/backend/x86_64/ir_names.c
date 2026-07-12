@@ -46,9 +46,9 @@ static int mangle_type(const IrModule *module, IrTypeId type_id, char *buffer,
         static const char *const codes[] = {
             "i", "c", "y", "b", "f", "d", "s",
             "t2_i8", "t2_u8", "t3_i16", "t3_u16", "t3_i32", "t3_u32",
-            "t3_i64", "t3_u64", "t5_isize", "t5_usize", "v"
+            "t3_i64", "t3_u64", "t5_isize", "t5_usize", "v", "n"
         };
-        if (type->primitive < TYPE_INT || type->primitive > TYPE_VOID) return 0;
+        if (type->primitive < TYPE_INT || type->primitive > TYPE_NEVER) return 0;
         return mangle_append(buffer, buffer_size, used, codes[type->primitive]);
     }
     if (type->kind == IR_TYPE_POINTER)

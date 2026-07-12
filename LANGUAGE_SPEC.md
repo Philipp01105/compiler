@@ -33,11 +33,16 @@ discovery, visibility, `internal`, vendoring and `dmm manifest sync` contract is
 ## Types
 
 The primitive types are `int`, `char`, `byte`, `bit`, `float`, `double`, `string`,
-`i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `isize`, `usize`, and `void`. Fixed-width integer names denote
+`i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `isize`, `usize`, `void`, and `never`. Fixed-width integer names denote
 their signedness and width; `isize`/`usize` are signed/unsigned pointer-width integers (64 bits on both supported
 targets). Existing `int`, `char` and `byte` retain their 32-bit signed, 8-bit signed and 8-bit unsigned memory/ABI
 representations. The new spellings are distinct primitive types for overload resolution and generic specialization.
-`void` is valid only as a function return type. Fixed arrays use `var name:type[length];`. Array and slice postfixes may
+`void` is valid only as a function return type. `never` is an uninhabited bottom type used as the direct return type of
+functions that cannot complete normally. It has no runtime value and is therefore invalid for variables, parameters,
+fields, payloads, pointers, arrays, and slices. A `never` expression is compatible with every expected result type
+because evaluation cannot reach the consuming operation. A `never` function must not use `return` and every path must
+terminate. Such paths satisfy definite-return analysis for surrounding value-returning functions. Fixed arrays use
+`var name:type[length];`. Array and slice postfixes may
 be repeated and are applied from left to right: `int[2][3]` is an outer length-3 array whose elements are length-2
 arrays, while `int[2][]` is a slice of length-2 arrays. Repeated prefix stars form pointers, such as `**int`; grouped
 types distinguish `*(int[4])` from `*int[4]`. Whole-array assignment is supported when both sides have the same complete
@@ -53,7 +58,9 @@ A bare top-level function name, static method, or type-qualified instance method
 instance method takes `*Owner` as its first parameter; selecting an instance method from a value remains invalid.
 Overloaded names require an expected function type. Generic functions may remain polymorphic (`var f=identity`), be
 explicitly specialized (`identity<int>`), or specialize from a monomorphic expected type
-(`var f:func(int) -> int=identity`). Calls through a null monomorphic callable trap.
+(`var f:func(int) -> int=identity`). Calls through a null monomorphic callable trap. Callable return types may be
+`never`; calling one terminates the current control-flow path. A `void` call only produces no value and continues
+normally, so the two types are not interchangeable.
 
 Monomorphic callable values may be stored in locals, constants, package variables, fields, enum payloads, arrays, and
 slices, and may be passed and returned. They compare only with `==` and `!=`, and only at the same signature.

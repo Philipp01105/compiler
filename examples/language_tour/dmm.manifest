@@ -1,5 +1,5 @@
 /* main
-Core syntax through a score report: constants, structs, methods, overloads, arrays, slices, casts and metadata.
+Core syntax through a score report: constants, structs, methods, overloads, never-returning validation, arrays, slices, casts and metadata.
 */
 
 module dmm.example/language_tour

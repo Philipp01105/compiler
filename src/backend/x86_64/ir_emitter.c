@@ -161,6 +161,7 @@ static DataType ir_ast_type(const AstProgram *program, const AstType *type) {
         case TOKEN_TYPE_DOUBLE: return TYPE_DOUBLE;
         case TOKEN_TYPE_STRING: return TYPE_STRING;
         case TOKEN_TYPE_VOID: return TYPE_VOID;
+        case TOKEN_TYPE_NEVER: return TYPE_NEVER;
         default: return TYPE_UNKNOWN;
     }
 }

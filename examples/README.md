@@ -18,7 +18,7 @@ standard output.
 
 | Example | What it demonstrates |
 |---|---|
-| [language_tour](language_tour/language_tour.dmm) | A score report using constants, primitives, structs, methods, overloads, fixed arrays, slice borrowing, loops, casts and type metadata |
+| [language_tour](language_tour/language_tour.dmm) | A score report using constants, primitives, structs, methods, overloads, `never`, fixed arrays, slice borrowing, loops, casts and type metadata |
 | [callable_values](callable_values/callable_values.dmm) | A transformation pipeline with function-typed fields and arrays, enum payloads, returned callables, equality and unbound methods |
 | [sum_types](sum_types/sum_types.dmm) | Success, absence and failure modeled with generic sum enums, exhaustive `match`, `Option` and `Result` |
 | [generics_and_interfaces](generics_and_interfaces/generics_and_interfaces.dmm) | Generic containers and functions, multiple structural bounds, static specialization, dynamic interface slices and type matches |
@@ -34,6 +34,7 @@ standard output.
 | Language area | Primary example |
 |---|---|
 | Declarations, expressions and control flow | `language_tour` |
+| Never-returning functions and definite return | `language_tour` |
 | Function types and higher-order code | `callable_values` |
 | Enums and pattern matching | `sum_types` |
 | Generics, interfaces and compile-time type selection | `generics_and_interfaces` |

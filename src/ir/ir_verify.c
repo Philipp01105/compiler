@@ -12,7 +12,7 @@ static int instruction_produces_value(const IrInstruction *instruction) {
     IrOpcode opcode = instruction->opcode;
     return opcode == IR_OP_CONSTANT || opcode == IR_OP_FUNCTION_ADDRESS || opcode == IR_OP_LOAD ||
            opcode == IR_OP_UNARY || opcode == IR_OP_BINARY ||
-           (opcode == IR_OP_CALL && instruction->type != TYPE_VOID) ||
+           (opcode == IR_OP_CALL && data_type_has_value(instruction->type)) ||
            opcode == IR_OP_INDEX || opcode == IR_OP_SUBSLICE ||
            opcode == IR_OP_MEMBER || opcode == IR_OP_SLICE_LENGTH ||
            opcode == IR_OP_SLICE || opcode == IR_OP_SLICE_DATA ||
@@ -67,6 +67,8 @@ static int ir_types_assignable(const IrModule *module, IrTypeId source,
     if (source == target) return 1;
     const IrType *from = &module->types[source];
     const IrType *to = &module->types[target];
+    if (from->kind == IR_TYPE_PRIMITIVE && from->primitive == TYPE_NEVER)
+        return 1;
     if (from->kind == IR_TYPE_NAMED && to->kind == IR_TYPE_NAMED &&
         semantic_implements_interface(module->semantics, to->symbol_id, from->symbol_id))
         return 1;
@@ -493,7 +495,7 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
         if (type->kind < IR_TYPE_PRIMITIVE || type->kind > IR_TYPE_FUNCTION) return 0;
         if (type->kind == IR_TYPE_PRIMITIVE &&
             type->primitive != TYPE_UNKNOWN &&
-            (type->primitive < TYPE_INT || type->primitive > TYPE_VOID))
+            (type->primitive < TYPE_INT || type->primitive > TYPE_NEVER))
             return 0;
         if (type->kind == IR_TYPE_ARRAY && type->array_length == 0) return 0;
         if (type->kind != IR_TYPE_ARRAY && type->array_length != 0) return 0;

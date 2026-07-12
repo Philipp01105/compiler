@@ -777,7 +777,7 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                                   : TOKEN_ERROR;
         if (strcmp(name, "true") == 0 || strcmp(name, "false") == 0) {
             expression->resolved_type = TYPE_BIT;
-        } else if (name_type >= TOKEN_TYPE_INT && name_type <= TOKEN_TYPE_VOID) {
+        } else if (name_type >= TOKEN_TYPE_INT && name_type <= TOKEN_TYPE_NEVER) {
             AstType type = {
                 .kind = AST_TYPE_NAMED,
                 .name_token = expression->value_token,
@@ -1150,7 +1150,7 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                             specialized->source_program, &specialized->declared_type);
                     }
                 }
-            } else if (callee_type >= TOKEN_TYPE_INT && callee_type <= TOKEN_TYPE_VOID) {
+            } else if (callee_type >= TOKEN_TYPE_INT && callee_type <= TOKEN_TYPE_NEVER) {
                 expression->resolved_type = primitive_type(analyzer->program, &cast_type);
             } else {
                 int ambiguous = 0;

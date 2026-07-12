@@ -36,8 +36,8 @@ func main() -> int {
 | `core.core_write(fd:int, source:*u8, bytes:usize) -> isize`      | Return bytes written or a negative error.                                                     |
 | `core.core_open(path:string, flags:int, permissions:int) -> int` | Return a descriptor or a negative error.                                                      |
 | `core.core_close(fd:int) -> int`                                 | Return zero or a negative error.                                                              |
-| `core.core_exit(status:int)`                                     | Exit without returning to the caller.                                                         |
-| `core.core_trap()`                                               | Trap without returning to the caller.                                                         |
+| `core.core_exit(status:int) -> never`                            | Exit without returning to the caller.                                                         |
+| `core.core_trap() -> never`                                      | Trap without returning to the caller.                                                         |
 
 Copy/fill with zero bytes do not access either pointer, so null pointers are accepted. Nonzero copy/fill traps on null
 pointers or counts above `INT64_MAX`. Other region validity, pointer arithmetic, lifetimes and ownership are caller
@@ -52,8 +52,8 @@ table. Linux uses direct syscalls. The supported portable open flags are `CORE_R
 `CORE_APPEND`; combine one access mode with the desired flags by addition. Permissions are Linux mode bits and are
 ignored by the Windows implementation.
 
-The language currently types exit/trap as `void`; it has no never-returning type. A non-void DMM function still needs a
-syntactic return on every reachable path.
+Exit and trap have the uninhabited return type `never`. Their calls end the current control-flow path and therefore
+satisfy definite-return analysis. Immediate process termination still bypasses normal scope and package cleanup.
 
 ## Compiler and library responsibilities
 
