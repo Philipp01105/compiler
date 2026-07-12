@@ -661,7 +661,7 @@ static void analyze_propagation(Analyzer *analyzer, AstExpression *expression) {
         return;
     }
     const AstProgram *saved_program = analyzer->program;
-    analyzer->program = branch->source_program;
+    analyzer->program = (AstProgram *) branch->source_program;
     const SemanticSymbol *from = unique_static_method(
         analyzer, return_id, "fromResidual", &residual, &ambiguous);
     analyzer->program = (AstProgram *) saved_program;
