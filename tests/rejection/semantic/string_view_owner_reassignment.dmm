@@ -1,8 +1,8 @@
 package main;
 import "stdlib";
 func main() -> void {
-    var text:stdlib.String=stdlib.String.clone("old");
+    var text:stdlib.String=stdlib.cloneString("old");
     var view:string=text.view();
-    text=stdlib.String.clone("new");
+    text=stdlib.cloneString("new");
     stdlib.println(view);
 }

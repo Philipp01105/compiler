@@ -1,0 +1,20 @@
+package main;
+import analytics "dmm.example/packages/statistics";
+import "stdlib";
+
+const SAMPLE_COUNT:int=5;
+
+func main() -> int {
+    var samples:int[SAMPLE_COUNT]=[7,4,9,6,4];
+    var summary:analytics.Summary=analytics.summarize(samples);
+
+    stdlib.println(summary.minimum);
+    stdlib.println(summary.maximum);
+    stdlib.println(summary.total);
+    stdlib.println(analytics.average(summary,SAMPLE_COUNT.(usize)));
+
+    if (summary.minimum != 4 || summary.maximum != 9 || summary.total != 30) {
+        return 1;
+    }
+    return 0;
+}

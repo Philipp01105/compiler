@@ -1,7 +1,7 @@
 # DMM examples
 
-These programs are executable documentation for the current `2026-09-22-dev` edition. Each directory is an independent
-module with its own `dmm.manifest`, and each program focuses on a small set of related features.
+These programs are executable documentation for the current `2026-09-22-dev` edition. Every directory is an independent
+module with its own `dmm.manifest`; together they cover the implemented language areas without relying on planned syntax.
 
 From the repository root:
 
@@ -11,100 +11,39 @@ From the repository root:
 ```
 
 On Windows, use `build/compiler.exe` and an `.exe` output name. Substitute another configured build directory when
-needed.
+needed. `file_io` creates `dmm-example-output.txt` in the process working directory; the other examples only write to
+standard output.
 
 ## Suggested reading order
 
-| Example | Main ideas |
+| Example | What it demonstrates |
 |---|---|
-| [language_tour](language_tour/language_tour.dmm) | Constants, structs, methods, overloads, contextual literals, slices, loops, casts and type metadata |
-| [callable_values](callable_values/callable_values.dmm) | Function types, higher-order calls, returned callables, callable equality and unbound methods |
-| [sum_types](sum_types/sum_types.dmm) | Generic sum enums, qualified constructors, payload bindings, exhaustive `match`, `Option` and `Result` |
-| [generics_and_interfaces](generics_and_interfaces/generics_and_interfaces.dmm) | Generic functions and structs, inferred specialization, interface bounds and dynamic interface collections |
-| [memory_and_slices](memory_and_slices/memory_and_slices.dmm) | Fixed arrays, slice views, raw allocation, pointer casts, `sizeof` and `alignof` |
-| [type_derived_ownership](type_derived_ownership/type_derived_ownership.dmm) | Copy versus move, destructor propagation, reinitialization, checked mutable borrows and reverse field drop |
-| [defer_cleanup](defer_cleanup/defer_cleanup.dmm) | LIFO `defer`, eager call capture, anonymous-body reference capture and cleanup on return |
-| [package_cleanup](package_cleanup/package_cleanup.dmm) | Exactly-once package-owner destruction after a normal return from `main` |
-| [io_demo](io_demo/io_demo.dmm) | Streams, buffered I/O, files, byte slices and explicit cleanup of current I/O wrappers |
+| [language_tour](language_tour/language_tour.dmm) | A score report using constants, primitives, structs, methods, overloads, fixed arrays, slice borrowing, loops, casts and type metadata |
+| [callable_values](callable_values/callable_values.dmm) | A transformation pipeline with function-typed fields and arrays, enum payloads, returned callables, equality and unbound methods |
+| [sum_types](sum_types/sum_types.dmm) | Success, absence and failure modeled with generic sum enums, exhaustive `match`, `Option` and `Result` |
+| [generics_and_interfaces](generics_and_interfaces/generics_and_interfaces.dmm) | Generic containers and functions, multiple structural bounds, static specialization, dynamic interface slices and type matches |
+| [memory_and_slices](memory_and_slices/memory_and_slices.dmm) | Nested arrays, checked views and subslices, generated backing storage, raw slices, pointers, `reserve`/`free`, `sizeof` and `alignof` |
+| [ownership_and_borrows](ownership_and_borrows/ownership_and_borrows.dmm) | Copy versus move, destructor propagation through generics, reinitialization, disjoint mutable borrows and reverse field drop |
+| [defer_cleanup](defer_cleanup/defer_cleanup.dmm) | LIFO `defer`, eager call capture, anonymous-body reference capture and cleanup on return, `continue` and `break` |
+| [owning_collections](owning_collections/owning_collections.dmm) | Move-only `Bytes`, `Buffer<T>`, `List<T>` and `String`, including growth, borrowed views and automatic destruction |
+| [packages](packages/packages.dmm) | A public API in a second package, an import alias, module-relative resolution and package-owner cleanup after `main` |
+| [file_io](file_io/file_io.dmm) | A deterministic file round-trip with streams, transfer statuses, byte views and explicit cleanup of current I/O wrappers |
 
-## Feature snapshots
+## Coverage map
 
-Context supplies the element type of an array or slice literal:
+| Language area | Primary example |
+|---|---|
+| Declarations, expressions and control flow | `language_tour` |
+| Function types and higher-order code | `callable_values` |
+| Enums and pattern matching | `sum_types` |
+| Generics, interfaces and compile-time type selection | `generics_and_interfaces` |
+| Arrays, slices, pointers and raw allocation | `memory_and_slices` |
+| Moves, borrows and destructors | `ownership_and_borrows` |
+| Scope-exit cleanup | `defer_cleanup` |
+| Standard owning collections | `owning_collections` |
+| Modules, packages and visibility | `packages` |
+| Files, streams and status-based error handling | `file_io` |
 
-```dmm
-func sum(values:int[]) -> int { /* ... */ }
-
-var fixed:int[4] = [2,4,6,8];
-var view:int[] = fixed;
-var total:int = sum([2,4,6,8]);
-```
-
-Generic enum constructors carry their concrete specialization, and `match` must cover every variant:
-
-```dmm
-enum Lookup<T> {
-    Found(T),
-    Missing,
-    Failed(int),
-}
-
-var result:Lookup<int> = Lookup<int>.Found(42);
-match (result) {
-    Found(value) => stdlib.println(value);
-    Missing => stdlib.println("missing");
-    Failed(code) => stdlib.println(code);
-}
-```
-
-Interfaces are structural: a concrete type implements an interface by providing the required method shape.
-
-```dmm
-interface Measurable {
-    func measure(scale:int) -> int;
-}
-
-struct Width {
-    var value:int;
-    func measure(scale:int) -> int { return value * scale; }
-}
-
-func scaled<T:Measurable>(value:T) -> int {
-    return value.measure(2);
-}
-```
-
-Ownership is derived from concrete fields. The complete runnable example shows why `Box<int>` is copyable while
-`Box<File>` moves and is destroyed exactly once:
-
-```dmm
-struct File {
-    var handle:int;
-    destructor { handle = 0; }
-}
-
-struct Box<T> {
-    var value:T;
-}
-
-var number:Box<int>;
-var numberCopy = number;
-
-var file:Box<File>;
-consumeValue(file); // ownership moves into the parameter
-```
-
-Deferred calls capture evaluated operands immediately. Anonymous deferred bodies instead observe referenced locals when
-the surrounding scope exits:
-
-```dmm
-var digit:int = 1;
-defer append(target,digit); // captures 1
-defer func() {
-    append(target,digit);   // reads digit when the defer runs
-}
-digit = 2;
-```
-
-These snippets are excerpts, not separate fixtures. Follow the links in the catalog for complete programs with imports,
-return paths and observable results. Normative rules live in the [language specification](../LANGUAGE_SPEC.md); planned
-syntax such as closures and expression-valued `if`/`match` is deliberately absent from the examples.
+Each feature is explained where it is exercised rather than repeated here as a second partial program. Normative rules
+live in the [language specification](../LANGUAGE_SPEC.md); diagnostics and edge cases belong in the test suite. Planned
+closures, propagation syntax and expression-valued control flow are deliberately absent until their semantics land.

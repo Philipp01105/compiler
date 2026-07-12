@@ -1,2 +1,6 @@
-module dmm.example/callable-values
+/* main
+Function values in fields, arrays and enum payloads, plus returned callables, equality and unbound methods.
+*/
+
+module dmm.example/callable_values
 dmm 2026-09-22-dev

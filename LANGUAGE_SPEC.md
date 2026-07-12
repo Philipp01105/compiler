@@ -231,15 +231,15 @@ are implemented. Local and by-value-parameter cleanup covers scope fallthrough, 
 recursive struct-field and fixed-array-element destruction is emitted in reverse order. Package storage participates in
 exactly-once cleanup after a normal return from `main`.
 
-The `stdlib` package provides destructor-backed owning collections. `Bytes.allocate(capacity)` owns a growable byte
-region; `Buffer<T>.allocate(count)` owns a fixed-length region; and `List<T>.allocate(capacity)` owns a growable logical
+The `stdlib` package provides destructor-backed owning collections. `stdlib.bytes(capacity)` creates a growable byte
+region; `stdlib.buffer<T>(count)` creates a fixed-length region; and `stdlib.list<T>(capacity)` creates a growable logical
 sequence. Each owner is move-only, exposes `ok()` and an `error:AllocationError`, and releases its allocation exactly
 once. `Bytes.push` and `List<T>.push` return `AllocationError`; the variants are `None`, `OutOfMemory`, and
 `CapacityOverflow`. Their `view()` methods return borrowed slices, so any operation that can relocate or release the
 owner is rejected while the view is live. `Buffer<T>` and `List<T>` currently require copyable element types for
 `get`, `set`, growth, and destruction; dynamic element drop is not yet part of their contract.
 
-`stdlib.String.clone(text)` creates a move-only owned string and reports allocation failure through the same typed
+`stdlib.cloneString(text)` creates a move-only owned string and reports allocation failure through the same typed
 status. `String.view() -> string` returns a non-owning string view tied to the `String` receiver, and `length()` reports
 its byte length. Moving, replacing, or destroying the owner while that view remains live is rejected.
 

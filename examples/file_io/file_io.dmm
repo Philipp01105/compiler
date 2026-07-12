@@ -1,0 +1,28 @@
+package main;
+import "stdlib/stdio";
+
+const OUTPUT_PATH:string="dmm-example-output.txt";
+
+func main() -> int {
+    var file=stdio.openWrite(OUTPUT_PATH);
+    if (!file.isOpen()) { return 1; }
+
+    var first= file.writeLine("DMM file example");
+    var second=file.writeLine("portable streams and status values");
+    var closed:isize=file.close();
+    if (!first.ok() || !second.ok() || closed < 0) { return 2; }
+
+    var loaded=stdio.readFile(OUTPUT_PATH,1024);
+    if (loaded.status != stdio.Status.EndOfStream) {
+        loaded.release();
+        return 3;
+    }
+
+    var output=stdio.stdout();
+    var displayed=output.writeAll(loaded.view());
+    output.close();
+    loaded.release();
+
+    if (!displayed.ok()) { return 4; }
+    return 0;
+}

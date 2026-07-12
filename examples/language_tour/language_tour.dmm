@@ -1,55 +1,65 @@
 package main;
 import "stdlib";
 
-const VALUE_COUNT:int=4;
+const SCORE_COUNT:int=5;
 
-struct Counter {
-    var value:int;
+struct ScoreCard {
+    var scores:int[SCORE_COUNT];
 
-    func add(amount:int) -> void {
-        value+=amount;
+    func total() -> int {
+        var result:int=0;
+        for (var index:int=0; index < SCORE_COUNT; index+=1) {
+            result+=scores[index];
+        }
+        return result;
     }
 
-    func current() -> int {
-        return value;
+    func average() -> double {
+        var result:int=0;
+        for (var index:int=0; index < SCORE_COUNT; index+=1) {
+            result+=scores[index];
+        }
+        return result.(double)/SCORE_COUNT.(double);
     }
 }
 
-func describe(value:int) -> string {
-    return "integer";
-}
+// Overload resolution selects a function from the argument type.
+func category(value:int) -> string { return "whole-number score"; }
+func category(value:double) -> string { return "average score"; }
 
-func describe(value:double) -> string {
-    return "double";
-}
-
-func sum(values:int[]) -> int {
-    var total:int=0;
-    for (var index:int=0; index < values.length; index+=1) {
-        total+=values[index];
+func passedEveryScore(scores:int[]) -> bit {
+    for (var index:int=0; index < scores.length; index+=1) {
+        if (scores[index] < 50) { return false; }
     }
-    return total;
+    return true;
 }
 
 func main() -> int {
-    var values:int[VALUE_COUNT]=[2,4,6,8];
+    var card:ScoreCard;
+    card.scores=[72,88,91,67,82];
 
-    // A fixed array converts to a checked slice without copying its elements.
-    var view:int[]=values;
-    var total:int=sum([2,4,6,8]);
-    var average:double=total.(double)/view.length.(double);
+    // Fixed arrays retain their length in the type and borrow as checked slices.
+    var view:int[]=card.scores;
+    var total:int=card.total();
+    var average:double=card.average();
+    var passed:bit=passedEveryScore(view);
 
-    var counter:Counter;
-    counter.add(total);
-    counter.add(-5);
+    stdlib.println(category(total));
+    stdlib.println(total);
+    stdlib.println(category(average));
+    stdlib.println(average);
+    stdlib.println(passed);
 
-    stdlib.println(describe(total));
-    stdlib.println(describe(average));
-    stdlib.println(counter.current());
-    stdlib.println(Counter.name);
-    stdlib.println(Counter.size);
-    stdlib.println(Counter.align);
+    // Concatenation accepts scalar values and returns an explicitly owned string.
+    var summary:string="passed every score: "+passed;
+    stdlib.println(summary);
+    free(summary);
 
-    if (average != 5.0 || counter.current() != 15) { return 1; }
+    // Types are values in metadata expressions.
+    stdlib.println(ScoreCard.name);
+    stdlib.println(ScoreCard.size);
+    stdlib.println(ScoreCard.align);
+
+    if (total != 400 || average != 80.0 || !passed) { return 1; }
     return 0;
 }

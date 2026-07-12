@@ -7,9 +7,16 @@ enum Lookup<T> {
     Failed(int),
 }
 
-func lookup(enabled:bit) -> Lookup<int> {
-    if (enabled) { return Lookup<int>.Found(42); }
-    return Lookup<int>.Missing;
+// Legacy enums attach the same compile-time fields to every member.
+enum HttpStatus(code:int, text:string) {
+    Ok(200,"ok"),
+    NotFound(404,"not found"),
+}
+
+func lookup(key:int) -> Lookup<int> {
+    if (key < 0) { return Lookup<int>.Failed(400); }
+    if (key == 0) { return Lookup<int>.Missing; }
+    return Lookup<int>.Found(key*2);
 }
 
 func display(result:Lookup<int>) -> int {
@@ -23,6 +30,7 @@ func display(result:Lookup<int>) -> int {
             return 0;
         }
         Failed(code) => {
+            stdlib.println("lookup failed");
             stdlib.println(code);
             return -code;
         }
@@ -43,12 +51,17 @@ func main() -> int {
     var some:stdlib.Option<int>=stdlib.Option<int>.Some(7);
     var none:stdlib.Option<int>=stdlib.Option<int>.None;
     var ok:stdlib.Result<int,string>=stdlib.Result<int,string>.Ok(9);
+    var error:stdlib.Result<int,string>=stdlib.Result<int,string>.Err("invalid value");
 
     stdlib.println(stdlib.unwrapOr(some,0));
     stdlib.println(stdlib.unwrapOr(none,5));
+    stdlib.println(HttpStatus.NotFound.code);
+    stdlib.println(HttpStatus.NotFound.text);
 
-    if (display(lookup(true)) != 42) { return 1; }
-    if (display(lookup(false)) != 0) { return 2; }
-    if (displayResult(ok) != 9) { return 3; }
+    if (display(lookup(21)) != 42) { return 1; }
+    if (display(lookup(0)) != 0) { return 2; }
+    if (display(lookup(-1)) != -400) { return 3; }
+    if (displayResult(ok) != 9 || displayResult(error) != 0) { return 4; }
+    if (HttpStatus.Ok == HttpStatus.NotFound) { return 5; }
     return 0;
 }

@@ -1,7 +1,0 @@
-/* main
-Interactive stream I/O demo: buffered stdin, stdout/stderr and file streams.
-Reads a name and message, saves demo_output.txt and streams its contents back.
-*/
-
-module dmm.example/io_demo
-dmm 2026-09-22-dev

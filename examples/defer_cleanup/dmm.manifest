@@ -1,5 +1,5 @@
 /* main
-LIFO defer cleanup, eager argument capture, reference capture and cleanup on return.
+LIFO defer cleanup, eager and reference capture, plus cleanup on return, continue and break.
 */
 
 module dmm.example/defer_cleanup

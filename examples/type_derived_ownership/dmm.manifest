@@ -1,6 +1,0 @@
-/* main
-Type-derived ownership, generic inference patterns, borrows, moves, reinitialization and local drop glue.
-*/
-
-module dmm.example/type_derived_ownership
-dmm 2026-09-22-dev

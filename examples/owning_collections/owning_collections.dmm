@@ -1,0 +1,45 @@
+package main;
+import "stdlib";
+
+func sum(values:int[]) -> int {
+    var total:int=0;
+    for (var index:int=0; index < values.length; index+=1) {
+        total+=values[index];
+    }
+    return total;
+}
+
+func main() -> int {
+    var numbers=stdlib.list<int>(2);
+    if (!numbers.ok()) { return 1; }
+    if (numbers.push(10) != stdlib.AllocationError.None) { return 2; }
+    if (numbers.push(20) != stdlib.AllocationError.None) { return 3; }
+    // The third push grows the allocation beyond its initial capacity.
+    if (numbers.push(30) != stdlib.AllocationError.None) { return 4; }
+    numbers.set(1,25);
+
+    var buffer=stdlib.buffer<int>(3);
+    if (!buffer.ok()) { return 5; }
+    buffer.set(0,2);
+    buffer.set(1,4);
+    buffer.set(2,6);
+
+    var bytes=stdlib.bytes(1);
+    if (!bytes.ok()) { return 6; }
+    bytes.push(68); // D
+    bytes.push(77); // M
+    bytes.push(77); // M
+
+    var title=stdlib.cloneString("owned collections");
+    if (!title.ok()) { return 7; }
+
+    stdlib.println(title.view());
+    stdlib.println(sum(numbers.view()));
+    stdlib.println(sum(buffer.view()));
+    stdlib.println(bytes.length());
+    stdlib.println(numbers.capacity());
+
+    if (sum(numbers.view()) != 65 || sum(buffer.view()) != 12) { return 8; }
+    if (bytes.length() != 3 || title.length() != 17) { return 9; }
+    return 0;
+} // All four owners release their allocations automatically.

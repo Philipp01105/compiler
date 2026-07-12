@@ -12,22 +12,6 @@ pub struct Bytes {
     var count:usize;
     pub var error:AllocationError;
 
-    pub static func allocate(capacity:usize) -> Bytes {
-        var value:Bytes;
-        if (capacity > 9223372036854775807.(usize)) {
-            value.error=AllocationError.CapacityOverflow;
-            return value;
-        }
-        if (capacity > 0) {
-            value.storage=core.alloc<u8>(capacity);
-            if (value.storage.length == 0) {
-                value.error=AllocationError.OutOfMemory;
-                return value;
-            }
-        }
-        return value;
-    }
-
     pub func ok() -> bit { return error == AllocationError.None; }
     pub func length() -> usize { return count; }
     pub func capacity() -> usize { return storage.length; }
@@ -62,25 +46,25 @@ pub struct Bytes {
     }
 }
 
+pub func bytes(capacity:usize) -> Bytes {
+    var value:Bytes;
+    if (capacity > 9223372036854775807.(usize)) {
+        value.error=AllocationError.CapacityOverflow;
+        return value;
+    }
+    if (capacity > 0) {
+        value.storage=core.alloc<u8>(capacity);
+        if (value.storage.length == 0) {
+            value.error=AllocationError.OutOfMemory;
+            return value;
+        }
+    }
+    return value;
+}
+
 pub struct Buffer<T> {
     var storage:T[];
     pub var error:AllocationError;
-
-    pub static func allocate(count:usize) -> Buffer<T> {
-        var value:Buffer<T>;
-        if (count > 9223372036854775807.(usize)/sizeof(T)) {
-            value.error=AllocationError.CapacityOverflow;
-            return value;
-        }
-        if (count > 0) {
-            value.storage=core.alloc<T>(count);
-            if (value.storage.length == 0) {
-                value.error=AllocationError.OutOfMemory;
-                return value;
-            }
-        }
-        return value;
-    }
 
     pub func ok() -> bit { return error == AllocationError.None; }
     pub func length() -> usize { return storage.length; }
@@ -93,26 +77,26 @@ pub struct Buffer<T> {
     }
 }
 
+pub func buffer<T>(count:usize) -> Buffer<T> {
+    var value:Buffer<T>;
+    if (count > 9223372036854775807.(usize)/sizeof(T)) {
+        value.error=AllocationError.CapacityOverflow;
+        return value;
+    }
+    if (count > 0) {
+        value.storage=core.alloc<T>(count);
+        if (value.storage.length == 0) {
+            value.error=AllocationError.OutOfMemory;
+            return value;
+        }
+    }
+    return value;
+}
+
 pub struct List<T> {
     var storage:T[];
     var count:usize;
     pub var error:AllocationError;
-
-    pub static func allocate(capacity:usize) -> List<T> {
-        var value:List<T>;
-        if (capacity > 9223372036854775807.(usize)/sizeof(T)) {
-            value.error=AllocationError.CapacityOverflow;
-            return value;
-        }
-        if (capacity > 0) {
-            value.storage=core.alloc<T>(capacity);
-            if (value.storage.length == 0) {
-                value.error=AllocationError.OutOfMemory;
-                return value;
-            }
-        }
-        return value;
-    }
 
     pub func ok() -> bit { return error == AllocationError.None; }
     pub func length() -> usize { return count; }
@@ -150,20 +134,25 @@ pub struct List<T> {
     }
 }
 
-pub struct String {
-    var storage:string;
-    pub var error:AllocationError;
-
-    pub static func clone(text:string) -> String {
-        var value:String;
-        var copy:string=strdup(text);
-        if (core.core_string_data(copy) == core.null<u8>()) {
+pub func list<T>(capacity:usize) -> List<T> {
+    var value:List<T>;
+    if (capacity > 9223372036854775807.(usize)/sizeof(T)) {
+        value.error=AllocationError.CapacityOverflow;
+        return value;
+    }
+    if (capacity > 0) {
+        value.storage=core.alloc<T>(capacity);
+        if (value.storage.length == 0) {
             value.error=AllocationError.OutOfMemory;
             return value;
         }
-        value.storage=copy;
-        return value;
     }
+    return value;
+}
+
+pub struct String {
+    var storage:string;
+    pub var error:AllocationError;
 
     pub func ok() -> bit { return error == AllocationError.None; }
     pub func view() -> string { return storage; }
@@ -172,4 +161,15 @@ pub struct String {
     destructor {
         free(storage);
     }
+}
+
+pub func cloneString(text:string) -> String {
+    var value:String;
+    var copy:string=strdup(text);
+    if (core.core_string_data(copy) == core.null<u8>()) {
+        value.error=AllocationError.OutOfMemory;
+        return value;
+    }
+    value.storage=copy;
+    return value;
 }
