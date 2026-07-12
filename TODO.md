@@ -1,8 +1,7 @@
 # Compiler roadmap
 
-This roadmap lists remaining work for the compiler and language. It is based on the current implementation, language
-specification, runtime documentation, native-backend documentation, tests, and known limitations. Completed features are
-omitted unless further work is required.
+This roadmap lists remaining work and retains a small number of completed milestones where they explain sequencing or
+dependencies. Implemented semantics belong in the language and subsystem documentation rather than in this file.
 
 ## Priorities
 
@@ -23,13 +22,10 @@ omitted unless further work is required.
     - Calendar editions and their development-state suffixes are validated.
     - No backwards-compatibility guarantee exists before the first stable release.
     - `dmm.manifest` is authoritative for project-wide experimental feature gates.
-2. [ ] Implement resource safety and self-hosting foundations.
-    - Move-only ownership with implicit moves and checked non-owning borrows.
-    - Exclusive mutable borrows with field-sensitive disjointness.
-    - Deterministic destructors plus LIFO `defer` actions.
-    - Conservative non-escaping borrow analysis without lifetime parameters.
-    - Typed allocation failures in high-level APIs and nullable failures in `stdlib/core`.
-    - Deterministic dependency-ordered runtime package initialization.
+2. [ ] Finish resource-safety and self-hosting foundations.
+    - Implemented: derived move-only ownership, checked borrows, deterministic destruction, LIFO `defer`, and typed
+      allocation failures in high-level APIs with nullable failures in `stdlib/core`.
+    - Remaining: deterministic dependency-ordered runtime package initialization.
 
 The second P1 goal begins only after the first is complete. Other language-feature work remains outside P1 unless it is
 required to implement these resource-safety foundations.
@@ -71,33 +67,10 @@ required to implement these resource-safety foundations.
 
 ### Ownership and resource lifetime
 
-Accepted P1 design: ownership is derived from concrete types. A destructor makes an ordinary `struct` move-only and
-in need of destruction; both properties propagate through fields. Ordinary values remain copyable when all their
-contents are copyable. Borrows are checked conservatively without general lifetime parameters. Mutable borrows are
-exclusive and borrowing is field-sensitive when disjointness is provable.
-
-- [x] Add explicit `COPYABLE`, `MOVE_ONLY`, and independent `NEEDS_DROP` type properties; derive them from normal
-  struct destructors and concrete field types (including generic specializations); add implicit moves, reinitialization
-  after a move, use-after-move diagnostics, and an initial ban on partial moves.
-- [x] Add checked `&T` / `&mut T` types, explicit borrow expressions, explicit checked-reference-to-`*T` casts,
-  field-sensitive conflict checking, conservative last-use lifetimes, and deferred-closure borrow retention.
-- [x] Restrict borrowed returns to one statically provable borrowed-parameter or package-storage origin; reject checked
-  references in aggregate and package-variable storage where their lifetime cannot be expressed.
-- [x] Lower LIFO `defer` calls and anonymous bodies on scope fallthrough, `return`, `break`, and `continue`;
-  deferred calls capture evaluated operands and deferred anonymous bodies capture locals by reference.
-- [x] Lower local-value destructors and recursive owned-field/array-element destruction in reverse order; use explicit
-  IR ownership effects and runtime initialization flags to suppress destruction of moved-from locals.
-- [x] Extend exactly-once cleanup and moved-state flags to owned by-value parameters.
-- [x] Add exactly-once cleanup for initialized package storage at normal process exit, in reverse declaration order;
-  reject moves out of package storage because moved-state cannot be tracked soundly across functions.
-- [x] Extend ownership state merging across all branches, loops, enum payloads, arrays, generic substitutions, and
-  interface conversions; reject unsupported move-only interface erasure and diagnose invalid copies or double release.
-- [x] Extend the implemented local slice-copy/backing-owner tracking through arbitrary calls, returned borrowed views,
-  aggregate storage, subslices, and precise mutable regions so slices participate fully in the borrow checker.
-- [x] Use explicit ownership with checked non-owning borrows as the P1 memory model; retain raw pointers as the explicit
-  unchecked boundary.
-- [x] Provide move-safe owning `Bytes`, `Buffer<T>`, `List<T>`, and `String` types, with explicit
-  `String.view() -> string` borrowing and typed allocation failures.
+The P1 baseline is implemented: ownership properties derive from concrete types, moves and reinitialization are checked
+path-sensitively, borrows use conservative last-use lifetimes, and live owners receive exactly-once cleanup across
+ordinary control flow, `defer`, parameters and normal package exit. Move-safe standard-library owners build on that
+model. The normative rules and current restrictions are maintained in [LANGUAGE_SPEC.md](LANGUAGE_SPEC.md).
 
 ### Generics, interfaces, and sum types
 
@@ -247,11 +220,11 @@ exclusive and borrowing is field-sensitive when disjointness is provable.
 - [x] Basic filesystem and stream primitives.
 - [x] Deterministic native executable and object emission.
 - [x] Local manifests, synchronized dependencies, and vendored dependencies.
-- [ ] Move-safe byte buffers, strings, and dynamic collections.
+- [x] Move-safe byte buffers, strings, and dynamic collections.
 - [ ] Stable library exports and external object/archive interoperability.
 - [ ] Runtime package initialization.
-- [ ] Explicit file and allocation error handling.
-- [ ] Deterministic cleanup for owned resources.
+- [x] Explicit file and allocation error handling.
+- [x] Deterministic cleanup for owned resources.
 - [ ] Remote dependency retrieval, checksums, and lockfiles.
 
 ### Porting sequence

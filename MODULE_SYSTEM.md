@@ -30,10 +30,9 @@ require (
 ```
 
 There must be exactly one `module` directive and one `dmm` directive. Module and package paths are case-sensitive
-slash-separated identifiers. Empty components, `.` and `..`, backslashes and absolute paths are invalid. This compiler
-supports only language edition `2026-09-22-dev`; other editions are rejected. Calendar editions must contain a real date
-as `YYYY-MM-DD`, optionally followed by `-dev`, `-pr`, `-prerelease`, `-rc`, or `-releasecandidate`. There is currently
-no backwards-compatibility mode.
+slash-separated identifiers. Empty components, `.` and `..`, backslashes and absolute paths are invalid. Edition syntax,
+validation and compatibility policy are defined in [LANGUAGE_SPEC.md](LANGUAGE_SPEC.md); this document uses the current
+edition in its examples.
 
 The optional `features = [...]` directive contains quoted experimental feature names. It may span lines, permits a
 trailing comma, and is equivalent to omission when empty. Names begin with a lowercase ASCII letter and continue with

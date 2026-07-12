@@ -1,62 +1,110 @@
 # DMM examples
 
-This directory contains small programs for the current `2026-09-22-dev` edition. Each example focuses on one coherent
-part of the language and has its own `dmm.manifest`.
+These programs are executable documentation for the current `2026-09-22-dev` edition. Each directory is an independent
+module with its own `dmm.manifest`, and each program focuses on a small set of related features.
 
-From the compiler repository root:
+From the repository root:
 
 ```sh
 ./build/compiler examples/language_tour/language_tour.dmm -o language_tour
 ./language_tour
 ```
 
-On Windows, use `compiler.exe` and an `.exe` output name. Substitute the configured build directory, such as
-`cmake-build-debug`, for `build`.
+On Windows, use `build/compiler.exe` and an `.exe` output name. Substitute another configured build directory when
+needed.
 
-## Catalog
+## Suggested reading order
 
-| Example | Demonstrates |
+| Example | Main ideas |
 |---|---|
-| [language_tour](language_tour/language_tour.dmm) | Constants, structs, methods, overloads, contextual array literals, slices, postfix casts, loops and type metadata |
-| [generics_and_interfaces](generics_and_interfaces/generics_and_interfaces.dmm) | Generic functions and structs, inferred specialization, structural interface implementation, bounds and interface arrays |
+| [language_tour](language_tour/language_tour.dmm) | Constants, structs, methods, overloads, contextual literals, slices, loops, casts and type metadata |
+| [callable_values](callable_values/callable_values.dmm) | Function types, higher-order calls, returned callables, callable equality and unbound methods |
 | [sum_types](sum_types/sum_types.dmm) | Generic sum enums, qualified constructors, payload bindings, exhaustive `match`, `Option` and `Result` |
-| [type_derived_ownership](type_derived_ownership/type_derived_ownership.dmm) | Destructor-derived ownership, generic inference patterns, moves, complete reinitialization, field-sensitive mutable borrows and reverse field drop |
-| [package_cleanup](package_cleanup/package_cleanup.dmm) | Exactly-once destruction of package values in reverse declaration order after normal `main` return |
-| [defer_cleanup](defer_cleanup/defer_cleanup.dmm) | LIFO `defer`, eager call-argument capture, anonymous-body reference capture and return cleanup |
-| [memory_and_slices](memory_and_slices/memory_and_slices.dmm) | Fixed arrays, owned literal backing for non-owning slices, borrowed slices, checked-borrow-to-pointer casts, `reserve`/`free`, `sizeof` and `alignof` |
-| [io_demo](io_demo/io_demo.dmm) | Buffered standard input, stream output, file writing/read-back, byte slices and explicit wrapper cleanup |
+| [generics_and_interfaces](generics_and_interfaces/generics_and_interfaces.dmm) | Generic functions and structs, inferred specialization, interface bounds and dynamic interface collections |
+| [memory_and_slices](memory_and_slices/memory_and_slices.dmm) | Fixed arrays, slice views, raw allocation, pointer casts, `sizeof` and `alignof` |
+| [type_derived_ownership](type_derived_ownership/type_derived_ownership.dmm) | Copy versus move, destructor propagation, reinitialization, checked mutable borrows and reverse field drop |
+| [defer_cleanup](defer_cleanup/defer_cleanup.dmm) | LIFO `defer`, eager call capture, anonymous-body reference capture and cleanup on return |
+| [package_cleanup](package_cleanup/package_cleanup.dmm) | Exactly-once package-owner destruction after a normal return from `main` |
+| [io_demo](io_demo/io_demo.dmm) | Streams, buffered I/O, files, byte slices and explicit cleanup of current I/O wrappers |
 
-## Generic inference: whole type versus inner type
+## Feature snapshots
 
-The parameter pattern determines what a type parameter represents:
+Context supplies the element type of an array or slice literal:
 
 ```dmm
-func consumeValue<T>(value:T) -> void {}
-func consumeBox<T>(value:Box<T>) -> void {}
+func sum(values:int[]) -> int { /* ... */ }
 
-var file:Box<File>;
-consumeValue(file); // T = Box<File>
-
-var other:Box<File>;
-consumeBox(other);  // T = File; the parameter itself is Box<File>
+var fixed:int[4] = [2,4,6,8];
+var view:int[] = fixed;
+var total:int = sum([2,4,6,8]);
 ```
 
-The ownership example prints `T.name` for both calls and `value.type.name` for the shaped parameter. This makes both
-the inferred inner type and the retained complete `Box<File>` parameter type directly observable.
+Generic enum constructors carry their concrete specialization, and `match` must cover every variant:
 
-## Ownership shown by the examples
+```dmm
+enum Lookup<T> {
+    Found(T),
+    Missing,
+    Failed(int),
+}
 
-All user-defined records use normal `struct` syntax. A destructor makes its type `MOVE_ONLY | NEEDS_DROP`; those
-properties propagate through fields and concrete generic specializations. Passing or assigning a move-only value by
-value transfers ownership. The source cannot be used again until a complete assignment reinitializes it.
+var result:Lookup<int> = Lookup<int>.Found(42);
+match (result) {
+    Found(value) => stdlib.println(value);
+    Missing => stdlib.println("missing");
+    Failed(code) => stdlib.println(code);
+}
+```
 
-Compiler-generated cleanup runs once for every live value that needs drop. A struct destructor runs before owned
-fields, fields are dropped in reverse declaration order, and normal process termination also cleans package storage.
-Package-owned values cannot be moved out.
+Interfaces are structural: a concrete type implements an interface by providing the required method shape.
 
-Raw allocation and the current stream wrappers remain explicitly managed. `memory_and_slices` calls `free`, while
-`io_demo` calls `close`, `discard`, and `release` on all relevant paths because those library wrappers do not yet
-declare destructors.
+```dmm
+interface Measurable {
+    func measure(scale:int) -> int;
+}
 
-`io_demo` is interactive. It asks for a name and message, writes `demo_output.txt`, then streams the file back to
-standard output. The remaining examples run without input.
+struct Width {
+    var value:int;
+    func measure(scale:int) -> int { return value * scale; }
+}
+
+func scaled<T:Measurable>(value:T) -> int {
+    return value.measure(2);
+}
+```
+
+Ownership is derived from concrete fields. The complete runnable example shows why `Box<int>` is copyable while
+`Box<File>` moves and is destroyed exactly once:
+
+```dmm
+struct File {
+    var handle:int;
+    destructor { handle = 0; }
+}
+
+struct Box<T> {
+    var value:T;
+}
+
+var number:Box<int>;
+var numberCopy = number;
+
+var file:Box<File>;
+consumeValue(file); // ownership moves into the parameter
+```
+
+Deferred calls capture evaluated operands immediately. Anonymous deferred bodies instead observe referenced locals when
+the surrounding scope exits:
+
+```dmm
+var digit:int = 1;
+defer append(target,digit); // captures 1
+defer func() {
+    append(target,digit);   // reads digit when the defer runs
+}
+digit = 2;
+```
+
+These snippets are excerpts, not separate fixtures. Follow the links in the catalog for complete programs with imports,
+return paths and observable results. Normative rules live in the [language specification](../LANGUAGE_SPEC.md); planned
+syntax such as closures and expression-valued `if`/`match` is deliberately absent from the examples.

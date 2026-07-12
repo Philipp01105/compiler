@@ -34,7 +34,10 @@ reserves a tag slot and the largest payload, preserving by-value copying through
 Interface array and slice elements similarly store a concrete struct tag and enough inline space for the largest
 implementing struct. Calls through these elements select the concrete method by tag at runtime.
 
-## Ownership
+## Component ownership
+
+This section assigns implementation responsibilities. Source-language ownership and borrow semantics are defined only
+in [LANGUAGE_SPEC.md](LANGUAGE_SPEC.md).
 
 - `src/frontend/lexer.c` owns lexical analysis and token diagnostics.
 - `src/frontend/syntax_parser.c` constructs all declaration, type, statement, and expression nodes in the AST arena.

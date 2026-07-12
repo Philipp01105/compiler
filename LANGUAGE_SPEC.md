@@ -25,24 +25,10 @@ package variables and functions. Statements and imports end with `;`. `//` intro
 introduces a non-nesting block comment that may span lines. Unclosed block comments are lexical errors. Execution begins
 in a parameterless `main` returning `void` or `int` in `package main`; library packages need no entry point.
 
-Each project has one `dmm.manifest` defining its module path and required language edition. One directory is one
-package; all `.dmm` files directly in it are discovered and share a declaration scope. Package identity is the module
-path plus relative directory. All files agree on their package name. `package.dmm` has no special meaning.
-
-`dmm manifest sync` reconciles requirements across the whole module, marks dependencies used only transitively with
-`// indirect`, and removes unused entries. It uses exact versions from local manifests; ordinary builds never rewrite
-the project manifest.
-
-Imports use quoted canonical package paths, for example `import "github.com/example/project/lexer";` or
-`import lex "github.com/example/project/lexer";`. Imported declarations are accessed as `lexer.Token` or
-`lex.tokenize(...)`. Bindings are local to the importing source file; imports never expose unqualified declarations.
-Grouped imports remain supported. File imports, angle imports and dot imports are removed. Cycles and invalid `internal`
-imports are rejected.
-
-Declarations and members are package-private by default. `pub` exports functions, structs, enums, interfaces, constants,
-variables, fields, methods and enum variants. Private declarations are visible to all files of their package. Types
-remain nominal across package and module boundaries. See [MODULE_SYSTEM.md](MODULE_SYSTEM.md) for manifest syntax,
-vendor dependencies, visibility, identities and diagnostics.
+Projects use `dmm.manifest`; directories define packages, quoted imports bind packages per source file, and `pub`
+controls exported declarations and members. Imported nominal types retain their package identity. The complete manifest,
+discovery, visibility, `internal`, vendoring and `dmm manifest sync` contract is defined in
+[MODULE_SYSTEM.md](MODULE_SYSTEM.md).
 
 ## Types
 
@@ -75,6 +61,17 @@ Polymorphic callable identities are compile-time-only: they may occur in inferre
 compile-time callable parameters, and callable returns, but not in runtime aggregate or package storage. A function
 returning a polymorphic callable must return one template identity on every path. Passing such an identity specializes
 the receiving function and erases that compile-time parameter from the emitted ABI.
+
+`&T` and `&mut T` are checked non-owning references created by `&value` and `&mut value`. Immutable references permit
+reads; mutable references are exclusive and permit reads and writes through `*reference`. While a conflicting borrow is
+live, the owner cannot be moved, replaced or accessed incompatibly. Lifetimes end conservatively after the last proven
+use. Struct fields and constant array indices are treated as disjoint when that can be proven; dynamic indices and
+whole aggregates overlap. A postfix cast such as `reference.(*T)` explicitly crosses from a checked reference to an
+unchecked raw pointer.
+
+Checked references cannot be stored in aggregate fields, enum payloads or package variables because those locations do
+not express a lifetime. A borrowed return must have one statically provable origin in a borrowed parameter or package
+storage. Returning a local borrow or merging incompatible return origins is rejected.
 
 Fixed-size array parameters such as `values:float[2]` accept arrays with exactly the declared lengths and element types
 at every nesting level. They borrow the caller's storage, so element mutations are visible to the caller. Their ABI
@@ -156,6 +153,12 @@ arithmetic uses the wrapping rules above and is evaluated with exact integer bit
 
 DMM supports blocks, `if`/`else`, `for`, `while`, `break`, `continue`, and `return`. `break` and `continue` are valid
 only in loops. Every reachable path of a non-void function must return a value of the declared type.
+
+`defer call(...);` evaluates and retains the callee and arguments immediately, then performs the call when the current
+scope exits. `defer func() { ... }` instead retains referenced locals and evaluates its body at scope exit. Deferred
+actions run in last-in, first-out order on fallthrough, `return`, `break` and `continue`, before earlier enclosing-scope
+cleanup. A deferred anonymous body cannot `return`, `break` or `continue` out of its enclosing control flow. Captured
+borrows remain live until the deferred action runs.
 
 Operator precedence, from low to high, is logical OR, logical AND, comparisons, addition/subtraction,
 multiplication/division/remainder, unary operators, and primary expressions. Arithmetic is numeric; `bit` values
@@ -323,10 +326,8 @@ alignment remain caller responsibilities. Raw allocations require explicit relea
 raw allocation pointers have been removed. This does not suppress type-derived destructors for initialized values with
 `NEEDS_DROP`.
 
-`stdlib/core` implements `alloc<T>() -> *T`, `alloc<T>(count:usize) -> T[]`, `null<T>() -> *T`, `release<T>(pointer:*T)`
-and `release<T>(view:T[])` in DMM over byte-region primitives. Successful allocations are zero-initialized; failure
-returns null or an empty null slice. Release an allocation base exactly once, and never release a borrowed view into
-local, global or interior storage. See `CORE_RUNTIME.md`.
+`stdlib/core` builds typed allocation, release and raw I/O helpers over compiler primitives. Its signatures, failure
+values and allocation-base requirements are defined in [CORE_RUNTIME.md](CORE_RUNTIME.md).
 
 Nested fixed arrays use recursive row-major storage with no hidden descriptors. Nested slices retain one two-word
 descriptor for each slice value. Layout, generic identity, overload matching, argument and return classification,
@@ -338,11 +339,8 @@ them; an empty line is `stdlib.println("")`. Calls evaluate their arguments befo
 `"stdlib/core"` exposes low-level byte-region allocation, explicit release, raw I/O and process primitives without
 importing higher-level library functions. See [CORE_RUNTIME.md](CORE_RUNTIME.md) for signatures and ownership contracts.
 
-`"stdlib/stdio"` provides synchronous byte-oriented file and standard streams, buffered readers/writers,
-complete-transfer loops, bounded owned byte/line reads and decimal integer output. Its current wrappers predate
-destructor-backed ownership, so callers must follow their explicit close/release contract and must not manually copy
-owners. EOF, partial progress and OS errors are reported as typed library results. See [STDIO.md](STDIO.md) for the API
-and lifecycle rules.
+`"stdlib/stdio"` provides synchronous streams, buffered adapters and bounded byte-oriented helpers. Its API, explicit
+cleanup requirements and typed transfer/error results are defined in [STDIO.md](STDIO.md).
 
 Function overloads differ by ordered parameter types, never return type. Exact matches beat promotions and other allowed
 numeric conversions. A candidate must be no worse in every argument and better in at least one; ties are ambiguous.

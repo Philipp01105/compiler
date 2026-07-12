@@ -4,7 +4,7 @@ The compiler exposes deterministic, line-oriented debugging formats. Each begins
 reject unknown versions rather than infer a schema from individual fields.
 
 ```sh
-compiler --dump-tokens program.tokens --dump-ast program.ast --dump-symbols program.symbols \
+compiler -S --dump-tokens program.tokens --dump-ast program.ast --dump-symbols program.symbols \
   --dump-ir-before-opt program.lowered.ir --dump-ir program.ir --dump-cfg program.cfg \
   --source-map program.map -o program.s program.dmm
 ```
@@ -15,6 +15,14 @@ an I/O or validation failure makes the command fail and removes the incomplete a
 Dumps are written as soon as their compiler phase has completed. Consequently, `--dump-tokens` remains available after
 a parser failure, and `--dump-ast`/`--dump-symbols` remain available after a semantic failure. IR and CFG dumps require
 successful semantic analysis and lowering.
+
+## IDE analysis mode
+
+`--ide --dump-ast FILE` performs editor analysis without code generation. It recovers from syntax errors where possible
+and writes a validated partial AST with semantic information; malformed declarations may be omitted, and lexer failures
+can prevent a dump. `--ide-buffer FILE` reads the root document from an editor snapshot while retaining the original
+source path for imports, identities and diagnostics. Imported packages are still read from disk. IDE mode cannot be
+combined with program emission, IR, CFG, source-map or token output.
 
 ## `dmm-native-map-v1`
 

@@ -1,0 +1,38 @@
+package main;
+import "stdlib";
+
+func increment(value:int) -> int { return value + 1; }
+func twice(value:int) -> int { return value * 2; }
+
+func apply(operation:func(int) -> int, value:int) -> int {
+    return operation(value);
+}
+
+func choose(doubling:bit) -> func(int) -> int {
+    if (doubling) { return twice; }
+    return increment;
+}
+
+struct Counter {
+    var value:int;
+
+    func add(amount:int) -> int {
+        return value + amount;
+    }
+}
+
+func main() -> int {
+    var selected:func(int) -> int = choose(true);
+    var add:func(*Counter,int) -> int = Counter.add;
+
+    var counter:Counter;
+    counter.value = 40;
+
+    var transformed:int = apply(selected,20);
+    var total:int = add((&counter).(*Counter),2);
+    stdlib.println(transformed);
+    stdlib.println(total);
+
+    if (selected != twice || transformed != 40 || total != 42) { return 1; }
+    return 0;
+}

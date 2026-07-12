@@ -71,8 +71,9 @@ function-declaration
 parameter-list  = parameter, { ",", parameter } ;
 parameter       = identifier, ":", type ;
 return-type     = type ;
-type            = {"*"}, (function-type | primitive-type | qualified-name, [type-arguments] | "(", type, ")"),
-                  ["[", [integer | identifier], "]"] ;
+type            = ["&", ["mut"]], {"*"},
+                  (function-type | primitive-type | qualified-name, [type-arguments] | "(", type, ")"),
+                  {"[", [integer | identifier], "]"} ;
 function-type   = "func", [generic-parameters], "(", [type-list], ")", "->", type ;
 type-arguments  = "<", type, {",", type}, ">" ;
 generic-parameters = "<", generic-parameter, {",", generic-parameter}, ">" ;
@@ -131,10 +132,13 @@ statement       = block
                 | break-statement
                 | continue-statement
                 | match-statement
+                | defer-statement
                 | constant-declaration ;
 
 variable-declaration
                 = "var", identifier, [":", type], ["=", expression], ";" ;
+variable-declaration-without-semicolon
+                = "var", identifier, [":", type], ["=", expression] ;
 
 assignment-statement
                 = lvalue, assignment-operator, expression, ";"
@@ -161,6 +165,7 @@ match-statement = "match", "(", (expression | type), ")", "{", {match-arm}, "}" 
 match-arm       = (identifier, ["(", [identifier, {",", identifier}], ")"] | "_"),
                   "=>", statement
                 | "case", (type | "_"), "->", statement ;
+defer-statement = "defer", (call-expression, ";" | "func", "(", ")", block) ;
 ```
 
 ## Expressions
