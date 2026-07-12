@@ -169,7 +169,10 @@ only in loops. Every reachable path of a non-void function must return a value o
 scope exits. `defer func() { ... }` instead retains referenced locals and evaluates its body at scope exit. Deferred
 actions run in last-in, first-out order on fallthrough, `return`, `break` and `continue`, before earlier enclosing-scope
 cleanup. A deferred anonymous body cannot `return`, `break` or `continue` out of its enclosing control flow. Captured
-borrows remain live until the deferred action runs.
+borrows remain live until the deferred action runs. A borrow formed inside an anonymous deferred body is checked at its
+later execution point; every captured move-only value must therefore still be initialized on each relevant scope exit.
+If an intervening operation consumes such a value, the diagnostic points at the `defer` and identifies the consuming
+operation as a related location.
 
 Operator precedence, from low to high, is logical OR, logical AND, comparisons, addition/subtraction,
 multiplication/division/remainder, unary operators, and primary expressions. Arithmetic is numeric; `bit` values

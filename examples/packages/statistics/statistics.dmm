@@ -16,12 +16,16 @@ struct PackageLifetime {
 // Package-stored values live until normal process termination.
 var lifetime:PackageLifetime;
 
-func initializeBaseline() -> Summary {
-    return summarize([3,5,7]);
+func firstBaselineSample() -> int {
+    return 3;
 }
 
-// This initializer executes after imported dependencies and before main.
-pub var baseline:Summary=initializeBaseline();
+// Runtime array elements allocate owned slice backing during package startup.
+// The package keeps that backing alive until normal process cleanup.
+var baselineSamples:int[]=[firstBaselineSample(),5,7];
+
+// Initializers run in deterministic declaration order before main.
+pub var baseline:Summary=summarize(baselineSamples);
 
 pub func summarize(values:int[]) -> Summary {
     var result:Summary;

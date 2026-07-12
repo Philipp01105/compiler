@@ -1,16 +1,16 @@
 package main;
 import "stdlib";
 
-func append(target:*int, digit:int) -> void {
+func append(target:&mut int, digit:int) -> void {
     *target=*target*10+digit;
 }
 
-func addReturnCleanup(target:*int) -> void {
+func addReturnCleanup(target:&mut int) -> void {
     defer append(target,3);
     return;
 }
 
-func loopCleanup(target:*int) -> void {
+func loopCleanup(target:&mut int) -> void {
     for (var digit:int=4; digit < 7; digit+=1) {
         defer append(target,digit);
         if (digit == 4) { continue; }
@@ -20,22 +20,26 @@ func loopCleanup(target:*int) -> void {
 
 func main() -> int {
     var result:int=0;
+    var captured:int=0;
     var digit:int=1;
 
     {
-        // Call arguments are captured now, so this appends 1.
-        defer append((&result).(*int),digit);
+        // The mutable borrow remains live until scope exit. Call arguments are
+        // captured now, so this still appends 1 after digit changes.
+        defer append(&mut result,digit);
 
-        // An anonymous deferred body captures locals by reference and sees 2.
+        // The anonymous body captures a disjoint variable by reference and
+        // observes digit's later value. It runs before the earlier defer.
         defer func() {
-            append((&result).(*int),digit);
+            append(&mut captured,digit);
         }
         digit=2;
     }
+    result=captured*10+result;
 
     // Defers run on fallthrough, return, continue and break.
-    addReturnCleanup((&result).(*int));
-    loopCleanup((&result).(*int));
+    addReturnCleanup(&mut result);
+    loopCleanup(&mut result);
     stdlib.println(result);
 
     if (result != 21345) { return 1; }

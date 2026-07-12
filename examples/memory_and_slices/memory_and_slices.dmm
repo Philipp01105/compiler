@@ -32,8 +32,8 @@ func first(values:&FiveValues) -> &i32 {
     return &values.items[0];
 }
 
-func bumpFirst(values:i32[5]) -> void {
-    values[0]+=1;
+func bumpFirst(values:&mut FiveValues) -> void {
+    values.items[0]+=1;
 }
 
 func main() -> int {
@@ -46,7 +46,7 @@ func main() -> int {
     storage.items=[10,20,30,40,50];
     var firstValue=first(&storage);
     stdlib.println(*firstValue);
-    bumpFirst(storage.items);
+    bumpFirst(&mut storage);
     var middle:i32[]=storage.items[1:4];
     var rawTail:i32[]=slice((&storage.items[3]).(*i32),2);
     rawTail[0]=400;

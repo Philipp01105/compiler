@@ -22,11 +22,11 @@ standard output.
 | [callable_values](callable_values/callable_values.dmm) | A transformation pipeline with function-typed fields and arrays, enum payloads, returned callables, equality and unbound methods |
 | [sum_types](sum_types/sum_types.dmm) | Success, absence and failure modeled with generic sum enums, exhaustive `match`, `Option` and `Result` |
 | [generics_and_interfaces](generics_and_interfaces/generics_and_interfaces.dmm) | Generic containers and functions, multiple structural bounds, static specialization, dynamic interface slices and type matches |
-| [memory_and_slices](memory_and_slices/memory_and_slices.dmm) | Nested arrays, checked views and subslices, generated backing storage, raw slices, pointers, `reserve`/`free`, `sizeof` and `alignof` |
+| [memory_and_slices](memory_and_slices/memory_and_slices.dmm) | Nested arrays, immutable and mutable checked references, views and subslices, generated backing storage, raw slices, pointers, `reserve`/`free`, `sizeof` and `alignof` |
 | [ownership_and_borrows](ownership_and_borrows/ownership_and_borrows.dmm) | Copy versus move, destructor propagation through generics, reinitialization, disjoint mutable borrows and reverse field drop |
-| [defer_cleanup](defer_cleanup/defer_cleanup.dmm) | LIFO `defer`, eager call capture, anonymous-body reference capture and cleanup on return, `continue` and `break` |
+| [defer_cleanup](defer_cleanup/defer_cleanup.dmm) | LIFO `defer`, retained `&mut` borrows, eager call capture, anonymous-body reference capture and cleanup on return, `continue` and `break` |
 | [owning_collections](owning_collections/owning_collections.dmm) | Move-only `Bytes`, `Buffer<T>`, `List<T>` and `String`, including growth, borrowed views and automatic destruction |
-| [packages](packages/packages.dmm) | A public API in a second package, an import alias, module-relative resolution, runtime package initialization and package-owner cleanup after `main` |
+| [packages](packages/packages.dmm) | A public API in a second package, an import alias, module-relative resolution, ordered runtime globals, package-owned slice backing and cleanup after `main` |
 | [file_io](file_io/file_io.dmm) | A deterministic file round-trip with streams, transfer statuses, byte views and explicit cleanup of current I/O wrappers |
 
 ## Coverage map
@@ -37,11 +37,11 @@ standard output.
 | Function types and higher-order code | `callable_values` |
 | Enums and pattern matching | `sum_types` |
 | Generics, interfaces and compile-time type selection | `generics_and_interfaces` |
-| Arrays, slices, pointers and raw allocation | `memory_and_slices` |
+| Arrays, slices, checked borrows, pointers and raw allocation | `memory_and_slices` |
 | Moves, borrows and destructors | `ownership_and_borrows` |
-| Scope-exit cleanup | `defer_cleanup` |
+| Scope-exit cleanup and deferred borrow lifetimes | `defer_cleanup` |
 | Standard owning collections | `owning_collections` |
-| Modules, packages and visibility | `packages` |
+| Modules, visibility, runtime package globals and package cleanup | `packages` |
 | Files, streams and status-based error handling | `file_io` |
 
 Each feature is explained where it is exercised rather than repeated here as a second partial program. Normative rules
