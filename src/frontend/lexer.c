@@ -644,6 +644,8 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
                 break;
             case '!': type = TOKEN_BANG;
                 break;
+            case '?': type = TOKEN_QUESTION;
+                break;
             case '(': type = TOKEN_LPAREN;
                 break;
             case ')': type = TOKEN_RPAREN;
@@ -823,6 +825,7 @@ const char *token_type_to_string(TokenType type) {
         case TOKEN_ARROW: return "ARROW";
         case TOKEN_FAT_ARROW: return "FAT_ARROW";
         case TOKEN_DOT: return "DOT";
+        case TOKEN_QUESTION: return "QUESTION";
         case TOKEN_HASH: return "HASH";
         case TOKEN_AT: return "AT";
         case TOKEN_COMMENT: return "COMMENT";

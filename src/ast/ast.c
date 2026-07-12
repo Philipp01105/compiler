@@ -151,6 +151,10 @@ static int valid_expression(const AstProgram *program, const AstExpression *expr
         case AST_EXPR_UNARY:
             if (!valid_expression(program, expression->right)) return 0;
             break;
+        case AST_EXPR_PROPAGATE:
+            if (!valid_expression(program, expression->left) ||
+                !valid_token(program, expression->value_token)) return 0;
+            break;
         case AST_EXPR_BINARY:
         case AST_EXPR_SLICE:
         case AST_EXPR_INDEX:
@@ -356,6 +360,11 @@ static int valid_declarations(const AstProgram *program) {
                      argument != NULL; argument = argument->next)
                     if (!valid_expression(program, argument)) return 0;
             }
+            for (const AstDeclarationNode *method = declaration->as.enum_decl.methods;
+                 method != NULL; method = method->next)
+                if (method->kind != AST_DECL_FUNCTION ||
+                    !valid_function_declaration(program, method))
+                    return 0;
         } else if (declaration->kind == AST_DECL_INTERFACE) {
             if (!valid_token(program, declaration->name_token)) return 0;
             const AstDeclarationNode *methods = declaration->as.interface_decl.methods;

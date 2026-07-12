@@ -1,7 +1,49 @@
 package stdlib;
 // Compile-time containers and capabilities. Pointer/string ownership stays explicit.
-pub enum Option<T> { pub Some(T), pub None, }
-pub enum Result<T,E> { pub Ok(T), pub Err(E), }
+pub enum Propagation<Output,Residual> {
+    pub Continue(Output),
+    pub Break(Residual),
+}
+
+pub enum NoneResidual { pub None, }
+
+pub interface Propagate<Output,Residual> {
+    pub static func branch(value:Self) -> Propagation<Output,Residual>;
+}
+
+pub interface FromResidual<Residual> {
+    pub static func fromResidual(residual:Residual) -> Self;
+}
+
+pub enum Option<T> {
+    pub Some(T),
+    pub None,
+    ;
+    pub static func branch(value:Self) -> Propagation<T,NoneResidual> {
+        match (value) {
+            Some(output) => return Propagation<T,NoneResidual>.Continue(output);
+            None => return Propagation<T,NoneResidual>.Break(NoneResidual.None);
+        }
+    }
+    pub static func fromResidual(residual:NoneResidual) -> Self {
+        match (residual) { None => return Option<T>.None; }
+    }
+}
+
+pub enum Result<T,E> {
+    pub Ok(T),
+    pub Err(E),
+    ;
+    pub static func branch(value:Self) -> Propagation<T,E> {
+        match (value) {
+            Ok(output) => return Propagation<T,E>.Continue(output);
+            Err(residual) => return Propagation<T,E>.Break(residual);
+        }
+    }
+    pub static func fromResidual(residual:E) -> Self {
+        return Result<T,E>.Err(residual);
+    }
+}
 pub struct Cell<T> {
     pub var value:T;
     pub func get() -> T { return value; }

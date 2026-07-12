@@ -491,6 +491,15 @@ static void check_expression(BorrowChecker *checker,
                              const AstExpression *expression,
                              BorrowAccess access) {
     if (expression == NULL) return;
+    if (expression->kind == AST_EXPR_PROPAGATE) {
+        BorrowAccess operand_access =
+            semantic_expression_is_move_only(checker->analyzer,
+                                             expression->left)
+                ? BORROW_ACCESS_WRITE
+                : BORROW_ACCESS_READ;
+        check_expression(checker, expression->left, operand_access);
+        return;
+    }
     if (expression->kind == AST_EXPR_UNARY &&
         expression->operator_type == TOKEN_AMPERSAND) {
         check_new_borrow(checker, expression);

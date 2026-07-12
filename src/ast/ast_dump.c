@@ -40,9 +40,9 @@ static const char *expression_name(AstExpressionKind kind) {
     static const char *names[] = {
         "error", "literal", "name", "unary", "binary", "call",
         "index", "subslice", "member", "slice-length", "reserve", "cast", "free", "enum-construct", "enum-access",
-        "sizeof", "alignof", "slice", "slice-data", "type-info", "type-property", "array-literal"
+        "sizeof", "alignof", "slice", "slice-data", "type-info", "type-property", "array-literal", "propagate"
     };
-    return kind >= AST_EXPR_ERROR && kind <= AST_EXPR_ARRAY_LITERAL ? names[kind] : "invalid";
+    return kind >= AST_EXPR_ERROR && kind <= AST_EXPR_PROPAGATE ? names[kind] : "invalid";
 }
 
 static const char *statement_name(AstStatementKind kind) {
@@ -397,8 +397,12 @@ static int dump_declaration(FILE *output, const AstProgram *program,
             for (const AstTypeArgument *p = value->payload_types; p; p = p->next)
                 if (!indent(output, depth + 2) || fputs("payload=", output) == EOF ||
                     !dump_type(output, program, &p->type) || fputc('\n', output) == EOF)
-                    return 0;
+                return 0;
         }
+    if (declaration->kind == AST_DECL_ENUM)
+        for (const AstDeclarationNode *method = declaration->as.enum_decl.methods;
+             method != NULL; method = method->next)
+            if (!dump_declaration(output, program, method, depth + 1)) return 0;
     return 1;
 }
 

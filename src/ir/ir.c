@@ -408,6 +408,8 @@ static void set_void_type(IrBuilder *builder, IrInstruction *instruction) {
 }
 
 static void emit_label(IrBuilder *builder, size_t label, AstSourceSpan span);
+static void emit_deferred_until(IrBuilder *builder,
+                                const CleanupScope *stop);
 
 static size_t coerce_slice(IrBuilder *builder, size_t value, IrTypeId target, AstSourceSpan span) {
     if (target >= builder->module->type_count || builder->module->types[target].kind != IR_TYPE_SLICE || value ==
@@ -452,6 +454,167 @@ static void emit_move_if_owned(IrBuilder *builder,
 
 static size_t lower_expression(IrBuilder *builder, const AstExpression *expression) {
     if (expression == NULL) return IR_VALUE_NONE;
+    if (expression->kind == AST_EXPR_PROPAGATE) {
+        if (expression->propagation_branch_symbol_id >=
+                builder->module->semantics->symbol_count ||
+            expression->propagation_from_residual_symbol_id >=
+                builder->module->semantics->symbol_count) {
+            builder->failed = 1;
+            return IR_VALUE_NONE;
+        }
+        const SemanticSymbol *branch_target =
+            &builder->module->semantics->symbols[
+                expression->propagation_branch_symbol_id];
+        const SemanticSymbol *from_target =
+            &builder->module->semantics->symbols[
+                expression->propagation_from_residual_symbol_id];
+        size_t operand = lower_expression(builder, expression->left);
+        emit_move_if_owned(builder, expression->left);
+        size_t branch_argument = builder->function->argument_count;
+        if (!append_argument(builder, operand)) return IR_VALUE_NONE;
+        IrInstruction *branch_call = emit(builder, IR_OP_CALL,
+                                          expression->span);
+        if (branch_call == NULL) return IR_VALUE_NONE;
+        branch_call->symbol_id = branch_target->id;
+        branch_call->first_argument = branch_argument;
+        branch_call->argument_count = 1;
+        branch_call->result = new_value(builder);
+        branch_call->type_id = type_from_ast(
+            builder->module, branch_target->source_program,
+            &branch_target->declaration->as.function.return_type);
+        branch_call->type = ir_ast_type_data_type(
+            branch_target->source_program,
+            &branch_target->declaration->as.function.return_type);
+        size_t propagated = branch_call->result;
+
+        size_t failure_label = new_label(builder);
+        size_t continue_check_label = new_label(builder);
+        size_t success_label = new_label(builder);
+        size_t invalid_label = new_label(builder);
+        IrInstruction *test = emit(builder, IR_OP_ENUM_IS,
+                                   expression->span);
+        if (test == NULL) return IR_VALUE_NONE;
+        test->operand_a = propagated;
+        test->symbol_id = expression->propagation_break_symbol_id;
+        test->result = new_value(builder);
+        test->type = TYPE_BIT;
+        test->type_id = type_from_parts(
+            builder->module, TYPE_BIT, 0, AST_TOKEN_NONE, 0, 0, 0, 0,
+            builder->program, AST_SYMBOL_NONE);
+        IrInstruction *select = emit(builder, IR_OP_BRANCH,
+                                     expression->span);
+        if (select == NULL) return IR_VALUE_NONE;
+        set_void_type(builder, select);
+        select->operand_a = test->result;
+        select->target_a = failure_label;
+        select->target_b = continue_check_label;
+
+        emit_label(builder, failure_label, expression->span);
+        IrInstruction *residual = emit(builder, IR_OP_ENUM_PAYLOAD,
+                                       expression->span);
+        if (residual == NULL) return IR_VALUE_NONE;
+        residual->operand_a = propagated;
+        residual->symbol_id = expression->propagation_break_symbol_id;
+        residual->enum_payload_index = 0;
+        residual->target_a = failure_label;
+        residual->result = new_value(builder);
+        const SemanticSymbol *break_variant =
+            &builder->module->semantics->symbols[
+                expression->propagation_break_symbol_id];
+        const AstType *residual_type =
+            &((const AstEnumValue *) break_variant->node)->payload_types->type;
+        residual->type_id = type_from_ast(builder->module,
+                                          break_variant->source_program,
+                                          residual_type);
+        residual->type = ir_ast_type_data_type(break_variant->source_program,
+                                               residual_type);
+        size_t conversion_argument = builder->function->argument_count;
+        if (!append_argument(builder, residual->result))
+            return IR_VALUE_NONE;
+        IrInstruction *conversion = emit(builder, IR_OP_CALL,
+                                         expression->span);
+        if (conversion == NULL) return IR_VALUE_NONE;
+        conversion->symbol_id = from_target->id;
+        conversion->first_argument = conversion_argument;
+        conversion->argument_count = 1;
+        conversion->result = new_value(builder);
+        conversion->type_id = type_from_ast(
+            builder->module, from_target->source_program,
+            &from_target->declaration->as.function.return_type);
+        conversion->type = ir_ast_type_data_type(
+            from_target->source_program,
+            &from_target->declaration->as.function.return_type);
+        size_t return_value = conversion->result;
+        if (expression->propagation_return_variant_symbol_id !=
+            AST_SYMBOL_NONE) {
+            size_t wrapper_argument = builder->function->argument_count;
+            if (!append_argument(builder, return_value))
+                return IR_VALUE_NONE;
+            IrInstruction *wrapper = emit(builder, IR_OP_ENUM_CONSTRUCT,
+                                          expression->span);
+            if (wrapper == NULL) return IR_VALUE_NONE;
+            wrapper->symbol_id =
+                expression->propagation_return_variant_symbol_id;
+            wrapper->first_argument = wrapper_argument;
+            wrapper->argument_count = 1;
+            wrapper->result = new_value(builder);
+            wrapper->type_id = builder->function->return_type_id;
+            wrapper->type = ir_ast_type_data_type(
+                builder->program, &builder->function->return_type);
+            return_value = wrapper->result;
+        }
+        emit_deferred_until(builder, NULL);
+        IrInstruction *early_return = emit(builder, IR_OP_RETURN,
+                                            expression->span);
+        if (early_return == NULL) return IR_VALUE_NONE;
+        early_return->operand_a = return_value;
+        early_return->type_id = builder->function->return_type_id;
+        early_return->type = conversion->type;
+
+        emit_label(builder, invalid_label, expression->span);
+        IrInstruction *invalid = emit(builder, IR_OP_TRAP,
+                                      expression->span);
+        if (invalid == NULL) return IR_VALUE_NONE;
+        set_void_type(builder, invalid);
+        emit_label(builder, continue_check_label, expression->span);
+        IrInstruction *continue_test = emit(builder, IR_OP_ENUM_IS,
+                                            expression->span);
+        if (continue_test == NULL) return IR_VALUE_NONE;
+        continue_test->operand_a = propagated;
+        continue_test->symbol_id =
+            expression->propagation_continue_symbol_id;
+        continue_test->result = new_value(builder);
+        continue_test->type = TYPE_BIT;
+        continue_test->type_id = type_from_parts(
+            builder->module, TYPE_BIT, 0, AST_TOKEN_NONE, 0, 0, 0, 0,
+            builder->program, AST_SYMBOL_NONE);
+        IrInstruction *continue_select = emit(builder, IR_OP_BRANCH,
+                                              expression->span);
+        if (continue_select == NULL) return IR_VALUE_NONE;
+        set_void_type(builder, continue_select);
+        continue_select->operand_a = continue_test->result;
+        continue_select->target_a = success_label;
+        continue_select->target_b = invalid_label;
+        emit_label(builder, success_label, expression->span);
+        IrInstruction *output = emit(builder, IR_OP_ENUM_PAYLOAD,
+                                     expression->span);
+        if (output == NULL) return IR_VALUE_NONE;
+        output->operand_a = propagated;
+        output->symbol_id = expression->propagation_continue_symbol_id;
+        output->enum_payload_index = 0;
+        output->target_a = success_label;
+        output->result = new_value(builder);
+        set_expression_type(builder, output, expression);
+        const SemanticSymbol *continue_variant =
+            &builder->module->semantics->symbols[
+                expression->propagation_continue_symbol_id];
+        const AstType *output_type =
+            &((const AstEnumValue *) continue_variant->node)->payload_types->type;
+        output->type_id = type_from_ast(builder->module,
+                                        continue_variant->source_program,
+                                        output_type);
+        return output->result;
+    }
     if (expression->kind == AST_EXPR_ENUM_ACCESS) {
         size_t value = lower_expression(builder, expression->left->left);
         size_t success = new_label(builder), failure = new_label(builder), join = new_label(builder);
@@ -672,6 +835,7 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         case AST_EXPR_TYPE_INFO:
         case AST_EXPR_TYPE_PROPERTY: return IR_VALUE_NONE;
         case AST_EXPR_ARRAY_LITERAL: return IR_VALUE_NONE;
+        case AST_EXPR_PROPAGATE: return IR_VALUE_NONE;
         case AST_EXPR_RESERVE: opcode = IR_OP_ALLOC;
             break;
         case AST_EXPR_CAST: opcode = IR_OP_CAST;
@@ -2219,6 +2383,11 @@ static int lower_unit(IrModule *module, const AstProgram *program) {
         }
         if (declaration->kind == AST_DECL_STRUCT) {
             for (const AstDeclarationNode *method = declaration->as.struct_decl.methods;
+                 method != NULL; method = method->next)
+                if (!append_function(module, program, method)) return 0;
+        }
+        if (declaration->kind == AST_DECL_ENUM) {
+            for (const AstDeclarationNode *method = declaration->as.enum_decl.methods;
                  method != NULL; method = method->next)
                 if (!append_function(module, program, method)) return 0;
         }

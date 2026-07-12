@@ -238,6 +238,8 @@ static void optimize_declarations(AstProgram *program, AstDeclarationNode *decla
             optimize_statements(program, declaration->as.struct_decl.destructor, stats);
             optimize_declarations(program, declaration->as.struct_decl.methods, stats);
         }
+        else if (declaration->kind == AST_DECL_ENUM)
+            optimize_declarations(program, declaration->as.enum_decl.methods, stats);
         else if (declaration->kind == AST_DECL_INTERFACE)
             optimize_declarations(program, declaration->as.interface_decl.methods, stats);
     }

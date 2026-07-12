@@ -362,6 +362,7 @@ static AstGenericParameter *parse_generic_parameters(SyntaxParser *parser) {
                     size_t token = bound_type.name_token;
                     if (b != NULL) {
                         b->name_token = token;
+                        b->type = bound_type;
                         *bound = b;
                         bound = &b->next;
                     }
@@ -389,6 +390,11 @@ static AstExpression *new_expression(SyntaxParser *parser, AstExpressionKind kin
     expression->resolved_named_type_token = AST_TOKEN_NONE;
     expression->resolved_named_symbol_id = AST_SYMBOL_NONE;
     expression->resolved_symbol_id = AST_SYMBOL_NONE;
+    expression->propagation_branch_symbol_id = AST_SYMBOL_NONE;
+    expression->propagation_continue_symbol_id = AST_SYMBOL_NONE;
+    expression->propagation_break_symbol_id = AST_SYMBOL_NONE;
+    expression->propagation_from_residual_symbol_id = AST_SYMBOL_NONE;
+    expression->propagation_return_variant_symbol_id = AST_SYMBOL_NONE;
     expression->allocated_type = inferred_type();
     return expression;
 }
@@ -675,6 +681,13 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
                 }
             }
             expression = member;
+        } else if (match(parser, TOKEN_QUESTION)) {
+            AstExpression *propagate = new_expression(parser, AST_EXPR_PROPAGATE, first);
+            if (propagate != NULL) {
+                propagate->left = expression;
+                propagate->value_token = parser->current - 1;
+            }
+            expression = propagate;
         } else {
             break;
         }
@@ -1253,7 +1266,8 @@ static AstDeclarationNode *parse_enum(SyntaxParser *parser) {
     (void) consume(parser, TOKEN_LBRACE);
     AstEnumValue *values = NULL;
     AstEnumValue **value_tail = &values;
-    while (!parser->failed && !check(parser, TOKEN_RBRACE) && !check(parser, TOKEN_EOF)) {
+    while (!parser->failed && !check(parser, TOKEN_RBRACE) &&
+           !check(parser, TOKEN_SEMICOLON) && !check(parser, TOKEN_EOF)) {
         size_t value_first = parser->current;
         AstEnumValue *value = allocate(parser, sizeof(*value));
         int is_public = match(parser, TOKEN_KEYWORD_PUB);
@@ -1294,11 +1308,23 @@ static AstDeclarationNode *parse_enum(SyntaxParser *parser) {
         }
         if (!match(parser, TOKEN_COMMA)) break;
     }
+    AstDeclarationNode *methods = NULL, **method_tail = &methods;
+    if (match(parser, TOKEN_SEMICOLON)) {
+        while (!parser->failed && !check(parser, TOKEN_RBRACE) && !check(parser, TOKEN_EOF)) {
+            int is_public = match(parser, TOKEN_KEYWORD_PUB);
+            int is_static = match(parser, TOKEN_KEYWORD_STATIC);
+            AstDeclarationNode *method = parse_function(parser, is_static, name);
+            if (method != NULL) method->is_public = is_public;
+            *method_tail = method;
+            if (method != NULL) method_tail = &method->next;
+        }
+    }
     (void) consume(parser, TOKEN_RBRACE);
     if (declaration != NULL) {
         declaration->name_token = name;
         declaration->as.enum_decl.fields = fields;
         declaration->as.enum_decl.values = values;
+        declaration->as.enum_decl.methods = methods;
     }
     finish_declaration(parser, declaration);
     return declaration;
@@ -1353,13 +1379,16 @@ static AstDeclarationNode *parse_interface(SyntaxParser *parser) {
     size_t first = parser->current++;
     AstDeclarationNode *d = new_declaration(parser, AST_DECL_INTERFACE, first);
     size_t interface = consume(parser, TOKEN_IDENTIFIER);
+    AstGenericParameter *generics = parse_generic_parameters(parser);
+    if (d != NULL) d->generic_parameters = generics;
     (void) consume(parser, TOKEN_LBRACE);
     AstDeclarationNode *head = NULL, **tail = &head;
     int saved = parser->interface_signature;
     parser->interface_signature = 1;
     while (!parser->failed && !check(parser, TOKEN_RBRACE) && !check(parser, TOKEN_EOF)) {
         int is_public = match(parser, TOKEN_KEYWORD_PUB);
-        AstDeclarationNode *method = parse_function(parser, 0, interface);
+        int is_static = match(parser, TOKEN_KEYWORD_STATIC);
+        AstDeclarationNode *method = parse_function(parser, is_static, interface);
         if (method) method->is_public = is_public;
         *tail = method;
         if (method) tail = &method->next;

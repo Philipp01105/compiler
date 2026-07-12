@@ -21,6 +21,7 @@ standard output.
 | [language_tour](language_tour/language_tour.dmm) | A score report using constants, primitives, structs, methods, overloads, `never`, fixed arrays, slice borrowing, loops, casts and type metadata |
 | [callable_values](callable_values/callable_values.dmm) | A transformation pipeline with function-typed fields and arrays, enum payloads, returned callables, equality and unbound methods |
 | [sum_types](sum_types/sum_types.dmm) | Success, absence and failure modeled with generic sum enums, exhaustive `match`, `Option` and `Result` |
+| [error_propagation](error_propagation/error_propagation.dmm) | Postfix `?` with `Option`, direct and converted `Result` errors, and a custom propagation enum |
 | [generics_and_interfaces](generics_and_interfaces/generics_and_interfaces.dmm) | Generic containers and functions, multiple structural bounds, static specialization, dynamic interface slices and type matches |
 | [memory_and_slices](memory_and_slices/memory_and_slices.dmm) | Nested arrays, immutable and mutable checked references, views and subslices, generated backing storage, raw slices, pointers, `reserve`/`free`, `sizeof` and `alignof` |
 | [ownership_and_borrows](ownership_and_borrows/ownership_and_borrows.dmm) | Copy versus move, destructor propagation through generics, reinitialization, disjoint mutable borrows and reverse field drop |
@@ -37,6 +38,7 @@ standard output.
 | Never-returning functions and definite return | `language_tour` |
 | Function types and higher-order code | `callable_values` |
 | Enums and pattern matching | `sum_types` |
+| Typed early-return propagation | `error_propagation` |
 | Generics, interfaces and compile-time type selection | `generics_and_interfaces` |
 | Arrays, slices, checked borrows, pointers and raw allocation | `memory_and_slices` |
 | Moves, borrows and destructors | `ownership_and_borrows` |
@@ -47,4 +49,4 @@ standard output.
 
 Each feature is explained where it is exercised rather than repeated here as a second partial program. Normative rules
 live in the [language specification](../LANGUAGE_SPEC.md); diagnostics and edge cases belong in the test suite. Planned
-closures, propagation syntax and expression-valued control flow are deliberately absent until their semantics land.
+closures and expression-valued control flow are deliberately absent until their semantics land.

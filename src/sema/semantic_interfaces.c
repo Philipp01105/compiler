@@ -1,12 +1,21 @@
 #include "semantic_internal.h"
+#include "generics.h"
 
 #include <stdio.h>
 #include <string.h>
 
-static int interface_type_matches_depth(const AstProgram *interface_unit, const AstType *expected,
-                                    const AstProgram *actual_unit, const AstType *actual,
-                                    const AstProgram *self_unit, const AstType *self,
-                                    unsigned depth) {
+typedef struct {
+    const AstGenericParameter *parameters;
+    const AstTypeArgument *arguments;
+    const AstProgram *argument_unit;
+} InterfaceSubstitution;
+
+static int interface_type_matches_depth(const SemanticModel *model,
+                                     const AstProgram *interface_unit, const AstType *expected,
+                                     const AstProgram *actual_unit, const AstType *actual,
+                                     const AstProgram *self_unit, const AstType *self,
+                                     const InterfaceSubstitution *substitution,
+                                     unsigned depth) {
     if (depth > 64 || expected->kind != actual->kind ||
         expected->pointer_depth != actual->pointer_depth ||
         expected->outer_pointer_depth != actual->outer_pointer_depth ||
@@ -21,38 +30,150 @@ static int interface_type_matches_depth(const AstProgram *interface_unit, const 
         return !expected->arguments && !actual->arguments &&
                (strcmp(actual_name, owner_name) == 0 || strcmp(actual_name, canonical) == 0);
     }
-    if (strcmp(ast_program_lexeme(interface_unit, expected->name_token),
-               ast_program_lexeme(actual_unit, actual->name_token))) return 0;
-    const AstTypeArgument *x = expected->arguments, *y = actual->arguments;
+    if (substitution != NULL && expected->kind == AST_TYPE_NAMED &&
+        expected->arguments == NULL) {
+        const char *expected_name =
+            ast_program_lexeme(interface_unit, expected->name_token);
+        const AstGenericParameter *parameter = substitution->parameters;
+        const AstTypeArgument *argument = substitution->arguments;
+        for (; parameter != NULL && argument != NULL;
+             parameter = parameter->next, argument = argument->next)
+            if (!strcmp(expected_name,
+                        ast_program_lexeme(interface_unit,
+                                           parameter->name_token)))
+                return ast_concrete_type_equal(substitution->argument_unit,
+                                               &argument->type,
+                                               actual_unit, actual);
+    }
+    const char *expected_name =
+        ast_program_lexeme(interface_unit, expected->name_token);
+    const char *actual_name =
+        ast_program_lexeme(actual_unit, actual->name_token);
+    const AstTypeArgument *actual_arguments = actual->arguments;
+    if (strcmp(expected_name, actual_name)) {
+        const SemanticSymbol *actual_symbol = NULL;
+        for (size_t i = 0; i < model->symbol_count; i++)
+            if ((model->symbols[i].kind == SEMANTIC_SYMBOL_STRUCT ||
+                 model->symbols[i].kind == SEMANTIC_SYMBOL_ENUM) &&
+                !strcmp(actual_name, ast_program_lexeme(
+                                         model->symbols[i].source_program,
+                                         model->symbols[i].name_token))) {
+                actual_symbol = &model->symbols[i];
+                break;
+            }
+        const AstDeclarationNode *origin =
+            actual_symbol != NULL && actual_symbol->declaration != NULL
+                ? actual_symbol->declaration->generic_origin : NULL;
+        if (origin == NULL ||
+            strcmp(expected_name, ast_program_lexeme(
+                                      actual_symbol->source_program,
+                                      origin->name_token)))
+            return 0;
+        actual_arguments =
+            actual_symbol->declaration->specialization_arguments;
+    }
+    const AstTypeArgument *x = expected->arguments, *y = actual_arguments;
     for (; x && y; x = x->next, y = y->next)
-        if (!interface_type_matches_depth(interface_unit, &x->type, actual_unit, &y->type,
-                                      self_unit, self, depth + 1)) return 0;
+        if (!interface_type_matches_depth(model, interface_unit, &x->type, actual_unit, &y->type,
+                                       self_unit, self, substitution,
+                                       depth + 1)) return 0;
     return !x && !y;
 }
 
-static int interface_type_matches(const AstProgram *interface_unit, AstType expected,
-                              const AstProgram *actual_unit, const AstType *actual,
-                              const AstProgram *self_unit, const AstType *self) {
-    return interface_type_matches_depth(interface_unit, &expected, actual_unit, actual,
-                                    self_unit, self, 0);
+static int interface_type_matches(const SemanticModel *model,
+                               const AstProgram *interface_unit, AstType expected,
+                               const AstProgram *actual_unit, const AstType *actual,
+                               const AstProgram *self_unit, const AstType *self,
+                               const InterfaceSubstitution *substitution) {
+    if (substitution != NULL && expected.arguments != NULL) {
+        AstTypeArgument concrete_arguments[DMM_MAX_TYPE_PARAMETERS];
+        size_t count = 0;
+        int replaced = 0;
+        for (const AstTypeArgument *source = expected.arguments;
+             source != NULL && count < DMM_MAX_TYPE_PARAMETERS;
+             source = source->next) {
+            AstType concrete = source->type;
+            if (concrete.kind == AST_TYPE_NAMED &&
+                concrete.arguments == NULL) {
+                const char *name =
+                    ast_program_lexeme(interface_unit, concrete.name_token);
+                const AstGenericParameter *parameter =
+                    substitution->parameters;
+                const AstTypeArgument *argument = substitution->arguments;
+                for (; parameter != NULL && argument != NULL;
+                     parameter = parameter->next, argument = argument->next)
+                    if (!strcmp(name, ast_program_lexeme(
+                                          interface_unit,
+                                          parameter->name_token))) {
+                        concrete = argument->type;
+                        replaced = 1;
+                        break;
+                    }
+            }
+            concrete_arguments[count].type = concrete;
+            concrete_arguments[count].next = NULL;
+            if (count != 0)
+                concrete_arguments[count - 1].next =
+                    &concrete_arguments[count];
+            count++;
+        }
+        if (replaced) {
+            expected.arguments = &concrete_arguments[0];
+            return interface_type_matches_depth(
+                model, interface_unit, &expected, actual_unit, actual,
+                self_unit, self, NULL, 0);
+        }
+    }
+    return interface_type_matches_depth(model, interface_unit, &expected, actual_unit, actual,
+                                     self_unit, self, substitution, 0);
 }
+
+static size_t interface_method(const SemanticModel *model,
+                               size_t interface_method_id, size_t struct_id,
+                               const InterfaceSubstitution *substitution);
 
 int semantic_implements_interface(const SemanticModel *model, size_t interface_id,
                                   size_t struct_id) {
     if (!model || interface_id >= model->symbol_count || struct_id >= model->symbol_count) return 0;
     const SemanticSymbol *interface = &model->symbols[interface_id];
     const SemanticSymbol *owner = &model->symbols[struct_id];
-    if (interface->kind != SEMANTIC_SYMBOL_INTERFACE || owner->kind != SEMANTIC_SYMBOL_STRUCT ||
+    if (interface->kind != SEMANTIC_SYMBOL_INTERFACE ||
+        (owner->kind != SEMANTIC_SYMBOL_STRUCT && owner->kind != SEMANTIC_SYMBOL_ENUM) ||
         !interface->declaration) return 0;
     for (const AstDeclarationNode *required = interface->declaration->as.interface_decl.methods;
          required; required = required->next)
-        if (semantic_interface_method(model, required->resolved_symbol_id,
-                                      struct_id) == AST_SYMBOL_NONE) return 0;
+        if (interface_method(model, required->resolved_symbol_id, struct_id,
+                             NULL) == AST_SYMBOL_NONE) return 0;
     return 1;
 }
 
-size_t semantic_interface_method(const SemanticModel *model, size_t interface_method_id,
-                                 size_t struct_id) {
+int semantic_implements_specialized_interface(
+    const SemanticModel *model, size_t interface_id, size_t owner_id,
+    const AstProgram *argument_unit, const AstType *interface_type) {
+    if (!model || interface_id >= model->symbol_count ||
+        owner_id >= model->symbol_count || interface_type == NULL)
+        return 0;
+    const SemanticSymbol *interface = &model->symbols[interface_id];
+    if (interface->kind != SEMANTIC_SYMBOL_INTERFACE ||
+        interface->declaration == NULL)
+        return 0;
+    InterfaceSubstitution substitution = {
+        .parameters = interface->declaration->generic_parameters,
+        .arguments = interface_type->arguments,
+        .argument_unit = argument_unit
+    };
+    for (const AstDeclarationNode *required =
+             interface->declaration->as.interface_decl.methods;
+         required != NULL; required = required->next)
+        if (interface_method(model, required->resolved_symbol_id, owner_id,
+                             &substitution) == AST_SYMBOL_NONE)
+            return 0;
+    return 1;
+}
+
+static size_t interface_method(const SemanticModel *model,
+                               size_t interface_method_id, size_t struct_id,
+                               const InterfaceSubstitution *substitution) {
     if (!model || interface_method_id >= model->symbol_count || struct_id >= model->symbol_count)
         return AST_SYMBOL_NONE;
     const SemanticSymbol *required = &model->symbols[interface_method_id];
@@ -60,29 +181,42 @@ size_t semantic_interface_method(const SemanticModel *model, size_t interface_me
     if (required->kind != SEMANTIC_SYMBOL_FUNCTION || !required->declaration ||
         required->owner_symbol_id >= model->symbol_count ||
         model->symbols[required->owner_symbol_id].kind != SEMANTIC_SYMBOL_INTERFACE ||
-        owner->kind != SEMANTIC_SYMBOL_STRUCT || !owner->declaration) return AST_SYMBOL_NONE;
+        (owner->kind != SEMANTIC_SYMBOL_STRUCT && owner->kind != SEMANTIC_SYMBOL_ENUM) ||
+        !owner->declaration) return AST_SYMBOL_NONE;
     AstType self = {.kind = AST_TYPE_NAMED, .name_token = owner->name_token,
                     .array_length_token = AST_TOKEN_NONE};
     const char *required_name = ast_program_lexeme(required->source_program, required->name_token);
     size_t required_parameters = parameter_count(required->declaration);
-    for (const AstDeclarationNode *method = owner->declaration->as.struct_decl.methods;
+    const AstDeclarationNode *methods = owner->kind == SEMANTIC_SYMBOL_STRUCT
+                                            ? owner->declaration->as.struct_decl.methods
+                                            : owner->declaration->as.enum_decl.methods;
+    for (const AstDeclarationNode *method = methods;
          method; method = method->next) {
         if (method->resolved_symbol_id >= model->symbol_count) continue;
         const SemanticSymbol *actual = &model->symbols[method->resolved_symbol_id];
         if (actual->kind != SEMANTIC_SYMBOL_FUNCTION || actual->owner_symbol_id != struct_id ||
-            !actual->declaration || actual->declaration->as.function.is_static ||
+            !actual->declaration ||
+            actual->declaration->as.function.is_static !=
+                required->declaration->as.function.is_static ||
             !same_name(actual->source_program, actual->name_token, required_name) ||
             parameter_count(actual->declaration) != required_parameters) continue;
-        if (!interface_type_matches(required->source_program, required->declaration->as.function.return_type,
-                                actual->source_program, &actual->declaration->as.function.return_type,
-                                owner->source_program, &self)) continue;
+        if (!interface_type_matches(model, required->source_program, required->declaration->as.function.return_type,
+                                 actual->source_program, &actual->declaration->as.function.return_type,
+                                 owner->source_program, &self,
+                                 substitution)) continue;
         const AstParameter *expected = required->declaration->as.function.parameters;
         const AstParameter *provided = actual->declaration->as.function.parameters;
         for (; expected && provided; expected = expected->next, provided = provided->next)
-            if (!interface_type_matches(required->source_program, expected->type, actual->source_program,
-                                    &provided->type, owner->source_program, &self)) break;
+            if (!interface_type_matches(model, required->source_program, expected->type, actual->source_program,
+                                     &provided->type, owner->source_program, &self,
+                                     substitution)) break;
         if (!expected && !provided) return actual->id;
     }
     return AST_SYMBOL_NONE;
 }
 
+size_t semantic_interface_method(const SemanticModel *model,
+                                 size_t interface_method_id,
+                                 size_t struct_id) {
+    return interface_method(model, interface_method_id, struct_id, NULL);
+}

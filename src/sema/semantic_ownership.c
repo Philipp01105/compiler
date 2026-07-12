@@ -244,6 +244,14 @@ static void read_expression(OwnershipChecker *checker, OwnershipFlow *flow,
             read_call(checker, flow, expression);
             continue;
         }
+        if (expression->kind == AST_EXPR_PROPAGATE) {
+            if (semantic_expression_is_move_only(checker->analyzer,
+                                                 expression->left))
+                consume_expression(checker, flow, expression->left);
+            else
+                read_expression(checker, flow, expression->left);
+            continue;
+        }
         if (expression->kind == AST_EXPR_ARRAY_LITERAL ||
             expression->kind == AST_EXPR_ENUM_CONSTRUCT) {
             for (const AstExpression *argument = expression->arguments;

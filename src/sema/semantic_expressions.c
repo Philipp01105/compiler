@@ -487,6 +487,230 @@ static void contextualize_direct_call_literals(Analyzer *analyzer,
             argument->allocated_type = parameter->type;
 }
 
+static const char *aggregate_base_name(const SemanticSymbol *symbol) {
+    if (symbol == NULL || symbol->declaration == NULL) return "";
+    const AstDeclarationNode *declaration = symbol->declaration;
+    const AstDeclarationNode *origin = declaration->generic_origin != NULL
+                                           ? declaration->generic_origin
+                                           : declaration;
+    return ast_program_lexeme(symbol->source_program, origin->name_token);
+}
+
+static const SemanticSymbol *unique_static_method(Analyzer *analyzer,
+                                                   size_t owner_symbol_id,
+                                                   const char *name,
+                                                   const AstType *argument,
+                                                   int *ambiguous) {
+    const SemanticSymbol *selected = NULL;
+    if (ambiguous != NULL) *ambiguous = 0;
+    for (size_t i = 0; i < analyzer->model->symbol_count; i++) {
+        const SemanticSymbol *candidate = &analyzer->model->symbols[i];
+        if (candidate->kind != SEMANTIC_SYMBOL_FUNCTION ||
+            candidate->owner_symbol_id != owner_symbol_id ||
+            candidate->declaration == NULL ||
+            !candidate->declaration->as.function.is_static ||
+            !same_name(candidate->source_program, candidate->name_token, name))
+            continue;
+        const AstParameter *parameter =
+            candidate->declaration->as.function.parameters;
+        if (parameter == NULL || parameter->next != NULL) continue;
+        if (argument != NULL &&
+            !ast_concrete_type_equal(candidate->source_program,
+                                     &parameter->type,
+                                     analyzer->program, argument)) {
+            DataType expected = primitive_type(candidate->source_program,
+                                               &parameter->type);
+            DataType actual = primitive_type(analyzer->program, argument);
+            if (expected == TYPE_UNKNOWN || expected != actual ||
+                parameter->type.pointer_depth != argument->pointer_depth ||
+                parameter->type.outer_pointer_depth !=
+                    argument->outer_pointer_depth ||
+                parameter->type.is_array != argument->is_array ||
+                parameter->type.is_slice != argument->is_slice)
+                continue;
+        }
+        if (selected != NULL) {
+            if (ambiguous != NULL) *ambiguous = 1;
+            return NULL;
+        }
+        selected = candidate;
+    }
+    return selected;
+}
+
+static size_t named_variant(Analyzer *analyzer, size_t enum_symbol_id,
+                            const char *name) {
+    if (enum_symbol_id >= analyzer->model->symbol_count) return AST_SYMBOL_NONE;
+    const SemanticSymbol *enumeration =
+        &analyzer->model->symbols[enum_symbol_id];
+    if (enumeration->kind != SEMANTIC_SYMBOL_ENUM ||
+        enumeration->declaration == NULL) return AST_SYMBOL_NONE;
+    for (const AstEnumValue *value = enumeration->declaration->as.enum_decl.values;
+         value != NULL; value = value->next)
+        if (same_name(enumeration->source_program, value->name_token, name))
+            return value->resolved_symbol_id;
+    return AST_SYMBOL_NONE;
+}
+
+static const SemanticSymbol *declared_static_method(
+    Analyzer *analyzer, const SemanticSymbol *owner, const char *name,
+    int *ambiguous) {
+    if (owner == NULL || owner->declaration == NULL) return NULL;
+    const AstDeclarationNode *methods =
+        owner->kind == SEMANTIC_SYMBOL_STRUCT
+            ? owner->declaration->as.struct_decl.methods
+            : owner->kind == SEMANTIC_SYMBOL_ENUM
+                  ? owner->declaration->as.enum_decl.methods : NULL;
+    const SemanticSymbol *selected = NULL;
+    for (const AstDeclarationNode *method = methods; method != NULL;
+         method = method->next) {
+        if (!method->as.function.is_static ||
+            strcmp(ast_program_lexeme(owner->source_program,
+                                      method->name_token), name) ||
+            method->resolved_symbol_id >= analyzer->model->symbol_count)
+            continue;
+        if (selected != NULL) {
+            if (ambiguous != NULL) *ambiguous = 1;
+            return NULL;
+        }
+        selected =
+            &analyzer->model->symbols[method->resolved_symbol_id];
+    }
+    return selected;
+}
+
+static void analyze_propagation(Analyzer *analyzer, AstExpression *expression) {
+    AstExpression *operand = expression->left;
+    size_t question = expression->value_token;
+    if (analyzer->current_function == NULL || analyzer->in_destructor ||
+        analyzer->in_defer_closure) {
+        semantic_error(analyzer, question, ERROR_CATEGORY_SEMANTIC,
+                       ERR_TYPE_INVALID_OPERATION,
+                       "Error propagation with '?' is only allowed directly in functions and methods");
+        return;
+    }
+    if (operand == NULL ||
+        operand->resolved_named_symbol_id >= analyzer->model->symbol_count) {
+        semantic_error(analyzer, question, ERROR_CATEGORY_TYPE,
+                       ERR_TYPE_INVALID_OPERATION,
+                       "Operand of '?' does not provide a Propagate specialization");
+        return;
+    }
+    const SemanticSymbol *operand_type =
+        &analyzer->model->symbols[operand->resolved_named_symbol_id];
+    int ambiguous = 0;
+    const SemanticSymbol *branch = unique_static_method(
+        analyzer, operand_type->id, "branch",
+        operand->has_resolved_ast_type ? &operand->resolved_ast_type : NULL,
+        &ambiguous);
+    if (branch == NULL) {
+        semantic_error(analyzer, question, ERROR_CATEGORY_TYPE,
+                       ERR_TYPE_INVALID_OPERATION,
+                       ambiguous
+                           ? "Operand of '?' has multiple matching Propagate contracts"
+                           : "Operand of '?' does not provide static branch(Self)");
+        return;
+    }
+    const AstType *branch_result = &branch->declaration->as.function.return_type;
+    size_t propagation_id = resolve_named_symbol_id(
+        analyzer, branch->source_program, branch_result->name_token);
+    const SemanticSymbol *propagation =
+        propagation_id < analyzer->model->symbol_count
+            ? &analyzer->model->symbols[propagation_id] : NULL;
+    const AstTypeArgument *contract_arguments =
+        propagation != NULL && propagation->declaration != NULL
+            ? propagation->declaration->specialization_arguments : NULL;
+    if (branch_result->kind != AST_TYPE_NAMED || propagation == NULL ||
+        strcmp(aggregate_base_name(propagation), "Propagation") ||
+        contract_arguments == NULL || contract_arguments->next == NULL ||
+        contract_arguments->next->next != NULL) {
+        semantic_error(analyzer, question, ERROR_CATEGORY_TYPE,
+                       ERR_TYPE_INVALID_OPERATION,
+                       "Propagate.branch must return Propagation<Output,Residual>");
+        return;
+    }
+    AstType output = contract_arguments->type;
+    AstType residual = contract_arguments->next->type;
+    size_t continue_id = named_variant(analyzer, propagation_id, "Continue");
+    size_t break_id = named_variant(analyzer, propagation_id, "Break");
+    if (continue_id == AST_SYMBOL_NONE || break_id == AST_SYMBOL_NONE) {
+        semantic_error(analyzer, question, ERROR_CATEGORY_TYPE,
+                       ERR_TYPE_INVALID_OPERATION,
+                       "Propagation result must define Continue and Break variants");
+        return;
+    }
+
+    const AstType *return_type =
+        &analyzer->current_function->as.function.return_type;
+    size_t return_id = resolve_named_symbol_id(analyzer, analyzer->program,
+                                                return_type->name_token);
+    if (return_id >= analyzer->model->symbol_count) {
+        semantic_error(analyzer, question, ERROR_CATEGORY_TYPE,
+                       ERR_TYPE_INCOMPATIBLE_TYPES,
+                       "The enclosing return type cannot accept a residual");
+        return;
+    }
+    const SemanticSymbol *return_symbol = &analyzer->model->symbols[return_id];
+    const char *operand_base = aggregate_base_name(operand_type);
+    const char *return_base = aggregate_base_name(return_symbol);
+    if ((!strcmp(operand_base, "Option") && strcmp(return_base, "Option")) ||
+        (!strcmp(operand_base, "Result") && strcmp(return_base, "Result"))) {
+        semantic_error(analyzer, question, ERROR_CATEGORY_TYPE,
+                       ERR_TYPE_INCOMPATIBLE_TYPES,
+                       "Option and Result residuals cannot be propagated across standard container kinds");
+        return;
+    }
+    const AstProgram *saved_program = analyzer->program;
+    analyzer->program = branch->source_program;
+    const SemanticSymbol *from = unique_static_method(
+        analyzer, return_id, "fromResidual", &residual, &ambiguous);
+    analyzer->program = (AstProgram *) saved_program;
+    if (from == NULL && !ambiguous && strcmp(return_base, "Result"))
+        from = declared_static_method(analyzer, return_symbol,
+                                      "fromResidual", &ambiguous);
+    size_t return_variant = AST_SYMBOL_NONE;
+    if (from == NULL && !ambiguous && !strcmp(return_base, "Result") &&
+        return_symbol->declaration != NULL) {
+        const AstTypeArgument *return_arguments =
+            return_symbol->declaration->specialization_arguments;
+        if (return_arguments != NULL && return_arguments->next != NULL) {
+            const AstType *error_type = &return_arguments->next->type;
+            size_t error_id = resolve_named_symbol_id(
+                analyzer, return_symbol->source_program,
+                error_type->name_token);
+            analyzer->program = (AstProgram *) branch->source_program;
+            from = unique_static_method(analyzer, error_id, "fromResidual",
+                                        &residual, &ambiguous);
+            analyzer->program = (AstProgram *) saved_program;
+            if (from == NULL && !ambiguous &&
+                error_id < analyzer->model->symbol_count)
+                from = declared_static_method(
+                    analyzer, &analyzer->model->symbols[error_id],
+                    "fromResidual", &ambiguous);
+            if (from != NULL)
+                return_variant = named_variant(analyzer, return_id, "Err");
+        }
+    }
+    if (from == NULL) {
+        semantic_error(analyzer, question, ERROR_CATEGORY_TYPE,
+                       ERR_TYPE_INCOMPATIBLE_TYPES,
+                       ambiguous
+                           ? "Return type has multiple matching FromResidual conversions"
+                           : "Return type does not provide FromResidual for this residual");
+        return;
+    }
+    expression->propagation_branch_symbol_id = branch->id;
+    expression->propagation_continue_symbol_id = continue_id;
+    expression->propagation_break_symbol_id = break_id;
+    expression->propagation_from_residual_symbol_id = from->id;
+    expression->propagation_return_variant_symbol_id = return_variant;
+    expression->propagation_output_type = output;
+    expression->propagation_residual_type = residual;
+    expression->propagation_contract_program = branch->source_program;
+    set_expression_declared_type(analyzer, expression, branch->source_program,
+                                 &output);
+}
+
 void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
     if (expression == NULL) return;
     if (expression->kind == AST_EXPR_TYPE_INFO && !expression->left &&
@@ -538,6 +762,11 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
     }
     for (AstExpression *argument = expression->arguments; argument != NULL; argument = argument->next)
         analyze_expression(analyzer, argument);
+
+    if (expression->kind == AST_EXPR_PROPAGATE) {
+        analyze_propagation(analyzer, expression);
+        return;
+    }
 
     if (expression->kind == AST_EXPR_ENUM_ACCESS) return;
 

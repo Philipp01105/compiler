@@ -202,6 +202,15 @@ void normalize_generic_type(Analyzer *analyzer, AstType *type, unsigned depth) {
                 for (AstEnumValue *v = instance->as.enum_decl.values; v; v = v->next)
                     for (AstTypeArgument *p = v->payload_types; p; p = p->next)
                         normalize_generic_type(analyzer, &p->type, depth + 1);
+                AstType self_type = {.kind = AST_TYPE_NAMED, .name_token = instance->name_token,
+                                     .array_length_token = AST_TOKEN_NONE};
+                for (AstDeclarationNode *m = instance->as.enum_decl.methods; m; m = m->next) {
+                    replace_self_type(analyzer, &m->as.function.return_type, &self_type);
+                    for (AstParameter *p = m->as.function.parameters; p; p = p->next)
+                        replace_self_type(analyzer, &p->type, &self_type);
+                    replace_self_statement(analyzer, m->as.function.body, &self_type);
+                    normalize_function_types(analyzer, m);
+                }
             }
             if (instance->resolved_symbol_id == AST_SYMBOL_NONE && analyzer->model->symbol_count != 0) {
                 add_global(analyzer, instance,
@@ -220,6 +229,8 @@ void normalize_generic_type(Analyzer *analyzer, AstType *type, unsigned depth) {
                     for (AstEnumValue *v = instance->as.enum_decl.values; v; v = v->next)
                         add_member(analyzer, v->name_token, instance->name_token, enum_type, SEMANTIC_SYMBOL_ENUM_VALUE,
                                    v, &v->resolved_symbol_id);
+                    for (AstDeclarationNode *m = instance->as.enum_decl.methods; m; m = m->next)
+                        add_global(analyzer, m, SEMANTIC_SYMBOL_FUNCTION, instance->name_token);
                 }
                 /* Late specializations must be classified before their first use. */
                 derive_type_properties(analyzer);
@@ -413,7 +424,7 @@ void prepare_interfaces(Analyzer *a, AstProgram *root) {
 }
 
 int generic_bounds_satisfied(Analyzer *a, const AstProgram *declaration_unit,
-                                    const AstDeclarationNode *d, const AstType *arguments) {
+                                     const AstDeclarationNode *d, const AstType *arguments) {
     AstProgram *root = (AstProgram *) a->model->program;
     size_t index = 0;
     for (AstGenericParameter *g = d->generic_parameters; g; g = g->next, index++) {
@@ -425,12 +436,53 @@ int generic_bounds_satisfied(Analyzer *a, const AstProgram *declaration_unit,
             size_t owner_id = resolve_named_symbol_id(a, a->program,
                                                        named_type_token(a->program, &arguments[index]));
             if (!required_interface || owner_id >= a->model->symbol_count ||
-                a->model->symbols[owner_id].kind != SEMANTIC_SYMBOL_STRUCT ||
+                (a->model->symbols[owner_id].kind != SEMANTIC_SYMBOL_STRUCT &&
+                 a->model->symbols[owner_id].kind != SEMANTIC_SYMBOL_ENUM) ||
                 arguments[index].pointer_depth || arguments[index].outer_pointer_depth ||
                 arguments[index].is_array || arguments[index].is_slice)
                 return 0;
             size_t interface_id = required_interface->resolved_symbol_id;
-            if (!semantic_implements_interface(a->model, interface_id, owner_id)) return 0;
+            AstType concrete_bound = bound->type;
+            AstTypeArgument concrete_arguments[DMM_MAX_TYPE_PARAMETERS];
+            size_t concrete_count = 0;
+            const AstTypeArgument *source_argument = bound->type.arguments;
+            while (source_argument != NULL &&
+                   concrete_count < DMM_MAX_TYPE_PARAMETERS) {
+                AstType concrete = source_argument->type;
+                if (concrete.kind == AST_TYPE_NAMED &&
+                    concrete.arguments == NULL) {
+                    const char *name = ast_program_lexeme(
+                        declaration_unit, concrete.name_token);
+                    size_t parameter_index = 0;
+                    for (const AstGenericParameter *parameter =
+                             d->generic_parameters;
+                         parameter != NULL;
+                         parameter = parameter->next, parameter_index++)
+                        if (!strcmp(name, ast_program_lexeme(
+                                              declaration_unit,
+                                              parameter->name_token))) {
+                            concrete = arguments[parameter_index];
+                            break;
+                        }
+                }
+                concrete_arguments[concrete_count].type = concrete;
+                concrete_arguments[concrete_count].next = NULL;
+                if (concrete_count != 0)
+                    concrete_arguments[concrete_count - 1].next =
+                        &concrete_arguments[concrete_count];
+                concrete_count++;
+                source_argument = source_argument->next;
+            }
+            concrete_bound.arguments =
+                concrete_count == 0 ? NULL : &concrete_arguments[0];
+            if (required_interface->generic_parameters != NULL) {
+                if (!semantic_implements_specialized_interface(
+                        a->model, interface_id, owner_id, a->program,
+                        &concrete_bound))
+                    return 0;
+            } else if (!semantic_implements_interface(
+                           a->model, interface_id, owner_id))
+                return 0;
         }
     }
     return 1;

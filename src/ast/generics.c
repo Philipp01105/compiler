@@ -565,6 +565,30 @@ AstDeclarationNode *ast_specialize_function(AstProgram *program,
             tail = &copy->next;
         }
         result->as.enum_decl.values = head;
+        AstDeclarationNode **methods = &result->as.enum_decl.methods;
+        result->as.enum_decl.methods = NULL;
+        for (const AstDeclarationNode *m = origin->as.enum_decl.methods; m; m = m->next) {
+            AstDeclarationNode *copy = owned(&s, sizeof(*copy));
+            if (!copy) break;
+            *copy = *m;
+            copy->next = NULL;
+            copy->generic_origin = origin;
+            copy->as.function.return_type = substitute_type(&s, m->as.function.return_type);
+            copy->as.function.body = clone_statement(&s, m->as.function.body);
+            AstParameter *parameter_head = NULL, **parameter_tail = &parameter_head;
+            for (const AstParameter *p = m->as.function.parameters; p; p = p->next) {
+                AstParameter *v = owned(&s, sizeof(*v));
+                if (!v) break;
+                *v = *p;
+                v->next = NULL;
+                v->type = substitute_type(&s, p->type);
+                *parameter_tail = v;
+                parameter_tail = &v->next;
+            }
+            copy->as.function.parameters = parameter_head;
+            *methods = copy;
+            methods = &copy->next;
+        }
     } else return NULL;
     AstTypeArgument **args = &result->specialization_arguments;
     for (size_t i = 0; i < count; i++) {
@@ -583,9 +607,13 @@ AstDeclarationNode *ast_specialize_function(AstProgram *program,
         program->tokens = tokens;
         result->name_token = program->token_count++;
         tokens[result->name_token] = token;
-        if (origin->kind == AST_DECL_STRUCT)
-            for (AstDeclarationNode *m = result->as.struct_decl.methods; m; m = m->next)
+        if (origin->kind == AST_DECL_STRUCT || origin->kind == AST_DECL_ENUM) {
+            AstDeclarationNode *methods = origin->kind == AST_DECL_STRUCT
+                                              ? result->as.struct_decl.methods
+                                              : result->as.enum_decl.methods;
+            for (AstDeclarationNode *m = methods; m; m = m->next)
                 m->as.function.owner_token = result->name_token;
+        }
     }
     AstDeclarationNode **end = &program->root;
     while (*end) end = &(*end)->next;

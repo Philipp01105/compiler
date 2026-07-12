@@ -1030,11 +1030,13 @@ SemanticModel *semantic_analyze(AstProgram *program) {
         analyzer.program = unit;
         for (AstDeclarationNode *d = unit->root; d; d = d->next) {
             d->semantic_body_checked = 0;
-            if (d->generic_parameters) continue;
+            if (d->generic_parameters && d->kind != AST_DECL_INTERFACE)
+                continue;
             if (d->kind == AST_DECL_FUNCTION) normalize_function_types(&analyzer, d);
             else if (d->kind == AST_DECL_VARIABLE || d->kind == AST_DECL_CONSTANT) normalize_generic_type(
                 &analyzer, &d->as.constant.type, 0);
-            else if (d->kind == AST_DECL_INTERFACE) {
+            else if (d->kind == AST_DECL_INTERFACE &&
+                     d->generic_parameters == NULL) {
                 for (AstDeclarationNode *m = d->as.interface_decl.methods; m; m = m->next)
                     normalize_function_types(&analyzer, m);
             }
@@ -1042,6 +1044,16 @@ SemanticModel *semantic_analyze(AstProgram *program) {
                 for (AstEnumValue *v = d->as.enum_decl.values; v; v = v->next)
                     for (AstTypeArgument *p = v->payload_types; p; p = p->next)
                         normalize_generic_type(&analyzer, &p->type, 0);
+                AstType self_type = {.kind = AST_TYPE_NAMED, .name_token = d->name_token,
+                                     .array_length_token = AST_TOKEN_NONE};
+                for (AstDeclarationNode *m = d->as.enum_decl.methods; m; m = m->next) {
+                    m->semantic_body_checked = 0;
+                    replace_self_type(&analyzer, &m->as.function.return_type, &self_type);
+                    for (AstParameter *p = m->as.function.parameters; p; p = p->next)
+                        replace_self_type(&analyzer, &p->type, &self_type);
+                    replace_self_statement(&analyzer, m->as.function.body, &self_type);
+                    normalize_function_types(&analyzer, m);
+                }
             } else if (d->kind == AST_DECL_STRUCT) {
                 for (AstField *f = d->as.struct_decl.fields; f; f = f->next)
                     normalize_generic_type(&analyzer, &f->type, 0);
@@ -1223,6 +1235,9 @@ SemanticModel *semantic_analyze(AstProgram *program) {
                         }
                     }
                 }
+                for (AstDeclarationNode *method = declaration->as.enum_decl.methods;
+                     method != NULL; method = method->next)
+                    analyze_function(&analyzer, method);
             }
         }
     }

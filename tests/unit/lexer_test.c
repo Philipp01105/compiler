@@ -27,6 +27,13 @@ int main(void) {
     assert(peek_ahead(tokens, INT_MIN).type == TOKEN_EOF);
     free_token_stream(tokens);
 
+    const char propagation[] = "value??";
+    tokens = lex(propagation, sizeof(propagation) - 1U);
+    assert(tokens != NULL && !tokens->has_error && tokens->count == 4);
+    assert(tokens->tokens[1].type == TOKEN_QUESTION);
+    assert(tokens->tokens[2].type == TOKEN_QUESTION);
+    free_token_stream(tokens);
+
     const char repeated[] = "var repeated:int; repeated = repeated + repeated;";
     tokens = lex(repeated, sizeof(repeated) - 1U);
     assert(tokens != NULL && !tokens->has_error);
@@ -106,14 +113,14 @@ int main(void) {
     free_token_stream(tokens);
 
     error_handler_reset(handler);
-    const char unicode_unknown[] = "\xCE\xB1 ?";
+    const char unicode_unknown[] = "\xCE\xB1 $";
     tokens = lex(unicode_unknown, sizeof(unicode_unknown) - 1);
     assert(tokens != NULL && tokens->has_error && handler->error_count == 2);
     assert(handler->buffer[1]->column == 3);
     free_token_stream(tokens);
 
     error_handler_reset(handler);
-    const char unicode_char[] = "'\xCE\xB1' ?";
+    const char unicode_char[] = "'\xCE\xB1' $";
     tokens = lex(unicode_char, sizeof(unicode_char) - 1);
     assert(tokens != NULL && tokens->has_error && handler->error_count == 2);
     assert(handler->buffer[0]->error_code == ERR_LEX_INVALID_CHAR_LITERAL);

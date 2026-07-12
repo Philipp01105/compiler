@@ -181,6 +181,15 @@ later execution point; every captured move-only value must therefore still be in
 If an intervening operation consumes such a value, the diagnostic points at the `defer` and identifies the consuming
 operation as a related location.
 
+Postfix `?` performs typed early-return propagation. Its operand is evaluated exactly once by value and must provide a
+unique static `branch(Self) -> Propagation<Output,Residual>` method. A `Continue` branch evaluates to its `Output`;
+a `Break` branch is converted by the enclosing return type's static `fromResidual(Residual) -> Self` method and
+returned. The early return follows the normal cleanup path, so active deferred actions and derived drops run in their
+usual LIFO order. Move-only operands are consumed. `?` is valid only directly in functions and methods, not in
+constants, package initializers, destructors, or deferred anonymous bodies. Standard `Option` and `Result` residuals
+cannot cross container kinds. For `Result<T,E>`, an error conversion is also available when
+`E.fromResidual(residual)` exists.
+
 Operator precedence, from low to high, is logical OR, logical AND, comparisons, addition/subtraction,
 multiplication/division/remainder, unary operators, and primary expressions. Arithmetic is numeric; `bit` values
 participate in conditions and logic but not arithmetic. Remainder is defined only for integral operands. Assignment
@@ -282,9 +291,11 @@ arguments. Each module permits at most 256 specializations, declarations at most
 instantiation nesting at most 64 levels. Encoded specialization identities must fit 4095 bytes. By-value recursive
 layouts require a pointer to break the cycle. Only concrete specializations reach typed IR and native emission.
 
-`interface Printable { func toString() -> string; }` declares signatures. A struct implements the interface when its
-instance methods have the same names, parameter types and return types. `Self` in a signature denotes the implementing
-struct. Bounds such as `T:Printable + Equal` check these methods without an implementation declaration. Generic calls
+`interface Printable { func toString() -> string; }` declares signatures. Interfaces may have type parameters, and
+their requirements may be static: `interface FromResidual<R> { static func fromResidual(value:R) -> Self; }`.
+A struct or enum implements an interface when its methods have the same names, static/instance form, parameter types and
+return types. `Self` in a signature denotes the implementing type. Bounds such as
+`T:Printable + Equal` or `T:Propagate<O,R>` check these methods without an implementation declaration. Generic calls
 dispatch statically after specialization. Fixed arrays and slices of an interface may hold values of different
 implementing structs. Assigning a struct to an interface element copies its value, and calls through that element
 dispatch dynamically. Interface inheritance, associated types and default methods are not supported.
@@ -303,14 +314,19 @@ specialized payload type. The receiver is evaluated once, and accessing a varian
 reading its payload. Variants with zero or multiple payloads require `match`. Constructors remain type-qualified, for
 example `Result<int,string>.Ok(42)`.
 
+Enums may declare instance or static methods after a semicolon separating them from variants:
+`enum Status { Ok, Err,; static func make() -> Status { return Status.Ok; } }`.
+
 `match (value) { Some(v) => return v; None => return fallback; }` is a statement. Variant names are relative to the
 scrutinee enum. Bindings have the exact payload types and are scoped to their arm. Every variant must be covered unless
 `_` provides a wildcard arm. Duplicate variants, wrong binding counts and unreachable arms are errors. Payload
 extraction is emitted only in a branch guarded by the corresponding tag test; typed IR verifies that guard. An invalid
 runtime tag traps.
 
-`import "stdlib";` exports `stdlib.Option<T>`, `stdlib.Result<T,E>`, `stdlib.Cell<T>` with `get`/`set` methods,
-`unwrapOr`, `Printable`, `Equal`, and `printValue`. See `tests/execution/generics` for executable examples.
+`import "stdlib";` exports `stdlib.Option<T>`, `stdlib.Result<T,E>`, `stdlib.Propagation<O,R>`,
+`stdlib.NoneResidual`, `stdlib.Propagate<O,R>`, `stdlib.FromResidual<R>`, and `stdlib.Cell<T>` with
+`get`/`set` methods, `unwrapOr`, `Printable`, `Equal`, and `printValue`. See
+`tests/execution/generics` and `tests/execution/propagation` for executable examples.
 
 Functions declared inside a struct are invoked as instance methods, while
 `static func` members are invoked on the struct type. Top-level and method link names encode canonical package identity,

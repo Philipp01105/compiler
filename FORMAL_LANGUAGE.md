@@ -77,7 +77,7 @@ type            = ["&", ["mut"]], {"*"},
 function-type   = "func", [generic-parameters], "(", [type-list], ")", "->", type ;
 type-arguments  = "<", type, {",", type}, ">" ;
 generic-parameters = "<", generic-parameter, {",", generic-parameter}, ">" ;
-generic-parameter = identifier, [":", qualified-name, {"+", qualified-name}] ;
+generic-parameter = identifier, [":", type, {"+", type}] ;
 constant-declaration
                 = "const", identifier, [":", type], "=", expression, ";" ;
 ```
@@ -95,13 +95,17 @@ field-declaration
 
 enum-declaration
                 = "enum", identifier, [generic-parameters], ["(", enum-field-list, ")"],
-                  "{", enum-value, { ",", enum-value }, [","], "}" ;
+                  "{", [enum-value, { ",", enum-value }, [","]],
+                  [";", {enum-method}], "}" ;
 enum-field-list = enum-field, { ",", enum-field } ;
 enum-field      = ["pub"], identifier, ":", type ;
 enum-value      = ["pub"], identifier, ["(", [enum-argument-list | type-list], ")"] ;
 type-list       = type, {",", type} ;
-interface-declaration = "interface", identifier, "{", {interface-method}, "}" ;
-interface-method = ["pub"], "func", identifier, "(", [parameter-list], ")", "->", type, ";" ;
+enum-method     = ["pub"], ["static"], function-declaration ;
+interface-declaration = "interface", identifier, [generic-parameters],
+                        "{", {interface-method}, "}" ;
+interface-method = ["pub"], ["static"], "func", identifier,
+                   "(", [parameter-list], ")", "->", type, ";" ;
 enum-argument-list
                 = enum-argument, { ",", enum-argument } ;
 enum-argument   = integer | floating | character | string
@@ -202,9 +206,10 @@ identifier-expression
                 = identifier, { postfix } ;
 postfix         = "(", [argument-list], ")"
                 | type-arguments, ["(", [argument-list], ")"]
-                | "[", expression, "]"
-                | ".", identifier
-                | ".", "(", type, ")" ;
+                 | "[", expression, "]"
+                 | ".", identifier
+                 | ".", "(", type, ")"
+                 | "?" ;
 argument-list   = expression, { ",", expression } ;
 call-expression = identifier-expression ;
 type-metadata   = type, ".", ("name" | "size" | "align") ;

@@ -32,7 +32,7 @@ typedef enum {
     AST_EXPR_BINARY, AST_EXPR_CALL, AST_EXPR_INDEX, AST_EXPR_SUBSLICE, AST_EXPR_MEMBER,
     AST_EXPR_SLICE_LENGTH, AST_EXPR_RESERVE, AST_EXPR_CAST, AST_EXPR_FREE, AST_EXPR_ENUM_CONSTRUCT,
     AST_EXPR_ENUM_ACCESS, AST_EXPR_SIZEOF, AST_EXPR_ALIGNOF, AST_EXPR_SLICE, AST_EXPR_SLICE_DATA,
-    AST_EXPR_TYPE_INFO, AST_EXPR_TYPE_PROPERTY, AST_EXPR_ARRAY_LITERAL
+    AST_EXPR_TYPE_INFO, AST_EXPR_TYPE_PROPERTY, AST_EXPR_ARRAY_LITERAL, AST_EXPR_PROPAGATE
 } AstExpressionKind;
 
 typedef enum {
@@ -84,6 +84,7 @@ struct AstTypeArgument {
 
 typedef struct AstInterfaceBound {
     size_t name_token;
+    AstType type;
     struct AstInterfaceBound *next;
 } AstInterfaceBound;
 
@@ -153,6 +154,15 @@ struct AstExpression {
     const struct AstProgram *resolved_callable_program;
     AstBorrowKind resolved_borrow_kind;
     int mutable_borrow;
+    /* Sema-resolved targets for postfix error propagation. */
+    size_t propagation_branch_symbol_id;
+    size_t propagation_continue_symbol_id;
+    size_t propagation_break_symbol_id;
+    size_t propagation_from_residual_symbol_id;
+    size_t propagation_return_variant_symbol_id;
+    AstType propagation_output_type;
+    AstType propagation_residual_type;
+    const struct AstProgram *propagation_contract_program;
 };
 
 struct AstStatement {
@@ -257,6 +267,7 @@ struct AstDeclarationNode {
         struct {
             AstField *fields;
             AstEnumValue *values;
+            AstDeclarationNode *methods;
             int is_sum;
         } enum_decl;
 

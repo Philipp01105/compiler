@@ -98,7 +98,7 @@ model. The normative rules and current restrictions are maintained in [LANGUAGE_
 ### Functions, control flow, and error handling
 
 - [x] Add first-class non-capturing callbacks through parameters and return values.
-- [ ] Standardize `Option`/`Result`-style error propagation and concise propagation syntax.
+- [x] Standardize `Option`/`Result`-style error propagation and concise propagation syntax.
 - [ ] Evaluate expression forms for `if`, blocks, and `match` without compromising definite-return analysis.
 - [ ] Add labeled loop control where nested loops require it.
 - [ ] Add compile-time assertions and target-conditional compilation.

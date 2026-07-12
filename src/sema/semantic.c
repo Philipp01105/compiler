@@ -161,7 +161,9 @@ void add_member(Analyzer *analyzer, size_t name_token, size_t owner_token,
     };
     for (size_t i = 0; i < analyzer->model->symbol_count; i++) {
         const SemanticSymbol *owner = &analyzer->model->symbols[i];
-        if ((owner->kind == SEMANTIC_SYMBOL_STRUCT || owner->kind == SEMANTIC_SYMBOL_ENUM) &&
+        if ((owner->kind == SEMANTIC_SYMBOL_STRUCT ||
+             owner->kind == SEMANTIC_SYMBOL_ENUM ||
+             owner->kind == SEMANTIC_SYMBOL_INTERFACE) &&
             owner->source_program == analyzer->program && owner->name_token == owner_token) {
             symbol.owner_symbol_id = owner->id;
             break;
@@ -177,7 +179,9 @@ void collect_declarations(Analyzer *analyzer, AstProgram *program) {
     analyzer->program = program;
     for (AstDeclarationNode *declaration = program->root;
          declaration != NULL; declaration = declaration->next) {
-        if (declaration->generic_parameters != NULL) continue;
+        if (declaration->generic_parameters != NULL &&
+            declaration->kind != AST_DECL_INTERFACE)
+            continue;
         if (declaration->kind == AST_DECL_IMPORT) {
             continue; /* Imports are file-local package bindings, not value symbols. */
         }
@@ -211,6 +215,9 @@ void collect_declarations(Analyzer *analyzer, AstProgram *program) {
                  value != NULL; value = value->next)
                 add_member(analyzer, value->name_token, declaration->name_token, enum_type,
                            SEMANTIC_SYMBOL_ENUM_VALUE, value, &value->resolved_symbol_id);
+            for (AstDeclarationNode *method = declaration->as.enum_decl.methods;
+                 method != NULL; method = method->next)
+                add_global(analyzer, method, SEMANTIC_SYMBOL_FUNCTION, declaration->name_token);
         } else if (declaration->kind == AST_DECL_INTERFACE) {
             add_global(analyzer, declaration, SEMANTIC_SYMBOL_INTERFACE, AST_TOKEN_NONE);
             for (AstDeclarationNode *method = declaration->as.interface_decl.methods;

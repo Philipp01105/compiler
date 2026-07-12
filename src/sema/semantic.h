@@ -67,6 +67,9 @@ SemanticModel *semantic_analyze(AstProgram * program);
 
 int semantic_implements_interface(const SemanticModel *model, size_t interface_id,
                                   size_t struct_id);
+int semantic_implements_specialized_interface(
+    const SemanticModel *model, size_t interface_id, size_t owner_id,
+    const AstProgram *argument_unit, const AstType *interface_type);
 size_t semantic_interface_method(const SemanticModel *model, size_t interface_method_id,
                                  size_t struct_id);
 
