@@ -19,6 +19,7 @@ typedef struct {
     int reported;
     int recover_syntax;
     int allocation_failed;
+    int value_context;
 } SyntaxParser;
 
 #define AST_MAX_PARSE_DEPTH 512U
@@ -339,6 +340,9 @@ static AstType parse_type(SyntaxParser *parser) {
 static AstExpression *parse_expression(SyntaxParser *parser);
 
 static AstStatement *parse_statement(SyntaxParser *parser);
+static AstStatement *parse_statement_impl(SyntaxParser *parser);
+static AstStatement *parse_value_block(SyntaxParser *parser);
+static AstStatement *parse_expression_statement(SyntaxParser *parser, int consume_semicolon);
 
 static AstGenericParameter *parse_generic_parameters(SyntaxParser *parser) {
     AstGenericParameter *head = NULL, **tail = &head;
@@ -538,6 +542,18 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
         if (expression != NULL) {
             expression->arguments = elements;
             expression->right = repeat;
+        }
+    } else if (type == TOKEN_LBRACE || type == TOKEN_KEYWORD_IF ||
+               type == TOKEN_KEYWORD_MATCH) {
+        expression = new_expression(parser, AST_EXPR_CONTROL, first);
+        if (expression != NULL) {
+            if (type == TOKEN_LBRACE) expression->control = parse_value_block(parser);
+            else {
+                int saved = parser->value_context;
+                parser->value_context = 1;
+                expression->control = parse_statement_impl(parser);
+                parser->value_context = saved;
+            }
         }
     } else if (match(parser, TOKEN_LPAREN)) {
         expression = parse_expression(parser);
@@ -850,6 +866,76 @@ static AstStatement *parse_block(SyntaxParser *parser) {
     return block;
 }
 
+static int control_value_ahead(const SyntaxParser *parser) {
+    TokenType kind = current_type(parser);
+    if (kind != TOKEN_KEYWORD_IF && kind != TOKEN_KEYWORD_MATCH)
+        return 0;
+    unsigned depth = 0;
+    int saw_body = 0;
+    int saw_else = 0;
+    for (size_t i = parser->current; i < parser->program->token_count; i++) {
+        TokenType token = parser->program->tokens[i].type;
+        if (token == TOKEN_LBRACE) {
+            depth++;
+            saw_body = 1;
+        } else if (token == TOKEN_RBRACE) {
+            if (depth == 0) return 0;
+            depth--;
+            if (depth == 0 && saw_body) {
+                TokenType next = i + 1 < parser->program->token_count
+                                     ? parser->program->tokens[i + 1].type
+                                     : TOKEN_EOF;
+                if (kind == TOKEN_KEYWORD_IF && !saw_else) {
+                    if (next != TOKEN_KEYWORD_ELSE) return 0;
+                    saw_else = 1;
+                    continue;
+                }
+                return next == TOKEN_RBRACE || next == TOKEN_SEMICOLON;
+            }
+        }
+    }
+    return 0;
+}
+
+static AstStatement *parse_value_block(SyntaxParser *parser) {
+    size_t first = parser->current;
+    (void) consume(parser, TOKEN_LBRACE);
+    AstStatement *block = new_statement(parser, AST_STMT_BLOCK, first);
+    AstStatement **tail = block == NULL ? NULL : &block->body;
+    while (!parser->failed && !check(parser, TOKEN_RBRACE) &&
+           !check(parser, TOKEN_EOF)) {
+        TokenType type = current_type(parser);
+        AstStatement *child;
+        if (type == TOKEN_KEYWORD_VAR || type == TOKEN_KEYWORD_CONST ||
+            type == TOKEN_KEYWORD_RETURN || type == TOKEN_KEYWORD_DEFER ||
+            type == TOKEN_KEYWORD_FOR || type == TOKEN_KEYWORD_WHILE ||
+            type == TOKEN_KEYWORD_BREAK || type == TOKEN_KEYWORD_CONTINUE ||
+            ((type == TOKEN_KEYWORD_IF || type == TOKEN_KEYWORD_MATCH) &&
+             !control_value_ahead(parser))) {
+            int saved = parser->value_context;
+            parser->value_context = 0;
+            child = parse_statement(parser);
+            parser->value_context = saved;
+        } else {
+            child = parse_expression_statement(parser, 0);
+            if (check(parser, TOKEN_RBRACE) && child != NULL &&
+                child->kind == AST_STMT_EXPRESSION) {
+                if (block != NULL) block->result = child->expression;
+                break;
+            }
+            (void) consume(parser, TOKEN_SEMICOLON);
+            finish_statement(parser, child);
+        }
+        if (tail != NULL) {
+            *tail = child;
+            if (child != NULL) tail = &child->next;
+        }
+    }
+    (void) consume(parser, TOKEN_RBRACE);
+    finish_statement(parser, block);
+    return block;
+}
+
 static AstStatement *parse_variable(SyntaxParser *parser, size_t first,
                                     int consume_semicolon) {
     int is_const = check(parser, TOKEN_KEYWORD_CONST);
@@ -965,7 +1051,9 @@ static AstStatement *parse_statement_impl(SyntaxParser *parser) {
             }
             if (type_pattern) (void) consume(parser, TOKEN_ARROW);
             else (void) consume(parser, TOKEN_FAT_ARROW);
-            AstStatement *body = parse_statement(parser);
+            AstStatement *body = parser->value_context
+                                     ? parse_value_block(parser)
+                                     : parse_statement(parser);
             if (arm) {
                 arm->variant_token = variant;
                 arm->is_type_pattern = type_pattern;
@@ -992,9 +1080,17 @@ static AstStatement *parse_statement_impl(SyntaxParser *parser) {
         (void) consume(parser, TOKEN_LPAREN);
         AstExpression *condition = parse_expression(parser);
         (void) consume(parser, TOKEN_RPAREN);
-        AstStatement *body = parse_statement(parser);
+        AstStatement *body = parser->value_context
+                                 ? parse_value_block(parser)
+                                 : parse_statement(parser);
         AstStatement *else_body = NULL;
-        if (match(parser, TOKEN_KEYWORD_ELSE)) else_body = parse_statement(parser);
+        if (match(parser, TOKEN_KEYWORD_ELSE))
+            else_body = parser->value_context
+                            ? parse_value_block(parser)
+                            : parse_statement(parser);
+        else if (parser->value_context)
+            parser_failure(parser, ERR_PARSE_EXPECTED_TOKEN,
+                           "Value if requires an else branch");
         if (statement != NULL) {
             statement->condition = condition;
             statement->body = body;

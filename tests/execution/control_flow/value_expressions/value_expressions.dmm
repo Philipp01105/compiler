@@ -1,0 +1,132 @@
+package main;
+import "stdlib";
+import "stdlib/core";
+
+var configured:i32 = if (true) { 6 } else { 7 };
+
+struct Point {
+    var x:i32;
+    var y:i32;
+}
+
+struct Handle {
+    var id:i32;
+    destructor { id = 0; }
+}
+
+func handle(id:i32) -> Handle {
+    var result:Handle;
+    result.id = id;
+    return result;
+}
+
+func point(x:i32, y:i32) -> Point {
+    var result:Point;
+    result.x = x;
+    result.y = y;
+    return result;
+}
+
+enum Temperature {
+    Celsius(i32),
+    Fahrenheit(i32),
+    Invalid,
+}
+
+func normalize(reading:Temperature) -> i32 {
+    return match (reading) {
+        Celsius(value) => { value }
+        Fahrenheit(value) => { (value - 32) * 5 / 9 }
+        Invalid => { -273 }
+    };
+}
+
+func nonnegative(value:i32) -> i32 {
+    return if (value >= 0) { value } else { core.core_trap(); };
+}
+
+func unreachableValue(flag:bit) -> i32 {
+    return if (flag) { core.core_trap(); } else { core.core_trap(); };
+}
+
+func earlyReturn(flag:bit) -> i32 {
+    var result:i32 = if (flag) { return 7; } else { 8 };
+    return result;
+}
+
+func destination(reading:Temperature) -> Point {
+    return match (reading) {
+        Celsius(value) => { point(value, 1) }
+        Fahrenheit(value) => { point(value, 2) }
+        Invalid => { point(0, 0) }
+    };
+}
+
+func kind<T>(value:T) -> i32 {
+    return match (T) {
+        case i32 -> { 1 }
+        case string -> { 2 }
+        case _ -> { 3 }
+    };
+}
+
+func chooseOptional(value:stdlib.Option<i32>, useValue:bit) -> stdlib.Option<i32> {
+    var selected:i32 = if (useValue) { value? } else { 0 };
+    return stdlib.Option<i32>.Some(selected);
+}
+
+func main() -> int {
+    if (configured != 6) { return 15; }
+    var adjustment:i32 = {
+        var offset:i32 = 4;
+        if (offset < 5) { offset += 1; }
+        offset
+    };
+    var measured:i32 = if (adjustment == 5) {
+        normalize(Temperature.Fahrenheit(68))
+    } else {
+        normalize(Temperature.Invalid)
+    };
+    if (measured != 20) { return 1; }
+    var selected:Point = if (measured == 20) {
+        destination(Temperature.Celsius(7))
+    } else {
+        point(0, 0)
+    };
+    if (selected.x != 7 || selected.y != 1) { return 2; }
+    if (nonnegative(3) != 3) { return 3; }
+    if (earlyReturn(true) != 7 || earlyReturn(false) != 8) { return 14; }
+    var widened:i64 = if (measured == 20) { 10.(i32) } else { 20.(i64) };
+    if (widened != 10) { return 4; }
+    var first:Handle = handle(11);
+    var second:Handle = handle(22);
+    var chosen:Handle = if (measured == 20) { first } else { second };
+    if (chosen.id != 11) { return 5; }
+    var base:i32 = 42;
+    var selectedRef = if (measured == 20) { &base } else { &measured };
+    if (*selectedRef != 42) { return 6; }
+    var fraction:double = if (measured == 20) { 1.5.(float) } else { 2.5 };
+    if (fraction != 1.5) { return 7; }
+    var samples:i32[2] = if (measured == 20) { [3, 4] } else { [5, 6] };
+    if (samples[0] != 3 || samples[1] != 4) { return 8; }
+    var nested:int = { if (measured == 20) { 9 } else { 10 } };
+    if (nested != 9) { return 9; }
+    if (kind<i32>(measured) != 1 || kind<string>("ok") != 2) { return 10; }
+    var present = chooseOptional(stdlib.Option<i32>.Some(8), true);
+    var skipped = chooseOptional(stdlib.Option<i32>.None, false);
+    if (present.Some() != 8 || skipped.Some() != 0) { return 11; }
+    var propagated = chooseOptional(stdlib.Option<i32>.None, true);
+    var residual:i32 = match (propagated) {
+        Some(value) => { value }
+        None => { -1 }
+    };
+    if (residual != -1) { return 12; }
+    var promoted = match (Temperature.Invalid) {
+        Celsius(value) => { 1.(i8) }
+        Fahrenheit(value) => { 2.(u8) }
+        Invalid => { 3.(i16) }
+    };
+    if (promoted != 3) { return 13; }
+    stdlib.println("value expressions ok");
+    return 0;
+}

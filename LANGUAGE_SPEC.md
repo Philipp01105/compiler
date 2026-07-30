@@ -172,6 +172,20 @@ backing is released in reverse initialization order. The terminating `exit` intr
 DMM supports blocks, `if`/`else`, `for`, `while`, `break`, `continue`, and `return`. `break` and `continue` are valid
 only in loops. Every reachable path of a non-void function must return a value of the declared type.
 
+Blocks, `if`/`else`, and `match` can also produce values. A value block ends with an expression without a semicolon:
+`var total:int = { var fee:int = 2; fee + 40 };`. A value `if` requires both branches and braces:
+`var label = if (ready) { "ready" } else { "pending" };`. Value `match` arms likewise use braces, for example
+`var code = match (status) { Ready => { 0 } Failed => { 1 } };`. An arm or branch may instead terminate with
+`return`, a `never` call, or another non-fallthrough operation. A reachable branch with no final value, or with a
+`void` value, is rejected. Statement forms retain their existing syntax.
+
+All reachable branches must have a common type under the existing implicit-conversion rules. An expected type from a
+declaration, assignment, return, or direct-call parameter is applied to every branch first; otherwise the compiler
+chooses a branch type to which all reachable branches convert. `never` branches do not participate, and an expression
+whose branches all terminate has type `never`. Branch-local bindings leave scope after their value is evaluated;
+returning a borrow of such a binding is rejected. Ownership states from only the reachable branches meet at the
+join, so a move on any continuing path prevents an unchecked later use.
+
 `defer call(...);` evaluates and retains the callee and arguments immediately, then performs the call when the current
 scope exits. `defer func() { ... }` instead retains referenced locals and evaluates its body at scope exit. Deferred
 actions run in last-in, first-out order on fallthrough, `return`, `break` and `continue`, before earlier enclosing-scope
@@ -317,7 +331,8 @@ example `Result<int,string>.Ok(42)`.
 Enums may declare instance or static methods after a semicolon separating them from variants:
 `enum Status { Ok, Err,; static func make() -> Status { return Status.Ok; } }`.
 
-`match (value) { Some(v) => return v; None => return fallback; }` is a statement. Variant names are relative to the
+`match (value) { Some(v) => return v; None => return fallback; }` is a statement; braced arms with final expressions
+make it a value expression. Variant names are relative to the
 scrutinee enum. Bindings have the exact payload types and are scoped to their arm. Every variant must be covered unless
 `_` provides a wildcard arm. Duplicate variants, wrong binding counts and unreachable arms are errors. Payload
 extraction is emitted only in a branch guarded by the corresponding tag test; typed IR verifies that guard. An invalid

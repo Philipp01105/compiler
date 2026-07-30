@@ -1,0 +1,10 @@
+package main;
+
+func main() -> int {
+    var first:i32 = 1;
+    var second:i32 = 2;
+    var flag:bit = true;
+    var selected = if (flag) { &first } else { &second };
+    first = 3;
+    return *selected;
+}

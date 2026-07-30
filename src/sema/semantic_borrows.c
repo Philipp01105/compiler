@@ -24,6 +24,7 @@ typedef struct {
     Analyzer *analyzer;
     size_t *last_use;
     BorrowRecord *borrows;
+    size_t current_scope_depth;
 } BorrowChecker;
 
 typedef enum {
@@ -40,6 +41,10 @@ typedef struct {
     const BorrowRecord *through;
 } BorrowPlace;
 
+static void collect_statement_uses(BorrowChecker *checker,
+                                   const AstStatement *statement,
+                                   int deferred);
+
 static void collect_expression_uses(BorrowChecker *checker,
                                     const AstExpression *expression,
                                     int deferred) {
@@ -53,6 +58,7 @@ static void collect_expression_uses(BorrowChecker *checker,
         collect_expression_uses(checker, expression->left, deferred);
         collect_expression_uses(checker, expression->right, deferred);
         collect_expression_uses(checker, expression->arguments, deferred);
+        collect_statement_uses(checker, expression->control, deferred);
     }
 }
 
@@ -65,6 +71,7 @@ static void collect_statement_uses(BorrowChecker *checker,
         collect_expression_uses(checker, statement->value, deferred);
         collect_expression_uses(checker, statement->condition, deferred);
         collect_expression_uses(checker, statement->update, deferred);
+        collect_expression_uses(checker, statement->result, deferred);
         collect_statement_uses(checker, statement->initializer, deferred);
         collect_statement_uses(checker, statement->body, body_deferred);
         collect_statement_uses(checker, statement->else_body, deferred);
@@ -390,6 +397,9 @@ static void check_new_borrow(BorrowChecker *checker,
 static void check_expression(BorrowChecker *checker,
                              const AstExpression *expression,
                              BorrowAccess access);
+static void check_statement_list(BorrowChecker *checker,
+                                 const AstStatement *statement,
+                                 size_t scope_depth);
 
 static int expression_targets_field(const BorrowChecker *checker,
                                     const SemanticSymbol *function,
@@ -491,6 +501,11 @@ static void check_expression(BorrowChecker *checker,
                              const AstExpression *expression,
                              BorrowAccess access) {
     if (expression == NULL) return;
+    if (expression->kind == AST_EXPR_CONTROL) {
+        check_statement_list(checker, expression->control,
+                             checker->current_scope_depth + 1);
+        return;
+    }
     if (expression->kind == AST_EXPR_PROPAGATE) {
         BorrowAccess operand_access =
             semantic_expression_is_move_only(checker->analyzer,
@@ -539,12 +554,50 @@ static void deactivate_borrower(BorrowChecker *checker,
             old->active = 0;
 }
 
-static BorrowRecord *add_borrow(BorrowChecker *checker,
-                                const AstExpression *borrower,
-                                const AstExpression *value,
-                                size_t scope_depth) {
+static BorrowRecord *add_borrow_mode(BorrowChecker *checker,
+                                     const AstExpression *borrower,
+                                     const AstExpression *value,
+                                     size_t scope_depth,
+                                     int preserve_existing) {
     if (value == NULL || borrower == NULL)
         return NULL;
+    if (value->kind == AST_EXPR_CONTROL && value->control != NULL) {
+        BorrowPlace borrower_place;
+        if (!expression_place(borrower, &borrower_place)) return NULL;
+        if (!preserve_existing)
+            deactivate_borrower(checker, borrower_place.owner,
+                                borrower_place.field);
+        const AstStatement *control = value->control;
+        BorrowRecord *first = NULL;
+        if (control->kind == AST_STMT_BLOCK) {
+            first = add_borrow_mode(checker, borrower, control->result,
+                                    scope_depth, 1);
+        } else if (control->kind == AST_STMT_IF) {
+            const AstStatement *branches[2] = {control->body,
+                                               control->else_body};
+            for (size_t i = 0; i < 2; i++)
+                if (branches[i] != NULL && branches[i]->result != NULL &&
+                    statement_may_fall_through(branches[i]->body)) {
+                    BorrowRecord *record = add_borrow_mode(
+                        checker, borrower, branches[i]->result,
+                        scope_depth, 1);
+                    if (first == NULL) first = record;
+                }
+        } else if (control->kind == AST_STMT_MATCH) {
+            for (const AstMatchArm *arm = control->match_arms; arm;
+                 arm = arm->next) {
+                if (control->is_type_match && arm != control->selected_type_arm)
+                    continue;
+                if (arm->body == NULL || arm->body->result == NULL ||
+                    !statement_may_fall_through(arm->body->body)) continue;
+                BorrowRecord *record = add_borrow_mode(
+                    checker, borrower, arm->body->result,
+                    scope_depth, 1);
+                if (first == NULL) first = record;
+            }
+        }
+        return first;
+    }
     /*
      * Ownership metadata says who frees a returned descriptor, while
      * provenance says whether it aliases existing storage.  A library method
@@ -575,8 +628,9 @@ static BorrowRecord *add_borrow(BorrowChecker *checker,
         place = returned_place;
     }
 
-    deactivate_borrower(checker, borrower_place.owner,
-                        borrower_place.field);
+    if (!preserve_existing)
+        deactivate_borrower(checker, borrower_place.owner,
+                            borrower_place.field);
 
     BorrowRecord *borrow = calloc(1, sizeof(*borrow));
     if (borrow == NULL) {
@@ -598,6 +652,13 @@ static BorrowRecord *add_borrow(BorrowChecker *checker,
     borrow->next = checker->borrows;
     checker->borrows = borrow;
     return borrow;
+}
+
+static BorrowRecord *add_borrow(BorrowChecker *checker,
+                                const AstExpression *borrower,
+                                const AstExpression *value,
+                                size_t scope_depth) {
+    return add_borrow_mode(checker, borrower, value, scope_depth, 0);
 }
 
 static void clone_aggregate_borrows(BorrowChecker *checker,
@@ -630,6 +691,8 @@ static void clone_aggregate_borrows(BorrowChecker *checker,
 static void check_statement_list(BorrowChecker *checker,
                                  const AstStatement *statement,
                                  size_t scope_depth) {
+    size_t saved_scope_depth = checker->current_scope_depth;
+    checker->current_scope_depth = scope_depth;
     for (; statement != NULL; statement = statement->next) {
         expire_borrows(checker, statement->first_token);
         if (statement->kind == AST_STMT_VARIABLE) {
@@ -687,6 +750,7 @@ static void check_statement_list(BorrowChecker *checker,
             statement->kind == AST_STMT_WHILE ||
             statement->kind == AST_STMT_FOR) {
             check_statement_list(checker, statement->body, scope_depth + 1);
+            check_expression(checker, statement->result, BORROW_ACCESS_READ);
             deactivate_scope(checker, scope_depth + 1);
         } else {
             check_statement_list(checker, statement->body, scope_depth);
@@ -700,6 +764,7 @@ static void check_statement_list(BorrowChecker *checker,
             deactivate_scope(checker, scope_depth + 1);
         }
     }
+    checker->current_scope_depth = saved_scope_depth;
 }
 
 void validate_function_borrows(Analyzer *analyzer,

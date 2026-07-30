@@ -181,11 +181,19 @@ static int expression_available(OwnershipChecker *checker,
 
 static void read_expression(OwnershipChecker *checker, OwnershipFlow *flow,
                             const AstExpression *expression);
+static OwnershipFlow check_control_expression(OwnershipChecker *checker,
+                                               const AstExpression *expression,
+                                               OwnershipFlow flow,
+                                               int consuming);
 
 static void consume_expression(OwnershipChecker *checker,
                                OwnershipFlow *flow,
                                const AstExpression *expression) {
     if (expression == NULL) return;
+    if (expression->kind == AST_EXPR_CONTROL) {
+        *flow = check_control_expression(checker, expression, *flow, 1);
+        return;
+    }
     if (!semantic_expression_is_move_only(checker->analyzer, expression)) {
         read_expression(checker, flow, expression);
         return;
@@ -240,6 +248,10 @@ static void read_expression(OwnershipChecker *checker, OwnershipFlow *flow,
             (void) expression_available(checker, flow, expression);
             continue;
         }
+        if (expression->kind == AST_EXPR_CONTROL) {
+            *flow = check_control_expression(checker, expression, *flow, 0);
+            continue;
+        }
         if (expression->kind == AST_EXPR_CALL) {
             read_call(checker, flow, expression);
             continue;
@@ -274,6 +286,12 @@ static OwnershipFlow check_statements(OwnershipChecker *checker,
                                       const AstStatement *statement,
                                       OwnershipFlow flow,
                                       const OwnershipDefer *inherited_defers);
+static OwnershipFlow check_statements_tail(OwnershipChecker *checker,
+                                           const AstStatement *statement,
+                                           OwnershipFlow flow,
+                                           const OwnershipDefer *inherited_defers,
+                                           const AstExpression *tail,
+                                           int consuming);
 
 static OwnershipFlow run_deferred(OwnershipChecker *checker,
                                   OwnershipFlow flow,
@@ -368,10 +386,73 @@ static OwnershipFlow check_match(OwnershipChecker *checker,
     return merged;
 }
 
-static OwnershipFlow check_statements(OwnershipChecker *checker,
-                                      const AstStatement *statement,
-                                      OwnershipFlow flow,
-                                      const OwnershipDefer *inherited_defers) {
+static OwnershipFlow check_value_block(OwnershipChecker *checker,
+                                       const AstStatement *block,
+                                       OwnershipFlow flow, int consuming) {
+    if (block == NULL) return flow;
+    return check_statements_tail(checker, block->body, flow, NULL,
+                                 block->result, consuming);
+}
+
+static OwnershipFlow check_control_expression(OwnershipChecker *checker,
+                                               const AstExpression *expression,
+                                               OwnershipFlow flow,
+                                               int consuming) {
+    const AstStatement *control = expression->control;
+    if (control == NULL) return flow;
+    if (control->kind == AST_STMT_BLOCK)
+        return check_value_block(checker, control, flow, consuming);
+    if (control->kind == AST_STMT_IF) {
+        read_expression(checker, &flow, control->condition);
+        if (control->condition != NULL &&
+            control->condition->resolved_type == TYPE_NEVER) {
+            flow.reachable = 0;
+            return flow;
+        }
+        OwnershipFlow then_flow = flow_clone(checker, &flow);
+        OwnershipFlow else_flow = flow_clone(checker, &flow);
+        then_flow = check_value_block(checker, control->body, then_flow,
+                                      consuming);
+        else_flow = check_value_block(checker, control->else_body,
+                                      else_flow, consuming);
+        OwnershipFlow merged = flow_new(checker, 0);
+        flow_merge(checker, &merged, &then_flow);
+        flow_merge(checker, &merged, &else_flow);
+        flow_free(&flow);
+        flow_free(&then_flow);
+        flow_free(&else_flow);
+        return merged;
+    }
+    if (control->kind != AST_STMT_MATCH) return flow;
+    read_expression(checker, &flow, control->value);
+    OwnershipFlow merged = flow_new(checker, 0);
+    for (const AstMatchArm *arm = control->match_arms; arm;
+         arm = arm->next) {
+        if (control->is_type_match && arm != control->selected_type_arm)
+            continue;
+        OwnershipFlow branch = flow_clone(checker, &flow);
+        for (const AstParameter *binding = arm->bindings; binding;
+             binding = binding->next)
+            if (binding->resolved_symbol_id < checker->count &&
+                move_only_symbol(checker, binding->resolved_symbol_id)) {
+                branch.values[binding->resolved_symbol_id] = OWNERSHIP_LIVE;
+                branch.move_tokens[binding->resolved_symbol_id] =
+                    AST_TOKEN_NONE;
+            }
+        branch = check_value_block(checker, arm->body, branch, consuming);
+        flow_merge(checker, &merged, &branch);
+        flow_free(&branch);
+    }
+    flow_free(&flow);
+    return merged;
+}
+
+static OwnershipFlow check_statements_tail(OwnershipChecker *checker,
+                                           const AstStatement *statement,
+                                           OwnershipFlow flow,
+                                           const OwnershipDefer *inherited_defers,
+                                           const AstExpression *tail,
+                                           int consuming) {
     const OwnershipDefer *defers = inherited_defers;
     for (; statement != NULL && flow.reachable; statement = statement->next) {
         switch (statement->kind) {
@@ -501,6 +582,14 @@ static OwnershipFlow check_statements(OwnershipChecker *checker,
                 break;
         }
     }
+    if (flow.reachable && tail != NULL) {
+        if (consuming && semantic_expression_is_move_only(checker->analyzer,
+                                                            tail))
+            consume_expression(checker, &flow, tail);
+        else
+            read_expression(checker, &flow, tail);
+        if (tail->resolved_type == TYPE_NEVER) flow.reachable = 0;
+    }
     if (flow.reachable)
         flow = run_deferred(checker, flow, defers, inherited_defers);
     while (defers != inherited_defers) {
@@ -509,6 +598,14 @@ static OwnershipFlow check_statements(OwnershipChecker *checker,
         defers = previous;
     }
     return flow;
+}
+
+static OwnershipFlow check_statements(OwnershipChecker *checker,
+                                      const AstStatement *statement,
+                                      OwnershipFlow flow,
+                                      const OwnershipDefer *inherited_defers) {
+    return check_statements_tail(checker, statement, flow,
+                                 inherited_defers, NULL, 0);
 }
 
 void validate_function_ownership(Analyzer *analyzer,

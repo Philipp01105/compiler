@@ -254,6 +254,7 @@ static void normalize_expression_types(Analyzer *analyzer, AstExpression *e) {
         normalize_expression_types(analyzer, e->left);
         normalize_expression_types(analyzer, e->right);
         normalize_expression_types(analyzer, e->arguments);
+        normalize_statement_types(analyzer, e->control);
     }
 }
 
@@ -264,6 +265,7 @@ void normalize_statement_types(Analyzer *analyzer, AstStatement *s) {
         normalize_expression_types(analyzer, s->expression);
         normalize_expression_types(analyzer, s->condition);
         normalize_expression_types(analyzer, s->update);
+        normalize_expression_types(analyzer, s->result);
         normalize_statement_types(analyzer, s->body);
         normalize_statement_types(analyzer, s->else_body);
         normalize_statement_types(analyzer, s->initializer);
@@ -315,6 +317,7 @@ static void replace_self_expression(Analyzer *a, AstExpression *e, const AstType
         replace_self_expression(a, e->left, self);
         replace_self_expression(a, e->right, self);
         replace_self_expression(a, e->arguments, self);
+        replace_self_statement(a, e->control, self);
     }
 }
 
@@ -325,6 +328,7 @@ void replace_self_statement(Analyzer *a, AstStatement *s, const AstType *self) {
         replace_self_expression(a, s->expression, self);
         replace_self_expression(a, s->condition, self);
         replace_self_expression(a, s->update, self);
+        replace_self_expression(a, s->result, self);
         replace_self_statement(a, s->body, self);
         replace_self_statement(a, s->else_body, self);
         replace_self_statement(a, s->initializer, self);

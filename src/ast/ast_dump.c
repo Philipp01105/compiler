@@ -40,9 +40,10 @@ static const char *expression_name(AstExpressionKind kind) {
     static const char *names[] = {
         "error", "literal", "name", "unary", "binary", "call",
         "index", "subslice", "member", "slice-length", "reserve", "cast", "free", "enum-construct", "enum-access",
-        "sizeof", "alignof", "slice", "slice-data", "type-info", "type-property", "array-literal", "propagate"
+        "sizeof", "alignof", "slice", "slice-data", "type-info", "type-property", "array-literal", "propagate",
+        "control"
     };
-    return kind >= AST_EXPR_ERROR && kind <= AST_EXPR_PROPAGATE ? names[kind] : "invalid";
+    return kind >= AST_EXPR_ERROR && kind <= AST_EXPR_CONTROL ? names[kind] : "invalid";
 }
 
 static const char *statement_name(AstStatementKind kind) {
@@ -166,6 +167,8 @@ static int dump_type(FILE *output, const AstProgram *program, const AstType *typ
     return 1;
 }
 
+static int dump_statement(FILE *, const AstProgram *, const AstStatement *, unsigned,
+                          const char *);
 static int dump_expression(FILE *, const AstProgram *, const AstExpression *, unsigned,
                            const char *);
 
@@ -213,7 +216,8 @@ static int dump_expression(FILE *output, const AstProgram *program,
     if (fputc('\n', output) == EOF) return 0;
     return dump_expression(output, program, expression->left, depth + 1, "left") &&
            dump_expression(output, program, expression->right, depth + 1, "right") &&
-           dump_expression_list(output, program, expression->arguments, depth + 1, "argument");
+           dump_expression_list(output, program, expression->arguments, depth + 1, "argument") &&
+           dump_statement(output, program, expression->control, depth + 1, "control");
 }
 
 static int dump_statement(FILE *, const AstProgram *, const AstStatement *, unsigned,
@@ -268,6 +272,7 @@ static int dump_statement(FILE *output, const AstProgram *program,
            dump_expression(output, program, statement->value, depth + 1, "value") &&
            dump_expression(output, program, statement->condition, depth + 1, "condition") &&
            dump_expression(output, program, statement->update, depth + 1, "update") &&
+           dump_expression(output, program, statement->result, depth + 1, "result") &&
            dump_statement_list(output, program, statement->body, depth + 1, "body") &&
            dump_statement_list(output, program, statement->else_body, depth + 1, "else");
 }

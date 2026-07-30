@@ -451,9 +451,13 @@ static size_t coerce_slice(IrBuilder *builder, size_t value, IrTypeId target, As
 
 static void emit_move_if_owned(IrBuilder *builder,
                                const AstExpression *expression);
+static size_t lower_control_expression(IrBuilder *builder,
+                                       const AstExpression *expression);
 
 static size_t lower_expression(IrBuilder *builder, const AstExpression *expression) {
     if (expression == NULL) return IR_VALUE_NONE;
+    if (expression->kind == AST_EXPR_CONTROL)
+        return lower_control_expression(builder, expression);
     if (expression->kind == AST_EXPR_PROPAGATE) {
         if (expression->propagation_branch_symbol_id >=
                 builder->module->semantics->symbol_count ||
@@ -836,6 +840,7 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         case AST_EXPR_TYPE_PROPERTY: return IR_VALUE_NONE;
         case AST_EXPR_ARRAY_LITERAL: return IR_VALUE_NONE;
         case AST_EXPR_PROPAGATE: return IR_VALUE_NONE;
+        case AST_EXPR_CONTROL: return IR_VALUE_NONE;
         case AST_EXPR_RESERVE: opcode = IR_OP_ALLOC;
             break;
         case AST_EXPR_CAST: opcode = IR_OP_CAST;
@@ -1194,6 +1199,212 @@ static void emit_label(IrBuilder *builder, size_t label, AstSourceSpan span) {
     IrInstruction *instruction = emit(builder, IR_OP_LABEL, span);
     if (instruction != NULL) instruction->target_a = label;
     set_void_type(builder, instruction);
+}
+
+static size_t current_block_label(const IrBuilder *builder) {
+    for (size_t i = builder->function->instruction_count; i > 0; i--)
+        if (builder->function->instructions[i - 1].opcode == IR_OP_LABEL)
+            return builder->function->instructions[i - 1].target_a;
+    return IR_VALUE_NONE;
+}
+
+static size_t lower_value_block(IrBuilder *builder, const AstStatement *block,
+                                IrTypeId target_type) {
+    if (block == NULL) return IR_VALUE_NONE;
+    CleanupScope scope = {.previous = builder->cleanup_scope};
+    builder->cleanup_scope = &scope;
+    lower_statement(builder, block->body);
+    size_t value = IR_VALUE_NONE;
+    if (!block_terminated(builder->function) && block->result != NULL) {
+        value = lower_expression(builder, block->result);
+        if (!block_terminated(builder->function)) {
+            value = coerce_slice(builder, value, target_type, block->span);
+            IrTypeId source_type = type_from_expression(builder->module,
+                                                        builder->program,
+                                                        block->result);
+            if (source_type != target_type &&
+                source_type < builder->module->type_count &&
+                target_type < builder->module->type_count &&
+                builder->module->types[source_type].kind == IR_TYPE_PRIMITIVE &&
+                builder->module->types[target_type].kind == IR_TYPE_PRIMITIVE) {
+                IrInstruction *cast = emit(builder, IR_OP_CAST, block->span);
+                if (cast == NULL) return IR_VALUE_NONE;
+                cast->operand_a = value;
+                cast->result = new_value(builder);
+                cast->type_id = target_type;
+                cast->type = builder->module->types[target_type].primitive;
+                value = cast->result;
+            }
+            emit_move_if_owned(builder, block->result);
+        }
+    }
+    if (!block_terminated(builder->function))
+        emit_deferred_scope(builder, &scope);
+    builder->cleanup_scope = scope.previous;
+    free_deferred_actions(scope.actions);
+    return value;
+}
+
+static size_t emit_value_phi(IrBuilder *builder,
+                             const AstExpression *expression,
+                             size_t first_value, size_t first_label,
+                             size_t second_value, size_t second_label) {
+    IrInstruction *phi = emit(builder, IR_OP_PHI, expression->span);
+    if (phi == NULL) return IR_VALUE_NONE;
+    phi->result = new_value(builder);
+    phi->operand_a = first_value;
+    phi->operand_b = second_value;
+    phi->target_a = first_label;
+    phi->target_b = second_label;
+    set_expression_type(builder, phi, expression);
+    return phi->result;
+}
+
+static void lower_match_bindings(IrBuilder *builder, size_t value,
+                                const AstMatchArm *arm, size_t body_label) {
+    size_t payload_index = 0;
+    for (const AstParameter *binding = arm->bindings; binding;
+         binding = binding->next, payload_index++) {
+        IrInstruction *payload = emit(builder, IR_OP_ENUM_PAYLOAD, arm->span);
+        if (payload == NULL) return;
+        payload->operand_a = value;
+        payload->symbol_id = arm->resolved_variant_symbol;
+        payload->enum_payload_index = payload_index;
+        payload->target_a = body_label;
+        payload->result = new_value(builder);
+        payload->type_id = type_from_ast(builder->module, builder->program,
+                                         &binding->type);
+        payload->type = ir_ast_type_data_type(builder->program, &binding->type);
+        payload->pointer_depth = binding->type.pointer_depth +
+                                 binding->type.outer_pointer_depth +
+                                 (binding->type.borrow_kind != AST_BORROW_NONE);
+        payload->type_name_token = binding->type.name_token;
+        payload->is_array = binding->type.is_array;
+        IrInstruction *local = emit(builder, IR_OP_DECLARE, arm->span);
+        if (local == NULL) return;
+        local->operand_a = payload->result;
+        local->symbol_id = binding->resolved_symbol_id;
+        local->type_id = payload->type_id;
+        local->type = payload->type;
+        local->pointer_depth = payload->pointer_depth;
+        local->type_name_token = payload->type_name_token;
+        local->is_array = payload->is_array;
+    }
+}
+
+static size_t lower_match_value_arms(IrBuilder *builder,
+                                     const AstExpression *expression,
+                                     const AstMatchArm *arm, size_t value,
+                                     IrTypeId target_type) {
+    if (arm == NULL) {
+        IrInstruction *trap = emit(builder, IR_OP_TRAP, expression->span);
+        set_void_type(builder, trap);
+        return IR_VALUE_NONE;
+    }
+    if (arm->wildcard)
+        return lower_value_block(builder, arm->body, target_type);
+    size_t body_label = new_label(builder);
+    size_t next_label = new_label(builder);
+    size_t join_label = new_label(builder);
+    IrInstruction *test = emit(builder, IR_OP_ENUM_IS, arm->span);
+    if (test == NULL) return IR_VALUE_NONE;
+    test->operand_a = value;
+    test->symbol_id = arm->resolved_variant_symbol;
+    test->result = new_value(builder);
+    test->type = TYPE_BIT;
+    test->type_id = type_from_parts(builder->module, TYPE_BIT, 0,
+                                    AST_TOKEN_NONE, 0, 0, 0, 0,
+                                    builder->program, AST_SYMBOL_NONE);
+    IrInstruction *branch = emit(builder, IR_OP_BRANCH, arm->span);
+    if (branch == NULL) return IR_VALUE_NONE;
+    set_void_type(builder, branch);
+    branch->operand_a = test->result;
+    branch->target_a = body_label;
+    branch->target_b = next_label;
+    emit_label(builder, body_label, arm->span);
+    lower_match_bindings(builder, value, arm, body_label);
+    size_t body_value = lower_value_block(builder, arm->body, target_type);
+    int body_reaches = !block_terminated(builder->function);
+    size_t body_predecessor = current_block_label(builder);
+    if (body_reaches) {
+        IrInstruction *jump = emit(builder, IR_OP_JUMP, arm->span);
+        if (jump != NULL) jump->target_a = join_label;
+        set_void_type(builder, jump);
+    }
+    emit_label(builder, next_label, arm->span);
+    size_t next_value = lower_match_value_arms(builder, expression,
+                                               arm->next, value, target_type);
+    int next_reaches = !block_terminated(builder->function);
+    size_t next_predecessor = current_block_label(builder);
+    if (next_reaches) {
+        IrInstruction *jump = emit(builder, IR_OP_JUMP, arm->span);
+        if (jump != NULL) jump->target_a = join_label;
+        set_void_type(builder, jump);
+    }
+    if (!body_reaches && !next_reaches) return IR_VALUE_NONE;
+    emit_label(builder, join_label, arm->span);
+    if (!body_reaches) return next_value;
+    if (!next_reaches) return body_value;
+    return emit_value_phi(builder, expression, body_value,
+                          body_predecessor, next_value, next_predecessor);
+}
+
+static size_t lower_control_expression(IrBuilder *builder,
+                                       const AstExpression *expression) {
+    const AstStatement *control = expression->control;
+    if (control == NULL) return IR_VALUE_NONE;
+    IrTypeId target_type = type_from_expression(builder->module,
+                                                builder->program, expression);
+    if (control->kind == AST_STMT_BLOCK)
+        return lower_value_block(builder, control, target_type);
+    if (control->kind == AST_STMT_MATCH) {
+        if (control->is_type_match)
+            return control->selected_type_arm == NULL ? IR_VALUE_NONE
+                : lower_value_block(builder,
+                                    control->selected_type_arm->body,
+                                    target_type);
+        size_t value = lower_expression(builder, control->value);
+        if (block_terminated(builder->function)) return IR_VALUE_NONE;
+        return lower_match_value_arms(builder, expression,
+                                      control->match_arms, value, target_type);
+    }
+    if (control->kind != AST_STMT_IF) return IR_VALUE_NONE;
+    size_t condition = lower_expression(builder, control->condition);
+    if (block_terminated(builder->function)) return IR_VALUE_NONE;
+    size_t then_label = new_label(builder);
+    size_t else_label = new_label(builder);
+    size_t join_label = new_label(builder);
+    IrInstruction *branch = emit(builder, IR_OP_BRANCH, control->span);
+    if (branch == NULL) return IR_VALUE_NONE;
+    set_void_type(builder, branch);
+    branch->operand_a = condition;
+    branch->target_a = then_label;
+    branch->target_b = else_label;
+    emit_label(builder, then_label, control->span);
+    size_t then_value = lower_value_block(builder, control->body, target_type);
+    int then_reaches = !block_terminated(builder->function);
+    size_t then_predecessor = current_block_label(builder);
+    if (then_reaches) {
+        IrInstruction *jump = emit(builder, IR_OP_JUMP, control->span);
+        if (jump != NULL) jump->target_a = join_label;
+        set_void_type(builder, jump);
+    }
+    emit_label(builder, else_label, control->span);
+    size_t else_value = lower_value_block(builder, control->else_body,
+                                          target_type);
+    int else_reaches = !block_terminated(builder->function);
+    size_t else_predecessor = current_block_label(builder);
+    if (else_reaches) {
+        IrInstruction *jump = emit(builder, IR_OP_JUMP, control->span);
+        if (jump != NULL) jump->target_a = join_label;
+        set_void_type(builder, jump);
+    }
+    if (!then_reaches && !else_reaches) return IR_VALUE_NONE;
+    emit_label(builder, join_label, control->span);
+    if (!then_reaches) return else_value;
+    if (!else_reaches) return then_value;
+    return emit_value_phi(builder, expression, then_value, then_predecessor,
+                          else_value, else_predecessor);
 }
 
 static void lower_statement(IrBuilder *builder, const AstStatement *statement) {

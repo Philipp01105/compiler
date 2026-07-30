@@ -463,8 +463,11 @@ static int verify_instruction_types(const IrModule *module,
         case IR_OP_LABEL:
             return ir_void_type(module, instruction->type_id);
         case IR_OP_PHI:
-            return a != NULL && b != NULL && instruction->type == TYPE_BIT &&
-                   a->type == TYPE_BIT && b->type == TYPE_BIT;
+            return a != NULL && b != NULL &&
+                   ir_types_assignable(module, a->type_id,
+                                       instruction->type_id, a->opcode) &&
+                   ir_types_assignable(module, b->type_id,
+                                       instruction->type_id, b->opcode);
     }
     return 0;
 }

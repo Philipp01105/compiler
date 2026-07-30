@@ -1,0 +1,15 @@
+package main;
+
+struct Handle {
+    var id:int;
+    destructor { id = 0; }
+}
+
+func main() -> int {
+    var first:Handle;
+    var second:Handle;
+    var flag:bit = true;
+    var selected:Handle = if (flag) { first } else { second };
+    var duplicate:Handle = first;
+    return selected.id + duplicate.id;
+}

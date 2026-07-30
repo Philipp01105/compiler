@@ -196,6 +196,7 @@ static void optimize_statements(AstProgram *program, AstStatement *statement, As
         optimize_expression(program, statement->value, stats);
         optimize_expression(program, statement->condition, stats);
         optimize_expression(program, statement->update, stats);
+        optimize_expression(program, statement->result, stats);
         optimize_statements(program, statement->initializer, stats);
         optimize_statements(program, statement->body, stats);
         optimize_statements(program, statement->else_body, stats);

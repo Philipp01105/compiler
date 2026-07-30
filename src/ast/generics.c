@@ -295,6 +295,9 @@ static AstType substitute_type(Substitution *s, AstType type) {
     return type;
 }
 
+static AstStatement *clone_statement(Substitution *s,
+                                     const AstStatement *original);
+
 static AstExpression *clone_expression(Substitution *s, const AstExpression *original) {
     if (!original) return NULL;
     AstExpression *e = owned(s, sizeof(*e));
@@ -303,6 +306,7 @@ static AstExpression *clone_expression(Substitution *s, const AstExpression *ori
     e->left = clone_expression(s, original->left);
     e->right = clone_expression(s, original->right);
     e->arguments = clone_expression(s, original->arguments);
+    e->control = clone_statement(s, original->control);
     e->next = clone_expression(s, original->next);
     e->allocated_type = substitute_type(s, original->allocated_type);
     return e;
@@ -318,6 +322,7 @@ static AstStatement *clone_statement(Substitution *s, const AstStatement *origin
     v->value = clone_expression(s, original->value);
     v->condition = clone_expression(s, original->condition);
     v->update = clone_expression(s, original->update);
+    v->result = clone_expression(s, original->result);
     v->body = clone_statement(s, original->body);
     v->else_body = clone_statement(s, original->else_body);
     v->initializer = clone_statement(s, original->initializer);

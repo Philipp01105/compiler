@@ -32,7 +32,8 @@ typedef enum {
     AST_EXPR_BINARY, AST_EXPR_CALL, AST_EXPR_INDEX, AST_EXPR_SUBSLICE, AST_EXPR_MEMBER,
     AST_EXPR_SLICE_LENGTH, AST_EXPR_RESERVE, AST_EXPR_CAST, AST_EXPR_FREE, AST_EXPR_ENUM_CONSTRUCT,
     AST_EXPR_ENUM_ACCESS, AST_EXPR_SIZEOF, AST_EXPR_ALIGNOF, AST_EXPR_SLICE, AST_EXPR_SLICE_DATA,
-    AST_EXPR_TYPE_INFO, AST_EXPR_TYPE_PROPERTY, AST_EXPR_ARRAY_LITERAL, AST_EXPR_PROPAGATE
+    AST_EXPR_TYPE_INFO, AST_EXPR_TYPE_PROPERTY, AST_EXPR_ARRAY_LITERAL, AST_EXPR_PROPAGATE,
+    AST_EXPR_CONTROL
 } AstExpressionKind;
 
 typedef enum {
@@ -126,6 +127,8 @@ struct AstExpression {
     AstExpression *right;
     AstExpression *arguments;
     AstExpression *next;
+    /* Expression-valued block, if, or match. */
+    AstStatement *control;
     AstType allocated_type;
     int explicit_type_arguments;
     int explicit_generic_reference;
@@ -178,6 +181,8 @@ struct AstStatement {
     AstExpression *value;
     AstExpression *condition;
     AstExpression *update;
+    /* Last expression of a value block, without a trailing semicolon. */
+    AstExpression *result;
     AstStatement *body;
     AstStatement *else_body;
     AstStatement *initializer;

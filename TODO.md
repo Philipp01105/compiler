@@ -99,7 +99,7 @@ model. The normative rules and current restrictions are maintained in [LANGUAGE_
 
 - [x] Add first-class non-capturing callbacks through parameters and return values.
 - [x] Standardize `Option`/`Result`-style error propagation and concise propagation syntax.
-- [ ] Evaluate expression forms for `if`, blocks, and `match` without compromising definite-return analysis.
+- [x] Add expression forms for `if`, blocks, and exhaustive `match` with branch typing, ownership joins, and `never` paths.
 - [ ] Add labeled loop control where nested loops require it.
 - [ ] Add compile-time assertions and target-conditional compilation.
 - [ ] Define attributes for layout, linkage, calling convention, deprecation, diagnostics, and test discovery.

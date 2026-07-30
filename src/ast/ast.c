@@ -138,12 +138,18 @@ static int valid_type(const AstProgram *program, const AstType *type, int allow_
     return valid_type_depth(program, type, allow_inferred, 0);
 }
 
+static int valid_statement(const AstProgram *program, const AstStatement *statement);
+
 static int valid_expression(const AstProgram *program, const AstExpression *expression) {
     if (expression == NULL || expression->first_token >= program->token_count ||
         expression->token_count == 0 ||
         expression->token_count > program->token_count - expression->first_token)
         return 0;
     switch (expression->kind) {
+        case AST_EXPR_CONTROL:
+            if (expression->control == NULL ||
+                !valid_statement(program, expression->control)) return 0;
+            break;
         case AST_EXPR_LITERAL:
         case AST_EXPR_NAME:
             if (!valid_token(program, expression->value_token)) return 0;
@@ -222,7 +228,8 @@ static int valid_statement(const AstProgram *program, const AstStatement *statem
             return 0;
         switch (statement->kind) {
             case AST_STMT_BLOCK:
-                if (statement->body != NULL && !valid_statement(program, statement->body)) return 0;
+                if ((statement->body != NULL && !valid_statement(program, statement->body)) ||
+                    (statement->result != NULL && !valid_expression(program, statement->result))) return 0;
                 break;
             case AST_STMT_VARIABLE:
                 if (!valid_token(program, statement->name_token) ||

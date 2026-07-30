@@ -81,7 +81,7 @@ static int array_literal_element_allowed(const Analyzer *analyzer,
                                                analyzer->program, element_type);
 }
 
-static void set_expression_declared_type(Analyzer *analyzer,
+void set_expression_declared_type(Analyzer *analyzer,
                                          AstExpression *expression,
                                          const AstProgram *program,
                                          const AstType *type) {
@@ -483,7 +483,8 @@ static void contextualize_direct_call_literals(Analyzer *analyzer,
         function->declaration->as.function.parameters;
     for (; argument != NULL && parameter != NULL;
          argument = argument->next, parameter = parameter->next)
-        if (argument->kind == AST_EXPR_ARRAY_LITERAL)
+        if (argument->kind == AST_EXPR_ARRAY_LITERAL ||
+            argument->kind == AST_EXPR_CONTROL)
             argument->allocated_type = parameter->type;
 }
 
@@ -714,6 +715,10 @@ static void analyze_propagation(Analyzer *analyzer, AstExpression *expression) {
 
 void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
     if (expression == NULL) return;
+    if (expression->kind == AST_EXPR_CONTROL) {
+        analyze_control_expression(analyzer, expression);
+        return;
+    }
     if (expression->kind == AST_EXPR_TYPE_INFO && !expression->left &&
         !expression->allocated_type.pointer_depth && !expression->allocated_type.outer_pointer_depth &&
         !expression->allocated_type.is_array && !expression->allocated_type.is_slice && !expression->allocated_type.

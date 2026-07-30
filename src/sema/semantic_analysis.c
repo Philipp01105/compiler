@@ -45,6 +45,8 @@ static int statement_returns_owned_slice(const SemanticModel *model,
     for (; statement != NULL; statement = statement->next) {
         if (statement->kind == AST_STMT_RETURN &&
             returned_slice_expression_owns(model, statement->value)) return 1;
+        if (statement->result != NULL &&
+            returned_slice_expression_owns(model, statement->result)) return 1;
         if (statement_returns_owned_slice(model, statement->body) ||
             statement_returns_owned_slice(model, statement->else_body) ||
             statement_returns_owned_slice(model, statement->initializer)) return 1;
@@ -55,12 +57,16 @@ static int statement_returns_owned_slice(const SemanticModel *model,
     return 0;
 }
 
+static void refresh_owned_slice_statements(const SemanticModel *model,
+                                           AstStatement *statement);
+
 static void refresh_owned_slice_expression(const SemanticModel *model,
                                            AstExpression *expression) {
     for (; expression != NULL; expression = expression->next) {
         refresh_owned_slice_expression(model, expression->left);
         refresh_owned_slice_expression(model, expression->right);
         refresh_owned_slice_expression(model, expression->arguments);
+        refresh_owned_slice_statements(model, expression->control);
         if (expression->kind == AST_EXPR_CALL &&
             returned_slice_expression_owns(model, expression))
             expression->owns_slice_backing = 1;
@@ -74,6 +80,7 @@ static void refresh_owned_slice_statements(const SemanticModel *model,
         refresh_owned_slice_expression(model, statement->value);
         refresh_owned_slice_expression(model, statement->condition);
         refresh_owned_slice_expression(model, statement->update);
+        refresh_owned_slice_expression(model, statement->result);
         refresh_owned_slice_statements(model, statement->body);
         refresh_owned_slice_statements(model, statement->else_body);
         refresh_owned_slice_statements(model, statement->initializer);
@@ -439,7 +446,8 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
             size_t errors_before = analyzer->model->error_count;
             validate_array_shape(analyzer, &statement->type);
             if (statement->value != NULL &&
-                statement->value->kind == AST_EXPR_ARRAY_LITERAL)
+                (statement->value->kind == AST_EXPR_ARRAY_LITERAL ||
+                 statement->value->kind == AST_EXPR_CONTROL))
                 statement->value->allocated_type = statement->type;
             if (statement->value != NULL && statement->value->kind == AST_EXPR_NAME &&
                 statement->type.kind == AST_TYPE_FUNCTION &&
@@ -577,7 +585,8 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                 analyzer->assignment_target = NULL;
             } else analyze_expression(analyzer, statement->expression);
             if (statement->value != NULL &&
-                statement->value->kind == AST_EXPR_ARRAY_LITERAL) {
+                (statement->value->kind == AST_EXPR_ARRAY_LITERAL ||
+                 statement->value->kind == AST_EXPR_CONTROL)) {
                 if (statement->kind == AST_STMT_ASSIGNMENT && statement->expression != NULL)
                     statement->value->allocated_type = inferred_argument_type(analyzer, statement->expression);
                 else if (statement->kind == AST_STMT_RETURN && analyzer->current_function != NULL)
@@ -737,6 +746,11 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                 statement->body != NULL)
                 analyzer->in_defer_closure = 1;
             analyze_statement(analyzer, statement->body);
+            if (statement->kind == AST_STMT_BLOCK && statement->result != NULL) {
+                analyze_expression(analyzer, statement->result);
+                validate_expression(analyzer, statement->result, 0);
+                consume_call_arguments(analyzer, statement->result);
+            }
             analyzer->in_defer_closure = saved_defer_closure;
             if (statement->kind == AST_STMT_BLOCK || statement->kind == AST_STMT_IF ||
                 statement->kind == AST_STMT_WHILE)
@@ -748,6 +762,228 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
             statement->kind == AST_STMT_WHILE)
             pop_to(analyzer, scope);
     }
+}
+
+static const AstExpression *borrow_origin_name(const AstExpression *expression) {
+    while (expression != NULL &&
+           ((expression->kind == AST_EXPR_UNARY &&
+             expression->operator_type == TOKEN_AMPERSAND) ||
+            expression->kind == AST_EXPR_MEMBER ||
+            expression->kind == AST_EXPR_INDEX))
+        expression = expression->kind == AST_EXPR_UNARY
+                         ? expression->right : expression->left;
+    return expression != NULL && expression->kind == AST_EXPR_NAME
+               ? expression : NULL;
+}
+
+static size_t control_branch_count(const AstStatement *control) {
+    if (control->kind == AST_STMT_BLOCK) return 1;
+    if (control->kind == AST_STMT_IF) return 2;
+    if (control->kind == AST_STMT_MATCH && control->is_type_match)
+        return control->selected_type_arm == NULL ? 0 : 1;
+    size_t count = 0;
+    for (const AstMatchArm *arm = control->match_arms; arm; arm = arm->next)
+        count++;
+    return count;
+}
+
+static const AstStatement *control_branch_at(const AstStatement *control,
+                                             size_t index) {
+    if (control->kind == AST_STMT_BLOCK) return control;
+    if (control->kind == AST_STMT_IF)
+        return index == 0 ? control->body : control->else_body;
+    if (control->is_type_match)
+        return control->selected_type_arm == NULL ? NULL
+            : control->selected_type_arm->body;
+    const AstMatchArm *arm = control->match_arms;
+    while (arm != NULL && index-- != 0) arm = arm->next;
+    return arm == NULL ? NULL : arm->body;
+}
+
+static const AstExpression *reachable_branch_result(const AstStatement *block) {
+    if (block == NULL || block->result == NULL ||
+        block->result->resolved_type == TYPE_NEVER ||
+        !statement_may_fall_through(block->body)) return NULL;
+    return block->result;
+}
+
+static void validate_slice_branch_lifetime(Analyzer *analyzer,
+                                           const AstExpression *result,
+                                           const AstType *target) {
+    if (result == NULL || target == NULL || !target->is_slice ||
+        !result->resolved_is_array) return;
+    const AstExpression *origin = borrow_origin_name(result);
+    if (origin != NULL && origin->resolved_symbol_id <
+                              analyzer->model->symbol_count &&
+        analyzer->model->symbols[origin->resolved_symbol_id].scope_depth >
+            analyzer->scope_depth)
+        semantic_error(analyzer, result->first_token,
+                       ERROR_CATEGORY_SEMANTIC,
+                       ERR_SEM_INVALID_DECLARATION,
+                       "Value branch cannot expose a slice of a local array");
+}
+
+static void validate_control_branch(Analyzer *analyzer,
+                                    const AstExpression *control,
+                                    const AstStatement *block) {
+    if (block == NULL) return;
+    const AstExpression *result = block->result;
+    if (result == NULL) {
+        if (statement_may_fall_through(block->body))
+            semantic_error(analyzer, block->first_token, ERROR_CATEGORY_TYPE,
+                           ERR_TYPE_INCOMPATIBLE_TYPES,
+                           "Value branch must end with an expression");
+        return;
+    }
+    if (reachable_branch_result(block) == NULL) return;
+    if (result->resolved_type == TYPE_VOID)
+        semantic_error(analyzer, result->first_token, ERROR_CATEGORY_TYPE,
+                       ERR_TYPE_INCOMPATIBLE_TYPES,
+                       "Value branch cannot end with a void expression");
+    if (result->resolved_borrow_kind != AST_BORROW_NONE) {
+        const AstExpression *origin = borrow_origin_name(result);
+        if (origin != NULL && origin->resolved_symbol_id <
+                                  analyzer->model->symbol_count &&
+            analyzer->model->symbols[origin->resolved_symbol_id].scope_depth >
+                analyzer->scope_depth)
+            semantic_error(analyzer, result->first_token,
+                           ERROR_CATEGORY_SEMANTIC,
+                           ERR_SEM_INVALID_DECLARATION,
+                           "Value branch cannot return a borrow of a local binding");
+    }
+    if (control->allocated_type.kind != AST_TYPE_INFERRED) {
+        validate_slice_branch_lifetime(analyzer, result,
+                                       &control->allocated_type);
+        if (!expression_to_declared_type_allowed(analyzer, result,
+                                                 analyzer->program,
+                                                 &control->allocated_type))
+            semantic_error(analyzer, result->first_token,
+                           ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
+                           "Value branch cannot convert to the expected type");
+    }
+}
+
+void analyze_control_expression(Analyzer *analyzer, AstExpression *expression) {
+    AstStatement *control = expression->control;
+    if (control == NULL) return;
+    if (expression->allocated_type.kind != AST_TYPE_INFERRED) {
+        if (control->kind == AST_STMT_BLOCK) {
+            if (control->result != NULL)
+                control->result->allocated_type = expression->allocated_type;
+        } else if (control->kind == AST_STMT_IF) {
+            if (control->body != NULL && control->body->result != NULL)
+                control->body->result->allocated_type = expression->allocated_type;
+            if (control->else_body != NULL &&
+                control->else_body->result != NULL)
+                control->else_body->result->allocated_type =
+                    expression->allocated_type;
+        } else if (control->kind == AST_STMT_MATCH) {
+            for (AstMatchArm *arm = control->match_arms; arm; arm = arm->next)
+                if (arm->body != NULL && arm->body->result != NULL)
+                    arm->body->result->allocated_type =
+                        expression->allocated_type;
+        }
+    }
+    analyze_statement(analyzer, control);
+    size_t branch_count = control_branch_count(control);
+    size_t live_count = 0;
+    for (size_t i = 0; i < branch_count; i++) {
+        const AstStatement *block = control_branch_at(control, i);
+        validate_control_branch(analyzer, expression, block);
+        if (reachable_branch_result(block) != NULL) live_count++;
+    }
+    if (live_count == 0) {
+        expression->resolved_type = TYPE_NEVER;
+        return;
+    }
+    if (expression->allocated_type.kind != AST_TYPE_INFERRED) {
+        set_expression_declared_type(analyzer, expression, analyzer->program,
+                                     &expression->allocated_type);
+        if (expression->allocated_type.is_slice) {
+            int backing_ownership = -1;
+            for (size_t i = 0; i < branch_count; i++) {
+                const AstExpression *result = reachable_branch_result(
+                    control_branch_at(control, i));
+                if (result == NULL) continue;
+                int owns = result->owns_slice_backing != 0;
+                if (backing_ownership >= 0 && backing_ownership != owns)
+                    semantic_error(analyzer, result->first_token,
+                                   ERROR_CATEGORY_SEMANTIC,
+                                   ERR_SEM_INVALID_DECLARATION,
+                                   "Value branches must agree on slice backing ownership");
+                backing_ownership = owns;
+            }
+            expression->owns_slice_backing = backing_ownership > 0;
+        }
+        return;
+    }
+    const AstExpression *chosen = NULL;
+    for (size_t i = 0; i < branch_count; i++) {
+        const AstExpression *candidate = reachable_branch_result(
+            control_branch_at(control, i));
+        if (candidate == NULL) continue;
+        AstType target = inferred_argument_type(analyzer, candidate);
+        int accepts_all = 1;
+        for (size_t j = 0; j < branch_count; j++) {
+            const AstExpression *source = reachable_branch_result(
+                control_branch_at(control, j));
+            if (source != NULL &&
+                !expression_to_declared_type_allowed(analyzer, source,
+                                                     analyzer->program,
+                                                     &target)) {
+                accepts_all = 0;
+                break;
+            }
+        }
+        if (!accepts_all) continue;
+        if (chosen != NULL) {
+            AstType previous = inferred_argument_type(analyzer, chosen);
+            if (!expression_to_declared_type_allowed(analyzer, chosen,
+                                                     analyzer->program,
+                                                     &target) ||
+                expression_to_declared_type_allowed(analyzer, candidate,
+                                                    analyzer->program,
+                                                    &previous))
+                continue;
+        }
+        chosen = candidate;
+    }
+    if (chosen == NULL) {
+        semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE,
+                       ERR_TYPE_INCOMPATIBLE_TYPES,
+                       "Value branches have incompatible types");
+        return;
+    }
+    AstType selected_type = inferred_argument_type(analyzer, chosen);
+    int backing_ownership = -1;
+    for (size_t i = 0; i < branch_count; i++) {
+        const AstExpression *result = reachable_branch_result(
+            control_branch_at(control, i));
+        if (result == NULL) continue;
+        validate_slice_branch_lifetime(analyzer, result, &selected_type);
+        if (selected_type.is_slice) {
+            int owns = result->owns_slice_backing != 0;
+            if (backing_ownership >= 0 && backing_ownership != owns)
+                semantic_error(analyzer, result->first_token,
+                               ERROR_CATEGORY_SEMANTIC,
+                               ERR_SEM_INVALID_DECLARATION,
+                               "Value branches must agree on slice backing ownership");
+            backing_ownership = owns;
+        }
+    }
+    expression->resolved_type = chosen->resolved_type;
+    expression->resolved_borrow_kind = chosen->resolved_borrow_kind;
+    expression->resolved_pointer_depth = chosen->resolved_pointer_depth;
+    expression->resolved_outer_pointer_depth = chosen->resolved_outer_pointer_depth;
+    expression->resolved_named_type_token = chosen->resolved_named_type_token;
+    expression->resolved_named_symbol_id = chosen->resolved_named_symbol_id;
+    expression->resolved_is_array = chosen->resolved_is_array;
+    expression->resolved_is_slice = chosen->resolved_is_slice;
+    expression->resolved_array_length = chosen->resolved_array_length;
+    expression->resolved_ast_type = chosen->resolved_ast_type;
+    expression->resolved_type_program = chosen->resolved_type_program;
+    expression->has_resolved_ast_type = chosen->has_resolved_ast_type;
+    expression->owns_slice_backing = chosen->owns_slice_backing;
 }
 
 static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
@@ -885,7 +1121,8 @@ void analyze_constant_declaration(Analyzer *analyzer,
         declaration->semantic_body_checked = 1;
         return;
     }
-    if (value != NULL && value->kind == AST_EXPR_ARRAY_LITERAL)
+    if (value != NULL && (value->kind == AST_EXPR_ARRAY_LITERAL ||
+                          value->kind == AST_EXPR_CONTROL))
         value->allocated_type = *type;
     analyze_expression(analyzer, value);
     validate_expression(analyzer, value, 0);

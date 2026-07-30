@@ -100,6 +100,9 @@ size_t concrete_token(Analyzer *analyzer, TokenType kind, const char *text);
 AstType inferred_argument_type(Analyzer *analyzer, const AstExpression *value);
 void normalize_generic_type(Analyzer *analyzer, AstType *type, unsigned depth);
 void normalize_statement_types(Analyzer *analyzer, AstStatement *statement);
+void analyze_control_expression(Analyzer *analyzer, AstExpression *expression);
+void set_expression_declared_type(Analyzer *analyzer, AstExpression *expression,
+                                  const AstProgram *program, const AstType *type);
 void normalize_function_types(Analyzer *analyzer, AstDeclarationNode *declaration);
 void replace_self_type(Analyzer *analyzer, AstType *type, const AstType *self);
 void replace_self_statement(Analyzer *analyzer, AstStatement *statement, const AstType *self);
