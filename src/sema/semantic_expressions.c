@@ -67,16 +67,6 @@ static void metadata_name(DiagnosticText *text, const Analyzer *analyzer, const 
 static int array_literal_element_allowed(const Analyzer *analyzer,
                                          const AstExpression *element,
                                          const AstType *element_type) {
-    size_t target = resolve_named_symbol_id(analyzer, analyzer->program,
-                                            named_type_token(analyzer->program, element_type));
-    if (target < analyzer->model->symbol_count &&
-        analyzer->model->symbols[target].kind == SEMANTIC_SYMBOL_INTERFACE &&
-        element->resolved_pointer_depth == 0 &&
-        element->resolved_outer_pointer_depth == 0 &&
-        !element->resolved_is_array && !element->resolved_is_slice &&
-        semantic_implements_interface(analyzer->model, target,
-                                      element->resolved_named_symbol_id))
-        return !semantic_expression_is_move_only(analyzer, element);
     return expression_to_declared_type_allowed(analyzer, element,
                                                analyzer->program, element_type);
 }

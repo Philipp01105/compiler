@@ -619,8 +619,7 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                 statement->value != NULL &&
                 !expression_assignment_allowed(analyzer, statement->value,
                                                statement->expression)) {
-                if (statement->expression->kind == AST_EXPR_INDEX &&
-                    statement->expression->resolved_named_symbol_id < analyzer->model->symbol_count &&
+                if (statement->expression->resolved_named_symbol_id < analyzer->model->symbol_count &&
                     analyzer->model->symbols[statement->expression->resolved_named_symbol_id].kind ==
                         SEMANTIC_SYMBOL_INTERFACE &&
                     semantic_implements_interface(analyzer->model,

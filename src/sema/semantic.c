@@ -643,6 +643,13 @@ int expression_to_declared_type_allowed(const Analyzer *analyzer,
                          type->resolved_array_length == expression->resolved_array_length;
     if (target_name != AST_TOKEN_NONE) {
         size_t target_symbol = resolve_named_symbol_id(analyzer, type_program, target_name);
+        if (target_symbol < analyzer->model->symbol_count && matching_shape &&
+            !target_depth && !type->is_array && !type->is_slice &&
+            !expression->resolved_is_array && !expression->resolved_is_slice &&
+            analyzer->model->symbols[target_symbol].kind == SEMANTIC_SYMBOL_INTERFACE &&
+            semantic_implements_interface(analyzer->model, target_symbol,
+                                          expression->resolved_named_symbol_id))
+            return !semantic_expression_is_move_only(analyzer, expression);
         return target_symbol != AST_SYMBOL_NONE &&
                target_symbol == expression->resolved_named_symbol_id &&
                matching_shape;
@@ -730,8 +737,7 @@ int expression_assignment_allowed(const Analyzer *analyzer,
         return 0;
     if (target->resolved_named_symbol_id != AST_SYMBOL_NONE ||
         source->resolved_named_symbol_id != AST_SYMBOL_NONE)
-        if (target->kind == AST_EXPR_INDEX &&
-            target->resolved_named_symbol_id < analyzer->model->symbol_count &&
+        if (target->resolved_named_symbol_id < analyzer->model->symbol_count &&
             analyzer->model->symbols[target->resolved_named_symbol_id].kind == SEMANTIC_SYMBOL_INTERFACE &&
             !source_depth && !target_depth && !target->resolved_is_array &&
             !target->resolved_is_slice && !source->resolved_is_array && !source->resolved_is_slice &&
@@ -884,6 +890,23 @@ static int type_mentions(const AstProgram *unit, const AstType *type, const char
         if (type_mentions(unit, &a->type, name)) return 1;
     if (type->function_return_type && type_mentions(unit, type->function_return_type, name)) return 1;
     return 0;
+}
+
+static const char *interface_value_method_error(const SemanticSymbol *method) {
+    if (method == NULL || method->declaration == NULL) return NULL;
+    const AstDeclarationNode *declaration = method->declaration;
+    if (type_mentions(method->source_program,
+                      &declaration->as.function.return_type, "Self"))
+        return "Methods using Self cannot be called through an interface value";
+    for (const AstParameter *parameter = declaration->as.function.parameters;
+         parameter != NULL; parameter = parameter->next)
+        if (type_mentions(method->source_program, &parameter->type, "Self"))
+            return "Methods using Self cannot be called through an interface value";
+    if (declaration->as.function.is_static)
+        return "Static methods cannot be called through an interface value";
+    if (declaration->generic_parameters != NULL)
+        return "Generic methods cannot be called through an interface value";
+    return NULL;
 }
 
 int viable_function(const Analyzer *analyzer, const SemanticSymbol *function,
@@ -1305,15 +1328,11 @@ void validate_expression(Analyzer *analyzer, AstExpression *expression,
                     &analyzer->model->symbols[expression->resolved_symbol_id];
             if (method->owner_symbol_id < analyzer->model->symbol_count &&
                 analyzer->model->symbols[method->owner_symbol_id].kind == SEMANTIC_SYMBOL_INTERFACE) {
-                int uses_self = type_mentions(method->source_program,
-                    &method->declaration->as.function.return_type, "Self");
-                for (const AstParameter *p = method->declaration->as.function.parameters;
-                     p; p = p->next)
-                    if (type_mentions(method->source_program, &p->type, "Self")) uses_self = 1;
-                if (uses_self)
+                const char *object_safety_error = interface_value_method_error(method);
+                if (object_safety_error != NULL)
                     semantic_error(analyzer, expression->value_token, ERROR_CATEGORY_TYPE,
                                    ERR_TYPE_INVALID_OPERATION,
-                                   "Methods using Self cannot be called through an interface value");
+                                   object_safety_error);
             }
             const AstExpression *receiver = expression->left->left;
             int type_receiver = receiver != NULL &&
@@ -1351,19 +1370,14 @@ void validate_expression(Analyzer *analyzer, AstExpression *expression,
                                                   expression->left->value_token);
             const SemanticSymbol *interface_method = find_method(analyzer,
                 receiver->resolved_named_symbol_id, expression->left->value_token);
-            int self_error = 0;
+            const char *object_safety_error = NULL;
             if (interface_method && interface_method->owner_symbol_id < analyzer->model->symbol_count &&
-                analyzer->model->symbols[interface_method->owner_symbol_id].kind == SEMANTIC_SYMBOL_INTERFACE) {
-                self_error = type_mentions(interface_method->source_program,
-                    &interface_method->declaration->as.function.return_type, "Self");
-                for (const AstParameter *p = interface_method->declaration->as.function.parameters;
-                     p; p = p->next)
-                    if (type_mentions(interface_method->source_program, &p->type, "Self")) self_error = 1;
-            }
-            if (self_error)
+                analyzer->model->symbols[interface_method->owner_symbol_id].kind == SEMANTIC_SYMBOL_INTERFACE)
+                object_safety_error = interface_value_method_error(interface_method);
+            if (object_safety_error != NULL)
                 semantic_error(analyzer, expression->left->value_token, ERROR_CATEGORY_TYPE,
                                ERR_TYPE_INVALID_OPERATION,
-                               "Methods using Self cannot be called through an interface value");
+                               object_safety_error);
             else {
                 (void) resolve_overload(analyzer, name, receiver->resolved_named_symbol_id,
                                         type_receiver, expression->arguments, &ambiguous);

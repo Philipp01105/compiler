@@ -449,6 +449,37 @@ static size_t coerce_slice(IrBuilder *builder, size_t value, IrTypeId target, As
     return slice->result;
 }
 
+static size_t coerce_interface(IrBuilder *builder, size_t value, IrTypeId target,
+                               AstSourceSpan span) {
+    if (value == IR_VALUE_NONE || target >= builder->module->type_count) return value;
+    const IrType *destination = &builder->module->types[target];
+    if (destination->kind != IR_TYPE_NAMED) return value;
+    for (size_t i = builder->function->instruction_count; i > 0; i--) {
+        const IrInstruction *source = &builder->function->instructions[i - 1];
+        if (source->result != value) continue;
+        if (source->type_id >= builder->module->type_count) return value;
+        const IrType *concrete = &builder->module->types[source->type_id];
+        if (concrete->kind != IR_TYPE_NAMED || concrete->symbol_id == destination->symbol_id ||
+            !semantic_implements_interface(builder->module->semantics,
+                                           destination->symbol_id, concrete->symbol_id))
+            return value;
+        IrInstruction *pack = emit(builder, IR_OP_INTERFACE_PACK, span);
+        if (pack == NULL) return IR_VALUE_NONE;
+        pack->type_id = target;
+        pack->type = TYPE_UNKNOWN;
+        pack->operand_a = value;
+        pack->result = new_value(builder);
+        return pack->result;
+    }
+    return value;
+}
+
+static size_t coerce_value(IrBuilder *builder, size_t value, IrTypeId target,
+                           AstSourceSpan span) {
+    return coerce_interface(builder, coerce_slice(builder, value, target, span),
+                            target, span);
+}
+
 static void emit_move_if_owned(IrBuilder *builder,
                                const AstExpression *expression);
 static size_t lower_control_expression(IrBuilder *builder,
@@ -697,6 +728,13 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         }
     }
     if (expression->kind == AST_EXPR_ARRAY_LITERAL) {
+        IrTypeId container_type = type_from_expression(builder->module, builder->program, expression);
+        IrTypeId element_type = IR_TYPE_NONE;
+        if (container_type < builder->module->type_count) {
+            const IrType *container = &builder->module->types[container_type];
+            if (container->kind == IR_TYPE_ARRAY || container->kind == IR_TYPE_SLICE)
+                element_type = container->element_type;
+        }
         size_t count = 0;
         for (const AstExpression *element = expression->arguments;
              element != NULL; element = element->next) count++;
@@ -708,7 +746,8 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         size_t index = 0;
         for (const AstExpression *element = expression->arguments;
              element != NULL; element = element->next) {
-            values[index++] = lower_expression(builder, element);
+            size_t value = lower_expression(builder, element);
+            values[index++] = coerce_value(builder, value, element_type, element->span);
             emit_move_if_owned(builder, element);
         }
         IrInstruction *instruction = emit(builder, IR_OP_ARRAY_LITERAL,
@@ -899,7 +938,7 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
                            parameter->type.borrow_kind == AST_BORROW_NONE;
             if (parameter || payload) {
                 const AstType *type = parameter ? &parameter->type : &payload->type;
-                value = coerce_slice(builder, value, type_from_ast(builder->module, type_unit, type), argument->span);
+                value = coerce_value(builder, value, type_from_ast(builder->module, type_unit, type), argument->span);
                 if (parameter) parameter = parameter->next;
                 else payload = payload->next;
             }
@@ -1218,7 +1257,7 @@ static size_t lower_value_block(IrBuilder *builder, const AstStatement *block,
     if (!block_terminated(builder->function) && block->result != NULL) {
         value = lower_expression(builder, block->result);
         if (!block_terminated(builder->function)) {
-            value = coerce_slice(builder, value, target_type, block->span);
+            value = coerce_value(builder, value, target_type, block->span);
             IrTypeId source_type = type_from_expression(builder->module,
                                                         builder->program,
                                                         block->result);
@@ -1501,7 +1540,7 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
                 continue;
             size_t value = lower_expression(builder, statement->value);
             if (statement->type.kind != AST_TYPE_INFERRED)
-                value = coerce_slice(builder, value, type_from_ast(builder->module, builder->program, &statement->type),
+                value = coerce_value(builder, value, type_from_ast(builder->module, builder->program, &statement->type),
                                      statement->span);
             IrInstruction *instruction = emit(builder, IR_OP_DECLARE, statement->span);
             if (instruction != NULL) {
@@ -1544,7 +1583,7 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
         } else if (statement->kind == AST_STMT_ASSIGNMENT) {
             size_t target = lower_expression(builder, statement->expression);
             size_t value = lower_expression(builder, statement->value);
-            value = coerce_slice(builder, value,
+            value = coerce_value(builder, value,
                                  type_from_expression(builder->module, builder->program, statement->expression),
                                  statement->span);
             IrTypeId target_type = type_from_expression(builder->module,
@@ -1623,7 +1662,7 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
         } else if (statement->kind == AST_STMT_RETURN) {
             size_t value = lower_expression(builder, statement->value);
             if (block_terminated(builder->function)) continue;
-            value = coerce_slice(builder, value, builder->function->return_type_id, statement->span);
+            value = coerce_value(builder, value, builder->function->return_type_id, statement->span);
             emit_move_if_owned(builder, statement->value);
             emit_deferred_until(builder, NULL);
             IrInstruction *instruction = emit(builder, IR_OP_RETURN, statement->span);
@@ -2219,7 +2258,7 @@ static int append_package_init(IrModule *module) {
         if (initializer == NULL) continue;
         builder.program = global->source_program;
         size_t value = lower_expression(&builder, initializer);
-        value = coerce_slice(&builder, value, global->type_id,
+        value = coerce_value(&builder, value, global->type_id,
                              initializer->span);
 
         IrInstruction *target = emit(&builder, IR_OP_LOAD,

@@ -49,6 +49,7 @@ typedef enum {
     IR_OP_LOAD,
     IR_OP_DECLARE,
     IR_OP_STORE,
+    IR_OP_INTERFACE_PACK,
     IR_OP_UNARY,
     IR_OP_BINARY,
     IR_OP_CALL,

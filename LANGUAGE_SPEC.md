@@ -313,10 +313,14 @@ return types. `Self` in a signature denotes the implementing type. Bounds such a
 dispatch statically after specialization. Fixed arrays and slices of an interface may hold values of different
 implementing structs. Assigning a struct to an interface element copies its value, and calls through that element
 dispatch dynamically. Interface inheritance, associated types and default methods are not supported.
-Concrete-to-interface conversion is supported for array or slice element assignment; other assignments, arguments,
-initializers and returns require an existing interface value. Methods whose signatures contain `Self` can be used
-through generic bounds but cannot be called through an interface array element, because the concrete receiver type is
-known only at runtime.
+Concrete-to-interface conversion copies a copyable implementing struct into an interface value in variables,
+assignments, arguments, returns, fields, variant payloads, and array or slice elements. An interface value may be
+copied between these positions. Move-only implementers cannot currently be erased into copyable interface values.
+Dynamic calls through interface values require an instance method with no method-level type parameters and no `Self`
+in its parameters or return type. `Self` in these positions remains available through concrete receivers and generic
+bounds, where the implementing type is known statically. Static interface requirements likewise require a concrete
+type or generic bound. Interface values currently store an inline type tag and a copy of the implementer; their size
+depends on the known implementers and is not a stable exported ABI.
 
 A sum enum gives each variant its own payload types. Construct values with
 `Option<int>.Some(42)` or `Option<int>.None`. The representation stores a tag followed by storage for the largest

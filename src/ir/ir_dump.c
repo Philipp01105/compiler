@@ -27,7 +27,7 @@ static const char *primitive_name(DataType type) {
 
 static const char *opcode_name(IrOpcode opcode) {
     static const char *names[] = {
-        "constant", "function-address", "load", "declare", "store", "unary",
+        "constant", "function-address", "load", "declare", "store", "interface-pack", "unary",
         "binary", "call", "index", "subslice", "member", "slice-length", "cast", "alloc", "free",
         "return", "branch", "jump", "label", "phi", "enum-construct", "enum-is", "enum-payload", "trap", "slice",
         "slice-data", "array-literal", "drop", "move", "reinit", "free-slice-backing"

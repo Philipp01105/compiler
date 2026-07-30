@@ -1,0 +1,1 @@
+Static methods cannot be called through an interface value

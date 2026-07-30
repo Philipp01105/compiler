@@ -1,0 +1,8 @@
+package main;
+interface Factory { static func code() -> int; }
+struct Device { static func code() -> int { return 7; } }
+func main() -> void {
+    var device:Device;
+    var erased:Factory = device;
+    erased.code();
+}

@@ -74,8 +74,8 @@ model. The normative rules and current restrictions are maintained in [LANGUAGE_
 
 ### Generics, interfaces, and sum types
 
-- [ ] Generalize concrete-to-interface conversion beyond array and slice elements.
-- [ ] Permit interface values in variables, parameters, returns, fields, variants, and collections with one consistent
+- [x] Generalize concrete-to-interface conversion beyond array and slice elements for copyable implementers.
+- [x] Permit interface values in variables, parameters, returns, fields, variants, and collections with one consistent
   representation.
 - [ ] Add Rust-inspired, opt-in runtime type tests and safe downcasts for interface values without introducing general
   runtime reflection.
@@ -88,7 +88,8 @@ model. The normative rules and current restrictions are maintained in [LANGUAGE_
     - Integrate borrow lifetimes, move-only values, destruction, nullability, and `Option`/`Result` failure forms, with
       exhaustive positive, negative, ownership, and cross-module tests.
 - [ ] Design interface inheritance, associated types, and default methods.
-- [ ] Define object-safe `Self` rules and support valid dynamic dispatch through interface elements.
+- [x] Define object-safe `Self` rules and support valid dynamic dispatch through interface values and elements.
+- [ ] Support move-only implementers in interface values with ownership-aware erasure and destruction.
 - [ ] Improve generic inference, constraint diagnostics, specialization controls, and duplicate-instantiation
   elimination.
 - [ ] Support recursive and mutually recursive generic types where layouts are finite.

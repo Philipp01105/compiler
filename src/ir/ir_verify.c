@@ -16,7 +16,7 @@ static int instruction_produces_value(const IrInstruction *instruction) {
            opcode == IR_OP_INDEX || opcode == IR_OP_SUBSLICE ||
            opcode == IR_OP_MEMBER || opcode == IR_OP_SLICE_LENGTH ||
            opcode == IR_OP_SLICE || opcode == IR_OP_SLICE_DATA ||
-           opcode == IR_OP_ARRAY_LITERAL ||
+           opcode == IR_OP_ARRAY_LITERAL || opcode == IR_OP_INTERFACE_PACK ||
            opcode == IR_OP_CAST || opcode == IR_OP_ALLOC ||
            opcode == IR_OP_PHI || opcode == IR_OP_ENUM_CONSTRUCT || opcode == IR_OP_ENUM_IS || opcode ==
            IR_OP_ENUM_PAYLOAD;
@@ -207,6 +207,14 @@ static int verify_instruction_types(const IrModule *module,
         case IR_OP_DECLARE:
             return a == NULL || ir_types_assignable(module, a->type_id,
                                                     instruction->type_id, a->opcode);
+        case IR_OP_INTERFACE_PACK:
+            return a != NULL && a->type_id < module->type_count &&
+                   instruction->type_id < module->type_count &&
+                   module->types[a->type_id].kind == IR_TYPE_NAMED &&
+                   module->types[instruction->type_id].kind == IR_TYPE_NAMED &&
+                   semantic_implements_interface(module->semantics,
+                       module->types[instruction->type_id].symbol_id,
+                       module->types[a->type_id].symbol_id);
         case IR_OP_STORE:
             if (a == NULL || a->type_id != instruction->type_id) return 0;
             if (a->opcode != IR_OP_LOAD && a->opcode != IR_OP_INDEX &&
@@ -752,6 +760,7 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                         valid = 0;
                     break;
                 case IR_OP_CAST:
+                case IR_OP_INTERFACE_PACK:
                 case IR_OP_FREE:
                     REQUIRE_VALUE(instruction->operand_a);
                     break;
