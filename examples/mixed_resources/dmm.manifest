@@ -1,0 +1,6 @@
+/* main
+Telemetry batch processor with device leases, sample statistics, borrows, collections and raw aggregate storage.
+*/
+
+module dmm.example/mixed_resources
+dmm 2026-09-22-dev

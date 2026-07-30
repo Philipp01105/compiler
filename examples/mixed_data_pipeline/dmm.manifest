@@ -1,0 +1,6 @@
+/* main
+Sensor report pipeline with domain structs, interfaces, callbacks, typed errors, propagation, defer and byte packets.
+*/
+
+module dmm.example/mixed_data_pipeline
+dmm 2026-09-22-dev

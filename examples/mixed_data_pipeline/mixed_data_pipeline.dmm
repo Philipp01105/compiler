@@ -1,0 +1,145 @@
+package main;
+import "stdlib";
+
+// A small sensor-reporting pipeline. Different sensor records share the same
+// metric contract and can therefore be aggregated through an interface slice.
+interface Metric {
+    func weighted(scale:double) -> double;
+}
+
+interface Named {
+    func label() -> string;
+}
+
+struct TemperatureReading {
+    var celsius:double;
+    var confidence:double;
+
+    func weighted(scale:double) -> double {
+        return celsius*confidence*scale;
+    }
+    func label() -> string { return "temperature"; }
+}
+
+struct HumidityReading {
+    var percent:double;
+
+    func weighted(scale:double) -> double {
+        return percent/10.0*scale;
+    }
+    func label() -> string { return "humidity"; }
+}
+
+struct StationReport {
+    var temperature:TemperatureReading;
+    var aggregate:double;
+    var packetChecksum:u32;
+    var source:char;
+    var accepted:bit;
+}
+
+enum SensorError { Offline, CorruptPacket, }
+
+enum ReportError {
+    Sensor,
+    ;
+    static func fromResidual(error:SensorError) -> Self {
+        return ReportError.Sensor;
+    }
+}
+
+func doubleMetric(value:double) -> double { return value*2.0; }
+func identityMetric(value:double) -> double { return value; }
+
+func appendAudit(target:&mut int, digit:int) -> void {
+    *target=*target*10+digit;
+}
+
+func decodeTemperature(source:stdlib.Result<double,SensorError>,
+                       confidence:double, auditDigit:int, audit:&mut int)
+    -> stdlib.Result<TemperatureReading,ReportError> {
+    // Audit logging happens for accepted readings and propagated sensor errors.
+    defer appendAudit(audit,auditDigit);
+    var reading:TemperatureReading;
+    reading.celsius=source?;
+    reading.confidence=confidence;
+    return stdlib.Result<TemperatureReading,ReportError>.Ok(reading);
+}
+
+func project<T:Metric+Named>(value:T,
+                             operation:func(double) -> double) -> double {
+    stdlib.println(value.label());
+    return operation(value.weighted(1.0));
+}
+
+func aggregate(values:Metric[]) -> double {
+    var total:double=0.0;
+    for (var index:usize=0; index < values.length; index+=1) {
+        total+=values[index].weighted(1.0);
+    }
+    return total;
+}
+
+func checksum(values:u8[]) -> u32 {
+    var total:u32=0;
+    for (var index:usize=0; index < values.length; index+=1) {
+        total+=values[index].(u32);
+    }
+    return total;
+}
+
+func typeKind<T>(value:T) -> string {
+    match (T) {
+        case TemperatureReading -> return "temperature record";
+        case double -> return "floating measurement";
+        case char -> return "station marker";
+        case _ -> return T.name;
+    }
+}
+
+func main() -> int {
+    var audit:int=0;
+    var decoded=decodeTemperature(
+        stdlib.Result<double,SensorError>.Ok(20.0),0.5,3,&mut audit);
+    var rejected=decodeTemperature(
+        stdlib.Result<double,SensorError>.Err(SensorError.CorruptPacket),
+        1.0,4,&mut audit);
+
+    var temperature:TemperatureReading;
+    match (decoded) {
+        Ok(value) => temperature=value;
+        Err(error) => return 1;
+    }
+    match (rejected) {
+        Ok(value) => return 2;
+        Err(error) => match (error) { Sensor => {} }
+    }
+
+    var humidity:HumidityReading;
+    humidity.percent=60.0;
+    var metrics:Metric[2]=[temperature,humidity];
+    var metricView:Metric[]=metrics;
+    var projections:(func(double) -> double)[2]=[doubleMetric,identityMetric];
+    var packet:u8[3]=[83,78,82]; // ASCII "SNR"
+    var packetView:u8[]=packet;
+
+    var report:StationReport;
+    report.temperature=temperature;
+    report.aggregate=aggregate(metricView);
+    report.packetChecksum=checksum(packetView);
+    report.source='A';
+    report.accepted=report.aggregate >= 15.0;
+
+    var projected=project(temperature,projections[0]);
+    var summary:string=typeKind(temperature)+" aggregate: "+report.aggregate;
+    stdlib.println(summary);
+    stdlib.println(typeKind(report.source));
+    stdlib.println(report.packetChecksum);
+    stdlib.println(StationReport.size);
+    free(summary);
+
+    if (audit != 34 || projected != 20.0 || report.aggregate != 16.0) { return 3; }
+    if (!report.accepted || report.packetChecksum != 243) { return 4; }
+    if (projections[1](9.5) != 9.5) { return 5; }
+    return 0;
+}

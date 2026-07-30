@@ -29,6 +29,8 @@ standard output.
 | [owning_collections](owning_collections/owning_collections.dmm) | Move-only `Bytes`, `Buffer<T>`, `List<T>` and `String`, including growth, borrowed views and automatic destruction |
 | [packages](packages/packages.dmm) | A public API in a second package, an import alias, module-relative resolution, ordered runtime globals, package-owned slice backing and cleanup after `main` |
 | [file_io](file_io/file_io.dmm) | A deterministic file round-trip with streams, transfer statuses, byte views and explicit cleanup of current I/O wrappers |
+| [mixed_data_pipeline](mixed_data_pipeline/mixed_data_pipeline.dmm) | Builds a sensor-station report from temperature and humidity structs, typed sensor failures, byte-packet checksums, callbacks, interface aggregation and deferred auditing |
+| [mixed_resources](mixed_resources/mixed_resources.dmm) | Processes a telemetry batch using device-lease structs, fixed-width sample statistics, packet headers, owning collections, checked borrows and raw aggregate storage |
 
 ## Coverage map
 
@@ -46,7 +48,10 @@ standard output.
 | Standard owning collections | `owning_collections` |
 | Modules, visibility, runtime package globals and package cleanup | `packages` |
 | Files, streams and status-based error handling | `file_io` |
+| Mixed typed application flow | `mixed_data_pipeline` |
+| Mixed ownership and memory flow | `mixed_resources` |
 
-Each feature is explained where it is exercised rather than repeated here as a second partial program. Normative rules
-live in the [language specification](../LANGUAGE_SPEC.md); diagnostics and edge cases belong in the test suite. Planned
-closures and expression-valued control flow are deliberately absent until their semantics land.
+The focused examples introduce individual areas; the two `mixed_*` programs show how those areas interact in larger
+application-shaped flows. Normative rules live in the [language specification](../LANGUAGE_SPEC.md); diagnostics and
+edge cases belong in the test suite. Planned closures and expression-valued control flow are deliberately absent until
+their semantics land.
