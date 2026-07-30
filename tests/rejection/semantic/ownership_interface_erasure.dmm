@@ -9,4 +9,5 @@ func main() -> void {
     var values:Value[1];
     var resource:Resource;
     values[0]=resource;
+    resource.get();
 }

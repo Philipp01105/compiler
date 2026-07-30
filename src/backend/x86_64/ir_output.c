@@ -359,7 +359,9 @@ static int emit_file(Emitter *emitter, int deterministic) {
                 declarations += slots;
             } else if ((function->instructions[i].opcode == IR_OP_CALL || function->instructions[i].opcode ==
                         IR_OP_ENUM_CONSTRUCT || function->instructions[i].opcode == IR_OP_SLICE ||
-                        function->instructions[i].opcode == IR_OP_ARRAY_LITERAL) &&
+                        function->instructions[i].opcode == IR_OP_SUBSLICE ||
+                        function->instructions[i].opcode == IR_OP_ARRAY_LITERAL ||
+                        function->instructions[i].opcode == IR_OP_INTERFACE_PACK) &&
                        (is_inline_structure(emitter->module,
                                             &function->instructions[i]) ||
                         function->instructions[i].is_array)) {

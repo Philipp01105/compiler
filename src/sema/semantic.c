@@ -649,7 +649,7 @@ int expression_to_declared_type_allowed(const Analyzer *analyzer,
             analyzer->model->symbols[target_symbol].kind == SEMANTIC_SYMBOL_INTERFACE &&
             semantic_implements_interface(analyzer->model, target_symbol,
                                           expression->resolved_named_symbol_id))
-            return !semantic_expression_is_move_only(analyzer, expression);
+            return 1;
         return target_symbol != AST_SYMBOL_NONE &&
                target_symbol == expression->resolved_named_symbol_id &&
                matching_shape;
@@ -743,7 +743,7 @@ int expression_assignment_allowed(const Analyzer *analyzer,
             !target->resolved_is_slice && !source->resolved_is_array && !source->resolved_is_slice &&
             semantic_implements_interface(analyzer->model, target->resolved_named_symbol_id,
                                 source->resolved_named_symbol_id))
-            return !semantic_expression_is_move_only(analyzer, source);
+            return 1;
     if (target->resolved_named_symbol_id != AST_SYMBOL_NONE ||
         source->resolved_named_symbol_id != AST_SYMBOL_NONE)
         return target->resolved_named_symbol_id != AST_SYMBOL_NONE &&

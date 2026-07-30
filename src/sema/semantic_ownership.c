@@ -208,7 +208,8 @@ static void consume_expression(OwnershipChecker *checker,
         return;
     }
     if (expression->kind == AST_EXPR_MEMBER ||
-        expression->kind == AST_EXPR_INDEX) {
+        expression->kind == AST_EXPR_INDEX ||
+        expression->kind == AST_EXPR_ENUM_ACCESS) {
         read_expression(checker, flow, expression);
         ownership_error(checker, expression->first_token,
                         "Partial moves from move-only aggregates are not supported");

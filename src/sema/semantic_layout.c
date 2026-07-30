@@ -89,15 +89,7 @@ static size_t semantic_symbol_slots(const Analyzer *analyzer, size_t symbol_id,
         depth > analyzer->model->symbol_count)
         return SIZE_MAX;
     const SemanticSymbol *symbol = &analyzer->model->symbols[symbol_id];
-    if (symbol->kind == SEMANTIC_SYMBOL_INTERFACE) {
-        size_t largest = 1;
-        for (size_t i = 0; i < analyzer->model->symbol_count; i++)
-            if (semantic_implements_interface(analyzer->model, symbol_id, i)) {
-                size_t slots = semantic_symbol_slots(analyzer, i, depth + 1);
-                if (slots > largest) largest = slots;
-            }
-        return largest == SIZE_MAX ? SIZE_MAX : largest + 1;
-    }
+    if (symbol->kind == SEMANTIC_SYMBOL_INTERFACE) return 2;
     if (symbol->kind == SEMANTIC_SYMBOL_ENUM && symbol->declaration) {
         size_t largest = 0;
         for (const AstEnumValue *v = symbol->declaration->as.enum_decl.values; v; v = v->next) {

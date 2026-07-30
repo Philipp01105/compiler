@@ -869,6 +869,66 @@ static int emit_drop_type(Emitter *emitter, IrTypeId type_id) {
         return 1;
     }
     if (type->kind != IR_TYPE_NAMED) return 1;
+    if (type->symbol_id < emitter->module->semantics->symbol_count &&
+        emitter->module->semantics->symbols[type->symbol_id].kind ==
+            SEMANTIC_SYMBOL_INTERFACE) {
+        size_t sequence = emitter->bounds_sequence++;
+        char done[96], release[96], next[96];
+        snprintf(done, sizeof(done), ".LIR_interface_drop_done_%zu_%zu",
+                 emitter->function_index, sequence);
+        snprintf(release, sizeof(release), ".LIR_interface_drop_release_%zu_%zu",
+                 emitter->function_index, sequence);
+        write_register_move(emitter, "rbx", "rax");
+        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                    x64_register("rax"), x64_memory(X64_WIDTH_QWORD, "rbx", 8));
+        write_x64_2(emitter, X64_OP_TEST, X64_WIDTH_QWORD,
+                    x64_register("rax"), x64_register("rax"));
+        write_x64_1(emitter, X64_OP_JE, X64_WIDTH_NONE, x64_label(done));
+        for (size_t s = 0; s < emitter->module->structure_count; s++) {
+            const IrAggregate *structure = &emitter->module->structures[s];
+            if (!semantic_implements_interface(emitter->module->semantics,
+                                               type->symbol_id,
+                                               structure->symbol_id)) continue;
+            snprintf(next, sizeof(next), ".LIR_interface_drop_next_%zu_%zu_%zu",
+                     emitter->function_index, sequence, s);
+            write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                        x64_register("rax"), x64_memory(X64_WIDTH_QWORD, "rbx", 0));
+            write_immediate(emitter, "rdx",
+                            (long long) ir_interface_type_tag(emitter->module,
+                                                                structure->symbol_id));
+            write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_QWORD,
+                        x64_register("rax"), x64_register("rdx"));
+            write_x64_1(emitter, X64_OP_JNE, X64_WIDTH_NONE, x64_label(next));
+            if (structure->type_properties & SEMANTIC_TYPE_NEEDS_DROP) {
+                const IrFunction *glue = called_function(emitter->module,
+                                                         structure->symbol_id);
+                char buffer[4096];
+                if (glue == NULL || !glue->is_drop_glue) return 0;
+                const char *name = function_link_name(emitter->module, glue,
+                                                       buffer, sizeof(buffer));
+                if (name == NULL) return 0;
+                write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                            x64_register(emitter->target == TARGET_COFF ? "rcx" : "rdi"),
+                            x64_memory(X64_WIDTH_QWORD, "rbx", 8));
+                write_call(emitter, name);
+            }
+            write_x64_1(emitter, X64_OP_JMP, X64_WIDTH_NONE, x64_label(release));
+            write_labelf(emitter, "%s:\n", next);
+        }
+        write_x64_0(emitter, X64_OP_UD2);
+        write_labelf(emitter, "%s:\n", release);
+        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                    x64_register(emitter->target == TARGET_COFF ? "rcx" : "rdi"),
+                    x64_memory(X64_WIDTH_QWORD, "rbx", 8));
+        write_call(emitter, "free");
+        write_immediate(emitter, "rax", 0);
+        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                    x64_memory(X64_WIDTH_QWORD, "rbx", 0), x64_register("rax"));
+        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                    x64_memory(X64_WIDTH_QWORD, "rbx", 8), x64_register("rax"));
+        write_labelf(emitter, "%s:\n", done);
+        return 1;
+    }
     const IrFunction *glue = called_function(emitter->module,
                                              type->symbol_id);
     if (glue == NULL || !glue->is_drop_glue) return 0;
@@ -1360,20 +1420,22 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             size_t offset = aggregate_result_offset(emitter, instruction);
             size_t slots = type_slots(emitter->module, instruction->type_id);
             if (concrete->kind != IR_TYPE_NAMED || offset == 0 || slots == 0) return 0;
-            write_immediate(emitter, "rax", 0);
-            for (size_t slot = 0; slot < slots; slot++)
-                write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
-                            x64_memory(X64_WIDTH_QWORD, "rbp", -(long long) offset + (long long) (slot * 8)),
-                            x64_register("rax"));
-            write_immediate(emitter, "rax", (long long) (concrete->symbol_id + 1));
+            write_immediate(emitter, emitter->target == TARGET_COFF ? "rcx" : "rdi", 1);
+            write_immediate(emitter, emitter->target == TARGET_COFF ? "rdx" : "rsi",
+                            (long long) (type_slots(emitter->module, source->type_id) * 8U));
+            write_call(emitter, "calloc");
+            write_register_move(emitter, "rbx", "rax");
+            write_value_load(emitter, "rax", instruction->operand_a);
+            copy_aggregate(emitter, type_slots(emitter->module, source->type_id), "rax", "rbx");
+            write_immediate(emitter, "rax",
+                            (long long) ir_interface_type_tag(emitter->module,
+                                                                concrete->symbol_id));
             write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
                         x64_memory(X64_WIDTH_QWORD, "rbp", -(long long) offset),
                         x64_register("rax"));
-            write_value_load(emitter, "rax", instruction->operand_a);
-            write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD,
-                        x64_register("rbx"),
-                        x64_memory(X64_WIDTH_NONE, "rbp", -(long long) offset + 8));
-            copy_aggregate(emitter, type_slots(emitter->module, source->type_id), "rax", "rbx");
+            write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                        x64_memory(X64_WIDTH_QWORD, "rbp", -(long long) offset + 8),
+                        x64_register("rbx"));
             write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD,
                         x64_register("rax"), x64_memory(X64_WIDTH_NONE, "rbp", -(long long) offset));
             write_value_store(emitter, "rax", instruction->result);

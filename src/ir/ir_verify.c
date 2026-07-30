@@ -486,6 +486,15 @@ int ir_verify_module_report(const IrModule *module) { return ir_verify_module_in
 
 static int ir_verify_module_internal(const IrModule *module, int report) {
     if (module == NULL || module->program == NULL || module->semantics == NULL) return 0;
+    for (size_t i = 0; i < module->structure_count; i++) {
+        uint64_t tag = ir_interface_type_tag(module,
+                                             module->structures[i].symbol_id);
+        if (tag == 0) return 0;
+        for (size_t j = 0; j < i; j++)
+            if (ir_interface_type_tag(module,
+                                      module->structures[j].symbol_id) == tag)
+                return 0;
+    }
     if (module->global_count && !module->globals) return 0;
     for (size_t g = 0; g < module->global_count; g++) {
         const IrGlobal *global = &module->globals[g];

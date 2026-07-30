@@ -1,1 +1,1 @@
-Cannot erase a move-only value into a copyable interface
+Cannot read, borrow, copy, or move a value after ownership was moved

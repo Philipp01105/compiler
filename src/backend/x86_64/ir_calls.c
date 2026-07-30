@@ -92,8 +92,8 @@ int emit_typed_call(Emitter *emitter, const IrInstruction *instruction,
             if (value == NULL) return 0;
             write_value_load(emitter, "rax", value_id);
             if (interface_receiver && source == 0)
-                write_x64_2(emitter, X64_OP_ADD, X64_WIDTH_QWORD,
-                            x64_register("rax"), x64_immediate(8));
+                write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                            x64_register("rax"), x64_memory(X64_WIDTH_QWORD, "rax", 8));
             if (callee->parameters[source].is_slice && emitter->module->types[value->type_id].kind == IR_TYPE_SLICE)
                 write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rax"),
                             x64_memory(X64_WIDTH_QWORD, "rax", 0));
@@ -139,8 +139,8 @@ int emit_typed_call(Emitter *emitter, const IrInstruction *instruction,
             if (value == NULL) return 0;
             write_value_load(emitter, "rax", value_id);
             if (interface_receiver && source == 0)
-                write_x64_2(emitter, X64_OP_ADD, X64_WIDTH_QWORD,
-                            x64_register("rax"), x64_immediate(8));
+                write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                            x64_register("rax"), x64_memory(X64_WIDTH_QWORD, "rax", 8));
             if (callee->parameters[source].is_slice && emitter->module->types[value->type_id].kind == IR_TYPE_SLICE)
                 write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rax"),
                             x64_memory(X64_WIDTH_QWORD, "rax", 0));
@@ -216,8 +216,10 @@ int emit_interface_call(Emitter *emitter, const IrInstruction *instruction) {
         write_value_load(emitter, "rax", receiver);
         write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
                     x64_register("rax"), x64_memory(X64_WIDTH_QWORD, "rax", 0));
+        write_immediate(emitter, "rdx",
+                        (long long) ir_interface_type_tag(emitter->module, struct_id));
         write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_QWORD,
-                    x64_register("rax"), x64_immediate((long long) (struct_id + 1)));
+                    x64_register("rax"), x64_register("rdx"));
         write_x64_1(emitter, X64_OP_JNE, X64_WIDTH_NONE, x64_label(next));
         if (!emit_typed_call(emitter, instruction, callee, 1, IR_VALUE_NONE)) return 0;
         write_x64_1(emitter, X64_OP_JMP, X64_WIDTH_NONE, x64_label(end));

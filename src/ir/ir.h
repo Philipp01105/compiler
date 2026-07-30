@@ -249,6 +249,9 @@ int ir_type_layout(const IrModule *module, IrTypeId type, IrTypeLayout *layout);
 
 unsigned ir_type_properties(const IrModule *module, IrTypeId type);
 
+/* Stable, nonzero wire identity for a concrete aggregate in an interface value. */
+uint64_t ir_interface_type_tag(const IrModule *module, size_t symbol_id);
+
 /* Internal failures retain the concrete instruction and its original source unit. */
 void ir_report_failure(const IrFunction *function, size_t instruction_index,
                        const char *stage, const char *reason);

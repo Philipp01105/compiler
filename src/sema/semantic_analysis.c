@@ -619,21 +619,9 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                 statement->value != NULL &&
                 !expression_assignment_allowed(analyzer, statement->value,
                                                statement->expression)) {
-                if (statement->expression->resolved_named_symbol_id < analyzer->model->symbol_count &&
-                    analyzer->model->symbols[statement->expression->resolved_named_symbol_id].kind ==
-                        SEMANTIC_SYMBOL_INTERFACE &&
-                    semantic_implements_interface(analyzer->model,
-                        statement->expression->resolved_named_symbol_id,
-                        statement->value->resolved_named_symbol_id) &&
-                    semantic_expression_is_move_only(analyzer, statement->value))
-                    semantic_error(analyzer, statement->value->first_token,
-                                   ERROR_CATEGORY_SEMANTIC,
-                                   ERR_SEM_INVALID_DECLARATION,
-                                   "Cannot erase a move-only value into a copyable interface");
-                else
-                    conversion_error(analyzer, statement->value, NULL, NULL,
-                                     statement->expression,
-                                     "Cannot implicitly convert assigned value");
+                conversion_error(analyzer, statement->value, NULL, NULL,
+                                 statement->expression,
+                                 "Cannot implicitly convert assigned value");
             }
             if (statement->kind == AST_STMT_ASSIGNMENT &&
                 statement->assignment_operator == TOKEN_EQUAL) {

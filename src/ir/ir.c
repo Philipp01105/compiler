@@ -1622,6 +1622,23 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
                     drop->symbol_id = statement->expression->resolved_symbol_id;
                 }
             }
+            if (statement->assignment_operator == TOKEN_EQUAL &&
+                statement->expression != NULL &&
+                statement->expression->kind != AST_EXPR_NAME &&
+                target_type < builder->module->type_count &&
+                builder->module->types[target_type].kind == IR_TYPE_NAMED &&
+                builder->module->types[target_type].symbol_id <
+                    builder->module->semantics->symbol_count &&
+                builder->module->semantics->symbols[
+                    builder->module->types[target_type].symbol_id].kind ==
+                    SEMANTIC_SYMBOL_INTERFACE) {
+                IrInstruction *drop = emit(builder, IR_OP_DROP, statement->span);
+                if (drop != NULL) {
+                    drop->type = TYPE_VOID;
+                    drop->type_id = target_type;
+                    drop->operand_a = target;
+                }
+            }
             IrInstruction *instruction = emit(builder, IR_OP_STORE, statement->span);
             if (instruction != NULL) {
                 instruction->operand_a = target;
@@ -2685,6 +2702,33 @@ IrModule *ir_lower_program(const AstProgram *program, const SemanticModel *seman
 failure:
     ir_module_free(module);
     return NULL;
+}
+
+uint64_t ir_interface_type_tag(const IrModule *module, size_t symbol_id) {
+    if (module == NULL || module->semantics == NULL ||
+        symbol_id >= module->semantics->symbol_count) return 0;
+    const SemanticSymbol *symbol = &module->semantics->symbols[symbol_id];
+    if (symbol->kind != SEMANTIC_SYMBOL_STRUCT || symbol->source_program == NULL)
+        return 0;
+    const char *specialized = symbol->declaration != NULL
+                                  ? symbol->declaration->specialization_identity
+                                  : NULL;
+    const char *module_name = symbol->source_program->module_identity != NULL
+                                  ? symbol->source_program->module_identity : "";
+    const char *type_name = ast_program_lexeme(symbol->source_program,
+                                                symbol->name_token);
+    uint64_t hash = UINT64_C(14695981039346656037);
+    const unsigned char *part = (const unsigned char *)
+        (specialized != NULL ? specialized : module_name);
+    hash = (hash ^ (specialized != NULL ? 'S' : 'N')) * UINT64_C(1099511628211);
+    for (; *part != 0; part++)
+        hash = (hash ^ *part) * UINT64_C(1099511628211);
+    if (specialized == NULL) {
+        hash = (hash ^ 0) * UINT64_C(1099511628211);
+        for (part = (const unsigned char *) type_name; *part != 0; part++)
+            hash = (hash ^ *part) * UINT64_C(1099511628211);
+    }
+    return hash == 0 ? 1 : hash;
 }
 
 void ir_module_free(IrModule *module) {
