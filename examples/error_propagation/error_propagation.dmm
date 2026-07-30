@@ -1,0 +1,60 @@
+package main;
+import "stdlib";
+
+enum IOError { Read, }
+
+enum AppError {
+    Io,
+    ;
+    static func fromResidual(error:IOError) -> Self {
+        return AppError.Io;
+    }
+}
+
+enum Validation {
+    Valid(int),
+    Invalid(int),
+    ;
+    static func branch(value:Self) -> stdlib.Propagation<int,int> {
+        match (value) {
+            Valid(output) => return stdlib.Propagation<int,int>.Continue(output);
+            Invalid(residual) => return stdlib.Propagation<int,int>.Break(residual);
+        }
+    }
+    static func fromResidual(residual:int) -> Self {
+        return Validation.Invalid(residual);
+    }
+}
+
+func increment(value:stdlib.Option<int>) -> stdlib.Option<int> {
+    return stdlib.Option<int>.Some(value?+1);
+}
+
+func read(value:stdlib.Result<int,IOError>) -> stdlib.Result<int,AppError> {
+    return stdlib.Result<int,AppError>.Ok(value?);
+}
+
+func validate(value:Validation) -> Validation {
+    return Validation.Valid(value?+3);
+}
+
+func main() -> int {
+    var option=increment(stdlib.Option<int>.Some(20));
+    match (option) {
+        Some(value) => if (value != 21) { return 1; }
+        None => return 2;
+    }
+
+    var result=read(stdlib.Result<int,IOError>.Err(IOError.Read));
+    match (result) {
+        Ok(value) => return 3;
+        Err(error) => match (error) { Io => {} }
+    }
+
+    var custom=validate(Validation.Invalid(7));
+    match (custom) {
+        Valid(value) => return 4;
+        Invalid(error) => if (error != 7) { return 5; }
+    }
+    return 0;
+}

@@ -706,8 +706,9 @@ static void analyze_propagation(Analyzer *analyzer, AstExpression *expression) {
     expression->propagation_return_variant_symbol_id = return_variant;
     expression->propagation_output_type = output;
     expression->propagation_residual_type = residual;
-    expression->propagation_contract_program = branch->source_program;
-    set_expression_declared_type(analyzer, expression, branch->source_program,
+    expression->propagation_contract_program = propagation->source_program;
+    set_expression_declared_type(analyzer, expression,
+                                 propagation->source_program,
                                  &output);
 }
 

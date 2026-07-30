@@ -10,6 +10,21 @@ typedef struct {
     const AstProgram *argument_unit;
 } InterfaceSubstitution;
 
+static int symbol_has_type_name(const SemanticSymbol *symbol,
+                                const char *name) {
+    const char *symbol_name = ast_program_lexeme(symbol->source_program,
+                                                  symbol->name_token);
+    if (!strcmp(name, symbol_name)) return 1;
+
+    char canonical[4096];
+    snprintf(canonical, sizeof(canonical), "%s::%s",
+             symbol->source_program->module_identity != NULL
+                 ? symbol->source_program->module_identity
+                 : "",
+             symbol_name);
+    return !strcmp(name, canonical);
+}
+
 static int interface_type_matches_depth(const SemanticModel *model,
                                      const AstProgram *interface_unit, const AstType *expected,
                                      const AstProgram *actual_unit, const AstType *actual,
@@ -50,14 +65,13 @@ static int interface_type_matches_depth(const SemanticModel *model,
     const char *actual_name =
         ast_program_lexeme(actual_unit, actual->name_token);
     const AstTypeArgument *actual_arguments = actual->arguments;
+    const AstProgram *actual_argument_unit = actual_unit;
     if (strcmp(expected_name, actual_name)) {
         const SemanticSymbol *actual_symbol = NULL;
         for (size_t i = 0; i < model->symbol_count; i++)
             if ((model->symbols[i].kind == SEMANTIC_SYMBOL_STRUCT ||
                  model->symbols[i].kind == SEMANTIC_SYMBOL_ENUM) &&
-                !strcmp(actual_name, ast_program_lexeme(
-                                         model->symbols[i].source_program,
-                                         model->symbols[i].name_token))) {
+                symbol_has_type_name(&model->symbols[i], actual_name)) {
                 actual_symbol = &model->symbols[i];
                 break;
             }
@@ -71,10 +85,12 @@ static int interface_type_matches_depth(const SemanticModel *model,
             return 0;
         actual_arguments =
             actual_symbol->declaration->specialization_arguments;
+        actual_argument_unit = actual_symbol->source_program;
     }
     const AstTypeArgument *x = expected->arguments, *y = actual_arguments;
     for (; x && y; x = x->next, y = y->next)
-        if (!interface_type_matches_depth(model, interface_unit, &x->type, actual_unit, &y->type,
+        if (!interface_type_matches_depth(model, interface_unit, &x->type,
+                                       actual_argument_unit, &y->type,
                                        self_unit, self, substitution,
                                        depth + 1)) return 0;
     return !x && !y;
@@ -85,45 +101,6 @@ static int interface_type_matches(const SemanticModel *model,
                                const AstProgram *actual_unit, const AstType *actual,
                                const AstProgram *self_unit, const AstType *self,
                                const InterfaceSubstitution *substitution) {
-    if (substitution != NULL && expected.arguments != NULL) {
-        AstTypeArgument concrete_arguments[DMM_MAX_TYPE_PARAMETERS];
-        size_t count = 0;
-        int replaced = 0;
-        for (const AstTypeArgument *source = expected.arguments;
-             source != NULL && count < DMM_MAX_TYPE_PARAMETERS;
-             source = source->next) {
-            AstType concrete = source->type;
-            if (concrete.kind == AST_TYPE_NAMED &&
-                concrete.arguments == NULL) {
-                const char *name =
-                    ast_program_lexeme(interface_unit, concrete.name_token);
-                const AstGenericParameter *parameter =
-                    substitution->parameters;
-                const AstTypeArgument *argument = substitution->arguments;
-                for (; parameter != NULL && argument != NULL;
-                     parameter = parameter->next, argument = argument->next)
-                    if (!strcmp(name, ast_program_lexeme(
-                                          interface_unit,
-                                          parameter->name_token))) {
-                        concrete = argument->type;
-                        replaced = 1;
-                        break;
-                    }
-            }
-            concrete_arguments[count].type = concrete;
-            concrete_arguments[count].next = NULL;
-            if (count != 0)
-                concrete_arguments[count - 1].next =
-                    &concrete_arguments[count];
-            count++;
-        }
-        if (replaced) {
-            expected.arguments = &concrete_arguments[0];
-            return interface_type_matches_depth(
-                model, interface_unit, &expected, actual_unit, actual,
-                self_unit, self, NULL, 0);
-        }
-    }
     return interface_type_matches_depth(model, interface_unit, &expected, actual_unit, actual,
                                      self_unit, self, substitution, 0);
 }

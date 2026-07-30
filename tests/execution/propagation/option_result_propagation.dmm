@@ -24,13 +24,11 @@ enum Validation {
 }
 
 func optionStep(value:stdlib.Option<int>) -> stdlib.Option<int> {
-    var number:int = value?;
-    return stdlib.Option<int>.Some(number+1);
+    return stdlib.Option<int>.Some(value?+1);
 }
 
 func resultStep(value:stdlib.Result<int,int>) -> stdlib.Result<int,int> {
-    var number:int = value?;
-    return stdlib.Result<int,int>.Ok(number*2);
+    return stdlib.Result<int,int>.Ok(value?*2);
 }
 
 func convertedResult(value:stdlib.Result<int,IOError>) -> stdlib.Result<int,AppError> {
@@ -39,8 +37,7 @@ func convertedResult(value:stdlib.Result<int,IOError>) -> stdlib.Result<int,AppE
 }
 
 func validationStep(value:Validation) -> Validation {
-    var number:int = value?;
-    return Validation.Valid(number+3);
+    return Validation.Valid(value?+3);
 }
 
 func contractScore<P:stdlib.Propagate<int,int>>(value:P) -> int {
