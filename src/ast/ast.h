@@ -33,7 +33,7 @@ typedef enum {
     AST_EXPR_SLICE_LENGTH, AST_EXPR_RESERVE, AST_EXPR_CAST, AST_EXPR_FREE, AST_EXPR_ENUM_CONSTRUCT,
     AST_EXPR_ENUM_ACCESS, AST_EXPR_SIZEOF, AST_EXPR_ALIGNOF, AST_EXPR_SLICE, AST_EXPR_SLICE_DATA,
     AST_EXPR_TYPE_INFO, AST_EXPR_TYPE_PROPERTY, AST_EXPR_ARRAY_LITERAL, AST_EXPR_PROPAGATE,
-    AST_EXPR_CONTROL
+    AST_EXPR_CONTROL, AST_EXPR_AWAIT
 } AstExpressionKind;
 
 typedef enum {
@@ -259,6 +259,7 @@ struct AstDeclarationNode {
             AstType return_type;
             AstStatement *body;
             int is_static;
+            int is_async;
             size_t owner_token;
             int returns_owned_slice_backing;
         } function;

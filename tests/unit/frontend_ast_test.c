@@ -103,6 +103,31 @@ int main(int argc, char **argv) {
         return 1;
     }
     ast_program_free(program);
+
+    static const char async_source[] =
+        "package main;\n"
+        "async func pending() -> int { return 4; }\n"
+        "async func main() -> int { return await pending(); }\n";
+    program = frontend_parse_source(async_source, strlen(async_source),
+                                    "<async-syntax>", &options);
+    const AstDeclarationNode *pending = program == NULL ? NULL : program->root;
+    const AstDeclarationNode *async_main = pending == NULL ? NULL : pending->next;
+    const AstStatement *returned = async_main == NULL ||
+                                   async_main->as.function.body == NULL
+                                       ? NULL : async_main->as.function.body->body;
+    if (program == NULL || !ast_validate_program(program) ||
+        pending == NULL || !pending->as.function.is_async ||
+        async_main == NULL || !async_main->as.function.is_async ||
+        returned == NULL || returned->kind != AST_STMT_RETURN ||
+        returned->value == NULL || returned->value->kind != AST_EXPR_AWAIT ||
+        returned->value->right == NULL ||
+        returned->value->right->kind != AST_EXPR_CALL) {
+        fprintf(stderr, "async/await syntax AST is incomplete\n");
+        ast_program_free(program);
+        error_handler_free(errors);
+        return 1;
+    }
+    ast_program_free(program);
     error_handler_free(errors);
     return 0;
 }

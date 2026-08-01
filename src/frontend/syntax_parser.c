@@ -85,6 +85,7 @@ static const char *token_spelling(TokenType type) {
         case TOKEN_EQUAL: return "=";
         case TOKEN_GREATER: return ">";
         case TOKEN_KEYWORD_FUNC: return "func";
+        case TOKEN_KEYWORD_ASYNC: return "async";
         case TOKEN_KEYWORD_VAR: return "var";
         case TOKEN_KEYWORD_STRUCT: return "struct";
         case TOKEN_KEYWORD_ENUM: return "enum";
@@ -720,7 +721,8 @@ static AstExpression *parse_unary(SyntaxParser *parser) {
     for (;;) {
         TokenType type = current_type(parser);
         if (type != TOKEN_BANG && type != TOKEN_MINUS &&
-            type != TOKEN_AMPERSAND && type != TOKEN_STAR)
+            type != TOKEN_AMPERSAND && type != TOKEN_STAR &&
+            type != TOKEN_KEYWORD_AWAIT)
             break;
         if (parser->expression_depth + count >= AST_MAX_PARSE_DEPTH) {
             parser_failure(parser, ERR_PARSE_TOO_MANY_ERRORS,
@@ -728,7 +730,9 @@ static AstExpression *parse_unary(SyntaxParser *parser) {
             return NULL;
         }
         size_t first = parser->current++;
-        AstExpression *expression = new_expression(parser, AST_EXPR_UNARY, first);
+        AstExpression *expression = new_expression(parser,
+                                                   type == TOKEN_KEYWORD_AWAIT ? AST_EXPR_AWAIT : AST_EXPR_UNARY,
+                                                   first);
         if (expression != NULL) {
             expression->operator_type = type;
             if (type == TOKEN_AMPERSAND && match(parser, TOKEN_KEYWORD_MUT)) expression->mutable_borrow = 1;
@@ -1224,6 +1228,7 @@ static void finish_declaration(SyntaxParser *parser, AstDeclarationNode *declara
 static AstDeclarationNode *parse_function(SyntaxParser *parser, int is_static,
                                           size_t owner_token) {
     size_t first = parser->current;
+    int is_async = match(parser, TOKEN_KEYWORD_ASYNC);
     (void) consume(parser, TOKEN_KEYWORD_FUNC);
     AstDeclarationNode *declaration = new_declaration(parser, AST_DECL_FUNCTION, first);
     size_t name = consume_callable_name(parser);
@@ -1254,6 +1259,7 @@ static AstDeclarationNode *parse_function(SyntaxParser *parser, int is_static,
         declaration->as.function.return_type = return_type;
         declaration->as.function.body = body;
         declaration->as.function.is_static = is_static;
+        declaration->as.function.is_async = is_async;
         declaration->as.function.owner_token = owner_token;
     }
     finish_declaration(parser, declaration);
@@ -1303,7 +1309,7 @@ static AstDeclarationNode *parse_struct(SyntaxParser *parser) {
         }
         int is_public = match(parser, TOKEN_KEYWORD_PUB);
         int is_static = match(parser, TOKEN_KEYWORD_STATIC);
-        if (check(parser, TOKEN_KEYWORD_FUNC)) {
+        if (check(parser, TOKEN_KEYWORD_FUNC) || check(parser, TOKEN_KEYWORD_ASYNC)) {
             AstDeclarationNode *method = parse_function(parser, is_static, name);
             if (method) method->is_public = is_public;
             *method_tail = method;
@@ -1546,7 +1552,7 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
         if (check(&parser, TOKEN_KEYWORD_IMPORT)) declaration = parse_import(&parser);
         else if (check(&parser, TOKEN_KEYWORD_CONST)) declaration = parse_constant(&parser);
         else if (check(&parser, TOKEN_KEYWORD_VAR)) declaration = parse_constant(&parser);
-        else if (check(&parser, TOKEN_KEYWORD_FUNC))
+        else if (check(&parser, TOKEN_KEYWORD_FUNC) || check(&parser, TOKEN_KEYWORD_ASYNC))
             declaration = parse_function(&parser, 0, AST_TOKEN_NONE);
         else if (check(&parser, TOKEN_KEYWORD_STRUCT)) declaration = parse_struct(&parser);
         else if (check(&parser, TOKEN_KEYWORD_ENUM)) declaration = parse_enum(&parser);
@@ -1569,7 +1575,8 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
             while (!check(&parser, TOKEN_EOF)) {
                 TokenType token = current_type(&parser);
                 if (braces <= 0 && parser.current > first &&
-                    (token == TOKEN_KEYWORD_FUNC || token == TOKEN_KEYWORD_STRUCT ||
+                    (token == TOKEN_KEYWORD_FUNC || token == TOKEN_KEYWORD_ASYNC ||
+                     token == TOKEN_KEYWORD_STRUCT ||
                      token == TOKEN_KEYWORD_ENUM || token == TOKEN_KEYWORD_INTERFACE ||
                      token == TOKEN_KEYWORD_IMPORT || token == TOKEN_KEYWORD_CONST))
                     break;

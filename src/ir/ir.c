@@ -460,6 +460,9 @@ static size_t coerce_interface(IrBuilder *builder, size_t value, IrTypeId target
         if (source->type_id >= builder->module->type_count) return value;
         const IrType *concrete = &builder->module->types[source->type_id];
         if (concrete->kind != IR_TYPE_NAMED || concrete->symbol_id == destination->symbol_id ||
+            concrete->symbol_id >= builder->module->semantics->symbol_count ||
+            builder->module->semantics->symbols[concrete->symbol_id].kind !=
+                SEMANTIC_SYMBOL_STRUCT ||
             !semantic_implements_interface(builder->module->semantics,
                                            destination->symbol_id, concrete->symbol_id))
             return value;
@@ -852,6 +855,7 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
             break;
         case AST_EXPR_UNARY: opcode = IR_OP_UNARY;
             break;
+        case AST_EXPR_AWAIT: return IR_VALUE_NONE;
         case AST_EXPR_BINARY: opcode = IR_OP_BINARY;
             break;
         case AST_EXPR_ENUM_CONSTRUCT: opcode = IR_OP_ENUM_CONSTRUCT;
@@ -935,7 +939,8 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
             }
             size_t value = lower_expression(builder, argument);
             int consumes = parameter == NULL ||
-                           parameter->type.borrow_kind == AST_BORROW_NONE;
+                           (parameter->type.borrow_kind == AST_BORROW_NONE &&
+                            !(parameter->type.is_slice && argument->resolved_is_array));
             if (parameter || payload) {
                 const AstType *type = parameter ? &parameter->type : &payload->type;
                 value = coerce_value(builder, value, type_from_ast(builder->module, type_unit, type), argument->span);

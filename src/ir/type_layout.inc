@@ -80,8 +80,9 @@ static unsigned ir_type_properties_depth(const IrModule *module, IrTypeId id,
     if (module == NULL || id >= module->type_count || depth > module->type_count)
         return 0;
     const IrType *type = &module->types[id];
-    if (type->kind == IR_TYPE_POINTER || type->kind == IR_TYPE_FUNCTION || type->kind == IR_TYPE_SLICE ||
-        type->kind == IR_TYPE_PRIMITIVE)
+    if (type->kind == IR_TYPE_PRIMITIVE)
+        return SEMANTIC_TYPE_COPYABLE | SEMANTIC_TYPE_SEND | SEMANTIC_TYPE_SYNC;
+    if (type->kind == IR_TYPE_POINTER || type->kind == IR_TYPE_FUNCTION || type->kind == IR_TYPE_SLICE)
         return SEMANTIC_TYPE_COPYABLE;
     if (type->kind == IR_TYPE_ARRAY)
         return ir_type_properties_depth(module, type->element_type, depth + 1);

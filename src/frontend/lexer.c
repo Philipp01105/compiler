@@ -137,6 +137,8 @@ static TokenType get_keyword_type(const char *str) {
     if (strcmp(str, "interface") == 0) return TOKEN_KEYWORD_INTERFACE;
     if (strcmp(str, "match") == 0) return TOKEN_KEYWORD_MATCH;
     if (strcmp(str, "func") == 0) return TOKEN_KEYWORD_FUNC;
+    if (strcmp(str, "async") == 0) return TOKEN_KEYWORD_ASYNC;
+    if (strcmp(str, "await") == 0) return TOKEN_KEYWORD_AWAIT;
     if (strcmp(str, "var") == 0) return TOKEN_KEYWORD_VAR;
     if (strcmp(str, "return") == 0) return TOKEN_KEYWORD_RETURN;
     if (strcmp(str, "for") == 0) return TOKEN_KEYWORD_FOR;
@@ -740,6 +742,8 @@ const char *token_type_to_string(TokenType type) {
         case TOKEN_KEYWORD_ALIGNOF: return "KEYWORD_ALIGNOF";
         case TOKEN_KEYWORD_SLICE: return "KEYWORD_SLICE";
         case TOKEN_KEYWORD_FUNC: return "KEYWORD_FUNC";
+        case TOKEN_KEYWORD_ASYNC: return "KEYWORD_ASYNC";
+        case TOKEN_KEYWORD_AWAIT: return "KEYWORD_AWAIT";
         case TOKEN_KEYWORD_VAR: return "KEYWORD_VAR";
         case TOKEN_KEYWORD_RETURN: return "KEYWORD_RETURN";
         case TOKEN_KEYWORD_FOR: return "KEYWORD_FOR";

@@ -155,6 +155,7 @@ static int valid_expression(const AstProgram *program, const AstExpression *expr
             if (!valid_token(program, expression->value_token)) return 0;
             break;
         case AST_EXPR_UNARY:
+        case AST_EXPR_AWAIT:
             if (!valid_expression(program, expression->right)) return 0;
             break;
         case AST_EXPR_PROPAGATE:

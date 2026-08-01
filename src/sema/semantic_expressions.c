@@ -703,7 +703,8 @@ static void analyze_propagation(Analyzer *analyzer, AstExpression *expression) {
                                  &output);
 }
 
-void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
+static void analyze_expression_context(Analyzer *analyzer, AstExpression *expression,
+                                       int direct_call_callee) {
     if (expression == NULL) return;
     if (expression->kind == AST_EXPR_CONTROL) {
         analyze_control_expression(analyzer, expression);
@@ -744,8 +745,9 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                         expression->left = NULL;
                     }
     }
-    analyze_expression(analyzer, expression->left);
-    analyze_expression(analyzer, expression->right);
+    analyze_expression_context(analyzer, expression->left,
+                               expression->kind == AST_EXPR_CALL);
+    analyze_expression_context(analyzer, expression->right, 0);
     contextualize_direct_call_literals(analyzer, expression);
     if (expression->kind == AST_EXPR_ARRAY_LITERAL &&
         expression->allocated_type.kind != AST_TYPE_INFERRED &&
@@ -757,7 +759,17 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                 argument->allocated_type = element_type;
     }
     for (AstExpression *argument = expression->arguments; argument != NULL; argument = argument->next)
-        analyze_expression(analyzer, argument);
+        analyze_expression_context(analyzer, argument, 0);
+
+    if (expression->kind == AST_EXPR_AWAIT) {
+        semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_SEMANTIC,
+                       ERR_SEM_INVALID_DECLARATION,
+                       analyzer->current_function != NULL &&
+                       analyzer->current_function->as.function.is_async
+                           ? "await requires Future lowering, which is not yet implemented"
+                           : "await is only valid inside an async function");
+        return;
+    }
 
     if (expression->kind == AST_EXPR_PROPAGATE) {
         analyze_propagation(analyzer, expression);
@@ -954,21 +966,14 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
             analyzer->model->symbols[interface_symbol].kind == SEMANTIC_SYMBOL_INTERFACE;
         for (AstExpression *element = expression->arguments; element != NULL;
              element = element->next) {
-            if (interface_elements &&
-                semantic_implements_interface(analyzer->model, interface_symbol,
-                                              element->resolved_named_symbol_id) &&
-                semantic_expression_is_move_only(analyzer, element)) {
-                semantic_error(analyzer, element->first_token, ERROR_CATEGORY_SEMANTIC,
-                               ERR_SEM_INVALID_DECLARATION,
-                               "Cannot erase a move-only value into a copyable interface");
-            } else if (!array_literal_element_allowed(analyzer, element, &element_type))
+            if (!array_literal_element_allowed(analyzer, element, &element_type))
                 conversion_error(analyzer, element, analyzer->program, &element_type,
                                  NULL, "Cannot implicitly convert array literal element");
         }
         if (expression->right != NULL && element_count > pattern_count)
             for (AstExpression *element = expression->arguments; element != NULL;
                  element = element->next)
-                if (semantic_expression_is_move_only(analyzer, element)) {
+                if (interface_elements || semantic_expression_is_move_only(analyzer, element)) {
                     semantic_error(analyzer, element->first_token,
                                    ERROR_CATEGORY_SEMANTIC,
                                    ERR_SEM_INVALID_DECLARATION,
@@ -1655,6 +1660,7 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
     else if (expression->resolved_symbol_id < analyzer->model->symbol_count)
         expression->resolved_array_length = analyzer->model->symbols[expression->resolved_symbol_id].declared_type.
                 resolved_array_length;
+    /* Overload and generic callees acquire their type from the enclosing call. */
     if (expression->resolved_type == TYPE_UNKNOWN &&
         expression->resolved_named_type_token == AST_TOKEN_NONE &&
         expression->resolved_symbol_id == AST_SYMBOL_NONE &&
@@ -1670,6 +1676,11 @@ void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
         !(expression->kind == AST_EXPR_CALL && expression->left != NULL &&
           expression->left->kind == AST_EXPR_NAME &&
           is_builtin_name(ast_program_lexeme(analyzer->program,
-                                             expression->left->value_token))))
+                                             expression->left->value_token))) &&
+        !(direct_call_callee && expression->kind == AST_EXPR_NAME))
         analyzer->model->unresolved_expression_count++;
+}
+
+void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
+    analyze_expression_context(analyzer, expression, 0);
 }

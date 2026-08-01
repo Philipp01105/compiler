@@ -647,6 +647,9 @@ int expression_to_declared_type_allowed(const Analyzer *analyzer,
             !target_depth && !type->is_array && !type->is_slice &&
             !expression->resolved_is_array && !expression->resolved_is_slice &&
             analyzer->model->symbols[target_symbol].kind == SEMANTIC_SYMBOL_INTERFACE &&
+            expression->resolved_named_symbol_id < analyzer->model->symbol_count &&
+            analyzer->model->symbols[expression->resolved_named_symbol_id].kind ==
+                SEMANTIC_SYMBOL_STRUCT &&
             semantic_implements_interface(analyzer->model, target_symbol,
                                           expression->resolved_named_symbol_id))
             return 1;
@@ -741,6 +744,9 @@ int expression_assignment_allowed(const Analyzer *analyzer,
             analyzer->model->symbols[target->resolved_named_symbol_id].kind == SEMANTIC_SYMBOL_INTERFACE &&
             !source_depth && !target_depth && !target->resolved_is_array &&
             !target->resolved_is_slice && !source->resolved_is_array && !source->resolved_is_slice &&
+            source->resolved_named_symbol_id < analyzer->model->symbol_count &&
+            analyzer->model->symbols[source->resolved_named_symbol_id].kind ==
+                SEMANTIC_SYMBOL_STRUCT &&
             semantic_implements_interface(analyzer->model, target->resolved_named_symbol_id,
                                 source->resolved_named_symbol_id))
             return 1;

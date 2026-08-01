@@ -26,7 +26,9 @@ typedef enum {
 typedef enum {
     SEMANTIC_TYPE_COPYABLE = 1u << 0,
     SEMANTIC_TYPE_MOVE_ONLY = 1u << 1,
-    SEMANTIC_TYPE_NEEDS_DROP = 1u << 2
+    SEMANTIC_TYPE_NEEDS_DROP = 1u << 2,
+    SEMANTIC_TYPE_SEND = 1u << 3,
+    SEMANTIC_TYPE_SYNC = 1u << 4
 } SemanticTypeProperties;
 
 typedef struct {

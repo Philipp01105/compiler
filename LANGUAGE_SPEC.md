@@ -30,6 +30,10 @@ controls exported declarations and members. Imported nominal types retain their 
 discovery, visibility, `internal`, vendoring and `dmm manifest sync` contract is defined in
 [MODULE_SYSTEM.md](MODULE_SYSTEM.md).
 
+`async` and `await` are reserved by the parser but are not yet executable language features. Semantic analysis rejects
+async functions and await expressions; the `async` manifest feature is not enabled until Future lowering, pinning, and
+ownership checks are complete.
+
 ## Types
 
 The primitive types are `int`, `char`, `byte`, `bit`, `float`, `double`, `string`,
@@ -311,16 +315,23 @@ A struct or enum implements an interface when its methods have the same names, s
 return types. `Self` in a signature denotes the implementing type. Bounds such as
 `T:Printable + Equal` or `T:Propagate<O,R>` check these methods without an implementation declaration. Generic calls
 dispatch statically after specialization. Fixed arrays and slices of an interface may hold values of different
-implementing structs. Assigning a struct to an interface element copies its value, and calls through that element
-dispatch dynamically. Interface inheritance, associated types and default methods are not supported.
-Concrete-to-interface conversion copies a copyable implementing struct into an interface value in variables,
-assignments, arguments, returns, fields, variant payloads, and array or slice elements. An interface value may be
-copied between these positions. Move-only implementers cannot currently be erased into copyable interface values.
+implementing structs. Assigning a struct to an interface element transfers a value into owned payload storage, and
+calls through that element dispatch dynamically. Interface inheritance, associated types and default methods are
+not supported. Concrete-to-interface conversion accepts copyable and move-only implementing structs in variables,
+assignments, arguments, returns, fields, variant payloads, and array or slice elements. Erasure moves a move-only
+source. Interface values are themselves move-only: passing or assigning one by value transfers it; partial moves
+out of aggregate fields, array elements, or variant accessors are not supported. Destruction invokes the concrete
+struct's drop glue, then releases the payload. Interface-valued fields, variants, and arrays therefore participate
+in their enclosing value's ownership and cleanup.
 Dynamic calls through interface values require an instance method with no method-level type parameters and no `Self`
 in its parameters or return type. `Self` in these positions remains available through concrete receivers and generic
 bounds, where the implementing type is known statically. Static interface requirements likewise require a concrete
-type or generic bound. Interface values currently store an inline type tag and a copy of the implementer; their size
-depends on the known implementers and is not a stable exported ABI.
+type or generic bound. An interface value has a fixed 16-byte, eight-byte-aligned layout: a nonzero 64-bit concrete
+type tag followed by an owned payload pointer. Both words are zero in an empty slot. Tags are deterministic FNV-1a
+identities of the defining module and struct name (or the concrete specialization identity); collisions among known
+structs are rejected. This fixes the layout independently of implementer size and allows recursive interface fields.
+Dynamic dispatch is still closed-world: the current toolchain does not define an ABI for independently built dynamic
+libraries introducing new implementers.
 
 A sum enum gives each variant its own payload types. Construct values with
 `Option<int>.Some(42)` or `Option<int>.None`. The representation stores a tag followed by storage for the largest

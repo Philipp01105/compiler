@@ -1,0 +1,3 @@
+package main;
+async func work() -> int { return 7; }
+func main() -> int { return 0; }

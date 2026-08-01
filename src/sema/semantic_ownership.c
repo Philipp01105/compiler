@@ -233,6 +233,7 @@ static void read_call(OwnershipChecker *checker, OwnershipFlow *flow,
          argument != NULL; argument = argument->next) {
         if (parameter != NULL &&
             parameter->type.borrow_kind == AST_BORROW_NONE &&
+            !(parameter->type.is_slice && argument->resolved_is_array) &&
             semantic_expression_is_move_only(checker->analyzer, argument))
             consume_expression(checker, flow, argument);
         else
@@ -473,6 +474,16 @@ static OwnershipFlow check_statements_tail(OwnershipChecker *checker,
                 }
                 break;
             case AST_STMT_ASSIGNMENT:
+                if (statement->assignment_operator == TOKEN_EQUAL &&
+                    statement->expression != NULL && statement->value != NULL &&
+                    statement->expression->kind == AST_EXPR_NAME &&
+                    statement->value->kind == AST_EXPR_NAME &&
+                    statement->expression->resolved_symbol_id ==
+                        statement->value->resolved_symbol_id &&
+                    move_only_symbol(checker,
+                                     statement->expression->resolved_symbol_id))
+                    ownership_error(checker, statement->first_token,
+                                    "Cannot move a value into itself");
                 if (statement->expression != NULL &&
                     statement->expression->kind != AST_EXPR_NAME)
                     read_expression(checker, &flow, statement->expression);

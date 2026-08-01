@@ -212,6 +212,9 @@ static int verify_instruction_types(const IrModule *module,
                    instruction->type_id < module->type_count &&
                    module->types[a->type_id].kind == IR_TYPE_NAMED &&
                    module->types[instruction->type_id].kind == IR_TYPE_NAMED &&
+                   module->types[a->type_id].symbol_id < module->semantics->symbol_count &&
+                   module->semantics->symbols[module->types[a->type_id].symbol_id].kind ==
+                       SEMANTIC_SYMBOL_STRUCT &&
                    semantic_implements_interface(module->semantics,
                        module->types[instruction->type_id].symbol_id,
                        module->types[a->type_id].symbol_id);

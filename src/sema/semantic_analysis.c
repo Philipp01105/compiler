@@ -136,13 +136,25 @@ int semantic_type_needs_drop(const Analyzer *analyzer,
 static unsigned field_type_properties(const Analyzer *analyzer,
                                        const AstProgram *program,
                                        const AstType *type) {
-    if (type->borrow_kind != AST_BORROW_NONE || type->pointer_depth != 0 ||
-        type->outer_pointer_depth != 0 || type->is_slice)
+    if (type->pointer_depth != 0 || type->outer_pointer_depth != 0 || type->is_slice)
         return SEMANTIC_TYPE_COPYABLE;
+    if (type->borrow_kind != AST_BORROW_NONE) {
+        AstType referent = *type;
+        referent.borrow_kind = AST_BORROW_NONE;
+        unsigned nested = field_type_properties(analyzer, program, &referent);
+        if (type->borrow_kind == AST_BORROW_IMMUTABLE)
+            return SEMANTIC_TYPE_COPYABLE |
+                   ((nested & SEMANTIC_TYPE_SYNC)
+                        ? SEMANTIC_TYPE_SEND | SEMANTIC_TYPE_SYNC : 0);
+        return SEMANTIC_TYPE_COPYABLE |
+               ((nested & SEMANTIC_TYPE_SEND) ? SEMANTIC_TYPE_SEND : 0);
+    }
     if (type->is_array) {
         AstType element = ast_type_element(type);
         return field_type_properties(analyzer, program, &element);
     }
+    if (primitive_type(program, type) != TYPE_UNKNOWN)
+        return SEMANTIC_TYPE_COPYABLE | SEMANTIC_TYPE_SEND | SEMANTIC_TYPE_SYNC;
     size_t nested = resolve_named_symbol_id(
         analyzer, program, named_type_token(program, type));
     return semantic_symbol_type_properties(analyzer->model, nested);
@@ -154,12 +166,14 @@ void derive_type_properties(Analyzer *analyzer) {
         if (symbol->kind != SEMANTIC_SYMBOL_STRUCT &&
             symbol->kind != SEMANTIC_SYMBOL_ENUM)
             continue;
-        symbol->type_properties = SEMANTIC_TYPE_COPYABLE;
+        symbol->type_properties = SEMANTIC_TYPE_COPYABLE |
+                                  SEMANTIC_TYPE_SEND | SEMANTIC_TYPE_SYNC;
         if (symbol->kind == SEMANTIC_SYMBOL_STRUCT &&
             symbol->declaration != NULL &&
             symbol->declaration->as.struct_decl.destructor != NULL)
             symbol->type_properties =
-                SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP;
+                SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP |
+                SEMANTIC_TYPE_SEND | SEMANTIC_TYPE_SYNC;
     }
 
     int changed;
@@ -183,6 +197,8 @@ void derive_type_properties(Analyzer *analyzer) {
                               SEMANTIC_TYPE_MOVE_ONLY;
                 if (nested & SEMANTIC_TYPE_NEEDS_DROP)
                     derived |= SEMANTIC_TYPE_NEEDS_DROP;
+                if (!(nested & SEMANTIC_TYPE_SEND)) derived &= ~(unsigned) SEMANTIC_TYPE_SEND;
+                if (!(nested & SEMANTIC_TYPE_SYNC)) derived &= ~(unsigned) SEMANTIC_TYPE_SYNC;
             }
             if (symbol->kind == SEMANTIC_SYMBOL_ENUM) {
                 for (const AstEnumValue *value =
@@ -198,6 +214,8 @@ void derive_type_properties(Analyzer *analyzer) {
                                 SEMANTIC_TYPE_MOVE_ONLY;
                         if (nested & SEMANTIC_TYPE_NEEDS_DROP)
                             derived |= SEMANTIC_TYPE_NEEDS_DROP;
+                        if (!(nested & SEMANTIC_TYPE_SEND)) derived &= ~(unsigned) SEMANTIC_TYPE_SEND;
+                        if (!(nested & SEMANTIC_TYPE_SYNC)) derived &= ~(unsigned) SEMANTIC_TYPE_SYNC;
                     }
                 }
             }
@@ -278,7 +296,8 @@ static void consume_call_arguments(Analyzer *analyzer,
         function->declaration->as.function.parameters;
     for (; argument != NULL && parameter != NULL;
          argument = argument->next, parameter = parameter->next)
-        if (parameter->type.borrow_kind == AST_BORROW_NONE)
+        if (parameter->type.borrow_kind == AST_BORROW_NONE &&
+            !(parameter->type.is_slice && argument->resolved_is_array))
             consume_owned_expression(analyzer, argument);
 }
 
@@ -1249,6 +1268,29 @@ SemanticModel *semantic_analyze(AstProgram *program) {
         .current_function_symbol_id = AST_SYMBOL_NONE,
         .current_owner_token = AST_TOKEN_NONE
     };
+    /* Parsing async syntax must never make an unsupported function run eagerly. */
+    for (size_t unit_index = 0; unit_index <= program->owned_import_count; unit_index++) {
+        AstProgram *unit = unit_index == 0 ? program : program->owned_imports[unit_index - 1];
+        analyzer.program = unit;
+        for (AstDeclarationNode *declaration = unit->root; declaration != NULL;
+             declaration = declaration->next) {
+            if (declaration->kind == AST_DECL_FUNCTION && declaration->as.function.is_async)
+                semantic_error(&analyzer, declaration->first_token, ERROR_CATEGORY_SEMANTIC,
+                               ERR_SEM_INVALID_DECLARATION,
+                               "async functions require Future lowering, which is not yet implemented");
+            AstDeclarationNode *methods = declaration->kind == AST_DECL_STRUCT
+                                              ? declaration->as.struct_decl.methods
+                                              : declaration->kind == AST_DECL_ENUM
+                                                    ? declaration->as.enum_decl.methods
+                                                    : declaration->kind == AST_DECL_INTERFACE
+                                                          ? declaration->as.interface_decl.methods : NULL;
+            for (AstDeclarationNode *method = methods; method != NULL; method = method->next)
+                if (method->as.function.is_async)
+                    semantic_error(&analyzer, method->first_token, ERROR_CATEGORY_SEMANTIC,
+                                   ERR_SEM_INVALID_DECLARATION,
+                                   "async functions require Future lowering, which is not yet implemented");
+        }
+    }
     for (size_t i = 0; i <= program->owned_import_count; i++) {
         AstProgram *unit = i == 0 ? program : program->owned_imports[i - 1];
         analyzer.program = unit;

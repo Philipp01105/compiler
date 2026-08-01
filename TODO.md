@@ -74,7 +74,7 @@ model. The normative rules and current restrictions are maintained in [LANGUAGE_
 
 ### Generics, interfaces, and sum types
 
-- [x] Generalize concrete-to-interface conversion beyond array and slice elements for copyable implementers.
+- [x] Generalize concrete-to-interface conversion beyond array and slice elements, including move-only implementers.
 - [x] Permit interface values in variables, parameters, returns, fields, variants, and collections with one consistent
   representation.
 - [ ] Add Rust-inspired, opt-in runtime type tests and safe downcasts for interface values without introducing general
@@ -89,12 +89,14 @@ model. The normative rules and current restrictions are maintained in [LANGUAGE_
       exhaustive positive, negative, ownership, and cross-module tests.
 - [ ] Design interface inheritance, associated types, and default methods.
 - [x] Define object-safe `Self` rules and support valid dynamic dispatch through interface values and elements.
-- [ ] Support move-only implementers in interface values with ownership-aware erasure and destruction.
+- [x] Support move-only implementers in interface values with ownership-aware erasure and destruction.
 - [ ] Improve generic inference, constraint diagnostics, specialization controls, and duplicate-instantiation
   elimination.
 - [ ] Support recursive and mutually recursive generic types where layouts are finite.
 - [ ] Add richer patterns: bindings, nested destructuring, guards, ranges, and exhaustive match expressions.
-- [ ] Define stable exported layout and ABI rules for enums, variants, and interface values.
+- [ ] Define stable exported layout and ABI rules for enums and variants, and cross-library dispatch/versioning for
+  independently built interface implementers. The in-process interface descriptor now has a fixed layout and
+  deterministic type tags.
 
 ### Functions, control flow, and error handling
 
@@ -127,7 +129,9 @@ model. The normative rules and current restrictions are maintained in [LANGUAGE_
 - [ ] Link only the runtime routines reachable from the program.
 - [ ] Extend I/O with seeking, file sizes, directories, terminal detection, pipes, and process execution.
 - [ ] Revisit concurrency only after atomics, ownership, thread-local state, and runtime scheduling requirements are
-  specified.
+  specified. The parser now preserves `async func`/`await` and sema derives conservative Send/Sync metadata, but async
+  syntax remains rejected: Future typing, pinned frames, suspend/resume IR, borrow checking across await, atomics,
+  code generation, and the deterministic poll harness are still required before enabling the feature.
 - [ ] Provide a DMM-native test and assertion library.
 
 ## Modules, dependencies, and builds

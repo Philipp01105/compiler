@@ -214,12 +214,72 @@ static void report_unresolved(const AstProgram *program) {
     }
 }
 
+static int unresolved_call_regression(void) {
+    const char *source = "func main() -> void { missing(); }";
+    const FrontendOptions options = {0};
+    AstProgram *program = test_parse_source(source, strlen(source),
+                                            "unresolved-call-test.dmm", &options);
+    SemanticModel *semantics = program == NULL ? NULL : semantic_analyze(program);
+    int failed = semantics == NULL || semantics->error_count == 0 ||
+                 semantics->unresolved_expression_count == 0;
+    semantic_model_free(semantics);
+    ast_program_free(program);
+    return failed;
+}
+
+static int thread_type_property_regression(void) {
+    const char *source =
+        "struct Safe { var value:int; }"
+        "struct Raw { var pointer:*int; }"
+        "struct Nested { var values:Safe[2]; }"
+        "struct NestedRaw { var value:Raw; }"
+        "interface Reading { func read() -> int; }"
+        "struct Dynamic { var value:Reading; }"
+        "func main() -> void { var a:Safe; var b:Raw; var c:Nested;"
+        "var d:NestedRaw; var e:Dynamic; }";
+    const FrontendOptions options = {0};
+    AstProgram *program = test_parse_source(source, strlen(source),
+                                            "thread-type-test.dmm", &options);
+    SemanticModel *semantics = program == NULL ? NULL : semantic_analyze(program);
+    IrModule *module = semantics != NULL && semantics->error_count == 0
+                           ? ir_lower_program(program, semantics) : NULL;
+    const char *names[] = {"Safe", "Raw", "Nested", "NestedRaw", "Dynamic"};
+    int expected[] = {1, 0, 1, 0, 0};
+    int failed = semantics == NULL || semantics->error_count != 0 ||
+                 module == NULL || !ir_verify_module(module);
+    for (size_t i = 0; !failed && i < sizeof(names) / sizeof(names[0]); i++) {
+        const SemanticSymbol *symbol = semantic_find_global(
+            semantics, names[i], SEMANTIC_SYMBOL_STRUCT);
+        unsigned properties = symbol == NULL ? 0 :
+            semantic_symbol_type_properties(semantics, symbol->id);
+        int thread_safe = (properties & (SEMANTIC_TYPE_SEND | SEMANTIC_TYPE_SYNC)) ==
+                          (SEMANTIC_TYPE_SEND | SEMANTIC_TYPE_SYNC);
+        int ir_thread_safe = 0;
+        for (IrTypeId t = 0; module != NULL && t < module->type_count; t++)
+            if (symbol != NULL && module->types[t].symbol_id == symbol->id) {
+                unsigned ir_properties = ir_type_properties(module, t);
+                ir_thread_safe = (ir_properties & (SEMANTIC_TYPE_SEND | SEMANTIC_TYPE_SYNC)) ==
+                                 (SEMANTIC_TYPE_SEND | SEMANTIC_TYPE_SYNC);
+            }
+        if (symbol == NULL || thread_safe != expected[i] || ir_thread_safe != expected[i]) {
+            fprintf(stderr, "thread type properties for %s: sema=%d ir=%d expected=%d\n",
+                    names[i], thread_safe, ir_thread_safe, expected[i]);
+            failed = 1;
+        }
+    }
+    ir_module_free(module);
+    semantic_model_free(semantics);
+    ast_program_free(program);
+    return failed;
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) return 1;
     ErrorHandler *errors = error_handler_init();
     if (errors == NULL) return 1;
     error_handler_set_global(errors);
-    int failed = control_flow_regressions() || ownership_property_regressions();
+    int failed = control_flow_regressions() || ownership_property_regressions() ||
+                 unresolved_call_regression() || thread_type_property_regression();
     int saw_cast = 0;
     int saw_alloc = 0;
     int saw_free = 0;
@@ -230,7 +290,6 @@ int main(int argc, char **argv) {
         IrModule *module = semantics != NULL && semantics->error_count == 0
                                ? ir_lower_program(program, semantics)
                                : NULL;
-        int has_import = module != NULL && module->import_count != 0;
         if (strstr(argv[i], "package_import_fixture") != NULL) {
             const AstImportPath *paths = program != NULL && program->root != NULL
                                              ? program->root->as.import_decl.paths
@@ -247,7 +306,7 @@ int main(int argc, char **argv) {
                     semantics->unresolved_expression_count);
         if (semantics != NULL && semantics->unresolved_expression_count != 0)
             report_unresolved(program);
-        if (semantics != NULL && semantics->unresolved_expression_count != 0 && !has_import)
+        if (semantics != NULL && semantics->unresolved_expression_count != 0)
             failed = 1;
         if (semantics != NULL && semantics->error_count != 0) {
             fprintf(stderr, "semantic errors for %s: %zu\n", argv[i],

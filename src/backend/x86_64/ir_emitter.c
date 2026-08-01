@@ -943,6 +943,54 @@ static int emit_drop_type(Emitter *emitter, IrTypeId type_id) {
     return 1;
 }
 
+static int emit_drop_owned_slice_elements(Emitter *emitter, IrTypeId slice_type) {
+    if (slice_type >= emitter->module->type_count ||
+        emitter->module->types[slice_type].kind != IR_TYPE_SLICE) return 0;
+    IrTypeId element_type = emitter->module->types[slice_type].element_type;
+    if ((ir_type_properties(emitter->module, element_type) &
+         SEMANTIC_TYPE_NEEDS_DROP) == 0) return 1;
+    IrTypeLayout element_layout;
+    if (!ir_type_layout(emitter->module, element_type, &element_layout)) return 0;
+    size_t sequence = emitter->bounds_sequence++;
+    char loop[96], done[96];
+    snprintf(loop, sizeof(loop), ".LIR_slice_drop_loop_%zu_%zu",
+             emitter->function_index, sequence);
+    snprintf(done, sizeof(done), ".LIR_slice_drop_done_%zu_%zu",
+             emitter->function_index, sequence);
+    write_x64_2(emitter, X64_OP_SUB, X64_WIDTH_QWORD,
+                x64_register("rsp"), x64_immediate(32));
+    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                x64_memory(X64_WIDTH_QWORD, "rsp", 0), x64_register("rax"));
+    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                x64_memory(X64_WIDTH_QWORD, "rsp", 8), x64_register("rdx"));
+    write_x64_2(emitter, X64_OP_TEST, X64_WIDTH_QWORD,
+                x64_register("rax"), x64_register("rax"));
+    write_x64_1(emitter, X64_OP_JE, X64_WIDTH_NONE, x64_label(done));
+    write_labelf(emitter, "%s:\n", loop);
+    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                x64_register("rcx"), x64_memory(X64_WIDTH_QWORD, "rsp", 8));
+    write_x64_2(emitter, X64_OP_TEST, X64_WIDTH_QWORD,
+                x64_register("rcx"), x64_register("rcx"));
+    write_x64_1(emitter, X64_OP_JE, X64_WIDTH_NONE, x64_label(done));
+    write_x64_1(emitter, X64_OP_DEC, X64_WIDTH_QWORD, x64_register("rcx"));
+    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                x64_memory(X64_WIDTH_QWORD, "rsp", 8), x64_register("rcx"));
+    write_x64_2(emitter, X64_OP_IMUL, X64_WIDTH_QWORD,
+                x64_register("rcx"), x64_immediate((long long) element_layout.size));
+    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                x64_register("rax"), x64_memory(X64_WIDTH_QWORD, "rsp", 0));
+    write_x64_2(emitter, X64_OP_ADD, X64_WIDTH_QWORD,
+                x64_register("rax"), x64_register("rcx"));
+    if (!emit_drop_type(emitter, element_type)) return 0;
+    write_x64_1(emitter, X64_OP_JMP, X64_WIDTH_NONE, x64_label(loop));
+    write_labelf(emitter, "%s:\n", done);
+    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                x64_register("rax"), x64_memory(X64_WIDTH_QWORD, "rsp", 0));
+    write_x64_2(emitter, X64_OP_ADD, X64_WIDTH_QWORD,
+                x64_register("rsp"), x64_immediate(32));
+    return 1;
+}
+
 static int emit_ownership_effect(Emitter *emitter,
                                  const IrInstruction *instruction,
                                  size_t index) {
@@ -1424,6 +1472,15 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             write_immediate(emitter, emitter->target == TARGET_COFF ? "rdx" : "rsi",
                             (long long) (type_slots(emitter->module, source->type_id) * 8U));
             write_call(emitter, "calloc");
+            size_t allocation = emitter->bounds_sequence++;
+            char allocated[96];
+            snprintf(allocated, sizeof(allocated), ".LIR_interface_alloc_%zu_%zu",
+                     emitter->function_index, allocation);
+            write_x64_2(emitter, X64_OP_TEST, X64_WIDTH_QWORD,
+                        x64_register("rax"), x64_register("rax"));
+            write_x64_1(emitter, X64_OP_JNE, X64_WIDTH_NONE, x64_label(allocated));
+            write_x64_0(emitter, X64_OP_UD2);
+            write_labelf(emitter, "%s:\n", allocated);
             write_register_move(emitter, "rbx", "rax");
             write_value_load(emitter, "rax", instruction->operand_a);
             copy_aggregate(emitter, type_slots(emitter->module, source->type_id), "rax", "rbx");
@@ -2236,17 +2293,22 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             if (instruction->operand_a != IR_VALUE_NONE) {
                 write_value_load(emitter, "rax", instruction->operand_a);
                 write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
-                            x64_register(argument),
+                            x64_register("rdx"),
+                            x64_memory(X64_WIDTH_QWORD, "rax", 8));
+                write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                            x64_register("rax"),
                             x64_memory(X64_WIDTH_QWORD, "rax", 0));
             } else {
                 const IrInstruction *declaration = local_declaration(
                     function, instruction->symbol_id, index);
                 if (declaration != NULL) {
-                    write_local_load(emitter, argument,
+                    write_local_load(emitter, "rdx",
+                                     declaration_offset(emitter, declaration) - 8U);
+                    write_local_load(emitter, "rax",
                                      declaration_slice_owner_offset(
                                          emitter, declaration));
-                    write_immediate(emitter, "rax", 0);
-                    write_local_store(emitter, "rax",
+                    write_immediate(emitter, "rcx", 0);
+                    write_local_store(emitter, "rcx",
                                       declaration_slice_owner_offset(
                                           emitter, declaration));
                 } else if (instruction->symbol_id <
@@ -2263,13 +2325,24 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                     X64Operand owner_memory =
                         x64_rip_memory(X64_WIDTH_QWORD, owner, 0);
                     owner_memory.has_symbol_suffix = 0;
+                    char label[4096];
+                    if (!global_label(&emitter->module->semantics->symbols[
+                                          instruction->symbol_id],
+                                      label, sizeof(label))) return 0;
+                    X64Operand length_memory =
+                        x64_rip_memory(X64_WIDTH_QWORD, label, 8);
+                    length_memory.has_symbol_suffix = 0;
                     write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
-                                x64_register(argument), owner_memory);
-                    write_immediate(emitter, "rax", 0);
+                                x64_register("rdx"), length_memory);
                     write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
-                                owner_memory, x64_register("rax"));
+                                x64_register("rax"), owner_memory);
+                    write_immediate(emitter, "rcx", 0);
+                    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                                owner_memory, x64_register("rcx"));
                 } else return 0;
             }
+            if (!emit_drop_owned_slice_elements(emitter, instruction->type_id)) return 0;
+            write_register_move(emitter, argument, "rax");
             write_call(emitter, "free");
             return 1;
         }

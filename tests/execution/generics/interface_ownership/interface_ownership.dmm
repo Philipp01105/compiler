@@ -9,6 +9,10 @@ struct Resource {
     destructor { drops = drops * 10 + value; }
 }
 struct Box { var item:Value; }
+struct Wrapped {
+    var child:Value;
+    func get() -> int { return child.get(); }
+}
 enum Selection { Empty, Chosen(Value) }
 
 func make(value:int) -> Value {
@@ -44,7 +48,28 @@ func run() -> void {
     stdlib.println(box.item.get() + selection.Chosen().get() + values[0].get());
 }
 
+func runSlice() -> void {
+    var seventh:Resource;
+    seventh.value = 7;
+    var eighth:Resource;
+    eighth.value = 8;
+    var items:Value[] = [seventh];
+    items = [eighth];
+    stdlib.println(items[0].get());
+}
+
+func runWrapped() -> void {
+    var ninth:Resource;
+    ninth.value = 9;
+    var wrapper:Wrapped;
+    wrapper.child = ninth;
+    var erased:Value = wrapper;
+    stdlib.println(erased.get());
+}
+
 func main() -> void {
     run();
+    runSlice();
+    runWrapped();
     stdlib.println(drops);
 }

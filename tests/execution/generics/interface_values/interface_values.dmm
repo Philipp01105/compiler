@@ -54,6 +54,7 @@ func main() -> void {
     stdlib.println(batch[0].value() + batch[1].value());
     stdlib.println(last.value());
     stdlib.println(nested.value());
+    stdlib.println(sizeof(Reading));
 
     current = pressure;
     stdlib.println(current.value());

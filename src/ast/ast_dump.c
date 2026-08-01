@@ -41,9 +41,9 @@ static const char *expression_name(AstExpressionKind kind) {
         "error", "literal", "name", "unary", "binary", "call",
         "index", "subslice", "member", "slice-length", "reserve", "cast", "free", "enum-construct", "enum-access",
         "sizeof", "alignof", "slice", "slice-data", "type-info", "type-property", "array-literal", "propagate",
-        "control"
+        "control", "await"
     };
-    return kind >= AST_EXPR_ERROR && kind <= AST_EXPR_CONTROL ? names[kind] : "invalid";
+    return kind >= AST_EXPR_ERROR && kind <= AST_EXPR_AWAIT ? names[kind] : "invalid";
 }
 
 static const char *statement_name(AstStatementKind kind) {
@@ -305,6 +305,9 @@ static int dump_declaration(FILE *output, const AstProgram *program,
         return 0;
     if (declaration->kind == AST_DECL_FUNCTION &&
         fprintf(output, " static=%d", declaration->as.function.is_static) < 0)
+        return 0;
+    if (declaration->kind == AST_DECL_FUNCTION && declaration->as.function.is_async &&
+        fputs(" async=1", output) == EOF)
         return 0;
     if (declaration->kind == AST_DECL_IMPORT) {
         if (fputs(" paths=[", output) == EOF) return 0;
