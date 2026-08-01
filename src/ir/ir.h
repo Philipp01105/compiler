@@ -19,7 +19,8 @@ typedef enum {
     IR_TYPE_POINTER,
     IR_TYPE_ARRAY,
     IR_TYPE_SLICE,
-    IR_TYPE_FUNCTION
+    IR_TYPE_FUNCTION,
+    IR_TYPE_FUTURE
 } IrTypeKind;
 
 typedef struct {
@@ -68,7 +69,10 @@ typedef enum {
     IR_OP_SLICE, IR_OP_SLICE_DATA, IR_OP_ARRAY_LITERAL,
     /* Ownership effects are explicit so optimization and code generation
        preserve exactly-once destruction. */
-    IR_OP_DROP, IR_OP_MOVE, IR_OP_REINIT, IR_OP_FREE_SLICE_BACKING
+    IR_OP_DROP, IR_OP_MOVE, IR_OP_REINIT, IR_OP_FREE_SLICE_BACKING,
+    /* A suspend point polls operand_a at a stable frame address. target_a is
+       its unique resume state; completion consumes the child exactly once. */
+    IR_OP_AWAIT
 } IrOpcode;
 
 typedef struct {
@@ -138,6 +142,11 @@ typedef struct {
     int is_drop_glue;
     int is_package_init;
     int is_package_cleanup;
+    int is_async;
+    IrTypeId future_type_id;
+    size_t async_state_count;
+    int async_frame_pinned;
+    unsigned async_frame_properties;
 } IrFunction;
 
 typedef struct {

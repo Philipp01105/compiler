@@ -12,6 +12,13 @@
 #include <string.h>
 
 static void write_x64(const Emitter *emitter, X64Instruction instruction) {
+    if (emitter->async_storage)
+        for (size_t i = 0; i < instruction.operand_count; i++) {
+            X64Operand *operand = &instruction.operands[i];
+            if (operand->kind == X64_OPERAND_MEMORY && operand->base != NULL &&
+                !strcmp(operand->base, "rbp") && operand->displacement < 0)
+                operand->base = "r14";
+        }
     SourceMapWriter *map = emitter->source_map;
     if (map != NULL) {
         if (map->has_source)
@@ -729,7 +736,7 @@ size_t aggregate_result_offset(const Emitter *emitter,
     size_t slots_before = 0;
     for (size_t i = 0; i < emitter->function->instruction_count; i++) {
         const IrInstruction *candidate = &emitter->function->instructions[i];
-        if ((candidate->opcode != IR_OP_CALL && candidate->opcode != IR_OP_ENUM_CONSTRUCT && candidate->opcode !=
+        if ((candidate->opcode != IR_OP_AWAIT && candidate->opcode != IR_OP_CALL && candidate->opcode != IR_OP_ENUM_CONSTRUCT && candidate->opcode !=
              IR_OP_SLICE && candidate->opcode != IR_OP_SUBSLICE &&
              candidate->opcode != IR_OP_ARRAY_LITERAL &&
              candidate->opcode != IR_OP_INTERFACE_PACK) ||
@@ -751,7 +758,7 @@ static size_t aggregate_result_slots(const Emitter *emitter) {
     size_t result = 0;
     for (size_t i = 0; i < emitter->function->instruction_count; i++) {
         const IrInstruction *instruction = &emitter->function->instructions[i];
-        if ((instruction->opcode == IR_OP_CALL || instruction->opcode == IR_OP_ENUM_CONSTRUCT || instruction->opcode ==
+        if ((instruction->opcode == IR_OP_AWAIT || instruction->opcode == IR_OP_CALL || instruction->opcode == IR_OP_ENUM_CONSTRUCT || instruction->opcode ==
              IR_OP_SLICE || instruction->opcode == IR_OP_SUBSLICE ||
              instruction->opcode == IR_OP_ARRAY_LITERAL ||
              instruction->opcode == IR_OP_INTERFACE_PACK) &&
@@ -766,7 +773,9 @@ static size_t parameter_copy_offset(const Emitter *emitter, size_t parameter_ind
     size_t slots_before = 0;
     for (size_t i = 0; i < parameter_index; i++)
         if (type_is_structure(emitter->module,
-                              emitter->function->parameters[i].type_id))
+                              emitter->function->parameters[i].type_id) ||
+            (emitter->function->is_async && emitter->module->types[
+                emitter->function->parameters[i].type_id].kind == IR_TYPE_ARRAY))
             slots_before += type_slots(emitter->module,
                                        emitter->function->parameters[i].type_id);
     size_t slots = type_slots(emitter->module,
@@ -843,6 +852,10 @@ static size_t aggregate_field_offset(const Emitter *emitter,
 static int emit_drop_type(Emitter *emitter, IrTypeId type_id) {
     if (type_id >= emitter->module->type_count) return 0;
     const IrType *type = &emitter->module->types[type_id];
+    if (type->kind == IR_TYPE_FUTURE) {
+        write_x64_0(emitter, X64_OP_UD2);
+        return 1;
+    }
     if (type->kind == IR_TYPE_ARRAY) {
         IrTypeLayout element;
         if (!ir_type_layout(emitter->module, type->element_type, &element))
@@ -1457,6 +1470,8 @@ static void emit_phi_moves(Emitter *emitter, size_t destination_label) {
     }
 }
 
+#include "ir_async.inc"
+
 static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                             size_t index) {
     const IrFunction *function = emitter->function;
@@ -1716,6 +1731,8 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             }
             return 1;
         }
+        case IR_OP_AWAIT:
+            return emit_async_await(emitter, instruction);
         case IR_OP_DROP:
         case IR_OP_MOVE:
         case IR_OP_REINIT:
@@ -1927,13 +1944,14 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                 int scalar = emitter->module->types[function->return_type_id].kind == IR_TYPE_PRIMITIVE;
                 if (scalar)
                     convert_rax(emitter, value->type, return_type);
-                if (scalar && return_type == TYPE_FLOAT)
+                if (!function->is_async && scalar && return_type == TYPE_FLOAT)
                     write_x64_2(emitter, X64_OP_MOVD, X64_WIDTH_NONE,
                                 x64_register("xmm0"), x64_register("eax"));
-                else if (scalar && return_type == TYPE_DOUBLE)
+                else if (!function->is_async && scalar && return_type == TYPE_DOUBLE)
                     write_x64_2(emitter, X64_OP_MOVQ, X64_WIDTH_NONE,
                                 x64_register("xmm0"), x64_register("rax"));
             }
+            if (function->is_async) async_complete(emitter);
             char epilogue[64];
             (void) snprintf(epilogue, sizeof(epilogue), ".LIR_epilogue_%zu",
                             emitter->function_index);
@@ -2428,6 +2446,8 @@ static int store_target_needs_no_value(const Emitter *emitter, size_t index) {
 }
 
 int emit_function(Emitter *emitter) {
+    emitter->async_storage = 0;
+    emitter->async_frame_bytes = 0;
     FILE *output = emitter->output;
     if (emitter->source_map != NULL)
         emitter->source_map->current_program = emitter->function->source_program;
@@ -2500,12 +2520,15 @@ int emit_function(Emitter *emitter) {
                 write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD, x64_memory(X64_WIDTH_QWORD, "rbx", 8),
                             x64_register("rax"));
             }
-        } else if (!is_length && type_is_structure(emitter->module, parameter->type_id)) {
+        } else if (!is_length && (type_is_structure(emitter->module, parameter->type_id) ||
+                   (emitter->function->is_async && emitter->module->types[parameter->type_id].kind == IR_TYPE_ARRAY))) {
             size_t copy_offset = parameter_copy_offset(emitter, p);
             size_t copy_slots = type_slots(emitter->module, parameter->type_id);
             write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD, x64_register("rbx"),
                         x64_memory(X64_WIDTH_NONE, "rbp", -(long long) copy_offset));
-            copy_aggregate(emitter, copy_slots, "rax", "rbx");
+            if (emitter->function->is_async) {
+                if (!copy_async_storage(emitter, parameter->type_id, "rax", "rbx")) return 0;
+            } else copy_aggregate(emitter, copy_slots, "rax", "rbx");
             write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
                         x64_register("rax"), x64_register("rbx"));
         }
@@ -2523,6 +2546,7 @@ int emit_function(Emitter *emitter) {
         write_local_store(emitter, "rax",
                           parameter_flag_offset(emitter, parameter));
     }
+    if (emitter->function->is_async && !async_construct_and_poll(emitter)) return 0;
     for (size_t i = 0; i < emitter->function->instruction_count; i++) {
         if (emitter->source_map != NULL) {
             emitter->source_map->current_ir_instruction = i;
@@ -2550,9 +2574,20 @@ int emit_function(Emitter *emitter) {
     }
     if (emitter->source_map != NULL) emitter->source_map->has_source = 0;
     write_immediate(emitter, "rax", 0);
+    if (emitter->function->is_async) {
+        async_complete(emitter);
+        char epilogue[80];
+        (void) snprintf(epilogue, sizeof(epilogue), ".LIR_epilogue_%zu", emitter->function_index);
+        write_x64_1(emitter, X64_OP_JMP, X64_WIDTH_NONE, x64_label(epilogue));
+        write_labelf(emitter, ".LIR_async_pending_%zu:\n", emitter->function_index);
+        write_immediate(emitter, "rax", 0);
+    }
     write_labelf(emitter, ".LIR_epilogue_%zu:\n", emitter->function_index);
+    emitter->async_storage = 0;
     write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD,
-                x64_register("rsp"), x64_memory(X64_WIDTH_NONE, "rbp", -8));
+                x64_register("rsp"), x64_memory(X64_WIDTH_NONE, "rbp", emitter->function->is_async ? -16 : -8));
+    if (emitter->function->is_async)
+        write_x64_1(emitter, X64_OP_POP, X64_WIDTH_QWORD, x64_register("r14"));
     write_x64_1(emitter, X64_OP_POP, X64_WIDTH_QWORD, x64_register("rbx"));
     write_x64_1(emitter, X64_OP_POP, X64_WIDTH_QWORD, x64_register("rbp"));
     write_x64_0(emitter, X64_OP_RET);

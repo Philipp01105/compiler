@@ -42,8 +42,7 @@ static int valid_feature_name(const char *name) {
 }
 
 static int supported_experimental_feature(const char *name) {
-    (void) name;
-    return 0;
+    return strcmp(name, "async") == 0;
 }
 
 static int add_manifest_feature(PackageLoader *loader, DmmModule *module, const char *name, const char *manifest) {

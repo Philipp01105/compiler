@@ -5,6 +5,9 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
+
+#include "ir_async_verify.inc"
 
 static int ir_verify_module_internal(const IrModule *module, int report);
 
@@ -12,7 +15,7 @@ static int instruction_produces_value(const IrInstruction *instruction) {
     IrOpcode opcode = instruction->opcode;
     return opcode == IR_OP_CONSTANT || opcode == IR_OP_FUNCTION_ADDRESS || opcode == IR_OP_LOAD ||
            opcode == IR_OP_UNARY || opcode == IR_OP_BINARY ||
-           (opcode == IR_OP_CALL && data_type_has_value(instruction->type)) ||
+           ((opcode == IR_OP_CALL || opcode == IR_OP_AWAIT) && data_type_has_value(instruction->type)) ||
            opcode == IR_OP_INDEX || opcode == IR_OP_SUBSLICE ||
            opcode == IR_OP_MEMBER || opcode == IR_OP_SLICE_LENGTH ||
            opcode == IR_OP_SLICE || opcode == IR_OP_SLICE_DATA ||
@@ -156,7 +159,19 @@ static int verify_instruction_types(const IrModule *module,
                                     size_t index) {
     const IrInstruction *a = verified_producer(function, producers, instruction->operand_a, index);
     const IrInstruction *b = verified_producer(function, producers, instruction->operand_b, index);
+    if (instruction->opcode == IR_OP_AWAIT) {
+        if (!function->is_async || a == NULL ||
+            module->types[a->type_id].kind != IR_TYPE_FUTURE ||
+            module->types[a->type_id].element_type != instruction->type_id ||
+            instruction->target_a == 0 ||
+            instruction->target_a > function->async_state_count) return 0;
+        for (size_t previous = 0; previous < index; previous++)
+            if (function->instructions[previous].opcode == IR_OP_AWAIT &&
+                function->instructions[previous].target_a == instruction->target_a) return 0;
+        return 1;
+    }
     switch (instruction->opcode) {
+        case IR_OP_AWAIT: return 0; /* checked above */
         case IR_OP_ENUM_CONSTRUCT: {
             const IrEnum *owner = NULL;
             const IrEnumVariant *variant = ir_variant(module, instruction->symbol_id, &owner);
@@ -344,7 +359,7 @@ static int verify_instruction_types(const IrModule *module,
                 }
             }
             if (callee == NULL || instruction->argument_count != callee->parameter_count ||
-                instruction->type_id != callee->return_type_id)
+                instruction->type_id != (callee->is_async ? callee->future_type_id : callee->return_type_id))
                 return 0;
             for (size_t argument = 0; argument < instruction->argument_count; argument++) {
                 const IrInstruction *value = verified_producer(function, producers,
@@ -375,6 +390,9 @@ static int verify_instruction_types(const IrModule *module,
             return instruction->symbol_id < module->semantics->symbol_count;
         case IR_OP_MOVE:
             return instruction->symbol_id < module->semantics->symbol_count &&
+                   (module->semantics->symbols[instruction->symbol_id].kind == SEMANTIC_SYMBOL_LOCAL ||
+                    module->semantics->symbols[instruction->symbol_id].kind == SEMANTIC_SYMBOL_PARAMETER ||
+                    module->semantics->symbols[instruction->symbol_id].kind == SEMANTIC_SYMBOL_VARIABLE) &&
                    (ir_type_properties(module, instruction->type_id) &
                     SEMANTIC_TYPE_MOVE_ONLY) != 0;
         case IR_OP_REINIT:
@@ -515,7 +533,7 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
     }
     for (size_t t = 0; t < module->type_count; t++) {
         const IrType *type = &module->types[t];
-        if (type->kind < IR_TYPE_PRIMITIVE || type->kind > IR_TYPE_FUNCTION) return 0;
+        if (type->kind < IR_TYPE_PRIMITIVE || type->kind > IR_TYPE_FUTURE) return 0;
         if (type->kind == IR_TYPE_PRIMITIVE &&
             type->primitive != TYPE_UNKNOWN &&
             (type->primitive < TYPE_INT || type->primitive > TYPE_NEVER))
@@ -523,7 +541,7 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
         if (type->kind == IR_TYPE_ARRAY && type->array_length == 0) return 0;
         if (type->kind != IR_TYPE_ARRAY && type->array_length != 0) return 0;
         if ((type->kind == IR_TYPE_POINTER || type->kind == IR_TYPE_ARRAY ||
-             type->kind == IR_TYPE_SLICE) &&
+             type->kind == IR_TYPE_SLICE || type->kind == IR_TYPE_FUTURE) &&
             (type->element_type == IR_TYPE_NONE || type->element_type >= t))
             return 0;
         if ((type->kind == IR_TYPE_PRIMITIVE || type->kind == IR_TYPE_NAMED) &&
@@ -816,6 +834,7 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                     if (instruction->target_a == instruction->target_b) valid = 0;
                     break;
                 case IR_OP_MEMBER:
+                case IR_OP_AWAIT:
                 case IR_OP_SLICE_LENGTH:
                 case IR_OP_SLICE_DATA:
                     REQUIRE_VALUE(instruction->operand_a);
@@ -881,7 +900,8 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
         }
         free(producers);
         free(labels);
-        if (!valid || !ir_verify_control_flow(module, function, ir_void_type(module, function->return_type_id))) {
+        if (!valid || !ir_verify_control_flow(module, function, ir_void_type(module, function->return_type_id)) ||
+            !verify_async_effects(module, function)) {
             if (report)
                 ir_report_failure(function, valid ? IR_VALUE_NONE : failing_instruction,
                                   "IR verification",

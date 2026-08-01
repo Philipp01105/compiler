@@ -28,7 +28,9 @@ typedef enum {
     SEMANTIC_TYPE_MOVE_ONLY = 1u << 1,
     SEMANTIC_TYPE_NEEDS_DROP = 1u << 2,
     SEMANTIC_TYPE_SEND = 1u << 3,
-    SEMANTIC_TYPE_SYNC = 1u << 4
+    SEMANTIC_TYPE_SYNC = 1u << 4,
+    /* A live value must be transferred or awaited, including inside aggregates. */
+    SEMANTIC_TYPE_MUST_CONSUME = 1u << 5
 } SemanticTypeProperties;
 
 typedef struct {
@@ -51,6 +53,8 @@ typedef struct {
     const void *node;
     size_t scope_depth;
     unsigned type_properties;
+    /* Per-constructor property: Future<T> alone does not describe captures. */
+    unsigned async_frame_properties;
 } SemanticSymbol;
 
 typedef struct {

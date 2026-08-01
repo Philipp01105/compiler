@@ -30,9 +30,41 @@ controls exported declarations and members. Imported nominal types retain their 
 discovery, visibility, `internal`, vendoring and `dmm manifest sync` contract is defined in
 [MODULE_SYSTEM.md](MODULE_SYSTEM.md).
 
-`async` and `await` are reserved by the parser but are not yet executable language features. Semantic analysis rejects
-async functions and await expressions; the `async` manifest feature is not enabled until Future lowering, pinning, and
-ownership checks are complete.
+The root manifest enables experimental async support with `features = ["async"]`. With that feature enabled,
+an `async func (...) -> T` call has type `Future<T>`, while its body returns `T`. `Future<T>` is a compiler-owned type
+with exactly one output type; `Future<void>` is valid. The consuming instance method `future.await()` is only valid
+inside an async function, takes no arguments, and produces the Future's output. For example,
+`var x:Future<int>=compute(); var y=x.await();` consumes `x` and gives `y` type `int`.
+The prefix form `await x` is not part of the language and is rejected. Futures are move-only, including when transferred through function values
+or generic functions. References to Futures cannot be awaited. Future output types are invariant: `Future<int>` does
+not convert to `Future<byte>` even though the corresponding scalar conversion exists.
+
+A live Future must be awaited or transferred on every reachable control-flow path. Discarding a Future expression,
+overwriting a live Future, or leaving its scope without consumption is an error. This requirement also propagates
+through aggregate fields and enum payloads. Existing restrictions on partial moves from aggregates still apply.
+Futures that capture checked reference parameters retain their loans across handle moves and forwarding calls;
+conflicting access to the origin is forbidden until consumption. A Future cannot escape a local borrow's scope or
+return a borrow of a local value. A borrowed await result remains tied to its origin. Async instance methods retain
+a loan on their receiver. References contained in captured aggregates retain their origins as well. A temporary
+owning slice cannot be captured as a borrowed parameter; bind its backing to an owner before constructing the Future.
+
+Each async call allocates its frame on the heap before returning the handle; it does not execute the function body.
+The frame is pinned from construction until cleanup. Moving a handle does not move its storage. Lowering emits a
+constructor, poll callback and cleanup callback, with persistent state, result storage, local values and drop flags.
+Stage 1 conservatively retains all frame storage across suspension. Await evaluates its operand once, polls its child,
+suspends on Pending, and resumes at its unique verified state. On Ready it moves the output and cleans up the child
+exactly once. Normal return and error propagation run the existing defer/destructor paths exactly once. Invalid
+resume states, polling a completed frame, and cleanup of an incomplete frame trap in the private ABI.
+Both ELF and COFF native backends support this at O0 and O1. A private deterministic test driver exercises polling;
+there is no public executor, spawn/cancel, socket or OS-I/O API in Stage 1. `main` remains synchronous.
+
+`Send` and `Sync` are compiler-derived, structurally through aggregate fields and enum payloads. Shared checked
+references are Send/Sync when their referent is Sync; mutable checked references are Send when their referent is Send.
+Raw pointers, slices without a checked owner, function values and dynamic interface values are conservative.
+A Future constructor receives Send only when its complete retained frame and output are Send. Futures with borrowed
+parameters or an instance receiver are not Send and cannot become spawn candidates. Unknown/erased Future captures
+remain conservative; `Future<T>` alone does not prove Send from `T`. Futures are not Sync because polling mutates them.
+There are no explicit unsafe Send/Sync implementations in Stage 1.
 
 The `core.AtomicBit` and `core.AtomicUsize` types are available independently of `async`. Construct them with
 `core.atomicBit(initial)` and `core.atomicUsize(initial)`. Their `load`, `store`, `swap`, and

@@ -550,7 +550,8 @@ static int pure(Pass *p, const IrInstruction *in) {
 static int memory_effect(const IrInstruction *in) {
     return in->opcode == IR_OP_STORE || in->opcode == IR_OP_DECLARE ||
            in->opcode == IR_OP_DROP || in->opcode == IR_OP_MOVE ||
-           in->opcode == IR_OP_REINIT || in->opcode == IR_OP_FREE_SLICE_BACKING || (
+           in->opcode == IR_OP_REINIT || in->opcode == IR_OP_FREE_SLICE_BACKING ||
+           in->opcode == IR_OP_AWAIT || (
                in->opcode == IR_OP_CALL || in->opcode == IR_OP_ENUM_CONSTRUCT) ||
            in->opcode == IR_OP_FREE || in->opcode == IR_OP_ALLOC ||
            (in->opcode == IR_OP_BINARY && in->type == TYPE_STRING);

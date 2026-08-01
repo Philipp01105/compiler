@@ -144,6 +144,11 @@ int pointer_expression(const AstExpression *expression);
 int semantic_type_is_move_only(const Analyzer *analyzer, size_t type_symbol_id);
 int semantic_type_needs_drop(const Analyzer *analyzer, size_t type_symbol_id);
 void derive_type_properties(Analyzer *analyzer);
+int semantic_async_enabled(const Analyzer *analyzer);
+int semantic_expression_is_future(const AstExpression *expression);
+unsigned semantic_declared_type_properties(const Analyzer *analyzer,
+                                           const AstProgram *program,
+                                           const AstType *type);
 int semantic_expression_is_move_only(const Analyzer *analyzer,
                                      const AstExpression *expression);
 void validate_function_borrows(Analyzer *analyzer,

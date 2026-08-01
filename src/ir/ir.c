@@ -288,6 +288,29 @@ static IrTypeId type_from_ast(IrModule *module, const AstProgram *program,
         }
         return result;
     }
+    if (type != NULL && type->kind == AST_TYPE_FUTURE) {
+        if (type->arguments == NULL || type->arguments->next != NULL) return IR_TYPE_NONE;
+        IrTypeId value = type_from_ast(module, program, &type->arguments->type);
+        if (value == IR_TYPE_NONE) return value;
+        value = intern_type(module, (IrType) {
+            .kind = IR_TYPE_FUTURE, .primitive = TYPE_UNKNOWN,
+            .symbol_id = AST_SYMBOL_NONE, .element_type = value
+        });
+        if (type->is_array || type->is_slice)
+            value = intern_type(module, (IrType) {
+                .kind = type->is_slice ? IR_TYPE_SLICE : IR_TYPE_ARRAY,
+                .primitive = TYPE_UNKNOWN, .symbol_id = AST_SYMBOL_NONE,
+                .element_type = value, .array_length = ast_array_length(program, type)
+            });
+        for (unsigned depth = 0; value != IR_TYPE_NONE &&
+             depth < type->pointer_depth + type->outer_pointer_depth +
+                     (type->borrow_kind != AST_BORROW_NONE); depth++)
+            value = intern_type(module, (IrType) {
+                .kind = IR_TYPE_POINTER, .primitive = TYPE_UNKNOWN,
+                .symbol_id = AST_SYMBOL_NONE, .element_type = value
+            });
+        return value;
+    }
     if (type != NULL && type->kind == AST_TYPE_FUNCTION) {
         if (type->function_generic_parameters != NULL) return IR_TYPE_NONE;
         size_t count = 0;
@@ -363,7 +386,8 @@ static IrTypeId type_from_expression(IrModule *module, const AstProgram *program
                                      const AstExpression *expression) {
     if (expression->has_resolved_ast_type &&
         (expression->resolved_ast_type.element_type != NULL ||
-         expression->resolved_ast_type.kind == AST_TYPE_FUNCTION))
+         expression->resolved_ast_type.kind == AST_TYPE_FUNCTION ||
+         expression->resolved_ast_type.kind == AST_TYPE_FUTURE))
         return type_from_ast(module,
                              expression->resolved_type_program != NULL
                                  ? expression->resolved_type_program : program,
@@ -841,6 +865,8 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         return phi->result;
     }
     size_t right = lower_expression(builder, expression->right);
+    if (expression->kind == AST_EXPR_AWAIT)
+        emit_move_if_owned(builder, expression->right);
     if ((expression->kind == AST_EXPR_CAST || expression->kind == AST_EXPR_FREE) &&
         expression->arguments != NULL)
         left = lower_expression(builder, expression->arguments);
@@ -855,7 +881,8 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
             break;
         case AST_EXPR_UNARY: opcode = IR_OP_UNARY;
             break;
-        case AST_EXPR_AWAIT: return IR_VALUE_NONE;
+        case AST_EXPR_AWAIT: opcode = IR_OP_AWAIT;
+            break;
         case AST_EXPR_BINARY: opcode = IR_OP_BINARY;
             break;
         case AST_EXPR_ENUM_CONSTRUCT: opcode = IR_OP_ENUM_CONSTRUCT;
@@ -969,11 +996,16 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
     }
     IrInstruction *instruction = emit(builder, opcode, expression->span);
     if (instruction == NULL) return IR_VALUE_NONE;
-    if (!((opcode == IR_OP_CALL || opcode == IR_OP_FREE) &&
+    if (!((opcode == IR_OP_CALL || opcode == IR_OP_FREE || opcode == IR_OP_AWAIT) &&
           !data_type_has_value(expression->resolved_type)))
         instruction->result = new_value(builder);
     instruction->operand_a = left;
     instruction->operand_b = right;
+    if (opcode == IR_OP_AWAIT) {
+        instruction->operand_a = right;
+        instruction->operand_b = IR_VALUE_NONE;
+        instruction->target_a = ++builder->function->async_state_count;
+    }
     instruction->auxiliary_token = expression->value_token;
     instruction->symbol_id = expression->resolved_symbol_id;
     instruction->operator_type = expression->operator_type;
@@ -1138,6 +1170,13 @@ static void register_local_drop(IrBuilder *builder, size_t symbol_id,
 
 static int expression_moves_ownership(const IrBuilder *builder,
                                       const AstExpression *expression) {
+    if (expression != NULL && expression->kind == AST_EXPR_NAME &&
+        expression->has_resolved_ast_type &&
+        expression->resolved_ast_type.kind == AST_TYPE_FUTURE &&
+        expression->resolved_borrow_kind == AST_BORROW_NONE &&
+        expression->resolved_pointer_depth == 0 &&
+        expression->resolved_outer_pointer_depth == 0 && !expression->resolved_is_slice)
+        return 1;
     if (expression == NULL || expression->kind != AST_EXPR_NAME ||
         expression->resolved_borrow_kind != AST_BORROW_NONE ||
         expression->resolved_pointer_depth != 0 ||
@@ -1798,10 +1837,21 @@ static int append_function(IrModule *module, const AstProgram *program,
         .return_type_id = type_from_ast(module, program, &declaration->as.function.return_type)
     };
     if (function->return_type_id == IR_TYPE_NONE) return 0;
+    function->is_async = declaration->as.function.is_async;
+    function->async_frame_pinned = function->is_async;
+    function->future_type_id = IR_TYPE_NONE;
+    if (function->is_async) {
+        function->future_type_id = intern_type(module, (IrType) {
+            .kind = IR_TYPE_FUTURE, .primitive = TYPE_UNKNOWN,
+            .symbol_id = AST_SYMBOL_NONE, .element_type = function->return_type_id
+        });
+        if (function->future_type_id == IR_TYPE_NONE) return 0;
+    }
     for (size_t i = 0; i < module->semantics->symbol_count; i++) {
         const SemanticSymbol *symbol = &module->semantics->symbols[i];
         if (symbol->kind == SEMANTIC_SYMBOL_FUNCTION && symbol->declaration == declaration) {
             function->symbol_id = symbol->id;
+            function->async_frame_properties = symbol->async_frame_properties;
             function->owner_symbol_id = symbol->owner_symbol_id;
             break;
         }

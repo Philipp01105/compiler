@@ -1,1 +1,1 @@
-async functions require Future lowering, which is not yet implemented
+async functions require the async manifest feature

@@ -22,10 +22,16 @@ typedef struct OwnershipDefer {
     struct OwnershipDefer *previous;
 } OwnershipDefer;
 
+typedef struct OwnershipScope {
+    const AstStatement *statements;
+    struct OwnershipScope *previous;
+} OwnershipScope;
+
 typedef struct OwnershipLoop {
     OwnershipFlow breaks;
     OwnershipFlow continues;
     const OwnershipDefer *defer_boundary;
+    const OwnershipScope *scope_boundary;
     struct OwnershipLoop *parent;
 } OwnershipLoop;
 
@@ -34,6 +40,8 @@ typedef struct {
     size_t count;
     OwnershipLoop *loop;
     size_t deferred_error_token;
+    OwnershipScope *scope;
+    const OwnershipDefer *active_defers;
 } OwnershipChecker;
 
 static OwnershipFlow flow_new(OwnershipChecker *checker, int reachable) {
@@ -128,6 +136,60 @@ static void ownership_error(OwnershipChecker *checker, size_t token,
                    ERR_SEM_INVALID_DECLARATION, message);
 }
 
+static int must_consume_symbol(const OwnershipChecker *checker, size_t id) {
+    if (id >= checker->count) return 0;
+    const SemanticSymbol *symbol = &checker->analyzer->model->symbols[id];
+    if (symbol->kind != SEMANTIC_SYMBOL_LOCAL && symbol->kind != SEMANTIC_SYMBOL_PARAMETER)
+        return 0;
+    if (symbol->resolved_borrow_kind == AST_BORROW_NONE &&
+        symbol->resolved_pointer_depth == 0 && symbol->resolved_outer_pointer_depth == 0 &&
+        !symbol->resolved_is_slice && symbol->resolved_named_symbol_id < checker->count)
+        return (semantic_symbol_type_properties(checker->analyzer->model,
+                                                symbol->resolved_named_symbol_id) &
+                SEMANTIC_TYPE_MUST_CONSUME) != 0;
+    return (semantic_declared_type_properties(checker->analyzer, symbol->source_program,
+                                              &symbol->declared_type) &
+            SEMANTIC_TYPE_MUST_CONSUME) != 0;
+}
+
+static int must_consume_expression(const OwnershipChecker *checker, const AstExpression *expression) {
+    if (expression == NULL || expression->resolved_borrow_kind != AST_BORROW_NONE ||
+        expression->resolved_pointer_depth != 0 || expression->resolved_outer_pointer_depth != 0 ||
+        expression->resolved_is_slice) return 0;
+    if (semantic_expression_is_future(expression)) return 1;
+    return (semantic_symbol_type_properties(checker->analyzer->model,
+                                            expression->resolved_named_symbol_id) &
+            SEMANTIC_TYPE_MUST_CONSUME) != 0;
+}
+
+static void finish_binding(OwnershipChecker *checker, OwnershipFlow *flow,
+                            size_t id, size_t token) {
+    if (must_consume_symbol(checker, id) && (flow->values[id] & OWNERSHIP_LIVE) != 0) {
+        ownership_error(checker, token,
+                        "A live Future must be awaited or transferred on every control-flow path; implicit drop is forbidden");
+        flow->values[id] = OWNERSHIP_UNINITIALIZED;
+    }
+}
+
+static void finish_scopes(OwnershipChecker *checker, OwnershipFlow *flow,
+                           const OwnershipScope *boundary, size_t token) {
+    for (const OwnershipScope *scope = checker->scope; scope != boundary && scope != NULL;
+         scope = scope->previous)
+        for (const AstStatement *statement = scope->statements; statement; statement = statement->next)
+            if (statement->kind == AST_STMT_VARIABLE)
+                finish_binding(checker, flow, statement->resolved_symbol_id, token);
+}
+
+static void finish_function(OwnershipChecker *checker, OwnershipFlow *flow, size_t token) {
+    finish_scopes(checker, flow, NULL, token);
+    for (size_t id = 0; id < checker->count; id++) {
+        const SemanticSymbol *symbol = &checker->analyzer->model->symbols[id];
+        if (symbol->kind == SEMANTIC_SYMBOL_PARAMETER &&
+            symbol->owner_symbol_id == checker->analyzer->current_function_symbol_id)
+            finish_binding(checker, flow, id, token);
+    }
+}
+
 static void deferred_use_after_move_error(OwnershipChecker *checker,
                                           size_t move_token) {
     const AstToken *defer_location = ast_program_token(
@@ -181,6 +243,8 @@ static int expression_available(OwnershipChecker *checker,
 
 static void read_expression(OwnershipChecker *checker, OwnershipFlow *flow,
                             const AstExpression *expression);
+static OwnershipFlow run_deferred(OwnershipChecker *checker, OwnershipFlow flow,
+                                  const OwnershipDefer *defer, const OwnershipDefer *boundary);
 static OwnershipFlow check_control_expression(OwnershipChecker *checker,
                                                const AstExpression *expression,
                                                OwnershipFlow flow,
@@ -222,6 +286,7 @@ static void read_call(OwnershipChecker *checker, OwnershipFlow *flow,
                       const AstExpression *expression) {
     read_expression(checker, flow, expression->left);
     const AstParameter *parameter = NULL;
+    const AstTypeArgument *callable_parameter = NULL;
     if (expression->resolved_symbol_id < checker->count) {
         const SemanticSymbol *function =
             &checker->analyzer->model->symbols[expression->resolved_symbol_id];
@@ -229,16 +294,22 @@ static void read_call(OwnershipChecker *checker, OwnershipFlow *flow,
             function->declaration != NULL)
             parameter = function->declaration->as.function.parameters;
     }
+    if (parameter == NULL && expression->left != NULL && expression->left->has_resolved_ast_type &&
+        expression->left->resolved_ast_type.kind == AST_TYPE_FUNCTION)
+        callable_parameter = expression->left->resolved_ast_type.function_parameters;
     for (const AstExpression *argument = expression->arguments;
          argument != NULL; argument = argument->next) {
-        if (parameter != NULL &&
-            parameter->type.borrow_kind == AST_BORROW_NONE &&
-            !(parameter->type.is_slice && argument->resolved_is_array) &&
+        const AstType *parameter_type = parameter != NULL ? &parameter->type :
+            callable_parameter != NULL ? &callable_parameter->type : NULL;
+        if (parameter_type != NULL &&
+            parameter_type->borrow_kind == AST_BORROW_NONE &&
+            !(parameter_type->is_slice && argument->resolved_is_array) &&
             semantic_expression_is_move_only(checker->analyzer, argument))
             consume_expression(checker, flow, argument);
         else
             read_expression(checker, flow, argument);
         if (parameter != NULL) parameter = parameter->next;
+        if (callable_parameter != NULL) callable_parameter = callable_parameter->next;
     }
 }
 
@@ -258,12 +329,23 @@ static void read_expression(OwnershipChecker *checker, OwnershipFlow *flow,
             read_call(checker, flow, expression);
             continue;
         }
+        if (expression->kind == AST_EXPR_AWAIT) {
+            consume_expression(checker, flow, expression->right);
+            continue;
+        }
         if (expression->kind == AST_EXPR_PROPAGATE) {
             if (semantic_expression_is_move_only(checker->analyzer,
                                                  expression->left))
                 consume_expression(checker, flow, expression->left);
             else
                 read_expression(checker, flow, expression->left);
+            /* The residual edge returns before the following statement. */
+            OwnershipFlow residual = flow_clone(checker, flow);
+            if (residual.values != NULL) {
+                residual = run_deferred(checker, residual, checker->active_defers, NULL);
+                finish_function(checker, &residual, expression->first_token);
+            }
+            flow_free(&residual);
             continue;
         }
         if (expression->kind == AST_EXPR_ARRAY_LITERAL ||
@@ -321,6 +403,7 @@ static OwnershipFlow check_loop(OwnershipChecker *checker,
         .breaks = flow_new(checker, 0),
         .continues = flow_new(checker, 0),
         .defer_boundary = defers,
+        .scope_boundary = checker->scope,
         .parent = checker->loop
     };
     checker->loop = &loop;
@@ -455,8 +538,12 @@ static OwnershipFlow check_statements_tail(OwnershipChecker *checker,
                                            const OwnershipDefer *inherited_defers,
                                            const AstExpression *tail,
                                            int consuming) {
+    OwnershipScope scope = {.statements = statement, .previous = checker->scope};
+    checker->scope = &scope;
+    const OwnershipDefer *saved_defers = checker->active_defers;
     const OwnershipDefer *defers = inherited_defers;
     for (; statement != NULL && flow.reachable; statement = statement->next) {
+        checker->active_defers = defers;
         switch (statement->kind) {
             case AST_STMT_VARIABLE:
                 if (statement->value != NULL) {
@@ -468,7 +555,9 @@ static OwnershipFlow check_statements_tail(OwnershipChecker *checker,
                 }
                 if (statement->resolved_symbol_id < checker->count &&
                     move_only_symbol(checker, statement->resolved_symbol_id)) {
-                    flow.values[statement->resolved_symbol_id] = OWNERSHIP_LIVE;
+                    flow.values[statement->resolved_symbol_id] = statement->value == NULL &&
+                        must_consume_symbol(checker, statement->resolved_symbol_id)
+                            ? OWNERSHIP_UNINITIALIZED : OWNERSHIP_LIVE;
                     flow.move_tokens[statement->resolved_symbol_id] =
                         AST_TOKEN_NONE;
                 }
@@ -499,6 +588,8 @@ static OwnershipFlow check_statements_tail(OwnershipChecker *checker,
                     statement->expression->resolved_symbol_id < checker->count &&
                     move_only_symbol(checker,
                                      statement->expression->resolved_symbol_id)) {
+                    finish_binding(checker, &flow, statement->expression->resolved_symbol_id,
+                                   statement->first_token);
                     flow.values[statement->expression->resolved_symbol_id] =
                         OWNERSHIP_LIVE;
                     flow.move_tokens[
@@ -508,12 +599,18 @@ static OwnershipFlow check_statements_tail(OwnershipChecker *checker,
                 break;
             case AST_STMT_EXPRESSION:
                 read_expression(checker, &flow, statement->expression);
+                if (must_consume_expression(checker, statement->expression))
+                    ownership_error(checker, statement->first_token,
+                                    "A Future expression must be awaited or transferred; implicit drop is forbidden");
                 if (statement->expression != NULL &&
                     statement->expression->resolved_type == TYPE_NEVER)
                     flow.reachable = 0;
                 break;
             case AST_STMT_DEFER:
                 read_expression(checker, &flow, statement->expression);
+                if (must_consume_expression(checker, statement->expression))
+                    ownership_error(checker, statement->first_token,
+                                    "A deferred call cannot discard a Future; await or transfer it in a deferred closure");
                 if (statement->body != NULL) {
                     OwnershipDefer *defer = malloc(sizeof(*defer));
                     if (defer == NULL) {
@@ -535,12 +632,15 @@ static OwnershipFlow check_statements_tail(OwnershipChecker *checker,
                 if (statement->value == NULL ||
                     statement->value->resolved_type != TYPE_NEVER)
                     flow = run_deferred(checker, flow, defers, NULL);
+                finish_function(checker, &flow, statement->first_token);
                 flow.reachable = 0;
                 break;
             case AST_STMT_BREAK:
                 if (checker->loop != NULL) {
                     flow = run_deferred(checker, flow, defers,
                                         checker->loop->defer_boundary);
+                    finish_scopes(checker, &flow, checker->loop->scope_boundary,
+                                  statement->first_token);
                     flow_merge(checker, &checker->loop->breaks, &flow);
                 }
                 flow.reachable = 0;
@@ -549,6 +649,8 @@ static OwnershipFlow check_statements_tail(OwnershipChecker *checker,
                 if (checker->loop != NULL) {
                     flow = run_deferred(checker, flow, defers,
                                         checker->loop->defer_boundary);
+                    finish_scopes(checker, &flow, checker->loop->scope_boundary,
+                                  statement->first_token);
                     flow_merge(checker, &checker->loop->continues, &flow);
                 }
                 flow.reachable = 0;
@@ -604,11 +706,16 @@ static OwnershipFlow check_statements_tail(OwnershipChecker *checker,
     }
     if (flow.reachable)
         flow = run_deferred(checker, flow, defers, inherited_defers);
+    if (flow.reachable)
+        finish_scopes(checker, &flow, scope.previous,
+                      scope.statements == NULL ? AST_TOKEN_NONE : scope.statements->first_token);
     while (defers != inherited_defers) {
         const OwnershipDefer *previous = defers->previous;
         free((OwnershipDefer *) defers);
         defers = previous;
     }
+    checker->scope = scope.previous;
+    checker->active_defers = saved_defers;
     return flow;
 }
 
@@ -640,5 +747,6 @@ void validate_function_ownership(Analyzer *analyzer,
             flow.move_tokens[parameter->resolved_symbol_id] = AST_TOKEN_NONE;
         }
     flow = check_statements(&checker, function->as.function.body, flow, NULL);
+    if (flow.reachable) finish_function(&checker, &flow, function->first_token);
     flow_free(&flow);
 }

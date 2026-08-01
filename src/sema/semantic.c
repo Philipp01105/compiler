@@ -79,6 +79,10 @@ size_t resolve_named_symbol_id(const Analyzer *analyzer,
 void add_global(Analyzer *analyzer, AstDeclarationNode *declaration,
                        SemanticSymbolKind kind, size_t owner_token) {
     const char *name = ast_program_lexeme(analyzer->program, declaration->name_token);
+    if ((kind == SEMANTIC_SYMBOL_STRUCT || kind == SEMANTIC_SYMBOL_ENUM ||
+         kind == SEMANTIC_SYMBOL_INTERFACE) && strcmp(name, "Future") == 0)
+        semantic_error(analyzer, declaration->name_token, ERROR_CATEGORY_SEMANTIC,
+                       ERR_SEM_INVALID_DECLARATION, "Future is a compiler-owned type name");
     if (owner_token == AST_TOKEN_NONE && kind == SEMANTIC_SYMBOL_FUNCTION &&
         reserved_link_name(name))
         semantic_error(analyzer, declaration->name_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_INVALID_DECLARATION,
@@ -287,6 +291,14 @@ LocalSymbol *push_local(Analyzer *analyzer, size_t name_token, AstType type,
         local->resolved_ast_type = type;
         local->resolved_type_program = analyzer->program;
         local->has_resolved_ast_type = 1;
+    }
+    if (local->has_resolved_ast_type && local->resolved_ast_type.kind == AST_TYPE_FUTURE) {
+        SemanticSymbol *binding = &analyzer->model->symbols[local->symbol_id];
+        binding->declared_type = argument_type_copy(analyzer,
+            local->resolved_type_program != NULL ? local->resolved_type_program : analyzer->program,
+            local->resolved_ast_type);
+        binding->type_properties = semantic_declared_type_properties(
+            analyzer, analyzer->program, &binding->declared_type);
     }
     local->is_constant = is_constant;
     local->moved = 0;
@@ -575,6 +587,12 @@ int expression_to_declared_type_allowed(const Analyzer *analyzer,
                                                const AstProgram *type_program,
                                                const AstType *type) {
     if (expression == NULL || type == NULL) return 0;
+    if (type->kind == AST_TYPE_FUTURE || semantic_expression_is_future(expression)) {
+        if (type->kind != AST_TYPE_FUTURE || !semantic_expression_is_future(expression)) return 0;
+        return ast_concrete_type_equal(type_program, type,
+            expression->resolved_type_program != NULL ? expression->resolved_type_program : analyzer->program,
+            &expression->resolved_ast_type);
+    }
     if (type->kind == AST_TYPE_FUNCTION && !type->is_array && !type->is_slice &&
         type->pointer_depth == 0 && type->outer_pointer_depth == 0) {
         if (!expression->has_resolved_ast_type ||
@@ -670,6 +688,14 @@ int expression_assignment_allowed(const Analyzer *analyzer,
                                          const AstExpression *source,
                                          const AstExpression *target) {
     if (source == NULL || target == NULL) return 0;
+    if (semantic_expression_is_future(source) || semantic_expression_is_future(target)) {
+        if (!semantic_expression_is_future(source) || !semantic_expression_is_future(target)) return 0;
+        return ast_concrete_type_equal(
+            source->resolved_type_program != NULL ? source->resolved_type_program : analyzer->program,
+            &source->resolved_ast_type,
+            target->resolved_type_program != NULL ? target->resolved_type_program : analyzer->program,
+            &target->resolved_ast_type);
+    }
     if (source->has_resolved_ast_type && target->has_resolved_ast_type &&
         (source->resolved_ast_type.kind == AST_TYPE_FUNCTION ||
          target->resolved_ast_type.kind == AST_TYPE_FUNCTION) &&
@@ -1764,6 +1790,9 @@ static int known_declared_type_with_binders(const Analyzer *analyzer,
     if (type == NULL || type->kind == AST_TYPE_INFERRED ||
         primitive_type(analyzer->program, type) != TYPE_UNKNOWN)
         return 1;
+    if (type->kind == AST_TYPE_FUTURE)
+        return type->arguments != NULL && type->arguments->next == NULL &&
+               known_declared_type_with_binders(analyzer, &type->arguments->type, binders);
     if (type->kind == AST_TYPE_NAMED) {
         const char *name = ast_program_lexeme(analyzer->program,
                                               type->name_token);

@@ -293,6 +293,12 @@ static AstType parse_type(SyntaxParser *parser) {
             } while (match(parser, TOKEN_COMMA));
             (void) consume(parser, TOKEN_GREATER);
         }
+        if (strcmp(ast_program_lexeme(parser->program, type.name_token), "Future") == 0) {
+            type.kind = AST_TYPE_FUTURE;
+            if (type.arguments == NULL || type.arguments->next != NULL)
+                parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
+                               "Future requires exactly one result type");
+        }
     }
     while (match(parser, TOKEN_LBRACKET)) {
         if (type.is_array || type.is_slice) {
@@ -658,6 +664,23 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
             (void) consume(parser, TOKEN_RBRACKET);
             expression = index;
         } else if (match(parser, TOKEN_DOT)) {
+            if (match(parser, TOKEN_KEYWORD_AWAIT)) {
+                AstExpression *await = new_expression(parser, AST_EXPR_AWAIT, first);
+                (void) consume(parser, TOKEN_LPAREN);
+                if (!check(parser, TOKEN_RPAREN)) {
+                    parser_failure(parser, ERR_PARSE_EXPECTED_TOKEN,
+                                   "Future.await() takes no arguments");
+                    break;
+                }
+                (void) consume(parser, TOKEN_RPAREN);
+                if (await != NULL) {
+                    await->operator_type = TOKEN_KEYWORD_AWAIT;
+                    await->right = expression;
+                }
+                expression = await;
+                finish_expression(parser, expression);
+                continue;
+            }
             if (match(parser, TOKEN_LPAREN)) {
                 AstExpression *cast = new_expression(parser, AST_EXPR_CAST, first);
                 AstType target = parse_type(parser);
@@ -715,14 +738,18 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
 }
 
 static AstExpression *parse_unary(SyntaxParser *parser) {
+    if (check(parser, TOKEN_KEYWORD_AWAIT)) {
+        parser_failure(parser, ERR_PARSE_UNEXPECTED_TOKEN,
+                       "Prefix await was removed; use future.await()");
+        return new_expression(parser, AST_EXPR_ERROR, parser->current);
+    }
     if (type_metadata_ahead(parser)) return parse_primary(parser);
     AstExpression *operators[AST_MAX_PARSE_DEPTH];
     size_t count = 0;
     for (;;) {
         TokenType type = current_type(parser);
         if (type != TOKEN_BANG && type != TOKEN_MINUS &&
-            type != TOKEN_AMPERSAND && type != TOKEN_STAR &&
-            type != TOKEN_KEYWORD_AWAIT)
+            type != TOKEN_AMPERSAND && type != TOKEN_STAR)
             break;
         if (parser->expression_depth + count >= AST_MAX_PARSE_DEPTH) {
             parser_failure(parser, ERR_PARSE_TOO_MANY_ERRORS,
@@ -731,7 +758,7 @@ static AstExpression *parse_unary(SyntaxParser *parser) {
         }
         size_t first = parser->current++;
         AstExpression *expression = new_expression(parser,
-                                                   type == TOKEN_KEYWORD_AWAIT ? AST_EXPR_AWAIT : AST_EXPR_UNARY,
+                                                   AST_EXPR_UNARY,
                                                    first);
         if (expression != NULL) {
             expression->operator_type = type;

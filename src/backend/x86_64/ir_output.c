@@ -357,7 +357,7 @@ static int emit_file(Emitter *emitter, int deterministic) {
                 if (function->instructions[i].is_slice) slots++;
                 if (slots == 0 || declarations > SIZE_MAX - slots) return 0;
                 declarations += slots;
-            } else if ((function->instructions[i].opcode == IR_OP_CALL || function->instructions[i].opcode ==
+            } else if ((function->instructions[i].opcode == IR_OP_AWAIT || function->instructions[i].opcode == IR_OP_CALL || function->instructions[i].opcode ==
                         IR_OP_ENUM_CONSTRUCT || function->instructions[i].opcode == IR_OP_SLICE ||
                         function->instructions[i].opcode == IR_OP_SUBSLICE ||
                         function->instructions[i].opcode == IR_OP_ARRAY_LITERAL ||
@@ -371,7 +371,8 @@ static int emit_file(Emitter *emitter, int deterministic) {
                 aggregate_results += slots;
             }
         for (size_t p = 0; p < function->parameter_count; p++) {
-            if (!type_is_structure(emitter->module, function->parameters[p].type_id)) continue;
+            if (!type_is_structure(emitter->module, function->parameters[p].type_id) &&
+                !(function->is_async && emitter->module->types[function->parameters[p].type_id].kind == IR_TYPE_ARRAY)) continue;
             size_t parameter_slots = type_slots(emitter->module,
                                                 function->parameters[p].type_id);
             if (parameter_slots == 0 || aggregate_parameters > SIZE_MAX - parameter_slots)

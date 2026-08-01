@@ -200,6 +200,18 @@ if (BUILD_TESTING)
     add_executable(dmm_foundation_test
             tests/unit/foundation_test.c
             ${DMM_FUZZ_PIPELINE_SOURCES})
+    add_executable(dmm_async_semantic_test
+            tests/unit/async_semantic_test.c
+            ${DMM_FUZZ_PIPELINE_SOURCES})
+    target_include_directories(dmm_async_semantic_test PRIVATE ${DMM_INCLUDE_DIRS})
+    add_test(NAME async_semantic_unit COMMAND dmm_async_semantic_test)
+    set_tests_properties(async_semantic_unit PROPERTIES LABELS "unit;frontend;sema;async;safety")
+    add_test(NAME async_frontend_contract
+            COMMAND ${CMAKE_COMMAND}
+            -DCOMPILER=$<TARGET_FILE:compiler>
+            -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/async_frontend_test
+            -P ${CMAKE_SOURCE_DIR}/tests/async_frontend_test.cmake)
+    set_tests_properties(async_frontend_contract PROPERTIES LABELS "integration;frontend;sema;async;safety")
     target_include_directories(dmm_foundation_test PRIVATE
             ${DMM_INCLUDE_DIRS}
             ${CMAKE_SOURCE_DIR}/tests/fuzz)
@@ -237,6 +249,11 @@ if (BUILD_TESTING)
 
     set(DMM_ASSEMBLER "${CMAKE_C_COMPILER}" CACHE FILEPATH
             "C compiler used to assemble and link generated code")
+    add_test(NAME async_runtime_contract COMMAND ${CMAKE_COMMAND}
+            -DCOMPILER=$<TARGET_FILE:compiler> -DASSEMBLER=${DMM_ASSEMBLER}
+            -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/async_runtime_test
+            -P ${CMAKE_SOURCE_DIR}/tests/async_runtime_test.cmake)
+    set_tests_properties(async_runtime_contract PROPERTIES LABELS "integration;async;ir;backend;execution;safety")
     if (NOT EXISTS "${DMM_ASSEMBLER}")
         message(FATAL_ERROR
                 "BUILD_TESTING is ON, but DMM_ASSEMBLER does not exist: ${DMM_ASSEMBLER}")
@@ -567,6 +584,7 @@ if (BUILD_TESTING)
 
     if (DMM_SANITIZERS)
         foreach (test_target
+                dmm_async_semantic_test
                 dmm_foundation_test
                 dmm_resource_fault_test
                 dmm_optimizer_test

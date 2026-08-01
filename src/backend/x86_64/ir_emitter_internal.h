@@ -27,6 +27,8 @@ typedef struct {
     size_t bounds_sequence;
     SourceMapWriter *source_map;
     NativeObject *native;
+    int async_storage;
+    size_t async_frame_bytes;
 } Emitter;
 
 int map_quoted(FILE *output, const char *text);

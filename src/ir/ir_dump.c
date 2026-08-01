@@ -30,9 +30,9 @@ static const char *opcode_name(IrOpcode opcode) {
         "constant", "function-address", "load", "declare", "store", "interface-pack", "unary",
         "binary", "call", "index", "subslice", "member", "slice-length", "cast", "alloc", "free",
         "return", "branch", "jump", "label", "phi", "enum-construct", "enum-is", "enum-payload", "trap", "slice",
-        "slice-data", "array-literal", "drop", "move", "reinit", "free-slice-backing"
+        "slice-data", "array-literal", "drop", "move", "reinit", "free-slice-backing", "await"
     };
-    return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_FREE_SLICE_BACKING ? names[opcode] : "invalid";
+    return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_AWAIT ? names[opcode] : "invalid";
 }
 
 static const char *operator_name(TokenType type) {
@@ -99,6 +99,9 @@ static int dump_types(FILE *output, const IrModule *module) {
                 break;
             case IR_TYPE_SLICE:
                 if (fprintf(output, "slice element=@%zu", type->element_type) < 0) return 0;
+                break;
+            case IR_TYPE_FUTURE:
+                if (fprintf(output, "future output=@%zu pinned=1", type->element_type) < 0) return 0;
                 break;
             case IR_TYPE_FUNCTION: {
                 if (type->signature_id >= module->signature_count) return 0;
@@ -273,6 +276,11 @@ int ir_dump_function(FILE *output, const IrModule *module, size_t function_index
                 function->return_type_id, function->parameter_count,
                 function->instruction_count) < 0)
         return 0;
+
+    if (function->is_async && fprintf(output,
+        "  async constructor=1 poll=1 cleanup=1 pinned=%d states=%zu future=@%zu send=%d sync=0\n",
+        function->async_frame_pinned, function->async_state_count, function->future_type_id,
+        (function->async_frame_properties & SEMANTIC_TYPE_SEND) != 0) < 0) return 0;
 
     for (size_t p = 0; p < function->parameter_count; p++) {
         const IrParameter *parameter = &function->parameters[p];

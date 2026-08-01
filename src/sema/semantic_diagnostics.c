@@ -134,6 +134,19 @@ static void diagnostic_ast_type(DiagnosticText *text, const Analyzer *analyzer,
             diagnostic_append(text, "[%zu]", type->resolved_array_length);
         return;
     }
+    if (type->kind == AST_TYPE_FUTURE) {
+        if (type->borrow_kind != AST_BORROW_NONE)
+            diagnostic_append(text, type->borrow_kind == AST_BORROW_MUTABLE ? "&mut " : "&");
+        for (unsigned i = 0; i < type->pointer_depth + type->outer_pointer_depth; i++)
+            diagnostic_append(text, "*");
+        diagnostic_append(text, "Future<");
+        if (type->arguments != NULL)
+            diagnostic_ast_type(text, analyzer, program, &type->arguments->type);
+        diagnostic_append(text, ">");
+        if (type->is_slice) diagnostic_append(text, "[]");
+        else if (type->is_array) diagnostic_append(text, "[%zu]", type->resolved_array_length);
+        return;
+    }
     if (type->kind == AST_TYPE_FUNCTION) {
         for (unsigned i = 0; i < type->pointer_depth + type->outer_pointer_depth; i++)
             diagnostic_append(text, "*");
@@ -211,7 +224,8 @@ void conversion_error(Analyzer *analyzer, const AstExpression *value,
                              const AstExpression *expected_value, const char *reason) {
     // An unresolved value already has a name/type diagnostic; avoid a follow-up conversion error.
     if (value->resolved_type == TYPE_UNKNOWN && value->resolved_named_symbol_id == AST_SYMBOL_NONE &&
-        !(value->has_resolved_ast_type && value->resolved_ast_type.kind == AST_TYPE_FUNCTION)) return;
+          !(value->has_resolved_ast_type && (value->resolved_ast_type.kind == AST_TYPE_FUNCTION ||
+                                           value->resolved_ast_type.kind == AST_TYPE_FUTURE))) return;
     DiagnosticText message = {0};
     diagnostic_append(&message, "%s; got '", reason);
     const char *length = NULL;
@@ -221,7 +235,8 @@ void conversion_error(Analyzer *analyzer, const AstExpression *value,
     }
     if (value->has_resolved_ast_type &&
         (value->resolved_ast_type.element_type != NULL ||
-         value->resolved_ast_type.kind == AST_TYPE_FUNCTION))
+           value->resolved_ast_type.kind == AST_TYPE_FUNCTION ||
+           value->resolved_ast_type.kind == AST_TYPE_FUTURE))
         diagnostic_ast_type(
             &message, analyzer,
             value->resolved_type_program != NULL
@@ -242,13 +257,14 @@ void conversion_error(Analyzer *analyzer, const AstExpression *value,
             expected_length = ast_program_lexeme(symbol->source_program, symbol->declared_type.array_length_token);
         }
         if (expected_value->resolved_type == TYPE_UNKNOWN && expected_value->resolved_named_symbol_id ==
-            AST_SYMBOL_NONE) {
+            AST_SYMBOL_NONE && !semantic_expression_is_future(expected_value)) {
             free(message.text);
             return;
         }
         if (expected_value->has_resolved_ast_type &&
             (expected_value->resolved_ast_type.element_type != NULL ||
-             expected_value->resolved_ast_type.kind == AST_TYPE_FUNCTION))
+             expected_value->resolved_ast_type.kind == AST_TYPE_FUNCTION ||
+             expected_value->resolved_ast_type.kind == AST_TYPE_FUTURE))
             diagnostic_ast_type(
                 &message, analyzer,
                 expected_value->resolved_type_program != NULL

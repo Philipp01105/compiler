@@ -205,12 +205,12 @@ done:
 
 static const char *cfg_opcode_name(IrOpcode opcode) {
     static const char *names[] = {
-        "constant", "function-address", "load", "declare", "store", "unary", "binary", "call", "index", "subslice", "member",
+        "constant", "function-address", "load", "declare", "store", "interface-pack", "unary", "binary", "call", "index", "subslice", "member",
         "slice-length", "cast", "alloc", "free", "return", "branch", "jump", "label", "phi",
         "enum-construct", "enum-is", "enum-payload", "trap", "slice", "slice-data", "array-literal",
-        "drop", "move", "reinit", "free-slice-backing"
+        "drop", "move", "reinit", "free-slice-backing", "await"
     };
-    return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_FREE_SLICE_BACKING ? names[opcode] : "invalid";
+    return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_AWAIT ? names[opcode] : "invalid";
 }
 
 static int cfg_quoted(FILE *output, const char *text) {

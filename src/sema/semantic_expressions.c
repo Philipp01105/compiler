@@ -92,6 +92,23 @@ void set_expression_declared_type(Analyzer *analyzer,
     expression->has_resolved_ast_type = 1;
 }
 
+static AstType future_of_type(Analyzer *analyzer, const AstProgram *program, const AstType *result) {
+    AstType future = {.kind = AST_TYPE_FUTURE, .array_length_token = AST_TOKEN_NONE};
+    AstTypeArgument *output = ast_program_alloc(analyzer->program, sizeof(*output));
+    if (output == NULL) {
+        analyzer->allocation_failed = 1;
+        future.invalid_substitution = 1;
+        return future;
+    }
+    output->type = *result;
+    future.arguments = output;
+    AstProgram *saved_program = analyzer->program;
+    analyzer->program = (AstProgram *) program;
+    future.name_token = concrete_token(analyzer, TOKEN_IDENTIFIER, "Future");
+    analyzer->program = saved_program;
+    return future;
+}
+
 static AstType callable_type(Analyzer *analyzer, const SemanticSymbol *function,
                              int include_receiver) {
     AstType type = {0};
@@ -127,6 +144,8 @@ static AstType callable_type(Analyzer *analyzer, const SemanticSymbol *function,
     AstType *result = ast_program_alloc(analyzer->program, sizeof(*result));
     if (result != NULL) {
         *result = function->declaration->as.function.return_type;
+        if (function->declaration->as.function.is_async)
+            *result = future_of_type(analyzer, function->source_program, result);
         type.function_return_type = result;
     } else analyzer->allocation_failed = 1;
     return type;
@@ -762,12 +781,27 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
         analyze_expression_context(analyzer, argument, 0);
 
     if (expression->kind == AST_EXPR_AWAIT) {
-        semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_SEMANTIC,
-                       ERR_SEM_INVALID_DECLARATION,
-                       analyzer->current_function != NULL &&
-                       analyzer->current_function->as.function.is_async
-                           ? "await requires Future lowering, which is not yet implemented"
-                           : "await is only valid inside an async function");
+        if (analyzer->current_function == NULL || !analyzer->current_function->as.function.is_async)
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_SEMANTIC,
+                           ERR_SEM_INVALID_DECLARATION, "await is only valid inside an async function");
+        else if (!semantic_expression_is_future(expression->right) ||
+                 expression->right->resolved_ast_type.pointer_depth != 0 ||
+                 expression->right->resolved_ast_type.outer_pointer_depth != 0 ||
+                 expression->right->resolved_ast_type.borrow_kind != AST_BORROW_NONE ||
+                 expression->right->resolved_ast_type.is_array ||
+                 expression->right->resolved_ast_type.is_slice)
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE,
+                           ERR_TYPE_INVALID_OPERATION, "await requires an owned Future value");
+        else if (expression->right->resolved_ast_type.arguments != NULL) {
+            const AstProgram *source = expression->right->resolved_type_program != NULL
+                ? expression->right->resolved_type_program : analyzer->program;
+            AstType output = expression->right->resolved_ast_type.arguments->type;
+            AstProgram *saved = analyzer->program;
+            analyzer->program = (AstProgram *) source;
+            validate_array_shape(analyzer, &output);
+            analyzer->program = saved;
+            set_expression_declared_type(analyzer, expression, source, &output);
+        }
         return;
     }
 
@@ -1493,6 +1527,11 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
         if (expression->resolved_symbol_id < analyzer->model->symbol_count) {
             const SemanticSymbol *callee =
                 &analyzer->model->symbols[expression->resolved_symbol_id];
+            if (callee->kind == SEMANTIC_SYMBOL_FUNCTION && callee->declaration != NULL &&
+                callee->declaration->as.function.is_async) {
+                AstType future = future_of_type(analyzer, callee->source_program, &callee->declared_type);
+                set_expression_declared_type(analyzer, expression, callee->source_program, &future);
+            }
             if (callee->kind == SEMANTIC_SYMBOL_FUNCTION &&
                 callee->declaration != NULL &&
                 callee->declaration->as.function.returns_owned_slice_backing)
@@ -1657,6 +1696,8 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
         expression->resolved_array_length = expression->allocated_type.resolved_array_length;
     else if (expression->kind == AST_EXPR_RESERVE)
         expression->resolved_array_length = expression->allocated_type.resolved_array_length;
+    else if (expression->has_resolved_ast_type && expression->resolved_is_array)
+        expression->resolved_array_length = expression->resolved_ast_type.resolved_array_length;
     else if (expression->resolved_symbol_id < analyzer->model->symbol_count)
         expression->resolved_array_length = analyzer->model->symbols[expression->resolved_symbol_id].declared_type.
                 resolved_array_length;

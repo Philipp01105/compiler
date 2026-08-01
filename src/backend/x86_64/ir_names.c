@@ -51,6 +51,9 @@ static int mangle_type(const IrModule *module, IrTypeId type_id, char *buffer,
         if (type->primitive < TYPE_INT || type->primitive > TYPE_NEVER) return 0;
         return mangle_append(buffer, buffer_size, used, codes[type->primitive]);
     }
+    if (type->kind == IR_TYPE_FUTURE)
+        return mangle_append(buffer, buffer_size, used, "h") &&
+               mangle_type(module, type->element_type, buffer, buffer_size, used, depth + 1U);
     if (type->kind == IR_TYPE_POINTER)
         return mangle_append(buffer, buffer_size, used, "p") &&
                mangle_type(module, type->element_type, buffer, buffer_size, used, depth + 1U);

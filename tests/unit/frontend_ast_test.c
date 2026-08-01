@@ -107,7 +107,7 @@ int main(int argc, char **argv) {
     static const char async_source[] =
         "package main;\n"
         "async func pending() -> int { return 4; }\n"
-        "async func main() -> int { return await pending(); }\n";
+        "async func main() -> int { return pending().await(); }\n";
     program = frontend_parse_source(async_source, strlen(async_source),
                                     "<async-syntax>", &options);
     const AstDeclarationNode *pending = program == NULL ? NULL : program->root;

@@ -660,9 +660,10 @@ int main(int argc, char *argv[]) {
                    ast_stats.unreachable_statements);
         module = ir_lower_program(program, semantics);
         if (module == NULL) {
-            error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
-                         ERR_COMP_INTERNAL_FAILURE, source_file,
-                         "Could not create lowering module");
+            if (error_handler_get_error_count(error_handler) == 0)
+                error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
+                             ERR_COMP_INTERNAL_FAILURE, source_file,
+                             "Could not create lowering module");
             error_handler_flush(error_handler);
             free(generated_output);
             semantic_model_free(semantics);

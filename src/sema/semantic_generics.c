@@ -61,6 +61,10 @@ static AstType expression_shape_copy(Analyzer *analyzer,
 }
 
 AstType inferred_argument_type(Analyzer *analyzer, const AstExpression *value) {
+    if (value->has_resolved_ast_type && value->resolved_ast_type.kind == AST_TYPE_FUTURE)
+        return argument_type_copy(analyzer,
+            value->resolved_type_program != NULL ? value->resolved_type_program : analyzer->program,
+            value->resolved_ast_type);
     static const char *names[] = {DMM_TYPE_NAMES};
     AstType t = {
         .kind = AST_TYPE_NAMED, .array_length_token = AST_TOKEN_NONE,
@@ -95,6 +99,24 @@ AstType inferred_argument_type(Analyzer *analyzer, const AstExpression *value) {
 }
 
 void normalize_generic_type(Analyzer *analyzer, AstType *type, unsigned depth) {
+    if (depth > 64) {
+        semantic_error(analyzer, type->name_token, ERROR_CATEGORY_SEMANTIC,
+                       ERR_SEM_COMPLEXITY_LIMIT, "Generic type nesting exceeds 64 instantiations");
+        return;
+    }
+    if (type->kind == AST_TYPE_FUTURE) {
+        if (!semantic_async_enabled(analyzer))
+            semantic_error(analyzer, type->name_token, ERROR_CATEGORY_SEMANTIC,
+                           ERR_SEM_INVALID_DECLARATION,
+                           "Future types require the async manifest feature");
+        if (type->arguments == NULL || type->arguments->next != NULL) {
+            semantic_error(analyzer, type->name_token, ERROR_CATEGORY_TYPE,
+                           ERR_TYPE_INVALID_OPERATION, "Future requires exactly one result type");
+            return;
+        }
+        normalize_generic_type(analyzer, &type->arguments->type, depth + 1);
+        return;
+    }
     if (type->invalid_substitution) {
         semantic_error(analyzer, type->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                        "Generic substitution creates an unsupported nested array or slice type");
@@ -500,6 +522,16 @@ AstType argument_type_copy(Analyzer *analyzer, const AstProgram *unit, AstType t
         snprintf(length, sizeof(length), "%zu", type.resolved_array_length);
         type.array_length_token = concrete_token(analyzer, TOKEN_NUMBER, length);
     }
+    if (type.kind == AST_TYPE_FUTURE && type.arguments != NULL) {
+        AstTypeArgument *result = ast_program_alloc(analyzer->program, sizeof(*result));
+        if (result == NULL) {
+            analyzer->allocation_failed = 1;
+            type.invalid_substitution = 1;
+        } else {
+            result->type = argument_type_copy(analyzer, unit, type.arguments->type);
+            type.arguments = result;
+        }
+    }
     return type;
 }
 
@@ -542,6 +574,12 @@ static int unify_generic_pattern(Analyzer *analyzer, const AstProgram *pattern_u
         return 1;
     }
     if (actual.pointer_depth || actual.outer_pointer_depth || actual.is_array || actual.is_slice) return 0;
+    if (pattern->kind == AST_TYPE_FUTURE) {
+        if (actual.kind != AST_TYPE_FUTURE || pattern->arguments == NULL || actual.arguments == NULL)
+            return 0;
+        return unify_generic_pattern(analyzer, pattern_unit, &pattern->arguments->type,
+            actual_unit, actual.arguments->type, declaration, substitutions, inferred, depth + 1);
+    }
     if (pattern->arguments) {
         const SemanticSymbol *symbol = scoped_find_global(analyzer->model, analyzer->program,
                                                           ast_program_lexeme(actual_unit, actual.name_token),
