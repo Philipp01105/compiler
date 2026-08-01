@@ -1,0 +1,54 @@
+package core;
+
+// All operations use sequentially consistent ordering. The storage address
+// must remain aligned and must not be accessed non-atomically after sharing.
+pub struct AtomicUsize {
+    var value:usize;
+    destructor {}
+
+    pub func load() -> usize {
+        return __dmm_intrinsic_atomic_load((&value).(*u8));
+    }
+    pub func store(next:usize) -> void {
+        __dmm_intrinsic_atomic_store((&value).(*u8), next);
+    }
+    pub func swap(next:usize) -> usize {
+        return __dmm_intrinsic_atomic_swap((&value).(*u8), next);
+    }
+    // Returns the previous value; equality with expected indicates success.
+    pub func compareExchange(expected:usize,next:usize) -> usize {
+        return __dmm_intrinsic_atomic_compare_exchange((&value).(*u8), expected, next);
+    }
+}
+
+pub func atomicUsize(initial:usize) -> AtomicUsize {
+    var result:AtomicUsize;
+    result.value=initial;
+    return result;
+}
+
+pub struct AtomicBit {
+    var value:usize;
+    destructor {}
+
+    pub func load() -> bit {
+        return __dmm_intrinsic_atomic_load((&value).(*u8)) != 0.(usize);
+    }
+    pub func store(next:bit) -> void {
+        __dmm_intrinsic_atomic_store((&value).(*u8), next.(usize));
+    }
+    pub func swap(next:bit) -> bit {
+        return __dmm_intrinsic_atomic_swap((&value).(*u8), next.(usize)) != 0.(usize);
+    }
+    // Returns the previous value; equality with expected indicates success.
+    pub func compareExchange(expected:bit,next:bit) -> bit {
+        return __dmm_intrinsic_atomic_compare_exchange((&value).(*u8), expected.(usize),
+                                                        next.(usize)) != 0.(usize);
+    }
+}
+
+pub func atomicBit(initial:bit) -> AtomicBit {
+    var result:AtomicBit;
+    result.value=initial.(usize);
+    return result;
+}

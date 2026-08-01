@@ -34,6 +34,16 @@ discovery, visibility, `internal`, vendoring and `dmm manifest sync` contract is
 async functions and await expressions; the `async` manifest feature is not enabled until Future lowering, pinning, and
 ownership checks are complete.
 
+The `core.AtomicBit` and `core.AtomicUsize` types are available independently of `async`. Construct them with
+`core.atomicBit(initial)` and `core.atomicUsize(initial)`. Their `load`, `store`, `swap`, and
+`compareExchange(expected, next)` methods all use sequentially consistent ordering. `compareExchange` returns the
+previous value, whether or not the exchange succeeded; compare that value with `expected` to determine success.
+On x86-64, an aligned word load is atomic, while stores and swaps use the implicitly locked memory `xchg` and
+compare-exchange uses `lock cmpxchg`. All operations participate in a single sequentially consistent order compatible
+with program order. The atomic wrapper types are move-only so they cannot be copied by ordinary aggregate assignment.
+Their storage must not be accessed through a non-atomic alias while it may be shared. There is not yet a public
+multi-thread executor or thread-spawning API.
+
 ## Types
 
 The primitive types are `int`, `char`, `byte`, `bit`, `float`, `double`, `string`,

@@ -63,7 +63,8 @@ required to implement these resource-safety foundations.
 - [ ] Define nullability explicitly instead of encoding absence through unchecked pointer conventions.
 - [ ] Decide whether pointer arithmetic is a supported unsafe operation; otherwise keep rejecting it with targeted
   diagnostics.
-- [ ] Add volatile and atomic operations only with a documented memory model.
+- [ ] Add volatile operations. `AtomicBit` and `AtomicUsize` now provide sequentially consistent load, store, swap,
+  and compare-exchange; broaden the atomic API only with an explicit memory-order contract.
 
 ### Ownership and resource lifetime
 
@@ -130,7 +131,7 @@ model. The normative rules and current restrictions are maintained in [LANGUAGE_
 - [ ] Extend I/O with seeking, file sizes, directories, terminal detection, pipes, and process execution.
 - [ ] Revisit concurrency only after atomics, ownership, thread-local state, and runtime scheduling requirements are
   specified. The parser now preserves `async func`/`await` and sema derives conservative Send/Sync metadata, but async
-  syntax remains rejected: Future typing, pinned frames, suspend/resume IR, borrow checking across await, atomics,
+  syntax remains rejected: Future typing, pinned frames, suspend/resume IR, borrow checking across await,
   code generation, and the deterministic poll harness are still required before enabling the feature.
 - [ ] Provide a DMM-native test and assertion library.
 

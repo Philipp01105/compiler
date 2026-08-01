@@ -167,6 +167,43 @@ static void own_strcmp(Runtime *r) {
     op0(r, X64_OP_RET);
 }
 
+/* The public AtomicBit/AtomicUsize storage is an aligned machine word.  On
+   x86-64, a plain load participates in the SeqCst total order established by
+   locked RMW stores; XCHG with memory is implicitly locked. */
+static void own_atomics(Runtime *r) {
+    r->function = "__dmm_core_atomic_load";
+    (void) native_define(r->object, r->function, 1, 1);
+    mov(r, "r10", arg(r, 0));
+    op2(r, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rax"),
+        x64_memory(X64_WIDTH_QWORD, "r10", 0));
+    op0(r, X64_OP_RET);
+
+    r->function = "__dmm_core_atomic_store";
+    (void) native_define(r->object, r->function, 1, 1);
+    mov(r, "r10", arg(r, 0));
+    mov(r, "rax", arg(r, 1));
+    { const unsigned char xchg[] = {0x49, 0x87, 0x02};
+      (void) native_bytes(r->object, xchg, sizeof(xchg)); }
+    op0(r, X64_OP_RET);
+
+    r->function = "__dmm_core_atomic_swap";
+    (void) native_define(r->object, r->function, 1, 1);
+    mov(r, "r10", arg(r, 0));
+    mov(r, "rax", arg(r, 1));
+    { const unsigned char xchg[] = {0x49, 0x87, 0x02};
+      (void) native_bytes(r->object, xchg, sizeof(xchg)); }
+    op0(r, X64_OP_RET);
+
+    r->function = "__dmm_core_atomic_compare_exchange";
+    (void) native_define(r->object, r->function, 1, 1);
+    mov(r, "r10", arg(r, 0));
+    mov(r, "rax", arg(r, 1));
+    mov(r, "r11", arg(r, 2));
+    { const unsigned char cmpxchg[] = {0xf0, 0x4d, 0x0f, 0xb1, 0x1a};
+      (void) native_bytes(r->object, cmpxchg, sizeof(cmpxchg)); }
+    op0(r, X64_OP_RET);
+}
+
 static void own_copy(Runtime *r, int append) {
     r->function = append ? "__dmm_core_strcat" : "__dmm_core_strcpy";
     (void) native_define(r->object, r->function, 0, 1);
@@ -483,6 +520,7 @@ int native_runtime_emit(NativeObject *object, TargetFormat target) {
     own_calloc(&r);
     own_strdup(&r);
     own_core_memory(&r);
+    own_atomics(&r);
     own_core_process(&r);
     emit_alias(&r, "__dmm_rt_strlen", "strlen", 1);
     emit_alias(&r, "__dmm_rt_strcmp", "strcmp", 3);

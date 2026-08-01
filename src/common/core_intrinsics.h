@@ -23,6 +23,10 @@ typedef struct {
     X("__dmm_intrinsic_offset", "__dmm_core_offset", 2, CORE_BYTES, CORE_BYTES, CORE_OFFSET, CORE_VOID) \
     X("__dmm_intrinsic_copy", "__dmm_core_copy", 3, CORE_VOID, CORE_BYTES, CORE_BYTES, CORE_SIZE) \
     X("__dmm_intrinsic_fill", "__dmm_core_fill", 3, CORE_VOID, CORE_BYTES, CORE_INT, CORE_SIZE) \
+    X("__dmm_intrinsic_atomic_load", "__dmm_core_atomic_load", 1, CORE_SIZE, CORE_BYTES, CORE_VOID, CORE_VOID) \
+    X("__dmm_intrinsic_atomic_store", "__dmm_core_atomic_store", 2, CORE_VOID, CORE_BYTES, CORE_SIZE, CORE_VOID) \
+    X("__dmm_intrinsic_atomic_swap", "__dmm_core_atomic_swap", 2, CORE_SIZE, CORE_BYTES, CORE_SIZE, CORE_VOID) \
+    X("__dmm_intrinsic_atomic_compare_exchange", "__dmm_core_atomic_compare_exchange", 3, CORE_SIZE, CORE_BYTES, CORE_SIZE, CORE_SIZE) \
     X("__dmm_intrinsic_string_data", "__dmm_core_string_data", 1, CORE_BYTES, CORE_STRING, CORE_VOID, CORE_VOID) \
     X("__dmm_intrinsic_read", "__dmm_rt_sys_read", 3, CORE_OFFSET, CORE_INT, CORE_BYTES, CORE_SIZE) \
     X("__dmm_intrinsic_write", "__dmm_rt_sys_write", 3, CORE_OFFSET, CORE_INT, CORE_BYTES, CORE_SIZE) \
