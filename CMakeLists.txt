@@ -206,6 +206,12 @@ if (BUILD_TESTING)
     target_include_directories(dmm_async_semantic_test PRIVATE ${DMM_INCLUDE_DIRS})
     add_test(NAME async_semantic_unit COMMAND dmm_async_semantic_test)
     set_tests_properties(async_semantic_unit PROPERTIES LABELS "unit;frontend;sema;async;safety")
+    find_package(Threads REQUIRED)
+    add_executable(dmm_executor_test tests/unit/executor_test.c src/runtime/executor.c)
+    target_include_directories(dmm_executor_test PRIVATE ${DMM_INCLUDE_DIRS})
+    target_link_libraries(dmm_executor_test PRIVATE Threads::Threads)
+    add_test(NAME executor_runtime_unit COMMAND dmm_executor_test)
+    set_tests_properties(executor_runtime_unit PROPERTIES LABELS "unit;runtime;async;safety" TIMEOUT 45)
     add_test(NAME async_frontend_contract
             COMMAND ${CMAKE_COMMAND}
             -DCOMPILER=$<TARGET_FILE:compiler>
@@ -288,7 +294,7 @@ if (BUILD_TESTING)
     add_test(NAME runtime_unit
             COMMAND dmm_runtime_test ${CMAKE_BINARY_DIR}/runtime_test.dat)
     set_tests_properties(runtime_unit PROPERTIES
-            LABELS "unit;runtime;safety")
+            LABELS "unit;runtime;safety" TIMEOUT 45)
 
     function(add_dmm_regression_stage stage label)
         add_test(NAME regression_${stage}
@@ -584,6 +590,7 @@ if (BUILD_TESTING)
 
     if (DMM_SANITIZERS)
         foreach (test_target
+                dmm_executor_test
                 dmm_async_semantic_test
                 dmm_foundation_test
                 dmm_resource_fault_test

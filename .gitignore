@@ -1,5 +1,6 @@
 # CMake and build directories
 /build/
+/build-stage2-*/
 /cmake-build-*/
 /*-build/
 /_codeql_build_dir/

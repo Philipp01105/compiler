@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <stdatomic.h>
 #ifdef _WIN32
 #define TokenType WindowsTokenType
 #include <windows.h>
@@ -108,6 +109,25 @@ typedef int64_t (*IO)(int64_t, void *, int64_t);
 
 typedef int64_t (*Close)(int64_t);
 
+typedef uint64_t (*ThreadCallback)(void *);
+typedef void *(*ThreadCreate)(ThreadCallback, void *);
+typedef void *(*WaitCreate)(void);
+typedef void (*WaitAction)(void *);
+typedef struct {
+    void *entered, *proceed;
+    WaitAction wait, wake;
+    atomic_uint finished;
+} ThreadJob;
+/* This callback intentionally needs no libc or TLS: the ELF primitive creates
+   a raw native thread, just as generated standalone code will. */
+static uint64_t native_thread_callback(void *pointer) {
+    ThreadJob *job = pointer;
+    job->wake(job->entered);
+    job->wait(job->proceed);
+    atomic_fetch_add_explicit(&job->finished, 1, memory_order_seq_cst);
+    return 0;
+}
+
 int main(int argc, char **argv) {
     CHECK(argc == 2);
     Image image = {0};
@@ -122,6 +142,31 @@ int main(int argc, char **argv) {
     FUNCTION(IO, read_file, "__dmm_rt_sys_read");
     FUNCTION(IO, write_file, "__dmm_rt_sys_write");
     FUNCTION(Close, close_file, "__dmm_rt_sys_close");
+    FUNCTION(ThreadCreate, create_thread, "__dmm_async_thread_create");
+    FUNCTION(WaitAction, join_thread, "__dmm_async_thread_join");
+    FUNCTION(WaitCreate, create_wait, "__dmm_async_wait_create");
+    FUNCTION(WaitAction, wait_event, "__dmm_async_wait");
+    FUNCTION(WaitAction, wake_event, "__dmm_async_wake");
+    FUNCTION(WaitAction, reset_event, "__dmm_async_wait_reset");
+    FUNCTION(WaitAction, destroy_event, "__dmm_async_wait_destroy");
+    ThreadJob job = {.entered=create_wait(), .proceed=create_wait(), .wait=wait_event, .wake=wake_event};
+    atomic_init(&job.finished, 0);
+    CHECK(job.entered && job.proceed);
+    for (unsigned round=0; round<20; round++) {
+        reset_event(job.entered);
+        reset_event(job.proceed);
+        void *thread = create_thread(native_thread_callback, &job);
+        CHECK(thread);
+        wait_event(job.entered);
+        CHECK(atomic_load(&job.finished)==round);
+        wake_event(job.proceed);
+        join_thread(thread);
+        CHECK(atomic_load(&job.finished)==round+1);
+        /* A signal preceding the wait must remain observable. */
+        wait_event(job.proceed);
+    }
+    destroy_event(job.entered);
+    destroy_event(job.proceed);
     char actual[384], expected[384];
     uint64_t bits = 0;
     const double cases[] = {

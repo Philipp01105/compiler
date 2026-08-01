@@ -66,6 +66,27 @@ parameters or an instance receiver are not Send and cannot become spawn candidat
 remain conservative; `Future<T>` alone does not prove Send from `T`. Futures are not Sync because polling mutates them.
 There are no explicit unsafe Send/Sync implementations in Stage 1.
 
+The private Stage 2 runtime foundation is implemented in `src/runtime/executor.c`.
+Its ready queue parks idle workers and serializes polling of each frame. A wake
+received during a poll is retained across a Pending return. Task completion and
+cancellation requests are ordered under the same lock. Cancellation uses a
+separate callback and waits for child/I/O termination and awaitable cleanup;
+requesting I/O cancellation does not constitute confirmation. A completed,
+unclaimed result is destroyed exactly once when its handle is cancelled.
+Drain closes admission and waits for normal completion; Cancel additionally
+requests cancellation of active tasks. Both wait for worker exit. Outstanding
+joins and retained wakers keep task/executor state alive after shutdown. Local
+blocking polls run on the calling thread. The private default executor is lazy,
+has two workers, and drains at normal process exit. Native ELF/COFF thread and
+manual-reset wait-event primitives are emitted without an external linker handoff.
+
+This foundation is not yet connected to language-level Future frames. The public
+`Executor`, `JoinHandle<T>`, `ShutdownMode`, `TaskError`, `spawn`, `block_on`, and
+`cancel` API, concrete-value spawn checks, cancellation loan transfer, generated
+scope cleanup and cancellation IR/verifier transitions remain unimplemented.
+The Stage 1 language contract above therefore remains the implemented contract;
+the presence of private runtime helpers does not enable these source APIs.
+
 The `core.AtomicBit` and `core.AtomicUsize` types are available independently of `async`. Construct them with
 `core.atomicBit(initial)` and `core.atomicUsize(initial)`. Their `load`, `store`, `swap`, and
 `compareExchange(expected, next)` methods all use sequentially consistent ordering. `compareExchange` returns the

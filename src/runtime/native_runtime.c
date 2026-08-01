@@ -480,10 +480,13 @@ static void read_value(Runtime *r) {
     end(r);
 }
 
+#include "native_threads.inc"
+
 const char *native_runtime_import(const char *name, TargetFormat target) {
     static const char *const imports[] = {
         "VirtualAlloc", "VirtualFree", "GetStdHandle", "ReadFile",
-        "WriteFile", "CreateFileA", "CloseHandle", "GetLastError", "ExitProcess"
+        "WriteFile", "CreateFileA", "CloseHandle", "GetLastError", "ExitProcess",
+        "CreateThread", "WaitForSingleObject", "CreateEventA", "SetEvent", "ResetEvent"
     };
     if (target != TARGET_COFF || strncmp(name, "__dmm_os_", 9)) return NULL;
     for (size_t n = 0; n < sizeof(imports) / sizeof(imports[0]); ++n)
@@ -521,6 +524,7 @@ int native_runtime_emit(NativeObject *object, TargetFormat target) {
     own_strdup(&r);
     own_core_memory(&r);
     own_atomics(&r);
+    own_async_threads(&r);
     own_core_process(&r);
     emit_alias(&r, "__dmm_rt_strlen", "strlen", 1);
     emit_alias(&r, "__dmm_rt_strcmp", "strcmp", 3);
