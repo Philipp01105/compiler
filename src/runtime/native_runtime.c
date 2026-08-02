@@ -9,6 +9,7 @@ typedef struct {
     NativeObject *object;
     TargetFormat target;
     const char *function;
+    RuntimeProfile profile;
 } Runtime;
 
 static const char *arg(Runtime *r, int n) {
@@ -363,7 +364,8 @@ static void own_core_memory(Runtime *r) {
 
 static void own_core_process(Runtime *r) {
     begin(r, "__dmm_core_exit", 0);
-    if (r->target == TARGET_COFF) call(r, "__dmm_os_ExitProcess");
+    if (r->profile == RUNTIME_PLATFORM) call(r, "__dmm_platform_exit");
+    else if (r->target == TARGET_COFF) call(r, "__dmm_os_ExitProcess");
     else {
         imm(r, "rax", 60);
         op0(r, X64_OP_SYSCALL);
@@ -496,7 +498,12 @@ const char *native_runtime_import(const char *name, TargetFormat target) {
 }
 
 int native_runtime_emit(NativeObject *object, TargetFormat target) {
-    Runtime r = {object, target, NULL};
+    return native_runtime_emit_profile(object, target, RUNTIME_STANDALONE, 0);
+}
+
+int native_runtime_emit_profile(NativeObject *object, TargetFormat target,
+                                RuntimeProfile profile, int main_returns_void) {
+    Runtime r = {object, target, NULL, profile};
     object->section = NATIVE_RODATA;
     const char *const names[] = {".Lnative_empty", ".Lnative_integer", ".Lnative_char"};
     const char *const values[] = {"", "%lld", "%c"};
@@ -525,7 +532,7 @@ int native_runtime_emit(NativeObject *object, TargetFormat target) {
     own_strdup(&r);
     own_core_memory(&r);
     own_atomics(&r);
-    own_async_threads(&r);
+    if (profile == RUNTIME_STANDALONE) own_async_threads(&r);
     own_async_executor(&r);
     own_core_process(&r);
     emit_alias(&r, "__dmm_rt_strlen", "strlen", 1);
@@ -558,6 +565,20 @@ int native_runtime_emit(NativeObject *object, TargetFormat target) {
     own_scan_int(&r);
     own_scan_string(&r);
     read_value(&r);
+    if (profile == RUNTIME_PLATFORM) {
+        /* Static runtime storage is initialized by the platform loader before
+           this bridge runs, including before any package initializer. */
+        begin(&r, "__dmm_runtime_main", 16);
+        call(&r, "__dmm_package_init");
+        call(&r, "__dmm_program_main");
+        if (main_returns_void) imm(&r, "rax", 0);
+        store(&r, "rax", 8);
+        call(&r, "__dmm_async_default_drain");
+        call(&r, "__dmm_package_cleanup");
+        load(&r, "rax", 8);
+        end(&r);
+        return !object->failed;
+    }
     (void) native_define(object, "__dmm_entry", 1, 1);
     if (target == TARGET_COFF) {
         stack(&r, X64_OP_SUB, 40);
@@ -590,10 +611,27 @@ int native_runtime_emit(NativeObject *object, TargetFormat target) {
     return !object->failed;
 }
 
+static int platform_symbol(const char *name) {
+    static const char *const symbols[] = {
+        "__dmm_async_thread_create", "__dmm_async_thread_join",
+        "__dmm_async_wait_create", "__dmm_async_wait", "__dmm_async_wake",
+        "__dmm_async_wait_reset", "__dmm_async_wait_destroy", "__dmm_platform_exit"
+    };
+    for (size_t i = 0; i < sizeof(symbols) / sizeof(symbols[0]); ++i)
+        if (!strcmp(name, symbols[i])) return 1;
+    return 0;
+}
+
 int native_runtime_object_imports(NativeObject *object, TargetFormat target) {
+    return native_runtime_object_imports_profile(object, target, RUNTIME_STANDALONE);
+}
+
+int native_runtime_object_imports_profile(NativeObject *object, TargetFormat target,
+                                          RuntimeProfile profile) {
     for (size_t n = 0; n < object->symbol_count; ++n) {
         NativeSymbol *symbol = &object->symbols[n];
         if (symbol->defined)continue;
+        if (profile == RUNTIME_PLATFORM && platform_symbol(symbol->name)) continue;
         const char *import = native_runtime_import(symbol->name, target);
         if (!import) {
             native_error(object, "Standalone object contains an unresolved non-OS symbol");
@@ -613,8 +651,13 @@ int native_runtime_object_imports(NativeObject *object, TargetFormat target) {
 }
 
 int native_runtime_assembly(FILE *output, TargetFormat target) {
+    return native_runtime_assembly_profile(output, target, RUNTIME_STANDALONE, 0);
+}
+
+int native_runtime_assembly_profile(FILE *output, TargetFormat target,
+                                    RuntimeProfile profile, int main_returns_void) {
     NativeObject object = {0};
-    if (!native_runtime_emit(&object, target) || !native_validate(&object)) {
+    if (!native_runtime_emit_profile(&object, target, profile, main_returns_void) || !native_validate(&object)) {
         native_object_free(&object);
         return 0;
     }
@@ -647,8 +690,10 @@ int native_runtime_assembly(FILE *output, TargetFormat target) {
                 NativeSymbol *symbol = &object.symbols[relocation->symbol];
                 const char *name = symbol->name;
                 if (!symbol->defined && strcmp(name, "main") &&
+                    strcmp(name, "__dmm_program_main") &&
                     strcmp(name, "__dmm_package_init") &&
-                    strcmp(name, "__dmm_package_cleanup")) {
+                    strcmp(name, "__dmm_package_cleanup") &&
+                    !(profile == RUNTIME_PLATFORM && platform_symbol(name))) {
                     name = native_runtime_import(name, target);
                     if (!name) {
                         native_object_free(&object);

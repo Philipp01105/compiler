@@ -17,6 +17,7 @@
 #include "backend.h"
 #include "errorHandler.h"
 #include "path_identity.h"
+#include "external_link.h"
 
 #ifndef DMM_VERSION
 #define DMM_VERSION "development"
@@ -36,7 +37,11 @@ static void print_usage(const char *program_name) {
     printf("  --formatError  Output errors in JSON format\n");
     printf("  --ide          Recover syntax for editor analysis; requires --dump-ast, emits no program\n");
     printf("  --ide-buffer FILE  Read editor contents from FILE while keeping the source path/imports (--ide only)\n");
-    printf("  --emit=MODE    Output exe (default), obj, or asm; executable linking is internal\n");
+    printf("  --emit=MODE    Output exe (default), obj, or asm\n");
+    printf("  --link=MODE    auto (default), internal, external; external requests platform runtime\n");
+    printf("                 For obj/asm selects the future link ABI; starts no link process\n");
+    printf("  --linker-driver PATH  GCC-compatible driver (default: gcc); exe only\n");
+    printf("  --runtime-shim PATH   Private target platform shim object; exe only\n");
     printf("  -c             Emit a native object file (same as --emit=obj)\n");
     printf("  -S             Emit assembly (same as --emit=asm)\n");
     printf("  -O0 / -O1      Disable / enable AST and IR optimization (default: -O1)\n");
@@ -164,6 +169,8 @@ static int write_ir_optimization_trace(FILE *output, const void *value) {
 
 int main(int argc, char *argv[]) {
     BackendEmission emission = BACKEND_EXECUTABLE;
+    LinkMode link_mode = LINK_AUTO;
+    const char *linker_driver = NULL, *runtime_shim = NULL;
     int emission_requested = 0;
     int optimize = 1;
     int optimization_requested = 0;
@@ -299,6 +306,22 @@ int main(int argc, char *argv[]) {
                              mode);
                 format_error = 1;
             }
+        } else if (strncmp(argv[i], "--link=", 7) == 0) {
+            const char *mode = argv[i] + 7;
+            if (!strcmp(mode, "auto")) link_mode = LINK_AUTO;
+            else if (!strcmp(mode, "internal")) link_mode = LINK_INTERNAL;
+            else if (!strcmp(mode, "external")) link_mode = LINK_EXTERNAL;
+            else error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                              ERR_COMP_INVALID_OPTION, NULL, "Invalid link mode: %s", mode);
+        } else if (!strcmp(argv[i], "--linker-driver") || !strcmp(argv[i], "--runtime-shim")) {
+            const char *option = argv[i];
+            if (++i >= argc || !argv[i][0]) {
+                error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                             ERR_COMP_INVALID_OPTION, NULL, "Missing value for %s", option);
+                break;
+            }
+            if (!strcmp(option, "--linker-driver")) linker_driver = argv[i];
+            else runtime_shim = argv[i];
         } else if (strncmp(argv[i], "--syntax=", 9) == 0) {
             const char *mode = argv[i] + 9;
             if (strcmp(mode, "intel") == 0) {
@@ -443,6 +466,16 @@ int main(int argc, char *argv[]) {
         ir_pass_dump_path, ir_dump_path, cfg_dump_path, source_map_path
     };
     for (size_t i = 0; i < sizeof(requested_artifacts) / sizeof(requested_artifacts[0]); i++) {
+        if (emission == BACKEND_EXECUTABLE && link_mode == LINK_EXTERNAL &&
+            driver_link_input_conflicts(target_format, requested_artifacts[i], linker_driver, runtime_shim)) {
+            error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                         ERR_COMP_INVALID_OPTION, source_file, "Generated artifact conflicts with linker input");
+            error_handler_flush(error_handler);
+            ast_program_free(program);
+            error_handler_free(error_handler);
+            free(override_name);
+            return 1;
+        }
         if (artifact_conflicts_with_program(program, requested_artifacts[i])) {
             error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
                          ERR_COMP_INVALID_OPTION, source_file,
@@ -464,7 +497,7 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
     }
-    if (!ide_mode)
+    if (!ide_mode && !(link_mode == LINK_EXTERNAL && emission == BACKEND_EXECUTABLE))
         remove_stale_output(program, source_file, requested_output,
                             requested_artifacts, sizeof(requested_artifacts) / sizeof(requested_artifacts[0]),
                             emission == BACKEND_ASSEMBLY
@@ -571,6 +604,16 @@ int main(int argc, char *argv[]) {
         ir_pass_dump_path, ir_dump_path, cfg_dump_path, source_map_path
     };
     for (size_t i = 0; i < sizeof(artifacts) / sizeof(artifacts[0]); i++) {
+        if (emission == BACKEND_EXECUTABLE && link_mode == LINK_EXTERNAL &&
+            driver_link_input_conflicts(target_format, artifacts[i], linker_driver, runtime_shim)) {
+            error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                         ERR_COMP_INVALID_OPTION, source_file, "Generated artifact conflicts with linker input");
+            error_handler_flush(error_handler);
+            free(generated_output);
+            ast_program_free(program);
+            error_handler_free(error_handler);
+            return 1;
+        }
         if (artifacts[i] != NULL && artifact_conflicts_with_program(program, artifacts[i])) {
             error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
                          ERR_COMP_INVALID_OPTION, source_file,
@@ -595,7 +638,8 @@ int main(int argc, char *argv[]) {
             }
         }
     }
-    if (requested_output != NULL) (void) remove(requested_output);
+    if (requested_output != NULL && !(link_mode == LINK_EXTERNAL && emission == BACKEND_EXECUTABLE))
+        (void) remove(requested_output);
 
     if (debug_mode) {
         printf("\n================================================================\n");
@@ -745,7 +789,25 @@ int main(int argc, char *argv[]) {
             printf("  [+] Verified typed IR functions: %zu\n", module->function_count);
         }
     }
-    if (!backend_emit_file(module, &backend_options, output_filename)) {
+    /* CLI compatibility is translated to a requirement once. Runtime and backend
+       only receive the resolved profile, never the requested link strategy. */
+    RuntimeRequirements requirements = ir_runtime_requirements(module);
+    if (link_mode == LINK_EXTERNAL) requirements |= RUNTIME_REQUIRE_PLATFORM;
+    backend_options.runtime_profile = runtime_profile_for(requirements);
+    LinkMode resolved_link = LINK_INTERNAL;
+    int selection_ok = runtime_resolve_link(link_mode, backend_options.runtime_profile, &resolved_link);
+    if (!selection_ok)
+        error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                     ERR_COMP_INVALID_OPTION, source_file, "Internal linking cannot satisfy platform runtime requirements");
+    if (emission == BACKEND_EXECUTABLE && resolved_link != LINK_EXTERNAL && (linker_driver || runtime_shim)) {
+        selection_ok = 0;
+        error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                     ERR_COMP_INVALID_OPTION, source_file, "Linker driver and runtime shim require external executable linking");
+    }
+    int emitted = selection_ok && (emission == BACKEND_EXECUTABLE && resolved_link == LINK_EXTERNAL
+        ? driver_external_link(module, &backend_options, output_filename, linker_driver, runtime_shim)
+        : backend_emit_file(module, &backend_options, output_filename));
+    if (!emitted) {
         error_handler_flush(error_handler);
         if (!format_error) fprintf(stderr, "\n[ERROR] Compilation failed!\n\n");
         free(generated_output);

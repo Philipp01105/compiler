@@ -1,5 +1,28 @@
 # Executor runtime and native ABI
 
+## Private platform ABI v1
+
+The optional platform profile keeps the emitted scheduler but replaces thread/event primitives with
+`platform_shim.c`. The declarations in `platform_shim.h` use the x86-64 System V or Microsoft x64 C ABI. Thread
+creation takes `void (*callback)(void *)` and its argument and returns a non-null opaque handle. The callback returns
+normally. Join waits for confirmed thread termination, then consumes the handle. Allocations never cross runtime
+ownership boundaries. Resource/API failures are fatal, with no recoverable partial startup contract.
+
+Linux implements threads with pthreads, including libc TLS initialization. Windows is specifically MinGW-w64
+UCRT64: `_beginthreadex` starts a C trampoline, normal trampoline return performs CRT thread cleanup, and join uses
+`WaitForSingleObject` followed by `CloseHandle`. Generated workers do not use raw clone or CreateThread in this profile.
+
+`__dmm_async_wait_create` returns an initially unsignalled manual-reset event. `__dmm_async_wake` signals it and
+retains that signal until `__dmm_async_wait_reset`; wait does not consume the signal. Linux uses a mutex-protected
+predicate and condition-variable loop; Windows uses a manual-reset Win32 event. Reset remains under the scheduler
+predicate lock, and destroy requires every waiter to have stopped. Existing no-lost-wake and single-poller invariants
+apply identically to standalone and platform profiles.
+
+Platform C startup calls the generated `int __dmm_runtime_main(void)` once. The generated object owns package init,
+DMM main, default-executor drain, package cleanup and the preserved return status; the C entry only forwards the call.
+Immediate process exit and traps do not run this normal cleanup path. `__dmm_platform_exit` terminates the whole
+process from any thread. This private ABI is not a source-language foreign-function interface.
+
 `executor.h` defines the internal C scheduler contract used by
 `executor_runtime_unit`. The standalone backends emit the equivalent scheduler
 in `native_executor.inc` and platform primitives in `native_threads.inc`.

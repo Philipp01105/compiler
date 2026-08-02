@@ -69,8 +69,8 @@ if (EXISTS "${ROOT}/src/runtime/runtime.c" OR EXISTS "${ROOT}/src/runtime/platfo
     message(FATAL_ERROR "libc-backed target runtime has returned")
 endif ()
 
-foreach (native_file encoder.c object.c linker.c)
-    file(READ "${ROOT}/src/backend/native/${native_file}" native_source)
+foreach (native_file native/encoder.c native/object.c native/linker.c backend.c)
+    file(READ "${ROOT}/src/backend/${native_file}" native_source)
     if (native_source MATCHES "system[ \t]*\\(|popen[ \t]*\\(|CreateProcess|execvp[ \t]*\\(")
         message(FATAL_ERROR "native backend invokes an external build process")
     endif ()

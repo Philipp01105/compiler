@@ -110,6 +110,7 @@ The compiler accepts a source file or package directory. Executable output is th
 Run `compiler --help` for the current option list. Useful groups include:
 
 - `--emit=exe|obj|asm`, `-c`, `-S`, `-o FILE`
+- `--link=auto|internal|external`, `--linker-driver PATH`, `--runtime-shim PATH` (private platform runtime)
 - `-O0`, `-O1`, `--target=elf|coff`, `--syntax=intel|att`
 - `--formatError`, `--ide`, `--ide-buffer FILE`
 - `--dump-tokens`, `--dump-ast`, `--dump-symbols`, `--dump-ir-before-opt`, `--dump-ir-passes`, `--dump-ir`,
@@ -119,9 +120,13 @@ Run `compiler --help` for the current option list. Useful groups include:
 Use `dmm manifest sync [package-directory]` to reconcile direct and indirect local dependencies. It never fetches
 packages or changes dependency versions.
 
-Native executables do not require libc, a CRT or a foreign-language runtime. Linux targets use syscalls; Windows
+Standalone native executables do not require libc, a CRT or a foreign-language runtime. Linux targets use syscalls; Windows
 targets import OS APIs. Assembly output can be handed to external GNU-compatible tools when required. The exact target
 and linking contracts are documented in [NATIVE_BACKEND.md](NATIVE_BACKEND.md).
+
+The optional `--link=external` profile uses regular platform startup and a private platform shim, so those programs
+gain libc/UCRT and documented OS dependencies. Default standalone builds retain their existing runtime and internal
+linker. For object/assembly emission this option selects the future link ABI and starts no external process.
 
 ## Tests and CI
 

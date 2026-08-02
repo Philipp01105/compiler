@@ -1,4 +1,5 @@
 #include "ir.h"
+
 #include "core_intrinsics.h"
 #include "ir_cfg.h"
 #include "ir_verify.h"
@@ -7,6 +8,19 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+int ir_main_returns_void(const IrModule *module) {
+    for (size_t i = 0; i < module->function_count; ++i) {
+        const IrFunction *function = &module->functions[i];
+        if (function->name_token != AST_TOKEN_NONE &&
+            !strcmp(ast_program_lexeme(function->source_program, function->name_token), "main") &&
+            (!function->source_program->package_name ||
+             !strcmp(function->source_program->package_name, "main")))
+            return function->return_type_id < module->type_count &&
+                   module->types[function->return_type_id].primitive == TYPE_VOID;
+    }
+    return 0;
+}
 
 void ir_report_failure(const IrFunction *function, size_t index,
                        const char *stage, const char *reason) {

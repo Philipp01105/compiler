@@ -12,6 +12,7 @@ typedef struct {
     int deterministic;
     const char *source_map_path;
     BackendEmission emission;
+    RuntimeProfile runtime_profile;
 } BackendOptions;
 
 /* Emit assembly, a relocatable object, or an internally linked native image. */

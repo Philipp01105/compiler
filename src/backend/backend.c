@@ -55,9 +55,10 @@ static int emit_native(const IrModule *module, const BackendOptions *options, co
     }
     if (success && options->emission == BACKEND_OBJECT &&
         (!module->program->package_name || !strcmp(module->program->package_name, "main")))
-        success = native_runtime_emit(&object, options->target_format);
+        success = native_runtime_emit_profile(&object, options->target_format,
+                                               options->runtime_profile, ir_main_returns_void(module));
     if (success && options->emission == BACKEND_OBJECT)
-        success = native_runtime_object_imports(&object, options->target_format);
+        success = native_runtime_object_imports_profile(&object, options->target_format, options->runtime_profile);
     if (success)
         success = options->emission == BACKEND_OBJECT
                       ? native_write_object(&object, options->target_format, &output)
@@ -116,6 +117,11 @@ int backend_emit_file(const IrModule *module, const BackendOptions *options,
                       const char *output_path) {
     if (module == NULL || module->program == NULL || options == NULL || output_path == NULL)
         return 0;
+    if (options->runtime_profile == RUNTIME_PLATFORM && options->emission == BACKEND_EXECUTABLE)
+        return output_error(module->program, "Platform executable requires driver link handoff: '%s'", output_path);
+    IrModule emission_module = *module;
+    emission_module.runtime_profile = options->runtime_profile;
+    module = &emission_module;
     if (options->emission != BACKEND_ASSEMBLY) return emit_native(module, options, output_path);
     int previous_errors = error_handler_get_error_count(global_error_handler);
     if (!x86_64_emit_ir_file(module, options->target_format, options->syntax_mode,

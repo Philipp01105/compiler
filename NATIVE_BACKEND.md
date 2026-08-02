@@ -1,8 +1,63 @@
 # Native x86-64 backend
 
 The compiler emits machine code directly from verified IR and structured x86-64 instructions. Native compilation invokes
-no assembler, C compiler or external linker. Every output mode embeds a compiler-owned runtime: generated programs
+no assembler, C compiler or external linker in its default standalone profile. Standalone output embeds a compiler-owned runtime: generated programs
 require no libc, Windows CRT or foreign language runtime. The compiler itself remains implemented in C.
+
+## Private platform-runtime handoff
+
+`--link=auto|internal|external` selects the link strategy (default `auto`). Runtime requirements are separate from
+link strategy: required IR operations determine a `standalone` or `platform` profile, and the driver resolves a
+supported linker for that profile. `NETWORK` is reserved and implies `PLATFORM_RUNTIME`; neither ordinary programs
+nor the `async` manifest feature require a platform runtime. No network operations are implemented by this handoff.
+
+For this development step, explicit `--link=external` requests `PLATFORM_RUNTIME`, not `NETWORK`. `auto` selects the
+internal linker for standalone output and the external driver for platform output. `internal` cannot satisfy a
+platform requirement. With `--emit=obj` or `--emit=asm`, `--link` selects the runtime/ABI profile intended for later
+linking; **no link process starts**, and linker-driver/shim overrides are not needed or consulted.
+
+```sh
+compiler --link=external program.dmm -o program
+compiler --link=external --linker-driver /usr/bin/clang program.dmm -o program
+compiler --link=external --emit=obj program.dmm -o program.o
+compiler --link=external --emit=asm --syntax=att program.dmm -o program.s
+```
+
+Platform executables use the platform's C startup and documented platform libraries. Standalone startup, native
+runtime and internal linking are unchanged. Platform output still embeds the generated DMM memory/I/O runtime and
+scheduler, but leaves private thread/event operations to a separately compiled shim. It defines
+`int __dmm_runtime_main(void)` instead of `__dmm_entry`; DMM `main` is privately named `__dmm_program_main`.
+The shim's C `main` only returns `__dmm_runtime_main()`.
+
+The generated bridge owns the lifecycle: loader-initialized runtime storage is available before package initializers;
+then package initialization, DMM main, preservation of its exit code, default-executor drain, package cleanup and
+return to C startup. Draining releases the default executor's runtime state. No additional eager runtime allocation
+or global teardown phase is introduced. A void main returns zero. Immediate `exit`, traps and fatal failures bypass
+normal DMM cleanup; platform `exit` terminates the entire process, including when called from a worker.
+The shim has no package-cleanup or scheduler-lifecycle knowledge. Its private ABI is documented in
+`src/runtime/platform_shim.h` and `src/runtime/EXECUTOR.md`.
+
+The external executable path defaults to `gcc` from PATH. `--linker-driver PATH` selects a GCC-compatible driver;
+`--runtime-shim PATH` selects a matching private shim object. CMake builds the shim and installs it next to the
+compiler as `dmm-runtime/elf/platform-shim.o` or `dmm-runtime/coff/platform-shim.o`. Discovery uses the running
+compiler's directory, including when the compiler was found through PATH. Linux GCC/Clang and Windows MinGW-w64
+UCRT64 GCC/Clang are supported; MSVC and MSVCRT shims are not supported. Cross-linking requires both overrides and
+a matching target toolchain. The override is a private ABI implementation, not a public arbitrary-object or FFI API.
+
+Manual linking of platform output uses regular C startup, **without** standalone entry flags or `-nostdlib`:
+
+```sh
+# Linux; substitute program.s for program.o to link assembly output.
+gcc -no-pie -pthread program.o /path/to/dmm-runtime/elf/platform-shim.o -o program
+# Windows UCRT64; substitute program.s for program.obj for assembly output.
+gcc program.obj C:/path/to/dmm-runtime/coff/platform-shim.o -lkernel32 -Wl,--subsystem,console -o program.exe
+```
+
+Linux platform output is non-PIE, consistent with the native object's absolute data relocations. The driver invokes
+the external tool with individual arguments and no shell, captures stdout/stderr and status in text/JSON diagnostics,
+and publishes a temporary linked image only after success. A failed link preserves an existing requested output.
+Only platform programs gain libc/UCRT and the required OS dependencies; network libraries are deferred until network
+operations exist. Reproducible external linking is scoped to a fixed toolchain, shim and linker configuration.
 
 ```sh
 compiler --emit=exe --target=elf program.dmm -o program

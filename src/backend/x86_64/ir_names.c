@@ -152,7 +152,7 @@ const char *function_link_name(const IrModule *module, const IrFunction *functio
     const char *name = ast_program_lexeme(function->source_program, function->name_token);
     if (strcmp(name, "main") == 0 && (!function->source_program->package_name ||
                                       !strcmp(function->source_program->package_name, "main")))
-        return name;
+        return module->runtime_profile == RUNTIME_PLATFORM ? "__dmm_program_main" : name;
     if (function->owner_symbol_id == AST_SYMBOL_NONE &&
         !function->source_program->package && !function_is_overloaded(module, function) && !runtime_link_name(name))
         return name;

@@ -442,7 +442,8 @@ int x86_64_emit_ir_file(const IrModule *module, TargetFormat target,
     };
     int success = emit_file(&emitter, deterministic);
     if (success && (!module->program->package_name || !strcmp(module->program->package_name, "main")))
-        success = native_runtime_assembly(output, target);
+        success = native_runtime_assembly_profile(output, target, module->runtime_profile,
+                                                  ir_main_returns_void(module));
     int assembly_io_error = ferror(output);
     if (fclose(output) != 0) assembly_io_error = 1;
     int map_io_error = map.output != NULL && ferror(map.output);

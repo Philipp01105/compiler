@@ -2,6 +2,14 @@
 #define DMM_NATIVE_RUNTIME_H
 #include "native/object.h"
 #include <stdio.h>
+#include "runtime_profile.h"
+
+int native_runtime_emit_profile(NativeObject *object, TargetFormat target,
+                                RuntimeProfile profile, int main_returns_void);
+int native_runtime_assembly_profile(FILE *output, TargetFormat target,
+                                    RuntimeProfile profile, int main_returns_void);
+int native_runtime_object_imports_profile(NativeObject *object, TargetFormat target,
+                                          RuntimeProfile profile);
 
 int native_runtime_emit(NativeObject *object, TargetFormat target);
 

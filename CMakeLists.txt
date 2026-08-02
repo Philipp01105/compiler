@@ -114,9 +114,32 @@ add_executable(compiler
         src/diagnostics/errorHandler.c
         src/diagnostics/errorHandler.h
         src/driver/main.c
+        src/driver/external_link.c
 )
 
 target_include_directories(compiler PRIVATE ${DMM_INCLUDE_DIRS})
+if (NOT MSVC)
+    if (WIN32)
+        set(DMM_SHIM_FORMAT coff)
+    else ()
+        set(DMM_SHIM_FORMAT elf)
+    endif ()
+    add_library(dmm_platform_shim OBJECT src/runtime/platform_bundle.c)
+    target_compile_options(dmm_platform_shim PRIVATE -Wall -Wextra -Wpedantic)
+    if (DMM_STRICT_WARNINGS)
+        target_compile_options(dmm_platform_shim PRIVATE -Wconversion -Wshadow -Werror)
+    endif ()
+    target_compile_definitions(dmm_platform_shim PRIVATE _XOPEN_SOURCE=700)
+    add_dependencies(compiler dmm_platform_shim)
+    set_property(TARGET compiler APPEND PROPERTY LINK_DEPENDS "$<TARGET_OBJECTS:dmm_platform_shim>")
+    add_custom_command(TARGET compiler POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:compiler>/dmm-runtime/${DMM_SHIM_FORMAT}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_OBJECTS:dmm_platform_shim>
+            "$<TARGET_FILE_DIR:compiler>/dmm-runtime/${DMM_SHIM_FORMAT}/platform-shim.o"
+        COMMAND_EXPAND_LISTS)
+    install(FILES $<TARGET_OBJECTS:dmm_platform_shim>
+        DESTINATION bin/dmm-runtime/${DMM_SHIM_FORMAT} RENAME platform-shim.o)
+endif ()
 add_custom_command(TARGET compiler POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:compiler>" "$<TARGET_FILE_DIR:compiler>/dmm$<TARGET_FILE_SUFFIX:compiler>"
@@ -181,6 +204,29 @@ endif ()
 
 include(CTest)
 if (BUILD_TESTING)
+    if (TARGET dmm_platform_shim)
+        find_package(Threads REQUIRED)
+        add_executable(dmm_platform_shim_test tests/unit/platform_shim_test.c src/runtime/platform_shim.c)
+        target_include_directories(dmm_platform_shim_test PRIVATE ${DMM_INCLUDE_DIRS})
+        target_link_libraries(dmm_platform_shim_test PRIVATE Threads::Threads)
+        target_compile_definitions(dmm_platform_shim_test PRIVATE _XOPEN_SOURCE=700)
+        target_compile_options(dmm_platform_shim_test PRIVATE -Wall -Wextra -Wpedantic)
+        if (DMM_STRICT_WARNINGS)
+            target_compile_options(dmm_platform_shim_test PRIVATE -Wconversion -Wshadow -Werror)
+        endif ()
+        add_test(NAME platform_shim_unit COMMAND dmm_platform_shim_test)
+        set_tests_properties(platform_shim_unit PROPERTIES LABELS "unit;runtime;platform;safety" TIMEOUT 20)
+        find_program(DMM_PLATFORM_LINKER NAMES gcc REQUIRED)
+        add_executable(dmm_linker_failure_driver tests/unit/linker_failure_driver.c)
+        add_test(NAME platform_handoff_contract COMMAND ${CMAKE_COMMAND}
+            -DCOMPILER=$<TARGET_FILE:compiler>
+            -DASSEMBLER=${DMM_PLATFORM_LINKER}
+            -DSHIM=$<TARGET_FILE_DIR:compiler>/dmm-runtime/${DMM_SHIM_FORMAT}/platform-shim.o
+            -DFAIL_DRIVER=$<TARGET_FILE:dmm_linker_failure_driver>
+            -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/platform_handoff_test
+            -P ${CMAKE_SOURCE_DIR}/tests/platform_handoff_test.cmake)
+        set_tests_properties(platform_handoff_contract PROPERTIES LABELS "integration;platform;runtime;cli;safety" TIMEOUT 120)
+    endif ()
     if (DMM_ENABLE_PERF_TESTS)
         find_package(Python3 COMPONENTS Interpreter REQUIRED)
         add_test(NAME runtime_performance
@@ -595,6 +641,7 @@ if (BUILD_TESTING)
 
     if (DMM_SANITIZERS)
         foreach (test_target
+                dmm_platform_shim_test
                 dmm_executor_test
                 dmm_async_semantic_test
                 dmm_foundation_test

@@ -7,6 +7,7 @@
 
 #include "ast.h"
 #include "semantic.h"
+#include "runtime_profile.h"
 
 #define IR_VALUE_NONE ((size_t)-1)
 #define IR_TYPE_NONE ((size_t)-1)
@@ -79,6 +80,8 @@ typedef enum {
 typedef struct {
     const AstProgram *source_program;
     IrOpcode opcode;
+    /* Lowering attaches requirements to future platform-specific operations. */
+    RuntimeRequirements runtime_requirements;
     AstAsyncOperation async_operation;
     int async_cleanup;
     AstSourceSpan span;
@@ -231,9 +234,23 @@ typedef struct {
     size_t import_capacity;
     struct IrGlobal *globals;
     size_t global_count;
+    /* Operation requirements are populated by lowering as platform intrinsics
+       are introduced. Profile is an emission view, not a linker decision. */
+    RuntimeRequirements runtime_requirements;
+    RuntimeProfile runtime_profile;
     int verified;
     int optimized;
 } IrModule;
+
+/* Inspect the selected IR after optimization: discarded operations do not
+   require runtime facilities. Current operations (including async) are zero. */
+static inline RuntimeRequirements ir_runtime_requirements(const IrModule *module) {
+    RuntimeRequirements result = module->runtime_requirements;
+    for (size_t f = 0; f < module->function_count; ++f)
+        for (size_t i = 0; i < module->functions[f].instruction_count; ++i)
+            result |= module->functions[f].instructions[i].runtime_requirements;
+    return runtime_requirements_normalize(result);
+}
 
 typedef struct IrGlobal {
     const AstProgram *source_program;
@@ -253,6 +270,7 @@ IrModule *ir_lower_program(const AstProgram *program, const SemanticModel *seman
 void ir_module_free(IrModule *module);
 
 int ir_verify_module(const IrModule *module);
+int ir_main_returns_void(const IrModule *module);
 
 int ir_dump(FILE *output, const IrModule *module);
 

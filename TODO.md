@@ -154,8 +154,9 @@ model. The normative rules and current restrictions are maintained in [LANGUAGE_
 - [ ] Define stable unmangled C imports and exports, calling-convention attributes, header generation, and ABI
   conformance tests.
 - [ ] Emit and consume static libraries.
-- [ ] Teach the internal linker to consume supported external objects and archives, or provide a documented
-  external-linker handoff.
+- [x] Provide a documented external-linker handoff for the private platform runtime, with separate runtime requirements,
+  profiles and link strategies; preserve standalone internal linking.
+- [ ] Extend object/archive interoperability beyond the private platform-runtime handoff.
 - [ ] Add position-independent code and shared libraries after symbol visibility and relocation rules are specified.
 - [ ] Emit source-level debug information: DWARF on ELF/COFF-compatible paths and PDB integration where applicable.
 - [ ] Emit Windows unwind metadata for functions that require it.
