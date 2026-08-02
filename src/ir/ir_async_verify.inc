@@ -6,6 +6,26 @@ static int verify_async_effects(const IrModule *module, const IrFunction *functi
     if (function->async_frame_pinned != 1 || function->future_type_id >= module->type_count ||
         module->types[function->future_type_id].kind != IR_TYPE_FUTURE ||
         module->types[function->future_type_id].element_type != function->return_type_id) return 0;
+    unsigned char *suspensions=calloc(function->async_state_count+1,1);
+    if(!suspensions) return 0;
+    int cancel_entry=0, transitions_valid=1;
+    for(size_t i=0;i<function->instruction_count;i++) {
+        const IrInstruction *in=&function->instructions[i];
+        if(in->opcode==IR_OP_LABEL && in->target_a==function->async_cancel_entry) cancel_entry=1;
+        if(in->opcode!=IR_OP_AWAIT && in->opcode!=IR_OP_CANCEL_AWAIT && in->opcode!=IR_OP_CANCEL_DROP) continue;
+        if(!in->target_a || in->target_a>function->async_state_count || suspensions[in->target_a]) {transitions_valid=0; break;}
+        suspensions[in->target_a]=1;
+        if(in->opcode==IR_OP_AWAIT && !in->async_cleanup) {
+            int edge=0;
+            for(size_t j=0;j<function->instruction_count;j++)
+                if(function->instructions[j].opcode==IR_OP_LABEL && function->instructions[j].target_a==in->target_b &&
+                   j+1<function->instruction_count && function->instructions[j+1].opcode==IR_OP_CANCEL_AWAIT &&
+                   function->instructions[j+1].operand_a==in->operand_a) edge=1;
+            if(!edge) transitions_valid=0;
+        }
+    }
+    free(suspensions);
+    if(!transitions_valid || !cancel_entry) return 0;
     IrControlFlowGraph graph;
     if (!ir_cfg_build(function, &graph)) return 0;
     size_t count = function->next_value;
@@ -25,7 +45,8 @@ static int verify_async_effects(const IrModule *module, const IrFunction *functi
             for (size_t i = graph.blocks[b].begin; i < graph.blocks[b].end; i++) {
                 const IrInstruction *in = &function->instructions[i];
                 if (in->result != IR_VALUE_NONE) state[in->result] = 0;
-                if (in->opcode == IR_OP_AWAIT ||
+                if (in->opcode == IR_OP_AWAIT || in->opcode == IR_OP_CANCEL_AWAIT ||
+                    (in->opcode==IR_OP_EXECUTOR && (in->async_operation==ASYNC_SPAWN || in->async_operation==ASYNC_CANCEL || in->async_operation==ASYNC_BLOCK_ON)) ||
                     (in->opcode == IR_OP_DROP && in->operand_a != IR_VALUE_NONE)) {
                     if (state[in->operand_a]) { valid = 0; break; }
                     state[in->operand_a] = 1;

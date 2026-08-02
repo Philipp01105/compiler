@@ -722,9 +722,13 @@ static void analyze_propagation(Analyzer *analyzer, AstExpression *expression) {
                                  &output);
 }
 
+static void analyze_expression_context(Analyzer *, AstExpression *, int);
+#include "semantic_executor.inc"
+
 static void analyze_expression_context(Analyzer *analyzer, AstExpression *expression,
                                        int direct_call_callee) {
     if (expression == NULL) return;
+    if (analyze_async_call(analyzer,expression)) return;
     if (expression->kind == AST_EXPR_CONTROL) {
         analyze_control_expression(analyzer, expression);
         return;
@@ -784,7 +788,9 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
         if (analyzer->current_function == NULL || !analyzer->current_function->as.function.is_async)
             semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_SEMANTIC,
                            ERR_SEM_INVALID_DECLARATION, "await is only valid inside an async function");
-        else if (!semantic_expression_is_future(expression->right) ||
+        else if ((!semantic_expression_is_future(expression->right) &&
+                  !(expression->right && expression->right->has_resolved_ast_type &&
+                    expression->right->resolved_ast_type.kind == AST_TYPE_JOIN)) ||
                  expression->right->resolved_ast_type.pointer_depth != 0 ||
                  expression->right->resolved_ast_type.outer_pointer_depth != 0 ||
                  expression->right->resolved_ast_type.borrow_kind != AST_BORROW_NONE ||
@@ -796,6 +802,10 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
             const AstProgram *source = expression->right->resolved_type_program != NULL
                 ? expression->right->resolved_type_program : analyzer->program;
             AstType output = expression->right->resolved_ast_type.arguments->type;
+            if (expression->right->resolved_ast_type.kind == AST_TYPE_JOIN) {
+                output=async_join_result(analyzer,source,&output);
+                source=analyzer->program;
+            }
             AstProgram *saved = analyzer->program;
             analyzer->program = (AstProgram *) source;
             validate_array_shape(analyzer, &output);

@@ -55,8 +55,8 @@ Stage 1 conservatively retains all frame storage across suspension. Await evalua
 suspends on Pending, and resumes at its unique verified state. On Ready it moves the output and cleans up the child
 exactly once. Normal return and error propagation run the existing defer/destructor paths exactly once. Invalid
 resume states, polling a completed frame, and cleanup of an incomplete frame trap in the private ABI.
-Both ELF and COFF native backends support this at O0 and O1. A private deterministic test driver exercises polling;
-there is no public executor, spawn/cancel, socket or OS-I/O API in Stage 1. `main` remains synchronous.
+Both ELF and COFF native backends support this at O0 and O1. A private deterministic test driver exercises polling.
+`main` remains synchronous. Public socket and file asynchronous I/O APIs remain outside Stage 2.
 
 `Send` and `Sync` are compiler-derived, structurally through aggregate fields and enum payloads. Shared checked
 references are Send/Sync when their referent is Sync; mutable checked references are Send when their referent is Send.
@@ -66,26 +66,61 @@ parameters or an instance receiver are not Send and cannot become spawn candidat
 remain conservative; `Future<T>` alone does not prove Send from `T`. Futures are not Sync because polling mutates them.
 There are no explicit unsafe Send/Sync implementations in Stage 1.
 
-The private Stage 2 runtime foundation is implemented in `src/runtime/executor.c`.
-Its ready queue parks idle workers and serializes polling of each frame. A wake
-received during a poll is retained across a Pending return. Task completion and
-cancellation requests are ordered under the same lock. Cancellation uses a
-separate callback and waits for child/I/O termination and awaitable cleanup;
-requesting I/O cancellation does not constitute confirmation. A completed,
-unclaimed result is destroyed exactly once when its handle is cancelled.
-Drain closes admission and waits for normal completion; Cancel additionally
-requests cancellation of active tasks. Both wait for worker exit. Outstanding
-joins and retained wakers keep task/executor state alive after shutdown. Local
-blocking polls run on the calling thread. The private default executor is lazy,
-has two workers, and drains at normal process exit. Native ELF/COFF thread and
-manual-reset wait-event primitives are emitted without an external linker handoff.
+Stage 2 exposes the following operations with the `async` feature enabled:
 
-This foundation is not yet connected to language-level Future frames. The public
-`Executor`, `JoinHandle<T>`, `ShutdownMode`, `TaskError`, `spawn`, `block_on`, and
-`cancel` API, concrete-value spawn checks, cancellation loan transfer, generated
-scope cleanup and cancellation IR/verifier transitions remain unimplemented.
-The Stage 1 language contract above therefore remains the implemented contract;
-the presence of private runtime helpers does not enable these source APIs.
+| Operation | Result |
+| --- | --- |
+| `Executor.create(workerCount:usize)` | owned `Executor`, at least one worker |
+| `executor.spawn(future:Future<T>)` or `spawn(future)` | owned `JoinHandle<T>` |
+| `executor.block_on(future:Future<T>)` or `block_on(future)` | `T`, synchronous functions only |
+| `executor.shutdown(ShutdownMode.Drain)` | consuming `Future<void>` |
+| `executor.shutdown(ShutdownMode.Cancel)` | consuming `Future<void>` |
+| `handle.await()` | `Result<T,TaskError>` |
+| `cancel(future:Future<T>)` or `cancel(handle:JoinHandle<T>)` | consuming `Future<void>` |
+
+`TaskError` initially has only `Cancelled`. Join results use `Ok(T)` and `Err(TaskError)`;
+`Result<void,TaskError>.Ok` has no payload. A consuming match on the async result transfers
+owned payloads to its bindings; every variant must bind its payloads, and bindings inherit
+the ordinary consumption requirements. To wait synchronously for a JoinHandle, call a small
+async function that awaits it through `block_on`.
+
+Futures, JoinHandles and Executor owners are move-only. Every reachable path must consume them;
+a completed but unclaimed JoinHandle cannot be dropped implicitly. Shutdown consumes the Executor
+and closes admission immediately. Drain lets admitted tasks finish normally; Cancel requests their
+cooperative cancellation. Both operations await I/O confirmation, cleanup and worker termination.
+JoinHandles remain independent owners after shutdown and must still be consumed. Published results
+remain available; cancelled tasks yield `Err(TaskError.Cancelled)`.
+
+Spawn checks the concrete Future value's complete retained frame and output for Send; the type
+`Future<T>` alone is insufficient. Borrowed parameters exclude spawn. Local blocking polls execute
+on the caller's thread and admit borrowed and non-Send futures. Cancel transfers existing loans into
+its returned operation. The origin remains inaccessible until that operation completes, including
+any delayed I/O cancellation and asynchronous cleanup. Requesting cancellation never releases a loan.
+Loans also follow pending Futures through `Result` construction, moves, forwarding calls and consuming
+matches; cancelling a bound payload releases its loan only after the cancellation Future completes.
+
+The scheduler uses a synchronized ready queue and parks idle workers. A frame is never polled
+concurrently. Notifications during a poll survive a Pending return; notifications may coalesce but
+cannot be lost. Completion and cancellation requests select one winner under the same lock. Published
+Ready results win over later shutdown cancellation; explicit handle cancellation destroys unclaimed
+results exactly once, recursively finishing owned child futures before destruction.
+
+Cancellation enters a separate generated cleanup path at a poll/suspension boundary; synchronous
+code already running is not forcibly interrupted. Only entered scopes contribute defer actions.
+Children and pending I/O terminate before their frames, borrowed buffers or OS handles are released.
+Active destructors and defers run once in the existing order. Awaitable defer actions keep polling
+until completion, including an action already suspended when cancellation arrives. Cancellation of
+a cancellation or shutdown Future still completes its operation. IR validation checks pinned storage,
+unique suspend states, cancellation edges, cleanup effects and consuming transitions.
+
+Native scheduling, threads, events and the private I/O handshake are emitted for ELF and COFF by
+the standalone runtime, without an external linker handoff. `src/runtime/executor.c` also implements
+the private contract for deterministic concurrency tests. I/O request and confirmed termination are
+separate events; frame and adapter references keep the operation alive through confirmation delivery.
+Free spawn and block_on lazily initialize a default executor with two workers. Normal process exit
+drains it before package cleanup. Explicit executors are independent. Resource failures follow the
+existing fatal runtime path. There are no detached tasks, forced thread aborts or cancellation deadline:
+non-cooperative synchronous code or missing I/O confirmation may delay cancellation/shutdown indefinitely.
 
 The `core.AtomicBit` and `core.AtomicUsize` types are available independently of `async`. Construct them with
 `core.atomicBit(initial)` and `core.atomicUsize(initial)`. Their `load`, `store`, `swap`, and
@@ -94,8 +129,8 @@ previous value, whether or not the exchange succeeded; compare that value with `
 On x86-64, an aligned word load is atomic, while stores and swaps use the implicitly locked memory `xchg` and
 compare-exchange uses `lock cmpxchg`. All operations participate in a single sequentially consistent order compatible
 with program order. The atomic wrapper types are move-only so they cannot be copied by ordinary aggregate assignment.
-Their storage must not be accessed through a non-atomic alias while it may be shared. There is not yet a public
-multi-thread executor or thread-spawning API.
+Their storage must not be accessed through a non-atomic alias while it may be shared. The async executor uses native
+worker threads; a separate public thread-spawning API is not provided.
 
 ## Types
 

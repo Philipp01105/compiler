@@ -23,6 +23,7 @@ typedef struct OwnershipDefer {
 } OwnershipDefer;
 
 typedef struct OwnershipScope {
+    const AstParameter *bindings;
     const AstStatement *statements;
     struct OwnershipScope *previous;
 } OwnershipScope;
@@ -157,6 +158,8 @@ static int must_consume_expression(const OwnershipChecker *checker, const AstExp
         expression->resolved_pointer_depth != 0 || expression->resolved_outer_pointer_depth != 0 ||
         expression->resolved_is_slice) return 0;
     if (semantic_expression_is_future(expression)) return 1;
+    if (expression->has_resolved_ast_type && (expression->resolved_ast_type.kind == AST_TYPE_JOIN ||
+        expression->resolved_ast_type.kind == AST_TYPE_EXECUTOR)) return 1;
     return (semantic_symbol_type_properties(checker->analyzer->model,
                                             expression->resolved_named_symbol_id) &
             SEMANTIC_TYPE_MUST_CONSUME) != 0;
@@ -174,10 +177,12 @@ static void finish_binding(OwnershipChecker *checker, OwnershipFlow *flow,
 static void finish_scopes(OwnershipChecker *checker, OwnershipFlow *flow,
                            const OwnershipScope *boundary, size_t token) {
     for (const OwnershipScope *scope = checker->scope; scope != boundary && scope != NULL;
-         scope = scope->previous)
+         scope = scope->previous) {
+        for(const AstParameter *p=scope->bindings;p;p=p->next) finish_binding(checker,flow,p->resolved_symbol_id,token);
         for (const AstStatement *statement = scope->statements; statement; statement = statement->next)
             if (statement->kind == AST_STMT_VARIABLE)
                 finish_binding(checker, flow, statement->resolved_symbol_id, token);
+    }
 }
 
 static void finish_function(OwnershipChecker *checker, OwnershipFlow *flow, size_t token) {
@@ -284,6 +289,19 @@ static void consume_expression(OwnershipChecker *checker,
 
 static void read_call(OwnershipChecker *checker, OwnershipFlow *flow,
                       const AstExpression *expression) {
+    if (expression->async_operation) {
+        if (expression->left && expression->left->kind == AST_EXPR_MEMBER &&
+            expression->async_operation != ASYNC_CREATE) {
+            if (expression->async_operation == ASYNC_SHUTDOWN)
+                consume_expression(checker, flow, expression->left->left);
+            else read_expression(checker, flow, expression->left->left);
+        }
+        for (const AstExpression *arg = expression->arguments; arg; arg = arg->next)
+            if (expression->async_operation == ASYNC_SPAWN || expression->async_operation == ASYNC_BLOCK_ON ||
+                expression->async_operation == ASYNC_CANCEL) consume_expression(checker, flow, arg);
+            else read_expression(checker, flow, arg);
+        return;
+    }
     read_expression(checker, flow, expression->left);
     const AstParameter *parameter = NULL;
     const AstTypeArgument *callable_parameter = NULL;
@@ -448,7 +466,8 @@ static OwnershipFlow check_match(OwnershipChecker *checker,
                                  const AstStatement *statement,
                                  OwnershipFlow flow,
                                  const OwnershipDefer *defers) {
-    read_expression(checker, &flow, statement->value);
+    if(statement->is_consuming_match) consume_expression(checker,&flow,statement->value);
+    else read_expression(checker, &flow, statement->value);
     OwnershipFlow merged = flow_new(checker, 0);
     for (const AstMatchArm *arm = statement->match_arms;
          arm != NULL; arm = arm->next) {
@@ -461,7 +480,11 @@ static OwnershipFlow check_match(OwnershipChecker *checker,
                 branch.move_tokens[binding->resolved_symbol_id] =
                     AST_TOKEN_NONE;
             }
+        OwnershipScope bindings={.bindings=arm->bindings,.previous=checker->scope};
+        checker->scope=&bindings;
         branch = check_statements(checker, arm->body, branch, defers);
+        if(branch.reachable) for(const AstParameter *p=arm->bindings;p;p=p->next) finish_binding(checker,&branch,p->resolved_symbol_id,arm->variant_token);
+        checker->scope=bindings.previous;
         flow_merge(checker, &merged, &branch);
         flow_free(&branch);
     }
@@ -509,7 +532,8 @@ static OwnershipFlow check_control_expression(OwnershipChecker *checker,
         return merged;
     }
     if (control->kind != AST_STMT_MATCH) return flow;
-    read_expression(checker, &flow, control->value);
+    if(control->is_consuming_match) consume_expression(checker,&flow,control->value);
+    else read_expression(checker, &flow, control->value);
     OwnershipFlow merged = flow_new(checker, 0);
     for (const AstMatchArm *arm = control->match_arms; arm;
          arm = arm->next) {
@@ -524,7 +548,11 @@ static OwnershipFlow check_control_expression(OwnershipChecker *checker,
                 branch.move_tokens[binding->resolved_symbol_id] =
                     AST_TOKEN_NONE;
             }
+        OwnershipScope bindings={.bindings=arm->bindings,.previous=checker->scope};
+        checker->scope=&bindings;
         branch = check_value_block(checker, arm->body, branch, consuming);
+        if(branch.reachable) for(const AstParameter *p=arm->bindings;p;p=p->next) finish_binding(checker,&branch,p->resolved_symbol_id,arm->variant_token);
+        checker->scope=bindings.previous;
         flow_merge(checker, &merged, &branch);
         flow_free(&branch);
     }

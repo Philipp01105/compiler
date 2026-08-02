@@ -29,6 +29,7 @@ typedef struct {
     NativeObject *native;
     int async_storage;
     size_t async_frame_bytes;
+    int async_result_callback;
 } Emitter;
 
 int map_quoted(FILE *output, const char *text);

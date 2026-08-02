@@ -557,10 +557,18 @@ static void check_expression(BorrowChecker *checker,
                              const AstExpression *expression,
                              BorrowAccess access) {
     if (expression == NULL) return;
+    if (expression->async_operation == ASYNC_BLOCK_ON) {
+        check_call(checker,expression);
+        if (!semantic_expression_is_future(expression) && expression->resolved_borrow_kind==AST_BORROW_NONE && !expression->resolved_is_slice &&
+            !(semantic_symbol_type_properties(checker->analyzer->model, expression->resolved_named_symbol_id) & SEMANTIC_TYPE_MUST_CONSUME))
+            release_future_value(checker,expression->arguments);
+        return;
+    }
     if (expression->kind == AST_EXPR_AWAIT) {
         check_expression(checker, expression->right, BORROW_ACCESS_WRITE);
         if (!semantic_expression_is_future(expression) &&
-            expression->resolved_borrow_kind == AST_BORROW_NONE && !expression->resolved_is_slice)
+            expression->resolved_borrow_kind == AST_BORROW_NONE && !expression->resolved_is_slice &&
+            !(semantic_symbol_type_properties(checker->analyzer->model, expression->resolved_named_symbol_id) & SEMANTIC_TYPE_MUST_CONSUME))
             release_future_value(checker, expression->right);
         return;
     }
@@ -672,14 +680,16 @@ static BorrowRecord *add_borrow_mode(BorrowChecker *checker,
     int has_returned_place = value->kind == AST_EXPR_CALL &&
                              returned_borrow_place(checker, value,
                                                    &returned_place);
-    if (value->kind == AST_EXPR_AWAIT && value->right != NULL) {
-        if (value->right->kind == AST_EXPR_CALL)
-            has_returned_place = returned_borrow_place(checker, value->right, &returned_place);
-        else if (value->right->kind == AST_EXPR_NAME) {
+    const AstExpression *completed=value->kind==AST_EXPR_AWAIT ? value->right :
+                                   value->async_operation==ASYNC_BLOCK_ON ? value->arguments:NULL;
+    if (completed != NULL) {
+        if (completed->kind == AST_EXPR_CALL)
+            has_returned_place = returned_borrow_place(checker, completed, &returned_place);
+        else if (completed->kind == AST_EXPR_NAME) {
             ReturnOrigin origin = {0};
             for (const BorrowRecord *loan = checker->borrows; loan; loan = loan->next)
                 if (loan->active && loan->captured_by_future &&
-                    loan->borrower_symbol == value->right->resolved_symbol_id) {
+                    loan->borrower_symbol == completed->resolved_symbol_id) {
                     BorrowPlace captured = {.owner = loan->owner_symbol, .field = loan->field_symbol};
                     merge_return_origin(&origin, &captured);
                 }
@@ -746,8 +756,8 @@ static void capture_future_borrows(BorrowChecker *checker,
         clone_aggregate_borrows(checker, borrower, value, scope_depth);
         return;
     }
-    if (value->kind == AST_EXPR_AWAIT) {
-        capture_future_borrows(checker, borrower, value->right, scope_depth);
+    if (value->kind == AST_EXPR_AWAIT || value->async_operation==ASYNC_BLOCK_ON) {
+        capture_future_borrows(checker, borrower, value->kind==AST_EXPR_AWAIT ? value->right:value->arguments, scope_depth);
         return;
     }
     if (value->kind == AST_EXPR_CONTROL && value->control != NULL) {
@@ -848,11 +858,16 @@ static void capture_future_borrows(BorrowChecker *checker,
 }
 
 static void check_future_return(BorrowChecker *checker, const AstExpression *value) {
-    if (!semantic_expression_is_future(value)) return;
+    if (value == NULL || (!semantic_expression_is_future(value) &&
+        !(semantic_symbol_type_properties(checker->analyzer->model,
+                                          value->resolved_named_symbol_id) & SEMANTIC_TYPE_MUST_CONSUME))) return;
     AstExpression escaped = {.kind = AST_EXPR_NAME,
         .resolved_symbol_id = checker->analyzer->current_function_symbol_id};
     BorrowRecord *boundary = checker->borrows;
-    capture_future_borrows(checker, &escaped, value, checker->current_scope_depth);
+    if (semantic_expression_is_future(value))
+        capture_future_borrows(checker, &escaped, value, checker->current_scope_depth);
+    else
+        clone_aggregate_borrows(checker, &escaped, value, checker->current_scope_depth);
     for (BorrowRecord *loan = checker->borrows; loan; loan = loan->next) {
         if (loan->active && loan->captured_by_future &&
             (loan->borrower_symbol == escaped.resolved_symbol_id ||
@@ -879,6 +894,48 @@ static void clone_aggregate_borrows(BorrowChecker *checker,
                                     const AstExpression *target,
                                     const AstExpression *source,
                                     size_t scope_depth) {
+    if (source != NULL && (source->kind == AST_EXPR_AWAIT || source->async_operation == ASYNC_BLOCK_ON) &&
+        (semantic_symbol_type_properties(checker->analyzer->model,
+                                         source->resolved_named_symbol_id) & SEMANTIC_TYPE_MUST_CONSUME)) {
+        capture_future_borrows(checker, target,
+            source->kind == AST_EXPR_AWAIT ? source->right : source->arguments, scope_depth);
+        return;
+    }
+    if (source != NULL && source->kind == AST_EXPR_ENUM_CONSTRUCT) {
+        for (const AstExpression *payload = source->arguments; payload; payload = payload->next) {
+            if (semantic_expression_is_future(payload))
+                capture_future_borrows(checker, target, payload, scope_depth);
+            else
+                clone_aggregate_borrows(checker, target, payload, scope_depth);
+        }
+        return;
+    }
+    if (source != NULL && source->kind == AST_EXPR_CALL &&
+        (semantic_symbol_type_properties(checker->analyzer->model,
+                                         source->resolved_named_symbol_id) & SEMANTIC_TYPE_MUST_CONSUME)) {
+        /* A synchronous wrapper may transfer a pending Future inside its result.
+           Preserve argument loans until the returned owner is consumed. */
+        for (const AstExpression *argument = source->arguments; argument; argument = argument->next) {
+            if (semantic_expression_is_future(argument)) {
+                capture_future_borrows(checker, target, argument, scope_depth);
+            } else if (argument->resolved_borrow_kind != AST_BORROW_NONE) {
+                BorrowRecord *loan = add_borrow_mode(checker, target, argument, scope_depth, 1);
+                if (loan != NULL) {
+                    loan->captured_by_future = 1;
+                    if (loan->borrower_symbol < checker->analyzer->model->symbol_count) {
+                        loan->scope_depth = checker->analyzer->model->symbols[loan->borrower_symbol].scope_depth;
+                        const SemanticSymbol *origin = &checker->analyzer->model->symbols[loan->owner_symbol];
+                        if (origin->kind == SEMANTIC_SYMBOL_LOCAL && origin->scope_depth > loan->scope_depth)
+                            report_borrow_error(checker, argument->first_token,
+                                "A Future cannot outlive the origin of a captured borrow");
+                    }
+                }
+            } else {
+                clone_aggregate_borrows(checker, target, argument, scope_depth);
+            }
+        }
+        return;
+    }
     if (source == NULL ||
         (!semantic_expression_is_future(source) && source->resolved_borrow_kind == AST_BORROW_NONE &&
          source->resolved_named_symbol_id == AST_SYMBOL_NONE && !source->resolved_is_array &&
@@ -912,7 +969,7 @@ static void clone_aggregate_borrows(BorrowChecker *checker,
         copy->next = checker->borrows;
         checker->borrows = copy;
     }
-    if (semantic_expression_is_future(source))
+    if (semantic_expression_is_move_only(checker->analyzer, source))
         deactivate_borrower(checker, source_place.owner, AST_SYMBOL_NONE);
 }
 
@@ -940,9 +997,9 @@ static void check_statement_list(BorrowChecker *checker,
                 clone_aggregate_borrows(checker, &borrower,
                                         statement->value, scope_depth);
             capture_future_borrows(checker, &borrower, statement->value, scope_depth);
-            if (statement->value != NULL && statement->value->kind == AST_EXPR_AWAIT &&
+            if (statement->value != NULL && (statement->value->kind == AST_EXPR_AWAIT || statement->value->async_operation==ASYNC_BLOCK_ON) &&
                 !semantic_expression_is_future(statement->value))
-                release_future_value(checker, statement->value->right);
+                release_future_value(checker, statement->value->kind==AST_EXPR_AWAIT ? statement->value->right:statement->value->arguments);
             continue;
         }
         if (statement->kind == AST_STMT_ASSIGNMENT) {
@@ -960,9 +1017,9 @@ static void check_statement_list(BorrowChecker *checker,
                 clone_aggregate_borrows(checker, statement->expression,
                                         statement->value, scope_depth);
             capture_future_borrows(checker, statement->expression, statement->value, scope_depth);
-            if (statement->value != NULL && statement->value->kind == AST_EXPR_AWAIT &&
+            if (statement->value != NULL && (statement->value->kind == AST_EXPR_AWAIT || statement->value->async_operation==ASYNC_BLOCK_ON) &&
                 !semantic_expression_is_future(statement->value))
-                release_future_value(checker, statement->value->right);
+                release_future_value(checker, statement->value->kind==AST_EXPR_AWAIT ? statement->value->right:statement->value->arguments);
             continue;
         }
         if (statement->kind == AST_STMT_DEFER) {
@@ -1034,6 +1091,18 @@ static void check_statement_list(BorrowChecker *checker,
             FutureLoanBranch *branches = NULL;
             for (const AstMatchArm *arm = statement->match_arms; arm; arm = arm->next) {
                 future_loan_restore(checker, &entry);
+                if (statement->is_consuming_match) {
+                    for (const AstParameter *binding = arm->bindings; binding; binding = binding->next) {
+                        if (!(semantic_declared_type_properties(checker->analyzer, checker->analyzer->program,
+                                                               &binding->type) & SEMANTIC_TYPE_MUST_CONSUME))
+                            continue;
+                        AstExpression borrower = {.kind = AST_EXPR_NAME,
+                            .resolved_symbol_id = binding->resolved_symbol_id};
+                        clone_aggregate_borrows(checker, &borrower, statement->value, scope_depth + 1);
+                    }
+                    if (statement->value && statement->value->kind == AST_EXPR_NAME)
+                        deactivate_borrower(checker, statement->value->resolved_symbol_id, AST_SYMBOL_NONE);
+                }
                 check_statement_list(checker, arm->body, scope_depth + 1);
                 deactivate_scope(checker, scope_depth + 1);
                 if (!statement_may_fall_through(arm->body)) continue;

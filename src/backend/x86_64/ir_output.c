@@ -357,7 +357,7 @@ static int emit_file(Emitter *emitter, int deterministic) {
                 if (function->instructions[i].is_slice) slots++;
                 if (slots == 0 || declarations > SIZE_MAX - slots) return 0;
                 declarations += slots;
-            } else if ((function->instructions[i].opcode == IR_OP_AWAIT || function->instructions[i].opcode == IR_OP_CALL || function->instructions[i].opcode ==
+            } else if ((function->instructions[i].opcode == IR_OP_EXECUTOR || function->instructions[i].opcode == IR_OP_AWAIT || function->instructions[i].opcode == IR_OP_CALL || function->instructions[i].opcode ==
                         IR_OP_ENUM_CONSTRUCT || function->instructions[i].opcode == IR_OP_SLICE ||
                         function->instructions[i].opcode == IR_OP_SUBSLICE ||
                         function->instructions[i].opcode == IR_OP_ARRAY_LITERAL ||

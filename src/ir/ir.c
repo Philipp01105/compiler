@@ -64,6 +64,8 @@ typedef struct {
     CleanupScope *cleanup_scope;
     CleanupScope *break_cleanup_stop;
     CleanupScope *continue_cleanup_stop;
+    int cancelling;
+    unsigned cleanup_depth;
     int failed;
 } IrBuilder;
 
@@ -78,7 +80,8 @@ static int grow_array(void **items, size_t *capacity, size_t item_size) {
 }
 
 static int is_terminator(IrOpcode opcode) {
-    return opcode == IR_OP_RETURN || opcode == IR_OP_BRANCH || opcode == IR_OP_JUMP || opcode == IR_OP_TRAP;
+    return opcode == IR_OP_RETURN || opcode == IR_OP_BRANCH || opcode == IR_OP_JUMP || opcode == IR_OP_TRAP ||
+           opcode == IR_OP_CANCEL_RETURN || opcode == IR_OP_CANCEL_CHECK;
 }
 
 static int block_terminated(const IrFunction *function) {
@@ -114,6 +117,7 @@ static IrInstruction *emit(IrBuilder *builder, IrOpcode opcode, AstSourceSpan sp
         .target_a = IR_VALUE_NONE,
         .target_b = IR_VALUE_NONE
     };
+    instruction->async_cleanup = builder->cancelling || builder->cleanup_depth != 0;
     return instruction;
 }
 
@@ -288,12 +292,20 @@ static IrTypeId type_from_ast(IrModule *module, const AstProgram *program,
         }
         return result;
     }
-    if (type != NULL && type->kind == AST_TYPE_FUTURE) {
+    if (type != NULL && type->kind == AST_TYPE_EXECUTOR) {
+        IrTypeId value=intern_type(module,(IrType){.kind=IR_TYPE_EXECUTOR,.primitive=TYPE_UNKNOWN,
+            .symbol_id=AST_SYMBOL_NONE,.element_type=IR_TYPE_NONE});
+        for (unsigned depth=0;depth<type->pointer_depth+type->outer_pointer_depth+(type->borrow_kind!=AST_BORROW_NONE);depth++)
+            value=intern_type(module,(IrType){.kind=IR_TYPE_POINTER,.primitive=TYPE_UNKNOWN,
+                .symbol_id=AST_SYMBOL_NONE,.element_type=value});
+        return value;
+    }
+    if (type != NULL && (type->kind == AST_TYPE_FUTURE || type->kind == AST_TYPE_JOIN)) {
         if (type->arguments == NULL || type->arguments->next != NULL) return IR_TYPE_NONE;
         IrTypeId value = type_from_ast(module, program, &type->arguments->type);
         if (value == IR_TYPE_NONE) return value;
         value = intern_type(module, (IrType) {
-            .kind = IR_TYPE_FUTURE, .primitive = TYPE_UNKNOWN,
+            .kind = type->kind == AST_TYPE_JOIN ? IR_TYPE_JOIN : IR_TYPE_FUTURE, .primitive = TYPE_UNKNOWN,
             .symbol_id = AST_SYMBOL_NONE, .element_type = value
         });
         if (type->is_array || type->is_slice)
@@ -387,7 +399,8 @@ static IrTypeId type_from_expression(IrModule *module, const AstProgram *program
     if (expression->has_resolved_ast_type &&
         (expression->resolved_ast_type.element_type != NULL ||
          expression->resolved_ast_type.kind == AST_TYPE_FUNCTION ||
-         expression->resolved_ast_type.kind == AST_TYPE_FUTURE))
+         expression->resolved_ast_type.kind == AST_TYPE_FUTURE ||
+         expression->resolved_ast_type.kind == AST_TYPE_JOIN || expression->resolved_ast_type.kind == AST_TYPE_EXECUTOR))
         return type_from_ast(module,
                              expression->resolved_type_program != NULL
                                  ? expression->resolved_type_program : program,
@@ -513,6 +526,22 @@ static size_t lower_control_expression(IrBuilder *builder,
                                        const AstExpression *expression);
 
 static size_t lower_expression(IrBuilder *builder, const AstExpression *expression) {
+    if (expression && expression->async_operation) {
+        size_t receiver=IR_VALUE_NONE;
+        if (expression->left->kind==AST_EXPR_MEMBER && expression->async_operation!=ASYNC_CREATE)
+            receiver=lower_expression(builder,expression->left->left);
+        size_t value=lower_expression(builder,expression->arguments);
+        if (expression->async_operation==ASYNC_SPAWN || expression->async_operation==ASYNC_BLOCK_ON ||
+            expression->async_operation==ASYNC_CANCEL) emit_move_if_owned(builder,expression->arguments);
+        if (expression->async_operation==ASYNC_SHUTDOWN) emit_move_if_owned(builder,expression->left->left);
+        IrInstruction *in=emit(builder,IR_OP_EXECUTOR,expression->span);
+        if (!in) return IR_VALUE_NONE;
+        in->async_operation=expression->async_operation;
+        in->operand_a=value; in->operand_b=receiver;
+        set_expression_type(builder,in,expression);
+        if (data_type_has_value(expression->resolved_type)) in->result=new_value(builder);
+        return in->result;
+    }
     if (expression == NULL) return IR_VALUE_NONE;
     if (expression->kind == AST_EXPR_CONTROL)
         return lower_control_expression(builder, expression);
@@ -867,6 +896,25 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
     size_t right = lower_expression(builder, expression->right);
     if (expression->kind == AST_EXPR_AWAIT)
         emit_move_if_owned(builder, expression->right);
+    if (expression->kind == AST_EXPR_AWAIT && !builder->cancelling && !builder->cleanup_depth) {
+        size_t normal=new_label(builder), cancel=new_label(builder);
+        IrInstruction *check=emit(builder,IR_OP_CANCEL_CHECK,expression->span);
+        if (!check) return IR_VALUE_NONE;
+        set_void_type(builder,check); check->target_a=normal; check->target_b=cancel;
+        emit_label(builder,cancel,expression->span);
+        builder->cancelling=1;
+        IrInstruction *child=emit(builder,IR_OP_CANCEL_AWAIT,expression->span);
+        if (!child) return IR_VALUE_NONE;
+        set_void_type(builder,child); child->operand_a=right;
+        child->target_a=++builder->function->async_state_count;
+        emit_deferred_until(builder,NULL);
+        IrInstruction *done=emit(builder,IR_OP_CANCEL_RETURN,expression->span);
+        set_void_type(builder,done);
+        builder->cancelling=0;
+        emit_label(builder,normal,expression->span);
+        /* The normal suspend state's cancellation dispatch enters this block. */
+        builder->function->instructions[builder->function->instruction_count-1].target_b=cancel;
+    }
     if ((expression->kind == AST_EXPR_CAST || expression->kind == AST_EXPR_FREE) &&
         expression->arguments != NULL)
         left = lower_expression(builder, expression->arguments);
@@ -1005,6 +1053,12 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         instruction->operand_a = right;
         instruction->operand_b = IR_VALUE_NONE;
         instruction->target_a = ++builder->function->async_state_count;
+        if (!builder->cancelling && !builder->cleanup_depth)
+            for (size_t i=builder->function->instruction_count-1;i>0;i--)
+                if (builder->function->instructions[i-1].opcode==IR_OP_LABEL) {
+                    instruction->target_b=builder->function->instructions[i-1].target_b;
+                    break;
+                }
     }
     instruction->auxiliary_token = expression->value_token;
     instruction->symbol_id = expression->resolved_symbol_id;
@@ -1097,17 +1151,19 @@ static void emit_deferred_scope(IrBuilder *builder,
             instruction->symbol_id = action->drop_symbol_id;
             instruction->type = TYPE_VOID;
         } else if (action->drop_local) {
-            IrInstruction *instruction = emit(builder, IR_OP_DROP,
+            IrInstruction *instruction = emit(builder, builder->cancelling ? IR_OP_CANCEL_DROP : IR_OP_DROP,
                                                action->drop_span);
             if (instruction == NULL) return;
             instruction->type_id = action->drop_type_id;
             instruction->symbol_id = action->drop_symbol_id;
             instruction->type = TYPE_VOID;
+            if (builder->cancelling) instruction->target_a=++builder->function->async_state_count;
         } else if (action->captured_call) {
             IrInstruction *instruction =
                 emit(builder, action->call.opcode, action->call.span);
             if (instruction == NULL) return;
             *instruction = action->call;
+            instruction->async_cleanup=builder->cancelling || builder->cleanup_depth!=0;
             instruction->first_argument =
                 builder->function->argument_count;
             instruction->argument_count = action->argument_count;
@@ -1117,7 +1173,9 @@ static void emit_deferred_scope(IrBuilder *builder,
             if (instruction->result != IR_VALUE_NONE)
                 instruction->result = new_value(builder);
         } else {
+            builder->cleanup_depth++;
             lower_scoped_statement(builder, action->body);
+            builder->cleanup_depth--;
         }
     }
 }
@@ -1172,7 +1230,8 @@ static int expression_moves_ownership(const IrBuilder *builder,
                                       const AstExpression *expression) {
     if (expression != NULL && expression->kind == AST_EXPR_NAME &&
         expression->has_resolved_ast_type &&
-        expression->resolved_ast_type.kind == AST_TYPE_FUTURE &&
+        (expression->resolved_ast_type.kind == AST_TYPE_FUTURE || expression->resolved_ast_type.kind == AST_TYPE_JOIN ||
+         expression->resolved_ast_type.kind == AST_TYPE_EXECUTOR) &&
         expression->resolved_borrow_kind == AST_BORROW_NONE &&
         expression->resolved_pointer_depth == 0 &&
         expression->resolved_outer_pointer_depth == 0 && !expression->resolved_is_slice)
@@ -1372,6 +1431,7 @@ static void lower_match_bindings(IrBuilder *builder, size_t value,
         local->pointer_depth = payload->pointer_depth;
         local->type_name_token = payload->type_name_token;
         local->is_array = payload->is_array;
+        register_local_drop(builder,binding->resolved_symbol_id,local->type_id,arm->span);
     }
 }
 
@@ -1405,8 +1465,13 @@ static size_t lower_match_value_arms(IrBuilder *builder,
     branch->target_a = body_label;
     branch->target_b = next_label;
     emit_label(builder, body_label, arm->span);
+    CleanupScope binding_scope={.previous=builder->cleanup_scope};
+    builder->cleanup_scope=&binding_scope;
     lower_match_bindings(builder, value, arm, body_label);
     size_t body_value = lower_value_block(builder, arm->body, target_type);
+    if(!block_terminated(builder->function)) emit_deferred_scope(builder,&binding_scope);
+    builder->cleanup_scope=binding_scope.previous;
+    free_deferred_actions(binding_scope.actions);
     int body_reaches = !block_terminated(builder->function);
     size_t body_predecessor = current_block_label(builder);
     if (body_reaches) {
@@ -1447,6 +1512,7 @@ static size_t lower_control_expression(IrBuilder *builder,
                                     control->selected_type_arm->body,
                                     target_type);
         size_t value = lower_expression(builder, control->value);
+        if(control->is_consuming_match) emit_move_if_owned(builder,control->value);
         if (block_terminated(builder->function)) return IR_VALUE_NONE;
         return lower_match_value_arms(builder, expression,
                                       control->match_arms, value, target_type);
@@ -1500,6 +1566,7 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
                 continue;
             }
             size_t value = lower_expression(builder, statement->value);
+            if(statement->is_consuming_match) emit_move_if_owned(builder,statement->value);
             size_t join = new_label(builder);
             int wildcard = 0;
             for (const AstMatchArm *arm = statement->match_arms; arm; arm = arm->next) {
@@ -1525,6 +1592,8 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
                     emit_label(builder, body_label, arm->span);
                 } else wildcard = 1;
                 size_t payload_index = 0;
+                CleanupScope binding_scope={.previous=builder->cleanup_scope};
+                builder->cleanup_scope=&binding_scope;
                 for (const AstParameter *binding = arm->bindings; binding; binding = binding->next, payload_index++) {
                     IrInstruction *payload = emit(builder, IR_OP_ENUM_PAYLOAD, arm->span);
                     if (!payload) return;
@@ -1552,8 +1621,12 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
                                            (binding->type.borrow_kind != AST_BORROW_NONE);
                     local->type_name_token = binding->type.name_token;
                     local->is_array = binding->type.is_array;
+                    register_local_drop(builder,binding->resolved_symbol_id,local->type_id,arm->span);
                 }
                 lower_scoped_statement(builder, arm->body);
+                if(!block_terminated(builder->function)) emit_deferred_scope(builder,&binding_scope);
+                builder->cleanup_scope=binding_scope.previous;
+                free_deferred_actions(binding_scope.actions);
                 IrInstruction *jump = emit(builder, IR_OP_JUMP, arm->span);
                 if (jump) {
                     set_void_type(builder, jump);
@@ -1918,6 +1991,18 @@ static int append_function(IrModule *module, const AstProgram *program,
             register_local_drop(&builder, parameter->symbol_id,
                                 parameter->type_id,
                                 declaration->span);
+    }
+    if (function->is_async) {
+        size_t normal=new_label(&builder), cancel=new_label(&builder);
+        function->async_cancel_entry=cancel;
+        IrInstruction *check=emit(&builder,IR_OP_CANCEL_CHECK,declaration->span);
+        set_void_type(&builder,check); check->target_a=normal; check->target_b=cancel;
+        emit_label(&builder,cancel,declaration->span);
+        builder.cancelling=1;
+        emit_deferred_scope(&builder,&parameter_scope);
+        IrInstruction *done=emit(&builder,IR_OP_CANCEL_RETURN,declaration->span); set_void_type(&builder,done);
+        builder.cancelling=0;
+        emit_label(&builder,normal,declaration->span);
     }
     lower_statement(&builder, declaration->as.function.body);
     if (!block_terminated(function))

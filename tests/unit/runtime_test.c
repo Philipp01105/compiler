@@ -128,6 +128,98 @@ static uint64_t native_thread_callback(void *pointer) {
     return 0;
 }
 
+typedef struct NativeFrame NativeFrame;
+struct NativeFrame {
+    uint64_t (*poll)(NativeFrame *,void *);
+    void (*destroy)(NativeFrame *,uint64_t);
+    int64_t state;
+    uint64_t (*cancel_poll)(NativeFrame *,void *);
+    void (*result_drop)(void *);
+    void *context;
+    uint64_t result_present,cancelling;
+    void *auxiliary;
+    uint64_t size,result[2];
+};
+typedef void *(*ExecutorCreate)(uint64_t);
+typedef NativeFrame *(*Spawn)(void *,NativeFrame *,uint64_t);
+typedef NativeFrame *(*Shutdown)(void *,uint64_t);
+typedef NativeFrame *(*FutureOperation)(NativeFrame *);
+typedef void *(*IoCreate)(void *,Release);
+typedef uint64_t (*IoPoll)(void *,void *);
+typedef uint64_t (*IoQuery)(void *);
+typedef struct {
+    atomic_uint entered, polls, cancelling, destroyed, discarded, in_poll, overlap, confirmed;
+    atomic_uintptr_t waker;
+    WaitAction retain,release,wake;
+    Release free_frame;
+    unsigned delay;
+    void *entered_event,*cancel_event;
+    WaitAction event_wake;
+    void *io;
+    IoPoll io_poll;
+    WaitAction io_request,io_destroy;
+    atomic_uint resources_released;
+    void *proceed_event;
+    WaitAction event_wait;
+} NativeProbe;
+static uint64_t native_probe_poll(NativeFrame *f,void *context) {
+    NativeProbe *p=f->auxiliary;
+    if(atomic_fetch_add(&p->in_poll,1)) atomic_store(&p->overlap,1);
+    unsigned poll=atomic_fetch_add(&p->polls,1);
+    if(!atomic_load(&p->waker)) {
+        p->retain(context);
+        atomic_store(&p->waker,(uintptr_t)context);
+    }
+    atomic_store(&p->entered,1);
+    if(p->entered_event) p->event_wake(p->entered_event);
+    if(p->proceed_event) p->event_wait(p->proceed_event);
+    if(poll<p->delay) {
+        /* Deliberately wake before returning Pending. */
+        p->wake(context);
+        atomic_fetch_sub(&p->in_poll,1);
+        return 0;
+    }
+    f->result[0]=42; f->state=-1; f->result_present=1;
+    atomic_fetch_sub(&p->in_poll,1);
+    return 1;
+}
+static uint64_t native_probe_pending(NativeFrame *f,void *context) {
+    NativeProbe *p=f->auxiliary;
+    if(p->io) (void)p->io_poll(p->io,context);
+    if(!atomic_load(&p->waker)) {
+        p->retain(context); atomic_store(&p->waker,(uintptr_t)context);
+    }
+    atomic_fetch_add(&p->polls,1); atomic_store(&p->entered,1);
+    if(p->entered_event) p->event_wake(p->entered_event);
+    return 0;
+}
+static uint64_t native_probe_cancel(NativeFrame *f,void *context) {
+    NativeProbe *p=f->auxiliary;
+    if(!atomic_load(&p->waker)) {
+        p->retain(context); atomic_store(&p->waker,(uintptr_t)context);
+    }
+    atomic_store(&p->cancelling,1);
+    if(p->io) p->io_request(p->io);
+    if(p->cancel_event) p->event_wake(p->cancel_event);
+    if(p->io ? !p->io_poll(p->io,context):!atomic_load(&p->confirmed)) return 0;
+    f->state=-2; return 1;
+}
+static void native_probe_destroy(NativeFrame *f,uint64_t discard) {
+    NativeProbe *p=f->auxiliary;
+    if(discard && f->result_present) atomic_fetch_add(&p->discarded,1);
+    atomic_fetch_add(&p->destroyed,1);
+    if(p->io) p->io_destroy(p->io);
+    p->free_frame(f);
+}
+static void native_probe_release(NativeProbe *p) {
+    uintptr_t ctx=atomic_exchange(&p->waker,0);
+    p->release((void *)ctx);
+}
+static void native_probe_resources_release(void *resource) {
+    NativeProbe *p=resource;
+    atomic_fetch_add(&p->resources_released,1);
+}
+
 int main(int argc, char **argv) {
     CHECK(argc == 2);
     Image image = {0};
@@ -220,6 +312,111 @@ int main(int argc, char **argv) {
     CHECK(fd >= 0 && read_file(fd, actual, 6) == 5 && !memcmp(actual, "12345", 5) && close_file(fd) == 0);
     CHECK(read_file(-1, actual, 1) < 0 && write_file(-1, actual, 1) < 0 && close_file(-1) < 0);
     CHECK(read_file(0, actual, -1) == -22);
+    FUNCTION(ExecutorCreate,executor_create,"__dmm_async_executor_create");
+    FUNCTION(Spawn,spawn_future,"__dmm_async_spawn");
+    FUNCTION(Shutdown,shutdown_executor,"__dmm_async_shutdown");
+    FUNCTION(FutureOperation,block_on_future,"__dmm_async_block_on");
+    FUNCTION(FutureOperation,cancel_future,"__dmm_async_cancel");
+    FUNCTION(WaitAction,context_retain,"__dmm_async_context_retain");
+    FUNCTION(WaitAction,context_release,"__dmm_async_context_release");
+    FUNCTION(WaitAction,context_wake,"__dmm_async_context_wake");
+    FUNCTION(IoCreate,io_create,"__dmm_async_io_create");
+    FUNCTION(IoPoll,io_poll,"__dmm_async_io_poll");
+    FUNCTION(WaitAction,io_request,"__dmm_async_io_request_cancel");
+    FUNCTION(IoQuery,io_requested,"__dmm_async_io_cancel_requested");
+    FUNCTION(WaitAction,io_confirm,"__dmm_async_io_confirm");
+    FUNCTION(WaitAction,io_destroy,"__dmm_async_io_destroy");
+    for(unsigned round=0;round<20;round++) {
+        void *executor=executor_create(2);
+        NativeProbe probes[8]={0}; NativeFrame *handles[8];
+        for(unsigned i=0;i<8;i++) {
+            NativeProbe *probe=&probes[i];
+            probe->retain=context_retain; probe->release=context_release; probe->wake=context_wake;
+            probe->free_frame=release; probe->delay=30;
+            NativeFrame *frame=callocate(1,sizeof(*frame)); CHECK(frame);
+            frame->poll=native_probe_poll; frame->cancel_poll=native_probe_cancel;
+            frame->destroy=native_probe_destroy; frame->auxiliary=probe;
+            handles[i]=spawn_future(executor,frame,8); CHECK(handles[i]);
+        }
+        NativeFrame *shutdown=shutdown_executor(executor,0);
+        CHECK(block_on_future(shutdown)==shutdown); shutdown->destroy(shutdown,0);
+        for(unsigned i=0;i<8;i++) {
+            NativeFrame *handle=handles[i]; CHECK(block_on_future(handle)==handle);
+            CHECK(handle->result[0]==0 && handle->result[1]==42);
+            handle->destroy(handle,0);
+            CHECK(atomic_load(&probes[i].destroyed)==1 && !atomic_load(&probes[i].overlap));
+            native_probe_release(&probes[i]);
+        }
+    }
+    /* The task and frame stay alive until the private adapter confirms I/O
+       termination. A wake after Pending schedules the cancellation poll. */
+    void *executor=executor_create(2);
+    NativeProbe probe={0}; probe.retain=context_retain; probe.release=context_release;
+    probe.wake=context_wake; probe.free_frame=release;
+    probe.entered_event=create_wait(); probe.cancel_event=create_wait(); probe.event_wake=wake_event;
+    probe.io=io_create(&probe,native_probe_resources_release); CHECK(probe.io);
+    probe.io_poll=io_poll; probe.io_request=io_request; probe.io_destroy=io_destroy;
+    NativeFrame *frame=callocate(1,sizeof(*frame)); CHECK(frame);
+    frame->poll=native_probe_pending; frame->cancel_poll=native_probe_cancel;
+    frame->destroy=native_probe_destroy; frame->auxiliary=&probe;
+    NativeFrame *handle=spawn_future(executor,frame,8);
+    wait_event(probe.entered_event);
+    NativeFrame *cancellation=cancel_future(handle);
+    CHECK(!cancellation->poll(cancellation,NULL));
+    wait_event(probe.cancel_event);
+    CHECK(!atomic_load(&probe.destroyed));
+    CHECK(io_requested(probe.io) && !atomic_load(&probe.resources_released));
+    io_confirm(probe.io);
+    CHECK(block_on_future(cancellation)==cancellation); cancellation->destroy(cancellation,0);
+    CHECK(atomic_load(&probe.destroyed)==1 && !atomic_load(&probe.discarded) && atomic_load(&probe.resources_released)==1);
+    native_probe_release(&probe);
+    destroy_event(probe.entered_event); destroy_event(probe.cancel_event);
+    NativeFrame *shutdown=shutdown_executor(executor,1);
+    CHECK(block_on_future(shutdown)==shutdown); shutdown->destroy(shutdown,0);
+    /* Two simultaneous polls must enter before either can leave. Request
+       cancellation of one while its synchronous code is still running. */
+    executor=executor_create(2);
+    NativeProbe parallel[2]={0}; NativeFrame *parallel_handles[2];
+    for(unsigned i=0;i<2;i++) {
+        NativeProbe *p_probe=&parallel[i];
+        p_probe->retain=context_retain; p_probe->release=context_release; p_probe->wake=context_wake;
+        p_probe->free_frame=release; p_probe->event_wake=wake_event; p_probe->event_wait=wait_event;
+        p_probe->entered_event=create_wait(); p_probe->proceed_event=create_wait();
+        frame=callocate(1,sizeof(*frame)); CHECK(frame); frame->poll=native_probe_poll;
+        frame->cancel_poll=native_probe_cancel; frame->destroy=native_probe_destroy; frame->auxiliary=p_probe;
+        parallel_handles[i]=spawn_future(executor,frame,8);
+    }
+    wait_event(parallel[0].entered_event); wait_event(parallel[1].entered_event);
+    cancellation=cancel_future(parallel_handles[0]); CHECK(!cancellation->poll(cancellation,NULL));
+    CHECK(!atomic_load(&parallel[0].destroyed));
+    wake_event(parallel[0].proceed_event); wake_event(parallel[1].proceed_event);
+    CHECK(block_on_future(cancellation)==cancellation); cancellation->destroy(cancellation,0);
+    CHECK(atomic_load(&parallel[0].discarded)==1 && atomic_load(&parallel[0].destroyed)==1);
+    handle=parallel_handles[1]; CHECK(block_on_future(handle)==handle);
+    CHECK(handle->result[0]==0 && handle->result[1]==42); handle->destroy(handle,0);
+    shutdown=shutdown_executor(executor,0); CHECK(block_on_future(shutdown)==shutdown); shutdown->destroy(shutdown,0);
+    for(unsigned i=0;i<2;i++) {
+        CHECK(!atomic_load(&parallel[i].overlap)); native_probe_release(&parallel[i]);
+        destroy_event(parallel[i].entered_event); destroy_event(parallel[i].proceed_event);
+    }
+    /* Shutdown Cancel closes admission but preserves an outstanding join.
+       It waits for the I/O confirmation before releasing the frame. */
+    executor=executor_create(2); NativeProbe shutdown_probe={0};
+    shutdown_probe.retain=context_retain; shutdown_probe.release=context_release;
+    shutdown_probe.wake=context_wake; shutdown_probe.free_frame=release; shutdown_probe.event_wake=wake_event;
+    shutdown_probe.entered_event=create_wait(); shutdown_probe.cancel_event=create_wait();
+    shutdown_probe.io=io_create(&shutdown_probe,native_probe_resources_release);
+    shutdown_probe.io_poll=io_poll; shutdown_probe.io_request=io_request; shutdown_probe.io_destroy=io_destroy;
+    frame=callocate(1,sizeof(*frame)); CHECK(frame); frame->poll=native_probe_pending;
+    frame->cancel_poll=native_probe_cancel; frame->destroy=native_probe_destroy; frame->auxiliary=&shutdown_probe;
+    handle=spawn_future(executor,frame,8); wait_event(shutdown_probe.entered_event);
+    shutdown=shutdown_executor(executor,1); wait_event(shutdown_probe.cancel_event);
+    CHECK(!shutdown->poll(shutdown,NULL) && !atomic_load(&shutdown_probe.destroyed));
+    io_confirm(shutdown_probe.io);
+    CHECK(block_on_future(shutdown)==shutdown); shutdown->destroy(shutdown,0);
+    CHECK(block_on_future(handle)==handle && handle->result[0]==1 && handle->result[1]==0);
+    handle->destroy(handle,0); CHECK(atomic_load(&shutdown_probe.destroyed)==1 && atomic_load(&shutdown_probe.resources_released)==1);
+    native_probe_release(&shutdown_probe); destroy_event(shutdown_probe.entered_event); destroy_event(shutdown_probe.cancel_event);
 #ifdef _WIN32
     VirtualFree(image.memory, 0, MEM_RELEASE);
 #else

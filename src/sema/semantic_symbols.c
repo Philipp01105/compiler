@@ -64,6 +64,8 @@ const char *symbol_name(const SemanticSymbol *symbol) {
 }
 
 int symbol_matches_scope(const AstProgram *file, const SemanticSymbol *symbol, const char *name) {
+    if (symbol->declaration && symbol->declaration->is_async_builtin &&
+        symbol->owner_symbol_id == AST_SYMBOL_NONE && !strcmp(name, symbol_name(symbol))) return 1;
     const char *plain = name;
     const DmmPackage *package = lookup_package(file, &plain);
     if ((package != NULL
@@ -162,6 +164,15 @@ const SemanticSymbol *scoped_find_global(const SemanticModel *model, const AstPr
     const int qualified = strchr(name, '.') != NULL || strstr(name, "::") != NULL;
     if (qualified && package == NULL) return NULL;
     const SemanticSymbol *symbol = indexed_find(model, file, package, plain, kind);
+    if (!symbol && !qualified)
+        for (size_t n = 0; n < model->symbol_count; n++) {
+            const SemanticSymbol *candidate = &model->symbols[n];
+            if (candidate->kind == kind && candidate->declaration && candidate->declaration->is_async_builtin &&
+                candidate->owner_symbol_id == AST_SYMBOL_NONE && !strcmp(name, symbol_name(candidate))) {
+                symbol = candidate;
+                break;
+            }
+        }
     if (symbol != NULL && strstr(name, "::") == NULL && !same_package(file, symbol->source_program) &&
         symbol->declaration != NULL && !symbol->declaration->is_public) {
         error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_SEMANTIC,

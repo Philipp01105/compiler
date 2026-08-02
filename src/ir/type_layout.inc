@@ -7,7 +7,7 @@ static int type_layout_depth(const IrModule *module, IrTypeId id, IrTypeLayout *
         .size = 8,.alignment = 8,.storage_slots = 1
     };
     if (type->kind == IR_TYPE_POINTER || type->kind == IR_TYPE_FUNCTION ||
-        type->kind == IR_TYPE_FUTURE) return 1;
+        type->kind == IR_TYPE_FUTURE || type->kind == IR_TYPE_JOIN || type->kind == IR_TYPE_EXECUTOR) return 1;
     if (type->kind == IR_TYPE_SLICE) {
         layout->size = 16;
         layout->storage_slots = 2;
@@ -83,7 +83,7 @@ static unsigned ir_type_properties_depth(const IrModule *module, IrTypeId id,
     const IrType *type = &module->types[id];
     if (type->kind == IR_TYPE_PRIMITIVE)
         return SEMANTIC_TYPE_COPYABLE | SEMANTIC_TYPE_SEND | SEMANTIC_TYPE_SYNC;
-    if (type->kind == IR_TYPE_FUTURE)
+    if (type->kind == IR_TYPE_FUTURE || type->kind == IR_TYPE_JOIN || type->kind == IR_TYPE_EXECUTOR)
         return SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP | SEMANTIC_TYPE_MUST_CONSUME;
     if (type->kind == IR_TYPE_POINTER || type->kind == IR_TYPE_FUNCTION || type->kind == IR_TYPE_SLICE)
         return SEMANTIC_TYPE_COPYABLE;

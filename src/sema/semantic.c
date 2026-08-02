@@ -292,7 +292,8 @@ LocalSymbol *push_local(Analyzer *analyzer, size_t name_token, AstType type,
         local->resolved_type_program = analyzer->program;
         local->has_resolved_ast_type = 1;
     }
-    if (local->has_resolved_ast_type && local->resolved_ast_type.kind == AST_TYPE_FUTURE) {
+    if (local->has_resolved_ast_type && (local->resolved_ast_type.kind == AST_TYPE_FUTURE ||
+        local->resolved_ast_type.kind == AST_TYPE_JOIN || local->resolved_ast_type.kind == AST_TYPE_EXECUTOR)) {
         SemanticSymbol *binding = &analyzer->model->symbols[local->symbol_id];
         binding->declared_type = argument_type_copy(analyzer,
             local->resolved_type_program != NULL ? local->resolved_type_program : analyzer->program,
@@ -587,8 +588,12 @@ int expression_to_declared_type_allowed(const Analyzer *analyzer,
                                                const AstProgram *type_program,
                                                const AstType *type) {
     if (expression == NULL || type == NULL) return 0;
-    if (type->kind == AST_TYPE_FUTURE || semantic_expression_is_future(expression)) {
-        if (type->kind != AST_TYPE_FUTURE || !semantic_expression_is_future(expression)) return 0;
+    if (type->kind == AST_TYPE_EXECUTOR)
+        return expression->has_resolved_ast_type && expression->resolved_ast_type.kind == AST_TYPE_EXECUTOR &&
+               ast_concrete_type_equal(type_program, type, expression->resolved_type_program != NULL ?
+                   expression->resolved_type_program : analyzer->program, &expression->resolved_ast_type);
+    if (type->kind == AST_TYPE_FUTURE || type->kind == AST_TYPE_JOIN || semantic_expression_is_future(expression)) {
+        if (!expression->has_resolved_ast_type || type->kind != expression->resolved_ast_type.kind) return 0;
         return ast_concrete_type_equal(type_program, type,
             expression->resolved_type_program != NULL ? expression->resolved_type_program : analyzer->program,
             &expression->resolved_ast_type);
@@ -1186,6 +1191,12 @@ static void validate_callable_arguments(Analyzer *analyzer,
 void validate_expression(Analyzer *analyzer, AstExpression *expression,
                                 int is_callee) {
     if (expression == NULL) return;
+    if (expression->async_operation) {
+        if (expression->left && expression->left->kind == AST_EXPR_MEMBER && expression->async_operation != ASYNC_CREATE)
+            validate_expression(analyzer, expression->left->left, 0);
+        for (AstExpression *arg = expression->arguments; arg; arg = arg->next) validate_expression(analyzer, arg, 0);
+        return;
+    }
     if (expression->kind == AST_EXPR_TYPE_INFO) {
         if (!is_callee)
             semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
@@ -1790,7 +1801,8 @@ static int known_declared_type_with_binders(const Analyzer *analyzer,
     if (type == NULL || type->kind == AST_TYPE_INFERRED ||
         primitive_type(analyzer->program, type) != TYPE_UNKNOWN)
         return 1;
-    if (type->kind == AST_TYPE_FUTURE)
+    if (type->kind == AST_TYPE_EXECUTOR) return 1;
+    if (type->kind == AST_TYPE_FUTURE || type->kind == AST_TYPE_JOIN)
         return type->arguments != NULL && type->arguments->next == NULL &&
                known_declared_type_with_binders(analyzer, &type->arguments->type, binders);
     if (type->kind == AST_TYPE_NAMED) {

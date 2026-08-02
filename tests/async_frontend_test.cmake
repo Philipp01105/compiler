@@ -5,10 +5,13 @@ file(WRITE "${work}/dmm.manifest"
      "module async.test/project\ndmm 2026-09-22-dev\nfeatures = [\"async\"]\n")
 file(WRITE "${work}/worker/worker.dmm"
      "package worker; pub async func value() -> int { return 7; }\n"
+     "pub enum Result<T> { pub Value(T), } pub func customResult() -> Result<int> { return Result<int>.Value(5); }\n"
+     "pub async func join(h:JoinHandle<int>) -> int { var r=h.await(); match(r) { Ok(v) => return v; Err(e) => return 0; } }\n"
      "pub async func array() -> int[2] { return [7,8]; }\n")
 file(WRITE "${work}/main.dmm"
      "package main; import \"async.test/project/worker\";\n"
      "pub async func use() -> int { var f:Future<int>=worker.value(); var v=f.await(); var a=worker.array().await(); return v+a[1]; }\n"
+     "func custom() -> int { var r:worker.Result<int>=worker.customResult(); match(r) { Value(v) => return v; } }\n"
      "func main() -> int { return 0; }\n")
 execute_process(COMMAND "${COMPILER}" --ide --formatError --dump-ast "${work}/tree.ast" "${work}/main.dmm"
                 RESULT_VARIABLE result ERROR_VARIABLE diagnostics TIMEOUT 20)

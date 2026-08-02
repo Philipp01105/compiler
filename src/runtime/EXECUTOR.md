@@ -1,11 +1,28 @@
-# Private executor foundation
+# Executor runtime and native ABI
 
-`executor.h` defines the internal scheduler contract. It is currently used by
-`executor_runtime_unit`, not by compiled DMM programs. Language API, ownership
-checking and cancellation lowering still need to be connected to this contract.
-The C implementation is the executable contract for that work; it is not linked
-into standalone DMM executables. `native_threads.inc` emits the native platform
-primitives but does not yet emit the scheduler itself.
+`executor.h` defines the internal C scheduler contract used by
+`executor_runtime_unit`. The standalone backends emit the equivalent scheduler
+in `native_executor.inc` and platform primitives in `native_threads.inc`.
+The C contract implementation is not linked into standalone DMM executables.
+The frontend enforces the public API and ownership; IR and native callbacks
+implement cancellation and active-scope cleanup. See `LANGUAGE_SPEC.md` for
+the source contract.
+
+## Emitted frame ABI
+
+Frames remain pinned. The private header contains poll at byte 0, destroy at 8,
+state at 16, cancellation poll at 24, result destructor at 32, poll context at
+40, result-present at 48, cancellation state at 56, auxiliary storage at 64,
+and result-cancellation callback at 72. Results start at 80. A JoinHandle uses
+its result tag at 80 and payload at 88; its auxiliary field owns the task until
+join consumption, and byte 56 records the output byte count. Callbacks receive
+`(frame, context)`; destroy receives `(frame, discardResult)`.
+
+Context addresses identify retained tasks. Bit 0 suppresses cancellation during
+an active defer cleanup; retain, release and wake mask that tag. Result cancellation
+walks owned child slots to acknowledged completion, clearing consumed slots so
+repeated Pending polls cannot duplicate destruction. Result destruction runs only
+after that walk finishes. The ABI is private and not a public foreign-function API.
 
 ## Synchronization and ownership
 
@@ -78,7 +95,13 @@ shutdown with open joins, caller-thread blocking and default executor use.
 Future adapters cover void cancellation, cancelled join results, discarded join
 outputs and shutdown from another executor, including cancellation of shutdown.
 
-`runtime_unit` executes the emitted thread/event instructions on the host OS.
-`native_binary_unit` verifies both ELF and COFF encoding/linking. Existing async
-tests retain their Stage 1 coverage. Passing these tests does not constitute
-Stage 2 language acceptance.
+`runtime_unit` executes emitted scheduling, thread, event and private I/O
+instructions on the host OS, including parallel polls, wake races, running-poll
+cancellation and shutdown with delayed confirmation and open joins.
+`async_runtime_contract` exercises generated cancellation before first poll,
+Pending cancellation, awaitable defer cleanup, result disposal and asynchronous
+child-result disposal. `async_executor_contract` compiles the public API to
+standalone ELF and COFF at O0/O1 and executes the host format.
+`async_semantic_unit` checks ownership, concrete Send eligibility, loans and
+negative cancellation verifier transitions. `native_binary_unit` verifies
+both ELF and COFF encoding/linking.

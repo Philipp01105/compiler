@@ -551,7 +551,8 @@ static int memory_effect(const IrInstruction *in) {
     return in->opcode == IR_OP_STORE || in->opcode == IR_OP_DECLARE ||
            in->opcode == IR_OP_DROP || in->opcode == IR_OP_MOVE ||
            in->opcode == IR_OP_REINIT || in->opcode == IR_OP_FREE_SLICE_BACKING ||
-           in->opcode == IR_OP_AWAIT || (
+           in->opcode == IR_OP_AWAIT || in->opcode == IR_OP_EXECUTOR || in->opcode == IR_OP_CANCEL_CHECK ||
+           in->opcode == IR_OP_CANCEL_AWAIT || in->opcode == IR_OP_CANCEL_DROP || in->opcode == IR_OP_CANCEL_RETURN || (
                in->opcode == IR_OP_CALL || in->opcode == IR_OP_ENUM_CONSTRUCT) ||
            in->opcode == IR_OP_FREE || in->opcode == IR_OP_ALLOC ||
            (in->opcode == IR_OP_BINARY && in->type == TYPE_STRING);
@@ -909,11 +910,12 @@ static int compact_ids(IrFunction *f) {
         if (in->result != IR_VALUE_NONE) in->result = values[in->result];
         if (in->operand_a != IR_VALUE_NONE) in->operand_a = values[in->operand_a];
         if (in->operand_b != IR_VALUE_NONE) in->operand_b = values[in->operand_b];
-        if (in->opcode == IR_OP_LABEL || in->opcode == IR_OP_JUMP || in->opcode == IR_OP_BRANCH || in->opcode ==
+        if (in->opcode == IR_OP_LABEL || in->opcode == IR_OP_JUMP || in->opcode == IR_OP_BRANCH || in->opcode==IR_OP_CANCEL_CHECK || in->opcode ==
             IR_OP_PHI || in->opcode == IR_OP_ENUM_PAYLOAD) {
             in->target_a = labels[in->target_a];
             if (in->target_b != IR_VALUE_NONE) in->target_b = labels[in->target_b];
         }
+        if(in->opcode==IR_OP_AWAIT && in->target_b!=IR_VALUE_NONE) in->target_b=labels[in->target_b];
         if ((in->opcode == IR_OP_CALL || in->opcode == IR_OP_ENUM_CONSTRUCT ||
              in->opcode == IR_OP_ARRAY_LITERAL ||
              in->opcode == IR_OP_SUBSLICE) &&
@@ -924,6 +926,7 @@ static int compact_ids(IrFunction *f) {
         }
     }
     f->next_value = nv;
+    if(f->is_async) f->async_cancel_entry=labels[f->async_cancel_entry];
     f->next_label = nl;
     free(f->arguments);
     f->arguments = arguments;

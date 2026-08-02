@@ -5,7 +5,8 @@
 #include <string.h>
 
 int ir_opcode_is_terminator(IrOpcode opcode) {
-    return opcode == IR_OP_BRANCH || opcode == IR_OP_JUMP || opcode == IR_OP_TRAP || opcode == IR_OP_RETURN;
+    return opcode == IR_OP_BRANCH || opcode == IR_OP_JUMP || opcode == IR_OP_TRAP || opcode == IR_OP_RETURN ||
+           opcode == IR_OP_CANCEL_CHECK || opcode == IR_OP_CANCEL_RETURN;
 }
 
 void ir_cfg_free(IrControlFlowGraph *graph) {
@@ -64,11 +65,11 @@ int ir_cfg_build(const IrFunction *function, IrControlFlowGraph *graph) {
     for (size_t b = 0; b < graph->count; b++) {
         IrCfgBlock *block = &graph->blocks[b];
         const IrInstruction *last = &function->instructions[block->end - 1];
-        if (last->opcode == IR_OP_BRANCH || last->opcode == IR_OP_JUMP)
+        if (last->opcode == IR_OP_BRANCH || last->opcode == IR_OP_JUMP || last->opcode == IR_OP_CANCEL_CHECK)
             block->successor[0] = graph->labels[last->target_a];
         else if (!ir_opcode_is_terminator(last->opcode) && b + 1 < graph->count)
             block->successor[0] = b + 1;
-        if (last->opcode == IR_OP_BRANCH && last->target_b != last->target_a)
+        if ((last->opcode == IR_OP_BRANCH || last->opcode == IR_OP_CANCEL_CHECK) && last->target_b != last->target_a)
             block->successor[1] = graph->labels[last->target_b];
         for (size_t s = 0; s < 2; s++) {
             size_t target = block->successor[s];
@@ -208,9 +209,9 @@ static const char *cfg_opcode_name(IrOpcode opcode) {
         "constant", "function-address", "load", "declare", "store", "interface-pack", "unary", "binary", "call", "index", "subslice", "member",
         "slice-length", "cast", "alloc", "free", "return", "branch", "jump", "label", "phi",
         "enum-construct", "enum-is", "enum-payload", "trap", "slice", "slice-data", "array-literal",
-        "drop", "move", "reinit", "free-slice-backing", "await"
+        "drop", "move", "reinit", "free-slice-backing", "await", "executor", "cancel-check", "cancel-await", "cancel-drop", "cancel-return"
     };
-    return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_AWAIT ? names[opcode] : "invalid";
+    return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_CANCEL_RETURN ? names[opcode] : "invalid";
 }
 
 static int cfg_quoted(FILE *output, const char *text) {

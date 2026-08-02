@@ -170,6 +170,9 @@ unsigned semantic_declared_type_properties(const Analyzer *analyzer,
         return semantic_declared_type_properties(analyzer, program, &element);
     }
     /* Send for a Future depends on its complete frame, not only its output. */
+    if (type->kind == AST_TYPE_JOIN || type->kind == AST_TYPE_EXECUTOR)
+        return SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP |
+               SEMANTIC_TYPE_MUST_CONSUME | SEMANTIC_TYPE_SEND;
     if (type->kind == AST_TYPE_FUTURE)
         return SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP |
                SEMANTIC_TYPE_MUST_CONSUME;
@@ -261,6 +264,8 @@ int semantic_expression_is_move_only(const Analyzer *analyzer,
         expression->resolved_is_slice)
         return 0;
     if (semantic_expression_is_future(expression)) return 1;
+    if (expression->has_resolved_ast_type && (expression->resolved_ast_type.kind == AST_TYPE_JOIN ||
+        expression->resolved_ast_type.kind == AST_TYPE_EXECUTOR)) return 1;
     if (expression->resolved_named_symbol_id < analyzer->model->symbol_count)
         return semantic_type_is_move_only(analyzer,
                                           expression->resolved_named_symbol_id);
@@ -416,6 +421,8 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
             }
             const AstDeclarationNode *enumeration = enum_symbol->declaration;
             const AstProgram *enum_unit = enum_symbol->source_program;
+            statement->is_consuming_match=enumeration->is_async_builtin && enumeration->as.enum_decl.is_sum &&
+                semantic_expression_is_move_only(analyzer,statement->value);
             size_t variants = 0, covered = 0;
             int wildcard = 0;
             for (const AstEnumValue *v = enumeration->as.enum_decl.values; v; v = v->next) variants++;
@@ -429,6 +436,9 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                 LocalSymbol *saved = analyzer->locals;
                 analyzer->scope_depth++;
                 if (arm->wildcard) {
+                    if(statement->is_consuming_match)
+                        semantic_error(analyzer,arm->variant_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_INVALID_DECLARATION,
+                            "Consuming enum matches must bind every variant payload");
                     wildcard = 1;
                     if (arm->bindings) semantic_error(analyzer, arm->variant_token, ERROR_CATEGORY_PARSER,
                                                       ERR_PARSE_INVALID_SYNTAX,
@@ -453,7 +463,7 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                         for (; p && binding; p = p->next, binding = binding->next) {
                             binding->type = argument_type_copy(analyzer, enum_unit, p->type);
                             validate_array_shape(analyzer, &binding->type);
-                            if ((semantic_declared_type_properties(analyzer, analyzer->program,
+                            if (!statement->is_consuming_match && (semantic_declared_type_properties(analyzer, analyzer->program,
                                                        &binding->type) &
                                  SEMANTIC_TYPE_MOVE_ONLY) != 0)
                                 semantic_error(analyzer, binding->name_token,
@@ -1295,6 +1305,7 @@ SemanticModel *semantic_analyze(AstProgram *program) {
         .current_function_symbol_id = AST_SYMBOL_NONE,
         .current_owner_token = AST_TOKEN_NONE
     };
+    async_prelude(&analyzer);
     /* Parsing async syntax must never make an unsupported function run eagerly. */
     for (size_t unit_index = 0; unit_index <= program->owned_import_count; unit_index++) {
         AstProgram *unit = unit_index == 0 ? program : program->owned_imports[unit_index - 1];

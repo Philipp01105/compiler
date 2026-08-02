@@ -481,6 +481,7 @@ static void read_value(Runtime *r) {
 }
 
 #include "native_threads.inc"
+#include "native_executor.inc"
 
 const char *native_runtime_import(const char *name, TargetFormat target) {
     static const char *const imports[] = {
@@ -525,6 +526,7 @@ int native_runtime_emit(NativeObject *object, TargetFormat target) {
     own_core_memory(&r);
     own_atomics(&r);
     own_async_threads(&r);
+    own_async_executor(&r);
     own_core_process(&r);
     emit_alias(&r, "__dmm_rt_strlen", "strlen", 1);
     emit_alias(&r, "__dmm_rt_strcmp", "strcmp", 3);
@@ -563,6 +565,7 @@ int native_runtime_emit(NativeObject *object, TargetFormat target) {
         op1(&r, X64_OP_CALL, x64_label("main"));
         op2(&r, X64_OP_MOV, X64_WIDTH_QWORD,
             x64_memory(X64_WIDTH_QWORD, "rsp", 32), x64_register("rax"));
+        op1(&r, X64_OP_CALL, x64_label("__dmm_async_default_drain"));
         op1(&r, X64_OP_CALL, x64_label("__dmm_package_cleanup"));
         op2(&r, X64_OP_MOV, X64_WIDTH_DWORD, x64_register("ecx"),
             x64_memory(X64_WIDTH_DWORD, "rsp", 32));
@@ -575,6 +578,7 @@ int native_runtime_emit(NativeObject *object, TargetFormat target) {
         stack(&r, X64_OP_SUB, 16);
         op2(&r, X64_OP_MOV, X64_WIDTH_QWORD,
             x64_memory(X64_WIDTH_QWORD, "rsp", 0), x64_register("rax"));
+        op1(&r, X64_OP_CALL, x64_label("__dmm_async_default_drain"));
         op1(&r, X64_OP_CALL, x64_label("__dmm_package_cleanup"));
         op2(&r, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rdi"),
             x64_memory(X64_WIDTH_QWORD, "rsp", 0));

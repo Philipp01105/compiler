@@ -20,7 +20,7 @@ typedef enum {
     IR_TYPE_ARRAY,
     IR_TYPE_SLICE,
     IR_TYPE_FUNCTION,
-    IR_TYPE_FUTURE
+    IR_TYPE_FUTURE, IR_TYPE_JOIN, IR_TYPE_EXECUTOR
 } IrTypeKind;
 
 typedef struct {
@@ -72,12 +72,15 @@ typedef enum {
     IR_OP_DROP, IR_OP_MOVE, IR_OP_REINIT, IR_OP_FREE_SLICE_BACKING,
     /* A suspend point polls operand_a at a stable frame address. target_a is
        its unique resume state; completion consumes the child exactly once. */
-    IR_OP_AWAIT
+    IR_OP_AWAIT, IR_OP_EXECUTOR, IR_OP_CANCEL_CHECK, IR_OP_CANCEL_AWAIT,
+    IR_OP_CANCEL_DROP, IR_OP_CANCEL_RETURN
 } IrOpcode;
 
 typedef struct {
     const AstProgram *source_program;
     IrOpcode opcode;
+    AstAsyncOperation async_operation;
+    int async_cleanup;
     AstSourceSpan span;
     DataType type;
     IrTypeId type_id;
@@ -147,6 +150,7 @@ typedef struct {
     size_t async_state_count;
     int async_frame_pinned;
     unsigned async_frame_properties;
+    size_t async_cancel_entry;
 } IrFunction;
 
 typedef struct {

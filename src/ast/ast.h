@@ -24,7 +24,10 @@ typedef enum {
     AST_DECL_CONSTANT, AST_DECL_INTERFACE, AST_DECL_VARIABLE, AST_DECL_INVALID
 } AstDeclarationKind;
 
-typedef enum { AST_TYPE_INFERRED, AST_TYPE_NAMED, AST_TYPE_FUNCTION, AST_TYPE_FUTURE } AstTypeKind;
+typedef enum { AST_TYPE_INFERRED, AST_TYPE_NAMED, AST_TYPE_FUNCTION, AST_TYPE_FUTURE,
+               AST_TYPE_JOIN, AST_TYPE_EXECUTOR } AstTypeKind;
+typedef enum { ASYNC_NONE, ASYNC_CREATE, ASYNC_SPAWN, ASYNC_BLOCK_ON,
+               ASYNC_SHUTDOWN, ASYNC_CANCEL } AstAsyncOperation;
 typedef enum { AST_BORROW_NONE, AST_BORROW_IMMUTABLE, AST_BORROW_MUTABLE } AstBorrowKind;
 
 typedef enum {
@@ -118,6 +121,7 @@ typedef struct AstImportPath {
 
 struct AstExpression {
     AstExpressionKind kind;
+    AstAsyncOperation async_operation;
     AstSourceSpan span;
     size_t first_token;
     size_t token_count;
@@ -190,6 +194,7 @@ struct AstStatement {
     size_t resolved_symbol_id;
     AstMatchArm *match_arms;
     int match_exhaustive;
+    int is_consuming_match;
     int is_type_match;
     AstMatchArm *selected_type_arm;
 };
@@ -236,6 +241,7 @@ struct AstEnumValue {
 
 struct AstDeclarationNode {
     int is_public;
+    int is_async_builtin;
     AstDeclarationKind kind;
     AstSourceSpan span;
     size_t first_token;

@@ -44,9 +44,22 @@ static int check_case(const char *source, const char *diagnostic, int enabled) {
             function->async_frame_pinned = 0;
             if (ir_verify_module(ir)) ok = 0;
             function->async_frame_pinned = 1;
+            size_t entry=function->async_cancel_entry;
+            function->async_cancel_entry=IR_VALUE_NONE;
+            if(ir_verify_module(ir)) ok=0;
+            function->async_cancel_entry=entry;
             for (size_t i = 0; i < function->instruction_count; i++) {
                 IrInstruction *in = &function->instructions[i];
+                if(in->opcode==IR_OP_CANCEL_AWAIT || in->opcode==IR_OP_CANCEL_DROP || in->opcode==IR_OP_CANCEL_RETURN) {
+                    in->async_cleanup=0; if(ir_verify_module(ir)) ok=0; in->async_cleanup=1;
+                    if(in->opcode!=IR_OP_CANCEL_RETURN) {
+                        size_t state=in->target_a; in->target_a=0; if(ir_verify_module(ir)) ok=0; in->target_a=state;
+                    }
+                }
                 if (in->opcode != IR_OP_AWAIT) continue;
+                if(!in->async_cleanup) {
+                    size_t edge=in->target_b; in->target_b=IR_VALUE_NONE; if(ir_verify_module(ir)) ok=0; in->target_b=edge;
+                }
                 size_t state = in->target_a;
                 in->target_a = function->async_state_count + 1;
                 if (ir_verify_module(ir)) ok = 0;
@@ -94,6 +107,35 @@ static int check_case(const char *source, const char *diagnostic, int enabled) {
 
 int main(void) {
     static const struct { const char *source; const char *diagnostic; } cases[] = {
+        {"async func work(x:&int) -> int { return *x; } async func wrap(x:&int) -> Result<Future<int>,TaskError> { return Result<Future<int>,TaskError>.Ok(work(x)); } func main() -> int { var x=7; var r=block_on(wrap(&x)); match(r) { Ok(f) => { var c=cancel(f); x=8; block_on(c); } Err(e) => {} } return x; }","while it is borrowed"},
+        {"async func work(x:&int) -> int { return *x; } async func wrap(x:&int) -> Result<Future<int>,TaskError> { return Result<Future<int>,TaskError>.Ok(work(x)); } func main() -> int { var x=7; var r=block_on(wrap(&x)); match(r) { Ok(f) => { block_on(cancel(f)); } Err(e) => {} } x=8; return x; }",NULL},
+        {"async func work(x:&int) -> int { return *x; } func wrap(x:&int) -> Result<Future<int>,TaskError> { return Result<Future<int>,TaskError>.Ok(work(x)); } func main() -> int { var x=7; var r=wrap(&x); match(r) { Ok(f) => { var c=cancel(f); x=8; block_on(c); } Err(e) => {} } return x; }","while it is borrowed"},
+        {"async func work(x:&int) -> int { return *x; } func relay(r:Result<Future<int>,TaskError>) -> Result<Future<int>,TaskError> { return r; } func main() -> int { var x=7; var r=relay(Result<Future<int>,TaskError>.Ok(work(&x))); match(r) { Ok(f) => { block_on(cancel(f)); } Err(e) => {} } x=8; return x; }",NULL},
+        {"async func work(x:&int) -> int { return *x; } func bad() -> Result<Future<int>,TaskError> { var x=7; return Result<Future<int>,TaskError>.Ok(work(&x)); } func main() -> int { return 0; }","cannot capture a borrow of a local value"},
+        {"async func work(x:&int) -> int { return *x; } func main() -> int { var x=7; var r=Result<Future<int>,TaskError>.Ok(work(&x)); var s=r; match(s) { Ok(f) => { block_on(cancel(f)); } Err(e) => {} } x=8; return x; }",NULL},
+        {"async func work(x:&int) -> int { return *x; } func main() -> int { var x=7; var r=Result<Future<int>,TaskError>.Ok(work(&x)); x=8; match(r) { Ok(f) => return block_on(f); Err(e) => return 0; } }","while it is borrowed"},
+        {"async func work(x:&int) -> int { return *x; } func main() -> int { var x=7; var r=Result<Future<int>,TaskError>.Ok(work(&x)); match(r) { Ok(f) => { var c=cancel(f); x=8; block_on(c); } Err(e) => {} } return x; }","while it is borrowed"},
+        {"async func work(x:&int) -> int { return *x; } func main() -> int { var x=7; var r=Result<Future<int>,TaskError>.Ok(work(&x)); match(r) { Ok(f) => { block_on(cancel(f)); x=8; } Err(e) => { x=9; } } x=10; return x; }",NULL},
+        {"async func work() -> int { return 7; } async func join(h:JoinHandle<int>) -> Result<int,TaskError> { return h.await(); } func main() -> int { var e=Executor.create(2); var h=e.spawn(work()); var r=e.block_on(join(h)); block_on(e.shutdown(ShutdownMode.Drain)); return 0; }",NULL},
+        {"async func work() -> int { return 7; } async func nested() -> Future<int> { return work(); } async func join(h:JoinHandle<Future<int>>) -> int { var r=h.await(); match(r) { Ok(f) => return f.await(); Err(e) => return 0; } } func main() -> int { return block_on(join(spawn(nested()))); }",NULL},
+        {"async func work() -> int { return 7; } async func nested() -> Future<int> { return work(); } async func join(h:JoinHandle<Future<int>>) -> int { var r=h.await(); match(r) { Ok(f) => return 0; Err(e) => return 0; } } func main() -> int { return block_on(join(spawn(nested()))); }","implicit drop is forbidden"},
+        {"async func work() -> void { return; } async func join(h:JoinHandle<void>) -> void { var r:Result<void,TaskError>=h.await(); match(r) { Ok => return; Err(e) => return; } } func main() -> int { block_on(join(spawn(work()))); return 0; }",NULL},
+        {"async func work(x:&int) -> int { return *x; } func main() -> int { var x=7; var f=work(&x); var n=block_on(f); x=8; return n; }",NULL},
+        {"async func work(x:&int) -> &int { return x; } func main() -> int { var x=7; var f=work(&x); var r=block_on(f); x=8; return *r; }","while it is borrowed"},
+        {"async func work(x:&int) -> &int { return x; } func main() -> int { var x=7; var f=work(&x); var r=block_on(f); var n=*r; x=8; return n; }",NULL},
+        {"async func work(x:&int) -> int { return *x; } func main() -> int { var x=7; var f=work(&x); var c=cancel(f); x=8; block_on(c); return 0; }","while it is borrowed"},
+        {"async func work(x:&int) -> int { return *x; } func main() -> int { var x=7; var f=work(&x); var c=cancel(f); block_on(c); x=8; return x; }",NULL},
+        {"async func work(x:&int) -> int { return *x; } func main() -> int { var x=7; var h=spawn(work(&x)); block_on(cancel(h)); return 0; }","spawn requires a Send Future frame"},
+        {"async func work(x:*int) -> int { return *x; } func main() -> int { var p:*int; var h=spawn(work(p)); block_on(cancel(h)); return 0; }","spawn requires a Send Future frame"},
+        {"async func work() -> int { return 7; } async func bad() -> int { return block_on(work()); } func main() -> int { return 0; }","block_on is only valid"},
+        {"func main() -> int { var e=Executor.create(0); block_on(e.shutdown(ShutdownMode.Cancel)); return 0; }","at least one worker"},
+        {"func main() -> int { var e=Executor.create(1); return 0; }","implicit drop is forbidden"},
+        {"func main() -> int { Executor.create(1); return 0; }","implicit drop is forbidden"},
+        {"async func work() -> int { return 7; } func main() -> int { spawn(work()); return 0; }","implicit drop is forbidden"},
+        {"async func work() -> int { return 7; } func main() -> int { var h=spawn(work()); return 0; }","implicit drop is forbidden"},
+        {"async func work() -> int { return 7; } func main() -> int { var h=spawn(work()); var c=cancel(h); return 0; }","implicit drop is forbidden"},
+        {"func bad(b:bit) -> int { var e=Executor.create(1); if(b) { block_on(e.shutdown(ShutdownMode.Drain)); return 0; } return 1; } func main() -> int { return 0; }","implicit drop is forbidden"},
+        {"func main() -> int { var e=Executor.create(1); block_on(e.shutdown(ShutdownMode.Drain)); block_on(e.shutdown(ShutdownMode.Cancel)); return 0; }","after ownership was moved"},
         {"async func work() -> int { return 7; } async func use() -> int { var x:Future<int>=work(); var y=x.await(); return y; } func main() -> int { return 0; }", NULL},
         {"async func work() -> int { return 7; } async func nested() -> Future<int> { return work(); } async func use() -> int { return nested().await().await(); } func main() -> int { return 0; }", NULL},
         {"async func work() -> int { return 7; } async func use() -> int { var x=work(); var y=x.await(); return x.await(); } func main() -> int { return 0; }", "after ownership was moved"},

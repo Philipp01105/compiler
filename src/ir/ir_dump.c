@@ -30,9 +30,10 @@ static const char *opcode_name(IrOpcode opcode) {
         "constant", "function-address", "load", "declare", "store", "interface-pack", "unary",
         "binary", "call", "index", "subslice", "member", "slice-length", "cast", "alloc", "free",
         "return", "branch", "jump", "label", "phi", "enum-construct", "enum-is", "enum-payload", "trap", "slice",
-        "slice-data", "array-literal", "drop", "move", "reinit", "free-slice-backing", "await"
+        "slice-data", "array-literal", "drop", "move", "reinit", "free-slice-backing", "await", "executor",
+        "cancel-check", "cancel-await", "cancel-drop", "cancel-return"
     };
-    return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_AWAIT ? names[opcode] : "invalid";
+    return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_CANCEL_RETURN ? names[opcode] : "invalid";
 }
 
 static const char *operator_name(TokenType type) {
@@ -101,7 +102,11 @@ static int dump_types(FILE *output, const IrModule *module) {
                 if (fprintf(output, "slice element=@%zu", type->element_type) < 0) return 0;
                 break;
             case IR_TYPE_FUTURE:
-                if (fprintf(output, "future output=@%zu pinned=1", type->element_type) < 0) return 0;
+            case IR_TYPE_JOIN:
+                if (fprintf(output, "%s output=@%zu pinned=1",type->kind==IR_TYPE_JOIN ? "join":"future", type->element_type) < 0) return 0;
+                break;
+            case IR_TYPE_EXECUTOR:
+                if (fputs("Executor",output)==EOF) return 0;
                 break;
             case IR_TYPE_FUNCTION: {
                 if (type->signature_id >= module->signature_count) return 0;
@@ -213,8 +218,6 @@ static int dump_aggregates(FILE *output, const IrModule *module) {
                 fprintf(output, " symbol=%zu arguments=%zu+%zu\n", variant->symbol_id,
                         variant->first_argument, variant->argument_count) < 0)
                 return 0;
-            for (size_t p = 0; p < variant->payload_count; p++)
-                if (fprintf(output, "    payload #%zu type=@%zu\n", p, variant->payload_types[p]) < 0) return 0;
             for (size_t p = 0; p < variant->payload_count; p++)
                 if (fprintf(output, "    payload #%zu type=@%zu\n", p, variant->payload_types[p]) < 0) return 0;
         }

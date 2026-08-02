@@ -260,6 +260,11 @@ if (BUILD_TESTING)
             -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/async_runtime_test
             -P ${CMAKE_SOURCE_DIR}/tests/async_runtime_test.cmake)
     set_tests_properties(async_runtime_contract PROPERTIES LABELS "integration;async;ir;backend;execution;safety")
+    add_test(NAME async_executor_contract COMMAND ${CMAKE_COMMAND}
+            -DCOMPILER=$<TARGET_FILE:compiler>
+            -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/async_executor_test
+            -P ${CMAKE_SOURCE_DIR}/tests/async_executor_test.cmake)
+    set_tests_properties(async_executor_contract PROPERTIES LABELS "integration;async;ir;backend;execution;safety" TIMEOUT 120)
     if (NOT EXISTS "${DMM_ASSEMBLER}")
         message(FATAL_ERROR
                 "BUILD_TESTING is ON, but DMM_ASSEMBLER does not exist: ${DMM_ASSEMBLER}")

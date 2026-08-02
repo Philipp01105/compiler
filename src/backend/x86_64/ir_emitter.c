@@ -736,7 +736,7 @@ size_t aggregate_result_offset(const Emitter *emitter,
     size_t slots_before = 0;
     for (size_t i = 0; i < emitter->function->instruction_count; i++) {
         const IrInstruction *candidate = &emitter->function->instructions[i];
-        if ((candidate->opcode != IR_OP_AWAIT && candidate->opcode != IR_OP_CALL && candidate->opcode != IR_OP_ENUM_CONSTRUCT && candidate->opcode !=
+        if ((candidate->opcode != IR_OP_EXECUTOR && candidate->opcode != IR_OP_AWAIT && candidate->opcode != IR_OP_CALL && candidate->opcode != IR_OP_ENUM_CONSTRUCT && candidate->opcode !=
              IR_OP_SLICE && candidate->opcode != IR_OP_SUBSLICE &&
              candidate->opcode != IR_OP_ARRAY_LITERAL &&
              candidate->opcode != IR_OP_INTERFACE_PACK) ||
@@ -758,7 +758,7 @@ static size_t aggregate_result_slots(const Emitter *emitter) {
     size_t result = 0;
     for (size_t i = 0; i < emitter->function->instruction_count; i++) {
         const IrInstruction *instruction = &emitter->function->instructions[i];
-        if ((instruction->opcode == IR_OP_AWAIT || instruction->opcode == IR_OP_CALL || instruction->opcode == IR_OP_ENUM_CONSTRUCT || instruction->opcode ==
+        if ((instruction->opcode == IR_OP_EXECUTOR || instruction->opcode == IR_OP_AWAIT || instruction->opcode == IR_OP_CALL || instruction->opcode == IR_OP_ENUM_CONSTRUCT || instruction->opcode ==
              IR_OP_SLICE || instruction->opcode == IR_OP_SUBSLICE ||
              instruction->opcode == IR_OP_ARRAY_LITERAL ||
              instruction->opcode == IR_OP_INTERFACE_PACK) &&
@@ -852,8 +852,13 @@ static size_t aggregate_field_offset(const Emitter *emitter,
 static int emit_drop_type(Emitter *emitter, IrTypeId type_id) {
     if (type_id >= emitter->module->type_count) return 0;
     const IrType *type = &emitter->module->types[type_id];
-    if (type->kind == IR_TYPE_FUTURE) {
+    if (type->kind == IR_TYPE_FUTURE || type->kind == IR_TYPE_JOIN || type->kind == IR_TYPE_EXECUTOR) {
+        char empty[96];
+        snprintf(empty,sizeof(empty),".LIR_owned_empty_%zu_%zu",emitter->function_index,emitter->bounds_sequence++);
+        write_x64_2(emitter,X64_OP_CMP,X64_WIDTH_QWORD,x64_memory(X64_WIDTH_QWORD,"rax",0),x64_immediate(0));
+        write_x64_1(emitter,X64_OP_JE,X64_WIDTH_NONE,x64_label(empty));
         write_x64_0(emitter, X64_OP_UD2);
+        write_labelf(emitter,"%s:\n",empty);
         return 1;
     }
     if (type->kind == IR_TYPE_ARRAY) {
@@ -1045,6 +1050,13 @@ static int emit_ownership_effect(Emitter *emitter,
     if (instruction->opcode != IR_OP_DROP) return 0;
     if (instruction->operand_a != IR_VALUE_NONE) {
         write_value_load(emitter, "rax", instruction->operand_a);
+        IrTypeKind kind=emitter->module->types[instruction->type_id].kind;
+        if(kind==IR_TYPE_FUTURE || kind==IR_TYPE_JOIN || kind==IR_TYPE_EXECUTOR) {
+            char empty[96]; snprintf(empty,sizeof(empty),".LIR_drop_empty_%zu_%zu",emitter->function_index,index);
+            write_x64_2(emitter,X64_OP_TEST,X64_WIDTH_QWORD,x64_register("rax"),x64_register("rax"));
+            write_x64_1(emitter,X64_OP_JE,X64_WIDTH_NONE,x64_label(empty));
+            write_x64_0(emitter,X64_OP_UD2); write_labelf(emitter,"%s:\n",empty); return 1;
+        }
         return emit_drop_type(emitter, instruction->type_id);
     }
     if (declaration != NULL) {
@@ -1733,6 +1745,13 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
         }
         case IR_OP_AWAIT:
             return emit_async_await(emitter, instruction);
+        case IR_OP_EXECUTOR:
+            return emit_executor_operation(emitter,instruction);
+        case IR_OP_CANCEL_CHECK:
+        case IR_OP_CANCEL_AWAIT:
+        case IR_OP_CANCEL_DROP:
+        case IR_OP_CANCEL_RETURN:
+            return emit_async_cancel_instruction(emitter, instruction, index);
         case IR_OP_DROP:
         case IR_OP_MOVE:
         case IR_OP_REINIT:

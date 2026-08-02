@@ -134,12 +134,12 @@ static void diagnostic_ast_type(DiagnosticText *text, const Analyzer *analyzer,
             diagnostic_append(text, "[%zu]", type->resolved_array_length);
         return;
     }
-    if (type->kind == AST_TYPE_FUTURE) {
+    if (type->kind == AST_TYPE_FUTURE || type->kind == AST_TYPE_JOIN) {
         if (type->borrow_kind != AST_BORROW_NONE)
             diagnostic_append(text, type->borrow_kind == AST_BORROW_MUTABLE ? "&mut " : "&");
         for (unsigned i = 0; i < type->pointer_depth + type->outer_pointer_depth; i++)
             diagnostic_append(text, "*");
-        diagnostic_append(text, "Future<");
+        diagnostic_append(text, type->kind == AST_TYPE_JOIN ? "JoinHandle<" : "Future<");
         if (type->arguments != NULL)
             diagnostic_ast_type(text, analyzer, program, &type->arguments->type);
         diagnostic_append(text, ">");

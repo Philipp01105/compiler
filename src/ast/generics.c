@@ -60,7 +60,7 @@ static int alpha_type_equal(const AstProgram *a, const AstType *x,
         x->outer_pointer_depth != y->outer_pointer_depth ||
         x->is_array != y->is_array || x->is_slice != y->is_slice ||
         x->resolved_array_length != y->resolved_array_length) return 0;
-    if (x->kind != AST_TYPE_FUNCTION && x->kind != AST_TYPE_FUTURE) {
+    if (x->kind != AST_TYPE_FUNCTION && x->kind != AST_TYPE_FUTURE && x->kind!=AST_TYPE_JOIN && x->kind!=AST_TYPE_EXECUTOR) {
         char x_name[2048], y_name[2048];
         if (strcmp(canonical_type_name(a, x->name_token, x_name,
                                        sizeof(x_name)),
@@ -115,7 +115,7 @@ int ast_concrete_type_equal(const AstProgram *a, const AstType *x,
                                 b, y->function_return_type, y->function_generic_parameters);
     }
     char x_name[2048], y_name[2048];
-    if (x->kind != AST_TYPE_FUTURE && strcmp(canonical_type_name(a, x->name_token, x_name,
+    if (x->kind != AST_TYPE_FUTURE && x->kind!=AST_TYPE_JOIN && x->kind!=AST_TYPE_EXECUTOR && strcmp(canonical_type_name(a, x->name_token, x_name,
                                    sizeof(x_name)),
                canonical_type_name(b, y->name_token, y_name,
                                    sizeof(y_name)))) return 0;

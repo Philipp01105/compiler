@@ -293,11 +293,17 @@ static AstType parse_type(SyntaxParser *parser) {
             } while (match(parser, TOKEN_COMMA));
             (void) consume(parser, TOKEN_GREATER);
         }
-        if (strcmp(ast_program_lexeme(parser->program, type.name_token), "Future") == 0) {
-            type.kind = AST_TYPE_FUTURE;
+        const char *async_name = ast_program_lexeme(parser->program, type.name_token);
+        if (!strcmp(async_name, "Future") || !strcmp(async_name, "JoinHandle")) {
+            type.kind = !strcmp(async_name, "Future") ? AST_TYPE_FUTURE : AST_TYPE_JOIN;
             if (type.arguments == NULL || type.arguments->next != NULL)
                 parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
                                "Future requires exactly one result type");
+        }
+        if (!strcmp(async_name, "Executor")) {
+            type.kind = AST_TYPE_EXECUTOR;
+            if (type.arguments) parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
+                                               "Executor takes no type arguments");
         }
     }
     while (match(parser, TOKEN_LBRACKET)) {

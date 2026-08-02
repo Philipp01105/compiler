@@ -15,7 +15,7 @@ static int instruction_produces_value(const IrInstruction *instruction) {
     IrOpcode opcode = instruction->opcode;
     return opcode == IR_OP_CONSTANT || opcode == IR_OP_FUNCTION_ADDRESS || opcode == IR_OP_LOAD ||
            opcode == IR_OP_UNARY || opcode == IR_OP_BINARY ||
-           ((opcode == IR_OP_CALL || opcode == IR_OP_AWAIT) && data_type_has_value(instruction->type)) ||
+           ((opcode == IR_OP_CALL || opcode == IR_OP_AWAIT || opcode == IR_OP_EXECUTOR) && data_type_has_value(instruction->type)) ||
            opcode == IR_OP_INDEX || opcode == IR_OP_SUBSLICE ||
            opcode == IR_OP_MEMBER || opcode == IR_OP_SLICE_LENGTH ||
            opcode == IR_OP_SLICE || opcode == IR_OP_SLICE_DATA ||
@@ -161,16 +161,58 @@ static int verify_instruction_types(const IrModule *module,
     const IrInstruction *b = verified_producer(function, producers, instruction->operand_b, index);
     if (instruction->opcode == IR_OP_AWAIT) {
         if (!function->is_async || a == NULL ||
-            module->types[a->type_id].kind != IR_TYPE_FUTURE ||
-            module->types[a->type_id].element_type != instruction->type_id ||
+            (module->types[a->type_id].kind != IR_TYPE_FUTURE && module->types[a->type_id].kind != IR_TYPE_JOIN) ||
+            (module->types[a->type_id].kind == IR_TYPE_FUTURE && module->types[a->type_id].element_type != instruction->type_id) ||
             instruction->target_a == 0 ||
             instruction->target_a > function->async_state_count) return 0;
         for (size_t previous = 0; previous < index; previous++)
             if (function->instructions[previous].opcode == IR_OP_AWAIT &&
                 function->instructions[previous].target_a == instruction->target_a) return 0;
+        if(module->types[a->type_id].kind==IR_TYPE_JOIN) {
+            const IrType *result=&module->types[instruction->type_id];
+            const IrEnum *enumeration=NULL;
+            for(size_t e=0;e<module->enum_count;e++)
+                if(result->kind==IR_TYPE_NAMED && module->enums[e].symbol_id==result->symbol_id) enumeration=&module->enums[e];
+            if(!enumeration || !enumeration->is_sum || enumeration->variant_count!=2) return 0;
+            IrTypeId output=module->types[a->type_id].element_type;
+            const IrEnumVariant *ok=&enumeration->variants[0],*error=&enumeration->variants[1];
+            if(ir_void_type(module,output) ? ok->payload_count!=0 :
+               (ok->payload_count!=1 || ok->payload_types[0]!=output)) return 0;
+            if(error->payload_count!=1 || module->types[error->payload_types[0]].kind!=IR_TYPE_NAMED) return 0;
+            size_t error_symbol=module->types[error->payload_types[0]].symbol_id;
+            const SemanticSymbol *s=&module->semantics->symbols[error_symbol];
+            if(!s->declaration || !s->declaration->is_async_builtin ||
+               strcmp(ast_program_lexeme(s->source_program,s->name_token),"TaskError")) return 0;
+        }
         return 1;
     }
     switch (instruction->opcode) {
+        case IR_OP_CANCEL_CHECK: return function->is_async && !instruction->async_cleanup && ir_void_type(module,instruction->type_id) &&
+                                            instruction->target_a!=instruction->target_b;
+        case IR_OP_CANCEL_RETURN: return function->is_async && instruction->async_cleanup && ir_void_type(module,instruction->type_id);
+        case IR_OP_CANCEL_AWAIT: return function->is_async && instruction->async_cleanup && a &&
+            (module->types[a->type_id].kind==IR_TYPE_FUTURE || module->types[a->type_id].kind==IR_TYPE_JOIN) &&
+            ir_void_type(module,instruction->type_id) && instruction->target_a>0 && instruction->target_a<=function->async_state_count;
+        case IR_OP_CANCEL_DROP: return function->is_async && instruction->async_cleanup &&
+            instruction->symbol_id<module->semantics->symbol_count &&
+            (ir_type_properties(module,instruction->type_id)&SEMANTIC_TYPE_NEEDS_DROP) &&
+            instruction->target_a>0 && instruction->target_a<=function->async_state_count;
+        case IR_OP_EXECUTOR:
+            if (!a || instruction->async_operation<ASYNC_CREATE || instruction->async_operation>ASYNC_CANCEL) return 0;
+            if (b && module->types[b->type_id].kind!=IR_TYPE_EXECUTOR) return 0;
+            switch (instruction->async_operation) {
+                case ASYNC_CREATE: return !b && ir_integral_type(module,a->type_id) && module->types[instruction->type_id].kind==IR_TYPE_EXECUTOR;
+                case ASYNC_SPAWN: return module->types[a->type_id].kind==IR_TYPE_FUTURE && module->types[instruction->type_id].kind==IR_TYPE_JOIN &&
+                                        module->types[a->type_id].element_type==module->types[instruction->type_id].element_type;
+                case ASYNC_BLOCK_ON: return !function->is_async && module->types[a->type_id].kind==IR_TYPE_FUTURE &&
+                                           module->types[a->type_id].element_type==instruction->type_id;
+                case ASYNC_SHUTDOWN: return b && module->types[instruction->type_id].kind==IR_TYPE_FUTURE &&
+                                           ir_void_type(module,module->types[instruction->type_id].element_type);
+                case ASYNC_CANCEL: return (module->types[a->type_id].kind==IR_TYPE_FUTURE || module->types[a->type_id].kind==IR_TYPE_JOIN) &&
+                                         module->types[instruction->type_id].kind==IR_TYPE_FUTURE && ir_void_type(module,module->types[instruction->type_id].element_type);
+                case ASYNC_NONE: return 0;
+            }
+            return 0;
         case IR_OP_AWAIT: return 0; /* checked above */
         case IR_OP_ENUM_CONSTRUCT: {
             const IrEnum *owner = NULL;
@@ -533,7 +575,7 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
     }
     for (size_t t = 0; t < module->type_count; t++) {
         const IrType *type = &module->types[t];
-        if (type->kind < IR_TYPE_PRIMITIVE || type->kind > IR_TYPE_FUTURE) return 0;
+        if (type->kind < IR_TYPE_PRIMITIVE || type->kind > IR_TYPE_EXECUTOR) return 0;
         if (type->kind == IR_TYPE_PRIMITIVE &&
             type->primitive != TYPE_UNKNOWN &&
             (type->primitive < TYPE_INT || type->primitive > TYPE_NEVER))
@@ -541,7 +583,7 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
         if (type->kind == IR_TYPE_ARRAY && type->array_length == 0) return 0;
         if (type->kind != IR_TYPE_ARRAY && type->array_length != 0) return 0;
         if ((type->kind == IR_TYPE_POINTER || type->kind == IR_TYPE_ARRAY ||
-             type->kind == IR_TYPE_SLICE || type->kind == IR_TYPE_FUTURE) &&
+             type->kind == IR_TYPE_SLICE || type->kind == IR_TYPE_FUTURE || type->kind == IR_TYPE_JOIN) &&
             (type->element_type == IR_TYPE_NONE || type->element_type >= t))
             return 0;
         if ((type->kind == IR_TYPE_PRIMITIVE || type->kind == IR_TYPE_NAMED) &&
@@ -835,9 +877,14 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                     break;
                 case IR_OP_MEMBER:
                 case IR_OP_AWAIT:
+                case IR_OP_CANCEL_AWAIT:
                 case IR_OP_SLICE_LENGTH:
                 case IR_OP_SLICE_DATA:
                     REQUIRE_VALUE(instruction->operand_a);
+                    break;
+                case IR_OP_EXECUTOR:
+                    REQUIRE_VALUE(instruction->operand_a);
+                    if(instruction->operand_b!=IR_VALUE_NONE) REQUIRE_VALUE(instruction->operand_b);
                     break;
                 case IR_OP_ENUM_IS:
                 case IR_OP_ENUM_PAYLOAD:
@@ -846,6 +893,11 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                         REQUIRE_LABEL(instruction->target_a);
                     break;
                 case IR_OP_TRAP: break;
+                case IR_OP_CANCEL_DROP:
+                case IR_OP_CANCEL_RETURN: break;
+                case IR_OP_CANCEL_CHECK:
+                    REQUIRE_LABEL(instruction->target_a); REQUIRE_LABEL(instruction->target_b);
+                    break;
                 case IR_OP_ENUM_CONSTRUCT:
                 case IR_OP_ARRAY_LITERAL:
                     if (instruction->first_argument > function->argument_count ||

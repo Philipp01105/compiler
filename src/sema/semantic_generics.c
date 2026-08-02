@@ -61,7 +61,8 @@ static AstType expression_shape_copy(Analyzer *analyzer,
 }
 
 AstType inferred_argument_type(Analyzer *analyzer, const AstExpression *value) {
-    if (value->has_resolved_ast_type && value->resolved_ast_type.kind == AST_TYPE_FUTURE)
+    if (value->has_resolved_ast_type && (value->resolved_ast_type.kind == AST_TYPE_FUTURE ||
+        value->resolved_ast_type.kind == AST_TYPE_JOIN || value->resolved_ast_type.kind == AST_TYPE_EXECUTOR))
         return argument_type_copy(analyzer,
             value->resolved_type_program != NULL ? value->resolved_type_program : analyzer->program,
             value->resolved_ast_type);
@@ -104,7 +105,13 @@ void normalize_generic_type(Analyzer *analyzer, AstType *type, unsigned depth) {
                        ERR_SEM_COMPLEXITY_LIMIT, "Generic type nesting exceeds 64 instantiations");
         return;
     }
-    if (type->kind == AST_TYPE_FUTURE) {
+    if (type->kind == AST_TYPE_EXECUTOR) {
+        if (!semantic_async_enabled(analyzer))
+            semantic_error(analyzer, type->name_token, ERROR_CATEGORY_SEMANTIC,
+                           ERR_SEM_INVALID_DECLARATION, "Executor requires the async manifest feature");
+        return;
+    }
+    if (type->kind == AST_TYPE_FUTURE || type->kind == AST_TYPE_JOIN) {
         if (!semantic_async_enabled(analyzer))
             semantic_error(analyzer, type->name_token, ERROR_CATEGORY_SEMANTIC,
                            ERR_SEM_INVALID_DECLARATION,
@@ -172,11 +179,14 @@ void normalize_generic_type(Analyzer *analyzer, AstType *type, unsigned depth) {
     }
     AstProgram *root = (AstProgram *) analyzer->model->program;
     const char *name = ast_program_lexeme(analyzer->program, type->name_token);
+    const int qualified = strchr(name, '.') != NULL || strstr(name, "::") != NULL;
     const DmmPackage *target = lookup_package(analyzer->program, &name);
+    for (unsigned fallback = 0; fallback < 2; fallback++)
     for (size_t i = 0; i <= root->owned_import_count; i++) {
         AstProgram *unit = i == 0 ? root : root->owned_imports[i - 1];
-        if (target ? unit->package != target : !same_package(analyzer->program, unit)) continue;
         for (AstDeclarationNode *d = unit->root; d; d = d->next) {
+            int local = target ? unit->package == target : same_package(analyzer->program, unit);
+            if (fallback == 0 ? !local : (qualified || local || !d->is_async_builtin)) continue;
             if ((d->kind != AST_DECL_STRUCT && d->kind != AST_DECL_ENUM) || !d->generic_parameters ||
                 strcmp(name, ast_program_lexeme(unit, d->name_token)))
                 continue;
@@ -198,6 +208,11 @@ void normalize_generic_type(Analyzer *analyzer, AstType *type, unsigned depth) {
                                "Generic aggregate specialization exceeds deterministic limits");
                 return;
             }
+            instance->is_async_builtin = d->is_async_builtin;
+            if (d->is_async_builtin && !strcmp(name, "Result") &&
+                primitive_type(analyzer->program, &arguments[0]) == TYPE_VOID &&
+                !arguments[0].pointer_depth && !arguments[0].borrow_kind)
+                instance->as.enum_decl.values->payload_types = NULL;
             char canonical[4096];
             snprintf(canonical, sizeof(canonical), "%s::%s", unit->module_identity ? unit->module_identity : "",
                      ast_program_lexeme(unit, instance->name_token));
@@ -522,7 +537,7 @@ AstType argument_type_copy(Analyzer *analyzer, const AstProgram *unit, AstType t
         snprintf(length, sizeof(length), "%zu", type.resolved_array_length);
         type.array_length_token = concrete_token(analyzer, TOKEN_NUMBER, length);
     }
-    if (type.kind == AST_TYPE_FUTURE && type.arguments != NULL) {
+    if ((type.kind == AST_TYPE_FUTURE || type.kind == AST_TYPE_JOIN) && type.arguments != NULL) {
         AstTypeArgument *result = ast_program_alloc(analyzer->program, sizeof(*result));
         if (result == NULL) {
             analyzer->allocation_failed = 1;
@@ -574,8 +589,8 @@ static int unify_generic_pattern(Analyzer *analyzer, const AstProgram *pattern_u
         return 1;
     }
     if (actual.pointer_depth || actual.outer_pointer_depth || actual.is_array || actual.is_slice) return 0;
-    if (pattern->kind == AST_TYPE_FUTURE) {
-        if (actual.kind != AST_TYPE_FUTURE || pattern->arguments == NULL || actual.arguments == NULL)
+    if (pattern->kind == AST_TYPE_FUTURE || pattern->kind == AST_TYPE_JOIN) {
+        if (actual.kind != pattern->kind || pattern->arguments == NULL || actual.arguments == NULL)
             return 0;
         return unify_generic_pattern(analyzer, pattern_unit, &pattern->arguments->type,
             actual_unit, actual.arguments->type, declaration, substitutions, inferred, depth + 1);

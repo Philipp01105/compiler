@@ -123,9 +123,10 @@ static int valid_type_depth(const AstProgram *program, const AstType *type, int 
         for (const AstGenericParameter *parameter = type->function_generic_parameters; parameter;
              parameter = parameter->next)
             if (++generic_count > 16 || !valid_token(program, parameter->name_token)) return 0;
-    } else if ((type->kind != AST_TYPE_NAMED && type->kind != AST_TYPE_FUTURE) ||
+    } else if ((type->kind != AST_TYPE_NAMED && type->kind != AST_TYPE_FUTURE &&
+                type->kind != AST_TYPE_JOIN && type->kind != AST_TYPE_EXECUTOR) ||
                !valid_token(program, type->name_token)) return 0;
-    if (type->kind == AST_TYPE_FUTURE &&
+    if ((type->kind == AST_TYPE_FUTURE || type->kind == AST_TYPE_JOIN) &&
         (type->arguments == NULL || type->arguments->next != NULL)) return 0;
     if (type->is_array && !valid_token(program, type->array_length_token)) return 0;
     if (type->element_type != NULL &&
