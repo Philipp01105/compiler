@@ -162,6 +162,8 @@ typedef struct {
     size_t name_token;
     size_t symbol_id;
     IrTypeId type_id;
+    size_t native_offset;
+    size_t native_array_stride;
 } IrFieldDefinition;
 
 typedef struct {
@@ -172,7 +174,22 @@ typedef struct {
     size_t field_count;
     unsigned type_properties;
     int has_explicit_destructor;
+    int is_native;
+    int is_opaque;
+    NativeTypeLayout native_layout;
 } IrAggregate;
+
+typedef struct {
+    const AstProgram *source_program;
+    AstSourceSpan span;
+    size_t symbol_id;
+    const char *abi;
+    const char *library;
+    const char *native_name;
+    IrTypeId return_type_id;
+    IrTypeId *parameter_types;
+    size_t parameter_count;
+} IrNativeImport;
 
 typedef struct {
     const AstProgram *source_program;
@@ -215,6 +232,9 @@ typedef struct {
 typedef struct {
     const AstProgram *program;
     const SemanticModel *semantics;
+    TargetFormat target_format;
+    IrNativeImport *native_imports;
+    size_t native_import_count;
     IrFunction *functions;
     size_t function_count;
     size_t function_capacity;
@@ -243,6 +263,8 @@ typedef struct {
     int optimized;
     int emission_selected;
 } IrModule;
+
+const IrNativeImport *ir_native_import(const IrModule *module, size_t symbol_id);
 
 /* Inspect the selected IR after optimization: discarded operations do not
    require runtime facilities. Current operations (including async) are zero. */

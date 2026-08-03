@@ -906,12 +906,7 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
             if ((!size && !is_void) || size > INT64_MAX)
                 semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                "Type metadata layout requires a complete, non-recursive sized type");
-            size_t align = is_void
-                               ? 1
-                               : (!type->pointer_depth && !type->outer_pointer_depth && !type->is_array && !type->
-                                  is_slice && primitive != TYPE_UNKNOWN)
-                                     ? data_type_bytes(primitive)
-                                     : 8;
+            size_t align = is_void ? 1 : layout_alignment(analyzer, type);
             char text[32];
             snprintf(text, sizeof(text), "%zu", !strcmp(property, "size") ? size : align);
             expression->folded_constant = (AstToken)
@@ -932,11 +927,7 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
             return;
         }
         const AstType *type = &expression->allocated_type;
-        DataType primitive = primitive_type(analyzer->program, type);
-        size_t alignment = (!type->pointer_depth && !type->outer_pointer_depth && !type->is_array && !type->is_slice &&
-                            primitive != TYPE_UNKNOWN)
-                               ? data_type_bytes(primitive)
-                               : 8;
+        size_t alignment = layout_alignment(analyzer, type);
         char text[32];
         snprintf(text, sizeof(text), "%zu", expression->kind == AST_EXPR_SIZEOF ? size : alignment);
         expression->folded_constant = (AstToken)
@@ -1189,6 +1180,13 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
                     expression->resolved_named_type_token = interface->name_token;
                     expression->resolved_named_symbol_id = interface->id;
                 } else if (function != NULL) {
+                    if (function->declaration && function->declaration->is_native &&
+                        !expression->direct_call_target && !direct_call_callee) {
+                        semantic_error(analyzer, expression->value_token, ERROR_CATEGORY_TYPE,
+                                       ERR_TYPE_INVALID_OPERATION,
+                                       "Native function values require native function-pointer types (FFI stage 3)");
+                        return;
+                    }
                     if (expression->direct_call_target) {
                         expression->resolved_symbol_id = function->id;
                         expression->resolved_type = primitive_type(function->source_program,

@@ -1093,12 +1093,14 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
                                         parameter->compile_time_value, 0);
         if (local != NULL) parameter->resolved_symbol_id = local->symbol_id;
     }
-    analyze_statement(analyzer, function->as.function.body);
-    validate_function_ownership(analyzer, function);
-    validate_function_borrows(analyzer, function);
+    if (!function->is_native) {
+        analyze_statement(analyzer, function->as.function.body);
+        validate_function_ownership(analyzer, function);
+        validate_function_borrows(analyzer, function);
+    }
     DataType return_type = primitive_type(analyzer->program,
                                           &function->as.function.return_type);
-    if (return_type != TYPE_VOID &&
+    if (!function->is_native && return_type != TYPE_VOID &&
         statement_may_fall_through(function->as.function.body))
         semantic_error(analyzer, function->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
                        return_type == TYPE_NEVER
@@ -1298,10 +1300,19 @@ static int check_package_initializer_cycles(Analyzer *analyzer) {
 }
 
 SemanticModel *semantic_analyze(AstProgram *program) {
+#ifdef _WIN32
+    return semantic_analyze_target(program, TARGET_COFF);
+#else
+    return semantic_analyze_target(program, TARGET_ELF);
+#endif
+}
+
+SemanticModel *semantic_analyze_target(AstProgram *program, TargetFormat target) {
     if (program == NULL || !program->structured_ast_complete) return NULL;
     SemanticModel *model = calloc(1, sizeof(*model));
     if (model == NULL) return NULL;
     model->program = program;
+    model->target_format = target;
     Analyzer analyzer = {
         .model = model,
         .program = program,
@@ -1427,6 +1438,7 @@ SemanticModel *semantic_analyze(AstProgram *program) {
     }
     analyzer.program = program;
     validate_overload_sets(&analyzer);
+    validate_native_declarations(&analyzer);
     for (size_t unit_index = 0; unit_index <= program->owned_import_count; unit_index++) {
         AstProgram *unit = unit_index == 0 ? program : program->owned_imports[unit_index - 1];
         analyzer.program = unit;

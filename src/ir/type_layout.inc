@@ -36,6 +36,14 @@ static int type_layout_depth(const IrModule *module, IrTypeId id, IrTypeLayout *
         for (size_t s = 0; s < module->structure_count; s++) {
             const IrAggregate *structure = &module->structures[s];
             if (structure->symbol_id != type->symbol_id) continue;
+            if (structure->is_native) {
+                if (structure->is_opaque || !structure->native_layout.size ||
+                    structure->native_layout.size > SIZE_MAX - 7) return 0;
+                layout->size = structure->native_layout.size;
+                layout->alignment = structure->native_layout.alignment;
+                layout->storage_slots = (layout->size + 7) / 8;
+                return 1;
+            }
             found = 1;
             for (size_t f = 0; f < structure->field_count; f++) {
                 IrTypeLayout field;

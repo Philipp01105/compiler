@@ -99,6 +99,7 @@ static AstSourceSpan token_span(const Token *token) {
 static AstDeclarationKind declaration_kind(TokenType first, TokenType second) {
     if (first == TOKEN_KEYWORD_PUB) first = second;
     if (first == TOKEN_KEYWORD_IMPORT) return AST_DECL_IMPORT;
+    if (first == TOKEN_KEYWORD_EXTERN) return AST_DECL_EXTERN;
     if (first == TOKEN_KEYWORD_STRUCT) return AST_DECL_STRUCT;
     if (first == TOKEN_KEYWORD_ENUM) return AST_DECL_ENUM;
     if (first == TOKEN_KEYWORD_INTERFACE) return AST_DECL_INTERFACE;

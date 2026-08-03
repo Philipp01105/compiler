@@ -87,15 +87,24 @@ cleanup, raw memory and stream I/O in focused programs.
 - primitive and fixed-width numeric types, pointers, fixed arrays, slices and contextual array/slice literals
 - functions, overloads, non-capturing callable values, structs, methods, enums and exhaustive `match`
 - generic functions, structs and enums with interface bounds and specialization
-- structural interfaces and dynamic dispatch through interface arrays and slices
+- structural interfaces with owned values, move-only implementers and dynamic dispatch
 - type-derived `COPYABLE`, `MOVE_ONLY` and `NEEDS_DROP` properties, implicit moves and deterministic destruction
 - checked `&T` and exclusive `&mut T` borrows with field-sensitive conflicts and conservative last-use lifetimes
 - LIFO `defer`, including eager call capture and anonymous deferred bodies
+- expression-valued `if`, blocks and exhaustive `match`, plus `Option`/`Result` propagation with `?`
+- sequentially consistent `AtomicBit`/`AtomicUsize` and experimental async futures, executors and confirmed cancellation
+- typed asynchronous TCP/UDP and DNS through `stdlib/core/net`, with an automatic external-linker handoff
 - packages, explicit exports, local vendored dependencies and deterministic manifest synchronization
 - verified typed IR, `-O0`/`-O1`, native ELF/COFF object emission and internal ELF/PE linking
 
 The [language specification](LANGUAGE_SPEC.md) is authoritative for semantics. The [roadmap](TODO.md) distinguishes
 implemented behavior from planned features.
+
+Async programs require `features = ["async"]` in the root `dmm.manifest`. An `async func` call constructs a lazy,
+move-only `Future<T>`; use `future.await()` inside async code and `block_on(future)` from synchronous code.
+`spawn(future)` requires a concrete Send future and returns a consuming `JoinHandle<T>`. Futures, joins and executor
+owners must be consumed on every path; cancellation completes through an awaited operation. See the
+[language specification](LANGUAGE_SPEC.md) and [executor contract](src/runtime/EXECUTOR.md).
 
 ## Compiler use
 
@@ -139,6 +148,8 @@ example:
 
 ```sh
 ctest --test-dir build -L unit --output-on-failure
+ctest --test-dir build -L async --output-on-failure
+ctest --test-dir build -L network --output-on-failure
 ```
 
 CI currently runs Linux/GCC, Linux/Clang, Linux/GCC with ASan+UBSan, Linux/Clang libFuzzer smoke tests, Windows/MinGW
@@ -155,10 +166,12 @@ Each topic has one canonical document; other documents link to it instead of rep
 | [Language specification](LANGUAGE_SPEC.md) | Source-language semantics and implementation limits |
 | [Modules](MODULE_SYSTEM.md) | Manifests, package discovery, imports, visibility and vendored dependencies |
 | [Core runtime](CORE_RUNTIME.md) | Low-level memory, I/O and process boundary |
+| [Executor runtime](src/runtime/EXECUTOR.md) | Pinned frames, scheduling, cancellation and private platform ABI |
+| [Network runtime](NETWORK_RUNTIME.md) | Typed TCP/UDP/DNS, runtime selection, loans and confirmed completion |
 | [Streams and buffered I/O](STDIO.md) | `stdlib/stdio` API, ownership and error contracts |
 | [Architecture](ARCHITECTURE.md) | Compiler pipeline and component responsibilities |
 | [IR optimization](IR_OPTIMIZATION.md) | Optimization passes and preserved semantic effects |
-| [Native backend](NATIVE_BACKEND.md) | x86-64 ABI, object formats, runtime and internal linker |
+| [Native backend](NATIVE_BACKEND.md) | x86-64 ABI, object formats, runtime profiles and linker handoff |
 | [Dump formats](DUMP_FORMATS.md) | Versioned tokens, AST, symbols, IR, CFG and source maps |
 | [Diagnostics audit](DIAGNOSTICS_AUDIT.md) | Diagnostic families, rendering contract and validation |
 | [Fuzzing](FUZZING.md) | libFuzzer targets, corpora and reproduction workflow |

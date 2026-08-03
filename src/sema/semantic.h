@@ -62,6 +62,7 @@ typedef struct {
 
 typedef struct {
     const AstProgram *program;
+    TargetFormat target_format;
     SemanticSymbol *symbols;
     size_t symbol_count;
     size_t symbol_capacity;
@@ -73,6 +74,19 @@ typedef struct {
 } SemanticModel;
 
 SemanticModel *semantic_analyze(AstProgram * program);
+SemanticModel *semantic_analyze_target(AstProgram *program, TargetFormat target);
+
+typedef struct {
+    size_t size;
+    size_t alignment;
+} NativeTypeLayout;
+
+/* Shared x86-64 glibc/UCRT layout. Arrays here have native element strides;
+   ordinary DMM arrays continue to use eight-byte slots. */
+int semantic_native_layout(const SemanticModel *model, const AstProgram *program,
+                           const AstType *type, NativeTypeLayout *layout);
+int semantic_native_field_offset(const SemanticModel *model, size_t symbol_id,
+                                 size_t field_index, size_t *offset);
 
 int semantic_implements_interface(const SemanticModel *model, size_t interface_id,
                                   size_t struct_id);

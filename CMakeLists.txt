@@ -280,6 +280,14 @@ if (BUILD_TESTING)
     add_executable(dmm_foundation_test
             tests/unit/foundation_test.c
             ${DMM_FUZZ_PIPELINE_SOURCES})
+    add_executable(dmm_native_ffi_test tests/unit/native_ffi_test.c ${DMM_FUZZ_PIPELINE_SOURCES})
+    target_include_directories(dmm_native_ffi_test PRIVATE ${DMM_INCLUDE_DIRS})
+    add_test(NAME native_ffi_frontend_unit COMMAND dmm_native_ffi_test)
+    set_tests_properties(native_ffi_frontend_unit PROPERTIES LABELS "unit;frontend;sema;ir;ffi;safety")
+    add_test(NAME native_ffi_frontend_contract COMMAND ${CMAKE_COMMAND}
+            -DCOMPILER=$<TARGET_FILE:compiler> -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/ffi_frontend_test
+            -P ${CMAKE_SOURCE_DIR}/tests/ffi_frontend_test.cmake)
+    set_tests_properties(native_ffi_frontend_contract PROPERTIES LABELS "integration;frontend;sema;ir;ffi;safety" TIMEOUT 90)
     add_executable(dmm_async_semantic_test
             tests/unit/async_semantic_test.c
             ${DMM_FUZZ_PIPELINE_SOURCES})

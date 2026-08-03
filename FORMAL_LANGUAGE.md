@@ -37,7 +37,8 @@ keyword         = "func" | "var" | "return" | "for" | "if" | "else"
                 | "struct" | "enum" | "import" | "static" | "reserve"
                 | "free" | "interface" | "match" | "package" | "pub"
                 | "sizeof" | "alignof" | "slice" | "case" | "typeof"
-                | "destructor" | "defer" | "mut" ;
+                | "destructor" | "defer" | "mut" | "async" | "await"
+                | "extern" | "from" ;
 
 primitive-type  = "int" | "char" | "byte" | "bit"
                 | "float" | "double" | "string" | "void" | "never"
@@ -55,6 +56,7 @@ program         = "package", identifier, ";", { top-level-declaration }, end-of-
 
 top-level-declaration
                 = import-declaration
+                | extern-block
                 | ["pub"], (function-declaration | struct-declaration
                 | enum-declaration | constant-declaration | package-variable
                 | interface-declaration) ;
@@ -66,15 +68,16 @@ import-entry    = [identifier], string ;
 qualified-name  = identifier, [".", identifier] ;
 
 function-declaration
-                = "func", identifier, [generic-parameters], "(", [parameter-list], ")",
+                = ["async"], "func", identifier, [generic-parameters], "(", [parameter-list], ")",
                   "->", return-type, block ;
 parameter-list  = parameter, { ",", parameter } ;
 parameter       = identifier, ":", type ;
 return-type     = type ;
 type            = ["&", ["mut"]], {"*"},
-                  (function-type | primitive-type | qualified-name, [type-arguments] | "(", type, ")"),
+                  (function-type | async-type | primitive-type | qualified-name, [type-arguments] | "(", type, ")"),
                   {"[", [integer | identifier], "]"} ;
 function-type   = "func", [generic-parameters], "(", [type-list], ")", "->", type ;
+async-type      = ("Future" | "JoinHandle"), "<", type, ">" | "Executor" ;
 type-arguments  = "<", type, {",", type}, ">" ;
 generic-parameters = "<", generic-parameter, {",", generic-parameter}, ">" ;
 generic-parameter = identifier, [":", type, {"+", type}] ;
@@ -186,7 +189,7 @@ comparison-operator
                 = "==" | "!=" | "<" | "<=" | ">" | ">=" ;
 additive        = multiplicative, { ("+" | "-"), multiplicative } ;
 multiplicative  = unary, { ("*" | "/" | "%"), unary } ;
-unary           = ("!" | "-" | "&" | "*"), unary | postfix-expression ;
+unary           = ("!" | "-" | "*"), unary | "&", ["mut"], unary | postfix-expression ;
 postfix-expression = primary, {postfix} ;
 
 primary         = integer | floating | character | string
@@ -196,6 +199,7 @@ primary         = integer | floating | character | string
                 | ("reserve" | "sizeof" | "alignof"), "(", type, ")"
                 | "slice", "(", expression, ",", expression, ")"
                 | array-literal
+                | value-block | if-expression | match-expression
                 | "free"
                 | "(", expression, ")" ;
 
@@ -207,12 +211,22 @@ identifier-expression
 postfix         = "(", [argument-list], ")"
                 | type-arguments, ["(", [argument-list], ")"]
                  | "[", expression, "]"
+                 | "[", [expression], ":", [expression], "]"
                  | ".", identifier
+                 | ".", "await", "(", ")"
                  | ".", "(", type, ")"
                  | "?" ;
 argument-list   = expression, { ",", expression } ;
 call-expression = identifier-expression ;
 type-metadata   = type, ".", ("name" | "size" | "align") ;
+
+value-block     = "{", {statement}, [expression], "}" ;
+if-expression   = "if", "(", expression, ")", value-block,
+                  "else", value-block ;
+match-expression = "match", "(", (expression | type), ")", "{", {value-match-arm}, "}" ;
+value-match-arm = (identifier, ["(", [identifier, {",", identifier}], ")"] | "_"),
+                  "=>", value-block
+                | "case", (type | "_"), "->", value-block ;
 ```
 
 `expression.type` is a member expression denoting compile-time static type metadata. It may be followed by `.name`,
@@ -220,11 +234,36 @@ type-metadata   = type, ".", ("name" | "size" | "align") ;
 `case _ -> statement`; enum matches use variant patterns with `=>`. See `LANGUAGE_SPEC.md` for specialization and
 unevaluated-expression rules. `typeof` is currently reserved by the lexer; use `.type` for static type access.
 
+Value blocks use a final expression without a semicolon as their result. Value-producing `if` requires `else`;
+value-producing `match` requires exhaustive arms. Branch typing and terminating paths follow `LANGUAGE_SPEC.md`.
+
+`Future`, `JoinHandle` and `Executor` are compiler-recognized type names, not lexer keywords. Their use and async
+declarations require the root manifest's `async` feature. The consuming `.await()` postfix takes no arguments and is
+valid only inside async functions. Prefix `await expression` is rejected. Async interface methods are not supported.
+
 Array literals require an expected fixed-array or slice type. Their prefix is nonempty. In the repetition form
 `[a,b,c;N]`, semantic analysis requires `N` to be a positive compile-time integer constant and produces exactly `N`
 elements by cycling the prefix. An ordinary fixed-array literal must contain exactly the target length.
 
 ## Context-sensitive validity
+
+Native declarations extend the top-level declaration alternatives with:
+
+```ebnf
+extern-block    = "extern", "\"system\"", ["from", string-literal],
+                  "{", {native-declaration}, "}" ;
+native-declaration = ["pub"], (native-function | native-struct) ;
+native-function = "func", identifier, "(", [parameter-list], ")", "->", type,
+                  ["=", string-literal], ";" ;
+native-struct   = "struct", identifier, (";" | "{", native-field, {native-field}, "}") ;
+native-field    = ["pub"], "var", identifier, ":", type, ";" ;
+```
+
+`from` is required for functions and denotes a logical library ID. It has no effect
+on structs. Opaque structs use the semicolon form. Native type and signature validity
+is specified in `LANGUAGE_SPEC.md`; native calls are currently analyzable but await
+stage 2 code generation. Native function-pointer types and exports are not yet grammar
+alternatives.
 
 The grammar describes structure only. A valid DMM program must also satisfy the rules in `LANGUAGE_SPEC.md`, including
 declaration-before-use and scope rules, type compatibility, valid return paths, argument matching, loop-only `break`/

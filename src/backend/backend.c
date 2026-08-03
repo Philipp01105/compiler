@@ -14,6 +14,102 @@
 
 #include <stdio.h>
 
+static int native_type_marked(const IrModule *module, const unsigned char *marked, IrTypeId id) {
+    return id < module->type_count && marked[id];
+}
+
+/* Propagate through the finite type graph, including recursive pointer cycles.
+   Each type changes from zero to one at most once. */
+static unsigned char *native_storage_types(const IrModule *module) {
+    unsigned char *marked = calloc(module->type_count ? module->type_count : 1, 1);
+    if (!marked) return NULL;
+    int changed;
+    do {
+        changed = 0;
+        for (size_t t = 0; t < module->type_count; t++) {
+            if (marked[t]) continue;
+            const IrType *type = &module->types[t];
+            int native = 0;
+            if (type->kind == IR_TYPE_POINTER || type->kind == IR_TYPE_ARRAY || type->kind == IR_TYPE_SLICE ||
+                type->kind == IR_TYPE_FUTURE || type->kind == IR_TYPE_JOIN)
+                native = native_type_marked(module, marked, type->element_type);
+            if (type->kind == IR_TYPE_FUNCTION && type->signature_id < module->signature_count) {
+                const IrFunctionSignature *signature = &module->signatures[type->signature_id];
+                native |= native_type_marked(module, marked, signature->return_type);
+                for (size_t p = 0; p < signature->parameter_count; p++)
+                    native |= native_type_marked(module, marked, signature->parameter_types[p]);
+            }
+            if (type->kind == IR_TYPE_NAMED) {
+                for (size_t s = 0; s < module->structure_count; s++) {
+                    const IrAggregate *structure = &module->structures[s];
+                    if (structure->symbol_id != type->symbol_id) continue;
+                    native |= structure->is_native;
+                    for (size_t f = 0; f < structure->field_count; f++)
+                        native |= native_type_marked(module, marked, structure->fields[f].type_id);
+                }
+                for (size_t e = 0; e < module->enum_count; e++) {
+                    const IrEnum *enumeration = &module->enums[e];
+                    if (enumeration->symbol_id != type->symbol_id) continue;
+                    for (size_t f = 0; f < enumeration->field_count; f++)
+                        native |= native_type_marked(module, marked, enumeration->fields[f].type_id);
+                    for (size_t v = 0; v < enumeration->variant_count; v++)
+                        for (size_t p = 0; p < enumeration->variants[v].payload_count; p++)
+                            native |= native_type_marked(module, marked, enumeration->variants[v].payload_types[p]);
+                }
+            }
+            if (native) { marked[t] = 1; changed = 1; }
+        }
+    } while (changed);
+    return marked;
+}
+/* Stage 1 makes native declarations analyzable. Do not route native storage or
+   calls through the existing DMM aggregate ABI while stage 2 is pending. */
+static int validate_native_emission(const IrModule *module) {
+    int has_native = module->native_import_count != 0;
+    for (size_t s = 0; s < module->structure_count; s++) has_native |= module->structures[s].is_native;
+    if (!has_native) return 1;
+    unsigned char *marked = native_storage_types(module);
+    if (!marked) return 0;
+    for (size_t g = 0; g < module->global_count; g++)
+        if (native_type_marked(module, marked, module->globals[g].type_id)) {
+            error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_CODEGEN,
+                         ERR_CODEGEN_OUTPUT_FAILED, module->globals[g].source_program->source_path,
+                         "Native values in executable global storage require FFI stage 2");
+            free(marked);
+            return 0;
+        }
+    for (size_t f = 0; f < module->function_count; f++) {
+        const IrFunction *function = &module->functions[f];
+        if (module->emission_selected && !function->emission_reachable) continue;
+        int native_signature = native_type_marked(module, marked, function->return_type_id);
+        for (size_t p = 0; p < function->parameter_count; p++)
+            native_signature |= native_type_marked(module, marked, function->parameters[p].type_id);
+        if (native_signature) {
+            error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_CODEGEN,
+                         ERR_CODEGEN_OUTPUT_FAILED, function->source_program->source_path,
+                         "Native values in executable function signatures require FFI stage 2");
+            free(marked);
+            return 0;
+        }
+        for (size_t i = 0; i < function->instruction_count; i++) {
+            const IrInstruction *in = &function->instructions[i];
+            int native_import = 0;
+            for (size_t n = 0; n < module->native_import_count; n++)
+                if (module->native_imports[n].symbol_id == in->symbol_id) native_import = 1;
+            if (native_import || native_type_marked(module, marked, in->type_id)) {
+                error_report(global_error_handler, SEVERITY_ERROR, in->span.begin.line, in->span.begin.column,
+                             ERROR_CATEGORY_CODEGEN, ERR_CODEGEN_OUTPUT_FAILED,
+                             in->source_program ? in->source_program->source_path : function->source_program->source_path,
+                             "Native declarations are supported; native calls and byte-exact storage require FFI stage 2");
+                free(marked);
+                return 0;
+            }
+        }
+    }
+    free(marked);
+    return 1;
+}
+
 static int output_error(const AstProgram *program, const char *message,
                         const char *path) {
     error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_CODEGEN,
@@ -117,6 +213,7 @@ int backend_emit_file(const IrModule *module, const BackendOptions *options,
                       const char *output_path) {
     if (module == NULL || module->program == NULL || options == NULL || output_path == NULL)
         return 0;
+    if (!validate_native_emission(module)) return 0;
     if (options->runtime_profile == RUNTIME_PLATFORM && options->emission == BACKEND_EXECUTABLE)
         return output_error(module->program, "Platform executable requires driver link handoff: '%s'", output_path);
     IrModule emission_module = *module;

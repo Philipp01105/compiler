@@ -509,7 +509,7 @@ int main(int argc, char *argv[]) {
     if (ide_mode) {
         SemanticModel *semantics = NULL;
         if (ast_validate_program(program)) {
-            semantics = semantic_analyze(program);
+            semantics = semantic_analyze_target(program, target_format);
             if (semantics == NULL)
                 error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
                              ERR_COMP_INTERNAL_FAILURE, source_file,
@@ -659,7 +659,7 @@ int main(int argc, char *argv[]) {
     SemanticModel *semantics = NULL;
     IrModule *module = NULL;
     if (program->structured_ast_complete) {
-        semantics = semantic_analyze(program);
+        semantics = semantic_analyze_target(program, target_format);
         if (semantics == NULL) {
             error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
                          ERR_COMP_INTERNAL_FAILURE, source_file,

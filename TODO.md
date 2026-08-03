@@ -25,7 +25,8 @@ dependencies. Implemented semantics belong in the language and subsystem documen
 2. [ ] Finish resource-safety and self-hosting foundations.
     - Implemented: derived move-only ownership, checked borrows, deterministic destruction, LIFO `defer`, and typed
       allocation failures in high-level APIs with nullable failures in `stdlib/core`.
-    - Remaining: deterministic dependency-ordered runtime package initialization.
+    - Implemented: dependency-ordered runtime package initialization, cycle diagnostics and reverse-order cleanup.
+    - Remaining: allocator interfaces and broader self-hostable collection APIs listed below.
 
 The second P1 goal begins only after the first is complete. Other language-feature work remains outside P1 unless it is
 required to implement these resource-safety foundations.
@@ -94,7 +95,8 @@ model. The normative rules and current restrictions are maintained in [LANGUAGE_
 - [ ] Improve generic inference, constraint diagnostics, specialization controls, and duplicate-instantiation
   elimination.
 - [ ] Support recursive and mutually recursive generic types where layouts are finite.
-- [ ] Add richer patterns: bindings, nested destructuring, guards, ranges, and exhaustive match expressions.
+- [ ] Add richer patterns beyond existing payload bindings and exhaustive match expressions: nested destructuring,
+  guards and ranges.
 - [ ] Define stable exported layout and ABI rules for enums and variants, and cross-library dispatch/versioning for
   independently built interface implementers. The in-process interface descriptor now has a fixed layout and
   deterministic type tags.
@@ -129,10 +131,13 @@ model. The normative rules and current restrictions are maintained in [LANGUAGE_
 - [ ] Add allocator interfaces, arenas, bounded allocators, and allocation-failure injection.
 - [ ] Link only the runtime routines reachable from the program.
 - [ ] Extend I/O with seeking, file sizes, directories, terminal detection, pipes, and process execution.
-- [ ] Revisit concurrency only after atomics, ownership, thread-local state, and runtime scheduling requirements are
-  specified. The parser now preserves `async func`/`await` and sema derives conservative Send/Sync metadata, but async
-  syntax remains rejected: Future typing, pinned frames, suspend/resume IR, borrow checking across await,
-  code generation, and the deterministic poll harness are still required before enabling the feature.
+- [x] Provide sequentially consistent `AtomicBit`/`AtomicUsize` and experimental manifest-gated `async func`,
+  consuming `future.await()`, pinned frames, suspend/resume IR and conservative Send/Sync checks.
+- [x] Provide multi-thread executors, Send-checked spawn, caller-thread blocking, consuming joins, Drain/Cancel
+  shutdown and confirmed cancellation with awaitable cleanup. See [LANGUAGE_SPEC.md](LANGUAGE_SPEC.md) and
+  [src/runtime/EXECUTOR.md](src/runtime/EXECUTOR.md).
+- [ ] Build the public `stdlib/net` API on the implemented private TCP/UDP/DNS foundation; TLS, HTTP and socket
+  convenience options remain separate work. See [NETWORK_RUNTIME.md](NETWORK_RUNTIME.md).
 - [ ] Provide a DMM-native test and assertion library.
 
 ## Modules, dependencies, and builds
@@ -241,7 +246,7 @@ model. The normative rules and current restrictions are maintained in [LANGUAGE_
 - [x] Local manifests, synchronized dependencies, and vendored dependencies.
 - [x] Move-safe byte buffers, strings, and dynamic collections.
 - [ ] Stable library exports and external object/archive interoperability.
-- [ ] Runtime package initialization.
+- [x] Runtime package initialization with dependency ordering and reverse-order cleanup.
 - [x] Explicit file and allocation error handling.
 - [x] Deterministic cleanup for owned resources.
 - [ ] Remote dependency retrieval, checksums, and lockfiles.

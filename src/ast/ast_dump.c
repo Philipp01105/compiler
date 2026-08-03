@@ -303,6 +303,14 @@ static int dump_declaration(FILE *output, const AstProgram *program,
     if (declaration->name_token != AST_TOKEN_NONE &&
         !token_field(output, program, "name", declaration->name_token))
         return 0;
+    if (declaration->is_native) {
+        if (fprintf(output, " native=1 opaque=%d", declaration->is_opaque) < 0 ||
+            !token_field(output, program, "abi", declaration->native_abi_token)) return 0;
+        if (declaration->native_library_token != AST_TOKEN_NONE &&
+            !token_field(output, program, "library", declaration->native_library_token)) return 0;
+        if (declaration->kind == AST_DECL_FUNCTION &&
+            !token_field(output, program, "native-name", declaration->native_name_token)) return 0;
+    }
     if (declaration->kind == AST_DECL_FUNCTION &&
         fprintf(output, " static=%d", declaration->as.function.is_static) < 0)
         return 0;
@@ -434,7 +442,7 @@ static int dump_program(FILE *output, const AstProgram *program, size_t index,
 
 int ast_dump(FILE *output, const AstProgram *program) {
     if (output == NULL || program == NULL || !ast_validate_program(program)) return 0;
-    if (fprintf(output, "dmm-ast-v3\nmodule units=%zu\n", program->owned_import_count + 1) < 0 ||
+    if (fprintf(output, "dmm-ast-v4\nmodule units=%zu\n", program->owned_import_count + 1) < 0 ||
         !dump_program(output, program, 0, "root"))
         return 0;
     for (size_t i = 0; i < program->owned_import_count; i++)

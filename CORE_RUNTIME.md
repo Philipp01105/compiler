@@ -58,6 +58,14 @@ ignored by the Windows implementation.
 Exit and trap have the uninhabited return type `never`. Their calls end the current control-flow path and therefore
 satisfy definite-return analysis. Immediate process termination still bypasses normal scope and package cleanup.
 
+## Atomics
+
+`core.atomicBit(initial)` and `core.atomicUsize(initial)` construct move-only `AtomicBit` and `AtomicUsize` owners.
+Both provide `load`, `store`, `swap` and `compareExchange(expected,next)` with sequentially consistent ordering.
+`swap` and `compareExchange` return the previous value; compare it with `expected` to determine exchange success.
+Storage must remain aligned and must not be accessed through a non-atomic alias while shared. These wrappers do not
+require the `async` feature. See [LANGUAGE_SPEC.md](LANGUAGE_SPEC.md) for the memory and Send/Sync contract.
+
 ## Compiler and library responsibilities
 
 `src/common/core_intrinsics.h` is the target-independent signature table shared by semantic analysis, IR verification

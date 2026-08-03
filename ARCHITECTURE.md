@@ -15,7 +15,7 @@ source file
   -> IR peephole/dataflow optimization and verification
   -> target-aware structured x86-64 instructions
   -> assembly printing/cleanup OR direct encoding
-  -> ELF/COFF object serialization OR internal ELF/PE executable linking
+  -> ELF/COFF object serialization OR internal ELF/PE executable linking OR external platform linking
 ```
 
 `dmm manifest sync` reuses package graph loading across all source packages of the selected module. It reconciles direct
@@ -31,8 +31,9 @@ and structural interface bounds, and checks each concrete body through a growing
 Sum construction, tag tests and guarded payload extraction are explicit operations; exhaustive matches become ordinary
 branches and labels. The verifier rejects extraction without the matching guarded predecessor. Native aggregate layout
 reserves a tag slot and the largest payload, preserving by-value copying through the existing internal ABI.
-Interface array and slice elements similarly store a concrete struct tag and enough inline space for the largest
-implementing struct. Calls through these elements select the concrete method by tag at runtime.
+Interface values use a fixed two-word descriptor: a deterministic concrete type tag and an owned payload pointer.
+Variables, parameters, returns, fields, variant payloads, arrays and slices share this representation. Dynamic calls
+select the concrete method by tag; destruction dispatches to concrete drop glue and releases the payload.
 
 ## Component ownership
 
@@ -54,6 +55,8 @@ in [LANGUAGE_SPEC.md](LANGUAGE_SPEC.md).
   `semantic_generics.c` handles specialization and type normalization, `semantic_constants.c` evaluates
   constant expressions, `semantic_diagnostics.c` formats errors, `semantic_layout.c` computes aggregate storage,
   and `semantic_interfaces.c` checks structural interface conformance.
+  `semantic_async.inc` and `semantic_executor.inc` validate Future/JoinHandle/Executor operations, retained loans,
+  concrete Send eligibility and consuming cancellation/shutdown paths.
 - `src/ir` lowers typed AST nodes to explicit values and control flow, interns types, describes aggregate/enum layouts
   and imports. `ir_verify.c` verifies every use, definition, label, type, and symbol reference.
 - `src/ir/ir_optimize.c` folds and propagates constants/copies, simplifies control flow and addresses, and removes dead
@@ -73,8 +76,12 @@ in [LANGUAGE_SPEC.md](LANGUAGE_SPEC.md).
   import/base-relocation tables.
 - `src/runtime/native_runtime.c` supplies executable startup and native runtime shims; system imports have private names
   to prevent source-symbol collisions. See [NATIVE_BACKEND.md](NATIVE_BACKEND.md) for image layout and limits.
+- `src/runtime/native_executor.inc` emits scheduling and Future adapters; `native_threads.inc` emits standalone
+  threads/events. `executor.c` is the independently tested C contract implementation. The optional `platform_shim.c`
+  supplies pthread/UCRT64 thread and event primitives; `network_shim.c` adds epoll/IOCP and bounded DNS.
 - `src/diagnostics` buffers and renders text or JSON diagnostics from every phase.
-- `src/driver` owns CLI validation and phase lifetime.
+- `src/driver` owns CLI validation and phase lifetime. `external_link.c` selects a matching GCC-compatible driver,
+  the required private runtime shim and OS link dependencies, then checks external-link success.
 
 ## AST and semantic model
 
@@ -97,15 +104,22 @@ ownership rules at individual expressions.
 
 A dedicated ownership dataflow pass tracks live, moved, and uninitialized local owners. It merges branch and match-arm
 states, validates loop backedges and `break`/`continue` exits, and applies concrete specialization properties to calls,
-arrays, and enum construction. Interface storage remains copyable, so the semantic layer rejects erasure of a move-only
-concrete value rather than losing its ownership state.
+arrays, and enum construction. Interface values are move-only owners; erasure copies copyable implementers and moves
+move-only implementers into their owned payload. Async ownership additionally requires consumption of Futures,
+JoinHandles and Executors, preserving captured loans until completion or confirmed cancellation.
 
 ## Typed IR
 
-IR types are primitive, named, pointer, fixed-array, or slice types. Instructions cover constants,
+IR types include primitive, named, pointer, fixed-array, slice, function, Future, JoinHandle and Executor types.
+Instructions cover constants,
 loads/declarations/stores, unary and binary operations, calls, indexes, members, slice construction/data/length, casts,
 allocation/free, returns, branches, jumps, labels, and PHI values. Calls store a contiguous ordered argument slice, so
 nested calls cannot corrupt argument ordering.
+
+Async functions retain pinned-frame metadata, concrete Send properties and verified suspension states. Explicit
+`await`, `executor`, `cancel-check`, `cancel-await`, `cancel-drop` and `cancel-return` instructions describe polling
+and cancellation cleanup. Native lowering emits frame constructors, poll callbacks and cleanup callbacks; active
+scope/drop flags preserve exactly-once cleanup across suspension. See [src/runtime/EXECUTOR.md](src/runtime/EXECUTOR.md).
 
 Boolean `&&` and `||` lower to branch/jump/label/PHI control flow and therefore preserve short-circuit side effects.
 Instance methods receive an explicit hidden aggregate pointer; implicit field names lower against that receiver. Slices
@@ -147,6 +161,11 @@ declaration names and signatures.
 fixed-format output, input and platform I/O. Executable packages embed these routines in assembly, objects and internal
 executable images. Library objects have no executable startup requirement. Linux uses syscalls and static ELF startup;
 Windows uses kernel32 APIs and its own file-descriptor table. The old C runtime archive has been removed.
+Runtime requirements, runtime profile and link strategy are separate decisions. Used network intrinsics set `NETWORK`
+and imply `PLATFORM_RUNTIME`; executable output then uses an external driver and the combined network shim. An unused
+network import does not select that profile. `--link=external` can also select the smaller platform shim without
+networking. Object/assembly output selects the same ABI without starting a linker. See
+[NETWORK_RUNTIME.md](NETWORK_RUNTIME.md) for completion and startup/shutdown ordering.
 `src/backend/runtime_calls.c` maps typed builtin calls to reserved runtime link symbols. The emitter performs ordinary
 ABI argument/result lowering and contains no syscall-number selection, Windows file-flag mapping or input
 implementations. The low-level core signatures in `src/common/core_intrinsics.h` are shared by semantic analysis, typed
@@ -186,3 +205,5 @@ interoperability, rejection diagnostics, runtime bounds traps, imports and cycle
 boundaries, large dynamic compiler state, AST construction, IR verification, optimization, and lexer/syntax conversion
 behavior. Parser, semantic, and IR libFuzzer targets reuse the in-memory frontend API; the IR target also mutates safe,
 non-owning instruction fields to exercise malformed-module verification.
+Dedicated async, executor, platform-handoff and network suites check manifest gating, ownership, pinned frames,
+ELF/COFF emission at O0/O1, scheduling/wake races, cancellation confirmation, loopback TCP/UDP/DNS and lifecycle.

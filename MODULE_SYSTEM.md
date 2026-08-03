@@ -39,6 +39,10 @@ trailing comma, and is equivalent to omission when empty. Names begin with a low
 lowercase letters, digits, or underscores. Unknown and duplicate features are rejected. The manifest is authoritative;
 source files and normal command-line builds cannot override it.
 
+The currently supported experimental feature is `async`. Set `features = ["async"]` in the root manifest to use
+`async func`, `Future<T>`, `JoinHandle<T>`, `Executor` and `stdlib/core/net`. Imported source uses the root feature
+configuration. See [LANGUAGE_SPEC.md](LANGUAGE_SPEC.md) for the source contract.
+
 Dependency versions currently use `vMAJOR.MINOR.PATCH`. Duplicate requirements and malformed directives are rejected.
 `//` comments, non-nesting `/* ... */` block comments and single-line `require path version`
 are supported. An unclosed block comment invalidates the manifest.

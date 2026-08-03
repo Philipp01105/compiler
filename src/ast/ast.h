@@ -21,7 +21,8 @@ typedef struct {
 
 typedef enum {
     AST_DECL_IMPORT, AST_DECL_STRUCT, AST_DECL_ENUM, AST_DECL_FUNCTION,
-    AST_DECL_CONSTANT, AST_DECL_INTERFACE, AST_DECL_VARIABLE, AST_DECL_INVALID
+    AST_DECL_CONSTANT, AST_DECL_INTERFACE, AST_DECL_VARIABLE, AST_DECL_INVALID,
+    AST_DECL_EXTERN
 } AstDeclarationKind;
 
 typedef enum { AST_TYPE_INFERRED, AST_TYPE_NAMED, AST_TYPE_FUNCTION, AST_TYPE_FUTURE,
@@ -241,6 +242,13 @@ struct AstEnumValue {
 
 struct AstDeclarationNode {
     int is_public;
+    /* Extern blocks flatten into ordinary package declarations. Token indices
+       retain ABI, library and alias source locations without synthetic bodies. */
+    int is_native;
+    int is_opaque;
+    size_t native_abi_token;
+    size_t native_library_token;
+    size_t native_name_token;
     int is_async_builtin;
     AstDeclarationKind kind;
     AstSourceSpan span;

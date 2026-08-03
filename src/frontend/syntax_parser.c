@@ -14,6 +14,7 @@ typedef struct {
     unsigned type_depth;
     size_t type_expression_end;
     int interface_signature;
+    int native_declaration;
     int pending_equal;
     int failed;
     int reported;
@@ -1248,6 +1249,9 @@ static AstDeclarationNode *new_declaration(SyntaxParser *parser,
         declaration->first_token = first;
         declaration->name_token = AST_TOKEN_NONE;
         declaration->resolved_symbol_id = AST_SYMBOL_NONE;
+        declaration->native_abi_token = AST_TOKEN_NONE;
+        declaration->native_library_token = AST_TOKEN_NONE;
+        declaration->native_name_token = AST_TOKEN_NONE;
     }
     return declaration;
 }
@@ -1280,14 +1284,25 @@ static AstDeclarationNode *parse_function(SyntaxParser *parser, int is_static,
     (void) consume(parser, TOKEN_RPAREN);
     (void) consume(parser, TOKEN_ARROW);
     AstType return_type = parse_type(parser);
-    AstStatement *body;
-    if (parser->interface_signature) {
+    AstStatement *body = NULL;
+    size_t native_name = name;
+    if (parser->native_declaration) {
+        if (generics != NULL || is_async)
+            parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
+                           "Native functions must be synchronous and non-generic");
+        if (match(parser, TOKEN_EQUAL)) native_name = consume(parser, TOKEN_STRING_LITERAL);
+        if (check(parser, TOKEN_LBRACE))
+            parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
+                           "Native imports cannot have a function body");
+        (void) consume(parser, TOKEN_SEMICOLON);
+    } else if (parser->interface_signature) {
         body = new_statement(parser, AST_STMT_BLOCK, parser->current);
         (void) consume(parser, TOKEN_SEMICOLON);
         finish_statement(parser, body);
     } else body = parse_block(parser);
     if (declaration != NULL) {
         declaration->name_token = name;
+        declaration->native_name_token = native_name;
         declaration->as.function.parameters = parameters;
         declaration->as.function.return_type = return_type;
         declaration->as.function.body = body;
@@ -1323,6 +1338,16 @@ static AstDeclarationNode *parse_struct(SyntaxParser *parser) {
     size_t name = consume(parser, TOKEN_IDENTIFIER);
     AstGenericParameter *generics = parse_generic_parameters(parser);
     if (declaration != NULL) declaration->generic_parameters = generics;
+    if (parser->native_declaration && generics != NULL)
+        parser_failure(parser, ERR_PARSE_INVALID_DECLARATION, "Native structs cannot be generic");
+    if (parser->native_declaration && match(parser, TOKEN_SEMICOLON)) {
+        if (declaration != NULL) {
+            declaration->name_token = name;
+            declaration->is_opaque = 1;
+        }
+        finish_declaration(parser, declaration);
+        return declaration;
+    }
     (void) consume(parser, TOKEN_LBRACE);
     AstField *fields = NULL;
     AstField **field_tail = &fields;
@@ -1330,6 +1355,13 @@ static AstDeclarationNode *parse_struct(SyntaxParser *parser) {
     AstDeclarationNode **method_tail = &methods;
     AstStatement *destructor = NULL;
     while (!parser->failed && !check(parser, TOKEN_RBRACE) && !check(parser, TOKEN_EOF)) {
+        if (parser->native_declaration &&
+            (check(parser, TOKEN_KEYWORD_DESTRUCTOR) || check(parser, TOKEN_KEYWORD_FUNC) ||
+             check(parser, TOKEN_KEYWORD_ASYNC) || check(parser, TOKEN_KEYWORD_STATIC))) {
+            parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
+                           "Native structs permit only var fields");
+            break;
+        }
         if (check(parser, TOKEN_KEYWORD_DESTRUCTOR)) {
             if (destructor != NULL) {
                 parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
@@ -1342,6 +1374,12 @@ static AstDeclarationNode *parse_struct(SyntaxParser *parser) {
         }
         int is_public = match(parser, TOKEN_KEYWORD_PUB);
         int is_static = match(parser, TOKEN_KEYWORD_STATIC);
+        if (parser->native_declaration && (is_static ||
+            check(parser, TOKEN_KEYWORD_FUNC) || check(parser, TOKEN_KEYWORD_ASYNC))) {
+            parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
+                           "Native structs permit only var fields");
+            break;
+        }
         if (check(parser, TOKEN_KEYWORD_FUNC) || check(parser, TOKEN_KEYWORD_ASYNC)) {
             AstDeclarationNode *method = parse_function(parser, is_static, name);
             if (method) method->is_public = is_public;
@@ -1561,6 +1599,51 @@ static AstDeclarationNode *parse_constant(SyntaxParser *parser) {
     return declaration;
 }
 
+static AstDeclarationNode *parse_extern(SyntaxParser *parser) {
+    (void) consume(parser, TOKEN_KEYWORD_EXTERN);
+    size_t abi = consume(parser, TOKEN_STRING_LITERAL);
+    if (strcmp(ast_program_lexeme(parser->program, abi), "system"))
+        parser_failure(parser, ERR_PARSE_INVALID_DECLARATION, "Only extern system ABI is supported");
+    size_t library = AST_TOKEN_NONE;
+    if (match(parser, TOKEN_KEYWORD_FROM)) {
+        library = consume(parser, TOKEN_STRING_LITERAL);
+        const unsigned char *id = (const unsigned char *)ast_program_lexeme(parser->program, library);
+        int valid = (*id >= 'A' && *id <= 'Z') || (*id >= 'a' && *id <= 'z') || *id == '_';
+        for (size_t i = 1; valid && id[i]; i++)
+            valid = (id[i] >= 'A' && id[i] <= 'Z') || (id[i] >= 'a' && id[i] <= 'z') ||
+                    (id[i] >= '0' && id[i] <= '9') || id[i] == '_' || id[i] == '-';
+        if (!valid)
+            parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
+                           "from requires a logical library ID, not a filename, path or linker option");
+    }
+    (void) consume(parser, TOKEN_LBRACE);
+    AstDeclarationNode *head = NULL;
+    AstDeclarationNode **tail = &head;
+    parser->native_declaration = 1;
+    while (!parser->failed && !check(parser, TOKEN_RBRACE) && !check(parser, TOKEN_EOF)) {
+        int is_public = match(parser, TOKEN_KEYWORD_PUB);
+        AstDeclarationNode *declaration = NULL;
+        if (check(parser, TOKEN_KEYWORD_FUNC)) {
+            if (library == AST_TOKEN_NONE)
+                parser_failure(parser, ERR_PARSE_INVALID_DECLARATION, "Native imports require from library");
+            else declaration = parse_function(parser, 0, AST_TOKEN_NONE);
+        } else if (check(parser, TOKEN_KEYWORD_STRUCT)) declaration = parse_struct(parser);
+        else parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
+                            "Extern blocks permit only functions and native structs");
+        if (declaration != NULL) {
+            declaration->is_public = is_public;
+            declaration->is_native = 1;
+            declaration->native_abi_token = abi;
+            declaration->native_library_token = declaration->kind == AST_DECL_FUNCTION ? library : AST_TOKEN_NONE;
+            *tail = declaration;
+            tail = &declaration->next;
+        }
+    }
+    parser->native_declaration = 0;
+    (void) consume(parser, TOKEN_RBRACE);
+    return head;
+}
+
 int frontend_build_structured_ast_recover(AstProgram *program, int recover_syntax) {
     if (program == NULL) return 0;
     program->structured_error_token = AST_TOKEN_NONE;
@@ -1582,7 +1665,12 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
         if (recover_syntax) parser.reported = 0;
         AstDeclarationNode *declaration = NULL;
         int is_public = match(&parser, TOKEN_KEYWORD_PUB);
-        if (check(&parser, TOKEN_KEYWORD_IMPORT)) declaration = parse_import(&parser);
+        if (check(&parser, TOKEN_KEYWORD_EXTERN)) {
+            if (is_public) parser_failure(&parser, ERR_PARSE_INVALID_DECLARATION,
+                                         "Place pub on declarations inside the extern block");
+            declaration = parse_extern(&parser);
+        }
+        else if (check(&parser, TOKEN_KEYWORD_IMPORT)) declaration = parse_import(&parser);
         else if (check(&parser, TOKEN_KEYWORD_CONST)) declaration = parse_constant(&parser);
         else if (check(&parser, TOKEN_KEYWORD_VAR)) declaration = parse_constant(&parser);
         else if (check(&parser, TOKEN_KEYWORD_FUNC) || check(&parser, TOKEN_KEYWORD_ASYNC))
@@ -1608,7 +1696,7 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
             while (!check(&parser, TOKEN_EOF)) {
                 TokenType token = current_type(&parser);
                 if (braces <= 0 && parser.current > first &&
-                    (token == TOKEN_KEYWORD_FUNC || token == TOKEN_KEYWORD_ASYNC ||
+                    (token == TOKEN_KEYWORD_EXTERN || token == TOKEN_KEYWORD_FUNC || token == TOKEN_KEYWORD_ASYNC ||
                      token == TOKEN_KEYWORD_STRUCT ||
                      token == TOKEN_KEYWORD_ENUM || token == TOKEN_KEYWORD_INTERFACE ||
                      token == TOKEN_KEYWORD_IMPORT || token == TOKEN_KEYWORD_CONST))
@@ -1624,7 +1712,7 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
             if (is_public && declaration->kind == AST_DECL_IMPORT)
                 parser_failure(&parser, ERR_PARSE_INVALID_DECLARATION,
                                "pub applies to declarations and members, not imports");
-            declaration->is_public = is_public;
+            if (!declaration->is_native) declaration->is_public = is_public;
             AstDeclarationNode *next = declaration->next;
             *tail = declaration;
             tail = &declaration->next;

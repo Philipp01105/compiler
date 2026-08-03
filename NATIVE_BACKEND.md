@@ -1,5 +1,16 @@
 # Native x86-64 backend
 
+Native FFI stage 1 adds separate `IrNativeImport` declarations (symbol identity,
+ABI, logical library, native name, signature and source span) and native aggregate
+layout metadata. These imports are not DMM function bodies. Sema uses the output
+target before IR lowering; native size, alignment, offsets and array strides come
+from a shared C-layout calculation, distinct from DMM's eight-byte aggregate slots.
+The IR verifier checks native signatures, references and layouts. Unused native
+declarations and compile-time layout queries can accompany ordinary programs.
+Executable native calls and native storage operations currently receive an explicit
+stage 2 diagnostic. Native ABI classification and linker requirements remain pending;
+the milestone boundaries are specified in [plans/ffi.md](plans/ffi.md).
+
 The compiler emits machine code directly from verified IR and structured x86-64 instructions. Native compilation invokes
 no assembler, C compiler or external linker in its default standalone profile. Standalone output embeds a compiler-owned runtime: generated programs
 require no libc, Windows CRT or foreign language runtime. The compiler itself remains implemented in C.

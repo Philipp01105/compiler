@@ -39,7 +39,8 @@ The prefix form `await x` is not part of the language and is rejected. Futures a
 or generic functions. References to Futures cannot be awaited. Future output types are invariant: `Future<int>` does
 not convert to `Future<byte>` even though the corresponding scalar conversion exists.
 
-A live Future must be awaited or transferred on every reachable control-flow path. Discarding a Future expression,
+A live Future must be awaited, transferred, synchronously consumed with `block_on`, or passed to `cancel` on every
+reachable control-flow path. The cancellation Future must itself be consumed to completion. Discarding a Future expression,
 overwriting a live Future, or leaving its scope without consumption is an error. This requirement also propagates
 through aggregate fields and enum payloads. Existing restrictions on partial moves from aggregates still apply.
 Futures that capture checked reference parameters retain their loans across handle moves and forwarding calls;
@@ -51,12 +52,13 @@ owning slice cannot be captured as a borrowed parameter; bind its backing to an 
 Each async call allocates its frame on the heap before returning the handle; it does not execute the function body.
 The frame is pinned from construction until cleanup. Moving a handle does not move its storage. Lowering emits a
 constructor, poll callback and cleanup callback, with persistent state, result storage, local values and drop flags.
-Stage 1 conservatively retains all frame storage across suspension. Await evaluates its operand once, polls its child,
+Lowering conservatively retains all frame storage across suspension. Await evaluates its operand once, polls its child,
 suspends on Pending, and resumes at its unique verified state. On Ready it moves the output and cleans up the child
 exactly once. Normal return and error propagation run the existing defer/destructor paths exactly once. Invalid
 resume states, polling a completed frame, and cleanup of an incomplete frame trap in the private ABI.
 Both ELF and COFF native backends support this at O0 and O1. A private deterministic test driver exercises polling.
-`main` remains synchronous. Public socket and file asynchronous I/O APIs remain outside Stage 2.
+`main` remains synchronous. Typed asynchronous TCP/UDP/DNS is available through `stdlib/core/net`; public `stdlib/net`
+and asynchronous file APIs remain future work. See [NETWORK_RUNTIME.md](NETWORK_RUNTIME.md).
 
 `Send` and `Sync` are compiler-derived, structurally through aggregate fields and enum payloads. Shared checked
 references are Send/Sync when their referent is Sync; mutable checked references are Send when their referent is Send.
@@ -71,9 +73,9 @@ conditional graph proof does not make a borrowed child independently Send; extra
 borrowed parameters and caller-stack origins remain excluded. Owned sockets and fixed arrays can therefore be lent
 to an embedded I/O future inside a spawnable parent. Move, destruction and conflicting accesses remain forbidden
 until confirmed completion or cancellation. See [NETWORK_RUNTIME.md](NETWORK_RUNTIME.md).
-There are no explicit unsafe Send/Sync implementations in Stage 1.
+There are no explicit unsafe Send/Sync implementations.
 
-Stage 2 exposes the following operations with the `async` feature enabled:
+The executor exposes the following operations with the `async` feature enabled:
 
 | Operation | Result |
 | --- | --- |
@@ -128,6 +130,11 @@ Free spawn and block_on lazily initialize a default executor with two workers. N
 drains it before package cleanup. Explicit executors are independent. Resource failures follow the
 existing fatal runtime path. There are no detached tasks, forced thread aborts or cancellation deadline:
 non-cooperative synchronous code or missing I/O confirmation may delay cancellation/shutdown indefinitely.
+
+The optional platform profile replaces thread/event primitives with pthreads on Linux or UCRT64 `_beginthreadex`
+on Windows while retaining the generated scheduler. Used network operations select this profile and its combined
+shim automatically; `--link=external` also selects the platform profile without requiring networking. See
+[NATIVE_BACKEND.md](NATIVE_BACKEND.md) and [src/runtime/EXECUTOR.md](src/runtime/EXECUTOR.md).
 
 The `core.AtomicBit` and `core.AtomicUsize` types are available independently of `async`. Construct them with
 `core.atomicBit(initial)` and `core.atomicUsize(initial)`. Their `load`, `store`, `swap`, and
@@ -357,7 +364,8 @@ Ownership state is path-sensitive. Branch and `match` joins merge the possible l
 A loop may carry a move-only owner across its backedge only when every continuing iteration leaves that owner live; a
 consumed owner must therefore be completely reassigned before the next iteration. Fixed arrays inherit their element
 ownership properties, array literals move move-only elements into their result, and repetition syntax cannot duplicate
-a move-only pattern element. Erasing a move-only concrete value into a copyable interface container is rejected.
+a move-only pattern element. Concrete-to-interface conversion transfers move-only implementers into owned payload
+storage; interface values are themselves move-only and require deterministic destruction.
 
 Every initialized, non-moved value with `NEEDS_DROP` is destroyed exactly once on each lifetime-ending path, including
 scope fallthrough, `return`, `break`, and `continue`. A moved-from value is not destroyed. For a struct with an
@@ -517,6 +525,59 @@ cleanup requirements and typed transfer/error results are defined in [STDIO.md](
 Function overloads differ by ordered parameter types, never return type. Exact matches beat promotions and other allowed
 numeric conversions. A candidate must be no worse in every argument and better in at least one; ties are ambiguous.
 `main` cannot be overloaded. Overloaded functions and methods use type-derived link names.
+
+## Native declarations (FFI stage 1)
+
+`extern "system" [from "library"] { ... }` contains native function declarations and
+native structs. `from` is a logical library ID, for example `c` or `ws2_32`, rather than
+a DLL, SONAME, path or linker option. IDs begin with a letter or underscore and then
+contain letters, digits, underscores or hyphens. `from` has no effect on type declarations.
+
+```dmm
+extern "system" {
+    pub struct Handle;
+    pub struct Record {
+        pub var count:u32;
+        pub var bytes:u8[3];
+    }
+}
+extern "system" from "example" {
+    pub func transform(value:Record, handle:*Handle) -> Record = "native_transform";
+}
+```
+
+Imports have explicit return types and no bodies; aliases must be C identifiers.
+Imports require `from`. Visibility and package resolution follow ordinary declarations.
+Native structs allow only fields, with no generics, methods, destructors or initializers.
+Opaque structs are permitted only behind raw pointers. Empty native structs and by-value
+cycles are rejected; pointer recursion is allowed.
+
+FFI values are fixed-width integers, `isize`, `usize`, `float`, `double`, `bit`, raw
+pointers and complete native structs. `bit` is one byte with 0/1 semantics and corresponds
+to C `_Bool`; Win32 `BOOL` is `i32`. `int`, `char` and `byte` are excluded as FFI values.
+`void` is only a result or pointer pointee. Fixed arrays are permitted as native fields,
+with C element strides, but cannot be direct parameters or results. Strings, slices,
+checked references, ordinary DMM aggregates, enums, interfaces and futures cannot cross
+the boundary by value. No implicit marshaling occurs.
+
+Native structs use the output target's C size, alignment, field padding and tail padding.
+They are copyable and have no drop glue. `sizeof`, `alignof`, `.size` and `.align` use the
+same layout calculation as IR. Ordinary DMM aggregate and array storage retains its
+eight-byte slots. Native imports are distinct from DMM function implementations in IR.
+
+A native declaration is a trust boundary: the binding package claims that its signature
+matches the native symbol. Native functions are not automatically memory-safe. Incorrect
+bindings and invalid pointers can invalidate normal memory-safety guarantees. Bindings
+own the responsibility for native lifetimes, ownership, alignment and synchronization.
+There is no new `unsafe` syntax. References require explicit pointer casts, for example
+`((&context).(*void))`. A pointer to an ordinary DMM type may serve as an opaque address;
+casting it to a native struct pointer neither converts nor validates its memory layout.
+
+Stage 1 supports analysis, IDE information and verified IR for these declarations and
+direct calls. Executable native calls and native storage operations are explicitly rejected
+until stage 2 supplies their ABI and byte-exact lowering. Native function values, exports,
+unions, packing and explicit alignment remain planned stage 3 features. The complete
+staged contract is in [plans/ffi.md](plans/ffi.md).
 
 ## Implementation limits
 

@@ -66,6 +66,11 @@ Aggregate ownership metadata is semantic input, not an optimization inference. P
 that doing so preserves exactly-once destruction. The synthetic package-cleanup function is a liveness root even though
 it has no source-level semantic symbol.
 
+Async polling, executor operations and cancellation instructions are observable effects. The optimizer retains
+`await`, `executor`, `cancel-check`, `cancel-await`, `cancel-drop` and `cancel-return`, remaps cancellation labels
+during ID compaction and preserves the generated cleanup paths. The verifier checks the optimized module's
+suspension and cancellation invariants before emission.
+
 ## Validation
 
 `ir_optimizer_unit` checks transformed IR, CFG joins, loop backedges, PHI repair, copy/store elimination, pointer

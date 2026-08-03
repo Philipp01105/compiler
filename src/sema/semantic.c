@@ -1827,8 +1827,13 @@ static int known_declared_type_with_binders(const Analyzer *analyzer,
                                                   nested)) return 0;
         return 1;
     }
-    return resolve_named_symbol_id(analyzer, analyzer->program,
-                                   named_type_token(analyzer->program, type)) != AST_SYMBOL_NONE;
+    size_t symbol_id = resolve_named_symbol_id(analyzer, analyzer->program,
+                                               named_type_token(analyzer->program, type));
+    if (symbol_id == AST_SYMBOL_NONE) return 0;
+    const SemanticSymbol *symbol = &analyzer->model->symbols[symbol_id];
+    if (symbol->declaration && symbol->declaration->is_opaque &&
+        !type->pointer_depth && !type->outer_pointer_depth) return 0;
+    return 1;
 }
 
 int known_declared_type(const Analyzer *analyzer, const AstType *type) {

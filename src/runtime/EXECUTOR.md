@@ -32,7 +32,7 @@ shuts down after cleanup. The core ownership contract and platform implementatio
 in `native_executor.inc` and platform primitives in `native_threads.inc`.
 The C contract implementation is not linked into standalone DMM executables.
 The frontend enforces the public API and ownership; IR and native callbacks
-implement cancellation and active-scope cleanup. See `LANGUAGE_SPEC.md` for
+implement cancellation and active-scope cleanup. See [LANGUAGE_SPEC.md](../../LANGUAGE_SPEC.md) for
 the source contract.
 
 ## Emitted frame ABI

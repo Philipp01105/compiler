@@ -2241,13 +2241,32 @@ static int append_structure(IrModule *module, const AstProgram *program,
         .source_program = program,
         .name_token = declaration->name_token,
         .symbol_id = declaration->resolved_symbol_id,
+        .is_native = declaration->is_native,
+        .is_opaque = declaration->is_opaque,
         .type_properties = semantic_symbol_type_properties(
             module->semantics, declaration->resolved_symbol_id),
         .has_explicit_destructor =
             declaration->as.struct_decl.destructor != NULL
     };
-    return copy_fields(module, program, declaration->as.struct_decl.fields,
-                       &structure->fields, &structure->field_count);
+    if (!copy_fields(module, program, declaration->as.struct_decl.fields,
+                     &structure->fields, &structure->field_count)) return 0;
+    if (structure->is_native && !structure->is_opaque) {
+        AstType type = {.kind = AST_TYPE_NAMED, .name_token = declaration->name_token};
+        if (type_from_ast(module, program, &type) == IR_TYPE_NONE) return 0;
+        if (!semantic_native_layout(module->semantics, program, &type, &structure->native_layout)) return 0;
+        size_t index = 0;
+        for (const AstField *field = declaration->as.struct_decl.fields; field; field = field->next, index++) {
+            if (!semantic_native_field_offset(module->semantics, structure->symbol_id, index,
+                                               &structure->fields[index].native_offset)) return 0;
+            if (field->type.is_array && !field->type.outer_pointer_depth) {
+                AstType element = ast_type_element(&field->type);
+                NativeTypeLayout layout;
+                if (!semantic_native_layout(module->semantics, program, &element, &layout)) return 0;
+                structure->fields[index].native_array_stride = layout.size;
+            }
+        }
+    }
+    return 1;
 }
 
 static int append_drop_glue(IrModule *module, const IrAggregate *structure) {
@@ -2805,6 +2824,41 @@ static int static_array_initializer(const AstExpression *literal) {
            literal->right->folded_constant.lexeme != NULL;
 }
 
+const IrNativeImport *ir_native_import(const IrModule *module, size_t symbol_id) {
+    if (module)
+        for (size_t i = 0; i < module->native_import_count; i++)
+            if (module->native_imports[i].symbol_id == symbol_id) return &module->native_imports[i];
+    return NULL;
+}
+
+static int append_native_import(IrModule *module, const AstProgram *program,
+                                const AstDeclarationNode *declaration) {
+    size_t count = module->native_import_count;
+    IrNativeImport *grown = realloc(module->native_imports, (count + 1) * sizeof(*grown));
+    if (!grown) return 0;
+    module->native_imports = grown;
+    IrNativeImport *import = &grown[count];
+    *import = (IrNativeImport){
+        .source_program = program, .span = declaration->span,
+        .symbol_id = declaration->resolved_symbol_id,
+        .abi = ast_program_lexeme(program, declaration->native_abi_token),
+        .library = ast_program_lexeme(program, declaration->native_library_token),
+        .native_name = ast_program_lexeme(program, declaration->native_name_token),
+        .return_type_id = type_from_ast(module, program, &declaration->as.function.return_type)
+    };
+    module->native_import_count++;
+    for (const AstParameter *p = declaration->as.function.parameters; p; p = p->next)
+        import->parameter_count++;
+    import->parameter_types = import->parameter_count ? calloc(import->parameter_count, sizeof(IrTypeId)) : NULL;
+    if (import->parameter_count && !import->parameter_types) return 0;
+    size_t index = 0;
+    for (const AstParameter *p = declaration->as.function.parameters; p; p = p->next) {
+        import->parameter_types[index] = type_from_ast(module, program, &p->type);
+        if (import->parameter_types[index++] == IR_TYPE_NONE) return 0;
+    }
+    return import->return_type_id != IR_TYPE_NONE;
+}
+
 static int lower_unit(IrModule *module, const AstProgram *program) {
     if (!program->structured_ast_complete) return 0;
     for (const AstDeclarationNode *declaration = program->root;
@@ -2862,6 +2916,10 @@ static int lower_unit(IrModule *module, const AstProgram *program) {
         if (declaration->kind == AST_DECL_ENUM && !append_enum(module, program, declaration))
             return 0;
         if (declaration->kind == AST_DECL_FUNCTION && declaration->generic_parameters == NULL) {
+            if (declaration->is_native) {
+                if (!append_native_import(module, program, declaration)) return 0;
+                continue;
+            }
             int requires_specialization =
                 declaration->as.function.return_type.kind == AST_TYPE_FUNCTION &&
                 declaration->as.function.return_type.function_generic_parameters != NULL;
@@ -2897,6 +2955,7 @@ IrModule *ir_lower_program(const AstProgram *program, const SemanticModel *seman
     if (module == NULL) return NULL;
     module->program = program;
     module->semantics = semantics;
+    module->target_format = semantics->target_format;
     PackageOrder order = {0};
     if (program->package != NULL && program->module != NULL) {
         if (!build_package_order(program, &order)) {
@@ -2978,6 +3037,8 @@ void ir_module_free(IrModule *module) {
     for (size_t i = 0; i < module->signature_count; i++)
         free(module->signatures[i].parameter_types);
     free(module->functions);
+    for (size_t i = 0; i < module->native_import_count; i++) free(module->native_imports[i].parameter_types);
+    free(module->native_imports);
     free(module->types);
     free(module->signatures);
     free(module->structures);

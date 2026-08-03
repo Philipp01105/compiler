@@ -195,6 +195,15 @@ static int dump_aggregates(FILE *output, const IrModule *module) {
                 fprintf(output, " symbol=%zu type=@%zu\n", aggregate->fields[f].symbol_id,
                         aggregate->fields[f].type_id) < 0)
                 return 0;
+        if (aggregate->is_native) {
+            if (fprintf(output, "  native opaque=%d size=%zu alignment=%zu\n",
+                        aggregate->is_opaque, aggregate->native_layout.size,
+                        aggregate->native_layout.alignment) < 0) return 0;
+            for (size_t f = 0; f < aggregate->field_count; f++)
+                if (fprintf(output, "  native-field #%zu offset=%zu array-stride=%zu\n", f,
+                            aggregate->fields[f].native_offset,
+                            aggregate->fields[f].native_array_stride) < 0) return 0;
+        }
     }
     for (size_t i = 0; i < module->enum_count; i++) {
         const IrEnum *enumeration = &module->enums[i];
@@ -245,17 +254,30 @@ static int dump_aggregates(FILE *output, const IrModule *module) {
 
 int ir_dump(FILE *output, const IrModule *module) {
     if (output == NULL || module == NULL || !ir_verify_module(module)) return 0;
-    if (fputs("dmm-ir-v3\nmodule path=", output) == EOF ||
+    if (fputs("dmm-ir-v4\nmodule path=", output) == EOF ||
         !quoted(output, module->program->source_path) ||
-        fprintf(output, " verified=%d types=%zu functions=%zu structs=%zu enums=%zu imports=%zu\n",
+        fprintf(output, " verified=%d types=%zu functions=%zu structs=%zu enums=%zu imports=%zu native-imports=%zu target=%s\n",
                 module->verified, module->type_count, module->function_count,
-                module->structure_count, module->enum_count, module->import_count) < 0 ||
+                module->structure_count, module->enum_count, module->import_count,
+                module->native_import_count, module->target_format == TARGET_ELF ? "elf" : "coff") < 0 ||
         !dump_types(output, module) || !dump_aggregates(output, module))
         return 0;
     if (fputs("package identity=", output) == EOF || !quoted(
             output, module->program->module_identity ? module->program->module_identity : "") ||
         fputc('\n', output) == EOF)
         return 0;
+    for (size_t n = 0; n < module->native_import_count; n++) {
+        const IrNativeImport *import = &module->native_imports[n];
+        if (fprintf(output, "native-import #%zu symbol=%zu abi=", n, import->symbol_id) < 0 ||
+            !quoted(output, import->abi) || fputs(" library=", output) == EOF ||
+            !quoted(output, import->library) || fputs(" name=", output) == EOF ||
+            !quoted(output, import->native_name) ||
+            fprintf(output, " return=@%zu parameters=[", import->return_type_id) < 0) return 0;
+        for (size_t p = 0; p < import->parameter_count; p++)
+            if (fprintf(output, "%s@%zu", p ? "," : "", import->parameter_types[p]) < 0) return 0;
+        if (fprintf(output, "] span=%d:%d-%d:%d\n", import->span.begin.line, import->span.begin.column,
+                    import->span.end.line, import->span.end.column) < 0) return 0;
+    }
     for (size_t g = 0; g < module->global_count; g++) {
         if (fprintf(output, "global #%zu symbol=%zu type=@%zu bits=%llu\n", g, module->globals[g].symbol_id,
                     module->globals[g].type_id,
@@ -279,7 +301,6 @@ int ir_dump_function(FILE *output, const IrModule *module, size_t function_index
                 function->return_type_id, function->parameter_count,
                 function->instruction_count) < 0)
         return 0;
-
     if (function->is_async && fprintf(output,
         "  async constructor=1 poll=1 cleanup=1 pinned=%d states=%zu future=@%zu send=%d sync=0\n",
         function->async_frame_pinned, function->async_state_count, function->future_type_id,

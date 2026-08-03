@@ -119,6 +119,8 @@ size_t semantic_type_slots(const Analyzer *analyzer, const AstProgram *program,
                            const AstType *type, const AstExpression *inferred);
 int assignable_expression(const Analyzer *analyzer, const AstExpression *expression);
 size_t layout_size(Analyzer *analyzer, AstType *type, size_t depth);
+size_t layout_alignment(Analyzer *analyzer, const AstType *type);
+void validate_native_declarations(Analyzer *analyzer);
 const LocalSymbol *find_local(const Analyzer *analyzer, size_t name_token);
 LocalSymbol *find_local_by_symbol(Analyzer *analyzer, size_t symbol_id);
 void analyze_constant_declaration(Analyzer *analyzer, AstDeclarationNode *declaration);

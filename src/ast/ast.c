@@ -76,6 +76,7 @@ const char *ast_declaration_kind_name(AstDeclarationKind kind) {
         case AST_DECL_VARIABLE: return "variable";
         case AST_DECL_INTERFACE: return "interface";
         case AST_DECL_INVALID: return "invalid";
+        case AST_DECL_EXTERN: return "extern";
     }
     return "invalid";
 }
@@ -317,8 +318,14 @@ static int valid_function_declaration(const AstProgram *program,
                                       const AstDeclarationNode *declaration) {
     if (!valid_token(program, declaration->name_token) ||
         !valid_type(program, &declaration->as.function.return_type, 0) ||
-        declaration->as.function.body == NULL ||
-        !valid_statement(program, declaration->as.function.body))
+        (declaration->is_native
+             ? declaration->as.function.body != NULL || declaration->as.function.is_async ||
+               declaration->generic_parameters != NULL ||
+               !valid_token(program, declaration->native_abi_token) ||
+               !valid_token(program, declaration->native_library_token) ||
+               !valid_token(program, declaration->native_name_token)
+             : declaration->as.function.body == NULL ||
+               !valid_statement(program, declaration->as.function.body)))
         return 0;
     for (const AstParameter *parameter = declaration->as.function.parameters;
          parameter != NULL; parameter = parameter->next)
@@ -334,6 +341,9 @@ static int valid_declarations(const AstProgram *program) {
         if (declaration->first_token >= program->token_count || declaration->token_count == 0 ||
             declaration->token_count > program->token_count - declaration->first_token)
             return 0;
+        if (declaration->is_native &&
+            ((declaration->kind != AST_DECL_STRUCT && declaration->kind != AST_DECL_FUNCTION) ||
+             !valid_token(program, declaration->native_abi_token))) return 0;
         if (declaration->kind == AST_DECL_IMPORT) {
             if (declaration->as.import_decl.paths == NULL) return 0;
             for (const AstImportPath *path = declaration->as.import_decl.paths; path != NULL; path = path->next) {
@@ -351,6 +361,11 @@ static int valid_declarations(const AstProgram *program) {
                  !valid_expression(program, declaration->as.constant.value)))
                 return 0;
         } else if (declaration->kind == AST_DECL_STRUCT) {
+            if (declaration->is_native &&
+                (declaration->generic_parameters || declaration->as.struct_decl.methods ||
+                 declaration->as.struct_decl.destructor ||
+                 declaration->native_library_token != AST_TOKEN_NONE ||
+                 (declaration->is_opaque && declaration->as.struct_decl.fields))) return 0;
             if (!valid_token(program, declaration->name_token) ||
                 !valid_fields(program, declaration->as.struct_decl.fields) ||
                 (declaration->as.struct_decl.destructor != NULL &&
