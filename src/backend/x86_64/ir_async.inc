@@ -6,6 +6,7 @@ static long long async_header_offset(const Emitter *emitter, size_t field) {
 }
 
 static int copy_async_storage(Emitter *emitter, IrTypeId type, const char *source, const char *destination) {
+    /* r11 is not an argument register: parameter capture may still need rcx. */
     IrTypeLayout layout;
     if (!ir_type_layout(emitter->module, type, &layout)) return 0;
     size_t bytes = layout.size;
@@ -17,16 +18,16 @@ static int copy_async_storage(Emitter *emitter, IrTypeId type, const char *sourc
     }
     size_t offset = 0;
     for (; bytes - offset >= 8; offset += 8) {
-        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rcx"),
+        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("r11"),
                     x64_memory(X64_WIDTH_QWORD, source, (long long) offset));
         write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
-                    x64_memory(X64_WIDTH_QWORD, destination, (long long) offset), x64_register("rcx"));
+                    x64_memory(X64_WIDTH_QWORD, destination, (long long) offset), x64_register("r11"));
     }
     for (; offset < bytes; offset++) {
-        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_BYTE, x64_register("cl"),
+        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_BYTE, x64_register("r11b"),
                     x64_memory(X64_WIDTH_BYTE, source, (long long) offset));
         write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_BYTE,
-                    x64_memory(X64_WIDTH_BYTE, destination, (long long) offset), x64_register("cl"));
+                    x64_memory(X64_WIDTH_BYTE, destination, (long long) offset), x64_register("r11b"));
     }
     return 1;
 }
@@ -113,6 +114,7 @@ static int emit_executor_operation(Emitter *e, const IrInstruction *in) {
     } else {
         write_value_load(e,"rax",in->operand_a); write_register_move(e,argument_register(e->target,0),"rax");
         name=in->async_operation==ASYNC_CREATE ? "__dmm_async_executor_create" :
+             in->async_operation==ASYNC_NET_WAIT ? "__dmm_net_wait" :
              in->async_operation==ASYNC_CANCEL ? "__dmm_async_cancel" : "__dmm_async_block_on";
     }
     write_call(e,name);

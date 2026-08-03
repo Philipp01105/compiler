@@ -510,6 +510,7 @@ static const SemanticSymbol *unique_static_method(Analyzer *analyzer,
                                                    size_t owner_symbol_id,
                                                    const char *name,
                                                    const AstType *argument,
+                                                   const AstProgram *argument_unit,
                                                    int *ambiguous) {
     const SemanticSymbol *selected = NULL;
     if (ambiguous != NULL) *ambiguous = 0;
@@ -527,16 +528,23 @@ static const SemanticSymbol *unique_static_method(Analyzer *analyzer,
         if (argument != NULL &&
             !ast_concrete_type_equal(candidate->source_program,
                                      &parameter->type,
-                                     analyzer->program, argument)) {
+                                     argument_unit, argument)) {
+            size_t expected_symbol=resolve_named_symbol_id(analyzer,candidate->source_program,named_type_token(candidate->source_program,&parameter->type));
+            size_t actual_symbol=resolve_named_symbol_id(analyzer,argument_unit,named_type_token(argument_unit,argument));
+            int nominal_equal=expected_symbol!=AST_SYMBOL_NONE && expected_symbol==actual_symbol &&
+                parameter->type.borrow_kind==argument->borrow_kind &&
+                parameter->type.pointer_depth==argument->pointer_depth &&
+                parameter->type.outer_pointer_depth==argument->outer_pointer_depth &&
+                parameter->type.is_array==argument->is_array && parameter->type.is_slice==argument->is_slice;
             DataType expected = primitive_type(candidate->source_program,
                                                &parameter->type);
-            DataType actual = primitive_type(analyzer->program, argument);
-            if (expected == TYPE_UNKNOWN || expected != actual ||
+            DataType actual = primitive_type(argument_unit, argument);
+            if (!nominal_equal && (expected == TYPE_UNKNOWN || expected != actual ||
                 parameter->type.pointer_depth != argument->pointer_depth ||
                 parameter->type.outer_pointer_depth !=
                     argument->outer_pointer_depth ||
                 parameter->type.is_array != argument->is_array ||
-                parameter->type.is_slice != argument->is_slice)
+                parameter->type.is_slice != argument->is_slice))
                 continue;
         }
         if (selected != NULL) {
@@ -612,6 +620,7 @@ static void analyze_propagation(Analyzer *analyzer, AstExpression *expression) {
     const SemanticSymbol *branch = unique_static_method(
         analyzer, operand_type->id, "branch",
         operand->has_resolved_ast_type ? &operand->resolved_ast_type : NULL,
+        operand->resolved_type_program?operand->resolved_type_program:analyzer->program,
         &ambiguous);
     if (branch == NULL) {
         semantic_error(analyzer, question, ERROR_CATEGORY_TYPE,
@@ -673,7 +682,7 @@ static void analyze_propagation(Analyzer *analyzer, AstExpression *expression) {
     const AstProgram *saved_program = analyzer->program;
     analyzer->program = (AstProgram *) branch->source_program;
     const SemanticSymbol *from = unique_static_method(
-        analyzer, return_id, "fromResidual", &residual, &ambiguous);
+        analyzer, return_id, "fromResidual", &residual, branch->source_program, &ambiguous);
     analyzer->program = (AstProgram *) saved_program;
     if (from == NULL && !ambiguous && strcmp(return_base, "Result"))
         from = declared_static_method(analyzer, return_symbol,
@@ -690,7 +699,7 @@ static void analyze_propagation(Analyzer *analyzer, AstExpression *expression) {
                 error_type->name_token);
             analyzer->program = (AstProgram *) branch->source_program;
             from = unique_static_method(analyzer, error_id, "fromResidual",
-                                        &residual, &ambiguous);
+                                        &residual, branch->source_program, &ambiguous);
             analyzer->program = (AstProgram *) saved_program;
             if (from == NULL && !ambiguous &&
                 error_id < analyzer->model->symbol_count)
@@ -1058,7 +1067,7 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
                 .array_length_token = AST_TOKEN_NONE
             };
             expression->resolved_type = primitive_type(analyzer->program, &type);
-        } else if (is_builtin_name(name)) {
+        } else if (is_builtin_name(name) && find_local(analyzer,expression->value_token)==NULL) {
             expression->resolved_type = builtin_result_type(name);
             if (strcmp(name, "malloc") == 0) expression->resolved_pointer_depth = 1;
             const CoreIntrinsic *core = core_intrinsic_find(name);

@@ -127,6 +127,9 @@ and linking contracts are documented in [NATIVE_BACKEND.md](NATIVE_BACKEND.md).
 The optional `--link=external` profile uses regular platform startup and a private platform shim, so those programs
 gain libc/UCRT and documented OS dependencies. Default standalone builds retain their existing runtime and internal
 linker. For object/assembly emission this option selects the future link ABI and starts no external process.
+Used operations from `stdlib/core/net` select that profile automatically and choose the combined network shim.
+TCP/UDP, IPv4/IPv6, deadlines, cancellation and bounded DNS are documented in
+[NETWORK_RUNTIME.md](NETWORK_RUNTIME.md); an unused import introduces no networking dependency.
 
 ## Tests and CI
 

@@ -55,6 +55,9 @@ typedef struct {
     unsigned type_properties;
     /* Per-constructor property: Future<T> alone does not describe captures. */
     unsigned async_frame_properties;
+    /* Conditional transferability when caller proves all loans frame-internal.
+       This is not the standalone Send property of a borrowed child Future. */
+    unsigned async_graph_properties;
 } SemanticSymbol;
 
 typedef struct {

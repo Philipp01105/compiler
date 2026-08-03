@@ -139,6 +139,20 @@ if (NOT MSVC)
         COMMAND_EXPAND_LISTS)
     install(FILES $<TARGET_OBJECTS:dmm_platform_shim>
         DESTINATION bin/dmm-runtime/${DMM_SHIM_FORMAT} RENAME platform-shim.o)
+    add_library(dmm_network_shim OBJECT src/runtime/network_bundle.c)
+    target_compile_options(dmm_network_shim PRIVATE -Wall -Wextra -Wpedantic)
+    if (DMM_STRICT_WARNINGS)
+        target_compile_options(dmm_network_shim PRIVATE -Wconversion -Wshadow -Werror)
+    endif ()
+    target_compile_definitions(dmm_network_shim PRIVATE _GNU_SOURCE _XOPEN_SOURCE=700)
+    add_dependencies(compiler dmm_network_shim)
+    set_property(TARGET compiler APPEND PROPERTY LINK_DEPENDS "$<TARGET_OBJECTS:dmm_network_shim>")
+    add_custom_command(TARGET compiler POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_OBJECTS:dmm_network_shim>
+            "$<TARGET_FILE_DIR:compiler>/dmm-runtime/${DMM_SHIM_FORMAT}/network-shim.o"
+        COMMAND_EXPAND_LISTS)
+    install(FILES $<TARGET_OBJECTS:dmm_network_shim>
+        DESTINATION bin/dmm-runtime/${DMM_SHIM_FORMAT} RENAME network-shim.o)
 endif ()
 add_custom_command(TARGET compiler POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -216,6 +230,26 @@ if (BUILD_TESTING)
         endif ()
         add_test(NAME platform_shim_unit COMMAND dmm_platform_shim_test)
         set_tests_properties(platform_shim_unit PROPERTIES LABELS "unit;runtime;platform;safety" TIMEOUT 20)
+        add_executable(dmm_network_shim_test tests/unit/network_shim_test.c
+            src/runtime/network_shim.c src/runtime/platform_shim.c)
+        target_include_directories(dmm_network_shim_test PRIVATE ${DMM_INCLUDE_DIRS})
+        target_compile_definitions(dmm_network_shim_test PRIVATE _GNU_SOURCE _XOPEN_SOURCE=700 DMM_NET_TESTING)
+        target_compile_options(dmm_network_shim_test PRIVATE -Wall -Wextra -Wpedantic)
+        if(DMM_STRICT_WARNINGS)
+            target_compile_options(dmm_network_shim_test PRIVATE -Wconversion -Wshadow -Werror)
+        endif()
+        target_link_libraries(dmm_network_shim_test PRIVATE Threads::Threads)
+        if(WIN32)
+            target_link_libraries(dmm_network_shim_test PRIVATE ws2_32)
+        endif()
+        add_test(NAME network_shim_unit COMMAND dmm_network_shim_test)
+        set_tests_properties(network_shim_unit PROPERTIES LABELS "unit;runtime;network;safety" TIMEOUT 30)
+        add_test(NAME network_runtime_contract COMMAND ${CMAKE_COMMAND}
+            -DCOMPILER=$<TARGET_FILE:compiler> -DASSEMBLER=${CMAKE_C_COMPILER}
+            -DSHIM=$<TARGET_FILE_DIR:compiler>/dmm-runtime/${DMM_SHIM_FORMAT}/network-shim.o
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/network_runtime_test
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/network_runtime_test.cmake)
+        set_tests_properties(network_runtime_contract PROPERTIES LABELS "integration;runtime;network;safety;abi" TIMEOUT 180)
         find_program(DMM_PLATFORM_LINKER NAMES gcc REQUIRED)
         add_executable(dmm_linker_failure_driver tests/unit/linker_failure_driver.c)
         add_test(NAME platform_handoff_contract COMMAND ${CMAKE_COMMAND}

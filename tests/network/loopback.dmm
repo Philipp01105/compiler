@@ -1,0 +1,54 @@
+package main;
+import "stdlib";
+import "stdlib/core/net";
+
+async func exercise(family:net.AddressFamily) -> stdlib.Result<int,net.NetError> {
+    var endpoint=net.ipv4(2130706433,0);
+    match(family) { IPv4=>{} IPv6=>{ endpoint=net.ipv6(0,1,0,0); } }
+    var receiver:net.Socket=net.socket(family,net.Transport.UDP)?;
+    net.bind(&mut receiver,endpoint)?;
+    var address=net.localAddress(&receiver)?;
+    var sender:net.Socket=net.socket(family,net.Transport.UDP)?;
+    var output:u8[4]=[1,2,3,4]; var source:u8[]=output[:];
+    var count=net.sendTo(&sender,&source,address,net.Deadline.after(2000000000)).await()?;
+    var input:u8[4]; var destination:u8[]=input[:];
+    var packet=net.recvFrom(&receiver,&mut destination,net.Deadline.after(2000000000)).await()?;
+    if(count!=4||packet.bytes!=4||input[2]!=3||packet.truncated) { return stdlib.Result<int,net.NetError>.Ok(1); }
+    // Cancellation before first poll releases the checked buffer loan.
+    cancel(net.recvFrom(&receiver,&mut destination,net.Deadline.noTimeout())).await();
+    input[0]=8;
+    var timed=net.recvFrom(&receiver,&mut destination,net.Deadline.after(1000000)).await();
+    match(timed) { Ok(value)=>return stdlib.Result<int,net.NetError>.Ok(2); Err(e)=>{ if(e.kind!=net.ErrorKind.TimedOut) { return stdlib.Result<int,net.NetError>.Ok(3); } } }
+    var listener:net.Socket=net.socket(family,net.Transport.TCP)?;
+    net.bind(&mut listener,endpoint)?; net.listen(&mut listener,4)?;
+    var listening=net.localAddress(&listener)?;
+    var client:net.Socket=net.socket(family,net.Transport.TCP)?;
+    net.connect(&client,listening,net.Deadline.after(2000000000)).await()?;
+    var accepted=net.accept(&listener,net.Deadline.after(2000000000)).await()?;
+    var written=net.write(&client,&source,net.Deadline.after(2000000000)).await()?;
+    var read=net.read(&accepted.socket,&mut destination,net.Deadline.after(2000000000)).await()?;
+    if(written!=4||read.bytes!=4||read.eof||input[0]!=1) { return stdlib.Result<int,net.NetError>.Ok(4); }
+    net.shutdown(&mut client,net.Shutdown.Write)?;
+    var eof=net.read(&accepted.socket,&mut destination,net.Deadline.after(2000000000)).await()?;
+    if(!eof.eof||eof.bytes!=0) { return stdlib.Result<int,net.NetError>.Ok(5); }
+    net.close(client)?; net.close(listener)?; net.close(sender)?; net.close(receiver)?;
+    return stdlib.Result<int,net.NetError>.Ok(0);
+}
+async func run() -> stdlib.Result<int,net.NetError> {
+    var a=exercise(net.AddressFamily.IPv4).await()?;
+    var b=exercise(net.AddressFamily.IPv6).await()?;
+    // DNS inputs are copied synchronously, and cancellation must be safe even
+    // when the resolver job starts before the wrapper's first poll.
+    cancel(net.resolve("127.0.0.1",123,net.AddressFamily.IPv4,net.Transport.TCP,net.Deadline.noTimeout())).await();
+    var answers=net.resolve("127.0.0.1",123,net.AddressFamily.IPv4,net.Transport.TCP,net.Deadline.after(2000000000)).await()?;
+    if(answers.length()==0) { return stdlib.Result<int,net.NetError>.Ok(6); }
+    return stdlib.Result<int,net.NetError>.Ok(a+b);
+}
+async func join(handle:JoinHandle<stdlib.Result<int,net.NetError>>) -> stdlib.Result<int,net.NetError> {
+    var result=handle.await();
+    match(result) { Ok(value)=>return value; Err(error)=>return stdlib.Result<int,net.NetError>.Ok(7); }
+}
+func main()->int {
+    var result=block_on(join(spawn(run())));
+    match(result) { Ok(code)=>return code; Err(error)=>{ stdlib.println(error.code); return 99; } }
+}

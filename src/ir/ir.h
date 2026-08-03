@@ -146,6 +146,7 @@ typedef struct {
     size_t next_value;
     size_t next_label;
     int is_drop_glue;
+    int emission_reachable;
     int is_package_init;
     int is_package_cleanup;
     int is_async;
@@ -240,6 +241,7 @@ typedef struct {
     RuntimeProfile runtime_profile;
     int verified;
     int optimized;
+    int emission_selected;
 } IrModule;
 
 /* Inspect the selected IR after optimization: discarded operations do not
@@ -247,10 +249,12 @@ typedef struct {
 static inline RuntimeRequirements ir_runtime_requirements(const IrModule *module) {
     RuntimeRequirements result = module->runtime_requirements;
     for (size_t f = 0; f < module->function_count; ++f)
+        if(!module->emission_selected || module->functions[f].emission_reachable)
         for (size_t i = 0; i < module->functions[f].instruction_count; ++i)
             result |= module->functions[f].instructions[i].runtime_requirements;
     return runtime_requirements_normalize(result);
 }
+void ir_select_runtime_functions(IrModule *module);
 
 typedef struct IrGlobal {
     const AstProgram *source_program;

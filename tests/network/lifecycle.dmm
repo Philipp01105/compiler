@@ -1,0 +1,36 @@
+package main;
+import "stdlib";
+import "stdlib/core/net";
+import "stdlib/core";
+
+struct Owner {
+    var socket:net.Socket;
+    destructor {
+        stdlib.println("package");
+        var denied=net.socket(net.AddressFamily.IPv4,net.Transport.UDP);
+        match(denied) { Ok(value)=>stdlib.println("unexpected socket"); Err(error)=>{
+            if(error.kind==net.ErrorKind.Closed) { stdlib.println("closed"); }
+        } }
+        // The owned socket field is destroyed after this user destructor.
+    }
+}
+func initialize()->Owner {
+    var result=net.socket(net.AddressFamily.IPv4,net.Transport.UDP);
+    match(result) { Ok(socket)=>{ var owner:Owner; owner.socket=socket; stdlib.println("init"); return owner; }
+        Err(error)=>{ core.core_exit(90); } }
+}
+var owner:Owner=initialize();
+async func worker()->int {
+    var result=net.resolve("127.0.0.1",1,net.AddressFamily.IPv4,net.Transport.TCP,net.Deadline.noTimeout()).await();
+    match(result) { Ok(answers)=>{ stdlib.println("task"); return 17; } Err(error)=>return 91; }
+}
+async func join(handle:JoinHandle<int>)->int {
+    var result=handle.await(); match(result) { Ok(value)=>return value; Err(error)=>return 92; }
+}
+func main()->int {
+    stdlib.println("main");
+    var executor=Executor.create(1);
+    var handle=executor.spawn(worker());
+    block_on(executor.shutdown(ShutdownMode.Drain));
+    return block_on(join(handle));
+}

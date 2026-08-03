@@ -8,8 +8,9 @@ require no libc, Windows CRT or foreign language runtime. The compiler itself re
 
 `--link=auto|internal|external` selects the link strategy (default `auto`). Runtime requirements are separate from
 link strategy: required IR operations determine a `standalone` or `platform` profile, and the driver resolves a
-supported linker for that profile. `NETWORK` is reserved and implies `PLATFORM_RUNTIME`; neither ordinary programs
-nor the `async` manifest feature require a platform runtime. No network operations are implemented by this handoff.
+supported linker for that profile. Used network IR requires `NETWORK`, which implies `PLATFORM_RUNTIME`; neither an
+unused import nor the `async` manifest feature requires a platform runtime. The networking ABI, combined shim and
+typed Core API are specified in [NETWORK_RUNTIME.md](NETWORK_RUNTIME.md).
 
 For this development step, explicit `--link=external` requests `PLATFORM_RUNTIME`, not `NETWORK`. `auto` selects the
 internal linker for standalone output and the external driver for platform output. `internal` cannot satisfy a
@@ -43,6 +44,9 @@ compiler as `dmm-runtime/elf/platform-shim.o` or `dmm-runtime/coff/platform-shim
 compiler's directory, including when the compiler was found through PATH. Linux GCC/Clang and Windows MinGW-w64
 UCRT64 GCC/Clang are supported; MSVC and MSVCRT shims are not supported. Cross-linking requires both overrides and
 a matching target toolchain. The override is a private ABI implementation, not a public arbitrary-object or FFI API.
+Network requirements instead select the complete `network-shim.o` in the same directory, add Windows `ws2_32`,
+and insert DRAINING before package cleanup and network shutdown afterward. Pure platform programs retain the smaller
+shim and no networking dependency.
 
 Manual linking of platform output uses regular C startup, **without** standalone entry flags or `-nostdlib`:
 
@@ -134,9 +138,9 @@ compare 2,000 finite binary64 formats with a test-only reference, and cover allo
 operations and negative errors. Other checks cover C ABI interoperability, EOF/input/truncation, deterministic bytes,
 cross-format headers/relocations and artifact/source protection.
 
-Windows validation passes 26/26 suites and a strict GCC compiler build. Linux execution, sanitizer and Clang fuzz
-acceptance remain for existing CI jobs. Sanitizers instrument the compiler and C test harnesses, not emitted
-instructions.
+Local Linux GCC and Windows UCRT64 GCC validation pass 41/41 suites; Windows UCRT64 Clang also passes the networking
+object/assembly matrix. Linux ASan/UBSan checks the network shim and test harness with leak detection. Sanitizers
+instrument C code, not emitted instructions. Hosted CI results require separate verification.
 
 The initial allocator maps each allocation separately. Windows maintains 253 file slots plus standard descriptors; input
 strings have a 255-byte limit. The internal formatter implements the fixed formats needed by DMM operations, not a

@@ -22,6 +22,10 @@ Platform C startup calls the generated `int __dmm_runtime_main(void)` once. The 
 DMM main, default-executor drain, package cleanup and the preserved return status; the C entry only forwards the call.
 Immediate process exit and traps do not run this normal cleanup path. `__dmm_platform_exit` terminates the whole
 process from any thread. This private ABI is not a source-language foreign-function interface.
+With NETWORK, the combined shim supplies reactor/DNS operations through the generated I/O acknowledgement ABI.
+Networking remains RUNNING throughout executor Drain; it enters DRAINING immediately before package cleanup and
+shuts down after cleanup. The core ownership contract and platform implementations are in
+[NETWORK_RUNTIME.md](../../NETWORK_RUNTIME.md).
 
 `executor.h` defines the internal C scheduler contract used by
 `executor_runtime_unit`. The standalone backends emit the equivalent scheduler

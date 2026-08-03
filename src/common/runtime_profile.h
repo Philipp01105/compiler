@@ -6,8 +6,8 @@ typedef unsigned RuntimeRequirements;
 enum { RUNTIME_REQUIRE_PLATFORM = 1u, RUNTIME_REQUIRE_NETWORK = 2u };
 typedef enum { RUNTIME_STANDALONE, RUNTIME_PLATFORM } RuntimeProfile;
 
-/* Requirements describe operations, never the chosen linker. NETWORK is reserved
-   for future IR intrinsics; async alone has no platform requirement. */
+/* Requirements describe emitted operations, never the chosen linker.
+   Async alone has no platform requirement. */
 static inline RuntimeRequirements runtime_requirements_normalize(RuntimeRequirements requirements) {
     return requirements & RUNTIME_REQUIRE_NETWORK
         ? requirements | RUNTIME_REQUIRE_PLATFORM : requirements;

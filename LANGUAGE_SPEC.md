@@ -64,6 +64,13 @@ Raw pointers, slices without a checked owner, function values and dynamic interf
 A Future constructor receives Send only when its complete retained frame and output are Send. Futures with borrowed
 parameters or an instance receiver are not Send and cannot become spawn candidates. Unknown/erased Future captures
 remain conservative; `Future<T>` alone does not prove Send from `T`. Futures are not Sync because polling mutates them.
+An enclosing future may nevertheless be Send with **frame-internal loans**: every loan origin must be owned within
+the same pinned future ownership graph, referenced storage must remain address-stable for the entire loan, and
+ordinary Send/Sync and exclusive-access rules still apply. Checked slice views trace to their storage owner. This
+conditional graph proof does not make a borrowed child independently Send; extracting/spawning it, externally
+borrowed parameters and caller-stack origins remain excluded. Owned sockets and fixed arrays can therefore be lent
+to an embedded I/O future inside a spawnable parent. Move, destruction and conflicting accesses remain forbidden
+until confirmed completion or cancellation. See [NETWORK_RUNTIME.md](NETWORK_RUNTIME.md).
 There are no explicit unsafe Send/Sync implementations in Stage 1.
 
 Stage 2 exposes the following operations with the `async` feature enabled:

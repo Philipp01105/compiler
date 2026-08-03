@@ -27,7 +27,7 @@ typedef enum {
 typedef enum { AST_TYPE_INFERRED, AST_TYPE_NAMED, AST_TYPE_FUNCTION, AST_TYPE_FUTURE,
                AST_TYPE_JOIN, AST_TYPE_EXECUTOR } AstTypeKind;
 typedef enum { ASYNC_NONE, ASYNC_CREATE, ASYNC_SPAWN, ASYNC_BLOCK_ON,
-               ASYNC_SHUTDOWN, ASYNC_CANCEL } AstAsyncOperation;
+               ASYNC_SHUTDOWN, ASYNC_CANCEL, ASYNC_NET_WAIT } AstAsyncOperation;
 typedef enum { AST_BORROW_NONE, AST_BORROW_IMMUTABLE, AST_BORROW_MUTABLE } AstBorrowKind;
 
 typedef enum {

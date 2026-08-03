@@ -49,6 +49,9 @@ int native_runtime_object_imports_profile(NativeObject *o, TargetFormat t, Runti
     (void) t;
     return 0;
 }
+int native_runtime_emit_requirements(NativeObject *o,TargetFormat t,RuntimeProfile p,int v,RuntimeRequirements r) {
+    (void)r; return native_runtime_emit_profile(o,t,p,v);
+}
 
 #include <stdio.h>
 #include <stdlib.h>

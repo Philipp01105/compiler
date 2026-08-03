@@ -198,9 +198,14 @@ static int verify_instruction_types(const IrModule *module,
             (ir_type_properties(module,instruction->type_id)&SEMANTIC_TYPE_NEEDS_DROP) &&
             instruction->target_a>0 && instruction->target_a<=function->async_state_count;
         case IR_OP_EXECUTOR:
-            if (!a || instruction->async_operation<ASYNC_CREATE || instruction->async_operation>ASYNC_CANCEL) return 0;
+            if (!a || instruction->async_operation<ASYNC_CREATE || instruction->async_operation>ASYNC_NET_WAIT) return 0;
             if (b && module->types[b->type_id].kind!=IR_TYPE_EXECUTOR) return 0;
             switch (instruction->async_operation) {
+                case ASYNC_NET_WAIT: return data_type_integral(a->type) &&
+                    module->types[instruction->type_id].kind==IR_TYPE_FUTURE &&
+                    module->types[module->types[instruction->type_id].element_type].kind==IR_TYPE_PRIMITIVE &&
+                    module->types[module->types[instruction->type_id].element_type].primitive==TYPE_VOID &&
+                    (instruction->runtime_requirements&RUNTIME_REQUIRE_NETWORK)!=0;
                 case ASYNC_CREATE: return !b && ir_integral_type(module,a->type_id) && module->types[instruction->type_id].kind==IR_TYPE_EXECUTOR;
                 case ASYNC_SPAWN: return module->types[a->type_id].kind==IR_TYPE_FUTURE && module->types[instruction->type_id].kind==IR_TYPE_JOIN &&
                                         module->types[a->type_id].element_type==module->types[instruction->type_id].element_type;
@@ -355,6 +360,8 @@ static int verify_instruction_types(const IrModule *module,
                 const CoreIntrinsic *core = core_intrinsic_find(ast_program_lexeme(
                     function->source_program, instruction->auxiliary_token));
                 if (core == NULL) return a != NULL;
+                if (!strncmp(core->source_name,"__dmm_net_",10) &&
+                    !(instruction->runtime_requirements & RUNTIME_REQUIRE_NETWORK)) return 0;
                 if (instruction->argument_count != core->argument_count ||
                     !core_ir_type_matches(module, instruction->type_id, core->result, 0) ||
                     instruction->type != core_value_type(core->result) ||

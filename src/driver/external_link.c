@@ -24,7 +24,7 @@ static int failure(const IrModule *module, const char *message, const char *deta
     return 0;
 }
 
-static char *default_shim(TargetFormat target) {
+static char *default_shim_profile(TargetFormat target, int network) {
     char executable[4096];
 #ifdef _WIN32
     DWORD length = GetModuleFileNameA(NULL, executable, sizeof(executable));
@@ -41,8 +41,8 @@ static char *default_shim(TargetFormat target) {
     *separator = '\0';
     size_t capacity = strlen(executable) + 64;
     char *path = malloc(capacity);
-    if (path) snprintf(path, capacity, "%s/dmm-runtime/%s/platform-shim.o", executable,
-                       target == TARGET_ELF ? "elf" : "coff");
+    if (path) snprintf(path, capacity, "%s/dmm-runtime/%s/%s-shim.o", executable,
+                       target == TARGET_ELF ? "elf" : "coff",network?"network":"platform");
     return path;
 }
 
@@ -61,11 +61,13 @@ static int shim_matches(const char *path, TargetFormat target) {
 int driver_link_input_conflicts(TargetFormat target, const char *artifact,
                                 const char *linker_driver, const char *runtime_shim) {
     if (!artifact) return 0;
-    char *owned = runtime_shim ? NULL : default_shim(target);
+    char *owned = runtime_shim ? NULL : default_shim_profile(target,0);
+    char *network = runtime_shim ? NULL : default_shim_profile(target,1);
     const char *shim = runtime_shim ? runtime_shim : owned;
     int conflict = (shim && path_identity_equal(artifact, shim) != 0) ||
+                   (network && path_identity_equal(artifact,network)!=0) ||
                    (linker_driver && path_identity_equal(artifact, linker_driver) != 0);
-    free(owned);
+    free(owned); free(network);
     return conflict;
 }
 
@@ -157,7 +159,8 @@ int driver_external_link(const IrModule *module, const BackendOptions *options,
 #endif
     if (options->target_format != host && (!linker_driver || !runtime_shim))
         return failure(module, "Cross-linking requires --linker-driver and --runtime-shim", output);
-    char *owned_shim = runtime_shim ? NULL : default_shim(options->target_format);
+    int network=(ir_runtime_requirements(module)&RUNTIME_REQUIRE_NETWORK)!=0;
+    char *owned_shim = runtime_shim ? NULL : default_shim_profile(options->target_format,network);
     const char *shim = runtime_shim ? runtime_shim : owned_shim;
     if (!shim || !shim_matches(shim, options->target_format)) {
         int result = failure(module, "Missing or incompatible private runtime shim", shim ? shim : "unknown compiler location");
@@ -168,10 +171,6 @@ int driver_external_link(const IrModule *module, const BackendOptions *options,
         (options->source_map_path && path_identity_equal(options->source_map_path, shim) != 0)) {
         free(owned_shim);
         return failure(module, "Generated artifact conflicts with runtime shim", output);
-    }
-    if (ir_runtime_requirements(module) & RUNTIME_REQUIRE_NETWORK) {
-        free(owned_shim);
-        return failure(module, "NETWORK runtime support is not implemented", output);
     }
     size_t capacity = strlen(output) + 128;
     char *directory = malloc(capacity);
@@ -208,7 +207,8 @@ int driver_external_link(const IrModule *module, const BackendOptions *options,
     const char *arguments[] = {
         linker_driver ? linker_driver : "gcc", object, shim, "-o", image,
         options->target_format == TARGET_ELF ? "-no-pie" : "-Wl,--subsystem,console",
-        options->target_format == TARGET_ELF ? "-pthread" : "-lkernel32", NULL
+        options->target_format == TARGET_ELF ? "-pthread" : "-lkernel32",
+        network&&options->target_format==TARGET_COFF?"-lws2_32":NULL, NULL
     };
     unsigned long code = 0;
     if (!run_process(arguments, log, &code) || code) {

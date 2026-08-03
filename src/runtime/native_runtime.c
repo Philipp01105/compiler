@@ -503,6 +503,10 @@ int native_runtime_emit(NativeObject *object, TargetFormat target) {
 
 int native_runtime_emit_profile(NativeObject *object, TargetFormat target,
                                 RuntimeProfile profile, int main_returns_void) {
+    return native_runtime_emit_requirements(object,target,profile,main_returns_void,0);
+}
+int native_runtime_emit_requirements(NativeObject *object, TargetFormat target,
+                                RuntimeProfile profile, int main_returns_void, RuntimeRequirements requirements) {
     Runtime r = {object, target, NULL, profile};
     object->section = NATIVE_RODATA;
     const char *const names[] = {".Lnative_empty", ".Lnative_integer", ".Lnative_char"};
@@ -574,7 +578,9 @@ int native_runtime_emit_profile(NativeObject *object, TargetFormat target,
         if (main_returns_void) imm(&r, "rax", 0);
         store(&r, "rax", 8);
         call(&r, "__dmm_async_default_drain");
+        if (requirements&RUNTIME_REQUIRE_NETWORK) call(&r,"__dmm_net_begin_draining");
         call(&r, "__dmm_package_cleanup");
+        if (requirements&RUNTIME_REQUIRE_NETWORK) call(&r,"__dmm_net_finish");
         load(&r, "rax", 8);
         end(&r);
         return !object->failed;
@@ -612,6 +618,7 @@ int native_runtime_emit_profile(NativeObject *object, TargetFormat target,
 }
 
 static int platform_symbol(const char *name) {
+    if (!strncmp(name,"__dmm_net_",10)) return 1;
     static const char *const symbols[] = {
         "__dmm_async_thread_create", "__dmm_async_thread_join",
         "__dmm_async_wait_create", "__dmm_async_wait", "__dmm_async_wake",
@@ -656,8 +663,12 @@ int native_runtime_assembly(FILE *output, TargetFormat target) {
 
 int native_runtime_assembly_profile(FILE *output, TargetFormat target,
                                     RuntimeProfile profile, int main_returns_void) {
+    return native_runtime_assembly_requirements(output,target,profile,main_returns_void,0);
+}
+int native_runtime_assembly_requirements(FILE *output, TargetFormat target,
+                                    RuntimeProfile profile, int main_returns_void, RuntimeRequirements requirements) {
     NativeObject object = {0};
-    if (!native_runtime_emit_profile(&object, target, profile, main_returns_void) || !native_validate(&object)) {
+    if (!native_runtime_emit_requirements(&object, target, profile, main_returns_void, requirements) || !native_validate(&object)) {
         native_object_free(&object);
         return 0;
     }

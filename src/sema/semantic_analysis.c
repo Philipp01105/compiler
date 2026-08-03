@@ -421,7 +421,11 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
             }
             const AstDeclarationNode *enumeration = enum_symbol->declaration;
             const AstProgram *enum_unit = enum_symbol->source_program;
-            statement->is_consuming_match=enumeration->is_async_builtin && enumeration->as.enum_decl.is_sum &&
+            const AstDeclarationNode *origin=enumeration->generic_origin;
+            int standard_result=origin && enum_unit->module_identity && !strcmp(enum_unit->module_identity,"stdlib") &&
+                (!strcmp(ast_program_lexeme(enum_unit,origin->name_token),"Result") ||
+                 !strcmp(ast_program_lexeme(enum_unit,origin->name_token),"Propagation"));
+            statement->is_consuming_match=(enumeration->is_async_builtin||standard_result) && enumeration->as.enum_decl.is_sum &&
                 semantic_expression_is_move_only(analyzer,statement->value);
             size_t variants = 0, covered = 0;
             int wildcard = 0;

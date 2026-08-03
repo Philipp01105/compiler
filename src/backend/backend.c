@@ -55,8 +55,8 @@ static int emit_native(const IrModule *module, const BackendOptions *options, co
     }
     if (success && options->emission == BACKEND_OBJECT &&
         (!module->program->package_name || !strcmp(module->program->package_name, "main")))
-        success = native_runtime_emit_profile(&object, options->target_format,
-                                               options->runtime_profile, ir_main_returns_void(module));
+        success = native_runtime_emit_requirements(&object, options->target_format,
+                                               options->runtime_profile, ir_main_returns_void(module), ir_runtime_requirements(module));
     if (success && options->emission == BACKEND_OBJECT)
         success = native_runtime_object_imports_profile(&object, options->target_format, options->runtime_profile);
     if (success)

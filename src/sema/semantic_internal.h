@@ -42,6 +42,7 @@ typedef struct {
     int complexity_error_reported;
     int allocation_failed;
     int in_destructor;
+    int async_graph_analysis;
     int in_defer_closure;
     const AstExpression *assignment_target;
 } Analyzer;

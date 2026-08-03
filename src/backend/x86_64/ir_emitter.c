@@ -788,13 +788,14 @@ static size_t parameter_copy_offset(const Emitter *emitter, size_t parameter_ind
 
 void copy_aggregate(Emitter *emitter, size_t slots,
                            const char *source, const char *destination) {
+    /* Preserve incoming ABI argument registers during by-value capture. */
     for (size_t slot = 0; slot < slots; slot++) {
         size_t offset = slot * 8U;
-        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rcx"),
+        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("r11"),
                     x64_memory(X64_WIDTH_QWORD, source, (long long) offset));
         write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
                     x64_memory(X64_WIDTH_QWORD, destination, (long long) offset),
-                    x64_register("rcx"));
+                    x64_register("r11"));
     }
 }
 
@@ -1924,7 +1925,7 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             }
             write_value_load(emitter, "rax", instruction->operand_b);
             if (instruction->operator_type == TOKEN_STAR) {
-                if (!instruction->is_array && !is_inline_structure(emitter->module, instruction))
+                if (!instruction->is_array && !instruction->is_slice && !is_inline_structure(emitter->module, instruction))
                     write_typed_indirect_load(emitter, instruction->type,
                                               instruction->pointer_depth, "rax");
                 write_value_store(emitter, "rax", instruction->result);

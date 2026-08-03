@@ -5,6 +5,7 @@
 static const RuntimeCall calls[] = {
 #define CORE_CALL(source, link, count, result, a, b, c) {source, link, count},
     DMM_CORE_INTRINSICS(CORE_CALL)
+    DMM_NETWORK_INTRINSICS(CORE_CALL)
 #undef CORE_CALL
     {"strlen", "__dmm_rt_strlen", 1},
     {"io_strlen", "__dmm_rt_strlen", 1},

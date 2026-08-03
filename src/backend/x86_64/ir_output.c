@@ -344,6 +344,7 @@ static int emit_file(Emitter *emitter, int deterministic) {
     else fputs("    .text\n", output);
     for (size_t f = 0; f < emitter->module->function_count; f++) {
         const IrFunction *function = &emitter->module->functions[f];
+        if(emitter->module->emission_selected && !function->emission_reachable) continue;
         size_t declarations = 0;
         size_t aggregate_results = 0;
         size_t aggregate_parameters = 0;
@@ -442,8 +443,8 @@ int x86_64_emit_ir_file(const IrModule *module, TargetFormat target,
     };
     int success = emit_file(&emitter, deterministic);
     if (success && (!module->program->package_name || !strcmp(module->program->package_name, "main")))
-        success = native_runtime_assembly_profile(output, target, module->runtime_profile,
-                                                  ir_main_returns_void(module));
+        success = native_runtime_assembly_requirements(output, target, module->runtime_profile,
+                                                  ir_main_returns_void(module),ir_runtime_requirements(module));
     int assembly_io_error = ferror(output);
     if (fclose(output) != 0) assembly_io_error = 1;
     int map_io_error = map.output != NULL && ferror(map.output);

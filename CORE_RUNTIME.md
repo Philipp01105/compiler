@@ -2,6 +2,9 @@
 
 `import "stdlib/core";` loads the low-level DMM package independently of the higher-level standard library. It provides
 ordinary typed DMM functions over compiler intrinsics. It participates in the module/package visibility model.
+The separate `stdlib/core/net` package provides move-only sockets/address lists and typed asynchronous TCP/UDP/DNS
+over the private platform runtime. Its API and ownership/completion contract are in
+[NETWORK_RUNTIME.md](NETWORK_RUNTIME.md).
 
 ```dmm
 package main;

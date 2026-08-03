@@ -4,6 +4,7 @@
 #include "language_types.h"
 #include <stddef.h>
 #include <string.h>
+#include "network_intrinsics.h"
 
 /* Target-independent signatures shared by semantic analysis, IR and emission. */
 typedef enum { CORE_VOID, CORE_NEVER, CORE_INT, CORE_SIZE, CORE_OFFSET, CORE_BYTES, CORE_STRING } CoreValueKind;
@@ -37,7 +38,8 @@ typedef struct {
 
 static inline const CoreIntrinsic *core_intrinsic_find(const char *name) {
 #define CORE_SIGNATURE(source, link, count, result, a, b, c) {source, link, count, result, {a, b, c}},
-    static const CoreIntrinsic signatures[] = {DMM_CORE_INTRINSICS(CORE_SIGNATURE)};
+    static const CoreIntrinsic signatures[] = {DMM_CORE_INTRINSICS(CORE_SIGNATURE)
+        DMM_NETWORK_INTRINSICS(CORE_SIGNATURE)};
 #undef CORE_SIGNATURE
     for (size_t i = 0; i < sizeof(signatures) / sizeof(signatures[0]); ++i)
         if (strcmp(name, signatures[i].source_name) == 0) return &signatures[i];

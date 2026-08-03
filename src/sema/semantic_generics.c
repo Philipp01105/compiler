@@ -7,6 +7,44 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Unit-valued sum payloads occupy no storage. Erase their pattern binding and
+   constructor argument together, including the standard Result branch method. */
+static void erase_unit_expression(AstProgram *unit, AstExpression *e,const char *binding) {
+    if(!e) return;
+    int erased=0;
+    AstExpression **link=&e->arguments;
+    while(*link) {
+        AstExpression *arg=*link;
+        if(arg->kind==AST_EXPR_NAME && !strcmp(ast_program_lexeme(unit,arg->value_token),binding))
+            { *link=arg->next; erased=1; }
+        else { erase_unit_expression(unit,arg,binding); link=&arg->next; }
+    }
+    erase_unit_expression(unit,e->left,binding); erase_unit_expression(unit,e->right,binding);
+    if(erased && !e->arguments && e->kind==AST_EXPR_CALL && e->left) {
+        AstExpression *next=e->next; *e=*e->left; e->next=next;
+    }
+}
+static void erase_unit_patterns(AstProgram *unit,AstStatement *s,const char *variant) {
+    for(;s;s=s->next) {
+        for(AstMatchArm *arm=s->match_arms;arm;arm=arm->next) {
+            if(!arm->wildcard && !strcmp(ast_program_lexeme(unit,arm->variant_token),variant) && arm->bindings && !arm->bindings->next) {
+                const char *binding=ast_program_lexeme(unit,arm->bindings->name_token);
+                for(AstStatement *body=arm->body;body;body=body->next) {
+                    erase_unit_expression(unit,body->value,binding);
+                    erase_unit_expression(unit,body->expression,binding);
+                    for(AstStatement *inner=body->body;inner;inner=inner->next) {
+                        erase_unit_expression(unit,inner->value,binding);
+                        erase_unit_expression(unit,inner->expression,binding);
+                    }
+                }
+                arm->bindings=NULL;
+            }
+            erase_unit_patterns(unit,arm->body,variant);
+        }
+        erase_unit_patterns(unit,s->body,variant); erase_unit_patterns(unit,s->else_body,variant);
+    }
+}
+
 size_t concrete_token(Analyzer *analyzer, TokenType kind, const char *text) {
     AstProgram *p = analyzer->program;
     for (size_t i = 0; i < p->token_count; i++)
@@ -239,6 +277,14 @@ void normalize_generic_type(Analyzer *analyzer, AstType *type, unsigned depth) {
                 for (AstEnumValue *v = instance->as.enum_decl.values; v; v = v->next)
                     for (AstTypeArgument *p = v->payload_types; p; p = p->next)
                         normalize_generic_type(analyzer, &p->type, depth + 1);
+                for(AstEnumValue *v=instance->as.enum_decl.values;v;v=v->next)
+                    if(v->payload_types && !v->payload_types->next &&
+                       primitive_type(unit,&v->payload_types->type)==TYPE_VOID &&
+                       !v->payload_types->type.pointer_depth && !v->payload_types->type.borrow_kind) {
+                        v->payload_types=NULL;
+                        for(AstDeclarationNode *m=instance->as.enum_decl.methods;m;m=m->next)
+                            erase_unit_patterns(unit,m->as.function.body,ast_program_lexeme(unit,v->name_token));
+                    }
                 AstType self_type = {.kind = AST_TYPE_NAMED, .name_token = instance->name_token,
                                      .array_length_token = AST_TOKEN_NONE};
                 for (AstDeclarationNode *m = instance->as.enum_decl.methods; m; m = m->next) {

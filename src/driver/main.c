@@ -41,7 +41,8 @@ static void print_usage(const char *program_name) {
     printf("  --link=MODE    auto (default), internal, external; external requests platform runtime\n");
     printf("                 For obj/asm selects the future link ABI; starts no link process\n");
     printf("  --linker-driver PATH  GCC-compatible driver (default: gcc); exe only\n");
-    printf("  --runtime-shim PATH   Private target platform shim object; exe only\n");
+    printf("  --runtime-shim PATH   Complete private platform/network shim object; exe only\n");
+    printf("                 Used network operations select platform runtime automatically\n");
     printf("  -c             Emit a native object file (same as --emit=obj)\n");
     printf("  -S             Emit assembly (same as --emit=asm)\n");
     printf("  -O0 / -O1      Disable / enable AST and IR optimization (default: -O1)\n");
@@ -466,7 +467,7 @@ int main(int argc, char *argv[]) {
         ir_pass_dump_path, ir_dump_path, cfg_dump_path, source_map_path
     };
     for (size_t i = 0; i < sizeof(requested_artifacts) / sizeof(requested_artifacts[0]); i++) {
-        if (emission == BACKEND_EXECUTABLE && link_mode == LINK_EXTERNAL &&
+        if (emission == BACKEND_EXECUTABLE && link_mode != LINK_INTERNAL &&
             driver_link_input_conflicts(target_format, requested_artifacts[i], linker_driver, runtime_shim)) {
             error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
                          ERR_COMP_INVALID_OPTION, source_file, "Generated artifact conflicts with linker input");
@@ -497,7 +498,7 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
     }
-    if (!ide_mode && !(link_mode == LINK_EXTERNAL && emission == BACKEND_EXECUTABLE))
+    if (!ide_mode && !(link_mode != LINK_INTERNAL && emission == BACKEND_EXECUTABLE))
         remove_stale_output(program, source_file, requested_output,
                             requested_artifacts, sizeof(requested_artifacts) / sizeof(requested_artifacts[0]),
                             emission == BACKEND_ASSEMBLY
@@ -604,7 +605,7 @@ int main(int argc, char *argv[]) {
         ir_pass_dump_path, ir_dump_path, cfg_dump_path, source_map_path
     };
     for (size_t i = 0; i < sizeof(artifacts) / sizeof(artifacts[0]); i++) {
-        if (emission == BACKEND_EXECUTABLE && link_mode == LINK_EXTERNAL &&
+        if (emission == BACKEND_EXECUTABLE && link_mode != LINK_INTERNAL &&
             driver_link_input_conflicts(target_format, artifacts[i], linker_driver, runtime_shim)) {
             error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
                          ERR_COMP_INVALID_OPTION, source_file, "Generated artifact conflicts with linker input");
@@ -638,7 +639,7 @@ int main(int argc, char *argv[]) {
             }
         }
     }
-    if (requested_output != NULL && !(link_mode == LINK_EXTERNAL && emission == BACKEND_EXECUTABLE))
+    if (requested_output != NULL && emission != BACKEND_EXECUTABLE)
         (void) remove(requested_output);
 
     if (debug_mode) {
@@ -791,6 +792,7 @@ int main(int argc, char *argv[]) {
     }
     /* CLI compatibility is translated to a requirement once. Runtime and backend
        only receive the resolved profile, never the requested link strategy. */
+    ir_select_runtime_functions(module);
     RuntimeRequirements requirements = ir_runtime_requirements(module);
     if (link_mode == LINK_EXTERNAL) requirements |= RUNTIME_REQUIRE_PLATFORM;
     backend_options.runtime_profile = runtime_profile_for(requirements);
@@ -804,6 +806,10 @@ int main(int argc, char *argv[]) {
         error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
                      ERR_COMP_INVALID_OPTION, source_file, "Linker driver and runtime shim require external executable linking");
     }
+    /* AUTO can acquire platform requirements during IR lowering. Preserve an
+       existing external executable until the isolated link publishes success. */
+    if (selection_ok && requested_output && emission == BACKEND_EXECUTABLE && resolved_link == LINK_INTERNAL)
+        (void)remove(requested_output);
     int emitted = selection_ok && (emission == BACKEND_EXECUTABLE && resolved_link == LINK_EXTERNAL
         ? driver_external_link(module, &backend_options, output_filename, linker_driver, runtime_shim)
         : backend_emit_file(module, &backend_options, output_filename));

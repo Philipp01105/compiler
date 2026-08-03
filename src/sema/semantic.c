@@ -651,7 +651,7 @@ int expression_to_declared_type_allowed(const Analyzer *analyzer,
         (type->borrow_kind == AST_BORROW_IMMUTABLE &&
          expression->resolved_borrow_kind == AST_BORROW_MUTABLE);
     int matching_shape = target_depth == source_depth && matching_borrow;
-    if (type->is_slice && !type->outer_pointer_depth)
+    if (type->is_slice && !type->outer_pointer_depth && type->borrow_kind==AST_BORROW_NONE)
         matching_shape = type->outer_pointer_depth == 0 &&
                          expression->resolved_outer_pointer_depth == 0 &&
                          type->pointer_depth == expression->resolved_pointer_depth &&
