@@ -277,6 +277,7 @@ static int initialize(Pass *p) {
             p->locals[p->local_count++] = (Local){in->symbol_id, i, in->type_id};
         }
         if (in->opcode == IR_OP_STORE) protect(p, in->operand_a);
+        if (in->opcode == IR_OP_NATIVE_COPY) protect(p, in->operand_a);
         if (in->opcode == IR_OP_UNARY && in->operator_type == TOKEN_AMPERSAND) protect(p, in->operand_b);
         if (in->opcode == IR_OP_MEMBER || in->opcode == IR_OP_SLICE_LENGTH || in->opcode == IR_OP_SLICE_DATA || in->
             opcode == IR_OP_SLICE || in->opcode == IR_OP_SUBSLICE)

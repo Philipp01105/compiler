@@ -260,6 +260,9 @@ if (BUILD_TESTING)
             -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/platform_handoff_test
             -P ${CMAKE_SOURCE_DIR}/tests/platform_handoff_test.cmake)
         set_tests_properties(platform_handoff_contract PROPERTIES LABELS "integration;platform;runtime;cli;safety" TIMEOUT 120)
+        get_filename_component(DMM_PLATFORM_LINKER_DIR "${DMM_PLATFORM_LINKER}" DIRECTORY)
+        set_tests_properties(platform_handoff_contract PROPERTIES
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${DMM_PLATFORM_LINKER_DIR}")
     endif ()
     if (DMM_ENABLE_PERF_TESTS)
         find_package(Python3 COMPONENTS Interpreter REQUIRED)
@@ -288,6 +291,16 @@ if (BUILD_TESTING)
             -DCOMPILER=$<TARGET_FILE:compiler> -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/ffi_frontend_test
             -P ${CMAKE_SOURCE_DIR}/tests/ffi_frontend_test.cmake)
     set_tests_properties(native_ffi_frontend_contract PROPERTIES LABELS "integration;frontend;sema;ir;ffi;safety" TIMEOUT 90)
+    add_test(NAME native_ffi_abi_contract COMMAND ${CMAKE_COMMAND}
+        -DCOMPILER=$<TARGET_FILE:compiler> -DC_DRIVER=${CMAKE_C_COMPILER}
+        -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/ffi_abi_test
+        -P ${CMAKE_SOURCE_DIR}/tests/native_ffi_test.cmake)
+    set_tests_properties(native_ffi_abi_contract PROPERTIES LABELS "integration;backend;native;ffi;safety" TIMEOUT 150)
+    add_test(NAME native_ffi_link_contract COMMAND ${CMAKE_COMMAND}
+        -DCOMPILER=$<TARGET_FILE:compiler> -DC_DRIVER=${CMAKE_C_COMPILER}
+        -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/ffi_link_test
+        -P ${CMAKE_SOURCE_DIR}/tests/native_ffi_link_test.cmake)
+    set_tests_properties(native_ffi_link_contract PROPERTIES LABELS "integration;cli;native;ffi;safety" TIMEOUT 180)
     add_executable(dmm_async_semantic_test
             tests/unit/async_semantic_test.c
             ${DMM_FUZZ_PIPELINE_SOURCES})

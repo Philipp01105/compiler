@@ -18,6 +18,76 @@
 #include <sys/wait.h>
 #endif
 
+static const char *native_override(const NativeLinkOptions *options, const char *name) {
+    for (size_t i = 0; i < options->library_count; ++i) {
+        const char *entry = options->libraries[i];
+        const char *equal = strchr(entry, '=');
+        if (equal && (size_t)(equal - entry) == strlen(name) && !strncmp(entry, name, strlen(name))) return equal + 1;
+    }
+    return NULL;
+}
+
+int driver_native_options_valid(const NativeLinkOptions *options) {
+    for (size_t i = 0; i < options->library_count; ++i) {
+        const char *entry = options->libraries[i], *equal = strchr(entry, '=');
+        if (!equal || equal == entry || !equal[1]) return 0;
+        for (const char *p = entry; p < equal; ++p)
+            if (!((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') || *p == '_' ||
+                  (p != entry && ((*p >= '0' && *p <= '9') || *p == '-')))) return 0;
+        for (size_t j = 0; j < i; ++j) {
+            const char *previous = options->libraries[j];
+            const char *separator = strchr(previous, '=');
+            if (separator && separator - previous == equal - entry &&
+                !strncmp(previous, entry, (size_t)(equal - entry))) return 0;
+        }
+    }
+    return 1;
+}
+
+int driver_native_input_conflicts(const NativeLinkOptions *options, const char *artifact) {
+    if (!artifact) return 0;
+    for (size_t i = 0; i < options->library_count; ++i) {
+        const char *equal = strchr(options->libraries[i], '=');
+        if (equal && path_identity_equal(artifact, equal + 1) != 0) return 1;
+    }
+    return 0;
+}
+
+static void link_quote(FILE *file, const char *text) {
+    fputc('"', file);
+    for (; *text; ++text) {
+        if (*text == '"' || *text == '\\') fputc('\\', file);
+        if (*text == '\n') fputs("\\n", file);
+        else if (*text == '\r') fputs("\\r", file);
+        else fputc(*text, file);
+    }
+    fputc('"', file);
+}
+
+int driver_dump_native_link(const IrModule *module, const BackendOptions *options,
+                            const NativeLinkOptions *native, const char *path) {
+    FILE *file = fopen(path, "w");
+    if (!file) return 0;
+    fprintf(file, "dmm-native-link-v1\ntarget=%s\nruntime-profile=%s\n",
+            options->target_format == TARGET_ELF ? "elf-x86_64-system-v" : "coff-x86_64-mingw-ucrt",
+            options->runtime_profile == RUNTIME_PLATFORM ? "platform" : "standalone");
+    for (size_t i = 0; i < native->directory_count; ++i) {
+        fputs("library-directory=", file); link_quote(file, native->directories[i]); fputc('\n', file);
+    }
+    for (size_t i = 0; i < module->native_import_count; ++i) {
+        const IrNativeImport *import = &module->native_imports[i];
+        if (!ir_native_import_used(module, import->symbol_id)) continue;
+        fputs("import library=", file); link_quote(file, import->library);
+        fputs(" symbol=", file); link_quote(file, import->native_name);
+        const char *override = native_override(native, import->library);
+        if (override) {fputs(" path=", file); link_quote(file, override);}
+        fputc('\n', file);
+    }
+    int success = !ferror(file);
+    if (fclose(file)) success = 0;
+    return success;
+}
+
 static int failure(const IrModule *module, const char *message, const char *detail) {
     error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_CODEGEN,
                  ERR_CODEGEN_OUTPUT_FAILED, module->program->source_path, "%s: %s", message, detail);
@@ -151,7 +221,8 @@ static int run_process(const char *const *arguments, const char *log_path, unsig
 
 int driver_external_link(const IrModule *module, const BackendOptions *options,
                          const char *output,
-                         const char *linker_driver, const char *runtime_shim) {
+                         const char *linker_driver, const char *runtime_shim,
+                         const NativeLinkOptions *native) {
 #ifdef _WIN32
     TargetFormat host = TARGET_COFF;
 #else
@@ -204,14 +275,62 @@ int driver_external_link(const IrModule *module, const BackendOptions *options,
     BackendOptions object_options = *options;
     object_options.emission = BACKEND_OBJECT;
     if (!backend_emit_file(module, &object_options, object)) goto cleanup;
-    const char *arguments[] = {
-        linker_driver ? linker_driver : "gcc", object, shim, "-o", image,
-        options->target_format == TARGET_ELF ? "-no-pie" : "-Wl,--subsystem,console",
-        options->target_format == TARGET_ELF ? "-pthread" : "-lkernel32",
-        network&&options->target_format==TARGET_COFF?"-lws2_32":NULL, NULL
-    };
+    size_t argument_capacity = 12 + native->directory_count + module->native_import_count;
+    const char **arguments = calloc(argument_capacity, sizeof(*arguments));
+    char **allocated = calloc(argument_capacity, sizeof(*allocated));
+    if (!arguments || !allocated) {free(arguments); free(allocated); goto cleanup;}
+    size_t argument_count = 0, owned_count = 0;
+    arguments[argument_count++] = linker_driver ? linker_driver : "gcc";
+    arguments[argument_count++] = object;
+    arguments[argument_count++] = shim;
+    arguments[argument_count++] = "-o";
+    arguments[argument_count++] = image;
+    arguments[argument_count++] = options->target_format == TARGET_ELF ? "-no-pie" : "-Wl,--subsystem,console";
+    arguments[argument_count++] = options->target_format == TARGET_ELF ? "-pthread" : "-lkernel32";
+    if (network && options->target_format == TARGET_COFF) arguments[argument_count++] = "-lws2_32";
+    int libraries_ok = 1;
+    for (size_t i = 0; i < native->directory_count; ++i) {
+        size_t length = strlen(native->directories[i]) + 3;
+        char *argument = malloc(length);
+        if (!argument) {libraries_ok = 0; break;}
+        snprintf(argument, length, "-L%s", native->directories[i]);
+        allocated[owned_count++] = argument;
+        arguments[argument_count++] = argument;
+    }
+    for (size_t i = 0; libraries_ok && i < module->native_import_count; ++i) {
+        const IrNativeImport *import = &module->native_imports[i];
+        if (!ir_native_import_used(module, import->symbol_id)) continue;
+        int duplicate = 0;
+        for (size_t j = 0; j < i; ++j)
+            if (!strcmp(import->library, module->native_imports[j].library) &&
+                ir_native_import_used(module, module->native_imports[j].symbol_id)) duplicate = 1;
+        if (duplicate) continue;
+        const char *override = native_override(native, import->library);
+        if (override) {
+            FILE *library = fopen(override, "rb");
+            if (!library) {failure(module, "Native library override is not readable", override); libraries_ok = 0; break;}
+            fclose(library);
+            /* Prefix relative paths so filenames beginning with '-' cannot become options. */
+            size_t length = strlen(override) + 3;
+            char *argument = malloc(length);
+            if (!argument) {libraries_ok = 0; break;}
+            int absolute = override[0] == '/' || override[0] == '\\' ||
+                           (override[0] && override[1] == ':');
+            snprintf(argument, length, "%s%s", absolute ? "" : "./", override);
+            allocated[owned_count++] = argument;
+            arguments[argument_count++] = argument;
+        } else {
+            size_t length = strlen(import->library) + 3;
+            char *argument = malloc(length);
+            if (!argument) {libraries_ok = 0; break;}
+            snprintf(argument, length, "-l%s", import->library);
+            allocated[owned_count++] = argument;
+            arguments[argument_count++] = argument;
+        }
+    }
     unsigned long code = 0;
-    if (!run_process(arguments, log, &code) || code) {
+    int linked = libraries_ok && run_process(arguments, log, &code) && !code;
+    if (!linked && libraries_ok) {
         char details[32768];
         size_t count = 0;
         FILE *file = fopen(log, "r");
@@ -220,8 +339,10 @@ int driver_external_link(const IrModule *module, const BackendOptions *options,
         char heading[256];
         snprintf(heading, sizeof(heading), "External linker '%s' failed (status %lu)", arguments[0], code);
         failure(module, heading, count ? details : "process could not start or produced no diagnostics");
-        goto cleanup;
     }
+    for (size_t i = 0; i < owned_count; ++i) free(allocated[i]);
+    free(allocated); free(arguments);
+    if (!linked) goto cleanup;
 #ifdef _WIN32
     success = MoveFileExA(image, output, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
 #else

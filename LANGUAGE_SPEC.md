@@ -526,7 +526,7 @@ Function overloads differ by ordered parameter types, never return type. Exact m
 numeric conversions. A candidate must be no worse in every argument and better in at least one; ties are ambiguous.
 `main` cannot be overloaded. Overloaded functions and methods use type-derived link names.
 
-## Native declarations (FFI stage 1)
+## Native FFI (V1: stages 1–2)
 
 `extern "system" [from "library"] { ... }` contains native function declarations and
 native structs. `from` is a logical library ID, for example `c` or `ws2_32`, rather than
@@ -573,9 +573,24 @@ There is no new `unsafe` syntax. References require explicit pointer casts, for 
 `((&context).(*void))`. A pointer to an ordinary DMM type may serve as an opaque address;
 casting it to a native struct pointer neither converts nor validates its memory layout.
 
-Stage 1 supports analysis, IDE information and verified IR for these declarations and
-direct calls. Executable native calls and native storage operations are explicitly rejected
-until stage 2 supplies their ABI and byte-exact lowering. Native function values, exports,
+Direct native calls support scalar and struct parameters and results on both x86-64
+targets. Linux uses the System V INTEGER/SSE/memory classification; Windows uses its
+position-based register convention, shadow space and indirect aggregate copies. Hidden
+result pointers are generated when required. Small integer and boolean results are
+normalized from their defined width. Struct arguments are captured when each argument
+is evaluated, before a later argument can change its source. Calls may change memory.
+Native struct fields and copies use byte-exact operations, including structs contained
+in DMM aggregates and arrays. Native field arrays retain C element strides.
+
+Only imports referenced by emitted functions require their logical libraries. Such
+imports select the platform runtime and external GCC/Clang linking with `--link=auto`;
+`--link=internal` diagnoses the native dependency. `--native-library NAME=PATH` selects
+an explicit library/archive/object file, and repeatable `--native-library-dir DIR`
+adds search directories. `-c` and `-S` emit unresolved symbols without invoking a
+linker. `--dump-native-link FILE` records the target, runtime profile and used imports
+for manual linking. A failed external link preserves the previous executable.
+
+Native function values, exports,
 unions, packing and explicit alignment remain planned stage 3 features. The complete
 staged contract is in [plans/ffi.md](plans/ffi.md).
 

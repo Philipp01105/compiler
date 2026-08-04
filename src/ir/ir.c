@@ -1020,10 +1020,12 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         size_t argument_index = 0;
         if (has_receiver) values[argument_index++] = receiver;
         const AstParameter *parameter = NULL;
+        int native_call = 0;
         const AstTypeArgument *payload = NULL;
         const AstProgram *type_unit = NULL;
         if (expression->resolved_symbol_id < builder->module->semantics->symbol_count) {
             const SemanticSymbol *target = &builder->module->semantics->symbols[expression->resolved_symbol_id];
+            native_call = target->declaration && target->declaration->is_native;
             type_unit = target->source_program;
             if (expression->kind == AST_EXPR_CALL && target->declaration)
                 parameter = target->declaration->as.function.parameters;
@@ -1045,6 +1047,23 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
                 value = coerce_value(builder, value, type_from_ast(builder->module, type_unit, type), argument->span);
                 if (parameter) parameter = parameter->next;
                 else payload = payload->next;
+            }
+            const IrInstruction *source = NULL;
+            for (size_t i = builder->function->instruction_count; i-- > 0;)
+                if (builder->function->instructions[i].result == value) {
+                    source = &builder->function->instructions[i]; break;
+                }
+            if (native_call && source && source->type_id < builder->module->type_count &&
+                builder->module->types[source->type_id].kind == IR_TYPE_NAMED) {
+                IrInstruction snapshot = *source;
+                IrInstruction *copy = emit(builder, IR_OP_NATIVE_COPY, argument->span);
+                if (!copy) { free(values); return IR_VALUE_NONE; }
+                copy->type = snapshot.type;
+                copy->type_id = snapshot.type_id;
+                copy->type_name_token = snapshot.type_name_token;
+                copy->operand_a = value;
+                copy->result = new_value(builder);
+                value = copy->result;
             }
             values[argument_index++] = value;
             if (consumes) emit_move_if_owned(builder, argument);
@@ -1072,7 +1091,8 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         !strncmp(ast_program_lexeme(builder->program,expression->left->value_token),"__dmm_net_",10))
         instruction->runtime_requirements=RUNTIME_REQUIRE_NETWORK;
     if (!((opcode == IR_OP_CALL || opcode == IR_OP_FREE || opcode == IR_OP_AWAIT) &&
-          !data_type_has_value(expression->resolved_type)))
+          !data_type_has_value(expression->resolved_type) &&
+          !expression->resolved_pointer_depth && !expression->resolved_outer_pointer_depth))
         instruction->result = new_value(builder);
     instruction->operand_a = left;
     instruction->operand_b = right;

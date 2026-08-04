@@ -2,15 +2,14 @@
 
 ## Status und Ziel
 
-Etappe 1 ist implementiert: native Deklarationen, semantische Prüfung, gemeinsame
-C-Layoutberechnung und separate NativeImport-IR. Native Aufrufe und native
-Speicheroperationen werden bis Etappe 2 vom Backend ausdrücklich abgelehnt.
-FFI V1 ist erst nach 2B abgeschlossen; das Gesamtvorhaben erst nach Etappe 5.
+Etappen 1, 2A und 2B sind implementiert: native Deklarationen, gemeinsame
+C-Layouts, überprüfbare Import-IR, skalare Calls, Structs by value und externer
+Linkpfad. FFI V1 ist eigenständig nutzbar. Der Implementierungs- und Prüfstand
+von Etappe 2 ist in [ffi-stage2.md](ffi-stage2.md) festgehalten.
 
-Geprüft: FFI-Frontend/Layout/IR auf beiden Target-Modellen, ein Windows-Frontend-
-Unit-Test sowie die Linux-Regression (43 Tests). Ein vollständiger Windows-
-Compiler-Build benötigt weiterhin die vorgeschriebene MinGW-w64-UCRT64-Toolchain;
-die vorhandene CLion-MinGW-Toolchain erfüllt diese Voraussetzung nicht.
+Etappe 3 folgt nach der vollständigen Verifikation von Etappe 2 und erweitert
+die FFI für Runtime-Komponenten. Das Gesamtvorhaben ist erst nach Etappe 5
+abgeschlossen; die vorhandenen C-Runtime-Shims bleiben bis dahin erforderlich.
 
 DMM erhält eine allgemeine native FFI für x86-64 Linux/glibc und Windows mit
 MinGW-w64 UCRT64. GCC und Clang dienen als externe Treiber. Danach werden die

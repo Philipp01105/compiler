@@ -641,6 +641,9 @@ int native_runtime_object_imports_profile(NativeObject *object, TargetFormat tar
         if (profile == RUNTIME_PLATFORM && platform_symbol(symbol->name)) continue;
         const char *import = native_runtime_import(symbol->name, target);
         if (!import) {
+            /* The external driver resolves native FFI symbols. Standalone
+               linking still admits only the compiler's explicit OS imports. */
+            if (profile == RUNTIME_PLATFORM) continue;
             native_error(object, "Standalone object contains an unresolved non-OS symbol");
             return 0;
         }

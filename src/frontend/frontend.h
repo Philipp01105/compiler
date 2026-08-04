@@ -9,6 +9,8 @@ typedef struct {
     int debug;
     int show_tokens;
     int recover_syntax; /* IDE analysis only: discard malformed statements/declarations. */
+    int has_target;
+    TargetFormat target_format;
 } FrontendOptions;
 
 /* Parse a source file into an owned recursive AST with no backend side effects. */

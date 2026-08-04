@@ -129,11 +129,12 @@ static int instruction_produces_value(const IrInstruction *instruction) {
     IrOpcode opcode = instruction->opcode;
     return opcode == IR_OP_CONSTANT || opcode == IR_OP_FUNCTION_ADDRESS || opcode == IR_OP_LOAD ||
            opcode == IR_OP_UNARY || opcode == IR_OP_BINARY ||
-           ((opcode == IR_OP_CALL || opcode == IR_OP_AWAIT || opcode == IR_OP_EXECUTOR) && data_type_has_value(instruction->type)) ||
+           ((opcode == IR_OP_CALL || opcode == IR_OP_AWAIT || opcode == IR_OP_EXECUTOR) &&
+            (data_type_has_value(instruction->type) || instruction->pointer_depth)) ||
            opcode == IR_OP_INDEX || opcode == IR_OP_SUBSLICE ||
            opcode == IR_OP_MEMBER || opcode == IR_OP_SLICE_LENGTH ||
            opcode == IR_OP_SLICE || opcode == IR_OP_SLICE_DATA ||
-           opcode == IR_OP_ARRAY_LITERAL || opcode == IR_OP_INTERFACE_PACK ||
+           opcode == IR_OP_ARRAY_LITERAL || opcode == IR_OP_INTERFACE_PACK || opcode == IR_OP_NATIVE_COPY ||
            opcode == IR_OP_CAST || opcode == IR_OP_ALLOC ||
            opcode == IR_OP_PHI || opcode == IR_OP_ENUM_CONSTRUCT || opcode == IR_OP_ENUM_IS || opcode ==
            IR_OP_ENUM_PAYLOAD;
@@ -383,6 +384,14 @@ static int verify_instruction_types(const IrModule *module,
         case IR_OP_DECLARE:
             return a == NULL || ir_types_assignable(module, a->type_id,
                                                     instruction->type_id, a->opcode);
+        case IR_OP_NATIVE_COPY: {
+            if (!a || a->type_id != instruction->type_id ||
+                module->types[instruction->type_id].kind != IR_TYPE_NAMED) return 0;
+            for (size_t s = 0; s < module->structure_count; ++s)
+                if (module->structures[s].symbol_id == module->types[instruction->type_id].symbol_id)
+                    return module->structures[s].is_native && !module->structures[s].is_opaque;
+            return 0;
+        }
         case IR_OP_INTERFACE_PACK:
             return a != NULL && a->type_id < module->type_count &&
                    instruction->type_id < module->type_count &&
@@ -1050,6 +1059,7 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                         valid = 0;
                     break;
                 case IR_OP_CAST:
+                case IR_OP_NATIVE_COPY:
                 case IR_OP_INTERFACE_PACK:
                 case IR_OP_FREE:
                     REQUIRE_VALUE(instruction->operand_a);

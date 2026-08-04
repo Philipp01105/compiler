@@ -82,6 +82,9 @@ int emit_typed_call(Emitter *emitter, const IrInstruction *instruction, const Ir
 int emit_indirect_typed_call(Emitter *emitter, const IrInstruction *instruction,
                              size_t callable_value, IrTypeId callable_type);
 int emit_interface_call(Emitter *emitter, const IrInstruction *instruction);
+int emit_native_call(Emitter *emitter, const IrInstruction *instruction, const IrNativeImport *callee);
+void copy_bytes(Emitter *emitter, size_t bytes, const char *source, const char *destination);
+void copy_typed_value(Emitter *emitter, IrTypeId type, const char *source, const char *destination);
 void load_nullable_string(Emitter *emitter, const char *reg, size_t value);
 int emit_builtin_call(Emitter *emitter, const IrInstruction *instruction, const char *name);
 

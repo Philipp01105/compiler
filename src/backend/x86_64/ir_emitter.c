@@ -739,7 +739,7 @@ size_t aggregate_result_offset(const Emitter *emitter,
         if ((candidate->opcode != IR_OP_EXECUTOR && candidate->opcode != IR_OP_AWAIT && candidate->opcode != IR_OP_CALL && candidate->opcode != IR_OP_ENUM_CONSTRUCT && candidate->opcode !=
              IR_OP_SLICE && candidate->opcode != IR_OP_SUBSLICE &&
              candidate->opcode != IR_OP_ARRAY_LITERAL &&
-             candidate->opcode != IR_OP_INTERFACE_PACK) ||
+             candidate->opcode != IR_OP_INTERFACE_PACK && candidate->opcode != IR_OP_NATIVE_COPY) ||
             (!is_inline_structure(emitter->module, candidate) &&
              !candidate->is_array))
             continue;
@@ -761,7 +761,7 @@ static size_t aggregate_result_slots(const Emitter *emitter) {
         if ((instruction->opcode == IR_OP_EXECUTOR || instruction->opcode == IR_OP_AWAIT || instruction->opcode == IR_OP_CALL || instruction->opcode == IR_OP_ENUM_CONSTRUCT || instruction->opcode ==
              IR_OP_SLICE || instruction->opcode == IR_OP_SUBSLICE ||
              instruction->opcode == IR_OP_ARRAY_LITERAL ||
-             instruction->opcode == IR_OP_INTERFACE_PACK) &&
+             instruction->opcode == IR_OP_INTERFACE_PACK || instruction->opcode == IR_OP_NATIVE_COPY) &&
             (is_inline_structure(emitter->module, instruction) ||
              instruction->is_array))
             result += type_slots(emitter->module, instruction->type_id);
@@ -844,10 +844,64 @@ static size_t aggregate_field_offset(const Emitter *emitter,
                                      size_t field_symbol_id) {
     size_t slots = 0;
     for (size_t i = 0; i < aggregate->field_count; i++) {
-        if (aggregate->fields[i].symbol_id == field_symbol_id) return slots * 8U;
+        if (aggregate->fields[i].symbol_id == field_symbol_id)
+            return aggregate->is_native ? aggregate->fields[i].native_offset : slots * 8U;
         slots += type_slots(emitter->module, aggregate->fields[i].type_id);
     }
     return SIZE_MAX;
+}
+
+/* Arrays in C objects have byte strides; standalone DMM arrays keep their
+   existing storage. The distinction belongs to the address, not the type. */
+static int native_array_storage(const Emitter *emitter, const IrInstruction *value) {
+    if (!value) return 0;
+    if (value->opcode == IR_OP_MEMBER && value->symbol_id < emitter->module->semantics->symbol_count) {
+        const SemanticSymbol *field = &emitter->module->semantics->symbols[value->symbol_id];
+        const IrAggregate *aggregate = aggregate_for_symbol(emitter->module, field->owner_symbol_id);
+        return aggregate && aggregate->is_native;
+    }
+    if (value->opcode == IR_OP_INDEX)
+        return native_array_storage(emitter, producer(emitter->function, value->operand_a));
+    return 0;
+}
+
+static size_t storage_element_stride(const Emitter *emitter, IrTypeId type, int native) {
+    IrTypeLayout layout;
+    if (!ir_type_layout(emitter->module, type, &layout)) return 0;
+    if (native && emitter->module->types[type].kind == IR_TYPE_ARRAY) {
+        size_t stride = storage_element_stride(emitter, emitter->module->types[type].element_type, 1);
+        return stride * emitter->module->types[type].array_length;
+    }
+    /* Preserve the existing scalar array stride. Native aggregate elements in
+       ordinary arrays occupy whole DMM slots. */
+    if (!native && type_is_structure(emitter->module, type)) return layout.storage_slots * 8;
+    return layout.size;
+}
+
+static void copy_array_storage(Emitter *emitter, IrTypeId id, int source_native, int destination_native,
+                               size_t source_offset, size_t destination_offset) {
+    if (!source_native && !destination_native && !source_offset && !destination_offset) {
+        copy_aggregate(emitter, type_slots(emitter->module, id), "rax", "rbx");
+        return;
+    }
+    const IrType *type = &emitter->module->types[id];
+    if (type->kind == IR_TYPE_ARRAY) {
+        size_t source_stride = storage_element_stride(emitter, type->element_type, source_native);
+        size_t destination_stride = storage_element_stride(emitter, type->element_type, destination_native);
+        for (size_t i = 0; i < type->array_length; ++i)
+            copy_array_storage(emitter, type->element_type, source_native, destination_native,
+                               source_offset + i * source_stride, destination_offset + i * destination_stride);
+        return;
+    }
+    IrTypeLayout layout;
+    if (!ir_type_layout(emitter->module, id, &layout)) return;
+    size_t bytes = layout.size;
+    for (size_t i = 0; i < bytes; ++i) {
+        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_BYTE, x64_register("r11b"),
+                    x64_memory(X64_WIDTH_BYTE, "rax", (long long)(source_offset + i)));
+        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_BYTE,
+                    x64_memory(X64_WIDTH_BYTE, "rbx", (long long)(destination_offset + i)), x64_register("r11b"));
+    }
 }
 
 static int emit_drop_type(Emitter *emitter, IrTypeId type_id) {
@@ -1269,7 +1323,14 @@ static int emit_lvalue_address(Emitter *emitter, const IrInstruction *target,
         }
         IrTypeLayout element;
         if (!ir_type_layout(emitter->module, target->type_id, &element)) return 0;
-        size_t element_size = element.size;
+        int native_storage = native_array_storage(emitter, base);
+        if (base && base->pointer_depth && target->type_id < emitter->module->type_count &&
+            emitter->module->types[target->type_id].kind == IR_TYPE_NAMED) {
+            const IrAggregate *pointee = aggregate_for_symbol(emitter->module,
+                emitter->module->types[target->type_id].symbol_id);
+            native_storage |= pointee && pointee->is_native;
+        }
+        size_t element_size = storage_element_stride(emitter, target->type_id, native_storage);
         write_x64_2(emitter, X64_OP_IMUL, X64_WIDTH_QWORD,
                     x64_register("rcx"), x64_immediate((long long) element_size));
         write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD, x64_register("rbx"),
@@ -1704,7 +1765,10 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                     write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD,
                                 x64_register("rbx"),
                                 x64_memory(X64_WIDTH_NONE, "rbp", -(long long) offset));
-                    copy_aggregate(emitter, slots, "rax", "rbx");
+                    if (instruction->is_array)
+                        copy_array_storage(emitter, instruction->type_id,
+                            native_array_storage(emitter, producer(function, instruction->operand_a)), 0, 0, 0);
+                    else copy_typed_value(emitter, instruction->type_id, "rax", "rbx");
                 } else {
                     write_immediate(emitter, "rax", 0);
                     for (size_t slot = 0; slot < slots; slot++)
@@ -1744,6 +1808,17 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             }
             return 1;
         }
+        case IR_OP_NATIVE_COPY: {
+            size_t offset = aggregate_result_offset(emitter, instruction);
+            if (!offset) return 0;
+            write_value_load(emitter, "rax", instruction->operand_a);
+            write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD, x64_register("rbx"),
+                        x64_memory(X64_WIDTH_NONE, "rbp", -(long long)offset));
+            copy_typed_value(emitter, instruction->type_id, "rax", "rbx");
+            write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rax"), x64_register("rbx"));
+            write_value_store(emitter, "rax", instruction->result);
+            return 1;
+        }
         case IR_OP_AWAIT:
             return emit_async_await(emitter, instruction);
         case IR_OP_EXECUTOR:
@@ -1781,8 +1856,11 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             if (instruction->operator_type == TOKEN_EQUAL &&
                 (target->is_array || is_inline_structure(emitter->module, target))) {
                 write_value_load(emitter, "rax", instruction->operand_b);
-                copy_aggregate(emitter, type_slots(emitter->module, target->type_id),
-                               "rax", "rbx");
+                if (target->is_array)
+                    copy_array_storage(emitter, target->type_id,
+                        native_array_storage(emitter, producer(function, instruction->operand_b)),
+                        native_array_storage(emitter, target), 0, 0);
+                else copy_typed_value(emitter, target->type_id, "rax", "rbx");
                 if (target->is_slice && target->opcode == IR_OP_LOAD) {
                     const IrInstruction *declaration = local_declaration(
                         function, target->symbol_id, index);
@@ -2064,6 +2142,8 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
         }
         }
         case IR_OP_CALL: {
+            const IrNativeImport *native = ir_native_import(emitter->module, instruction->symbol_id);
+            if (native) return emit_native_call(emitter, instruction, native);
             const IrFunction *callee = called_function(emitter->module, instruction->symbol_id);
             if (callee == NULL) {
                 const IrInstruction *callee_value = producer(function,
@@ -2280,7 +2360,7 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                     instruction->first_argument + element % instruction->argument_count];
                 const IrInstruction *value = producer(function, value_id);
                 if (value == NULL) return 0;
-                size_t byte_offset = element * element_layout.size;
+                size_t byte_offset = element * storage_element_stride(emitter, container->element_type, 0);
                 const IrType *target = &emitter->module->types[container->element_type];
                 if (element_layout.storage_slots > 1U ||
                            type_is_structure(emitter->module, container->element_type)) {
@@ -2288,7 +2368,7 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                     write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD,
                                 x64_register("rdx"),
                                 x64_memory(X64_WIDTH_NONE, "r10", (long long) byte_offset));
-                    copy_aggregate(emitter, element_layout.storage_slots, "rax", "rdx");
+                    copy_typed_value(emitter, container->element_type, "rax", "rdx");
                 } else {
                     write_value_load(emitter, "rax", value_id);
                     if (target->kind == IR_TYPE_PRIMITIVE)
@@ -2543,12 +2623,11 @@ int emit_function(Emitter *emitter) {
         } else if (!is_length && (type_is_structure(emitter->module, parameter->type_id) ||
                    (emitter->function->is_async && emitter->module->types[parameter->type_id].kind == IR_TYPE_ARRAY))) {
             size_t copy_offset = parameter_copy_offset(emitter, p);
-            size_t copy_slots = type_slots(emitter->module, parameter->type_id);
             write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD, x64_register("rbx"),
                         x64_memory(X64_WIDTH_NONE, "rbp", -(long long) copy_offset));
             if (emitter->function->is_async) {
                 if (!copy_async_storage(emitter, parameter->type_id, "rax", "rbx")) return 0;
-            } else copy_aggregate(emitter, copy_slots, "rax", "rbx");
+            } else copy_typed_value(emitter, parameter->type_id, "rax", "rbx");
             write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
                         x64_register("rax"), x64_register("rbx"));
         }

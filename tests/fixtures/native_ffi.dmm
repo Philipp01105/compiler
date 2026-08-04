@@ -1,0 +1,104 @@
+package main;
+extern "system" from "ffi_reference" {
+    struct Tiny { pub var a:u8; pub var b:u8; pub var c:u8; }
+    struct Mixed { pub var x:i32; pub var y:double; }
+    struct Reverse { pub var y:double; pub var x:i32; }
+    struct Floats { pub var a:float; pub var b:float; pub var c:float; }
+    struct Pair { pub var a:u64; pub var b:u64; }
+    struct Large { pub var pairs:Pair[2]; pub var tiny:Tiny[2]; pub var end:u8; }
+    struct Record { pub var tag:u8; pub var count:u32; pub var bytes:u8[3]; }
+    struct SingleFloat { pub var value:float; }
+    struct SingleDouble { pub var value:double; }
+    struct SingleWord { pub var value:u16; }
+    func singleFloat(value:SingleFloat) -> SingleFloat = "ffi_single_float";
+    func singleDouble(value:SingleDouble) -> SingleDouble = "ffi_single_double";
+    func singleWord(value:SingleWord) -> SingleWord = "ffi_single_word";
+    func mutate(value:*Tiny) -> i32 = "ffi_mutate";
+    func snapshot(value:Tiny,delta:i32) -> i32 = "ffi_snapshot";
+    func i8return() -> i8 = "ffi_i8";
+    func u8return() -> u8 = "ffi_u8";
+    func i16return() -> i16 = "ffi_i16";
+    func u16return() -> u16 = "ffi_u16";
+    func i32return() -> i32 = "ffi_i32";
+    func u32return() -> u32 = "ffi_u32";
+    func boolean(value:bit) -> bit = "ffi_bool";
+    func floating(value:float) -> float = "ffi_float";
+    func mixed(a:i8,b:double,c:u16,d:float,e:i32,f:double,g:u64,h:float,i:i64,j:double,k:u32,
+               l:double,m:double,n:double,o:double,p:double,q:double) -> double = "ffi_mixed";
+    func write(value:*u32) -> void = "ffi_write";
+    func identity(value:*void) -> *void = "ffi_identity";
+    func tiny(value:Tiny) -> Tiny = "ffi_tiny";
+    func transform(value:Mixed,delta:i32,weight:double) -> Mixed = "ffi_transform";
+    func reverse(value:Reverse) -> Reverse = "ffi_reverse";
+    func floats(value:Floats) -> Floats = "ffi_floats";
+    func pair(value:Pair) -> Pair = "ffi_pair";
+    func large(value:Large,delta:i32) -> Large = "ffi_large";
+    func exhaust(a:i64,b:i64,c:i64,d:i64,e:i64,value:Pair,last:i64) -> i64 = "ffi_exhaust";
+    func sseExhaust(a:double,b:double,c:double,d:double,e:double,f:double,g:double,value:Mixed,h:double) -> double = "ffi_sse_exhaust";
+    func record(value:Record) -> Record = "ffi_record";
+    func layout(which:u32) -> u64 = "ffi_layout";
+    func tinyAddress() -> *Tiny = "ffi_tiny_address";
+    func next() -> i32 = "ffi_next";
+    func order(a:i32,b:i32,c:i32) -> i32 = "ffi_order";
+}
+extern "system" from "never_link_this" { func unused() -> i32; }
+struct Wrapper { pub var before:u64; pub var native:Tiny; pub var after:u64; }
+func dmmCopy(value:Tiny) -> Tiny { return value; }
+func main() -> int {
+    if (i8return() != -117) { return 1; }
+    if (u8return() != 241) { return 2; }
+    if (i16return() != -30123) { return 3; }
+    if (u16return() != 60123) { return 4; }
+    if (i32return() != -1901234567) { return 5; }
+    if (u32return() != 3901234567.(u32)) { return 6; }
+    if (boolean(true) || !boolean(false)) { return 7; }
+    if (floating(2.5.(float)) != 4.0) { return 8; }
+    if (mixed(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17) != 153) { return 9; }
+    var written:u32;
+    write((&written).(*u32));
+    if (written != 123456789) { return 10; }
+    if (identity((&written).(*void)) != (&written).(*void)) { return 11; }
+    var t:Tiny; t.a=10; t.b=20; t.c=30;
+    var t2:Tiny=tiny(t);
+    if (t2.a != 11 || t2.b != 22 || t2.c != 33 || t.c != 30) { return 12; }
+    var m:Mixed; m.x=17; m.y=2.5;
+    var m2:Mixed=transform(m,3,4.5);
+    if (m2.x != 20 || m2.y != 7 || m.x != 17) { return 13; }
+    var r:Reverse; r.x=12; r.y=3.5;
+    r=reverse(r);
+    if (r.x != 19 || r.y != 6) { return 14; }
+    var f:Floats; f.a=10; f.b=20; f.c=30;
+    f=floats(f);
+    if (f.a != 11 || f.b != 22 || f.c != 33) { return 15; }
+    var p:Pair; p.a=10; p.b=20;
+    var p2:Pair=pair(p);
+    if (p2.a != 21 || p2.b != 33) { return 16; }
+    if (exhaust(1,2,3,4,5,p,7) != 52) { return 17; }
+    if (sseExhaust(1,2,3,4,5,6,7,m,8) != 55.5) { return 18; }
+    var big:Large; big.pairs[1].b=40; big.tiny[1].c=10; big.end=8;
+    var big2:Large=large(big,2);
+    if (big2.pairs[1].b != 42) { return 190; }
+    if (big2.tiny[1].c != 13) { return 191; }
+    if (big2.end != 9) { return 192; }
+    if (big.end != 8) { return 193; }
+    var rec:Record; rec.tag=4; rec.count=90; rec.bytes[2]=6;
+    rec=record(rec);
+    if (rec.tag != 5 || rec.count != 92 || rec.bytes[2] != 9) { return 20; }
+    if (layout(0) != Record.size || layout(1) != Record.align || layout(4) != Large.size) { return 21; }
+    var w:Wrapper; w.before=99; w.after=77; w.native=*tinyAddress();
+    w.native=tiny(w.native);
+    if (w.before != 99 || w.after != 77 || w.native.c != 36) { return 22; }
+    var ts:Tiny[2]; ts[0]=t; ts[1]=t2; ts[1]=dmmCopy(ts[1]);
+    if (ts[0].c != 30 || ts[1].c != 33) { return 23; }
+    if (order(next(),next(),next()) != 123) { return 24; }
+    if (snapshot(t,mutate((&t).(*Tiny))) != 15 || t.a != 99) { return 25; }
+    var sf:SingleFloat; sf.value=3.5; sf=singleFloat(sf);
+    var sd:SingleDouble; sd.value=4.5; sd=singleDouble(sd);
+    var sw:SingleWord; sw.value=600; sw=singleWord(sw);
+    if (sf.value != 4.75 || sd.value != 7 || sw.value != 700) { return 26; }
+    var fromNative:Tiny[2]=big.tiny;
+    if (fromNative[1].c != 10) { return 27; }
+    big.tiny=ts;
+    if (big.tiny[0].c != 30 || big.tiny[1].c != 33 || big.end != 8) { return 28; }
+    return 0;
+}

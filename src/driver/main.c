@@ -42,13 +42,16 @@ static void print_usage(const char *program_name) {
     printf("                 For obj/asm selects the future link ABI; starts no link process\n");
     printf("  --linker-driver PATH  GCC-compatible driver (default: gcc); exe only\n");
     printf("  --runtime-shim PATH   Complete private platform/network shim object; exe only\n");
+    printf("  --native-library NAME=PATH  Override a logical native library\n");
+    printf("  --native-library-dir DIR    Add a native library search directory (repeatable)\n");
+    printf("  --dump-native-link FILE     Write target/profile/used native import requirements\n");
     printf("                 Used network operations select platform runtime automatically\n");
     printf("  -c             Emit a native object file (same as --emit=obj)\n");
     printf("  -S             Emit assembly (same as --emit=asm)\n");
     printf("  -O0 / -O1      Disable / enable AST and IR optimization (default: -O1)\n");
     printf("  --syntax=MODE  Assembly printing syntax: att or intel (default: intel)\n");
     printf("  --target=FMT   Target format: elf or coff (default: auto-detect)\n");
-    printf("  --dump-ast FILE Write the stable dmm-ast-v3 dump to FILE\n");
+    printf("  --dump-ast FILE Write the stable dmm-ast-v4 dump to FILE\n");
     printf("  --dump-tokens FILE Write the token inventory to FILE\n");
     printf("  --dump-symbols FILE Write the semantic symbol table to FILE\n");
     printf("  --dump-ir-before-opt FILE Write lowered IR before IR passes to FILE\n");
@@ -172,6 +175,10 @@ int main(int argc, char *argv[]) {
     BackendEmission emission = BACKEND_EXECUTABLE;
     LinkMode link_mode = LINK_AUTO;
     const char *linker_driver = NULL, *runtime_shim = NULL;
+    const char *native_libraries[argc > 0 ? (size_t)argc : 1];
+    const char *native_directories[argc > 0 ? (size_t)argc : 1];
+    NativeLinkOptions native_options = {.libraries = native_libraries, .directories = native_directories};
+    const char *native_link_dump = NULL;
     int emission_requested = 0;
     int optimize = 1;
     int optimization_requested = 0;
@@ -314,6 +321,20 @@ int main(int argc, char *argv[]) {
             else if (!strcmp(mode, "external")) link_mode = LINK_EXTERNAL;
             else error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
                               ERR_COMP_INVALID_OPTION, NULL, "Invalid link mode: %s", mode);
+        } else if (!strcmp(argv[i], "--native-library") || !strcmp(argv[i], "--native-library-dir") ||
+                   !strcmp(argv[i], "--dump-native-link")) {
+            const char *option = argv[i];
+            if (++i >= argc || !argv[i][0]) {
+                error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                             ERR_COMP_INVALID_OPTION, NULL, "Missing value for %s", option);
+                break;
+            }
+            if (!strcmp(option, "--native-library")) native_libraries[native_options.library_count++] = argv[i];
+            else if (!strcmp(option, "--native-library-dir")) native_directories[native_options.directory_count++] = argv[i];
+            else native_link_dump = argv[i];
+            if (!driver_native_options_valid(&native_options))
+                error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                             ERR_COMP_INVALID_OPTION, NULL, "Native library overrides require unique logical NAME=PATH entries");
         } else if (!strcmp(argv[i], "--linker-driver") || !strcmp(argv[i], "--runtime-shim")) {
             const char *option = argv[i];
             if (++i >= argc || !argv[i][0]) {
@@ -423,7 +444,7 @@ int main(int argc, char *argv[]) {
     if ((ide_buffer != NULL && !ide_mode) || (
             ide_mode && (ast_dump_path == NULL || requested_output != NULL || token_dump_path != NULL ||
                          symbol_dump_path != NULL || preopt_ir_dump_path != NULL || ir_pass_dump_path != NULL ||
-                         ir_dump_path != NULL || cfg_dump_path != NULL || source_map_path != NULL || debug_mode || show_tokens ||
+                         ir_dump_path != NULL || cfg_dump_path != NULL || source_map_path != NULL || native_link_dump != NULL || debug_mode || show_tokens ||
                          optimization_requested || (
                              emission_requested && emission != BACKEND_ASSEMBLY) ||
                          output_conflicts_with_source(source_file, ast_dump_path) ||
@@ -440,7 +461,9 @@ int main(int argc, char *argv[]) {
     FrontendOptions frontend_options = {
         .debug = debug_mode,
         .show_tokens = show_tokens,
-        .recover_syntax = ide_mode
+        .recover_syntax = ide_mode,
+        .has_target = 1,
+        .target_format = target_format
     };
     char *override_name = NULL;
     if (ide_buffer != NULL) {
@@ -464,11 +487,12 @@ int main(int argc, char *argv[]) {
     }
     const char *requested_artifacts[] = {
         requested_output, ast_dump_path, token_dump_path, symbol_dump_path, preopt_ir_dump_path,
-        ir_pass_dump_path, ir_dump_path, cfg_dump_path, source_map_path
+        ir_pass_dump_path, ir_dump_path, cfg_dump_path, source_map_path, native_link_dump
     };
     for (size_t i = 0; i < sizeof(requested_artifacts) / sizeof(requested_artifacts[0]); i++) {
-        if (emission == BACKEND_EXECUTABLE && link_mode != LINK_INTERNAL &&
-            driver_link_input_conflicts(target_format, requested_artifacts[i], linker_driver, runtime_shim)) {
+        if (driver_native_input_conflicts(&native_options, requested_artifacts[i]) ||
+            (emission == BACKEND_EXECUTABLE && link_mode != LINK_INTERNAL &&
+             driver_link_input_conflicts(target_format, requested_artifacts[i], linker_driver, runtime_shim))) {
             error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
                          ERR_COMP_INVALID_OPTION, source_file, "Generated artifact conflicts with linker input");
             error_handler_flush(error_handler);
@@ -498,7 +522,7 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
     }
-    if (!ide_mode && !(link_mode != LINK_INTERNAL && emission == BACKEND_EXECUTABLE))
+    if (!ide_mode && emission != BACKEND_EXECUTABLE)
         remove_stale_output(program, source_file, requested_output,
                             requested_artifacts, sizeof(requested_artifacts) / sizeof(requested_artifacts[0]),
                             emission == BACKEND_ASSEMBLY
@@ -602,11 +626,12 @@ int main(int argc, char *argv[]) {
     }
     const char *artifacts[] = {
         output_filename, ast_dump_path, token_dump_path, symbol_dump_path, preopt_ir_dump_path,
-        ir_pass_dump_path, ir_dump_path, cfg_dump_path, source_map_path
+        ir_pass_dump_path, ir_dump_path, cfg_dump_path, source_map_path, native_link_dump
     };
     for (size_t i = 0; i < sizeof(artifacts) / sizeof(artifacts[0]); i++) {
-        if (emission == BACKEND_EXECUTABLE && link_mode != LINK_INTERNAL &&
-            driver_link_input_conflicts(target_format, artifacts[i], linker_driver, runtime_shim)) {
+        if (driver_native_input_conflicts(&native_options, artifacts[i]) ||
+            (emission == BACKEND_EXECUTABLE && link_mode != LINK_INTERNAL &&
+             driver_link_input_conflicts(target_format, artifacts[i], linker_driver, runtime_shim))) {
             error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
                          ERR_COMP_INVALID_OPTION, source_file, "Generated artifact conflicts with linker input");
             error_handler_flush(error_handler);
@@ -794,13 +819,19 @@ int main(int argc, char *argv[]) {
        only receive the resolved profile, never the requested link strategy. */
     ir_select_runtime_functions(module);
     RuntimeRequirements requirements = ir_runtime_requirements(module);
+    int uses_native = 0;
+    for (size_t n = 0; n < module->native_import_count; ++n)
+        uses_native |= ir_native_import_used(module, module->native_imports[n].symbol_id);
+    if (uses_native) requirements |= RUNTIME_REQUIRE_PLATFORM;
     if (link_mode == LINK_EXTERNAL) requirements |= RUNTIME_REQUIRE_PLATFORM;
     backend_options.runtime_profile = runtime_profile_for(requirements);
     LinkMode resolved_link = LINK_INTERNAL;
     int selection_ok = runtime_resolve_link(link_mode, backend_options.runtime_profile, &resolved_link);
     if (!selection_ok)
         error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
-                     ERR_COMP_INVALID_OPTION, source_file, "Internal linking cannot satisfy platform runtime requirements");
+                     ERR_COMP_INVALID_OPTION, source_file, uses_native
+                         ? "Internal linking cannot resolve native imports; use --link=auto or --link=external with GCC/Clang"
+                         : "Internal linking cannot satisfy platform runtime requirements");
     if (emission == BACKEND_EXECUTABLE && resolved_link != LINK_EXTERNAL && (linker_driver || runtime_shim)) {
         selection_ok = 0;
         error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
@@ -810,8 +841,14 @@ int main(int argc, char *argv[]) {
        existing external executable until the isolated link publishes success. */
     if (selection_ok && requested_output && emission == BACKEND_EXECUTABLE && resolved_link == LINK_INTERNAL)
         (void)remove(requested_output);
+    if (selection_ok && native_link_dump &&
+        !driver_dump_native_link(module, &backend_options, &native_options, native_link_dump)) {
+        selection_ok = 0;
+        error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                     ERR_COMP_DUMP_FAILED, source_file, "Could not write native link requirements: %s", native_link_dump);
+    }
     int emitted = selection_ok && (emission == BACKEND_EXECUTABLE && resolved_link == LINK_EXTERNAL
-        ? driver_external_link(module, &backend_options, output_filename, linker_driver, runtime_shim)
+        ? driver_external_link(module, &backend_options, output_filename, linker_driver, runtime_shim, &native_options)
         : backend_emit_file(module, &backend_options, output_filename));
     if (!emitted) {
         error_handler_flush(error_handler);

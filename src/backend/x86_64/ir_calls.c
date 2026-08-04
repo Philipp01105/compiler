@@ -8,6 +8,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "native_abi.inc"
+
 static int signature_parameter(const IrModule *module, IrTypeId id,
                                IrParameter *parameter) {
     if (id >= module->type_count) return 0;
@@ -176,14 +178,14 @@ int emit_typed_call(Emitter *emitter, const IrInstruction *instruction,
     if (cleanup != 0)
         write_x64_2(emitter, X64_OP_ADD, X64_WIDTH_QWORD,
                     x64_register("rsp"), x64_immediate((long long) cleanup));
-    if (data_type_has_value(instruction->type)) {
+    if (data_type_has_value(instruction->type) || instruction->pointer_depth) {
         if (is_inline_structure(emitter->module, instruction)) {
             size_t offset = aggregate_result_offset(emitter, instruction);
             size_t slots = type_slots(emitter->module, instruction->type_id);
             if (offset == 0 || slots == 0) return 0;
             write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD, x64_register("rbx"),
                         x64_memory(X64_WIDTH_NONE, "rbp", -(long long) offset));
-            copy_aggregate(emitter, slots, "rax", "rbx");
+            copy_typed_value(emitter, instruction->type_id, "rax", "rbx");
             write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
                         x64_register("rax"), x64_register("rbx"));
         } else if (instruction->type == TYPE_FLOAT && !instruction->pointer_depth)

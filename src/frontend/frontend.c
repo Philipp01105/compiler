@@ -350,7 +350,8 @@ AstProgram *frontend_parse_file(const char *source_path, const FrontendOptions *
         if (directory) {
             while ((entry = readdir(directory)) != NULL) {
                 size_t n = strlen(entry->d_name);
-                if (n > 4 && !strcmp(entry->d_name + n - 4, ".dmm")) {
+                if (n > 4 && !strcmp(entry->d_name + n - 4, ".dmm") &&
+                    source_matches_target(entry->d_name, options)) {
                     char *candidate = joined_path(canonical_source, entry->d_name);
                     if (candidate && !path_is_directory(candidate) && (!selected || strcmp(candidate, selected) < 0)) {
                         free(selected);

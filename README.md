@@ -96,6 +96,7 @@ cleanup, raw memory and stream I/O in focused programs.
 - typed asynchronous TCP/UDP and DNS through `stdlib/core/net`, with an automatic external-linker handoff
 - packages, explicit exports, local vendored dependencies and deterministic manifest synchronization
 - verified typed IR, `-O0`/`-O1`, native ELF/COFF object emission and internal ELF/PE linking
+- native `extern "system"` FFI for x86-64 Linux and MinGW-w64 UCRT64, including C-layout structs by value, symbol aliases and logical library overrides
 
 The [language specification](LANGUAGE_SPEC.md) is authoritative for semantics. The [roadmap](TODO.md) distinguishes
 implemented behavior from planned features.

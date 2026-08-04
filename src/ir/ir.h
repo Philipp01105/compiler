@@ -74,7 +74,10 @@ typedef enum {
     /* A suspend point polls operand_a at a stable frame address. target_a is
        its unique resume state; completion consumes the child exactly once. */
     IR_OP_AWAIT, IR_OP_EXECUTOR, IR_OP_CANCEL_CHECK, IR_OP_CANCEL_AWAIT,
-    IR_OP_CANCEL_DROP, IR_OP_CANCEL_RETURN
+    IR_OP_CANCEL_DROP, IR_OP_CANCEL_RETURN,
+    /* Snapshot C aggregates at argument evaluation, before later arguments
+       can mutate their source through native pointers. */
+    IR_OP_NATIVE_COPY
 } IrOpcode;
 
 typedef struct {
@@ -265,6 +268,18 @@ typedef struct {
 } IrModule;
 
 const IrNativeImport *ir_native_import(const IrModule *module, size_t symbol_id);
+static inline int ir_native_import_used(const IrModule *module, size_t symbol_id) {
+    for (size_t f = 0; f < module->function_count; ++f) {
+        const IrFunction *function = &module->functions[f];
+        if (module->emission_selected && !function->emission_reachable) continue;
+        for (size_t i = 0; i < function->instruction_count; ++i) {
+            const IrInstruction *in = &function->instructions[i];
+            if ((in->opcode == IR_OP_CALL || in->opcode == IR_OP_FUNCTION_ADDRESS) &&
+                in->symbol_id == symbol_id) return 1;
+        }
+    }
+    return 0;
+}
 
 /* Inspect the selected IR after optimization: discarded operations do not
    require runtime facilities. Current operations (including async) are zero. */

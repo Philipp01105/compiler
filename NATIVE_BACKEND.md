@@ -1,15 +1,36 @@
 # Native x86-64 backend
 
-Native FFI stage 1 adds separate `IrNativeImport` declarations (symbol identity,
+Native FFI V1 adds separate `IrNativeImport` declarations (symbol identity,
 ABI, logical library, native name, signature and source span) and native aggregate
 layout metadata. These imports are not DMM function bodies. Sema uses the output
 target before IR lowering; native size, alignment, offsets and array strides come
 from a shared C-layout calculation, distinct from DMM's eight-byte aggregate slots.
 The IR verifier checks native signatures, references and layouts. Unused native
 declarations and compile-time layout queries can accompany ordinary programs.
-Executable native calls and native storage operations currently receive an explicit
-stage 2 diagnostic. Native ABI classification and linker requirements remain pending;
-the milestone boundaries are specified in [plans/ffi.md](plans/ffi.md).
+Native calls use the separate classifier in `src/backend/x86_64/native_abi.inc`:
+System V Eightbytes use INTEGER/SSE registers or stack memory with whole-aggregate
+register rollback; Windows uses positional registers, shadow space and aligned
+copies for indirect aggregates. Struct returns use registers or hidden result pointers.
+`native-copy` IR captures by-value arguments before evaluation of later arguments.
+Scalar return normalization ignores undefined upper register bits. Native copies and
+field accesses use exact byte widths; native field arrays have C strides and native
+values in ordinary DMM arrays retain rounded DMM slots. No DMM aggregate ABI rule is
+used to classify a C call. Milestones are specified in [plans/ffi.md](plans/ffi.md).
+
+Used native imports select the platform profile and external linking in `auto` mode.
+The driver collects imports from the selected emitted functions, deduplicates logical
+libraries and creates a dynamic argv without a shell. `--native-library NAME=PATH`
+overrides one logical ID; repeatable `--native-library-dir DIR` adds search paths.
+Overrides remain file arguments, and logical IDs cannot contain linker options.
+Object and assembly emission require no library file or external process.
+`--dump-native-link FILE` writes a versioned target/profile/import inventory.
+For example:
+
+```sh
+compiler program.dmm --native-library sample=/path/libsample.a -o program
+compiler -c program.dmm --dump-native-link program.link -o program.o
+gcc -no-pie -pthread program.o /path/dmm-runtime/elf/platform-shim.o -lsample -o program
+```
 
 The compiler emits machine code directly from verified IR and structured x86-64 instructions. Native compilation invokes
 no assembler, C compiler or external linker in its default standalone profile. Standalone output embeds a compiler-owned runtime: generated programs

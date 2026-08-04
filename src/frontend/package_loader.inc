@@ -9,6 +9,22 @@ typedef struct {
 
 #define DMM_LANGUAGE_EDITION "2026-09-22-dev"
 
+static int source_matches_target(const char *name, const FrontendOptions *options) {
+#ifdef _WIN32
+    TargetFormat target = TARGET_COFF;
+#else
+    TargetFormat target = TARGET_ELF;
+#endif
+    if (options && options->has_target) target = options->target_format;
+    size_t length = strlen(name);
+    static const char linux_suffix[] = "_linux.dmm", windows_suffix[] = "_windows.dmm";
+    if (length >= sizeof(linux_suffix) - 1 &&
+        !strcmp(name + length - (sizeof(linux_suffix) - 1), linux_suffix)) return target == TARGET_ELF;
+    if (length >= sizeof(windows_suffix) - 1 &&
+        !strcmp(name + length - (sizeof(windows_suffix) - 1), windows_suffix)) return target == TARGET_COFF;
+    return 1;
+}
+
 static void package_error(const AstProgram *file, size_t token, int code, const char *format, ...);
 
 static int edition_digit(const char *edition, size_t index) {
@@ -500,7 +516,8 @@ static DmmPackage *load_package(PackageLoader *loader, DmmModule *module, const 
     int discovered = 1;
     while ((entry = readdir(dir)) != NULL) {
         size_t n = strlen(entry->d_name);
-        if (n <= 4 || strcmp(entry->d_name + n - 4, ".dmm")) continue;
+        if (n <= 4 || strcmp(entry->d_name + n - 4, ".dmm") ||
+            !source_matches_target(entry->d_name, loader->options)) continue;
         char *file_path = joined_path(directory, entry->d_name);
         if (!file_path || count == 1024) {
             free(file_path);
