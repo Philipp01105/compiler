@@ -77,6 +77,7 @@ typedef struct AstType {
     /* Function types use type-only parameters and an explicit result type.
        Generic parameters make the value compile-time-only until specialized. */
     AstGenericParameter *function_generic_parameters;
+    int is_native_function;
     AstTypeArgument *function_parameters;
     struct AstType *function_return_type;
     int invalid_substitution;
@@ -246,6 +247,10 @@ struct AstDeclarationNode {
        retain ABI, library and alias source locations without synthetic bodies. */
     int is_native;
     int is_opaque;
+    int is_native_export;
+    int is_native_union;
+    size_t native_pack;
+    size_t native_alignment;
     size_t native_abi_token;
     size_t native_library_token;
     size_t native_name_token;

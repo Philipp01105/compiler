@@ -84,7 +84,7 @@ void write_x64_2(const Emitter *emitter, X64Opcode opcode, X64Width width,
     write_x64(emitter, x64_instruction2(opcode, width, destination, source));
 }
 
-static void write_register_move(const Emitter *emitter, const char *destination,
+void write_register_move(const Emitter *emitter, const char *destination,
                                 const char *source) {
     write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
                 x64_register(destination), x64_register(source));
@@ -275,6 +275,13 @@ size_t type_slots(const IrModule *module, IrTypeId type_id) {
 static size_t declaration_offset(const Emitter *emitter,
                                  const IrInstruction *declaration);
 
+static size_t aligned_frame_offset(const Emitter *emitter, IrTypeId type, size_t offset) {
+    IrTypeLayout layout;
+    if (!ir_type_layout(emitter->module, type, &layout) || layout.alignment <= 8) return offset;
+    size_t phase = emitter->target == TARGET_COFF && emitter->module->runtime_profile == RUNTIME_PLATFORM &&
+                   !emitter->function->is_async ? 8 : 0;
+    return ((offset - phase) & ~(layout.alignment - 1)) + phase;
+}
 static size_t declaration_slots(const Emitter *emitter,
                                 const IrInstruction *declaration) {
     size_t slots = type_slots(emitter->module, declaration->type_id);
@@ -282,7 +289,7 @@ static size_t declaration_slots(const Emitter *emitter,
         SEMANTIC_TYPE_NEEDS_DROP)
         slots++;
     if (declaration->is_slice) slots++;
-    return slots;
+    return slots + 1;
 }
 
 static size_t declaration_slice_owner_offset(
@@ -309,9 +316,9 @@ static size_t declaration_offset(const Emitter *emitter,
         const IrInstruction *candidate = &emitter->function->instructions[i];
         if (candidate->opcode != IR_OP_DECLARE) continue;
         if (candidate == declaration)
-            return (emitter->function->next_value + parameter_storage_slots(emitter->function) +
+            return aligned_frame_offset(emitter, candidate->type_id, (emitter->function->next_value + parameter_storage_slots(emitter->function) +
                     parameter_drop_slots(emitter->module, emitter->function) +
-                    slots_before + declaration_slots(emitter, candidate) + 1U) * 8U;
+                    slots_before + declaration_slots(emitter, candidate) + 1U) * 8U);
         slots_before += declaration_slots(emitter, candidate);
     }
     return 0;
@@ -484,7 +491,7 @@ size_t parameter_register_index(const IrFunction *function, TargetFormat target,
     return class_index < limit ? class_index : IR_VALUE_NONE;
 }
 
-static size_t stack_parameter_index(const IrFunction *function, TargetFormat target,
+size_t stack_parameter_index(const IrFunction *function, TargetFormat target,
                                     size_t physical_index) {
     size_t stack_index = 0;
     for (size_t i = 0; i < physical_index; i++)
@@ -743,12 +750,12 @@ size_t aggregate_result_offset(const Emitter *emitter,
             (!is_inline_structure(emitter->module, candidate) &&
              !candidate->is_array))
             continue;
-        size_t slots = type_slots(emitter->module, candidate->type_id);
+        size_t slots = type_slots(emitter->module, candidate->type_id) + 1;
         if (candidate == result)
-            return (emitter->function->next_value +
+            return aligned_frame_offset(emitter, candidate->type_id, (emitter->function->next_value +
                     parameter_storage_slots(emitter->function) +
                     parameter_drop_slots(emitter->module, emitter->function) +
-                    emitter->declaration_count + slots_before + slots + 1U) * 8U;
+                    emitter->declaration_count + slots_before + slots + 1U) * 8U);
         slots_before += slots;
     }
     return 0;
@@ -764,7 +771,7 @@ static size_t aggregate_result_slots(const Emitter *emitter) {
              instruction->opcode == IR_OP_INTERFACE_PACK || instruction->opcode == IR_OP_NATIVE_COPY) &&
             (is_inline_structure(emitter->module, instruction) ||
              instruction->is_array))
-            result += type_slots(emitter->module, instruction->type_id);
+            result += type_slots(emitter->module, instruction->type_id) + 1;
     }
     return result;
 }
@@ -777,13 +784,13 @@ static size_t parameter_copy_offset(const Emitter *emitter, size_t parameter_ind
             (emitter->function->is_async && emitter->module->types[
                 emitter->function->parameters[i].type_id].kind == IR_TYPE_ARRAY))
             slots_before += type_slots(emitter->module,
-                                       emitter->function->parameters[i].type_id);
+                                       emitter->function->parameters[i].type_id) + 1;
     size_t slots = type_slots(emitter->module,
-                              emitter->function->parameters[parameter_index].type_id);
-    return (emitter->function->next_value + parameter_storage_slots(emitter->function) +
+                              emitter->function->parameters[parameter_index].type_id) + 1;
+    return aligned_frame_offset(emitter, emitter->function->parameters[parameter_index].type_id, (emitter->function->next_value + parameter_storage_slots(emitter->function) +
             parameter_drop_slots(emitter->module, emitter->function) +
             emitter->declaration_count + aggregate_result_slots(emitter) +
-            slots_before + slots + 1U) * 8U;
+            slots_before + slots + 1U) * 8U);
 }
 
 void copy_aggregate(Emitter *emitter, size_t slots,
@@ -844,6 +851,10 @@ static size_t aggregate_field_offset(const Emitter *emitter,
                                      size_t field_symbol_id) {
     size_t slots = 0;
     for (size_t i = 0; i < aggregate->field_count; i++) {
+        IrTypeLayout layout;
+        if (!ir_type_layout(emitter->module, aggregate->fields[i].type_id, &layout)) return SIZE_MAX;
+        size_t alignment_slots = layout.alignment > 8 ? layout.alignment / 8 : 1;
+        slots = (slots + alignment_slots - 1) & ~(alignment_slots - 1);
         if (aggregate->fields[i].symbol_id == field_symbol_id)
             return aggregate->is_native ? aggregate->fields[i].native_offset : slots * 8U;
         slots += type_slots(emitter->module, aggregate->fields[i].type_id);
@@ -1612,9 +1623,15 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                             x64_sized_register(X64_WIDTH_QWORD, "rax"), x64_sized_register(X64_WIDTH_BYTE, "al"));
             } else if (instruction->opcode == IR_OP_ENUM_PAYLOAD) {
                 size_t slot = 1;
-                for (size_t p = 0; p < instruction->enum_payload_index; p++)
+                for (size_t p = 0; p <= instruction->enum_payload_index; p++) {
+                    IrTypeLayout layout;
+                    if (!ir_type_layout(emitter->module, variant->payload_types[p], &layout)) return 0;
+                    size_t alignment_slots = layout.alignment > 8 ? layout.alignment / 8 : 1;
+                    slot = (slot + alignment_slots - 1) & ~(alignment_slots - 1);
+                    if (p == instruction->enum_payload_index) break;
                     slot += type_slots(emitter->module,
                                        variant->payload_types[p]);
+                }
                 write_value_load(emitter, "rax", instruction->operand_a);
                 if (type_is_structure(emitter->module, instruction->type_id) || instruction->is_array)
                     write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD, x64_register("rax"),
@@ -1640,11 +1657,15 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                     size_t argument = function->arguments[instruction->first_argument + p];
                     const IrInstruction *value = producer(function, argument);
                     IrTypeId type = variant->payload_types[p];
+                    IrTypeLayout layout;
+                    if (!ir_type_layout(emitter->module, type, &layout)) return 0;
+                    size_t alignment_slots = layout.alignment > 8 ? layout.alignment / 8 : 1;
+                    slot = (slot + alignment_slots - 1) & ~(alignment_slots - 1);
                     write_value_load(emitter, "rax", argument);
                     write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD, x64_register("rbx"),
                                 x64_memory(X64_WIDTH_NONE, "rbp", -(long long) offset + (long long) (slot * 8)));
                     if (type_is_structure(emitter->module, type) || emitter->module->types[type].kind == IR_TYPE_ARRAY)
-                        copy_aggregate(emitter, type_slots(emitter->module, type), "rax", "rbx");
+                        copy_typed_value(emitter, type, "rax", "rbx");
                     else {
                         convert_rax(emitter, value->type,
                                     emitter->module->types[type].kind == IR_TYPE_PRIMITIVE
@@ -1704,12 +1725,9 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             }
             return 1;
         case IR_OP_FUNCTION_ADDRESS: {
-            const IrFunction *addressed = addressed_function(emitter->module,
-                                                           instruction->symbol_id);
-            if (addressed == NULL) return 0;
             char buffer[4096];
-            const char *name = function_link_name(emitter->module, addressed,
-                                                  buffer, sizeof(buffer));
+            const char *name = function_address_link_name(emitter->module,
+                instruction->symbol_id, buffer, sizeof(buffer));
             if (name == NULL) return 0;
             X64Operand address = x64_rip_memory(X64_WIDTH_NONE, name, 0);
             address.has_symbol_suffix = 0;
@@ -2145,6 +2163,17 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             const IrNativeImport *native = ir_native_import(emitter->module, instruction->symbol_id);
             if (native) return emit_native_call(emitter, instruction, native);
             const IrFunction *callee = called_function(emitter->module, instruction->symbol_id);
+            if (callee && callee->is_native_export) {
+                IrTypeId *types = calloc(callee->parameter_count ? callee->parameter_count : 1, sizeof(*types));
+                if (!types) return 0;
+                for (size_t p = 0; p < callee->parameter_count; ++p) types[p] = callee->parameters[p].type_id;
+                IrNativeImport entry = {.return_type_id = callee->return_type_id,
+                    .parameter_count = callee->parameter_count, .parameter_types = types,
+                    .native_name = ast_program_lexeme(callee->source_program, callee->name_token)};
+                int emitted = emit_native_call(emitter, instruction, &entry);
+                free(types);
+                return emitted;
+            }
             if (callee == NULL) {
                 const IrInstruction *callee_value = producer(function,
                                                               instruction->operand_a);
@@ -2545,6 +2574,62 @@ static int store_target_needs_no_value(const Emitter *emitter, size_t index) {
     return 1;
 }
 
+int emit_windows_prologue(Emitter *emitter, const char *name, size_t frame) {
+    if (!emitter->native) fprintf(emitter->output, "    .seh_proc %s\n", name);
+    write_x64_1(emitter, X64_OP_PUSH, X64_WIDTH_QWORD, x64_register("rbp"));
+    if (!emitter->native) fputs("    .seh_pushreg rbp\n", emitter->output);
+    write_x64_1(emitter, X64_OP_PUSH, X64_WIDTH_QWORD, x64_register("rbx"));
+    if (!emitter->native) fputs("    .seh_pushreg rbx\n", emitter->output);
+    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rbp"), x64_register("rsp"));
+    if (!emitter->native) fputs("    .seh_setframe rbp, 0\n", emitter->output);
+    if (frame >= 4096) {
+        write_immediate(emitter, "rax", (long long)frame);
+        write_x64_1(emitter, X64_OP_CALL, X64_WIDTH_NONE, x64_label("___chkstk_ms"));
+        write_x64_2(emitter, X64_OP_SUB, X64_WIDTH_QWORD, x64_register("rsp"), x64_register("rax"));
+    } else write_x64_2(emitter, X64_OP_SUB, X64_WIDTH_QWORD, x64_register("rsp"), x64_immediate((long long)frame));
+    if (emitter->native) {
+        char label[4096]; snprintf(label, sizeof(label), ".Lunwind_prolog_%s", name);
+        return native_define(emitter->native, label, 0, 0);
+    }
+    fprintf(emitter->output, "    .seh_stackalloc %zu\n    .seh_endprologue\n", frame);
+    return 1;
+}
+
+int emit_windows_unwind(Emitter *emitter, const char *name, size_t frame) {
+    if (!emitter->native) { fputs("    .seh_endproc\n", emitter->output); return 1; }
+    NativeObject *object = emitter->native;
+    char end[4096], prolog[4096], info[4096];
+    snprintf(end, sizeof(end), ".Lunwind_end_%s", name);
+    snprintf(prolog, sizeof(prolog), ".Lunwind_prolog_%s", name);
+    snprintf(info, sizeof(info), ".Lunwind_info_%s", name);
+    if (!native_define(object, end, 0, 0)) return 0;
+    size_t length = object->symbols[native_symbol(object, prolog)].offset - object->symbols[native_symbol(object, name)].offset;
+    if (length > 255 || frame > UINT32_MAX) return 0;
+    object->section = NATIVE_XDATA;
+    if (!native_buffer_align(&object->sections[NATIVE_XDATA], 4) || !native_define(object, info, 0, 0)) return 0;
+    size_t allocation_slots = frame <= 128 ? 1 : frame < 524288 ? 2 : 3;
+    native_uint(object, 1, 1); native_uint(object, length, 1);
+    native_uint(object, allocation_slots + 3, 1); native_uint(object, 5, 1);
+    native_uint(object, length, 1);
+    if (allocation_slots == 1) native_uint(object, ((frame / 8 - 1) << 4) | 2, 1);
+    else {
+        native_uint(object, allocation_slots == 2 ? 1 : 17, 1);
+        native_uint(object, allocation_slots == 2 ? frame / 8 : frame, allocation_slots == 2 ? 2 : 4);
+    }
+    native_uint(object, 5, 1); native_uint(object, 3, 1); /* SET_FPREG */
+    native_uint(object, 2, 1); native_uint(object, 0x30, 1); /* PUSH RBX */
+    native_uint(object, 1, 1); native_uint(object, 0x50, 1); /* PUSH RBP */
+    native_buffer_align(&object->sections[NATIVE_XDATA], 4);
+    object->section = NATIVE_PDATA;
+    const char *references[] = {name, end, info};
+    for (size_t i = 0; i < 3; ++i) {
+        native_reference(object, references[i], NATIVE_ADDR32NB, object->sections[NATIVE_PDATA].size, 0);
+        native_uint(object, 0, 4);
+    }
+    object->section = NATIVE_TEXT;
+    return !object->failed;
+}
+
 int emit_function(Emitter *emitter) {
     emitter->async_storage = 0;
     emitter->async_frame_bytes = 0;
@@ -2573,11 +2658,17 @@ int emit_function(Emitter *emitter) {
             fprintf(output, "    .type %s, @function\n", name);
         fprintf(output, "%s:\n", name);
     }
+    int windows_unwind = emitter->target == TARGET_COFF &&
+                         emitter->module->runtime_profile == RUNTIME_PLATFORM && !emitter->function->is_async;
+    if (windows_unwind) {
+        if (!emit_windows_prologue(emitter, name, emitter->frame_size)) return 0;
+    } else {
     write_x64_1(emitter, X64_OP_PUSH, X64_WIDTH_QWORD, x64_register("rbp"));
     write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
                 x64_register("rbp"), x64_register("rsp"));
     write_x64_1(emitter, X64_OP_PUSH, X64_WIDTH_QWORD, x64_register("rbx"));
     write_frame_allocation(emitter);
+    }
     write_immediate(emitter, "rax", 0);
     for (size_t physical = 0;
          physical < physical_parameter_count(emitter->function); physical++) {
@@ -2588,7 +2679,7 @@ int emit_function(Emitter *emitter) {
         size_t register_index = parameter_register_index(emitter->function,
                                                          emitter->target, physical);
         if (register_index == IR_VALUE_NONE) {
-            size_t first_stack_offset = emitter->target == TARGET_COFF ? 48U : 16U;
+            size_t first_stack_offset = emitter->target == TARGET_COFF ? (windows_unwind ? 56U : 48U) : 16U;
             write_positive_frame_load(emitter, "rax", first_stack_offset +
                                                       stack_parameter_index(
                                                           emitter->function, emitter->target, physical) * 8U);
@@ -2684,12 +2775,13 @@ int emit_function(Emitter *emitter) {
     write_labelf(emitter, ".LIR_epilogue_%zu:\n", emitter->function_index);
     emitter->async_storage = 0;
     write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD,
-                x64_register("rsp"), x64_memory(X64_WIDTH_NONE, "rbp", emitter->function->is_async ? -16 : -8));
+                x64_register("rsp"), x64_memory(X64_WIDTH_NONE, "rbp", windows_unwind ? 0 : emitter->function->is_async ? -16 : -8));
     if (emitter->function->is_async)
         write_x64_1(emitter, X64_OP_POP, X64_WIDTH_QWORD, x64_register("r14"));
     write_x64_1(emitter, X64_OP_POP, X64_WIDTH_QWORD, x64_register("rbx"));
     write_x64_1(emitter, X64_OP_POP, X64_WIDTH_QWORD, x64_register("rbp"));
     write_x64_0(emitter, X64_OP_RET);
+    if (windows_unwind && !emit_windows_unwind(emitter, name, emitter->frame_size)) return 0;
     if (emitter->native) {
         size_t symbol = native_symbol(emitter->native, name);
         emitter->native->symbols[symbol].size = emitter->native->sections[NATIVE_TEXT].size - emitter->native->symbols[

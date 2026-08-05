@@ -51,7 +51,7 @@ static void print_usage(const char *program_name) {
     printf("  -O0 / -O1      Disable / enable AST and IR optimization (default: -O1)\n");
     printf("  --syntax=MODE  Assembly printing syntax: att or intel (default: intel)\n");
     printf("  --target=FMT   Target format: elf or coff (default: auto-detect)\n");
-    printf("  --dump-ast FILE Write the stable dmm-ast-v4 dump to FILE\n");
+    printf("  --dump-ast FILE Write the stable dmm-ast-v5 dump to FILE\n");
     printf("  --dump-tokens FILE Write the token inventory to FILE\n");
     printf("  --dump-symbols FILE Write the semantic symbol table to FILE\n");
     printf("  --dump-ir-before-opt FILE Write lowered IR before IR passes to FILE\n");
@@ -823,6 +823,8 @@ int main(int argc, char *argv[]) {
     for (size_t n = 0; n < module->native_import_count; ++n)
         uses_native |= ir_native_import_used(module, module->native_imports[n].symbol_id);
     if (uses_native) requirements |= RUNTIME_REQUIRE_PLATFORM;
+    for (size_t f = 0; f < module->function_count; ++f)
+        if (module->functions[f].is_native_export) requirements |= RUNTIME_REQUIRE_PLATFORM;
     if (link_mode == LINK_EXTERNAL) requirements |= RUNTIME_REQUIRE_PLATFORM;
     backend_options.runtime_profile = runtime_profile_for(requirements);
     LinkMode resolved_link = LINK_INTERNAL;

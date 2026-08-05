@@ -37,6 +37,7 @@ typedef struct {
     IrTypeId *parameter_types;
     size_t parameter_count;
     IrTypeId return_type;
+    int is_native;
 } IrFunctionSignature;
 
 typedef struct {
@@ -153,6 +154,7 @@ typedef struct {
     int is_package_init;
     int is_package_cleanup;
     int is_async;
+    int is_native_export;
     IrTypeId future_type_id;
     size_t async_state_count;
     int async_frame_pinned;
@@ -179,6 +181,9 @@ typedef struct {
     int has_explicit_destructor;
     int is_native;
     int is_opaque;
+    int is_native_union;
+    size_t native_pack;
+    size_t native_alignment;
     NativeTypeLayout native_layout;
 } IrAggregate;
 
@@ -268,19 +273,6 @@ typedef struct {
 } IrModule;
 
 const IrNativeImport *ir_native_import(const IrModule *module, size_t symbol_id);
-static inline int ir_native_import_used(const IrModule *module, size_t symbol_id) {
-    for (size_t f = 0; f < module->function_count; ++f) {
-        const IrFunction *function = &module->functions[f];
-        if (module->emission_selected && !function->emission_reachable) continue;
-        for (size_t i = 0; i < function->instruction_count; ++i) {
-            const IrInstruction *in = &function->instructions[i];
-            if ((in->opcode == IR_OP_CALL || in->opcode == IR_OP_FUNCTION_ADDRESS) &&
-                in->symbol_id == symbol_id) return 1;
-        }
-    }
-    return 0;
-}
-
 /* Inspect the selected IR after optimization: discarded operations do not
    require runtime facilities. Current operations (including async) are zero. */
 static inline RuntimeRequirements ir_runtime_requirements(const IrModule *module) {
@@ -327,5 +319,20 @@ uint64_t ir_interface_type_tag(const IrModule *module, size_t symbol_id);
 /* Internal failures retain the concrete instruction and its original source unit. */
 void ir_report_failure(const IrFunction *function, size_t instruction_index,
                        const char *stage, const char *reason);
+
+static inline int ir_native_import_used(const IrModule *module, size_t symbol_id) {
+    for (size_t g = 0; g < module->global_count; ++g)
+        if (module->globals[g].function_symbol_id == symbol_id) return 1;
+    for (size_t f = 0; f < module->function_count; ++f) {
+        const IrFunction *function = &module->functions[f];
+        if (module->emission_selected && !function->emission_reachable) continue;
+        for (size_t i = 0; i < function->instruction_count; ++i) {
+            const IrInstruction *in = &function->instructions[i];
+            if ((in->opcode == IR_OP_CALL || in->opcode == IR_OP_FUNCTION_ADDRESS) &&
+                in->symbol_id == symbol_id) return 1;
+        }
+    }
+    return 0;
+}
 
 #endif

@@ -29,7 +29,7 @@ foreach(target elf coff)
             message(FATAL_ERROR "Unused native imports must not require a library or native lowering: ${diagnostics}")
         endif()
         file(READ "${work}/${target}_${level}.ir" ir)
-        if(NOT ir MATCHES "dmm-ir-v4" OR NOT ir MATCHES "target=${target}" OR
+        if(NOT ir MATCHES "dmm-ir-v5" OR NOT ir MATCHES "target=${target}" OR
            NOT ir MATCHES "native-import" OR NOT ir MATCHES "size=12 alignment=4")
             message(FATAL_ERROR "Native IR metadata missing: ${ir}")
         endif()

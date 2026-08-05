@@ -114,6 +114,7 @@ static int valid_token(const AstProgram *program, size_t token) {
 
 static int valid_type_depth(const AstProgram *program, const AstType *type, int allow_inferred, unsigned depth) {
     if (depth > 512) return 0;
+    if (type->is_native_function && type->kind != AST_TYPE_FUNCTION) return 0;
     if (type->kind == AST_TYPE_INFERRED) return allow_inferred;
     if (type->kind == AST_TYPE_FUNCTION) {
         if (!valid_token(program, type->name_token) || type->function_return_type == NULL ||
@@ -344,6 +345,11 @@ static int valid_declarations(const AstProgram *program) {
         if (declaration->is_native &&
             ((declaration->kind != AST_DECL_STRUCT && declaration->kind != AST_DECL_FUNCTION) ||
              !valid_token(program, declaration->native_abi_token))) return 0;
+        if (declaration->is_native_export &&
+            (declaration->kind != AST_DECL_FUNCTION || declaration->is_native ||
+             !valid_token(program, declaration->native_abi_token))) return 0;
+        if ((declaration->is_native_union || declaration->native_pack || declaration->native_alignment) &&
+            (declaration->kind != AST_DECL_STRUCT || !declaration->is_native)) return 0;
         if (declaration->kind == AST_DECL_IMPORT) {
             if (declaration->as.import_decl.paths == NULL) return 0;
             for (const AstImportPath *path = declaration->as.import_decl.paths; path != NULL; path = path->next) {

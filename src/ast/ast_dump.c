@@ -124,6 +124,7 @@ static int dump_type(FILE *output, const AstProgram *program, const AstType *typ
     for (unsigned i = 0; i < type->pointer_depth; i++)
         if (fputc('*', output) == EOF) return 0;
     if (type->kind == AST_TYPE_FUNCTION) {
+        if (type->is_native_function && fputs("extern system ", output) == EOF) return 0;
         if (fputs("func", output) == EOF) return 0;
         if (type->function_generic_parameters) {
             if (fputc('<', output) == EOF) return 0;
@@ -303,7 +304,12 @@ static int dump_declaration(FILE *output, const AstProgram *program,
     if (declaration->name_token != AST_TOKEN_NONE &&
         !token_field(output, program, "name", declaration->name_token))
         return 0;
+    if (declaration->is_native_export &&
+        (fputs(" native-export=1", output) == EOF ||
+         !token_field(output, program, "abi", declaration->native_abi_token))) return 0;
     if (declaration->is_native) {
+        if (fprintf(output, " union=%d pack=%zu align=%zu", declaration->is_native_union,
+                    declaration->native_pack, declaration->native_alignment) < 0) return 0;
         if (fprintf(output, " native=1 opaque=%d", declaration->is_opaque) < 0 ||
             !token_field(output, program, "abi", declaration->native_abi_token)) return 0;
         if (declaration->native_library_token != AST_TOKEN_NONE &&
@@ -442,7 +448,7 @@ static int dump_program(FILE *output, const AstProgram *program, size_t index,
 
 int ast_dump(FILE *output, const AstProgram *program) {
     if (output == NULL || program == NULL || !ast_validate_program(program)) return 0;
-    if (fprintf(output, "dmm-ast-v4\nmodule units=%zu\n", program->owned_import_count + 1) < 0 ||
+    if (fprintf(output, "dmm-ast-v5\nmodule units=%zu\n", program->owned_import_count + 1) < 0 ||
         !dump_program(output, program, 0, "root"))
         return 0;
     for (size_t i = 0; i < program->owned_import_count; i++)

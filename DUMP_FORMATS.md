@@ -26,7 +26,7 @@ backslashes and newlines. This inventory accompanies object/assembly output with
 starting a linker. Platform output still requires the matching installed runtime
 shim and regular C startup, as described in [NATIVE_BACKEND.md](NATIVE_BACKEND.md).
 
-The v4 IR instruction inventory also includes `native-copy`, a byte-exact snapshot
+The v5 IR instruction inventory also includes `native-copy`, a byte-exact snapshot
 of a native struct before evaluation of later call arguments.
 
 ## IDE analysis mode
@@ -51,7 +51,7 @@ token kind, exact escaped source spelling, and begin/end source position. It is 
 classification, escaped literals, source coordinates, and import-specific lexer behavior without enabling noisy
 terminal debugging.
 
-## `dmm-ast-v4`
+## `dmm-ast-v5`
 
 Version 4 adds `native=1`, `opaque=...`, `abi=...`, optional `library=...` and
 `native-name=...` on native declarations. Extern blocks flatten into package
@@ -77,7 +77,7 @@ Compile-time metadata adds `type-info` expressions with `operand-type` and
 code.
 
 Async function declarations include `async=1`. `Future<T>` and `JoinHandle<T>` retain their output type in type
-spellings; consuming `.await()` appears as an `await` expression. These records currently retain the `dmm-ast-v4`
+spellings; consuming `.await()` appears as an `await` expression. These records currently retain the `dmm-ast-v5`
 marker.
 
 ## `dmm-symbols-v1`
@@ -90,7 +90,7 @@ specialization rather than receiving one template-wide property set. The header 
 occupancy, unresolved expressions, duplicates, and semantic errors. Hash slots are intentionally omitted because their
 placement is an implementation detail and may depend on process addresses.
 
-## `dmm-ir-v4`
+## `dmm-ir-v5`
 
 Version 4 adds `target=elf|coff` and `native-imports=N` to the module header.
 Each native import is a separate `native-import #N symbol=... abi=... library=...
@@ -103,7 +103,7 @@ representation; native offsets are in bytes.
 
 The IR dump lists interned types and aggregate definitions before functions. In-memory aggregate records retain
 the derived ownership properties and whether an explicit destructor exists; these fields drive verification and native
-drop-glue generation. `dmm-ir-v4` currently serializes aggregate names, symbols, and fields, but not
+drop-glue generation. `dmm-ir-v5` currently serializes aggregate names, symbols, and fields, but not
 those ownership fields; exposing them requires a new dump-format version. Function instructions are numbered in storage
 order. Values use `%N`, types use
 `@N`, and control-flow labels use `LN`. Each instruction records its opcode, result, type, operands, symbol/token
@@ -118,11 +118,11 @@ same SSA base and index. Original source tokens remain unchanged. Dumps describe
 lowered IR. `--dump-ir-before-opt` always captures IR immediately after lowering, so it can be diffed against
 `--dump-ir` to explain a transformation. Optimization compacts value and label IDs while preserving source spans.
 
-The current `dmm-ir-v4` writer also emits `future output=@N pinned=1`, `join output=@N pinned=1` and `Executor`
+The current `dmm-ir-v5` writer also emits `future output=@N pinned=1`, `join output=@N pinned=1` and `Executor`
 type records. Each async function has an `async constructor=1 poll=1 cleanup=1 pinned=... states=... future=@N send=... sync=0`
 metadata line. Instructions include `await`, `executor`, `cancel-check`, `cancel-await`, `cancel-drop` and
 `cancel-return`. The dump does not serialize every private in-memory frame/cancellation field or runtime requirement;
-see the verifier/runtime contracts for those details. These additions use the v4 marker, so
+see the verifier/runtime contracts for those details. These additions use the v5 marker, so
 consumers must support the emitted async records explicitly.
 
 ## `dmm-cfg-v1`
@@ -144,3 +144,11 @@ end-exclusive source span; compiler-generated prologue, epilogue, cleanup, and A
 Quoted values use `\\`, `\"`, `\n`, `\r`, and `\t` escapes. Other ASCII control bytes use `\xNN`. Field order, traversal
 order, identifier numbering, and final newlines are part of each versioned format. Adding or reordering fields requires
 a new format version.
+
+Stage 3 uses v5 AST/IR markers. AST declarations add native-export ABI and native
+union/pack/align attributes; callable spellings distinguish `extern system func`.
+IR function types print `extern system function`, exports have a `native-export`
+record, and aggregates include `native-layout union=... pack=... explicit-align=...`.
+The verifier checks these attributes against source declarations and recomputed
+layouts. The native-link inventory remains v1; emitted global native function
+addresses also contribute their library requirements.

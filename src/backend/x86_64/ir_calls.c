@@ -39,6 +39,12 @@ int emit_indirect_typed_call(Emitter *emitter, const IrInstruction *instruction,
         type->signature_id >= emitter->module->signature_count) return 0;
     const IrFunctionSignature *signature =
         &emitter->module->signatures[type->signature_id];
+    if (signature->is_native) {
+        IrNativeImport callee = {.return_type_id = signature->return_type,
+            .parameter_count = signature->parameter_count,
+            .parameter_types = signature->parameter_types};
+        return emit_native_call_target(emitter, instruction, &callee, callable_value);
+    }
     IrParameter *parameters = signature->parameter_count
                                   ? calloc(signature->parameter_count,
                                            sizeof(*parameters))

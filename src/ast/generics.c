@@ -55,7 +55,7 @@ static int alpha_type_equal(const AstProgram *a, const AstType *x,
                x->outer_pointer_depth == y->outer_pointer_depth &&
                x->is_array == y->is_array && x->is_slice == y->is_slice &&
                x->resolved_array_length == y->resolved_array_length;
-    if (x->kind != y->kind || x->borrow_kind != y->borrow_kind ||
+    if (x->kind != y->kind || x->is_native_function != y->is_native_function || x->borrow_kind != y->borrow_kind ||
         x->pointer_depth != y->pointer_depth ||
         x->outer_pointer_depth != y->outer_pointer_depth ||
         x->is_array != y->is_array || x->is_slice != y->is_slice ||
@@ -88,8 +88,8 @@ static int alpha_type_equal(const AstProgram *a, const AstType *x,
 }
 
 int ast_concrete_type_equal(const AstProgram *a, const AstType *x,
-                            const AstProgram *b, const AstType *y) {
-    if (x->kind != y->kind || x->borrow_kind != y->borrow_kind ||
+                              const AstProgram *b, const AstType *y) {
+    if (x->kind != y->kind || x->is_native_function != y->is_native_function || x->borrow_kind != y->borrow_kind ||
         x->pointer_depth != y->pointer_depth ||
         x->outer_pointer_depth != y->outer_pointer_depth || x->is_array != y->is_array ||
         x->is_slice != y->is_slice || x->resolved_array_length != y->resolved_array_length)
@@ -373,6 +373,7 @@ int ast_polymorphic_callable_compatible(const AstProgram *target_program,
     if (target == NULL || source == NULL ||
         target->kind != AST_TYPE_FUNCTION ||
         source->kind != AST_TYPE_FUNCTION ||
+        target->is_native_function != source->is_native_function ||
         target->function_generic_parameters == NULL ||
         source->function_generic_parameters == NULL ||
         target->pointer_depth != source->pointer_depth ||

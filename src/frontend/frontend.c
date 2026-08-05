@@ -103,7 +103,7 @@ static AstDeclarationKind declaration_kind(TokenType first, TokenType second) {
     if (first == TOKEN_KEYWORD_STRUCT) return AST_DECL_STRUCT;
     if (first == TOKEN_KEYWORD_ENUM) return AST_DECL_ENUM;
     if (first == TOKEN_KEYWORD_INTERFACE) return AST_DECL_INTERFACE;
-    if (first == TOKEN_KEYWORD_FUNC || first == TOKEN_KEYWORD_ASYNC) return AST_DECL_FUNCTION;
+    if (first == TOKEN_KEYWORD_FUNC || first == TOKEN_KEYWORD_ASYNC || first == TOKEN_KEYWORD_EXPORT) return AST_DECL_FUNCTION;
     if (first == TOKEN_KEYWORD_CONST) return AST_DECL_CONSTANT;
     if (first == TOKEN_KEYWORD_VAR) return AST_DECL_VARIABLE;
     return AST_DECL_INVALID;
@@ -369,6 +369,13 @@ AstProgram *frontend_parse_file(const char *source_path, const FrontendOptions *
             string_interner_free(strings);
             return NULL;
         }
+    }
+    if (!source_matches_target(canonical_source ? canonical_source : source_path, options)) {
+        error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_SEMANTIC, ERR_PACKAGE_NOT_FOUND,
+                     source_path, "Explicit source file is excluded by the output target");
+        free(canonical_source);
+        string_interner_free(strings);
+        return NULL;
     }
     AstProgram *program = parse_single_file(canonical_source == NULL ? source_path : canonical_source,
                                             options, strings);

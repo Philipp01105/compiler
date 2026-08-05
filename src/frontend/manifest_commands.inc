@@ -185,7 +185,7 @@ int frontend_sync_manifest(const char *package_directory) {
     }
     char *source_path = joined_path(directory, ".manifest-source.dmm");
     const char *source = "package main;";
-    FrontendOptions options = {0};
+    FrontendOptions options = {.include_all_targets = 1};
     AstProgram *root = source_path ? frontend_parse_source(source, strlen(source), source_path, &options) : NULL;
     free(source_path);
     if (!root) {

@@ -1271,7 +1271,7 @@ static int remove_dead_functions(IrModule *module, IrOptimizationStats *stats) {
                                      ? "__dmm_package_cleanup"
                                : ast_program_lexeme(function->source_program,
                                                     function->name_token);
-        if (function->is_package_init || function->is_package_cleanup ||
+        if (function->is_package_init || function->is_package_cleanup || function->is_native_export ||
             function->owner_symbol_id != AST_SYMBOL_NONE || !declaration || declaration->is_public ||
             !strcmp(name, "main")) {
             live[i] = 1;

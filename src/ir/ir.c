@@ -358,7 +358,8 @@ static IrTypeId type_from_ast(IrModule *module, const AstProgram *program,
         size_t signature = 0;
         for (; signature < module->signature_count; signature++) {
             const IrFunctionSignature *candidate = &module->signatures[signature];
-            if (candidate->parameter_count != count || candidate->return_type != result) continue;
+            if (candidate->parameter_count != count || candidate->return_type != result ||
+                candidate->is_native != type->is_native_function) continue;
             size_t p = 0;
             for (; p < count && candidate->parameter_types[p] == parameters[p]; p++) {}
             if (p == count) break;
@@ -368,7 +369,8 @@ static IrTypeId type_from_ast(IrModule *module, const AstProgram *program,
                 !grow_array((void **) &module->signatures, &module->signature_capacity,
                             sizeof(*module->signatures))) { free(parameters); return IR_TYPE_NONE; }
             module->signatures[module->signature_count++] = (IrFunctionSignature) {
-                .parameter_types = parameters, .parameter_count = count, .return_type = result
+                .parameter_types = parameters, .parameter_count = count, .return_type = result,
+                .is_native = type->is_native_function
             };
         } else free(parameters);
         IrTypeId value = intern_type(module, (IrType) {
@@ -1000,7 +1002,7 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
             expression->resolved_symbol_id < builder->module->semantics->symbol_count) {
             const SemanticSymbol *target =
                 &builder->module->semantics->symbols[expression->resolved_symbol_id];
-            if (target->declaration != NULL)
+            if (target->kind == SEMANTIC_SYMBOL_FUNCTION && target->declaration != NULL)
                 physical_parameter = target->declaration->as.function.parameters;
         }
         if (has_receiver) argument_count++;
@@ -1021,13 +1023,17 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         if (has_receiver) values[argument_index++] = receiver;
         const AstParameter *parameter = NULL;
         int native_call = 0;
+        if (expression->left && expression->left->has_resolved_ast_type &&
+            expression->left->resolved_ast_type.kind == AST_TYPE_FUNCTION)
+            native_call = expression->left->resolved_ast_type.is_native_function;
         const AstTypeArgument *payload = NULL;
         const AstProgram *type_unit = NULL;
         if (expression->resolved_symbol_id < builder->module->semantics->symbol_count) {
             const SemanticSymbol *target = &builder->module->semantics->symbols[expression->resolved_symbol_id];
-            native_call = target->declaration && target->declaration->is_native;
+            if (target->kind == SEMANTIC_SYMBOL_FUNCTION)
+                native_call = target->declaration && (target->declaration->is_native || target->declaration->is_native_export);
             type_unit = target->source_program;
-            if (expression->kind == AST_EXPR_CALL && target->declaration)
+            if (expression->kind == AST_EXPR_CALL && target->kind == SEMANTIC_SYMBOL_FUNCTION && target->declaration)
                 parameter = target->declaration->as.function.parameters;
             else if (expression->kind == AST_EXPR_ENUM_CONSTRUCT && target->node)
                 payload = ((const AstEnumValue *) target->node)->payload_types;
@@ -1285,6 +1291,7 @@ void ir_select_runtime_functions(IrModule *module) {
         int user_unit=!fn->source_program->module_identity ||
             strncmp(fn->source_program->module_identity,"stdlib",6)!=0;
         fn->emission_reachable=fn->is_package_init||fn->is_package_cleanup||
+            fn->is_native_export||
             user_unit||
             fn->interface_thunk_symbol_id!=AST_SYMBOL_NONE||
             (!fn->is_drop_glue && fn->source_program==module->program &&
@@ -2018,6 +2025,7 @@ static int append_function(IrModule *module, const AstProgram *program,
     };
     if (function->return_type_id == IR_TYPE_NONE) return 0;
     function->is_async = declaration->as.function.is_async;
+    function->is_native_export = declaration->is_native_export;
     function->async_frame_pinned = function->is_async;
     function->future_type_id = IR_TYPE_NONE;
     if (function->is_async) {
@@ -2262,6 +2270,9 @@ static int append_structure(IrModule *module, const AstProgram *program,
         .name_token = declaration->name_token,
         .symbol_id = declaration->resolved_symbol_id,
         .is_native = declaration->is_native,
+        .is_native_union = declaration->is_native_union,
+        .native_pack = declaration->native_pack,
+        .native_alignment = declaration->native_alignment,
         .is_opaque = declaration->is_opaque,
         .type_properties = semantic_symbol_type_properties(
             module->semantics, declaration->resolved_symbol_id),

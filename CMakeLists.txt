@@ -301,6 +301,16 @@ if (BUILD_TESTING)
         -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/ffi_link_test
         -P ${CMAKE_SOURCE_DIR}/tests/native_ffi_link_test.cmake)
     set_tests_properties(native_ffi_link_contract PROPERTIES LABELS "integration;cli;native;ffi;safety" TIMEOUT 180)
+    add_test(NAME native_callbacks_contract COMMAND ${CMAKE_COMMAND}
+        -DCOMPILER=$<TARGET_FILE:compiler> -DC_DRIVER=${CMAKE_C_COMPILER}
+        -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/ffi_callbacks_test
+        -P ${CMAKE_SOURCE_DIR}/tests/native_callbacks_test.cmake)
+    set_tests_properties(native_callbacks_contract PROPERTIES LABELS "integration;backend;native;ffi;safety" TIMEOUT 150)
+    add_test(NAME native_bindings_contract COMMAND ${CMAKE_COMMAND}
+        -DCOMPILER=$<TARGET_FILE:compiler> -DC_DRIVER=${CMAKE_C_COMPILER}
+        -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/ffi_bindings_test
+        -P ${CMAKE_SOURCE_DIR}/tests/native_bindings_test.cmake)
+    set_tests_properties(native_bindings_contract PROPERTIES LABELS "integration;backend;native;ffi;safety" TIMEOUT 180)
     add_executable(dmm_async_semantic_test
             tests/unit/async_semantic_test.c
             ${DMM_FUZZ_PIPELINE_SOURCES})

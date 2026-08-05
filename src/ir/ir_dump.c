@@ -111,6 +111,7 @@ static int dump_types(FILE *output, const IrModule *module) {
             case IR_TYPE_FUNCTION: {
                 if (type->signature_id >= module->signature_count) return 0;
                 const IrFunctionSignature *signature = &module->signatures[type->signature_id];
+                if (signature->is_native && fputs("extern system ", output) == EOF) return 0;
                 if (fputs("function (", output) == EOF) return 0;
                 for (size_t p = 0; p < signature->parameter_count; p++) {
                     if (fprintf(output, "@%zu", signature->parameter_types[p]) < 0) return 0;
@@ -196,6 +197,8 @@ static int dump_aggregates(FILE *output, const IrModule *module) {
                         aggregate->fields[f].type_id) < 0)
                 return 0;
         if (aggregate->is_native) {
+            if (fprintf(output, "  native-layout union=%d pack=%zu explicit-align=%zu\n",
+                        aggregate->is_native_union, aggregate->native_pack, aggregate->native_alignment) < 0) return 0;
             if (fprintf(output, "  native opaque=%d size=%zu alignment=%zu\n",
                         aggregate->is_opaque, aggregate->native_layout.size,
                         aggregate->native_layout.alignment) < 0) return 0;
@@ -254,7 +257,7 @@ static int dump_aggregates(FILE *output, const IrModule *module) {
 
 int ir_dump(FILE *output, const IrModule *module) {
     if (output == NULL || module == NULL || !ir_verify_module(module)) return 0;
-    if (fputs("dmm-ir-v4\nmodule path=", output) == EOF ||
+    if (fputs("dmm-ir-v5\nmodule path=", output) == EOF ||
         !quoted(output, module->program->source_path) ||
         fprintf(output, " verified=%d types=%zu functions=%zu structs=%zu enums=%zu imports=%zu native-imports=%zu target=%s\n",
                 module->verified, module->type_count, module->function_count,
@@ -293,6 +296,7 @@ int ir_dump_function(FILE *output, const IrModule *module, size_t function_index
     if (output == NULL || module == NULL || function_index >= module->function_count) return 0;
 
     const IrFunction *function = &module->functions[function_index];
+    if (function->is_native_export && fputs("native-export abi=system\n", output) == EOF) return 0;
     if (fprintf(output, "function #%zu name=", function_index) < 0 ||
         !print_token(output, function->source_program, function->name_token) ||
         fprintf(output, " symbol=%zu owner=", function->symbol_id) < 0 ||

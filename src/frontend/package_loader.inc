@@ -10,6 +10,7 @@ typedef struct {
 #define DMM_LANGUAGE_EDITION "2026-09-22-dev"
 
 static int source_matches_target(const char *name, const FrontendOptions *options) {
+    if (options && options->include_all_targets) return 1;
 #ifdef _WIN32
     TargetFormat target = TARGET_COFF;
 #else

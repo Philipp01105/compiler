@@ -1,0 +1,46 @@
+package main;
+import "stdlib/core";
+import "stdlib/native/kernel32";
+import "stdlib/native/ucrt";
+import "stdlib/native/winsock";
+extern "system" from "bindings" { pub func size(index:u32) -> usize = "binding_size"; }
+export "system" func worker(address:*void) -> u32 {
+    var value:*i32=address.(*i32); *value=17; return 23;
+}
+func main() -> int {
+    if (size(0)!=kernel32.Overlapped.size || size(1)!=kernel32.Overlapped.align || size(2)!=kernel32.OverlappedEntry.size ||
+        size(3)!=kernel32.SecurityAttributes.size || size(4)!=winsock.WsaData.size || size(5)!=winsock.WsaData.align ||
+        size(6)!=winsock.WsaBuffer.size || size(7)!=winsock.Addrinfo.size || size(8)!=winsock.SockaddrIn.size ||
+        size(9)!=winsock.SockaddrIn6.size || size(10)!=winsock.SockaddrStorage.size) { return 1; }
+    var value:i32=0; var code:u32;
+    var thread:usize=ucrt.beginThread(core.null<u8>().(*void),0,worker,(&value).(*void),0,core.null<u32>());
+    if (thread==0 || kernel32.WaitForSingleObject(kernel32.handleFromBits(thread),kernel32.INFINITE)!=kernel32.WAIT_OBJECT_0) { return 2; }
+    if (kernel32.GetExitCodeThread(kernel32.handleFromBits(thread),(&code).(*u32))==0 || code!=23 || value!=17) { return 3; }
+    kernel32.CloseHandle(kernel32.handleFromBits(thread));
+    var event:*void=kernel32.CreateEventW(core.null<kernel32.SecurityAttributes>(),1,0,core.null<u16>());
+    if (kernel32.SetEvent(event)==0 || kernel32.WaitForSingleObject(event,0)!=0 || kernel32.ResetEvent(event)==0 ||
+        kernel32.WaitForSingleObject(event,0)!=kernel32.WAIT_TIMEOUT) { return 4; }
+    kernel32.CloseHandle(event);
+    var port:*void=kernel32.CreateIoCompletionPort(kernel32.invalidHandle(),core.null<u8>().(*void),0,1);
+    if (port==core.null<u8>().(*void) || kernel32.PostQueuedCompletionStatus(port,7,123,core.null<kernel32.Overlapped>())==0) { return 5; }
+    var transferred:u32; var key:usize; var overlapped:*kernel32.Overlapped;
+    if (kernel32.GetQueuedCompletionStatus(port,(&transferred).(*u32),(&key).(*usize),(&overlapped).(**kernel32.Overlapped),1000)==0 || transferred!=7 || key!=123) { return 6; }
+    kernel32.CloseHandle(port);
+    var data:winsock.WsaData;
+    if (winsock.WSAStartup(514,(&data).(*winsock.WsaData))!=0) { return 7; }
+    var socket:usize=winsock.socket(winsock.AF_INET,winsock.SOCK_STREAM,0);
+    if (socket==18446744073709551615.(usize)) { return 8; }
+    var completion:extern "system" func(u32,u32,*kernel32.Overlapped,u32) -> void;
+    var acceptEx:extern "system" func(usize,usize,*void,u32,u32,u32,*u32,*kernel32.Overlapped) -> i32;
+    var connectEx:extern "system" func(usize,*winsock.Sockaddr,i32,*void,u32,*u32,*kernel32.Overlapped) -> i32;
+    var guid:winsock.Guid=winsock.acceptExId();
+    if (winsock.WSAIoctl(socket,winsock.SIO_GET_EXTENSION_FUNCTION_POINTER,(&guid).(*void),16,(&acceptEx).(*void),8,(&transferred).(*u32),core.null<kernel32.Overlapped>(),completion)!=0) { return 10; }
+    guid=winsock.connectExId();
+    if (winsock.WSAIoctl(socket,winsock.SIO_GET_EXTENSION_FUNCTION_POINTER,(&guid).(*void),16,(&connectEx).(*void),8,(&transferred).(*u32),core.null<kernel32.Overlapped>(),completion)!=0) { return 11; }
+    if (winsock.closesocket(socket)!=0) { return 8; }
+    var hints:winsock.Addrinfo; hints.family=winsock.AF_INET; hints.socketType=winsock.SOCK_STREAM;
+    var addresses:*winsock.Addrinfo;
+    if (winsock.getaddrinfo(core.null<u8>(),core.core_string_data("0"),(&hints).(*winsock.Addrinfo),(&addresses).(**winsock.Addrinfo))!=0) { return 9; }
+    winsock.freeaddrinfo(addresses); winsock.WSACleanup();
+    return 0;
+}

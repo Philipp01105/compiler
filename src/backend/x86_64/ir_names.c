@@ -68,7 +68,7 @@ static int mangle_type(const IrModule *module, IrTypeId type_id, char *buffer,
                mangle_type(module, type->element_type, buffer, buffer_size, used, depth + 1U);
     if (type->kind == IR_TYPE_FUNCTION) {
         if (type->signature_id >= module->signature_count ||
-            !mangle_append(buffer, buffer_size, used, "q")) return 0;
+            !mangle_append(buffer, buffer_size, used, module->signatures[type->signature_id].is_native ? "nq" : "q")) return 0;
         const IrFunctionSignature *signature = &module->signatures[type->signature_id];
         (void) snprintf(part, sizeof(part), "%zu_", signature->parameter_count);
         if (!mangle_append(buffer, buffer_size, used, part)) return 0;
@@ -122,6 +122,10 @@ static int function_is_overloaded(const IrModule *module, const IrFunction *func
 const char *function_link_name(const IrModule *module, const IrFunction *function,
                                       char *buffer, size_t buffer_size) {
     if (function->is_package_init) return "__dmm_package_init";
+    if (function->is_native_export) {
+        (void) snprintf(buffer, buffer_size, "__dmm_export_body_%zu", function->symbol_id);
+        return buffer;
+    }
     if (function->is_package_cleanup) return "__dmm_package_cleanup";
     if (function->interface_thunk_symbol_id != AST_SYMBOL_NONE) {
         (void) snprintf(buffer, buffer_size, "__dmm_interface_thunk_%zu",
@@ -204,6 +208,20 @@ const char *function_link_name(const IrModule *module, const IrFunction *functio
                          buffer_size, &used, 0))
             return NULL;
     return buffer;
+}
+
+const char *function_address_link_name(const IrModule *module, size_t symbol,
+                                      char *buffer, size_t buffer_size) {
+    const IrNativeImport *import = ir_native_import(module, symbol);
+    if (import) return import->native_name;
+    for (size_t f = 0; f < module->function_count; ++f) {
+        const IrFunction *function = &module->functions[f];
+        if (function->symbol_id != symbol) continue;
+        if (function->is_native_export)
+            return ast_program_lexeme(function->source_program, function->name_token);
+        return function_link_name(module, function, buffer, buffer_size);
+    }
+    return NULL;
 }
 
 static int compare_link_names(const void *left, const void *right) {

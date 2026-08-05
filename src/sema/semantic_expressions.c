@@ -30,6 +30,7 @@ static void metadata_name(DiagnosticText *text, const Analyzer *analyzer, const 
     if (type->outer_pointer_depth && (type->is_array || type->is_slice)) diagnostic_append(text, "(");
     for (unsigned i = 0; i < type->pointer_depth; i++) diagnostic_append(text, "*");
     if (type->kind == AST_TYPE_FUNCTION) {
+        if (type->is_native_function) diagnostic_append(text, "extern system ");
         diagnostic_append(text, "func(");
         for (const AstTypeArgument *parameter = type->function_parameters; parameter; parameter = parameter->next) {
             metadata_name(text, analyzer, unit, &parameter->type, depth + 1);
@@ -113,6 +114,7 @@ static AstType callable_type(Analyzer *analyzer, const SemanticSymbol *function,
                              int include_receiver) {
     AstType type = {0};
     type.kind = AST_TYPE_FUNCTION;
+    type.is_native_function = function->declaration->is_native || function->declaration->is_native_export;
     type.name_token = function->declaration->first_token;
     type.array_length_token = AST_TOKEN_NONE;
     type.function_generic_parameters = function->declaration->generic_parameters;
@@ -1180,13 +1182,6 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
                     expression->resolved_named_type_token = interface->name_token;
                     expression->resolved_named_symbol_id = interface->id;
                 } else if (function != NULL) {
-                    if (function->declaration && function->declaration->is_native &&
-                        !expression->direct_call_target && !direct_call_callee) {
-                        semantic_error(analyzer, expression->value_token, ERROR_CATEGORY_TYPE,
-                                       ERR_TYPE_INVALID_OPERATION,
-                                       "Native function values require native function-pointer types (FFI stage 3)");
-                        return;
-                    }
                     if (expression->direct_call_target) {
                         expression->resolved_symbol_id = function->id;
                         expression->resolved_type = primitive_type(function->source_program,

@@ -1,0 +1,31 @@
+cmake_minimum_required(VERSION 3.21)
+file(MAKE_DIRECTORY "${OUTPUT_DIR}")
+file(WRITE "${OUTPUT_DIR}/dmm.manifest" "module ffi.test/bindings\ndmm 2026-09-22-dev\n")
+foreach(target linux windows)
+    file(COPY "${SOURCE_DIR}/tests/fixtures/native_bindings_${target}.dmm" DESTINATION "${OUTPUT_DIR}")
+endforeach()
+execute_process(COMMAND "${C_DRIVER}" -std=c11 -O2 -c "${SOURCE_DIR}/tests/fixtures/native_bindings_reference.c"
+    -o "${OUTPUT_DIR}/reference.o" RESULT_VARIABLE result ERROR_VARIABLE diagnostics TIMEOUT 30)
+if(NOT result EQUAL 0)
+    message(FATAL_ERROR "Binding header reference failed: ${diagnostics}")
+endif()
+foreach(level 0 1)
+    execute_process(COMMAND "${COMPILER}" "-O${level}" --linker-driver "${C_DRIVER}"
+        --native-library "bindings=${OUTPUT_DIR}/reference.o" -o "${OUTPUT_DIR}/bindings_${level}.exe" "${OUTPUT_DIR}"
+        RESULT_VARIABLE result ERROR_VARIABLE diagnostics TIMEOUT 45)
+    if(NOT result EQUAL 0)
+        message(FATAL_ERROR "Binding compilation failed: ${diagnostics}")
+    endif()
+    execute_process(COMMAND "${OUTPUT_DIR}/bindings_${level}.exe" RESULT_VARIABLE result ERROR_VARIABLE diagnostics TIMEOUT 20)
+    if(NOT result EQUAL 0)
+        message(FATAL_ERROR "Binding execution checkpoint ${result}: ${diagnostics}")
+    endif()
+endforeach()
+# Emission selects target files before parsing, even on the opposite host.
+foreach(target elf coff)
+    execute_process(COMMAND "${COMPILER}" "--target=${target}" -c -o "${OUTPUT_DIR}/${target}.o" "${OUTPUT_DIR}"
+        RESULT_VARIABLE result ERROR_VARIABLE diagnostics TIMEOUT 45)
+    if(NOT result EQUAL 0)
+        message(FATAL_ERROR "Cross-target binding emission (${target}) failed: ${diagnostics}")
+    endif()
+endforeach()

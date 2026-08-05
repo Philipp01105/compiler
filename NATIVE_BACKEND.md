@@ -17,6 +17,28 @@ field accesses use exact byte widths; native field arrays have C strides and nat
 values in ordinary DMM arrays retain rounded DMM slots. No DMM aggregate ABI rule is
 used to classify a C call. Milestones are specified in [plans/ffi.md](plans/ffi.md).
 
+Stage 3 uses the same classifier and argument-placement routine for native indirect
+calls and incoming exports. An export has a stable native symbol and a private
+`__dmm_export_body_SYMBOL` DMM implementation. The entry captures register/stack
+arguments, reconstructs aggregates, calls the private body and converts the result
+to the native ABI. Function signature interning and mangling distinguish native and
+DMM callable types. Optimizers and emission selection retain native exports.
+
+Native unions, packing and explicit alignment are included in semantic and verified
+IR layout metadata. Native values with alignment 16 remain aligned in stack slots,
+parameter/result copies, global storage, ordinary struct fields and enum payloads.
+Windows platform synchronous bodies and native entries emit `.pdata`/`.xdata` with
+image-relative COFF relocations and four-byte section alignment. Frame-pointer unwind
+records also cover outgoing call stack adjustments. Large frames use MinGW's stack
+probe helper. Assembly output emits corresponding `.seh_*` directives. The records
+support OS stack inspection; foreign exception propagation remains unsupported.
+
+Raw bindings in `stdlib/native` describe libc/pthreads, Kernel32, UCRT and Winsock,
+including epoll's packed event, OVERLAPPED unions and resolver structures. Target
+source suffixes are selected before package parsing using the output target. The
+existing platform and network C runtime shims remain in use until migration stages
+4 and 5; these bindings do not change the public network API.
+
 Used native imports select the platform profile and external linking in `auto` mode.
 The driver collects imports from the selected emitted functions, deduplicates logical
 libraries and creates a dynamic argv without a shell. `--native-library NAME=PATH`

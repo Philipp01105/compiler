@@ -7,9 +7,11 @@ C-Layouts, überprüfbare Import-IR, skalare Calls, Structs by value und externe
 Linkpfad. FFI V1 ist eigenständig nutzbar. Der Implementierungs- und Prüfstand
 von Etappe 2 ist in [ffi-stage2.md](ffi-stage2.md) festgehalten.
 
-Etappe 3 folgt nach der vollständigen Verifikation von Etappe 2 und erweitert
-die FFI für Runtime-Komponenten. Das Gesamtvorhaben ist erst nach Etappe 5
-abgeschlossen; die vorhandenen C-Runtime-Shims bleiben bis dahin erforderlich.
+Etappe 3 ist ebenfalls implementiert und geprüft: native Function-Pointer,
+Exports und Callbacks, Unions und Packing/Alignment, Windows-Unwind-Metadaten,
+Target-Dateiauswahl und Raw-OS-Bindings. Der Prüfstand steht in
+[ffi-stage3.md](ffi-stage3.md). Etappen 4 und 5 bleiben offen; die vorhandenen
+C-Runtime-Shims sind weiterhin erforderlich.
 
 DMM erhält eine allgemeine native FFI für x86-64 Linux/glibc und Windows mit
 MinGW-w64 UCRT64. GCC und Clang dienen als externe Treiber. Danach werden die

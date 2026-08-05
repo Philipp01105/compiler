@@ -224,6 +224,9 @@ static int async_cancel_children(Emitter *e,IrTypeId id,size_t state) {
             for(size_t n=0;n<count;n++) {
                 IrTypeId child=a ? a->fields[n].type_id : en ? en->variants[v].payload_types[n] : t->element_type;
                 IrTypeLayout layout; if(!ir_type_layout(e->module,child,&layout)) return 0;
+                size_t alignment = layout.alignment > 8 ? layout.alignment : 8;
+                if (a && a->is_native) offset = a->fields[n].native_offset;
+                else if (a || en) offset = (offset + alignment - 1) & ~(alignment - 1);
                 write_x64_2(e,X64_OP_MOV,X64_WIDTH_QWORD,x64_register("rax"),x64_memory(X64_WIDTH_QWORD,"rsp",0));
                 write_x64_2(e,X64_OP_ADD,X64_WIDTH_QWORD,x64_register("rax"),x64_immediate((long long)offset));
                 if(!async_cancel_children(e,child,state)) return 0;

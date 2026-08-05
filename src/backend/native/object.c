@@ -162,7 +162,7 @@ static int resolve_local(NativeObject *object) {
             native_error(object, "Undefined native local label");
             return 0;
         }
-        if (relocation.kind != NATIVE_ADDR64 && symbol->defined && symbol->section == (int) relocation.section) {
+        if (relocation.kind != NATIVE_ADDR64 && relocation.kind != NATIVE_ADDR32NB && symbol->defined && symbol->section == (int) relocation.section) {
             if (symbol->offset > INT64_MAX || relocation.offset > INT64_MAX) return 0;
             int64_t value = (int64_t) symbol->offset - (int64_t) relocation.offset + relocation.addend;
             if (value < INT32_MIN || value > INT32_MAX) {
@@ -284,12 +284,13 @@ failure:
 
 static int write_coff(NativeObject *object, NativeBuffer *output) {
     NativeBuffer strings = {0};
-    size_t raw[3] = {0}, reloc[3] = {0}, counts[3] = {0};
-    static const char *names[] = {".text", ".rdata", ".data"};
+    size_t raw[NATIVE_SECTION_COUNT] = {0}, reloc[NATIVE_SECTION_COUNT] = {0}, counts[NATIVE_SECTION_COUNT] = {0};
+    static const char *names[] = {".text", ".rdata", ".data", ".pdata", ".xdata"};
+    size_t section_count = object->sections[NATIVE_PDATA].size ? NATIVE_SECTION_COUNT : 3;
     if (object->symbol_count > UINT32_MAX) goto failure;
-    BYTES(output, NULL, 20 + 3 * 40);
+    BYTES(output, NULL, 20 + section_count * 40);
     for (size_t i = 0; i < object->relocation_count; i++) counts[object->relocations[i].section]++;
-    for (size_t s = 0; s < 3; s++) {
+    for (size_t s = 0; s < section_count; s++) {
         ALIGN(output, 16);
         raw[s] = output->size;
         NativeBuffer *section = &object->sections[s];
@@ -304,11 +305,11 @@ static int write_coff(NativeObject *object, NativeBuffer *output) {
             const NativeRelocation *r = &object->relocations[i];
             if ((size_t) r->section != s) continue;
             native_buffer_patch(output, raw[s] + r->offset,
-                                (uint64_t)(r->addend + (r->kind == NATIVE_ADDR64 ? 0 : 4)),
+                                (uint64_t)(r->addend + (r->kind == NATIVE_ADDR64 || r->kind == NATIVE_ADDR32NB ? 0 : 4)),
                                 r->kind == NATIVE_ADDR64 ? 8 : 4);
             PUT(output, r->offset, 4);
             PUT(output, r->symbol, 4);
-            PUT(output, r->kind == NATIVE_ADDR64 ? 1 : 4, 2);
+            PUT(output, r->kind == NATIVE_ADDR64 ? 1 : r->kind == NATIVE_ADDR32NB ? 3 : 4, 2);
         }
     }
     size_t symtab = output->size;
@@ -334,17 +335,17 @@ static int write_coff(NativeObject *object, NativeBuffer *output) {
     native_buffer_patch(&strings, 0, strings.size, 4);
     BYTES(output, strings.data, strings.size);
     native_buffer_patch(output, 0, 0x8664, 2);
-    native_buffer_patch(output, 2, 3, 2);
+    native_buffer_patch(output, 2, section_count, 2);
     native_buffer_patch(output, 8, symtab, 4);
     native_buffer_patch(output, 12, object->symbol_count, 4);
-    for (size_t s = 0; s < 3; s++) {
+    for (size_t s = 0; s < section_count; s++) {
         size_t h = 20 + s * 40;
         memcpy(output->data + h, names[s], strlen(names[s]));
         native_buffer_patch(output, h + 16, object->sections[s].size, 4);
         native_buffer_patch(output, h + 20, raw[s], 4);
         native_buffer_patch(output, h + 24, counts[s] == 0 ? 0 : reloc[s], 4);
         native_buffer_patch(output, h + 32, counts[s] >= 65535 ? 65535 : counts[s], 2);
-        native_buffer_patch(output, h + 36, (s == 0 ? 0x60500020U : s == 1 ? 0x40500040U : 0xc0500040U) |
+        native_buffer_patch(output, h + 36, (s == 0 ? 0x60500020U : s >= NATIVE_PDATA ? 0x40300040U : s != NATIVE_DATA ? 0x40500040U : 0xc0500040U) |
                                             (counts[s] >= 65535 ? 0x01000000U : 0), 4);
     }
     free(strings.data);
@@ -375,7 +376,7 @@ int native_validate(NativeObject *object) {
         const NativeRelocation *r = &object->relocations[n];
         size_t width = r->kind == NATIVE_ADDR64 ? 8 : 4;
         if (r->section < 0 || r->section >= NATIVE_SECTION_COUNT || r->symbol >= object->symbol_count ||
-            r->kind < 0 || r->kind > NATIVE_ADDR64 || r->offset > object->sections[r->section].size ||
+            r->kind < 0 || r->kind > NATIVE_ADDR32NB || r->offset > object->sections[r->section].size ||
             width > object->sections[r->section].size - r->offset ||
             (r->kind != NATIVE_ADDR64 && (r->addend < INT32_MIN || r->addend > INT32_MAX))) {
             native_error(object, "Invalid native relocation bounds");

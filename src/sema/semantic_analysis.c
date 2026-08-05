@@ -748,6 +748,9 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                         returns_owned_slice_backing = 1;
                 DataType expected = primitive_type(analyzer->program,
                                                    &analyzer->current_function->as.function.return_type);
+                if (analyzer->current_function->as.function.return_type.pointer_depth ||
+                    analyzer->current_function->as.function.return_type.outer_pointer_depth)
+                    expected = TYPE_UNKNOWN;
                 if (expected == TYPE_NEVER)
                     semantic_error(analyzer, statement->first_token,
                                    ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
@@ -1100,6 +1103,8 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
     }
     DataType return_type = primitive_type(analyzer->program,
                                           &function->as.function.return_type);
+    if (function->as.function.return_type.pointer_depth || function->as.function.return_type.outer_pointer_depth)
+        return_type = TYPE_UNKNOWN;
     if (!function->is_native && return_type != TYPE_VOID &&
         statement_may_fall_through(function->as.function.body))
         semantic_error(analyzer, function->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,

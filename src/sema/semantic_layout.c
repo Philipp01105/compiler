@@ -17,6 +17,31 @@ static int native_layout_depth(const SemanticModel *model, const AstProgram *pro
         *layout = (NativeTypeLayout){8, 8};
         return 1;
     }
+    if (type->is_array && type->kind == AST_TYPE_FUNCTION) {
+        AstType element = ast_type_element(type);
+        size_t length = type->resolved_array_length;
+        if (!length && type->array_length_token < program->token_count)
+            length = (size_t)strtoull(ast_program_lexeme(program, type->array_length_token), NULL, 10);
+        if (!length || !native_layout_depth(model, program, &element, layout, depth + 1) ||
+            length > SIZE_MAX / layout->size) return 0;
+        layout->size *= length;
+        return 1;
+    }
+    if (type->kind == AST_TYPE_FUNCTION && type->is_native_function &&
+        !type->function_generic_parameters && !type->is_array && !type->is_slice) {
+        for (const AstTypeArgument *p = type->function_parameters; p; p = p->next) {
+            NativeTypeLayout ignored;
+            if (p->type.borrow_kind != AST_BORROW_NONE || p->type.is_array || p->type.is_slice ||
+                !native_layout_depth(model, program, &p->type, &ignored, depth + 1)) return 0;
+        }
+        const AstType *result = type->function_return_type;
+        NativeTypeLayout ignored;
+        if (!result || result->borrow_kind != AST_BORROW_NONE || result->is_array || result->is_slice ||
+            (!native_layout_depth(model, program, result, &ignored, depth + 1) &&
+             !(result->kind == AST_TYPE_NAMED && !result->pointer_depth && primitive_type(program, result) == TYPE_VOID))) return 0;
+        *layout = (NativeTypeLayout){8, 8};
+        return 1;
+    }
     if (type->is_slice || type->kind != AST_TYPE_NAMED || type->arguments) return 0;
     if (type->is_array) {
         AstType element = ast_type_element(type);
@@ -49,11 +74,14 @@ static int native_layout_depth(const SemanticModel *model, const AstProgram *pro
         NativeTypeLayout child;
         if (!native_layout_depth(model, symbol->source_program, &field->type, &child, depth + 1) ||
             size > SIZE_MAX - (child.alignment - 1)) return 0;
-        size = (size + child.alignment - 1) & ~(child.alignment - 1);
+        if (decl->native_pack && child.alignment > decl->native_pack) child.alignment = decl->native_pack;
+        if (!decl->is_native_union) size = (size + child.alignment - 1) & ~(child.alignment - 1);
         if (child.size > SIZE_MAX - size) return 0;
-        size += child.size;
+        if (decl->is_native_union) { if (child.size > size) size = child.size; }
+        else size += child.size;
         if (child.alignment > alignment) alignment = child.alignment;
     }
+    if (decl->native_alignment > alignment) alignment = decl->native_alignment;
     /* Empty C structs are an extension with incompatible compiler layouts. */
     if (!size || size > SIZE_MAX - (alignment - 1)) return 0;
     *layout = (NativeTypeLayout){(size + alignment - 1) & ~(alignment - 1), alignment};
@@ -77,8 +105,9 @@ int semantic_native_field_offset(const SemanticModel *model, size_t symbol_id,
         NativeTypeLayout child;
         if (!semantic_native_layout(model, symbol->source_program, &field->type, &child) ||
             size > SIZE_MAX - (child.alignment - 1)) return 0;
+        if (decl->native_pack && child.alignment > decl->native_pack) child.alignment = decl->native_pack;
         size = (size + child.alignment - 1) & ~(child.alignment - 1);
-        if (index == field_index) { *offset = size; return 1; }
+        if (index == field_index) { *offset = decl->is_native_union ? 0 : size; return 1; }
         if (child.size > SIZE_MAX - size) return 0;
         size += child.size;
     }
@@ -87,7 +116,7 @@ int semantic_native_field_offset(const SemanticModel *model, size_t symbol_id,
 
 static int native_signature_type(Analyzer *analyzer, const AstType *type, int result) {
     if (!known_declared_type(analyzer, type) || type->borrow_kind != AST_BORROW_NONE) return 0;
-    if (type->kind == AST_TYPE_FUNCTION || type->kind == AST_TYPE_INFERRED) return 0;
+    if (type->kind == AST_TYPE_INFERRED) return 0;
     if (type->outer_pointer_depth) return 1;
     if (type->is_array || type->is_slice) return 0;
     if (type->pointer_depth) return 1;
@@ -109,6 +138,13 @@ static int same_native_source_type(const Analyzer *analyzer, const AstProgram *a
     if (!ast_concrete_type_equal(a, x, b, y)) return 0;
     if (x->element_type)
         return same_native_source_type(analyzer, a, x->element_type, b, y->element_type);
+    if (x->kind == AST_TYPE_FUNCTION) {
+        if (!same_native_source_type(analyzer, a, x->function_return_type, b, y->function_return_type)) return 0;
+        const AstTypeArgument *p = x->function_parameters, *q = y->function_parameters;
+        for (; p && q; p = p->next, q = q->next)
+            if (!same_native_source_type(analyzer, a, &p->type, b, &q->type)) return 0;
+        return !p && !q;
+    }
     if (x->kind == AST_TYPE_NAMED && primitive_type(a, x) == TYPE_UNKNOWN) {
         size_t left = resolve_named_symbol_id(analyzer, a, x->name_token);
         size_t right = resolve_named_symbol_id(analyzer, b, y->name_token);
@@ -122,7 +158,7 @@ void validate_native_declarations(Analyzer *analyzer) {
     for (size_t i = 0; i < analyzer->model->symbol_count; i++) {
         const SemanticSymbol *symbol = &analyzer->model->symbols[i];
         const AstDeclarationNode *decl = symbol->declaration;
-        if (!decl || !decl->is_native ||
+        if (!decl || (!decl->is_native && !decl->is_native_export) ||
             (symbol->kind != SEMANTIC_SYMBOL_STRUCT && symbol->kind != SEMANTIC_SYMBOL_FUNCTION)) continue;
         analyzer->program = (AstProgram *)symbol->source_program;
         if (symbol->kind == SEMANTIC_SYMBOL_STRUCT) {
@@ -140,21 +176,30 @@ void validate_native_declarations(Analyzer *analyzer) {
                 semantic_error(analyzer, decl->name_token, ERROR_CATEGORY_TYPE,
                                ERR_TYPE_INVALID_OPERATION, "Native struct layout is empty, incomplete, recursive or too large");
         } else {
-            const char *library = ast_program_lexeme(analyzer->program, decl->native_library_token);
-            const char *name = ast_program_lexeme(analyzer->program, decl->native_name_token);
-            if (!native_identifier(library, 1))
+            const char *library = decl->is_native_export ? "" : ast_program_lexeme(analyzer->program, decl->native_library_token);
+            size_t name_token = decl->is_native_export ? decl->name_token : decl->native_name_token;
+            const char *name = ast_program_lexeme(analyzer->program, name_token);
+            if (decl->is_native_export && (decl->as.function.is_async || decl->generic_parameters))
+                semantic_error(analyzer, decl->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                               "Native exports must be synchronous and non-generic");
+            if (decl->is_native && !native_identifier(library, 1))
                 semantic_error(analyzer, decl->native_library_token, ERROR_CATEGORY_SEMANTIC,
                                ERR_SEM_INVALID_DECLARATION,
                                "from requires a logical library ID (letters, digits, underscore or hyphen), not a file or linker option");
             if (!native_identifier(name, 0))
-                semantic_error(analyzer, decl->native_name_token, ERROR_CATEGORY_SEMANTIC,
+                semantic_error(analyzer, name_token, ERROR_CATEGORY_SEMANTIC,
                                ERR_SEM_INVALID_DECLARATION, "Native symbol alias must be a C identifier");
             for (size_t j = 0; j < i; j++) {
                 const SemanticSymbol *other = &analyzer->model->symbols[j];
                 const AstDeclarationNode *previous = other->declaration;
-                if (other->kind != SEMANTIC_SYMBOL_FUNCTION || !previous || !previous->is_native ||
-                    strcmp(name, ast_program_lexeme(other->source_program, previous->native_name_token))) continue;
-                int conflict = strcmp(library, ast_program_lexeme(other->source_program, previous->native_library_token)) != 0 ||
+                size_t previous_name = previous && previous->is_native_export ? previous->name_token :
+                                       previous ? previous->native_name_token : AST_TOKEN_NONE;
+                if (other->kind != SEMANTIC_SYMBOL_FUNCTION || !previous ||
+                    (!previous->is_native && !previous->is_native_export) ||
+                    strcmp(name, ast_program_lexeme(other->source_program, previous_name))) continue;
+                const char *previous_library = previous->is_native_export ? "" :
+                    ast_program_lexeme(other->source_program, previous->native_library_token);
+                int conflict = decl->is_native_export || previous->is_native_export || strcmp(library, previous_library) != 0 ||
                     !same_native_source_type(analyzer, analyzer->program, &decl->as.function.return_type,
                                               other->source_program, &previous->as.function.return_type);
                 const AstParameter *a = decl->as.function.parameters, *b = previous->as.function.parameters;
@@ -162,8 +207,8 @@ void validate_native_declarations(Analyzer *analyzer) {
                     if (!same_native_source_type(analyzer, analyzer->program, &a->type, other->source_program, &b->type)) conflict = 1;
                 if (a || b) conflict = 1;
                 if (conflict)
-                    semantic_duplicate(analyzer, decl->native_name_token, other->source_program,
-                                       previous->native_name_token,
+                    semantic_duplicate(analyzer, name_token, other->source_program,
+                                       previous_name,
                                        "Native symbol has conflicting signatures or library assignments");
             }
             if (!native_signature_type(analyzer, &decl->as.function.return_type, 1))
@@ -178,14 +223,43 @@ void validate_native_declarations(Analyzer *analyzer) {
     analyzer->program = saved;
 }
 
-size_t layout_alignment(Analyzer *analyzer, const AstType *type) {
+static size_t layout_alignment_depth(const Analyzer *analyzer, const AstProgram *program,
+                                     const AstType *type, size_t depth) {
+    if (depth > analyzer->model->symbol_count + 64) return 8;
     if (!type->is_array && !type->is_slice) {
         NativeTypeLayout native;
-        if (semantic_native_layout(analyzer->model, analyzer->program, type, &native)) return native.alignment;
+        if (semantic_native_layout(analyzer->model, program, type, &native)) return native.alignment;
     }
-    DataType primitive = primitive_type(analyzer->program, type);
-    return !type->pointer_depth && !type->outer_pointer_depth && !type->is_array &&
-           !type->is_slice && primitive != TYPE_UNKNOWN ? data_type_bytes(primitive) : 8;
+    if (type->outer_pointer_depth || type->borrow_kind != AST_BORROW_NONE || type->is_slice ||
+        (!type->is_array && type->pointer_depth) || type->kind != AST_TYPE_NAMED) return 8;
+    if (type->is_array) {
+        AstType element = ast_type_element(type);
+        size_t alignment = layout_alignment_depth(analyzer, program, &element, depth + 1);
+        return alignment > 8 ? alignment : 8;
+    }
+    DataType primitive = primitive_type(program, type);
+    if (primitive != TYPE_UNKNOWN) return data_type_bytes(primitive);
+    size_t id = resolve_named_symbol_id(analyzer, program, type->name_token);
+    if (id >= analyzer->model->symbol_count) return 8;
+    const SemanticSymbol *symbol = &analyzer->model->symbols[id];
+    const AstDeclarationNode *decl = symbol->declaration;
+    size_t alignment = 8;
+    if (decl && decl->kind == AST_DECL_STRUCT)
+        for (const AstField *field = decl->as.struct_decl.fields; field; field = field->next) {
+            size_t child = layout_alignment_depth(analyzer, symbol->source_program, &field->type, depth + 1);
+            if (child > alignment) alignment = child;
+        }
+    if (decl && decl->kind == AST_DECL_ENUM)
+        for (const AstEnumValue *v = decl->as.enum_decl.values; v; v = v->next)
+            for (const AstTypeArgument *p = v->payload_types; p; p = p->next) {
+                size_t child = layout_alignment_depth(analyzer, symbol->source_program, &p->type, depth + 1);
+                if (child > alignment) alignment = child;
+            }
+    return alignment;
+}
+
+size_t layout_alignment(Analyzer *analyzer, const AstType *type) {
+    return layout_alignment_depth(analyzer, analyzer->program, type, 0);
 }
 
 static int type_directly_embeds_value(const AstType *type) {
@@ -274,18 +348,26 @@ static size_t semantic_symbol_slots(const Analyzer *analyzer, size_t symbol_id,
     const SemanticSymbol *symbol = &analyzer->model->symbols[symbol_id];
     if (symbol->kind == SEMANTIC_SYMBOL_INTERFACE) return 2;
     if (symbol->kind == SEMANTIC_SYMBOL_ENUM && symbol->declaration) {
-        size_t largest = 0;
+        size_t largest = 1;
         for (const AstEnumValue *v = symbol->declaration->as.enum_decl.values; v; v = v->next) {
-            size_t payload = 0;
+            size_t payload = 1;
             for (const AstTypeArgument *p = v->payload_types; p; p = p->next) {
                 size_t slots = declared_type_slots(
                     analyzer, symbol->source_program, &p->type, depth + 1);
+                if (slots > SIZE_MAX - payload) return SIZE_MAX;
+                size_t alignment = layout_alignment_depth(analyzer, symbol->source_program, &p->type, depth + 1);
+                size_t align_slots = alignment > 8 ? alignment / 8 : 1;
+                if (payload > SIZE_MAX - (align_slots - 1)) return SIZE_MAX;
+                payload = (payload + align_slots - 1) & ~(align_slots - 1);
                 if (slots > SIZE_MAX - payload) return SIZE_MAX;
                 payload += slots;
             }
             if (payload > largest) largest = payload;
         }
-        return largest == SIZE_MAX ? SIZE_MAX : largest + 1;
+        AstType type = {.kind = AST_TYPE_NAMED, .name_token = symbol->name_token};
+        size_t align_slots = layout_alignment_depth(analyzer, symbol->source_program, &type, depth + 1) / 8;
+        if (largest > SIZE_MAX - (align_slots - 1)) return SIZE_MAX;
+        return (largest + align_slots - 1) & ~(align_slots - 1);
     }
     if (symbol->kind != SEMANTIC_SYMBOL_STRUCT || symbol->declaration == NULL) return 1;
     if (symbol->declaration->is_native) {
@@ -301,9 +383,17 @@ static size_t semantic_symbol_slots(const Analyzer *analyzer, size_t symbol_id,
         size_t field_slots = declared_type_slots(
             analyzer, symbol->source_program, &field->type, depth + 1);
         if (slots > SIZE_MAX - field_slots) return SIZE_MAX;
+        size_t alignment = layout_alignment_depth(analyzer, symbol->source_program, &field->type, depth + 1);
+        size_t align_slots = alignment > 8 ? alignment / 8 : 1;
+        if (slots > SIZE_MAX - (align_slots - 1)) return SIZE_MAX;
+        slots = (slots + align_slots - 1) & ~(align_slots - 1);
+        if (field_slots > SIZE_MAX - slots) return SIZE_MAX;
         slots += field_slots;
     }
-    return slots == 0 ? 1 : slots;
+    AstType type = {.kind = AST_TYPE_NAMED, .name_token = symbol->name_token};
+    size_t align_slots = layout_alignment_depth(analyzer, symbol->source_program, &type, depth + 1) / 8;
+    if (slots > SIZE_MAX - (align_slots - 1)) return SIZE_MAX;
+    return slots == 0 ? 1 : (slots + align_slots - 1) & ~(align_slots - 1);
 }
 
 size_t semantic_type_slots(const Analyzer *analyzer, const AstProgram *program,
@@ -428,7 +518,6 @@ size_t layout_size(Analyzer *analyzer, AstType *type, size_t depth) {
     size_t id = resolve_named_symbol_id(analyzer, analyzer->program, type->name_token);
     if (id == AST_SYMBOL_NONE) return 0;
     const SemanticSymbol *symbol = &analyzer->model->symbols[id];
-    AstProgram *unit = (AstProgram *) symbol->source_program;
     AstDeclarationNode *declaration = (AstDeclarationNode *) symbol->declaration;
     if (!declaration) return 0;
     if (declaration->is_native) {
@@ -436,51 +525,9 @@ size_t layout_size(Analyzer *analyzer, AstType *type, size_t depth) {
         NativeTypeLayout native;
         return semantic_native_layout(analyzer->model, analyzer->program, type, &native) ? native.size : 0;
     }
-    if (symbol->kind == SEMANTIC_SYMBOL_INTERFACE) {
+    if (symbol->kind == SEMANTIC_SYMBOL_INTERFACE || symbol->kind == SEMANTIC_SYMBOL_STRUCT || symbol->kind == SEMANTIC_SYMBOL_ENUM) {
         size_t slots = semantic_symbol_slots(analyzer, id, depth + 1);
         return slots == SIZE_MAX || slots > SIZE_MAX / 8 ? 0 : slots * 8;
     }
-    AstProgram *saved = analyzer->program;
-    analyzer->program = unit;
-    size_t size = 0;
-    int valid = 1;
-    if (declaration->kind == AST_DECL_STRUCT) {
-        for (AstField *field = declaration->as.struct_decl.fields; field; field = field->next) {
-            size_t bytes = layout_size(analyzer, &field->type, depth + 1);
-            if (!bytes || bytes > SIZE_MAX - 7) {
-                valid = 0;
-                break;
-            }
-            bytes = (bytes + 7) & ~(size_t) 7;
-            if (bytes > SIZE_MAX - size) {
-                valid = 0;
-                break;
-            }
-            size += bytes;
-        }
-        if (!size) size = 8;
-    } else if (declaration->kind == AST_DECL_ENUM) {
-        size_t largest = 0;
-        for (AstEnumValue *variant = declaration->as.enum_decl.values; variant; variant = variant->next) {
-            size_t payload = 0;
-            for (AstTypeArgument *argument = variant->payload_types; argument; argument = argument->next) {
-                size_t bytes = layout_size(analyzer, &argument->type, depth + 1);
-                if (!bytes || bytes > SIZE_MAX - 7) {
-                    valid = 0;
-                    break;
-                }
-                bytes = (bytes + 7) & ~(size_t) 7;
-                if (bytes > SIZE_MAX - payload) {
-                    valid = 0;
-                    break;
-                }
-                payload += bytes;
-            }
-            if (payload > largest) largest = payload;
-        }
-        if (largest > SIZE_MAX - 8) valid = 0;
-        else size = largest + 8;
-    } else valid = 0;
-    analyzer->program = saved;
-    return valid ? size : 0;
+    return 0;
 }

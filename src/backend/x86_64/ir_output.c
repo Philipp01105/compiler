@@ -261,6 +261,12 @@ static int emit_file(Emitter *emitter, int deterministic) {
     else fputs("    .data\n    .balign 8\n", output);
     for (size_t g = 0; g < emitter->module->global_count; g++) {
         const IrGlobal *global = &emitter->module->globals[g];
+        IrTypeLayout global_layout;
+        if (!ir_type_layout(emitter->module, global->type_id, &global_layout)) return 0;
+        size_t alignment = global_layout.alignment > 8 ? global_layout.alignment : 8;
+        if (emitter->native) {
+            if (!native_buffer_align(&emitter->native->sections[NATIVE_DATA], alignment)) return 0;
+        } else fprintf(output, "    .balign %zu\n", alignment);
         const SemanticSymbol *symbol = &emitter->module->semantics->symbols[global->symbol_id];
         char label[4096];
         if (!global_label(symbol, label, sizeof(label))) return 0;
@@ -295,13 +301,9 @@ static int emit_file(Emitter *emitter, int deterministic) {
         } else if (global->array_literal != NULL) {
             if (!emit_global_literal_elements(emitter, global)) return 0;
         } else if (global->function_symbol_id != AST_SYMBOL_NONE) {
-            const IrFunction *addressed = addressed_function(emitter->module,
-                                                           global->function_symbol_id);
-            if (addressed == NULL) return 0;
             char function_buffer[4096];
-            const char *function_name = function_link_name(emitter->module, addressed,
-                                                           function_buffer,
-                                                           sizeof(function_buffer));
+            const char *function_name = function_address_link_name(emitter->module,
+                global->function_symbol_id, function_buffer, sizeof(function_buffer));
             if (function_name == NULL) return 0;
             if (emitter->native) {
                 native_reference(emitter->native, function_name, NATIVE_ADDR64,
@@ -357,7 +359,7 @@ static int emit_file(Emitter *emitter, int deterministic) {
                     slots++;
                 if (function->instructions[i].is_slice) slots++;
                 if (slots == 0 || declarations > SIZE_MAX - slots) return 0;
-                declarations += slots;
+                declarations += slots + 1;
             } else if ((function->instructions[i].opcode == IR_OP_EXECUTOR || function->instructions[i].opcode == IR_OP_AWAIT || function->instructions[i].opcode == IR_OP_CALL || function->instructions[i].opcode ==
                         IR_OP_ENUM_CONSTRUCT || function->instructions[i].opcode == IR_OP_SLICE ||
                         function->instructions[i].opcode == IR_OP_SUBSLICE ||
@@ -370,7 +372,7 @@ static int emit_file(Emitter *emitter, int deterministic) {
                 size_t slots = type_slots(emitter->module,
                                           function->instructions[i].type_id);
                 if (slots == 0 || aggregate_results > SIZE_MAX - slots) return 0;
-                aggregate_results += slots;
+                aggregate_results += slots + 1;
             }
         for (size_t p = 0; p < function->parameter_count; p++) {
             if (!type_is_structure(emitter->module, function->parameters[p].type_id) &&
@@ -379,7 +381,7 @@ static int emit_file(Emitter *emitter, int deterministic) {
                                                 function->parameters[p].type_id);
             if (parameter_slots == 0 || aggregate_parameters > SIZE_MAX - parameter_slots)
                 return 0;
-            aggregate_parameters += parameter_slots;
+            aggregate_parameters += parameter_slots + 1;
         }
         size_t parameter_slots = parameter_storage_slots(function);
         for (size_t p = 0; p < function->parameter_count; p++)
@@ -403,6 +405,7 @@ static int emit_file(Emitter *emitter, int deterministic) {
         emitter->declaration_count = declarations;
         emitter->frame_size = ((bytes + 15U) & ~(size_t) 15U) + 8U;
         if (!emit_function(emitter)) return 0;
+        if (function->is_native_export && !emit_native_export(emitter)) return 0;
     }
     return 1;
 }

@@ -1,0 +1,16 @@
+package main;
+extern "system" from "callbacks" {
+    pub func threads(f:extern "system" func(*void) -> u32) -> i32 = "callback_threads";
+}
+func nestedUnwind(a:i64,b:i64,c:i64,d:i64,e:i64) -> i32 {
+    if (a+b+c+d+e != 15) { return 0; }
+    return unwind();
+}
+export "system" func threadMain(address:*void) -> u32 {
+    var largeFrame:i64[1024]; largeFrame[1023]=17;
+    var context:*Context=address.(*Context);
+    context.result=context.value*3;
+    if (nestedUnwind(1,2,3,4,5) != 1) { return 0; }
+    return largeFrame[1023].(u32);
+}
+func runThreads() -> i32 { return threads(threadMain); }

@@ -154,7 +154,15 @@ int main(void) {
         "extern \"system\" from \"c\" { func f() -> i32 = \"\"; }",
         "extern \"system\" from \"c\" { func f() -> i32 = \"x\"; func g() -> double = \"x\"; }",
         "extern \"system\" from \"c\" { func f() -> i32 = \"x\"; } extern \"system\" from \"m\" { func g() -> i32 = \"x\"; }",
-        "extern \"system\" from \"c\" { func f() -> i32; } func main() -> int { var g = f; return 0; }"
+        "extern \"system\" from \"c\" { func f() -> i32; } func main() -> int { var g:func() -> i32 = f; return 0; }",
+        "func f() -> i32 { return 0; } func main() -> int { var g:extern \"system\" func() -> i32 = f; return 0; }",
+        "extern \"system\" from \"c\" { func f(x:extern \"system\" func(string) -> i32) -> i32; }",
+        "export \"system\" func f(x:int) -> i32 { return 0; }",
+        "export \"system\" func f<T>(x:T) -> i32 { return 0; }",
+        "struct S { var x:i32; } export \"system\" func f(x:S) -> i32 { return 0; }",
+        "extern \"system\" { struct S { var callback:func() -> i32; } }",
+        "extern \"system\" { align(16) struct S; }",
+        "extern \"system\" { pack(3) struct S { var x:i32; } }"
     };
     for (size_t i = 0; i < sizeof(invalid) / sizeof(*invalid); i++) failed |= reject(invalid[i]);
     error_handler_free(handler);

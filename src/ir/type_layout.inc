@@ -26,6 +26,7 @@ static int type_layout_depth(const IrModule *module, IrTypeId id, IrTypeLayout *
             type->array_length > SIZE_MAX / element.storage_slots)
             return 0;
         slots = type->array_length * element.storage_slots;
+        if (element.alignment > layout->alignment) layout->alignment = element.alignment;
     } else {
         int found = 0;
         if (type->symbol_id < module->semantics->symbol_count &&
@@ -49,7 +50,12 @@ static int type_layout_depth(const IrModule *module, IrTypeId id, IrTypeLayout *
                 IrTypeLayout field;
                 if (!type_layout_depth(module, structure->fields[f].type_id, &field, depth + 1) || field.storage_slots >
                     SIZE_MAX - slots) return 0;
+                size_t alignment_slots = field.alignment > 8 ? field.alignment / 8 : 1;
+                if (slots > SIZE_MAX - (alignment_slots - 1)) return 0;
+                slots = (slots + alignment_slots - 1) & ~(alignment_slots - 1);
+                if (field.storage_slots > SIZE_MAX - slots) return 0;
                 slots += field.storage_slots;
+                if (field.alignment > layout->alignment) layout->alignment = field.alignment;
             }
             if (!slots) slots = 1;
         }
@@ -57,24 +63,33 @@ static int type_layout_depth(const IrModule *module, IrTypeId id, IrTypeLayout *
             const IrEnum *enumeration = &module->enums[e];
             if (enumeration->symbol_id != type->symbol_id) continue;
             found = 1;
-            size_t largest = 0;
+            size_t largest = 1;
             for (size_t v = 0; v < enumeration->variant_count; v++) {
                 const IrEnumVariant *variant = &enumeration->variants[v];
-                size_t payload = 0;
+                size_t payload = 1;
                 for (size_t p = 0; p < variant->payload_count; p++) {
                     IrTypeLayout value;
                     if (!type_layout_depth(module, variant->payload_types[p], &value, depth + 1) || value.storage_slots
                         > SIZE_MAX - payload) return 0;
+                    size_t alignment_slots = value.alignment > 8 ? value.alignment / 8 : 1;
+                    if (payload > SIZE_MAX - (alignment_slots - 1)) return 0;
+                    payload = (payload + alignment_slots - 1) & ~(alignment_slots - 1);
+                    if (value.storage_slots > SIZE_MAX - payload) return 0;
                     payload += value.storage_slots;
+                    if (value.alignment > layout->alignment) layout->alignment = value.alignment;
                 }
                 if (payload > largest) largest = payload;
             }
             if (largest == SIZE_MAX) return 0;
-            slots = largest + 1;
+            slots = largest;
         }
         if (!found) return 0;
     }
     if (!slots || slots > SIZE_MAX / 8) return 0;
+    size_t alignment_slots = layout->alignment / 8;
+    if (slots > SIZE_MAX - (alignment_slots - 1)) return 0;
+    slots = (slots + alignment_slots - 1) & ~(alignment_slots - 1);
+    if (slots > SIZE_MAX / 8) return 0;
     layout->size = slots * 8;
     layout->storage_slots = slots;
     return 1;

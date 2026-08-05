@@ -526,7 +526,7 @@ Function overloads differ by ordered parameter types, never return type. Exact m
 numeric conversions. A candidate must be no worse in every argument and better in at least one; ties are ambiguous.
 `main` cannot be overloaded. Overloaded functions and methods use type-derived link names.
 
-## Native FFI (V1: stages 1–2)
+## Native FFI (stages 1–3)
 
 `extern "system" [from "library"] { ... }` contains native function declarations and
 native structs. `from` is a logical library ID, for example `c` or `ws2_32`, rather than
@@ -582,7 +582,8 @@ is evaluated, before a later argument can change its source. Calls may change me
 Native struct fields and copies use byte-exact operations, including structs contained
 in DMM aggregates and arrays. Native field arrays retain C element strides.
 
-Only imports referenced by emitted functions require their logical libraries. Such
+Only imports referenced by emitted code or global function-pointer initializers
+require their logical libraries. Such
 imports select the platform runtime and external GCC/Clang linking with `--link=auto`;
 `--link=internal` diagnoses the native dependency. `--native-library NAME=PATH` selects
 an explicit library/archive/object file, and repeatable `--native-library-dir DIR`
@@ -590,9 +591,59 @@ adds search directories. `-c` and `-S` emit unresolved symbols without invoking 
 linker. `--dump-native-link FILE` records the target, runtime profile and used imports
 for manual linking. A failed external link preserves the previous executable.
 
-Native function values, exports,
-unions, packing and explicit alignment remain planned stage 3 features. The complete
-staged contract is in [plans/ffi.md](plans/ffi.md).
+Native function values use `extern "system" func(...) -> T`. Their parameters and
+results obey the same FFI rules as imports. Import names and native exports produce
+such values; ordinary DMM functions require a matching explicit native export and
+cannot be implicitly converted. Function-pointer types include the ABI in their
+identity. A zero-initialized function pointer represents a null callback; calling it
+traps. Native function values can be stored, passed to native functions and returned
+by native functions. There are no captured closures or generated closure trampolines.
+
+```dmm
+package callbacks;
+export "system" func onValue(value:i32) -> i32 { return value+1; }
+extern "system" from "example" {
+    pub func invoke(callback:extern "system" func(i32) -> i32) -> i32;
+}
+pub func run() -> i32 { return invoke(onValue); }
+```
+
+Exports have bodies, are synchronous and non-generic, and expose their source name
+as a stable native entry address. The compiler bridges the native ABI to the DMM
+body. Exported functions are retained even without a DMM caller. Native callbacks
+may run concurrently on native threads; the caller must initialize those threads
+through the appropriate platform API and retain contexts, buffers and resources
+until all calls have ended, for example after a successful join. Exceptions and
+foreign unwinding across DMM frames are excluded. Windows native entries and their
+synchronous DMM function bodies have unwind metadata for OS stack inspection.
+
+Native `union` declarations use the field syntax of native structs. Fields overlap
+at offset zero; there is no discriminant or active-field check. `pack(N)` caps field
+alignment and `align(N)` raises the aggregate alignment. Both are prefix modifiers
+inside an extern block, after optional `pub`, with N equal to 1, 2, 4, 8 or 16:
+
+```dmm
+extern "system" {
+    pub union Word { pub var integer:u64; pub var floating:double; }
+    pub pack(1) struct Event { pub var events:u32; pub var data:Word; }
+    pub align(16) struct Aligned { pub var value:u64; }
+}
+```
+
+Packing and explicit alignment apply to the target C layout and ABI classification.
+Unaligned aggregate fields require System V memory passing. Opaque declarations
+remain unmodified `struct Handle;`. Native values retain their alignment within
+DMM structs, enum payloads and arrays; the DMM slot representation includes padding
+where required. Layout modifiers do not change primitive DMM scalar representation.
+
+Package loading selects files ending in `_linux.dmm` for ELF and `_windows.dmm` for
+COFF before parsing, based on the output target even during cross-compilation. All
+other DMM source files remain shared. An explicitly selected file with the wrong
+suffix is rejected. `manifest sync` discovers dependencies from both target variants.
+Raw platform bindings live in `stdlib/native/{glibc,pthreads,kernel32,ucrt,winsock}`.
+Their layouts target x86-64 glibc or MinGW-w64 UCRT64 specifically; the binding caller
+must not copy initialized native synchronization objects or free active operations.
+The staged contract is in [plans/ffi.md](plans/ffi.md).
 
 ## Implementation limits
 

@@ -11,6 +11,7 @@ typedef struct {
     int recover_syntax; /* IDE analysis only: discard malformed statements/declarations. */
     int has_target;
     TargetFormat target_format;
+    int include_all_targets; /* Manifest dependency discovery only. */
 } FrontendOptions;
 
 /* Parse a source file into an owned recursive AST with no backend side effects. */

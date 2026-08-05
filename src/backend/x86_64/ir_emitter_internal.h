@@ -47,6 +47,9 @@ int global_drop_flag_label(const SemanticSymbol *symbol, char *label,
 int global_slice_owner_label(const SemanticSymbol *symbol, char *label,
                              size_t size);
 int emit_function(Emitter *emitter);
+int emit_native_export(Emitter *emitter);
+int emit_windows_prologue(Emitter *emitter, const char *name, size_t frame);
+int emit_windows_unwind(Emitter *emitter, const char *name, size_t frame);
 
 void write_x64_0(const Emitter *emitter, X64Opcode opcode);
 void write_x64_1(const Emitter *emitter, X64Opcode opcode, X64Width width, X64Operand operand);
@@ -68,6 +71,8 @@ int physical_parameter(const IrFunction *function, size_t physical_index, size_t
 int physical_is_floating(const IrFunction *function, size_t physical_index);
 size_t parameter_register_index(const IrFunction *function, TargetFormat target, size_t physical_index);
 size_t stack_parameter_count(const IrFunction *function, TargetFormat target);
+size_t stack_parameter_index(const IrFunction *function, TargetFormat target, size_t physical_index);
+void write_register_move(const Emitter *emitter, const char *destination, const char *source);
 void normalize_integral_parameter(const Emitter *emitter, DataType type);
 void load_floating_value(Emitter *emitter, size_t value, DataType target, unsigned xmm);
 size_t aggregate_result_offset(const Emitter *emitter, const IrInstruction *result);

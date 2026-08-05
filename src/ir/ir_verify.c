@@ -16,6 +16,10 @@ static int native_ir_layout(const IrModule *module, IrTypeId id,
     if (id >= module->type_count || depth > module->type_count) return 0;
     const IrType *type = &module->types[id];
     if (type->kind == IR_TYPE_POINTER) { *layout = (NativeTypeLayout){8, 8}; return 1; }
+    if (type->kind == IR_TYPE_FUNCTION && type->signature_id < module->signature_count &&
+        module->signatures[type->signature_id].is_native) {
+        *layout = (NativeTypeLayout){8, 8}; return 1;
+    }
     if (type->kind == IR_TYPE_PRIMITIVE) {
         if (!data_type_fixed_integer(type->primitive) && type->primitive != TYPE_BIT &&
             type->primitive != TYPE_FLOAT && type->primitive != TYPE_DOUBLE) return 0;
@@ -40,14 +44,18 @@ static int native_ir_layout(const IrModule *module, IrTypeId id,
             NativeTypeLayout child;
             if (!native_ir_layout(module, field->type_id, &child, depth + 1) ||
                 size > SIZE_MAX - (child.alignment - 1)) return 0;
-            size = (size + child.alignment - 1) & ~(child.alignment - 1);
-            if (field->native_offset != size || child.size > SIZE_MAX - size) return 0;
-            size += child.size;
+            if (structure->native_pack && child.alignment > structure->native_pack)
+                child.alignment = structure->native_pack;
+            if (!structure->is_native_union) size = (size + child.alignment - 1) & ~(child.alignment - 1);
+            if (field->native_offset != (structure->is_native_union ? 0 : size) || child.size > SIZE_MAX - size) return 0;
+            if (structure->is_native_union) { if (child.size > size) size = child.size; }
+            else size += child.size;
             if (child.alignment > alignment) alignment = child.alignment;
             const IrType *field_type = &module->types[field->type_id];
             size_t stride = field_type->kind == IR_TYPE_ARRAY ? child.size / field_type->array_length : 0;
             if (field->native_array_stride != stride) return 0;
         }
+        if (structure->native_alignment > alignment) alignment = structure->native_alignment;
         if (size > SIZE_MAX - (alignment - 1)) return 0;
         *layout = (NativeTypeLayout){(size + alignment - 1) & ~(alignment - 1), alignment};
         return layout->size == structure->native_layout.size &&
@@ -99,6 +107,7 @@ static int native_type_matches_source(const IrModule *module, IrTypeId id,
     if (expected.kind == AST_TYPE_FUNCTION) {
         if (type->kind != IR_TYPE_FUNCTION || type->signature_id >= module->signature_count) return 0;
         const IrFunctionSignature *signature = &module->signatures[type->signature_id];
+        if (signature->is_native != expected.is_native_function) return 0;
         if (!native_type_matches_source(module, signature->return_type, program,
                                         expected.function_return_type, depth + 1)) return 0;
         size_t count = 0;
@@ -747,6 +756,11 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                 (signature->parameter_count && signature->parameter_types == NULL)) return 0;
             for (size_t p = 0; p < signature->parameter_count; p++)
                 if (signature->parameter_types[p] >= t) return 0;
+            if (signature->is_native) {
+                if (!native_ir_signature_type(module, signature->return_type, 1)) return 0;
+                for (size_t p = 0; p < signature->parameter_count; ++p)
+                    if (!native_ir_signature_type(module, signature->parameter_types[p], 0)) return 0;
+            }
         }
     }
     for (size_t n = 0; n < module->native_import_count; n++) {
@@ -803,6 +817,9 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
             return 0;
         const AstDeclarationNode *source_declaration = module->semantics->symbols[structure->symbol_id].declaration;
         if (!source_declaration || source_declaration->is_native != structure->is_native ||
+            source_declaration->is_native_union != structure->is_native_union ||
+            source_declaration->native_pack != structure->native_pack ||
+            source_declaration->native_alignment != structure->native_alignment ||
             source_declaration->is_opaque != structure->is_opaque) return 0;
         if (structure->is_native) {
             if (structure->has_explicit_destructor ||
@@ -921,6 +938,16 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
         if ((function->owner_token == AST_TOKEN_NONE) !=
             (function->owner_symbol_id == AST_SYMBOL_NONE))
             return 0;
+        if (!function->is_drop_glue && !function->is_package_init && !function->is_package_cleanup &&
+            function->interface_thunk_symbol_id == AST_SYMBOL_NONE) {
+            const AstDeclarationNode *decl = module->semantics->symbols[function->symbol_id].declaration;
+            if (!decl || function->is_native_export != decl->is_native_export) return 0;
+        }
+        if (function->is_native_export) {
+            if (function->is_async || !native_ir_signature_type(module, function->return_type_id, 1)) return 0;
+            for (size_t p = 0; p < function->parameter_count; ++p)
+                if (!native_ir_signature_type(module, function->parameters[p].type_id, 0)) return 0;
+        }
         if (function->owner_symbol_id != AST_SYMBOL_NONE &&
             (function->owner_symbol_id >= module->semantics->symbol_count ||
              (module->semantics->symbols[function->owner_symbol_id].kind !=

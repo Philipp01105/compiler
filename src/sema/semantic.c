@@ -453,6 +453,7 @@ static int same_declared_type(const Analyzer *analyzer,
                               const AstProgram *left_program, const AstType *left,
                               const AstProgram *right_program, const AstType *right) {
     if (left->kind != right->kind || left->pointer_depth != right->pointer_depth ||
+        left->is_native_function != right->is_native_function ||
         left->outer_pointer_depth != right->outer_pointer_depth ||
         left->is_array != right->is_array || left->is_slice != right->is_slice)
         return 0;
@@ -1825,6 +1826,14 @@ static int known_declared_type_with_binders(const Analyzer *analyzer,
         for (const AstTypeArgument *parameter = type->function_parameters; parameter; parameter = parameter->next)
             if (!known_declared_type_with_binders(analyzer, &parameter->type,
                                                   nested)) return 0;
+        if (type->is_native_function) {
+            NativeTypeLayout layout;
+            AstType callable = *type;
+            callable.pointer_depth = callable.outer_pointer_depth = 0;
+            callable.borrow_kind = AST_BORROW_NONE;
+            callable.is_array = callable.is_slice = 0;
+            if (!semantic_native_layout(analyzer->model, analyzer->program, &callable, &layout)) return 0;
+        }
         return 1;
     }
     size_t symbol_id = resolve_named_symbol_id(analyzer, analyzer->program,
