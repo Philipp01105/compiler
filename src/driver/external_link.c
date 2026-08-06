@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>
 #include <string.h>
 #ifdef _WIN32
 #define TokenType WindowsTokenType
@@ -68,8 +69,9 @@ int driver_dump_native_link(const IrModule *module, const BackendOptions *option
                             const NativeLinkOptions *native, const char *path) {
     FILE *file = fopen(path, "w");
     if (!file) return 0;
-    fprintf(file, "dmm-native-link-v1\ntarget=%s\nruntime-profile=%s\n",
+    fprintf(file, "dmm-native-link-v2\ntarget=%s\nruntime-profile=%s\n",
             options->target_format == TARGET_ELF ? "elf-x86_64-system-v" : "coff-x86_64-mingw-ucrt",
+            module->program->runtime_component ? "component" :
             options->runtime_profile == RUNTIME_PLATFORM ? "platform" : "standalone");
     for (size_t i = 0; i < native->directory_count; ++i) {
         fputs("library-directory=", file); link_quote(file, native->directories[i]); fputc('\n', file);
@@ -111,9 +113,15 @@ static char *default_shim_profile(TargetFormat target, int network) {
     *separator = '\0';
     size_t capacity = strlen(executable) + 64;
     char *path = malloc(capacity);
-    if (path) snprintf(path, capacity, "%s/dmm-runtime/%s/%s-shim.o", executable,
-                       target == TARGET_ELF ? "elf" : "coff",network?"network":"platform");
+    if (path) snprintf(path, capacity, "%s/dmm-runtime/%s/%s-shim.%s", executable,
+                       target == TARGET_ELF ? "elf" : "coff",network?"network":"platform", network?"a":"o");
     return path;
+}
+
+static int object_magic_matches(const unsigned char *magic, TargetFormat target) {
+    if (target == TARGET_COFF) return magic[0] == 0x64 && magic[1] == 0x86;
+    return !memcmp(magic, "\177ELF", 4) && magic[4] == 2 && magic[5] == 1 &&
+           magic[16] == 1 && magic[17] == 0 && magic[18] == 62 && magic[19] == 0;
 }
 
 static int shim_matches(const char *path, TargetFormat target) {
@@ -121,11 +129,41 @@ static int shim_matches(const char *path, TargetFormat target) {
     FILE *file = fopen(path, "rb");
     if (!file) return 0;
     size_t count = fread(magic, 1, sizeof(magic), file);
+    int valid = count == sizeof(magic) && object_magic_matches(magic, target);
+    if (count >= 8 && !memcmp(magic, "!<arch>\n", 8)) {
+        /* Validate every object member; GNU/LLVM archive metadata is target-neutral. */
+        valid = fseek(file, 0, SEEK_END) == 0;
+        long archive_size = valid ? ftell(file) : -1;
+        valid = archive_size >= 8 && fseek(file, 8, SEEK_SET) == 0;
+        size_t objects = 0;
+        unsigned char header[60];
+        while (valid) {
+            size_t read = fread(header, 1, sizeof(header), file);
+            if (!read) { valid = !ferror(file); break; }
+            if (read != sizeof(header) || header[58] != '`' || header[59] != '\n') { valid = 0; break; }
+            char length[11];
+            memcpy(length, header + 48, 10); length[10] = '\0';
+            char *end = NULL;
+            errno = 0;
+            unsigned long bytes = strtoul(length, &end, 10);
+            while (end && *end == ' ') ++end;
+            if (errno || end == length || !end || *end || bytes > (unsigned long)LONG_MAX - 1) { valid = 0; break; }
+            int metadata = header[0] == '/' && (header[1] == ' ' || header[1] == '/' ||
+                                               !memcmp(header, "/SYM64/", 7));
+            long start = ftell(file);
+            if (start < 0 || start > LONG_MAX - (long)bytes - (long)(bytes & 1UL)) { valid = 0; break; }
+            if (start + (long)bytes + (long)(bytes & 1UL) > archive_size) { valid = 0; break; }
+            if (!metadata) {
+                if (bytes < sizeof(magic) || fread(magic, 1, sizeof(magic), file) != sizeof(magic) ||
+                    !object_magic_matches(magic, target)) { valid = 0; break; }
+                ++objects;
+            }
+            if (fseek(file, start + (long)bytes + (long)(bytes & 1UL), SEEK_SET)) valid = 0;
+        }
+        valid = valid && objects != 0;
+    }
     fclose(file);
-    if (count != sizeof(magic)) return 0;
-    if (target == TARGET_COFF) return magic[0] == 0x64 && magic[1] == 0x86;
-    return !memcmp(magic, "\177ELF", 4) && magic[4] == 2 && magic[5] == 1 &&
-           magic[16] == 1 && magic[17] == 0 && magic[18] == 62 && magic[19] == 0;
+    return valid;
 }
 
 int driver_link_input_conflicts(TargetFormat target, const char *artifact,

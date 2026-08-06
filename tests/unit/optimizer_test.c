@@ -34,6 +34,9 @@ void native_error(NativeObject *o, const char *s) {
 }
 
 int ir_main_returns_void(const IrModule *module) { (void)module; return 0; }
+unsigned ir_type_properties(const IrModule *module, IrTypeId type) {
+    (void)module; (void)type; return 0;
+}
 
 int native_runtime_emit_profile(NativeObject *o, TargetFormat t, RuntimeProfile p, int v) {
     (void)p;

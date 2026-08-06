@@ -283,9 +283,9 @@ static int emit_file(Emitter *emitter, int deterministic) {
             if (!emit_global_literal_elements(emitter, global)) return 0;
         }
         if (emitter->native) {
-            if (!native_define(emitter->native, label, symbol->declaration->is_public, 0)) return 0;
+            if (!native_define(emitter->native, label, !emitter->module->program->runtime_component && symbol->declaration->is_public, 0)) return 0;
         } else {
-            if (symbol->declaration->is_public) fprintf(output, "    .globl %s\n", label);
+            if (!emitter->module->program->runtime_component && symbol->declaration->is_public) fprintf(output, "    .globl %s\n", label);
             fprintf(output, "%s:\n", label);
         }
         if (global->array_literal != NULL && global_type != NULL &&
@@ -446,7 +446,7 @@ int x86_64_emit_ir_file(const IrModule *module, TargetFormat target,
         .source_map = source_map_path == NULL ? NULL : &map
     };
     int success = emit_file(&emitter, deterministic);
-    if (success && (!module->program->package_name || !strcmp(module->program->package_name, "main")))
+    if (success && !module->program->runtime_component && (!module->program->package_name || !strcmp(module->program->package_name, "main")))
         success = native_runtime_assembly_requirements(output, target, module->runtime_profile,
                                                   ir_main_returns_void(module),ir_runtime_requirements(module));
     int assembly_io_error = ferror(output);

@@ -44,6 +44,17 @@ static int reserved_link_name(const char *name) {
     return strncmp(name, "__dmm_", 6) == 0;
 }
 
+static int platform_component_export(const char *name) {
+    static const char *const names[] = {
+        "__dmm_async_thread_create", "__dmm_async_thread_join", "__dmm_async_wait_create",
+        "__dmm_async_wait", "__dmm_async_wake", "__dmm_async_wait_reset",
+        "__dmm_async_wait_destroy", "__dmm_platform_exit", "__dmm_platform_thread_entry"
+    };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); ++i)
+        if (!strcmp(name, names[i])) return 1;
+    return 0;
+}
+
 static int append_symbol(Analyzer *analyzer, SemanticSymbol symbol) {
     if (semantic_append_symbol(analyzer->model, symbol)) return 1;
     analyzer->allocation_failed = 1;
@@ -84,9 +95,15 @@ void add_global(Analyzer *analyzer, AstDeclarationNode *declaration,
         semantic_error(analyzer, declaration->name_token, ERROR_CATEGORY_SEMANTIC,
                        ERR_SEM_INVALID_DECLARATION, "Future is a compiler-owned type name");
     if (owner_token == AST_TOKEN_NONE && kind == SEMANTIC_SYMBOL_FUNCTION &&
-        reserved_link_name(name))
+        reserved_link_name(name) &&
+        !(analyzer->model->program->runtime_component && declaration->is_native_export &&
+          platform_component_export(name)))
         semantic_error(analyzer, declaration->name_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_INVALID_DECLARATION,
                        "Function name is reserved by the runtime");
+    if (analyzer->model->program->runtime_component && declaration->is_native_export &&
+        !platform_component_export(name))
+        semantic_error(analyzer, declaration->name_token, ERROR_CATEGORY_SEMANTIC,
+                       ERR_SEM_INVALID_DECLARATION, "Runtime component export is outside the private platform ABI");
     for (size_t i = 0; i < analyzer->model->symbol_count; i++) {
         const SemanticSymbol *existing = &analyzer->model->symbols[i];
         if (!same_package(analyzer->program, existing->source_program)) continue;

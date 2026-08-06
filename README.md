@@ -135,10 +135,11 @@ Standalone native executables do not require libc, a CRT or a foreign-language r
 targets import OS APIs. Assembly output can be handed to external GNU-compatible tools when required. The exact target
 and linking contracts are documented in [NATIVE_BACKEND.md](NATIVE_BACKEND.md).
 
-The optional `--link=external` profile uses regular platform startup and a private platform shim, so those programs
+The optional `--link=external` profile uses regular platform startup and a DMM platform runtime, so those programs
 gain libc/UCRT and documented OS dependencies. Default standalone builds retain their existing runtime and internal
 linker. For object/assembly emission this option selects the future link ABI and starts no external process.
-Used operations from `stdlib/core/net` select that profile automatically and choose the combined network shim.
+Used operations from `stdlib/core/net` select that profile automatically and choose the network archive containing
+DMM platform code and the remaining network C implementation.
 TCP/UDP, IPv4/IPv6, deadlines, cancellation and bounded DNS are documented in
 [NETWORK_RUNTIME.md](NETWORK_RUNTIME.md); an unused import introduces no networking dependency.
 

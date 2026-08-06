@@ -48,7 +48,7 @@ foreach(driver IN LISTS drivers)
         endif()
         execute_process(COMMAND "${driver}" "${OUTPUT_DIR}/${name}_${syntax}.s" "${OUTPUT_DIR}/${name}.o"
             # The network bundle includes platform startup and thread support.
-            "${compiler_directory}/dmm-runtime/${target}/network-shim.o" ${link_options}
+            "${compiler_directory}/dmm-runtime/${target}/network-shim.a" ${link_options}
             -o "${OUTPUT_DIR}/${name}_${syntax}.exe"
             RESULT_VARIABLE result ERROR_VARIABLE diagnostics TIMEOUT 30)
         if(NOT result EQUAL 0)

@@ -1,4 +1,15 @@
 cmake_minimum_required(VERSION 3.21)
+
+# Select the local MinGW installation before project() detects the compiler.
+if (CMAKE_HOST_WIN32 AND CMAKE_GENERATOR MATCHES "Ninja|Makefiles"
+        AND NOT CMAKE_TOOLCHAIN_FILE AND NOT CMAKE_C_COMPILER
+        AND "$ENV{CC}" STREQUAL "")
+    set(DMM_MINGW_ROOT "C:/ProgramData/mingw64/mingw64" CACHE PATH "MinGW installation directory")
+    if (EXISTS "${DMM_MINGW_ROOT}/bin/gcc.exe")
+        set(CMAKE_C_COMPILER "${DMM_MINGW_ROOT}/bin/gcc.exe" CACHE FILEPATH "C compiler")
+    endif ()
+endif ()
+
 project(compiler VERSION 5.1.0 LANGUAGES C)
 
 add_compile_definitions(DMM_SOURCE_ROOT="${CMAKE_SOURCE_DIR}")
@@ -120,39 +131,48 @@ add_executable(compiler
 target_include_directories(compiler PRIVATE ${DMM_INCLUDE_DIRS})
 if (NOT MSVC)
     if (WIN32)
+        include(CheckCSourceCompiles)
+        check_c_source_compiles("#include <stdlib.h>\n#if !defined(__MINGW32__) || !defined(_WIN64) || !defined(_UCRT)\n#error UCRT64_required\n#endif\nint main(void) { return 0; }" DMM_HAVE_UCRT64)
+        if (NOT DMM_HAVE_UCRT64)
+            message(FATAL_ERROR "The Windows platform runtime requires MinGW-w64 UCRT64")
+        endif ()
         set(DMM_SHIM_FORMAT coff)
     else ()
         set(DMM_SHIM_FORMAT elf)
     endif ()
-    add_library(dmm_platform_shim OBJECT src/runtime/platform_bundle.c)
-    target_compile_options(dmm_platform_shim PRIVATE -Wall -Wextra -Wpedantic)
-    if (DMM_STRICT_WARNINGS)
-        target_compile_options(dmm_platform_shim PRIVATE -Wconversion -Wshadow -Werror)
-    endif ()
-    target_compile_definitions(dmm_platform_shim PRIVATE _XOPEN_SOURCE=700)
-    add_dependencies(compiler dmm_platform_shim)
-    set_property(TARGET compiler APPEND PROPERTY LINK_DEPENDS "$<TARGET_OBJECTS:dmm_platform_shim>")
-    add_custom_command(TARGET compiler POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:compiler>/dmm-runtime/${DMM_SHIM_FORMAT}"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_OBJECTS:dmm_platform_shim>
-            "$<TARGET_FILE_DIR:compiler>/dmm-runtime/${DMM_SHIM_FORMAT}/platform-shim.o"
-        COMMAND_EXPAND_LISTS)
-    install(FILES $<TARGET_OBJECTS:dmm_platform_shim>
-        DESTINATION bin/dmm-runtime/${DMM_SHIM_FORMAT} RENAME platform-shim.o)
-    add_library(dmm_network_shim OBJECT src/runtime/network_bundle.c)
+    file(GLOB_RECURSE DMM_PLATFORM_SOURCES CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/platform/*"
+        "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/native/*.dmm")
+    set(DMM_PLATFORM_OBJECT "${CMAKE_CURRENT_BINARY_DIR}/dmm-runtime/${DMM_SHIM_FORMAT}/platform-shim.o")
+    set(DMM_NETWORK_OBJECT "${CMAKE_CURRENT_BINARY_DIR}/dmm-runtime/${DMM_SHIM_FORMAT}/network-shim.a")
+    add_custom_command(OUTPUT "${DMM_PLATFORM_OBJECT}"
+        BYPRODUCTS "${DMM_PLATFORM_OBJECT}.link"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/dmm-runtime/${DMM_SHIM_FORMAT}"
+        COMMAND $<TARGET_FILE:compiler> --runtime-component -O1 --target=${DMM_SHIM_FORMAT}
+            --dump-native-link "${DMM_PLATFORM_OBJECT}.link"
+            -o "${DMM_PLATFORM_OBJECT}" "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/platform/platform.dmm"
+        DEPENDS compiler ${DMM_PLATFORM_SOURCES}
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        VERBATIM)
+    add_custom_target(dmm_platform_runtime ALL DEPENDS "${DMM_PLATFORM_OBJECT}")
+    set_source_files_properties("${DMM_PLATFORM_OBJECT}" PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
+    install(FILES "${DMM_PLATFORM_OBJECT}" "${DMM_PLATFORM_OBJECT}.link"
+        DESTINATION bin/dmm-runtime/${DMM_SHIM_FORMAT})
+    add_library(dmm_network_shim OBJECT src/runtime/network_shim.c)
     target_compile_options(dmm_network_shim PRIVATE -Wall -Wextra -Wpedantic)
     if (DMM_STRICT_WARNINGS)
         target_compile_options(dmm_network_shim PRIVATE -Wconversion -Wshadow -Werror)
     endif ()
     target_compile_definitions(dmm_network_shim PRIVATE _GNU_SOURCE _XOPEN_SOURCE=700)
-    add_dependencies(compiler dmm_network_shim)
-    set_property(TARGET compiler APPEND PROPERTY LINK_DEPENDS "$<TARGET_OBJECTS:dmm_network_shim>")
-    add_custom_command(TARGET compiler POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_OBJECTS:dmm_network_shim>
-            "$<TARGET_FILE_DIR:compiler>/dmm-runtime/${DMM_SHIM_FORMAT}/network-shim.o"
-        COMMAND_EXPAND_LISTS)
-    install(FILES $<TARGET_OBJECTS:dmm_network_shim>
-        DESTINATION bin/dmm-runtime/${DMM_SHIM_FORMAT} RENAME network-shim.o)
+    add_custom_command(OUTPUT "${DMM_NETWORK_OBJECT}"
+        COMMAND ${CMAKE_COMMAND} -E rm -f "${DMM_NETWORK_OBJECT}"
+        COMMAND ${CMAKE_AR} qc "${DMM_NETWORK_OBJECT}" $<TARGET_OBJECTS:dmm_network_shim> "${DMM_PLATFORM_OBJECT}"
+        COMMAND ${CMAKE_RANLIB} "${DMM_NETWORK_OBJECT}"
+        DEPENDS dmm_network_shim $<TARGET_OBJECTS:dmm_network_shim> "${DMM_PLATFORM_OBJECT}"
+        COMMAND_EXPAND_LISTS VERBATIM)
+    add_custom_target(dmm_network_runtime ALL DEPENDS "${DMM_NETWORK_OBJECT}")
+    add_dependencies(dmm_network_runtime dmm_platform_runtime)
+    install(FILES "${DMM_NETWORK_OBJECT}" DESTINATION bin/dmm-runtime/${DMM_SHIM_FORMAT})
 endif ()
 add_custom_command(TARGET compiler POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -218,9 +238,10 @@ endif ()
 
 include(CTest)
 if (BUILD_TESTING)
-    if (TARGET dmm_platform_shim)
+    if (TARGET dmm_platform_runtime)
         find_package(Threads REQUIRED)
-        add_executable(dmm_platform_shim_test tests/unit/platform_shim_test.c src/runtime/platform_shim.c)
+        add_executable(dmm_platform_shim_test tests/unit/platform_shim_test.c "${DMM_PLATFORM_OBJECT}")
+        add_dependencies(dmm_platform_shim_test dmm_platform_runtime)
         target_include_directories(dmm_platform_shim_test PRIVATE ${DMM_INCLUDE_DIRS})
         target_link_libraries(dmm_platform_shim_test PRIVATE Threads::Threads)
         target_compile_definitions(dmm_platform_shim_test PRIVATE _XOPEN_SOURCE=700)
@@ -230,8 +251,15 @@ if (BUILD_TESTING)
         endif ()
         add_test(NAME platform_shim_unit COMMAND dmm_platform_shim_test)
         set_tests_properties(platform_shim_unit PROPERTIES LABELS "unit;runtime;platform;safety" TIMEOUT 20)
+        add_test(NAME runtime_component_contract COMMAND ${CMAKE_COMMAND}
+            -DCOMPILER=$<TARGET_FILE:compiler> -DC_DRIVER=${CMAKE_C_COMPILER} -DNM=${CMAKE_NM} -DAR=${CMAKE_AR}
+            -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/runtime_component_test
+            -P ${CMAKE_SOURCE_DIR}/tests/runtime_component_test.cmake)
+        set_tests_properties(runtime_component_contract PROPERTIES
+            LABELS "integration;runtime;platform;ffi;safety;abi" TIMEOUT 180)
         add_executable(dmm_network_shim_test tests/unit/network_shim_test.c
-            src/runtime/network_shim.c src/runtime/platform_shim.c)
+            src/runtime/network_shim.c "${DMM_PLATFORM_OBJECT}")
+        add_dependencies(dmm_network_shim_test dmm_platform_runtime)
         target_include_directories(dmm_network_shim_test PRIVATE ${DMM_INCLUDE_DIRS})
         target_compile_definitions(dmm_network_shim_test PRIVATE _GNU_SOURCE _XOPEN_SOURCE=700 DMM_NET_TESTING)
         target_compile_options(dmm_network_shim_test PRIVATE -Wall -Wextra -Wpedantic)
@@ -246,7 +274,7 @@ if (BUILD_TESTING)
         set_tests_properties(network_shim_unit PROPERTIES LABELS "unit;runtime;network;safety" TIMEOUT 30)
         add_test(NAME network_runtime_contract COMMAND ${CMAKE_COMMAND}
             -DCOMPILER=$<TARGET_FILE:compiler> -DASSEMBLER=${CMAKE_C_COMPILER}
-            -DSHIM=$<TARGET_FILE_DIR:compiler>/dmm-runtime/${DMM_SHIM_FORMAT}/network-shim.o
+            -DSHIM=${DMM_NETWORK_OBJECT}
             -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/network_runtime_test
             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/network_runtime_test.cmake)
         set_tests_properties(network_runtime_contract PROPERTIES LABELS "integration;runtime;network;safety;abi" TIMEOUT 180)

@@ -647,6 +647,14 @@ The staged contract is in [plans/ffi.md](plans/ffi.md).
 
 ## Implementation limits
 
+`--runtime-component` is an explicit compiler bootstrap mode, not an FFI language feature. It produces a
+library object or assembly with no application startup, package initialization/cleanup or automatic runtime
+linkage. Only the fixed private platform thread/event/exit exports and `__dmm_platform_thread_entry` are allowed;
+other runtime-reserved function names remain rejected. Components use scalar/POD values, raw pointers and
+native calls. Compiler base helpers must be declared as explicit native imports if used. Implicit runtime
+dependencies, reachable async/drop bodies and runtime global initializers are rejected. This mode supplies
+the DMM platform runtime described in [plans/ffi-stage4.md](plans/ffi-stage4.md).
+
 Tokens are at most 511 bytes, an expression is at most 512 tokens, and a local object or function stack frame is at most
 8 MiB. Exceeding a limit is a compilation error, never silent truncation.
 

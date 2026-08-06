@@ -357,6 +357,7 @@ struct AstProgram {
     DmmPackage *package;
     DmmModule *module;
     int executable_build;
+    int runtime_component; /* Explicit bootstrap build; no application runtime. */
     char *source_path;
     char *module_identity;
     AstToken *tokens;

@@ -38,6 +38,7 @@ static void print_usage(const char *program_name) {
     printf("  --ide          Recover syntax for editor analysis; requires --dump-ast, emits no program\n");
     printf("  --ide-buffer FILE  Read editor contents from FILE while keeping the source path/imports (--ide only)\n");
     printf("  --emit=MODE    Output exe (default), obj, or asm\n");
+    printf("  --runtime-component Build a private runtime object without application startup/runtime\n");
     printf("  --link=MODE    auto (default), internal, external; external requests platform runtime\n");
     printf("                 For obj/asm selects the future link ABI; starts no link process\n");
     printf("  --linker-driver PATH  GCC-compatible driver (default: gcc); exe only\n");
@@ -180,6 +181,7 @@ int main(int argc, char *argv[]) {
     NativeLinkOptions native_options = {.libraries = native_libraries, .directories = native_directories};
     const char *native_link_dump = NULL;
     int emission_requested = 0;
+    int runtime_component = 0;
     int optimize = 1;
     int optimization_requested = 0;
     int show_tokens = 0;
@@ -302,6 +304,9 @@ int main(int argc, char *argv[]) {
         } else if (!strcmp(argv[i], "-c") || !strcmp(argv[i], "-S")) {
             emission = !strcmp(argv[i], "-c") ? BACKEND_OBJECT : BACKEND_ASSEMBLY;
             emission_requested = 1;
+        } else if (!strcmp(argv[i], "--runtime-component")) {
+            runtime_component = 1;
+            if (!emission_requested) emission = BACKEND_OBJECT;
         } else if (strncmp(argv[i], "--emit=", 7) == 0) {
             emission_requested = 1;
             const char *mode = argv[i] + 7;
@@ -423,6 +428,15 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    if (runtime_component && (emission == BACKEND_EXECUTABLE || link_mode != LINK_AUTO ||
+                              linker_driver || runtime_shim)) {
+        error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                     ERR_COMP_INVALID_OPTION, source_file,
+                     "Runtime components require object/assembly emission without linker or runtime overrides");
+        error_handler_flush(error_handler);
+        error_handler_free(error_handler);
+        return 1;
+    }
     if (ir_pass_dump_path != NULL && !optimize) {
         error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
                      ERR_COMP_INVALID_OPTION, source_file,
@@ -478,7 +492,10 @@ int main(int argc, char *argv[]) {
         error_handler->source_override_path = ide_buffer;
     }
     AstProgram *program = frontend_parse_file(source_file, &frontend_options);
-    if (program) program->executable_build = !ide_mode && emission == BACKEND_EXECUTABLE;
+    if (program) {
+        program->executable_build = !ide_mode && emission == BACKEND_EXECUTABLE;
+        program->runtime_component = runtime_component;
+    }
     if (program == NULL) {
         error_handler_flush(error_handler);
         error_handler_free(error_handler);

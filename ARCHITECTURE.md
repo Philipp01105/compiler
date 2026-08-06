@@ -77,8 +77,10 @@ in [LANGUAGE_SPEC.md](LANGUAGE_SPEC.md).
 - `src/runtime/native_runtime.c` supplies executable startup and native runtime shims; system imports have private names
   to prevent source-symbol collisions. See [NATIVE_BACKEND.md](NATIVE_BACKEND.md) for image layout and limits.
 - `src/runtime/native_executor.inc` emits scheduling and Future adapters; `native_threads.inc` emits standalone
-  threads/events. `executor.c` is the independently tested C contract implementation. The optional `platform_shim.c`
-  supplies pthread/UCRT64 thread and event primitives; `network_shim.c` adds epoll/IOCP and bounded DNS.
+  threads/events. `executor.c` is the independently tested C contract implementation. `src/runtime/platform/*.dmm`
+  supplies pthread/UCRT64 threads, events and exit through native exports; `network_shim.c` adds epoll/IOCP and bounded DNS.
+  The compiler emits the platform `main` bridge. Runtime objects are built by the completed compiler in the
+  `--runtime-component` bootstrap mode and then installed beside it.
 - `src/diagnostics` buffers and renders text or JSON diagnostics from every phase.
 - `src/driver` owns CLI validation and phase lifetime. `external_link.c` selects a matching GCC-compatible driver,
   the required private runtime shim and OS link dependencies, then checks external-link success.

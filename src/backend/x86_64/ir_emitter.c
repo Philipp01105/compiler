@@ -2642,7 +2642,7 @@ int emit_function(Emitter *emitter) {
     if (name == NULL) return 0;
     emitter->current_label = IR_VALUE_NONE;
     emitter->bounds_sequence = 0;
-    int exported = !emitter->function->is_drop_glue &&
+    int exported = !emitter->module->program->runtime_component && !emitter->function->is_drop_glue &&
                    !emitter->function->is_package_init &&
                    !emitter->function->is_package_cleanup &&
                    (emitter->module->semantics->symbols[

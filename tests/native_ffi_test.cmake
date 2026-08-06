@@ -29,7 +29,7 @@ foreach(driver IN LISTS drivers)
             message(FATAL_ERROR "Native ABI execution failed (${driver_name}, O${level}): checkpoint ${result}: ${diagnostics}")
         endif()
         file(READ "${OUTPUT_DIR}/link_${driver_name}_${level}.txt" link)
-        if(NOT link MATCHES "dmm-native-link-v1" OR NOT link MATCHES "runtime-profile=platform" OR
+        if(NOT link MATCHES "dmm-native-link-v2" OR NOT link MATCHES "runtime-profile=platform" OR
            link MATCHES "never_link_this")
             message(FATAL_ERROR "Incorrect emitted native dependency inventory: ${link}")
         endif()

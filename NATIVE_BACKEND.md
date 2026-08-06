@@ -80,27 +80,41 @@ compiler --link=external --emit=asm --syntax=att program.dmm -o program.s
 
 Platform executables use the platform's C startup and documented platform libraries. Standalone startup, native
 runtime and internal linking are unchanged. Platform output still embeds the generated DMM memory/I/O runtime and
-scheduler, but leaves private thread/event operations to a separately compiled shim. It defines
+scheduler, but leaves private thread/event operations to a separately compiled DMM component. It defines
 `int __dmm_runtime_main(void)` instead of `__dmm_entry`; DMM `main` is privately named `__dmm_program_main`.
-The shim's C `main` only returns `__dmm_runtime_main()`.
+The compiler also emits the native `main` bridge to `__dmm_runtime_main()`; no custom C entry is linked.
 
 The generated bridge owns the lifecycle: loader-initialized runtime storage is available before package initializers;
 then package initialization, DMM main, preservation of its exit code, default-executor drain, package cleanup and
 return to C startup. Draining releases the default executor's runtime state. No additional eager runtime allocation
 or global teardown phase is introduced. A void main returns zero. Immediate `exit`, traps and fatal failures bypass
 normal DMM cleanup; platform `exit` terminates the entire process, including when called from a worker.
-The shim has no package-cleanup or scheduler-lifecycle knowledge. Its private ABI is documented in
+The DMM platform component has no package-cleanup or scheduler-lifecycle knowledge. Its private ABI is documented in
 `src/runtime/platform_shim.h` and `src/runtime/EXECUTOR.md`.
 
 The external executable path defaults to `gcc` from PATH. `--linker-driver PATH` selects a GCC-compatible driver;
-`--runtime-shim PATH` selects a matching private shim object. CMake builds the shim and installs it next to the
+`--runtime-shim PATH` selects a matching private runtime object or archive. CMake first builds the compiler, then
+uses it to build `src/runtime/platform/*.dmm` and installs the object next to the
 compiler as `dmm-runtime/elf/platform-shim.o` or `dmm-runtime/coff/platform-shim.o`. Discovery uses the running
 compiler's directory, including when the compiler was found through PATH. Linux GCC/Clang and Windows MinGW-w64
 UCRT64 GCC/Clang are supported; MSVC and MSVCRT shims are not supported. Cross-linking requires both overrides and
 a matching target toolchain. The override is a private ABI implementation, not a public arbitrary-object or FFI API.
-Network requirements instead select the complete `network-shim.o` in the same directory, add Windows `ws2_32`,
+Network requirements instead select the complete `network-shim.a` in the same directory, add Windows `ws2_32`,
 and insert DRAINING before package cleanup and network shutdown afterward. Pure platform programs retain the smaller
-shim and no networking dependency.
+component and no networking dependency. The network archive contains the DMM platform object and the remaining
+network C object; GCC and Clang can link it without a relocatable COFF linker. Archive overrides are checked for
+the correct machine and object format in every object member.
+
+`--runtime-component` defaults to object emission and also accepts `-S`. It requires a library package and
+rejects executable emission, link-mode/driver/runtime overrides, runtime global initializers, owned global cleanup,
+reachable async/drop bodies and implicit runtime-helper dependencies. Its only exported symbols are the fixed
+private platform entries plus `__dmm_platform_thread_entry`; ordinary helpers and imported DMM functions remain
+local. Native imports (including explicitly declared base helpers, if needed) remain unresolved and are recorded
+by `--dump-native-link`. The compiler never attaches application startup, scheduler or platform/network objects
+to a component. Windows compiler stack probes remain a driver-provided dependency.
+
+Build the default CMake target (or `dmm_platform_runtime` / `dmm_network_runtime`) before installation. Runtime
+objects depend on the compiler and DMM binding sources, preventing a bootstrap cycle and rebuilding after changes.
 
 Manual linking of platform output uses regular C startup, **without** standalone entry flags or `-nostdlib`:
 

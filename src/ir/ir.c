@@ -1284,7 +1284,7 @@ static int select_owned_type(IrModule *module,IrTypeId id,unsigned depth) {
 }
 void ir_select_runtime_functions(IrModule *module) {
     /* Whole-program emission only. Library objects retain their exported API. */
-    if(module->program->package_name && strcmp(module->program->package_name,"main")) return;
+    if(!module->program->runtime_component && module->program->package_name && strcmp(module->program->package_name,"main")) return;
     module->emission_selected=1;
     for(size_t f=0;f<module->function_count;f++) {
         IrFunction *fn=&module->functions[f];
@@ -1296,6 +1296,7 @@ void ir_select_runtime_functions(IrModule *module) {
             fn->interface_thunk_symbol_id!=AST_SYMBOL_NONE||
             (!fn->is_drop_glue && fn->source_program==module->program &&
              !strcmp(ast_program_lexeme(fn->source_program,fn->name_token),"main"));
+        if (module->program->runtime_component) fn->emission_reachable = fn->is_native_export;
         /* Emitted interface tables contain method addresses even when a call
            goes through an erased callable rather than an explicit IR call. */
         if(fn->owner_symbol_id!=AST_SYMBOL_NONE)
@@ -1304,6 +1305,10 @@ void ir_select_runtime_functions(IrModule *module) {
                    semantic_implements_interface(module->semantics,s,fn->owner_symbol_id))
                     fn->emission_reachable=1;
     }
+    if (module->program->runtime_component)
+        for (size_t g = 0; g < module->global_count; ++g)
+            if (module->globals[g].function_symbol_id != AST_SYMBOL_NONE)
+                (void) select_symbol(module, module->globals[g].function_symbol_id);
     int changed=1;
     while(changed) {
         changed=0;

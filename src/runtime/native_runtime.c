@@ -583,6 +583,10 @@ int native_runtime_emit_requirements(NativeObject *object, TargetFormat target,
         if (requirements&RUNTIME_REQUIRE_NETWORK) call(&r,"__dmm_net_finish");
         load(&r, "rax", 8);
         end(&r);
+        /* The C driver supplies regular CRT startup; the compiler owns main. */
+        begin(&r, "main", 0);
+        call(&r, "__dmm_runtime_main");
+        end(&r);
         return !object->failed;
     }
     (void) native_define(object, "__dmm_entry", 1, 1);

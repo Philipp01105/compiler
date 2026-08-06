@@ -31,5 +31,6 @@ An initialized, zero-valued native function-pointer variable supplies a null
 completion routine. Strings require an explicit pointer to terminated byte storage,
 for example `core.core_string_data("0")`; there is no implicit marshaling.
 
-These bindings prepare the runtime migration. The compiler still installs its
-existing C platform/network shims at this milestone.
+The platform runtime now uses these bindings in `src/runtime/platform/*.dmm`.
+The compiler builds and installs a DMM platform object; the remaining network C
+implementation is packaged with it in `network-shim.a` until stage 5.

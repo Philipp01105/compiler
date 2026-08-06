@@ -16,7 +16,7 @@ Dumps are written as soon as their compiler phase has completed. Consequently, `
 a parser failure, and `--dump-ast`/`--dump-symbols` remain available after a semantic failure. IR and CFG dumps require
 successful semantic analysis and lowering.
 
-## `dmm-native-link-v1`
+## `dmm-native-link-v2`
 
 `--dump-native-link FILE` describes the output target ABI and runtime profile after
 function selection, then lists native imports with logical library IDs and native
@@ -24,7 +24,11 @@ symbol names. Explicit overrides add their file path; requested search directori
 are listed separately. Unused imports are absent. Quoted values escape quotes,
 backslashes and newlines. This inventory accompanies object/assembly output without
 starting a linker. Platform output still requires the matching installed runtime
-shim and regular C startup, as described in [NATIVE_BACKEND.md](NATIVE_BACKEND.md).
+component and regular C startup, as described in [NATIVE_BACKEND.md](NATIVE_BACKEND.md).
+Version 2 adds `runtime-profile=component` for `--runtime-component`: these objects
+have no application startup or automatic runtime dependencies. Other profile values
+remain `standalone` and `platform`. Global native function-pointer initializers also
+contribute used imports. AST and IR formats remain version 5 at this milestone.
 
 The v5 IR instruction inventory also includes `native-copy`, a byte-exact snapshot
 of a native struct before evaluation of later call arguments.

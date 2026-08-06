@@ -2,14 +2,14 @@
 
 ## Private platform ABI v1
 
-The optional platform profile keeps the emitted scheduler but replaces thread/event primitives with
-`platform_shim.c`. The declarations in `platform_shim.h` use the x86-64 System V or Microsoft x64 C ABI. Thread
+The optional platform profile keeps the emitted scheduler but implements thread/event primitives in
+`platform/*.dmm`. The compatibility declarations in `platform_shim.h` use the x86-64 System V or Microsoft x64 C ABI. Thread
 creation takes `void (*callback)(void *)` and its argument and returns a non-null opaque handle. The callback returns
 normally. Join waits for confirmed thread termination, then consumes the handle. Allocations never cross runtime
 ownership boundaries. Resource/API failures are fatal, with no recoverable partial startup contract.
 
 Linux implements threads with pthreads, including libc TLS initialization. Windows is specifically MinGW-w64
-UCRT64: `_beginthreadex` starts a C trampoline, normal trampoline return performs CRT thread cleanup, and join uses
+UCRT64: `_beginthreadex` starts a native DMM export, normal callback return performs CRT thread cleanup, and join uses
 `WaitForSingleObject` followed by `CloseHandle`. Generated workers do not use raw clone or CreateThread in this profile.
 
 `__dmm_async_wait_create` returns an initially unsignalled manual-reset event. `__dmm_async_wake` signals it and
@@ -18,11 +18,12 @@ predicate and condition-variable loop; Windows uses a manual-reset Win32 event. 
 predicate lock, and destroy requires every waiter to have stopped. Existing no-lost-wake and single-poller invariants
 apply identically to standalone and platform profiles.
 
-Platform C startup calls the generated `int __dmm_runtime_main(void)` once. The generated object owns package init,
-DMM main, default-executor drain, package cleanup and the preserved return status; the C entry only forwards the call.
+Regular platform C startup calls the compiler-generated `main`, which forwards to `int __dmm_runtime_main(void)` once.
+The generated object owns package init, DMM main, default-executor drain, package cleanup and the preserved return status.
 Immediate process exit and traps do not run this normal cleanup path. `__dmm_platform_exit` terminates the whole
 process from any thread. This private ABI is not a source-language foreign-function interface.
-With NETWORK, the combined shim supplies reactor/DNS operations through the generated I/O acknowledgement ABI.
+With NETWORK, `network-shim.a` combines the remaining network C implementation and the DMM platform object,
+and supplies reactor/DNS operations through the generated I/O acknowledgement ABI.
 Networking remains RUNNING throughout executor Drain; it enters DRAINING immediately before package cleanup and
 shuts down after cleanup. The core ownership contract and platform implementations are in
 [NETWORK_RUNTIME.md](../../NETWORK_RUNTIME.md).

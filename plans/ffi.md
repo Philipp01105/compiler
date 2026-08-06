@@ -10,8 +10,13 @@ von Etappe 2 ist in [ffi-stage2.md](ffi-stage2.md) festgehalten.
 Etappe 3 ist ebenfalls implementiert und geprüft: native Function-Pointer,
 Exports und Callbacks, Unions und Packing/Alignment, Windows-Unwind-Metadaten,
 Target-Dateiauswahl und Raw-OS-Bindings. Der Prüfstand steht in
-[ffi-stage3.md](ffi-stage3.md). Etappen 4 und 5 bleiben offen; die vorhandenen
-C-Runtime-Shims sind weiterhin erforderlich.
+[ffi-stage3.md](ffi-stage3.md).
+
+Etappe 4 ist implementiert und geprüft: Plattform-Threads, Events, Join und Exit
+liegen in DMM; der Compiler erzeugt die Startup-Brücke. Der Bootstrap-Modus baut
+und installiert die Komponente ohne rekursive Runtime-Einbindung. Eigener
+Plattform-C-Code ist entfernt. Der Prüfstand steht in [ffi-stage4.md](ffi-stage4.md).
+Nur Etappe 5 bleibt offen; die Netzwerkimplementierung ist weiterhin in C.
 
 DMM erhält eine allgemeine native FFI für x86-64 Linux/glibc und Windows mit
 MinGW-w64 UCRT64. GCC und Clang dienen als externe Treiber. Danach werden die
@@ -196,7 +201,7 @@ und DNS erforderlichen Typen sind darstellbar.
   DMM-Exports implementiert.
 - Der Compiler erzeugt die reguläre C-Startup-Funktion `main` direkt als
   ABI-Brücke zu `__dmm_runtime_main`.
-- Expliziter Runtime-Komponenten-Build-Modus (geplant: `--runtime-component`):
+- Expliziter Runtime-Komponenten-Build-Modus `--runtime-component`:
   Er emittiert Objektdateien ohne Application-Startup, Package-main-Wrapper oder
   automatische Runtime-Verknüpfung. Native Imports bleiben als Requirements
   verfügbar. Dieser Modus erlaubt ausschließlich den festgelegten privaten

@@ -1,7 +1,7 @@
 # Private network runtime and core API
 
 `stdlib/core/net` is the typed low-level TCP/UDP and DNS foundation. It requires the root manifest's
-`features = ["async"]`. Public `stdlib/net`, TLS, HTTP, general FFI and socket convenience options remain future work.
+`features = ["async"]`. Public `stdlib/net`, TLS, HTTP and socket convenience options remain future work.
 
 ## Selection and linking
 
@@ -13,8 +13,9 @@ function bodies, rather than predicting which branches execute.
 
 `--link=auto` uses external linking for network programs. `--link=internal` rejects their platform profile. Object and
 assembly emission use the same private ABI but start no external process. CMake builds and installs the combined
-`dmm-runtime/elf/network-shim.o` or `dmm-runtime/coff/network-shim.o` beside the compiler. This object includes the
-platform primitives and C entry; do not link both shims. `--runtime-shim PATH` replaces the complete required object.
+`dmm-runtime/elf/network-shim.a` or `dmm-runtime/coff/network-shim.a` beside the compiler. This archive includes the DMM
+platform primitives and the remaining network C object; do not link both runtime bundles.
+`--runtime-shim PATH` replaces the complete required archive. Regular C startup calls compiler-generated `main`.
 Cross-linking requires an explicit matching GCC-compatible driver and shim. Only network programs add Windows
 `ws2_32`; pure platform output uses the smaller `platform-shim.o`. Standalone startup and dependencies remain unchanged.
 
@@ -22,11 +23,11 @@ Cross-linking requires an explicit matching GCC-compatible driver and shim. Only
 compiler program.dmm --linker-driver gcc -o program
 compiler program.dmm --emit=obj -o program.o
 # Linux regular C startup
-gcc -no-pie program.o /path/to/dmm-runtime/elf/network-shim.o -pthread -o program
+gcc -no-pie program.o /path/to/dmm-runtime/elf/network-shim.a -pthread -o program
 # Windows MinGW-w64 UCRT64, GCC or Clang
-gcc program.obj C:/path/dmm-runtime/coff/network-shim.o -lws2_32 -o program.exe
+gcc program.obj C:/path/dmm-runtime/coff/network-shim.a -lws2_32 -o program.exe
 # Assembly also uses ordinary startup; for an arbitrary suffix:
-gcc -x assembler program.asm -x none /path/to/network-shim.o -pthread -no-pie -o program
+gcc -x assembler program.asm -x none /path/to/network-shim.a -pthread -no-pie -o program
 ```
 
 ## Typed operations and ownership
