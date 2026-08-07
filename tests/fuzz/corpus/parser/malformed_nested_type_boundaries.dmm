@@ -1,0 +1,15 @@
+package main;
+auto interface Stable<T>{func impossible()->void;}
+@[Stable + Stable where Pair<int,func<X>(X)->X>:Stable]
+@[no_default]
+struct Broken<T:Stable+Unknown>{
+    var callbacks:(func<U:Stable>(U[3],&mut U)->Pair<U,*U>)[2];
+    var nested:Pair<Pair<int,double>,func(*int)->int>;
+    func read<V>(value:V)->Pair<T,V>{return Pair<T,V>{first:,second:value};}
+}
+@[Stable where Broken<int>:Stable] type Broken<int>;
+func main()->int {
+    var result=a.B<int>.C<Pair<int,func(int)->int>>();
+    var selected=if(true){match(result){Some(value)=>{value} None=>{0}}}else{;
+    return selected;
+}

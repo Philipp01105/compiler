@@ -97,6 +97,7 @@ jobs:
             fi
 
             if [ "$stage" != syntax_converter ]; then
+              cp tests/fuzz/corpus/ir/*.dmm "build/corpus/$stage/"
               find tests/execution/generics \
                 -type f \
                 -name '*.dmm' \

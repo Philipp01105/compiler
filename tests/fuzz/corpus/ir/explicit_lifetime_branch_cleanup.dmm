@@ -1,0 +1,38 @@
+package main;
+
+var drops:int;
+@[no_default]
+struct Lease<T> {
+    var payload:T;
+    var weight:int;
+    destructor { drops+=weight; }
+}
+struct Holder<T> { var lease:Lease<T>; var tag:int; }
+enum OptionalLease<T> { None, Some(Lease<T>) }
+func initialize<T>(pointer:*T,value:T)->void { __dmm_intrinsic_initialize(pointer,value); }
+func destroy<T>(pointer:*T)->void { __dmm_intrinsic_destroy(pointer); }
+func record(target:&mut int,amount:int)->void { *target+=amount; }
+func make<T>(value:T,weight:int)->Lease<T> { return Lease<T>{payload:value,weight:weight}; }
+func branch(flag:bit)->int {
+    var lease:Lease<int>;
+    if(flag){lease=make(3,1);}
+    lease=make(5,2);
+    destroy<Lease<int>>(&lease);
+    initialize<Lease<int>>(&lease,make(8,3));
+    var moved=lease;
+    lease=make(13,4);
+    var audit:int;
+    defer record(&mut audit,7);
+    var block:*Lease<int>=reserve(Lease<int>);
+    initialize<Lease<int>>(block,make(21,5));
+    var output=block.payload+moved.payload+lease.payload;
+    destroy<Lease<int>>(block);
+    initialize<Lease<int>>(block,make(34,6));
+    destroy<Lease<int>>(block);
+    free(block);
+    var optional:OptionalLease<int>;
+    if(flag){optional=OptionalLease<int>.Some(make(55,7));}
+    output+=sizeof(OptionalLease<int>).(int);
+    return output;
+}
+func main()->int { var total=branch(false)+branch(true); return total+drops; }

@@ -1,0 +1,34 @@
+package main;
+import "stdlib/core";
+import "stdlib";
+struct State {var processed:core.AtomicUsize; var errors:core.AtomicUsize;}
+async func worker(owner:core.Shared<State>,rounds:int)->stdlib.Result<int,int> {
+    var state=owner.get();
+    for(var i=0;i<rounds;i+=1){
+        var count=state.processed.load();
+        while(state.processed.compareExchange(count,count+1.(usize))!=count){count=state.processed.load();}
+        if(i%3==0){var copy=owner.clone(); var view=copy.get(); var n=view.errors.load();}
+    }
+    return stdlib.Result<int,int>.Ok(rounds);
+}
+async func collect(handle:JoinHandle<stdlib.Result<int,int>>)->int {
+    match(handle.await()){
+        Ok(result)=>match(result){Ok(value)=>return value; Err(code)=>return -code;}
+        Err(error)=>return -1;
+    }
+}
+func main()->int {
+    match(core.shared(State{processed:core.atomicUsize(0.(usize)),errors:core.atomicUsize(0.(usize))})){
+        Ok(owner)=>{
+            var executor=Executor.create(3);
+            var first=executor.spawn(worker(owner.clone(),20));
+            var second=executor.spawn(worker(owner.clone(),30));
+            var cancelled=executor.spawn(worker(owner.clone(),40));
+            block_on(cancel(cancelled));
+            var total=executor.block_on(collect(first))+executor.block_on(collect(second));
+            block_on(executor.shutdown(ShutdownMode.Drain));
+            return total;
+        }
+        Err(error)=>return 1;
+    }
+}

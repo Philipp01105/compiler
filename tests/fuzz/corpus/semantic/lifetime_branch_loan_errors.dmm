@@ -1,0 +1,21 @@
+package main;
+@[no_default] struct Resource {var value:int; destructor{}}
+struct Aggregate<T>{var items:T[2];}
+enum Optional<T>{Some(T),None}
+func destroy<T>(pointer:*T)->void{__dmm_intrinsic_destroy(pointer);}
+func initialize<T>(pointer:*T,value:T)->void{__dmm_intrinsic_initialize(pointer,value);}
+func branch(flag:bit)->int {
+    var value:Resource;
+    if(flag){value=Resource{value:7};}
+    var view:&Resource=&value;
+    destroy<Resource>(&value);
+    var alias:&Resource=view;
+    destroy<Resource>(alias);
+    initialize<Resource>(&value,Resource{value:8});
+    initialize<Resource>(&value,Resource{value:9});
+    var aggregate:Aggregate<Resource>;
+    var optional:Optional<Resource>;
+    aggregate.items[0]=value;
+    match(optional){Some(item)=>return item.value+alias.value; None=>return view.value;}
+}
+func main()->int{return branch(true);}

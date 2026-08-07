@@ -760,8 +760,12 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
                     if (!depth && look < parser->program->token_count &&
                         (parser->program->tokens[look].type == TOKEN_DOT || parser->program->tokens[look].type ==
                          TOKEN_LPAREN)) {
+                        size_t saved = parser->current;
                         parser->current = expression->value_token;
                         member->allocated_type = parse_type(parser);
+                        if (!parser->failed && parser->current <= saved)
+                            parser_failure(parser, ERR_PARSE_EXPECTED_TOKEN,
+                                           "Expected generic arguments for qualified member");
                         member->explicit_type_arguments = parser->program->tokens[look].type == TOKEN_LPAREN;
                         member->kind = AST_EXPR_NAME;
                         member->left = NULL;

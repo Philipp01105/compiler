@@ -539,6 +539,13 @@ if (BUILD_TESTING)
             ${DMM_INCLUDE_DIRS}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/fuzz)
     add_test(NAME fuzz_pipeline_smoke COMMAND dmm_fuzz_pipeline_smoke_test)
+    add_test(NAME fuzz_corpus_contract
+            COMMAND ${CMAKE_COMMAND}
+            -DCOMPILER=$<TARGET_FILE:compiler>
+            -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/fuzz_corpus_test
+            -P ${CMAKE_SOURCE_DIR}/tests/fuzz_corpus_test.cmake)
+    set_tests_properties(fuzz_corpus_contract PROPERTIES
+            LABELS "integration;fuzz;parser;sema;ir;safety")
     set_tests_properties(fuzz_pipeline_smoke PROPERTIES
             LABELS "unit;fuzz;parser;sema;ir;safety")
 

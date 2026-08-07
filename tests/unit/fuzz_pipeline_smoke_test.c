@@ -20,6 +20,7 @@ int main(void) {
         "var p:Pair; p.x = 4; var result:int=p.x; }"))
         return 3;
     if (exercise("func main( -> { while(true) { var x:[0]int;")) return 4;
+    if (exercise("package main; func main()->void { a.B<int>.C<T>(); }")) return 6;
     const uint8_t binary[] = {0, 0xff, '{', '}', '\n'};
     for (int stage = DMM_FUZZ_PARSER; stage <= DMM_FUZZ_IR; stage++)
         if (dmm_fuzz_pipeline_input(binary, sizeof(binary), (DmmFuzzStage) stage)) return 5;
