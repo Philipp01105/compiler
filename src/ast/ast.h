@@ -37,7 +37,7 @@ typedef enum {
     AST_EXPR_SLICE_LENGTH, AST_EXPR_RESERVE, AST_EXPR_CAST, AST_EXPR_FREE, AST_EXPR_ENUM_CONSTRUCT,
     AST_EXPR_ENUM_ACCESS, AST_EXPR_SIZEOF, AST_EXPR_ALIGNOF, AST_EXPR_SLICE, AST_EXPR_SLICE_DATA,
     AST_EXPR_TYPE_INFO, AST_EXPR_TYPE_PROPERTY, AST_EXPR_ARRAY_LITERAL, AST_EXPR_PROPAGATE,
-    AST_EXPR_CONTROL, AST_EXPR_AWAIT
+    AST_EXPR_CONTROL, AST_EXPR_AWAIT, AST_EXPR_STRUCT_LITERAL
 } AstExpressionKind;
 
 typedef enum {
@@ -133,6 +133,9 @@ struct AstExpression {
     AstExpression *right;
     AstExpression *arguments;
     AstExpression *next;
+    /* Named field metadata on an argument of a struct literal. */
+    size_t initializer_name_token;
+    size_t initializer_field_symbol_id;
     /* Expression-valued block, if, or match. */
     AstStatement *control;
     AstType allocated_type;

@@ -69,7 +69,7 @@ foreach (fragment "declaration struct" "declaration enum" "variant name=\"North\
         message(FATAL_ERROR "AST dump is missing '${fragment}'")
     endif ()
 endforeach ()
-string(FIND "${preopt_ir_dump}" "dmm-ir-v5" preopt_header)
+string(FIND "${preopt_ir_dump}" "dmm-ir-v6" preopt_header)
 if (preopt_header LESS 0)
     message(FATAL_ERROR "Pre-optimization IR dump is incomplete")
 endif ()

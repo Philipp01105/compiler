@@ -739,6 +739,73 @@ static void analyze_expression_context(Analyzer *, AstExpression *, int);
 static void analyze_expression_context(Analyzer *analyzer, AstExpression *expression,
                                        int direct_call_callee) {
     if (expression == NULL) return;
+    if (expression->kind == AST_EXPR_STRUCT_LITERAL) {
+        normalize_generic_type(analyzer, &expression->allocated_type, 0);
+        AstType *type = &expression->allocated_type;
+        size_t owner_id = resolve_named_symbol_id(analyzer, analyzer->program,
+                                                   named_type_token(analyzer->program, type));
+        const SemanticSymbol *owner = owner_id < analyzer->model->symbol_count
+            ? &analyzer->model->symbols[owner_id] : NULL;
+        const AstDeclarationNode *declaration = owner != NULL ? owner->declaration : NULL;
+        if (owner == NULL || owner->kind != SEMANTIC_SYMBOL_STRUCT || declaration == NULL ||
+            declaration->is_opaque || type->pointer_depth || type->outer_pointer_depth ||
+            type->is_array || type->is_slice || type->borrow_kind != AST_BORROW_NONE ||
+            !layout_size(analyzer, type, 0)) {
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE,
+                           ERR_TYPE_INVALID_OPERATION,
+                           "Struct initializer requires a complete struct value type");
+            return;
+        }
+        const AstProgram *owner_program = owner->source_program;
+        set_expression_declared_type(analyzer, expression, analyzer->program, type);
+        size_t initialized = 0;
+        for (AstExpression *value = expression->arguments; value != NULL; value = value->next) {
+            const AstField *field = find_field_by_symbol(analyzer, owner_id, value->initializer_name_token);
+            value->initializer_field_symbol_id = field != NULL ? field->resolved_symbol_id : AST_SYMBOL_NONE;
+            if (field != NULL && (value->kind == AST_EXPR_ARRAY_LITERAL ||
+                                 value->kind == AST_EXPR_CONTROL || value->kind == AST_EXPR_NAME))
+                value->allocated_type = argument_type_copy(analyzer, owner_program, field->type);
+            analyze_expression_context(analyzer, value, 0);
+            if (value->owns_slice_backing)
+                semantic_error(analyzer, value->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                               "Struct slice fields require a view; bind temporary slice backing to an owner first");
+            if (field == NULL) {
+                semantic_error(analyzer, value->initializer_name_token, ERROR_CATEGORY_SEMANTIC,
+                               ERR_SEM_FIELD_NOT_FOUND, "Unknown field in struct initializer");
+                continue;
+            }
+            initialized++;
+            if (!field->is_public && !same_package(analyzer->program, owner_program))
+                semantic_error(analyzer, value->initializer_name_token, ERROR_CATEGORY_SEMANTIC,
+                               ERR_PACKAGE_PRIVATE, "Member is private to its defining package");
+            for (const AstExpression *previous = expression->arguments; previous != value; previous = previous->next)
+                if (previous->initializer_field_symbol_id == field->resolved_symbol_id) {
+                    semantic_error(analyzer, value->initializer_name_token, ERROR_CATEGORY_SEMANTIC,
+                                   ERR_SEM_INVALID_DECLARATION, "Duplicate field in struct initializer");
+                    break;
+                }
+            if (!expression_to_declared_type_allowed(analyzer, value, owner_program, &field->type))
+                semantic_error(analyzer, value->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                               "Struct initializer value is incompatible with its field type");
+        }
+        if (declaration->is_native_union) {
+            if (initialized != 1)
+                semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE,
+                               ERR_TYPE_INVALID_OPERATION, "Union initializer requires exactly one field");
+        } else {
+            for (const AstField *field = declaration->as.struct_decl.fields; field != NULL; field = field->next) {
+                int found = 0;
+                for (const AstExpression *value = expression->arguments; value != NULL; value = value->next)
+                    if (value->initializer_field_symbol_id == field->resolved_symbol_id) found = 1;
+                if (!found) {
+                    semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_SEMANTIC,
+                                   ERR_SEM_INVALID_DECLARATION, "Missing field in struct initializer");
+                    break;
+                }
+            }
+        }
+        return;
+    }
     if (analyze_async_call(analyzer,expression)) return;
     if (expression->kind == AST_EXPR_CONTROL) {
         analyze_control_expression(analyzer, expression);

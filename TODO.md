@@ -135,9 +135,17 @@ model. The normative rules and current restrictions are maintained in [LANGUAGE_
   consuming `future.await()`, pinned frames, suspend/resume IR and conservative Send/Sync checks.
 - [x] Provide multi-thread executors, Send-checked spawn, caller-thread blocking, consuming joins, Drain/Cancel
   shutdown and confirmed cancellation with awaitable cleanup. See [LANGUAGE_SPEC.md](LANGUAGE_SPEC.md) and
-  [src/runtime/EXECUTOR.md](src/runtime/EXECUTOR.md).
+  [ARCHITECTURE.md](ARCHITECTURE.md#executor-runtime-and-native-abi).
+- [ ] Support scoped spawning of futures that borrow caller-owned storage. Currently,
+  `spawn(worker(&counter))` rejects a `SharedCounter` local to `main` because futures with borrowed parameters
+  are not Send, even when the counter contains only atomics and the caller awaits the join before leaving scope.
+  `block_on(worker(&counter))` works but runs on the caller thread; `own-tests/main.dmm` currently uses a
+  package-level pointer to explicitly allocated storage as a workaround. Define and enforce scoped task lifetimes,
+  Sync/Send requirements, and mandatory completion on every exit, including errors and cancellation, so local
+  storage cannot be moved, freed, or dropped while a worker still borrows it. Cover both accepted scoped borrows
+  and rejected escaping tasks with compiler and runtime tests.
 - [ ] Build the public `stdlib/net` API on the implemented private TCP/UDP/DNS foundation; TLS, HTTP and socket
-  convenience options remain separate work. See [NETWORK_RUNTIME.md](NETWORK_RUNTIME.md).
+  convenience options remain separate work. See [stdlib/core/net/README.md](stdlib/core/net/README.md).
 - [ ] Provide a DMM-native test and assertion library.
 
 ## Modules, dependencies, and builds
@@ -162,7 +170,7 @@ model. The normative rules and current restrictions are maintained in [LANGUAGE_
 - [x] Provide a documented external-linker handoff for the private platform runtime, with separate runtime requirements,
   profiles and link strategies; preserve standalone internal linking.
 - [x] Provide private epoll/IOCP TCP/UDP, monotonic deadlines, bounded DNS and typed `stdlib/core/net`, with
-  frame-internal loan proofs and confirmed cancellation. See `NETWORK_RUNTIME.md`; public `stdlib/net` remains future work.
+  frame-internal loan proofs and confirmed cancellation. See `stdlib/core/net/README.md`; public `stdlib/net` remains future work.
 - [ ] Extend object/archive interoperability beyond the private platform-runtime handoff.
 - [ ] Add position-independent code and shared libraries after symbol visibility and relocation rules are specified.
 - [ ] Emit source-level debug information: DWARF on ELF/COFF-compatible paths and PDB integration where applicable.

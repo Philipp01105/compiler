@@ -1,4 +1,4 @@
-# Private network runtime and core API
+# stdlib/core/net
 
 `stdlib/core/net` is the typed low-level TCP/UDP and DNS foundation. It requires the root manifest's
 `features = ["async"]`. Public `stdlib/net`, TLS, HTTP and socket convenience options remain future work.
@@ -120,7 +120,7 @@ and their datagram counterparts. Connect binds when needed and updates its conte
 context. OVERLAPPED, buffers, flags, lengths and address outputs remain in stable operation storage until the packet
 is consumed. Neither successful CancelIoEx nor ERROR_NOT_FOUND permits early reclamation, as required by the
 [Microsoft cancellation contract](https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-cancelioex).
-System thread creation remains `_beginthreadex` through the platform shim.
+System thread creation remains `_beginthreadex` through the DMM platform runtime.
 
 ## DNS and lifecycle
 
@@ -140,7 +140,7 @@ Normal generated startup follows this dependency order:
    operations return Closed. Package destructors may still close their owned handles.
 4. After package cleanup, resolver workers finish/join, confirmed reactor work ends, and the reactor stops/joins.
    Windows calls WSACleanup last. Networking becomes SHUTDOWN, followed by remaining runtime cleanup.
-5. The saved DMM exit code returns through `__dmm_runtime_main` to trivial C main; void main returns zero.
+5. The saved DMM exit code returns through `__dmm_runtime_main` to the compiler-generated native `main`; void main returns zero.
 
 Winsock 2.2 initializes once under the shared runtime lock. Fatal exit, traps and fatal runtime errors retain immediate
 process termination, with no guaranteed drain or cleanup.

@@ -1,4 +1,4 @@
-# Streams and buffered I/O
+# stdlib/stdio
 
 `import "stdlib/stdio";` provides byte-oriented I/O implemented in DMM over
 `stdlib/core`. The compiler runtime only supplies OS open/read/write/close and allocation primitives. Streams,
@@ -118,7 +118,4 @@ before it; an EOF-terminated final line retains its bytes with
 `writeFile(path, source:u8[])` writes all bytes and closes the file, reporting transfer progress and any close error.
 `readFile` always closes its stream and returns the byte owner to the caller.
 
-The older `stdlib` descriptor/file helpers remain compatible and now use core I/O and streams. `read_file` validates
-capacity against the supplied slice length;
-`write_str_to` completes short writes. The compatibility `Input` scanner and floating/string conversion routines retain
-their existing runtime implementations.
+The [stdlib compatibility helpers](../README.md#output-and-compatibility-io) use core I/O and streams.

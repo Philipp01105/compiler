@@ -468,8 +468,25 @@ static void set_void_type(IrBuilder *builder, IrInstruction *instruction) {
 }
 
 static void emit_label(IrBuilder *builder, size_t label, AstSourceSpan span);
+static void set_field_type(IrBuilder *builder, IrInstruction *instruction,
+                          const SemanticSymbol *field) {
+    const AstType *type = &field->declared_type;
+    instruction->type = field->resolved_type;
+    instruction->type_id = type_from_ast(builder->module, field->source_program, type);
+    instruction->pointer_depth = type->pointer_depth + type->outer_pointer_depth +
+        (type->borrow_kind != AST_BORROW_NONE);
+    instruction->type_name_token =
+        type->name_token < field->source_program->token_count &&
+        field->source_program->tokens[type->name_token].type == TOKEN_IDENTIFIER
+            ? type->name_token : AST_TOKEN_NONE;
+    instruction->is_array = type->is_array && !type->outer_pointer_depth && type->borrow_kind == AST_BORROW_NONE;
+    instruction->is_slice = type->is_slice && !type->outer_pointer_depth && type->borrow_kind == AST_BORROW_NONE;
+    if (instruction->type_id == IR_TYPE_NONE) builder->failed = 1;
+}
+
 static void emit_deferred_until(IrBuilder *builder,
                                 const CleanupScope *stop);
+static void free_deferred_actions(DeferredAction *action);
 
 static size_t coerce_slice(IrBuilder *builder, size_t value, IrTypeId target, AstSourceSpan span) {
     if (target >= builder->module->type_count || builder->module->types[target].kind != IR_TYPE_SLICE || value ==
@@ -809,6 +826,64 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
             return result;
         }
     }
+    if (expression->kind == AST_EXPR_STRUCT_LITERAL) {
+        IrInstruction *literal = emit(builder, IR_OP_STRUCT_LITERAL, expression->span);
+        if (literal == NULL) return IR_VALUE_NONE;
+        literal->result = new_value(builder);
+        set_expression_type(builder, literal, expression);
+        size_t result = literal->result;
+        CleanupScope partial = {.previous = builder->cleanup_scope};
+        builder->cleanup_scope = &partial;
+        for (const AstExpression *value = expression->arguments; value != NULL; value = value->next) {
+            size_t field_id = value->initializer_field_symbol_id;
+            if (field_id >= builder->module->semantics->symbol_count) {
+                builder->failed = 1;
+                break;
+            }
+            const SemanticSymbol *field = &builder->module->semantics->symbols[field_id];
+            IrTypeId field_type = type_from_ast(builder->module, field->source_program, &field->declared_type);
+            IrInstruction *target = emit(builder, IR_OP_MEMBER, value->span);
+            if (target == NULL) break;
+            target->result = new_value(builder);
+            target->operand_a = result;
+            target->symbol_id = field_id;
+            set_field_type(builder, target, field);
+            IrInstruction field_metadata = *target;
+            size_t address = target->result;
+            size_t input = lower_expression(builder, value);
+            if (block_terminated(builder->function)) break;
+            input = coerce_value(builder, input, field_type, value->span);
+            IrInstruction *store = emit(builder, IR_OP_STORE, value->span);
+            if (store == NULL) break;
+            store->operand_a = address;
+            store->operand_b = input;
+            store->operator_type = TOKEN_EQUAL;
+            store->type = field_metadata.type;
+            store->type_id = field_type;
+            store->pointer_depth = field_metadata.pointer_depth;
+            store->type_name_token = field_metadata.type_name_token;
+            store->is_array = field_metadata.is_array;
+            store->is_slice = field_metadata.is_slice;
+            emit_move_if_owned(builder, value);
+            if (ir_type_properties(builder->module, field_type) & SEMANTIC_TYPE_NEEDS_DROP) {
+                DeferredAction *cleanup = calloc(1, sizeof(*cleanup));
+                if (cleanup == NULL) { builder->failed = 1; break; }
+                cleanup->captured_call = 1;
+                cleanup->call = field_metadata;
+                cleanup->call.opcode = IR_OP_DROP;
+                cleanup->call.result = IR_VALUE_NONE;
+                cleanup->call.operand_a = address;
+                cleanup->call.symbol_id = AST_SYMBOL_NONE;
+                cleanup->call.type = TYPE_VOID;
+                cleanup->call.pointer_depth = 0;
+                cleanup->next = partial.actions;
+                partial.actions = cleanup;
+            }
+        }
+        builder->cleanup_scope = partial.previous;
+        free_deferred_actions(partial.actions);
+        return builder->failed || block_terminated(builder->function) ? IR_VALUE_NONE : result;
+    }
     if (expression->kind == AST_EXPR_ARRAY_LITERAL) {
         IrTypeId container_type = type_from_expression(builder->module, builder->program, expression);
         IrTypeId element_type = IR_TYPE_NONE;
@@ -983,6 +1058,7 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         case AST_EXPR_TYPE_INFO:
         case AST_EXPR_TYPE_PROPERTY: return IR_VALUE_NONE;
         case AST_EXPR_ARRAY_LITERAL: return IR_VALUE_NONE;
+        case AST_EXPR_STRUCT_LITERAL: return IR_VALUE_NONE;
         case AST_EXPR_PROPAGATE: return IR_VALUE_NONE;
         case AST_EXPR_CONTROL: return IR_VALUE_NONE;
         case AST_EXPR_RESERVE: opcode = IR_OP_ALLOC;
@@ -1899,6 +1975,18 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
             }
         } else if (statement->kind == AST_STMT_EXPRESSION) {
             size_t value = lower_expression(builder, statement->expression);
+            if (value != IR_VALUE_NONE && statement->expression != NULL &&
+                statement->expression->kind == AST_EXPR_STRUCT_LITERAL) {
+                IrTypeId type = type_from_expression(builder->module, builder->program, statement->expression);
+                if (ir_type_properties(builder->module, type) & SEMANTIC_TYPE_NEEDS_DROP) {
+                    IrInstruction *drop = emit(builder, IR_OP_DROP, statement->span);
+                    if (drop != NULL) {
+                        drop->type = TYPE_VOID;
+                        drop->type_id = type;
+                        drop->operand_a = value;
+                    }
+                }
+            }
             if (statement->expression != NULL &&
                 statement->expression->owns_slice_backing) {
                 IrInstruction *cleanup = emit(builder,

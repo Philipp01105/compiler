@@ -31,9 +31,9 @@ static const char *opcode_name(IrOpcode opcode) {
         "binary", "call", "index", "subslice", "member", "slice-length", "cast", "alloc", "free",
         "return", "branch", "jump", "label", "phi", "enum-construct", "enum-is", "enum-payload", "trap", "slice",
         "slice-data", "array-literal", "drop", "move", "reinit", "free-slice-backing", "await", "executor",
-        "cancel-check", "cancel-await", "cancel-drop", "cancel-return", "native-copy"
+        "cancel-check", "cancel-await", "cancel-drop", "cancel-return", "native-copy", "struct-literal"
     };
-    return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_NATIVE_COPY ? names[opcode] : "invalid";
+    return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_STRUCT_LITERAL ? names[opcode] : "invalid";
 }
 
 static const char *operator_name(TokenType type) {
@@ -257,7 +257,7 @@ static int dump_aggregates(FILE *output, const IrModule *module) {
 
 int ir_dump(FILE *output, const IrModule *module) {
     if (output == NULL || module == NULL || !ir_verify_module(module)) return 0;
-    if (fputs("dmm-ir-v5\nmodule path=", output) == EOF ||
+    if (fputs("dmm-ir-v6\nmodule path=", output) == EOF ||
         !quoted(output, module->program->source_path) ||
         fprintf(output, " verified=%d types=%zu functions=%zu structs=%zu enums=%zu imports=%zu native-imports=%zu target=%s\n",
                 module->verified, module->type_count, module->function_count,

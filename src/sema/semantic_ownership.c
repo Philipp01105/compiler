@@ -366,7 +366,7 @@ static void read_expression(OwnershipChecker *checker, OwnershipFlow *flow,
             flow_free(&residual);
             continue;
         }
-        if (expression->kind == AST_EXPR_ARRAY_LITERAL ||
+        if (expression->kind == AST_EXPR_ARRAY_LITERAL || expression->kind == AST_EXPR_STRUCT_LITERAL ||
             expression->kind == AST_EXPR_ENUM_CONSTRUCT) {
             for (const AstExpression *argument = expression->arguments;
                  argument != NULL; argument = argument->next) {

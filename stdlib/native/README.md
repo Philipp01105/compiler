@@ -1,5 +1,8 @@
 # Raw native bindings
 
+The [language specification](../../LANGUAGE_SPEC.md#native-ffi) defines the native type/call contract;
+the [FFI migration plan](../../plans/ffi.md) records implementation status.
+
 These packages describe x86-64 glibc and MinGW-w64 UCRT64 APIs. Import the relevant
 package, for example `import "stdlib/native/pthreads";`. `_linux.dmm` and
 `_windows.dmm` files are selected by the compiler's output target.

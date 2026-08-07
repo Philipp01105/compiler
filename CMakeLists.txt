@@ -701,6 +701,12 @@ if (BUILD_TESTING)
             -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
             -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/dump_test
             -P ${CMAKE_SOURCE_DIR}/tests/dump_test.cmake)
+    add_test(NAME struct_initializers
+            COMMAND ${CMAKE_COMMAND}
+            -DCOMPILER=$<TARGET_FILE:compiler>
+            -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/struct_initializers_test
+            -P ${CMAKE_SOURCE_DIR}/tests/struct_initializers_test.cmake)
+    set_tests_properties(struct_initializers PROPERTIES LABELS "integration;frontend;backend;ownership")
     set_tests_properties(dump_formats PROPERTIES
             LABELS "integration;ast;ir;backend;cli;safety")
 

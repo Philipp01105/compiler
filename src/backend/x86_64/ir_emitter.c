@@ -746,7 +746,8 @@ size_t aggregate_result_offset(const Emitter *emitter,
         if ((candidate->opcode != IR_OP_EXECUTOR && candidate->opcode != IR_OP_AWAIT && candidate->opcode != IR_OP_CALL && candidate->opcode != IR_OP_ENUM_CONSTRUCT && candidate->opcode !=
              IR_OP_SLICE && candidate->opcode != IR_OP_SUBSLICE &&
              candidate->opcode != IR_OP_ARRAY_LITERAL &&
-             candidate->opcode != IR_OP_INTERFACE_PACK && candidate->opcode != IR_OP_NATIVE_COPY) ||
+             candidate->opcode != IR_OP_INTERFACE_PACK && candidate->opcode != IR_OP_NATIVE_COPY &&
+             candidate->opcode != IR_OP_STRUCT_LITERAL) ||
             (!is_inline_structure(emitter->module, candidate) &&
              !candidate->is_array))
             continue;
@@ -768,7 +769,8 @@ static size_t aggregate_result_slots(const Emitter *emitter) {
         if ((instruction->opcode == IR_OP_EXECUTOR || instruction->opcode == IR_OP_AWAIT || instruction->opcode == IR_OP_CALL || instruction->opcode == IR_OP_ENUM_CONSTRUCT || instruction->opcode ==
              IR_OP_SLICE || instruction->opcode == IR_OP_SUBSLICE ||
              instruction->opcode == IR_OP_ARRAY_LITERAL ||
-             instruction->opcode == IR_OP_INTERFACE_PACK || instruction->opcode == IR_OP_NATIVE_COPY) &&
+             instruction->opcode == IR_OP_INTERFACE_PACK || instruction->opcode == IR_OP_NATIVE_COPY ||
+             instruction->opcode == IR_OP_STRUCT_LITERAL) &&
             (is_inline_structure(emitter->module, instruction) ||
              instruction->is_array))
             result += type_slots(emitter->module, instruction->type_id) + 1;
@@ -1824,6 +1826,20 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                                   declaration_flag_offset(emitter,
                                                           instruction));
             }
+            return 1;
+        }
+        case IR_OP_STRUCT_LITERAL: {
+            size_t offset = aggregate_result_offset(emitter, instruction);
+            IrTypeLayout layout;
+            if (!offset || !ir_type_layout(emitter->module, instruction->type_id, &layout)) return 0;
+            write_immediate(emitter, "rax", 0);
+            for (size_t byte = 0; byte < layout.storage_slots * 8; byte += 8)
+                write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                            x64_memory(X64_WIDTH_QWORD, "rbp", -(long long)offset + (long long)byte),
+                            x64_register("rax"));
+            write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD, x64_register("rax"),
+                        x64_memory(X64_WIDTH_NONE, "rbp", -(long long)offset));
+            write_value_store(emitter, "rax", instruction->result);
             return 1;
         }
         case IR_OP_NATIVE_COPY: {

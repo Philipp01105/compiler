@@ -1,0 +1,79 @@
+package main;
+import "stdlib";
+
+struct test { var x:int; var y:int; };
+struct Box<T> { var value:T; }
+struct Nested { var pair:test; var values:int[3]; }
+struct Empty {}
+struct Resource {
+    var value:int;
+    destructor { stdlib.println(value); }
+}
+struct Owner { var resource:Resource; }
+struct WithResource {
+    var resource:Resource;
+    var number:int;
+    destructor { stdlib.println(999); }
+}
+struct Snapshot { var pair:test; var number:int; }
+extern "system" {
+    struct Native { pub var tag:u8; pub var value:i32; pub var real:double; }
+    pack(1) struct Packed { pub var tag:u8; pub var value:i32; }
+    union Bits { pub var value:u64; pub var bytes:u8[8]; }
+}
+struct NativeHolder { var value:Native; var entries:Native[2]; }
+
+var globalPair:test = test{y: 4, x: 3};
+var sequence:int = 0;
+func step() -> int { sequence += 1; return sequence; }
+func mutate() -> int { globalPair.x = 100; return 0; }
+func make() -> test { return test{x: 8, y: 9}; }
+func sum(value:test) -> int { return value.x + value.y; }
+func generic<T>(value:T) -> Box<T> { return Box<T>{value: value}; }
+func owned() -> void {
+    var resource = Resource{value: 77};
+    var owner = Owner{resource: resource};
+}
+func incomplete() -> stdlib.Option<int> {
+    var resource = Resource{value: 88};
+    var owner = WithResource{resource: resource, number: stdlib.Option<int>.None?};
+    return stdlib.Option<int>.Some(owner.number);
+}
+func main() -> int {
+    var y = test{x: 6, y: 10};
+    stdlib.println(y.x);
+    stdlib.println(y.y);
+    stdlib.println(globalPair.x + globalPair.y);
+    var ordered = test{y: step(), x: step(),};
+    stdlib.println(ordered.x * 10 + ordered.y);
+    var nested = Nested{values: [3, 4, 5], pair: test{x: 1, y: 2}};
+    stdlib.println(nested.values[2] + nested.pair.y);
+    stdlib.println(sum(make()));
+    y = test{y: 12, x: 11};
+    stdlib.println(y.x + y.y);
+    var box = generic(42);
+    stdlib.println(box.value);
+    var empty = Empty{};
+    var native = Native{real: 2.5, value: -123, tag: 250.(u8)};
+    stdlib.println(native.tag.(int));
+    stdlib.println(native.value);
+    stdlib.println(native.real);
+    var packed = Packed{value: 123456, tag: 7.(u8)};
+    stdlib.println(packed.value);
+    stdlib.println(packed.tag.(int));
+    var bits = Bits{bytes: [1.(u8), 0.(u8); 8]};
+    stdlib.println(bits.value.(int));
+    owned();
+    var failed = incomplete();
+    Resource{value: 99};
+    var snapshot = Snapshot{pair: globalPair, number: mutate()};
+    stdlib.println(snapshot.pair.x);
+    stdlib.println(globalPair.x);
+    stdlib.println(test{x: 5, y: 6}.y);
+    var natives = NativeHolder{
+        entries: [Native{tag: 3.(u8), value: 20, real: 1.0}, Native{tag: 4.(u8), value: 30, real: 2.0}],
+        value: Native{tag: 5.(u8), value: 40, real: 3.0},
+    };
+    stdlib.println(natives.entries[1].value + natives.value.value);
+    return 0;
+}

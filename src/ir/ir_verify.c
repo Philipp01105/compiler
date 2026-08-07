@@ -143,7 +143,7 @@ static int instruction_produces_value(const IrInstruction *instruction) {
            opcode == IR_OP_INDEX || opcode == IR_OP_SUBSLICE ||
            opcode == IR_OP_MEMBER || opcode == IR_OP_SLICE_LENGTH ||
            opcode == IR_OP_SLICE || opcode == IR_OP_SLICE_DATA ||
-           opcode == IR_OP_ARRAY_LITERAL || opcode == IR_OP_INTERFACE_PACK || opcode == IR_OP_NATIVE_COPY ||
+           opcode == IR_OP_ARRAY_LITERAL || opcode == IR_OP_STRUCT_LITERAL || opcode == IR_OP_INTERFACE_PACK || opcode == IR_OP_NATIVE_COPY ||
            opcode == IR_OP_CAST || opcode == IR_OP_ALLOC ||
            opcode == IR_OP_PHI || opcode == IR_OP_ENUM_CONSTRUCT || opcode == IR_OP_ENUM_IS || opcode ==
            IR_OP_ENUM_PAYLOAD;
@@ -656,6 +656,19 @@ static int verify_instruction_types(const IrModule *module,
                    IR_TYPE_SLICE &&
                    module->types[instruction->type_id].element_type == module->types[a->type_id].element_type &&
                    ir_integral_type(module, b->type_id);
+        case IR_OP_STRUCT_LITERAL: {
+            if (instruction->type_id >= module->type_count ||
+                module->types[instruction->type_id].kind != IR_TYPE_NAMED ||
+                instruction->operand_a != IR_VALUE_NONE || instruction->operand_b != IR_VALUE_NONE ||
+                instruction->argument_count != 0) return 0;
+            size_t symbol = module->types[instruction->type_id].symbol_id;
+            IrTypeLayout layout;
+            return symbol < module->semantics->symbol_count &&
+                module->semantics->symbols[symbol].kind == SEMANTIC_SYMBOL_STRUCT &&
+                module->semantics->symbols[symbol].declaration != NULL &&
+                !module->semantics->symbols[symbol].declaration->is_opaque &&
+                ir_type_layout(module, instruction->type_id, &layout) && layout.size != 0;
+        }
         case IR_OP_ARRAY_LITERAL:
             if (instruction->type_id >= module->type_count ||
                 (module->types[instruction->type_id].kind != IR_TYPE_ARRAY &&
@@ -1067,6 +1080,8 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                     labels[required_label] == 0) valid = 0; \
             } while (0)
             switch (instruction->opcode) {
+                case IR_OP_STRUCT_LITERAL:
+                    break;
                 case IR_OP_CONSTANT:
                 case IR_OP_FUNCTION_ADDRESS:
                 case IR_OP_LOAD:

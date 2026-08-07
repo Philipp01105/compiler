@@ -41,9 +41,9 @@ static const char *expression_name(AstExpressionKind kind) {
         "error", "literal", "name", "unary", "binary", "call",
         "index", "subslice", "member", "slice-length", "reserve", "cast", "free", "enum-construct", "enum-access",
         "sizeof", "alignof", "slice", "slice-data", "type-info", "type-property", "array-literal", "propagate",
-        "control", "await"
+        "control", "await", "struct-literal"
     };
-    return kind >= AST_EXPR_ERROR && kind <= AST_EXPR_AWAIT ? names[kind] : "invalid";
+    return kind >= AST_EXPR_ERROR && kind <= AST_EXPR_STRUCT_LITERAL ? names[kind] : "invalid";
 }
 
 static const char *statement_name(AstStatementKind kind) {
@@ -209,12 +209,18 @@ static int dump_expression(FILE *output, const AstProgram *program,
         (fputs(" folded=", output) == EOF || !quoted(output, expression->folded_constant.lexeme)))
         return 0;
     if (expression->kind == AST_EXPR_CAST || expression->kind == AST_EXPR_RESERVE || expression->kind ==
-        AST_EXPR_TYPE_INFO) {
+        AST_EXPR_TYPE_INFO || expression->kind == AST_EXPR_STRUCT_LITERAL) {
         if (fputs(" operand-type=", output) == EOF ||
             !dump_type(output, program, &expression->allocated_type))
             return 0;
     }
     if (fputc('\n', output) == EOF) return 0;
+    if (expression->kind == AST_EXPR_STRUCT_LITERAL)
+        for (const AstExpression *field = expression->arguments; field != NULL; field = field->next)
+            if (!indent(output, depth + 1) ||
+                !token_field(output, program, "initializer-field", field->initializer_name_token) ||
+                !symbol_field(output, field->initializer_field_symbol_id) || fputc('\n', output) == EOF)
+                return 0;
     return dump_expression(output, program, expression->left, depth + 1, "left") &&
            dump_expression(output, program, expression->right, depth + 1, "right") &&
            dump_expression_list(output, program, expression->arguments, depth + 1, "argument") &&
@@ -448,7 +454,7 @@ static int dump_program(FILE *output, const AstProgram *program, size_t index,
 
 int ast_dump(FILE *output, const AstProgram *program) {
     if (output == NULL || program == NULL || !ast_validate_program(program)) return 0;
-    if (fprintf(output, "dmm-ast-v5\nmodule units=%zu\n", program->owned_import_count + 1) < 0 ||
+    if (fprintf(output, "dmm-ast-v6\nmodule units=%zu\n", program->owned_import_count + 1) < 0 ||
         !dump_program(output, program, 0, "root"))
         return 0;
     for (size_t i = 0; i < program->owned_import_count; i++)

@@ -26,6 +26,7 @@ typedef struct {
     size_t *last_use;
     BorrowRecord *borrows;
     size_t current_scope_depth;
+    unsigned aggregate_capture_depth;
 } BorrowChecker;
 
 typedef struct {
@@ -599,6 +600,13 @@ static void check_expression(BorrowChecker *checker,
         check_call(checker, expression);
         return;
     }
+    if (expression->kind == AST_EXPR_STRUCT_LITERAL) {
+        for (const AstExpression *value = expression->arguments; value != NULL; value = value->next)
+            check_expression(checker, value,
+                semantic_expression_is_move_only(checker->analyzer, value)
+                    ? BORROW_ACCESS_WRITE : BORROW_ACCESS_READ);
+        return;
+    }
     if (expression->kind == AST_EXPR_NAME ||
         expression->kind == AST_EXPR_MEMBER ||
         expression->kind == AST_EXPR_INDEX ||
@@ -894,6 +902,30 @@ static void clone_aggregate_borrows(BorrowChecker *checker,
                                     const AstExpression *target,
                                     const AstExpression *source,
                                     size_t scope_depth) {
+    if (source != NULL && source->kind == AST_EXPR_STRUCT_LITERAL) {
+        BorrowPlace place;
+        if (!expression_place(target, &place)) return;
+        if (!checker->aggregate_capture_depth)
+            deactivate_borrower(checker, place.owner, place.field);
+        checker->aggregate_capture_depth++;
+        for (const AstExpression *value = source->arguments; value != NULL; value = value->next) {
+            AstExpression field = {.kind = AST_EXPR_MEMBER, .left = (AstExpression *)target,
+                .resolved_symbol_id = value->initializer_field_symbol_id};
+            AstExpression view = *value;
+            if (value->initializer_field_symbol_id < checker->analyzer->model->symbol_count &&
+                checker->analyzer->model->symbols[value->initializer_field_symbol_id].declared_type.is_slice &&
+                value->resolved_is_array) {
+                view.resolved_is_slice = 1;
+                view.resolved_is_array = 0;
+            }
+            if (semantic_expression_is_future(value))
+                capture_future_borrows(checker, target, value, scope_depth);
+            else if (add_borrow_mode(checker, &field, &view, scope_depth, 1) == NULL)
+                clone_aggregate_borrows(checker, target, value, scope_depth);
+        }
+        checker->aggregate_capture_depth--;
+        return;
+    }
     if (source != NULL && (source->kind == AST_EXPR_AWAIT || source->async_operation == ASYNC_BLOCK_ON) &&
         (semantic_symbol_type_properties(checker->analyzer->model,
                                          source->resolved_named_symbol_id) & SEMANTIC_TYPE_MUST_CONSUME)) {
@@ -947,7 +979,8 @@ static void clone_aggregate_borrows(BorrowChecker *checker,
         target_place.field != AST_SYMBOL_NONE ||
         source_place.field != AST_SYMBOL_NONE)
         return;
-    deactivate_borrower(checker, target_place.owner, AST_SYMBOL_NONE);
+    if (!checker->aggregate_capture_depth)
+        deactivate_borrower(checker, target_place.owner, AST_SYMBOL_NONE);
     for (BorrowRecord *old = checker->borrows; old != NULL; old = old->next) {
         if (!old->active || old->borrower_symbol != source_place.owner)
             continue;

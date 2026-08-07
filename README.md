@@ -13,7 +13,8 @@ Requirements:
 
 - CMake 3.21 or newer
 - a C23 compiler
-- GCC-compatible tools only when using GNU assembly output or the interoperability tests
+- GCC/Clang and target libraries for native FFI, platform/network runtime linking or interoperability tests;
+  GNU-compatible tools for assembling emitted assembly
 
 Configure, build and test:
 
@@ -85,7 +86,7 @@ cleanup, raw memory and stream I/O in focused programs.
 ## Implemented language areas
 
 - primitive and fixed-width numeric types, pointers, fixed arrays, slices and contextual array/slice literals
-- functions, overloads, non-capturing callable values, structs, methods, enums and exhaustive `match`
+- functions, overloads, non-capturing callable values, structs with named value initializers, methods, enums and exhaustive `match`
 - generic functions, structs and enums with interface bounds and specialization
 - structural interfaces with owned values, move-only implementers and dynamic dispatch
 - type-derived `COPYABLE`, `MOVE_ONLY` and `NEEDS_DROP` properties, implicit moves and deterministic destruction
@@ -106,7 +107,7 @@ Async programs require `features = ["async"]` in the root `dmm.manifest`. An `as
 move-only `Future<T>`; use `future.await()` inside async code and `block_on(future)` from synchronous code.
 `spawn(future)` requires a concrete Send future and returns a consuming `JoinHandle<T>`. Futures, joins and executor
 owners must be consumed on every path; cancellation completes through an awaited operation. See the
-[language specification](LANGUAGE_SPEC.md) and [executor contract](src/runtime/EXECUTOR.md).
+[language specification](LANGUAGE_SPEC.md) and [executor contract](ARCHITECTURE.md#executor-runtime-and-native-abi).
 
 ## Compiler use
 
@@ -122,6 +123,7 @@ Run `compiler --help` for the current option list. Useful groups include:
 
 - `--emit=exe|obj|asm`, `-c`, `-S`, `-o FILE`
 - `--link=auto|internal|external`, `--linker-driver PATH`, `--runtime-shim PATH` (private platform runtime)
+- `--native-library NAME=PATH`, repeatable `--native-library-dir DIR`, `--dump-native-link FILE`
 - `-O0`, `-O1`, `--target=elf|coff`, `--syntax=intel|att`
 - `--formatError`, `--ide`, `--ide-buffer FILE`
 - `--dump-tokens`, `--dump-ast`, `--dump-symbols`, `--dump-ir-before-opt`, `--dump-ir-passes`, `--dump-ir`,
@@ -133,7 +135,7 @@ packages or changes dependency versions.
 
 Standalone native executables do not require libc, a CRT or a foreign-language runtime. Linux targets use syscalls; Windows
 targets import OS APIs. Assembly output can be handed to external GNU-compatible tools when required. The exact target
-and linking contracts are documented in [NATIVE_BACKEND.md](NATIVE_BACKEND.md).
+and linking contracts are documented in [ARCHITECTURE.md](ARCHITECTURE.md#native-x86-64-backend).
 
 The optional `--link=external` profile uses regular platform startup and a DMM platform runtime, so those programs
 gain libc/UCRT and documented OS dependencies. Default standalone builds retain their existing runtime and internal
@@ -141,7 +143,7 @@ linker. For object/assembly emission this option selects the future link ABI and
 Used operations from `stdlib/core/net` select that profile automatically and choose the network archive containing
 DMM platform code and the remaining network C implementation.
 TCP/UDP, IPv4/IPv6, deadlines, cancellation and bounded DNS are documented in
-[NETWORK_RUNTIME.md](NETWORK_RUNTIME.md); an unused import introduces no networking dependency.
+[stdlib/core/net/README.md](stdlib/core/net/README.md); an unused import introduces no networking dependency.
 
 ## Tests and CI
 
@@ -156,7 +158,37 @@ ctest --test-dir build -L network --output-on-failure
 ```
 
 CI currently runs Linux/GCC, Linux/Clang, Linux/GCC with ASan+UBSan, Linux/Clang libFuzzer smoke tests, Windows/MinGW
-GCC and Windows/Clang. Optional runtime benchmarks and standalone fuzzing commands have dedicated documents.
+GCC and Windows/Clang. The following optional workflows complement the normal CTest suite.
+
+### Performance
+
+Enable benchmarks with `-DDMM_ENABLE_PERF_TESTS=ON` and run
+`ctest --test-dir build -R '^runtime_performance$' --output-on-failure`. For a standalone report:
+
+```sh
+python tests/performance/run.py --compiler build/compiler --output-dir build/performance --warmups 2 --samples 7
+```
+
+The harness checks results and writes medians to `report.json`. Compare a previous report with
+`--baseline previous-report.json --max-regression-percent 10`; regression limits apply to optimized results.
+Use the same target, compiler configuration and idle hardware for comparable measurements. Default CTest sets no
+timing threshold.
+
+### Fuzzing
+
+On a Unix-like host with Clang and libFuzzer:
+
+```sh
+cmake -S . -B build-fuzz -DCMAKE_C_COMPILER=clang -DDMM_BUILD_FUZZERS=ON -DBUILD_TESTING=OFF
+cmake --build build-fuzz --parallel
+./build-fuzz/fuzz_parser writable-corpus -dict=tests/fuzz/dmm.dict -max_total_time=60
+```
+
+Targets are `fuzz_lexer`, `fuzz_parser`, `fuzz_semantic`, `fuzz_ir` and `fuzz_syntax_converter`. Copy seed corpora from
+`tests/fuzz/corpus` into a writable directory before running; the converter can start with an empty corpus. Source
+inputs are capped at 64 KiB, diagnostics are buffered and imports cannot read arbitrary filesystem paths. The IR
+harness also mutates instructions and reruns verification. `fuzz_pipeline_smoke` runs in the normal test suite;
+CI runs each libFuzzer target for a short bounded interval.
 
 ## Documentation
 
@@ -164,22 +196,16 @@ Each topic has one canonical document; other documents link to it instead of rep
 
 | Document | Purpose |
 |---|---|
-| [Examples](examples/README.md) | Runnable feature-oriented programs and suggested reading order |
-| [Formal language](FORMAL_LANGUAGE.md) | Lexical and syntactic EBNF |
-| [Language specification](LANGUAGE_SPEC.md) | Source-language semantics and implementation limits |
-| [Modules](MODULE_SYSTEM.md) | Manifests, package discovery, imports, visibility and vendored dependencies |
-| [Core runtime](CORE_RUNTIME.md) | Low-level memory, I/O and process boundary |
-| [Executor runtime](src/runtime/EXECUTOR.md) | Pinned frames, scheduling, cancellation and private platform ABI |
-| [Network runtime](NETWORK_RUNTIME.md) | Typed TCP/UDP/DNS, runtime selection, loans and confirmed completion |
-| [Streams and buffered I/O](STDIO.md) | `stdlib/stdio` API, ownership and error contracts |
-| [Architecture](ARCHITECTURE.md) | Compiler pipeline and component responsibilities |
-| [IR optimization](IR_OPTIMIZATION.md) | Optimization passes and preserved semantic effects |
-| [Native backend](NATIVE_BACKEND.md) | x86-64 ABI, object formats, runtime profiles and linker handoff |
-| [Dump formats](DUMP_FORMATS.md) | Versioned tokens, AST, symbols, IR, CFG and source maps |
-| [Diagnostics audit](DIAGNOSTICS_AUDIT.md) | Diagnostic families, rendering contract and validation |
-| [Fuzzing](FUZZING.md) | libFuzzer targets, corpora and reproduction workflow |
-| [Performance](PERFORMANCE.md) | Opt-in runtime benchmarks and baseline comparisons |
-| [Roadmap](TODO.md) | Planned work, priorities and definition of done |
+| [Language specification](LANGUAGE_SPEC.md) | Semantics, modules, manifests, native FFI and EBNF |
+| [Architecture](ARCHITECTURE.md) | Pipeline, optimization, backend, runtime contracts, dumps and diagnostics |
+| [Standard library](stdlib/README.md) | Package index, common value types, collections and compatibility I/O |
+| [Core](stdlib/core/README.md) | Memory, allocation, atomics, descriptors and process primitives |
+| [Streams](stdlib/stdio/README.md) | Synchronous streams, buffers and transfer/error contracts |
+| [Networking](stdlib/core/net/README.md) | TCP/UDP/DNS, ownership, deadlines, cancellation and lifecycle |
+| [Native bindings](stdlib/native/README.md) | Raw OS/CRT bindings and caller responsibilities |
+| [Examples](examples/README.md) | Runnable feature-oriented programs |
+| [FFI and runtime migration](plans/ffi.md) | Completed stages 1–4 and remaining network migration |
+| [Roadmap](TODO.md) | Planned work and priorities |
 
 ## License
 

@@ -189,6 +189,11 @@ static int valid_expression(const AstProgram *program, const AstExpression *expr
         case AST_EXPR_CALL:
             if (!valid_expression(program, expression->left)) return 0;
             break;
+        case AST_EXPR_STRUCT_LITERAL:
+            if (!valid_type(program, &expression->allocated_type, 0)) return 0;
+            for (const AstExpression *field = expression->arguments; field != NULL; field = field->next)
+                if (!valid_token(program, field->initializer_name_token)) return 0;
+            break;
         case AST_EXPR_ARRAY_LITERAL:
             if (expression->arguments == NULL) return 0;
             for (const AstExpression *element = expression->arguments;

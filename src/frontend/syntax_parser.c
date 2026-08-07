@@ -413,6 +413,8 @@ static AstExpression *new_expression(SyntaxParser *parser, AstExpressionKind kin
     expression->kind = kind;
     expression->first_token = first;
     expression->value_token = AST_TOKEN_NONE;
+    expression->initializer_name_token = AST_TOKEN_NONE;
+    expression->initializer_field_symbol_id = AST_SYMBOL_NONE;
     expression->resolved_type = TYPE_UNKNOWN;
     expression->resolved_named_type_token = AST_TOKEN_NONE;
     expression->resolved_named_symbol_id = AST_SYMBOL_NONE;
@@ -496,7 +498,38 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
     size_t first = parser->current;
     TokenType type = current_type(parser);
     AstExpression *expression = NULL;
-    if (type_metadata_ahead(parser)) {
+    size_t literal_type_end = parser->current;
+    int struct_literal = type == TOKEN_IDENTIFIER &&
+        look_type(parser, &literal_type_end, 0) &&
+        literal_type_end + 1 < parser->program->token_count &&
+        parser->program->tokens[literal_type_end].type == TOKEN_LBRACE &&
+        (parser->program->tokens[literal_type_end + 1].type == TOKEN_RBRACE ||
+         (literal_type_end + 2 < parser->program->token_count &&
+          parser->program->tokens[literal_type_end + 1].type == TOKEN_IDENTIFIER &&
+          parser->program->tokens[literal_type_end + 2].type == TOKEN_COLON));
+    if (struct_literal) {
+        expression = new_expression(parser, AST_EXPR_STRUCT_LITERAL, first);
+        AstType literal_type = parse_type(parser);
+        (void) consume(parser, TOKEN_LBRACE);
+        AstExpression *fields = NULL, **tail = &fields;
+        while (!parser->failed && !check(parser, TOKEN_RBRACE) && !check(parser, TOKEN_EOF)) {
+            size_t name = consume(parser, TOKEN_IDENTIFIER);
+            (void) consume(parser, TOKEN_COLON);
+            AstExpression *value = parse_expression(parser);
+            if (value != NULL) {
+                value->initializer_name_token = name;
+                *tail = value;
+                tail = &value->next;
+            }
+            if (!match(parser, TOKEN_COMMA)) break;
+        }
+        (void) consume(parser, TOKEN_RBRACE);
+        if (expression != NULL) {
+            expression->allocated_type = literal_type;
+            expression->value_token = literal_type.name_token;
+            expression->arguments = fields;
+        }
+    } else if (type_metadata_ahead(parser)) {
         expression = new_expression(parser, AST_EXPR_TYPE_INFO, first);
         size_t end = parser->current;
         (void) look_type(parser, &end, 0);
@@ -1412,6 +1445,7 @@ static AstDeclarationNode *parse_struct(SyntaxParser *parser) {
         declaration->as.struct_decl.methods = methods;
         declaration->as.struct_decl.destructor = destructor;
     }
+    (void) match(parser, TOKEN_SEMICOLON);
     finish_declaration(parser, declaration);
     return declaration;
 }

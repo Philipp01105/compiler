@@ -1,5 +1,10 @@
 # DMM Language Specification 2026-09-22-dev
 
+- [Source and declarations](#source-and-declarations), [modules and packages](#modules-and-packages)
+- [Types](#types), [expressions and control flow](#control-flow-and-expressions), [ownership](#derived-ownership-and-destruction)
+- [Generics, interfaces and sum types](#compile-time-abstraction-and-sum-types)
+- [Native FFI](#native-ffi), [implementation limits](#implementation-limits) and [grammar](#grammar)
+
 Status: experimental. This document defines the tested source-language contract; undocumented behavior may change.
 
 ## Edition and compatibility
@@ -28,7 +33,7 @@ in a parameterless `main` returning `void` or `int` in `package main`; library p
 Projects use `dmm.manifest`; directories define packages, quoted imports bind packages per source file, and `pub`
 controls exported declarations and members. Imported nominal types retain their package identity. The complete manifest,
 discovery, visibility, `internal`, vendoring and `dmm manifest sync` contract is defined in
-[MODULE_SYSTEM.md](MODULE_SYSTEM.md).
+[Modules and packages](#modules-and-packages).
 
 The root manifest enables experimental async support with `features = ["async"]`. With that feature enabled,
 an `async func (...) -> T` call has type `Future<T>`, while its body returns `T`. `Future<T>` is a compiler-owned type
@@ -58,7 +63,7 @@ exactly once. Normal return and error propagation run the existing defer/destruc
 resume states, polling a completed frame, and cleanup of an incomplete frame trap in the private ABI.
 Both ELF and COFF native backends support this at O0 and O1. A private deterministic test driver exercises polling.
 `main` remains synchronous. Typed asynchronous TCP/UDP/DNS is available through `stdlib/core/net`; public `stdlib/net`
-and asynchronous file APIs remain future work. See [NETWORK_RUNTIME.md](NETWORK_RUNTIME.md).
+and asynchronous file APIs remain future work. See [stdlib/core/net/README.md](stdlib/core/net/README.md).
 
 `Send` and `Sync` are compiler-derived, structurally through aggregate fields and enum payloads. Shared checked
 references are Send/Sync when their referent is Sync; mutable checked references are Send when their referent is Send.
@@ -72,7 +77,7 @@ ordinary Send/Sync and exclusive-access rules still apply. Checked slice views t
 conditional graph proof does not make a borrowed child independently Send; extracting/spawning it, externally
 borrowed parameters and caller-stack origins remain excluded. Owned sockets and fixed arrays can therefore be lent
 to an embedded I/O future inside a spawnable parent. Move, destruction and conflicting accesses remain forbidden
-until confirmed completion or cancellation. See [NETWORK_RUNTIME.md](NETWORK_RUNTIME.md).
+until confirmed completion or cancellation. See [stdlib/core/net/README.md](stdlib/core/net/README.md).
 There are no explicit unsafe Send/Sync implementations.
 
 The executor exposes the following operations with the `async` feature enabled:
@@ -134,7 +139,7 @@ non-cooperative synchronous code or missing I/O confirmation may delay cancellat
 The optional platform profile replaces thread/event primitives with pthreads on Linux or UCRT64 `_beginthreadex`
 on Windows while retaining the generated scheduler. Used network operations select this profile and its combined
 shim automatically; `--link=external` also selects the platform profile without requiring networking. See
-[NATIVE_BACKEND.md](NATIVE_BACKEND.md) and [src/runtime/EXECUTOR.md](src/runtime/EXECUTOR.md).
+[ARCHITECTURE.md](ARCHITECTURE.md#native-x86-64-backend) and [ARCHITECTURE.md](ARCHITECTURE.md#executor-runtime-and-native-abi).
 
 The `core.AtomicBit` and `core.AtomicUsize` types are available independently of `async`. Construct them with
 `core.atomicBit(initial)` and `core.atomicUsize(initial)`. Their `load`, `store`, `swap`, and
@@ -145,6 +150,199 @@ compare-exchange uses `lock cmpxchg`. All operations participate in a single seq
 with program order. The atomic wrapper types are move-only so they cannot be copied by ordinary aggregate assignment.
 Their storage must not be accessed through a non-atomic alias while it may be shared. The async executor uses native
 worker threads; a separate public thread-spawning API is not provided.
+
+## Modules and packages
+
+DMM 2026-09-22-dev uses one module per project, one package per directory, and one or more
+`.dmm` source files per package. Subdirectories are separate packages.
+
+```text
+project/
+├── dmm.manifest
+├── cmd/compiler/main.dmm       package main;
+├── cmd/formatter/main.dmm      package main;
+├── lexer/lexer.dmm             package lexer;
+├── lexer/scanner.dmm           package lexer;
+└── internal/buffer/buffer.dmm  package buffer;
+```
+
+The compiler searches upward from the selected source file or package directory for `dmm.manifest`. A manifest is not
+DMM source code. Its module path is the project's global identity; the directory relative to its root completes a
+package's identity. Nested module roots are excluded from the enclosing module's packages.
+
+```text
+module github.com/example/compiler
+
+dmm 2026-09-22-dev
+
+features = []
+
+require (
+    github.com/example/collections v1.2.0
+)
+```
+
+### Manifests and features
+
+There must be exactly one `module` directive and one `dmm` directive. Module and package paths are case-sensitive
+slash-separated identifiers. Empty components, `.` and `..`, backslashes and absolute paths are invalid. Edition syntax,
+validation and compatibility policy are defined in [Edition and compatibility](#edition-and-compatibility); examples use the current
+edition in its examples.
+
+The optional `features = [...]` directive contains quoted experimental feature names. It may span lines, permits a
+trailing comma, and is equivalent to omission when empty. Names begin with a lowercase ASCII letter and continue with
+lowercase letters, digits, or underscores. Unknown and duplicate features are rejected. The manifest is authoritative;
+source files and normal command-line builds cannot override it.
+
+The currently supported experimental feature is `async`. Set `features = ["async"]` in the root manifest to use
+`async func`, `Future<T>`, `JoinHandle<T>`, `Executor` and `stdlib/core/net`. Imported source uses the root feature
+configuration. See [Source and declarations](#source-and-declarations) for the async source contract.
+
+Dependency versions currently use `vMAJOR.MINOR.PATCH`. Duplicate requirements and malformed directives are rejected.
+`//` comments, non-nesting `/* ... */` block comments and single-line `require path version`
+are supported. An unclosed block comment invalidates the manifest.
+
+Editor package hover text is read from its enclosing module's manifest. Start a block with the exact source package name as its
+first word. Each block documents one package; editor hovers select only the matching block, without merging other
+comments:
+
+```text
+/* lexer
+Tokenizes DMM source files.
+Provides tokens and source positions for the parser.
+*/
+```
+
+Function documentation is the immediately preceding `//` comment group or
+`/* ... */` block in the source file. JetBrains hovers show it with the declared signature, including generic
+parameters, parameter types and the return type.
+
+### Dependencies and manifest synchronization
+
+External dependencies are local for now. `require github.com/example/collections
+v1.2.0` authorizes loading that module from
+`vendor/github.com/example/collections/`, which must contain its own matching
+`dmm.manifest`. Missing requirements, missing vendored sources and conflicting module identities are errors. Transitive
+requirements are read from each dependency's manifest and use the same project-root `vendor/` directory. The version
+records the requested dependency; there is no network fetch, version selection, checksum validation or lockfile yet. The
+bundled
+`stdlib` module is available independently of project requirements.
+
+Use one command to reconcile dependencies:
+
+```sh
+dmm manifest sync
+dmm manifest sync path/to/package
+```
+
+The command finds the enclosing module and scans all of its packages, including libraries and every executable under
+`cmd/`. Nested modules, hidden directories and unimported vendor packages are excluded. It adds used transitive modules,
+marks them with `// indirect`, promotes directly imported modules to ordinary requirements and removes unused
+requirements. Direct means imported by any source package in the project; indirect means imported only by its
+dependencies.
+
+Versions come from existing project and dependency requirements. Missing explicit versions, unavailable vendor sources,
+invalid packages, import cycles and conflicting exact versions abort synchronization without changing the project
+manifest. This command does not fetch packages or select versions. Build commands read manifests and do not rewrite
+them. `--formatError` provides structured failure diagnostics.
+
+Synchronization writes a sorted, normalized manifest and replaces the original only after successful graph analysis and
+writing. Block comments are preserved and placed before the directives, so package documentation survives
+synchronization. Other formatting and comments except `// indirect` are not preserved. Repeated synchronization is
+deterministic.
+
+```text
+require (
+    example.com/direct v1.0.0
+    example.com/transitive v2.0.0 // indirect
+)
+```
+
+### Discovery, imports and visibility
+
+Every source file begins with `package name;` before imports or other declarations. Comments and whitespace may precede
+it. All source files directly in a package's directory must have the same local name. Discovery includes every regular
+`.dmm`
+file directly in that directory subject to target-specific selection below, including an ordinary file named `package.dmm`;
+that filename has no special role.
+Other extensions and subdirectories are ignored. Files are parsed before package symbol collection, and private
+declarations are visible throughout their package, regardless of source-file order.
+
+```dmm
+package parser;
+
+import lex "github.com/example/compiler/lexer";
+
+pub func tokenKind(token:lex.Token) -> int {
+    return token.kind;
+}
+```
+
+Imports bind a package in the importing source file. Without an explicit alias, the binding uses the imported package's
+declared local name. Access is qualified:
+`lexer.Token`, `lexer.tokenize(...)`, or `lex.Token` with an alias. Imports in one source file do not create import
+bindings in another file of the same package. The existing grouped form remains available:
+`import ("path/a" b "path/b");`. Dot imports, blank aliases, duplicate aliases and file imports are unsupported.
+
+Declarations and members are private by default. `pub` applies to functions, structs, enums, interfaces, constants and
+package variables. Fields and methods require their own `pub`; exporting a struct does not export its private members.
+Enum variants also require `pub`, for example:
+
+```dmm
+package result;
+
+pub enum Result<T,E> { pub Ok(T), pub Err(E), }
+pub struct Cell<T> {
+    pub var value:T;
+    var cached:int;
+    pub func get() -> T { return value; }
+}
+pub var count:int = 0;
+```
+
+Ownership is part of the resolved concrete type, not its export spelling. Imported structs therefore retain their
+derived `COPYABLE`/`MOVE_ONLY` and independent `NEEDS_DROP` properties across package boundaries. Generic structs
+derive those properties separately for each concrete specialization after type substitution.
+
+### Initialization and package identity
+
+For an executable main package, package-variable initialization follows the resolved package graph: dependencies run
+before importers, independent packages are ordered by canonical package path, and files/declarations retain their
+deterministic loader order. Each package is initialized once and `main` runs last. Direct package-variable dependency
+cycles are rejected; import cycles continue to report their complete package path.
+
+Package variables have shared writable storage. Their initializers may contain arbitrary well-typed runtime expressions;
+compile-time primitive, string and fixed-array values remain static data, and explicitly typed variables without an
+initializer begin as zero. Runtime-created slice backing and move-only values transfer into package storage. Moving an
+owner back out of package storage remains rejected; borrowing and in-place reassignment follow the ordinary borrow and
+exactly-once drop rules.
+
+For an executable main package, initialized owners participate in compiler-generated normal-exit cleanup in reverse
+initialization order. Slice backing owned by a package variable is released by the same cleanup path. Library packages
+do not emit executable startup.
+
+Only `package main` is executable. It requires exactly one non-generic, parameterless `main` returning `int` or `void`.
+Other packages are libraries and can emit assembly or relocatable objects without an entry point. Executable builds of a
+library are rejected; executable packages cannot be imported. Multiple
+`cmd/...` packages named `main` can coexist in one module.
+
+For every `internal` path segment, the importing package must be within the subtree of that segment's parent and belong
+to the same module. Thus
+`example.com/lib/io/internal/syscall` is accessible under `example.com/lib/io`, but not from `example.com/lib/parser` or
+another module. Package import cycles are compile-time errors and report the complete path through the cycle.
+
+Symbol identity includes the canonical package path (which includes the module path), the declared name and, where
+applicable, the owner type and overload or specialization signature. Identically shaped types from different packages
+remain nominally distinct. Backend names encode canonical package identity; public DMM names are not automatically
+unmangled C names. Interoperability callers must use the generated link name. Generic identities use declaration names
+and signatures, not source-file token positions.
+
+
+### Target-specific files
+
+Before parsing, the loader selects `_linux.dmm` files for ELF and `_windows.dmm` files for COFF; unsuffixed files are
+shared. Selection uses the output target, including cross-compilation. Manifest synchronization scans both variants
+so dependencies remain available for either target.
 
 ## Types
 
@@ -339,6 +537,27 @@ Struct types are nominal and cannot be assigned merely because their layouts mat
 only copyable fields is copyable; its arguments, assignments, and return values have by-value copy semantics, including
 nested structs and fixed arrays.
 
+Named struct initializers are expressions of the form `Type{field: expression, ...}`:
+
+```dmm
+struct test { var x:int; var y:int; };
+var y = test{x: 6, y: 10};
+```
+
+The initializer has type `test`, so a variable type annotation is optional. The semicolon after a complete struct
+declaration is optional. Every field must occur exactly once; unknown, duplicate, missing, inaccessible, and
+incompatible fields are rejected. Fields may appear in any order. Values are evaluated and stored once, in source
+order, including a by-value snapshot of aggregate fields before later expressions run. A trailing comma is allowed.
+Qualified and explicit generic types are supported (`bindings.Record{...}`, `Box<int>{value: 1}`), as are nested
+initializers, context-typed array fields, empty structs, returns, assignments, and function arguments.
+
+Native structs use their target layout; opaque structs cannot be constructed. A native union initializer names exactly
+one field. Construction zeros storage, including padding, before field stores. Move-only fields transfer ownership
+and retain normal borrow restrictions. Already initialized fields requiring destruction are cleaned up if a later
+initializer exits before construction completes; the enclosing struct's destructor runs only for a completed value.
+Slice fields contain views: bind temporary owning slice backing to a local owner before placing a view in a struct.
+Struct initializers are runtime values, not primitive compile-time constants.
+
 ### Derived ownership and destruction
 
 All user-defined structures use the ordinary `struct` declaration. There is no `resource struct` form. A struct may
@@ -392,17 +611,7 @@ are implemented. Local and by-value-parameter cleanup covers scope fallthrough, 
 recursive struct-field and fixed-array-element destruction is emitted in reverse order. Package storage participates in
 exactly-once cleanup after a normal return from `main`.
 
-The `stdlib` package provides destructor-backed owning collections. `stdlib.bytes(capacity)` creates a growable byte
-region; `stdlib.buffer<T>(count)` creates a fixed-length region; and `stdlib.list<T>(capacity)` creates a growable logical
-sequence. Each owner is move-only, exposes `ok()` and an `error:AllocationError`, and releases its allocation exactly
-once. `Bytes.push` and `List<T>.push` return `AllocationError`; the variants are `None`, `OutOfMemory`, and
-`CapacityOverflow`. Their `view()` methods return borrowed slices, so any operation that can relocate or release the
-owner is rejected while the view is live. `Buffer<T>` and `List<T>` currently require copyable element types for
-`get`, `set`, growth, and destruction; dynamic element drop is not yet part of their contract.
-
-`stdlib.cloneString(text)` creates a move-only owned string and reports allocation failure through the same typed
-status. `String.view() -> string` returns a non-owning string view tied to the `String` receiver, and `length()` reports
-its byte length. Moving, replacing, or destroying the owner while that view remains live is rejected.
+Library owners and their borrowed views follow these same rules. See the [stdlib package documentation](stdlib/README.md#owned-collections) for constructors, operations and allocation errors.
 
 Legacy enum member names must be unique within an enum. Legacy enum values are first-class:
 they can be stored, compared for equality, passed, and returned. Variant fields are scalar primitive types initialized
@@ -466,10 +675,7 @@ scrutinee enum. Bindings have the exact payload types and are scoped to their ar
 extraction is emitted only in a branch guarded by the corresponding tag test; typed IR verifies that guard. An invalid
 runtime tag traps.
 
-`import "stdlib";` exports `stdlib.Option<T>`, `stdlib.Result<T,E>`, `stdlib.Propagation<O,R>`,
-`stdlib.NoneResidual`, `stdlib.Propagate<O,R>`, `stdlib.FromResidual<R>`, and `stdlib.Cell<T>` with
-`get`/`set` methods, `unwrapOr`, `Printable`, `Equal`, and `printValue`. See
-`tests/execution/generics` and `tests/execution/propagation` for executable examples.
+The standard propagation types and interfaces are documented in [stdlib](stdlib/README.md#value-types-and-interfaces).
 
 Functions declared inside a struct are invoked as instance methods, while
 `static func` members are invoked on the struct type. Top-level and method link names encode canonical package identity,
@@ -506,27 +712,17 @@ alignment remain caller responsibilities. Raw allocations require explicit relea
 raw allocation pointers have been removed. This does not suppress type-derived destructors for initialized values with
 `NEEDS_DROP`.
 
-`stdlib/core` builds typed allocation, release and raw I/O helpers over compiler primitives. Its signatures, failure
-values and allocation-base requirements are defined in [CORE_RUNTIME.md](CORE_RUNTIME.md).
-
 Nested fixed arrays use recursive row-major storage with no hidden descriptors. Nested slices retain one two-word
 descriptor for each slice value. Layout, generic identity, overload matching, argument and return classification,
 ownership properties, and reverse-order destruction all use the complete recursive element type.
 
-`stdlib.print(value)` and `stdlib.println(value)` are ordinary overloaded stdlib functions. Import `"stdlib"` to use
-them; an empty line is `stdlib.println("")`. Calls evaluate their arguments before entering the output function.
-
-`"stdlib/core"` exposes low-level byte-region allocation, explicit release, raw I/O and process primitives without
-importing higher-level library functions. See [CORE_RUNTIME.md](CORE_RUNTIME.md) for signatures and ownership contracts.
-
-`"stdlib/stdio"` provides synchronous streams, buffered adapters and bounded byte-oriented helpers. Its API, explicit
-cleanup requirements and typed transfer/error results are defined in [STDIO.md](STDIO.md).
+Standard-library functions use the ordinary call and overload rules. Their APIs are documented in the [package index](stdlib/README.md).
 
 Function overloads differ by ordered parameter types, never return type. Exact matches beat promotions and other allowed
 numeric conversions. A candidate must be no worse in every argument and better in at least one; ties are ambiguous.
 `main` cannot be overloaded. Overloaded functions and methods use type-derived link names.
 
-## Native FFI (stages 1–3)
+## Native FFI
 
 `extern "system" [from "library"] { ... }` contains native function declarations and
 native structs. `from` is a logical library ID, for example `c` or `ws2_32`, rather than
@@ -653,7 +849,7 @@ linkage. Only the fixed private platform thread/event/exit exports and `__dmm_pl
 other runtime-reserved function names remain rejected. Components use scalar/POD values, raw pointers and
 native calls. Compiler base helpers must be declared as explicit native imports if used. Implicit runtime
 dependencies, reachable async/drop bodies and runtime global initializers are rejected. This mode supplies
-the DMM platform runtime described in [plans/ffi-stage4.md](plans/ffi-stage4.md).
+the DMM platform runtime described in [plans/ffi.md](plans/ffi.md).
 
 Tokens are at most 511 bytes, an expression is at most 512 tokens, and a local object or function stack frame is at most
 8 MiB. Exceeding a limit is a compilation error, never silent truncation.
@@ -663,3 +859,282 @@ Tokens are at most 511 bytes, an expression is at most 512 tokens, and a local o
 Normal diagnostics are human-readable. `--formatError` emits a single JSON document with `errors` and `summary`; each
 error records its category, code, line, and column. JSON mode emits no ANSI escapes or unrelated output. The compiler
 produces GNU x86-64 assembly for ELF/System V or COFF/Windows in Intel or AT&T syntax.
+
+
+## Grammar
+
+The following EBNF defines lexical and syntactic structure; the preceding sections define semantic validity.
+
+### Notation
+
+```ebnf
+x | y        (* alternative *)
+[x]          (* optional *)
+{x}          (* zero or more repetitions *)
+(x)          (* grouping *)
+"text"       (* terminal text *)
+```
+
+Whitespace separates tokens and is otherwise insignificant. A line comment begins with `//` and continues through the
+end of the line. A non-nesting block comment begins with `/*` and ends at the next `*/`, and may span lines.
+
+### Lexical grammar
+
+```ebnf
+letter          = "A" … "Z" | "a" … "z" | "_" ;
+digit           = "0" … "9" ;
+identifier      = letter, { letter | digit } ;
+
+integer         = digit, { digit } ;
+exponent        = ("e" | "E"), ["+" | "-"], digit, { digit } ;
+floating        = digit, { digit }, ".", digit, { digit }, [exponent]
+                | digit, { digit }, exponent ;
+
+escape          = "\\", ("n" | "t" | "r" | "0" | "\\" | "'" | '"') ;
+character       = "'", (escape | character-byte), "'" ;
+string          = '"', { escape | string-byte }, '"' ;
+
+keyword         = "func" | "var" | "return" | "for" | "if" | "else"
+                | "while" | "const" | "break" | "continue"
+                | "struct" | "enum" | "import" | "static" | "reserve"
+                | "free" | "interface" | "match" | "package" | "pub"
+                | "sizeof" | "alignof" | "slice" | "case" | "typeof"
+                | "destructor" | "defer" | "mut" | "async" | "await"
+                | "extern" | "from" | "export" | "union" ;
+
+primitive-type  = "int" | "char" | "byte" | "bit"
+                | "float" | "double" | "string" | "void" | "never"
+                | "i8" | "u8" | "i16" | "u16" | "i32" | "u32"
+                | "i64" | "u64" | "isize" | "usize" ;
+```
+
+`character-byte` excludes quote, backslash, and line terminators. `string-byte` excludes double quote, backslash, and
+line terminators. A leading sign is parsed as a unary operator rather than as part of a numeric token.
+
+### Program grammar
+
+```ebnf
+program         = "package", identifier, ";", { top-level-declaration }, end-of-file ;
+
+top-level-declaration
+                = import-declaration
+                | extern-block
+                | native-export
+                | ["pub"], (function-declaration | struct-declaration
+                | enum-declaration | constant-declaration | package-variable
+                | interface-declaration) ;
+package-variable = "var", identifier, [":", type], ["=", expression], ";" ;
+
+import-declaration
+                = "import", (import-entry | "(", import-entry, {import-entry}, ")"), ";" ;
+import-entry    = [identifier], string ;
+qualified-name  = identifier, [".", identifier] ;
+
+function-declaration
+                = ["async"], "func", identifier, [generic-parameters], "(", [parameter-list], ")",
+                  "->", return-type, block ;
+parameter-list  = parameter, { ",", parameter } ;
+parameter       = identifier, ":", type ;
+return-type     = type ;
+type            = ["&", ["mut"]], {"*"},
+                  (native-function-type | function-type | async-type | primitive-type | qualified-name, [type-arguments] | "(", type, ")"),
+                  {"[", [integer | identifier], "]"} ;
+function-type   = "func", [generic-parameters], "(", [type-list], ")", "->", type ;
+native-function-type = "extern", "\"system\"", "func", "(", [type-list], ")", "->", type ;
+async-type      = ("Future" | "JoinHandle"), "<", type, ">" | "Executor" ;
+type-arguments  = "<", type, {",", type}, ">" ;
+generic-parameters = "<", generic-parameter, {",", generic-parameter}, ">" ;
+generic-parameter = identifier, [":", type, {"+", type}] ;
+constant-declaration
+                = "const", identifier, [":", type], "=", expression, ";" ;
+```
+
+Struct and enum members use the same function and variable declaration forms accepted by their parser contexts:
+
+```ebnf
+struct-declaration
+                = "struct", identifier, [generic-parameters], "{", { struct-member }, "}", [";"] ;
+struct-member   = ["pub"], (field-declaration | ["static"], function-declaration)
+                | destructor-declaration ;
+destructor-declaration = "destructor", block ;
+field-declaration
+                = "var", identifier, ":", type, ";" ;
+
+enum-declaration
+                = "enum", identifier, [generic-parameters], ["(", enum-field-list, ")"],
+                  "{", [enum-value, { ",", enum-value }, [","]],
+                  [";", {enum-method}], "}" ;
+enum-field-list = enum-field, { ",", enum-field } ;
+enum-field      = ["pub"], identifier, ":", type ;
+enum-value      = ["pub"], identifier, ["(", [enum-argument-list | type-list], ")"] ;
+type-list       = type, {",", type} ;
+enum-method     = ["pub"], ["static"], function-declaration ;
+interface-declaration = "interface", identifier, [generic-parameters],
+                        "{", {interface-method}, "}" ;
+interface-method = ["pub"], ["static"], "func", identifier,
+                   "(", [parameter-list], ")", "->", type, ";" ;
+enum-argument-list
+                = enum-argument, { ",", enum-argument } ;
+enum-argument   = integer | floating | character | string
+                | "true" | "false" ;
+```
+
+`resource` is not a keyword or declaration modifier. It is an ordinary identifier, and the former
+`resource struct` spelling is rejected. Resource semantics are derived from the normal struct declaration's
+destructor and concrete field types.
+
+Enum field and member names are unique. Each value supplies exactly one compatible argument for every declared field.
+Without header fields, variant parentheses contain payload types rather than constant arguments. Generic nominal names
+followed by `.variant` accept type arguments in constructor expressions.
+
+### Statements
+
+```ebnf
+block           = "{", { statement }, "}" ;
+
+statement       = block
+                | variable-declaration
+                | assignment-statement
+                | expression-statement
+                | if-statement
+                | while-statement
+                | for-statement
+                | return-statement
+                | break-statement
+                | continue-statement
+                | match-statement
+                | defer-statement
+                | constant-declaration ;
+
+variable-declaration
+                = "var", identifier, [":", type], ["=", expression], ";" ;
+variable-declaration-without-semicolon
+                = "var", identifier, [":", type], ["=", expression] ;
+
+assignment-statement
+                = lvalue, assignment-operator, expression, ";"
+                | lvalue, ("++" | "--"), ";" ;
+assignment-operator
+                = "=" | "+=" | "-=" | "*=" | "/=" ;
+lvalue          = expression ; (* semantic analysis requires mutable storage *)
+
+expression-statement  = expression, ";" ;
+if-statement    = "if", "(", expression, ")", statement,
+                  ["else", (if-statement | statement)] ;
+while-statement = "while", "(", expression, ")", statement ;
+for-statement   = "for", "(", [for-initializer], ";", [expression], ";",
+                  [for-update], ")", statement ;
+for-initializer = variable-declaration-without-semicolon
+                | lvalue, "=", expression ;
+for-update      = lvalue, assignment-operator, expression
+                | lvalue, ("++" | "--") ;
+
+return-statement = "return", [expression], ";" ;
+break-statement  = "break", ";" ;
+continue-statement = "continue", ";" ;
+match-statement = "match", "(", (expression | type), ")", "{", {match-arm}, "}" ;
+match-arm       = (identifier, ["(", [identifier, {",", identifier}], ")"] | "_"),
+                  "=>", statement
+                | "case", (type | "_"), "->", statement ;
+defer-statement = "defer", (call-expression, ";" | "func", "(", ")", block) ;
+```
+
+### Expressions
+
+The grammar encodes precedence from lowest to highest. Binary operators at each level associate left-to-right; unary
+operators associate right-to-left.
+
+```ebnf
+expression      = logical-or ;
+logical-or      = logical-and, { "||", logical-and } ;
+logical-and     = comparison, { "&&", comparison } ;
+comparison      = additive, { comparison-operator, additive } ;
+comparison-operator
+                = "==" | "!=" | "<" | "<=" | ">" | ">=" ;
+additive        = multiplicative, { ("+" | "-"), multiplicative } ;
+multiplicative  = unary, { ("*" | "/" | "%"), unary } ;
+unary           = ("!" | "-" | "*"), unary | "&", ["mut"], unary | postfix-expression ;
+postfix-expression = primary, {postfix} ;
+
+primary         = struct-literal | integer | floating | character | string
+                | "true" | "false"
+                | identifier
+                | type-metadata
+                | ("reserve" | "sizeof" | "alignof"), "(", type, ")"
+                | "slice", "(", expression, ",", expression, ")"
+                | array-literal
+                | value-block | if-expression | match-expression
+                | "free"
+                | "(", expression, ")" ;
+
+struct-literal  = qualified-name, [type-arguments], "{",
+                  [initializer-field, {",", initializer-field}, [","]], "}" ;
+initializer-field = identifier, ":", expression ;
+
+array-literal   = "[", expression, {",", expression},
+                  [";", expression], "]" ;
+
+identifier-expression
+                = identifier, { postfix } ;
+postfix         = "(", [argument-list], ")"
+                | type-arguments, ["(", [argument-list], ")"]
+                 | "[", expression, "]"
+                 | "[", [expression], ":", [expression], "]"
+                 | ".", identifier
+                 | ".", "await", "(", ")"
+                 | ".", "(", type, ")"
+                 | "?" ;
+argument-list   = expression, { ",", expression } ;
+call-expression = identifier-expression ;
+type-metadata   = type, ".", ("name" | "size" | "align") ;
+
+value-block     = "{", {statement}, [expression], "}" ;
+if-expression   = "if", "(", expression, ")", value-block,
+                  "else", value-block ;
+match-expression = "match", "(", (expression | type), ")", "{", {value-match-arm}, "}" ;
+value-match-arm = (identifier, ["(", [identifier, {",", identifier}], ")"] | "_"),
+                  "=>", value-block
+                | "case", (type | "_"), "->", value-block ;
+```
+
+`expression.type` is a member expression denoting compile-time static type metadata. It may be followed by `.name`,
+`.size`, or `.align`, or used as a type-match scrutinee. Type matches use `case Type -> statement` and
+`case _ -> statement`; enum matches use variant patterns with `=>`. See the language rules above for specialization and
+unevaluated-expression rules. `typeof` is currently reserved by the lexer; use `.type` for static type access.
+
+Value blocks use a final expression without a semicolon as their result. Value-producing `if` requires `else`;
+value-producing `match` requires exhaustive arms. Branch typing and terminating paths follow the language rules above.
+
+`Future`, `JoinHandle` and `Executor` are compiler-recognized type names, not lexer keywords. Their use and async
+declarations require the root manifest's `async` feature. The consuming `.await()` postfix takes no arguments and is
+valid only inside async functions. Prefix `await expression` is rejected. Async interface methods are not supported.
+
+Array literals require an expected fixed-array or slice type. Their prefix is nonempty. In the repetition form
+`[a,b,c;N]`, semantic analysis requires `N` to be a positive compile-time integer constant and produces exactly `N`
+elements by cycling the prefix. An ordinary fixed-array literal must contain exactly the target length.
+
+### Context-sensitive validity
+
+Native declarations extend the top-level declaration alternatives with:
+
+```ebnf
+extern-block    = "extern", "\"system\"", ["from", string],
+                  "{", {native-declaration}, "}" ;
+native-declaration = ["pub"], (native-function | native-aggregate) ;
+native-function = "func", identifier, "(", [parameter-list], ")", "->", type,
+                  ["=", string], ";" ;
+native-aggregate = {native-attribute}, ("struct" | "union"), identifier,
+                   (";" | "{", native-field, {native-field}, "}", [";"]) ;
+native-attribute = ("pack" | "align"), "(", integer, ")" ;
+native-export   = ["pub"], "export", "\"system\"", "func", identifier,
+                  "(", [parameter-list], ")", "->", type, block ;
+native-field    = ["pub"], "var", identifier, ":", type, ";" ;
+```
+
+`from` is required for imports and denotes a logical library ID; it has no effect on types. Only structs may be opaque.
+`pack` and `align` accept 1, 2, 4, 8 or 16. Native exports are synchronous and non-generic; native function-pointer
+types have no generic parameters. Native signature and layout restrictions are defined in [Native FFI](#native-ffi).
+
+The grammar describes structure only. A valid DMM program must also satisfy the rules above, including
+declaration-before-use and scope rules, type compatibility, valid return paths, argument matching, loop-only `break`/
+`continue`, object-size limits, and array-bounds requirements.

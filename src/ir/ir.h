@@ -78,7 +78,9 @@ typedef enum {
     IR_OP_CANCEL_DROP, IR_OP_CANCEL_RETURN,
     /* Snapshot C aggregates at argument evaluation, before later arguments
        can mutate their source through native pointers. */
-    IR_OP_NATIVE_COPY
+    IR_OP_NATIVE_COPY,
+    /* Fresh zeroed aggregate storage, filled by ordinary member stores. */
+    IR_OP_STRUCT_LITERAL
 } IrOpcode;
 
 typedef struct {
