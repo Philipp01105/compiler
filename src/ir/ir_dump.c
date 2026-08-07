@@ -31,9 +31,9 @@ static const char *opcode_name(IrOpcode opcode) {
         "binary", "call", "index", "subslice", "member", "slice-length", "cast", "alloc", "free",
         "return", "branch", "jump", "label", "phi", "enum-construct", "enum-is", "enum-payload", "trap", "slice",
         "slice-data", "array-literal", "drop", "move", "reinit", "free-slice-backing", "await", "executor",
-        "cancel-check", "cancel-await", "cancel-drop", "cancel-return", "native-copy", "struct-literal"
+        "cancel-check", "cancel-await", "cancel-drop", "cancel-return", "native-copy", "struct-literal", "init", "destroy"
     };
-    return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_STRUCT_LITERAL ? names[opcode] : "invalid";
+    return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_DESTROY ? names[opcode] : "invalid";
 }
 
 static const char *operator_name(TokenType type) {
@@ -170,7 +170,7 @@ static int dump_instruction(FILE *output, const IrFunction *function,
         if (fputc(']', output) == EOF) return 0;
     }
     if ((instruction->opcode == IR_OP_UNARY || instruction->opcode == IR_OP_BINARY ||
-         instruction->opcode == IR_OP_STORE) &&
+         instruction->opcode == IR_OP_STORE || instruction->opcode == IR_OP_INIT) &&
         (fputs(" operator=", output) == EOF ||
          !quoted(output, operator_name(instruction->operator_type))))
         return 0;
@@ -178,6 +178,8 @@ static int dump_instruction(FILE *output, const IrFunction *function,
         fprintf(output, " immediate=0x%016llx", (unsigned long long) instruction->immediate) < 0)
         return 0;
     if (instruction->bounds_check_elided && fputs(" bounds-check=elided", output) == EOF) return 0;
+    if (instruction->uninitialized_storage && fputs(" storage=uninitialized", output) == EOF) return 0;
+    if (instruction->lifetime_pointer && fputs(" lifetime-pointer=1", output) == EOF) return 0;
     return fputc('\n', output) != EOF;
 }
 

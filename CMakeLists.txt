@@ -476,6 +476,13 @@ if (BUILD_TESTING)
             -P ${CMAKE_SOURCE_DIR}/tests/core_runtime_test.cmake)
     set_tests_properties(core_runtime_contract PROPERTIES
             LABELS "integration;core;runtime;execution;abi;safety")
+    add_test(NAME shared_language_contract
+            COMMAND ${CMAKE_COMMAND}
+            -DCOMPILER=$<TARGET_FILE:compiler>
+            -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/shared_language_test
+            -P ${CMAKE_SOURCE_DIR}/tests/shared_language_test.cmake)
+    set_tests_properties(shared_language_contract PROPERTIES
+            LABELS "integration;frontend;generics;ownership;core;async;safety")
 
     add_test(NAME native_cli_contract
             COMMAND ${CMAKE_COMMAND}

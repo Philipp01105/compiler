@@ -22,13 +22,14 @@ typedef struct {
 typedef enum {
     AST_DECL_IMPORT, AST_DECL_STRUCT, AST_DECL_ENUM, AST_DECL_FUNCTION,
     AST_DECL_CONSTANT, AST_DECL_INTERFACE, AST_DECL_VARIABLE, AST_DECL_INVALID,
-    AST_DECL_EXTERN
+    AST_DECL_EXTERN, AST_DECL_TYPE_RULE
 } AstDeclarationKind;
 
 typedef enum { AST_TYPE_INFERRED, AST_TYPE_NAMED, AST_TYPE_FUNCTION, AST_TYPE_FUTURE,
                AST_TYPE_JOIN, AST_TYPE_EXECUTOR } AstTypeKind;
 typedef enum { ASYNC_NONE, ASYNC_CREATE, ASYNC_SPAWN, ASYNC_BLOCK_ON,
                ASYNC_SHUTDOWN, ASYNC_CANCEL, ASYNC_NET_WAIT } AstAsyncOperation;
+typedef enum { LIFETIME_NONE, LIFETIME_INITIALIZE, LIFETIME_DESTROY } AstLifetimeOperation;
 typedef enum { AST_BORROW_NONE, AST_BORROW_IMMUTABLE, AST_BORROW_MUTABLE } AstBorrowKind;
 
 typedef enum {
@@ -100,6 +101,18 @@ struct AstGenericParameter {
     AstGenericParameter *next;
 };
 
+typedef struct AstAutoCondition {
+    AstType type;
+    AstInterfaceBound *bounds;
+    struct AstAutoCondition *next;
+} AstAutoCondition;
+
+typedef struct AstAutoRule {
+    AstInterfaceBound *interfaces;
+    AstAutoCondition *conditions;
+    struct AstAutoRule *next;
+} AstAutoRule;
+
 typedef struct AstExpression AstExpression;
 typedef struct AstStatement AstStatement;
 typedef struct AstParameter AstParameter;
@@ -123,6 +136,8 @@ typedef struct AstImportPath {
 
 struct AstExpression {
     AstExpressionKind kind;
+    AstLifetimeOperation lifetime_operation;
+    size_t lifetime_origin;
     AstAsyncOperation async_operation;
     AstSourceSpan span;
     size_t first_token;
@@ -179,6 +194,7 @@ struct AstExpression {
 
 struct AstStatement {
     AstStatementKind kind;
+    int begins_lifetime;
     AstSourceSpan span;
     size_t first_token;
     size_t token_count;
@@ -246,6 +262,10 @@ struct AstEnumValue {
 
 struct AstDeclarationNode {
     int is_public;
+    int no_default;
+    int is_auto_interface;
+    AstAutoRule *auto_rules;
+    AstType rule_target;
     /* Extern blocks flatten into ordinary package declarations. Token indices
        retain ABI, library and alias source locations without synthetic bodies. */
     int is_native;

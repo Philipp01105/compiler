@@ -254,6 +254,7 @@ static AstType substitute_type(Substitution *s, AstType type) {
                    ast_program_lexeme(s->program, parameter->name_token)) == 0) {
             AstType result = concrete_copy(s, s->arguments[i]);
             result.span = type.span;
+            if (type.borrow_kind != AST_BORROW_NONE) result.borrow_kind = type.borrow_kind;
             if ((result.is_array || result.is_slice) && !type.is_array && !type.is_slice)
                 result.outer_pointer_depth += type.pointer_depth;
             else result.pointer_depth += type.pointer_depth;
@@ -497,6 +498,32 @@ AstDeclarationNode *ast_specialize_function(AstProgram *program,
     result->generic_parameters = NULL;
     result->generic_origin = origin;
     result->resolved_symbol_id = AST_SYMBOL_NONE;
+    result->auto_rules = NULL;
+    AstAutoRule **rule_tail = &result->auto_rules;
+    for (const AstAutoRule *rule = origin->auto_rules; rule; rule = rule->next) {
+        AstAutoRule *copy = owned(&s, sizeof(*copy));
+        if (!copy) break;
+        copy->interfaces = rule->interfaces;
+        AstAutoCondition **tail = &copy->conditions;
+        for (const AstAutoCondition *condition = rule->conditions; condition; condition = condition->next) {
+            AstAutoCondition *child = owned(&s, sizeof(*child));
+            if (!child) break;
+            child->type = substitute_type(&s, condition->type);
+            AstInterfaceBound **bound_tail = &child->bounds;
+            for (const AstInterfaceBound *bound = condition->bounds; bound; bound = bound->next) {
+                AstInterfaceBound *concrete = owned(&s, sizeof(*concrete));
+                if (!concrete) break;
+                concrete->type = substitute_type(&s, bound->type);
+                concrete->name_token = concrete->type.name_token;
+                *bound_tail = concrete;
+                bound_tail = &concrete->next;
+            }
+            *tail = child;
+            tail = &child->next;
+        }
+        *rule_tail = copy;
+        rule_tail = &copy->next;
+    }
     if (origin->kind == AST_DECL_FUNCTION) {
         AstParameter *head = NULL, **tail = &head;
         for (const AstParameter *p = origin->as.function.parameters; p; p = p->next) {

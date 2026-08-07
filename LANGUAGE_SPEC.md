@@ -65,7 +65,8 @@ Both ELF and COFF native backends support this at O0 and O1. A private determini
 `main` remains synchronous. Typed asynchronous TCP/UDP/DNS is available through `stdlib/core/net`; public `stdlib/net`
 and asynchronous file APIs remain future work. See [stdlib/core/net/README.md](stdlib/core/net/README.md).
 
-`Send` and `Sync` are compiler-derived, structurally through aggregate fields and enum payloads. Shared checked
+`core.Send` and `core.Sync` are canonical auto interfaces, derived through aggregate fields and enum payloads unless
+an explicit property rule overrides that derivation. Shared checked
 references are Send/Sync when their referent is Sync; mutable checked references are Send when their referent is Send.
 Raw pointers, slices without a checked owner, function values and dynamic interface values are conservative.
 A Future constructor receives Send only when its complete retained frame and output are Send. Futures with borrowed
@@ -574,6 +575,70 @@ checked borrows, slices, and primitive values remain copyable non-owning values.
 
 Properties belong to concrete types. Generic aggregate specializations derive them after substitution, so
 `Box<int>` can be copyable while `Box<File>` is move-only and needs drop when `File` does.
+
+### Auto interfaces and explicit type properties
+
+`auto interface Property {}` declares a memberless, non-generic type property. Ordinary interfaces retain structural
+method matching. Auto interfaces can be used in generic constraints and type rules; they cannot be stored as dynamic
+interface values and do not generate implementations or dispatch tables.
+
+```dmm
+pub auto interface Safe {}
+@[Safe] type int;
+@[Safe where T: Safe]
+struct Wrapper<T> { var data:*T; }
+```
+
+Rules may annotate structs, enums, or an external `type ExistingType;` declaration. A rule can guarantee several
+properties (`@[Send + Sync where T: Send + Sync]`), with comma-separated conditions whose subjects are type expressions.
+Rules are trusted guarantees. An explicit rule replaces derivation for exactly the named properties; a failed
+condition is false without field-based fallback. Duplicate guarantees for the same concrete target and property are
+errors, including overlaps between declaration annotations and external rules. External rules do not define a type;
+their package must own the target or property. Generic rules belong on the generic declaration.
+
+The central satisfaction check resolves interface identities, evaluates explicit rules first, then fundamental facts,
+then aggregate and constructor rules. Struct fields and all enum payloads participate in auto derivation. Arrays follow
+their element. Own properties have no implicit primitive facts; external rules supply their base cases. Unsupported
+constructors are conservative. Recursive explicit conditions cannot prove themselves without independent evidence.
+
+`core.Send` and `core.Sync` are canonical auto interfaces exported by `stdlib/core`. Primitive values have both facts.
+An immutable `&T` has Send and Sync when T has Sync. A mutable `&mut T` has Send when T has Send, with no automatic Sync.
+Raw pointers, unbound slices, function values, and dynamic interfaces have no automatic Send/Sync guarantee. An
+unrelated interface named Send or Sync has no language role. Async frame, output, loan, and cancellation checks remain
+independent of an aggregate's property guarantee.
+
+### Explicit initialization and object lifetimes
+
+`@[no_default]` on a struct or enum requires explicit initialization. This property is monotone: a struct follows all
+its fields; a nonempty array follows its element. Pointers and other indirect representations do not inherit it from
+their pointee. An enum follows common fields and the payloads of its first declared variant, whose default tag is zero.
+Thus `enum E { None, Some(Resource) }` may have a default even when Resource requires initialization. The existing
+`stdlib.Option<T>` starts with Some, so it follows T. The attribute on an enum always requires initialization.
+
+An uninitialized declaration reserves storage without starting a value's lifetime. A whole-value initializer or
+assignment begins the lifetime; individual field writes cannot establish a complete value. Reads, borrows, moves, and
+destruction require a live value. Move and explicit destruction end that lifetime. A later whole assignment begins a
+new one. Assignment to live storage evaluates the right-hand side, destroys the old value, and initializes the new
+value. Merged control-flow states use a runtime lifetime flag so cleanup and replacement skip storage without a live
+value. Package storage follows the same rules. MUST_CONSUME is a separate property.
+
+`core.initialize<T>(ptr:*T,value:T)` transfers the value into correctly aligned, valid storage without a live T.
+`core.destroy<T>(ptr:*T)` runs normal destruction, including field and active-payload cleanup, and ends the lifetime.
+Neither operation changes the allocation. Initialize never drops old contents; Destroy never frees the allocation.
+When the argument directly names tracked whole storage, state and loan checks apply and cleanup flags are updated.
+Tracked subobject lifetime operations are unsupported in V1. Untracked pointers are permitted: the caller guarantees
+alignment, storage validity, ownership, lifetime state, and conflict-free access. In particular, destroying a payload
+through `&storage.value` where storage is a raw heap pointer is permitted under this contract.
+
+Owning instance methods may return a checked borrow of heap storage reachable through their receiver. The returned
+borrow is tied to that receiver. This does not establish general safe raw-pointer lifetime management.
+
+`core.shared<T>(value:T)` returns `stdlib.Result<core.Shared<T>,stdlib.AllocationError>`. Shared is a move-only library
+owner with no default or empty handle. Clone borrows its receiver and adds one reference without copying T; Get returns
+an owner-bound `&T`. Its explicit Send/Sync guarantee requires both properties of T. The constructor initializes one
+heap payload; allocation failure drops the incoming value and returns OutOfMemory. Sequentially consistent CAS loops
+manage the reference count, trapping before increment overflow. The final release destroys T and then releases its
+allocation. Each independent task must own a handle; shared mutation requires synchronization in the payload.
 
 Passing, returning, or assigning a move-only value by value transfers ownership. The source becomes moved and
 uninitialized. Until a complete assignment reinitializes it, the source cannot be read, borrowed, moved again, or

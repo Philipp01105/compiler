@@ -1,0 +1,5 @@
+package core;
+
+// Trusted type properties used by task transfer and shared borrows.
+pub auto interface Send {}
+pub auto interface Sync {}

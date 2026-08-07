@@ -25,6 +25,7 @@ standard output.
 | [generics_and_interfaces](generics_and_interfaces/generics_and_interfaces.dmm) | Generic containers and functions, multiple structural bounds, static specialization, dynamic interface slices and type matches |
 | [memory_and_slices](memory_and_slices/memory_and_slices.dmm) | Nested arrays, immutable and mutable checked references, views and subslices, generated backing storage, raw slices, pointers, `reserve`/`free`, `sizeof` and `alignof` |
 | [ownership_and_borrows](ownership_and_borrows/ownership_and_borrows.dmm) | Copy versus move, destructor propagation through generics, reinitialization, disjoint mutable borrows and reverse field drop |
+| [shared_async](shared_async/shared_async.dmm) | Shared ownership across independent tasks, atomic payload mutation and owner-bound checked borrows |
 | [defer_cleanup](defer_cleanup/defer_cleanup.dmm) | LIFO `defer`, retained `&mut` borrows, eager call capture, anonymous-body reference capture and cleanup on return, `continue` and `break` |
 | [owning_collections](owning_collections/owning_collections.dmm) | Move-only `Bytes`, `Buffer<T>`, `List<T>` and `String`, including growth, borrowed views and automatic destruction |
 | [packages](packages/packages.dmm) | A public API in a second package, an import alias, module-relative resolution, ordered runtime globals, package-owned slice backing and cleanup after `main` |
@@ -44,6 +45,7 @@ standard output.
 | Generics, interfaces and compile-time type selection | `generics_and_interfaces` |
 | Arrays, slices, checked borrows, pointers and raw allocation | `memory_and_slices` |
 | Moves, borrows and destructors | `ownership_and_borrows` |
+| Shared ownership, auto properties and concurrent tasks | `shared_async` |
 | Scope-exit cleanup and deferred borrow lifetimes | `defer_cleanup` |
 | Standard owning collections | `owning_collections` |
 | Modules, visibility, runtime package globals and package cleanup | `packages` |

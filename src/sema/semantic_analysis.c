@@ -149,7 +149,7 @@ int semantic_expression_is_future(const AstExpression *expression) {
            expression->resolved_ast_type.kind == AST_TYPE_FUTURE;
 }
 
-unsigned semantic_declared_type_properties(const Analyzer *analyzer,
+static unsigned derived_declared_type_properties(const Analyzer *analyzer,
                                        const AstProgram *program,
                                        const AstType *type) {
     if (type->pointer_depth != 0 || type->outer_pointer_depth != 0 || type->is_slice)
@@ -183,6 +183,25 @@ unsigned semantic_declared_type_properties(const Analyzer *analyzer,
     size_t nested = resolve_named_symbol_id(
         analyzer, program, named_type_token(program, type));
     return semantic_symbol_type_properties(analyzer->model, nested);
+}
+
+unsigned semantic_declared_type_properties(const Analyzer *analyzer,
+                                           const AstProgram *program,
+                                           const AstType *type) {
+    unsigned properties = derived_declared_type_properties(analyzer, program, type);
+    if (type->kind == AST_TYPE_FUTURE && !type->is_array && !type->is_slice &&
+        !type->pointer_depth && !type->outer_pointer_depth && !type->borrow_kind) return properties;
+    size_t send = semantic_auto_role(analyzer->model, SEMANTIC_TYPE_SEND);
+    size_t sync = semantic_auto_role(analyzer->model, SEMANTIC_TYPE_SYNC);
+    if (send != AST_SYMBOL_NONE) {
+        properties &= ~(unsigned)SEMANTIC_TYPE_SEND;
+        if (semantic_satisfies(analyzer->model, program, type, send)) properties |= SEMANTIC_TYPE_SEND;
+    }
+    if (sync != AST_SYMBOL_NONE) {
+        properties &= ~(unsigned)SEMANTIC_TYPE_SYNC;
+        if (semantic_satisfies(analyzer->model, program, type, sync)) properties |= SEMANTIC_TYPE_SYNC;
+    }
+    return properties;
 }
 
 void derive_type_properties(Analyzer *analyzer) {
@@ -254,6 +273,24 @@ void derive_type_properties(Analyzer *analyzer) {
             }
         }
     } while (changed);
+    /* Language roles bind only to the canonical core declarations. */
+    size_t send = semantic_auto_role(analyzer->model, SEMANTIC_TYPE_SEND);
+    size_t sync = semantic_auto_role(analyzer->model, SEMANTIC_TYPE_SYNC);
+    for (size_t i = 0; i < analyzer->model->symbol_count; i++) {
+        SemanticSymbol *symbol = &analyzer->model->symbols[i];
+        if (symbol->kind != SEMANTIC_SYMBOL_STRUCT && symbol->kind != SEMANTIC_SYMBOL_ENUM) continue;
+        AstType type = {.kind = AST_TYPE_NAMED, .name_token = symbol->name_token};
+        if (send != AST_SYMBOL_NONE) {
+            symbol->type_properties &= ~(unsigned)SEMANTIC_TYPE_SEND;
+            if (semantic_satisfies(analyzer->model, symbol->source_program, &type, send))
+                symbol->type_properties |= SEMANTIC_TYPE_SEND;
+        }
+        if (sync != AST_SYMBOL_NONE) {
+            symbol->type_properties &= ~(unsigned)SEMANTIC_TYPE_SYNC;
+            if (semantic_satisfies(analyzer->model, symbol->source_program, &type, sync))
+                symbol->type_properties |= SEMANTIC_TYPE_SYNC;
+        }
+    }
 }
 
 int semantic_expression_is_move_only(const Analyzer *analyzer,
@@ -348,6 +385,10 @@ static int safe_borrow_return_origin(const Analyzer *analyzer,
         return 0;
     const SemanticSymbol *origin =
         &analyzer->model->symbols[expression->resolved_symbol_id];
+    if (origin->kind == SEMANTIC_SYMBOL_FIELD &&
+        origin->owner_symbol_id < analyzer->model->symbol_count &&
+        analyzer->model->symbols[origin->owner_symbol_id].name_token == analyzer->current_owner_token &&
+        semantic_type_is_move_only(analyzer, origin->owner_symbol_id)) return 1;
     if (origin->scope_depth == 0 &&
         (origin->kind == SEMANTIC_SYMBOL_VARIABLE ||
          origin->kind == SEMANTIC_SYMBOL_CONSTANT))
@@ -1134,6 +1175,10 @@ static void analyze_destructor(Analyzer *analyzer, AstDeclarationNode *resource)
     analyzer->in_destructor = 1;
     analyzer->scope_depth++;
     analyze_statement(analyzer, resource->as.struct_decl.destructor);
+    AstDeclarationNode destructor_function = {.kind = AST_DECL_FUNCTION, .name_token = resource->name_token};
+    destructor_function.as.function.body = resource->as.struct_decl.destructor;
+    validate_function_ownership(analyzer, &destructor_function);
+    validate_function_borrows(analyzer, &destructor_function);
     pop_to(analyzer, saved);
     analyzer->scope_depth--;
     analyzer->current_function_token = saved_function;
@@ -1358,6 +1403,7 @@ SemanticModel *semantic_analyze_target(AstProgram *program, TargetFormat target)
             if (d->generic_parameters && d->kind != AST_DECL_INTERFACE)
                 continue;
             if (d->kind == AST_DECL_FUNCTION) normalize_function_types(&analyzer, d);
+            else if (d->kind == AST_DECL_TYPE_RULE) normalize_generic_type(&analyzer, &d->rule_target, 0);
             else if (d->kind == AST_DECL_VARIABLE || d->kind == AST_DECL_CONSTANT) normalize_generic_type(
                 &analyzer, &d->as.constant.type, 0);
             else if (d->kind == AST_DECL_INTERFACE &&
@@ -1443,6 +1489,23 @@ SemanticModel *semantic_analyze_target(AstProgram *program, TargetFormat target)
     }
     analyzer.program = program;
     validate_overload_sets(&analyzer);
+    validate_auto_rules(&analyzer);
+    derive_type_properties(&analyzer);
+    for (size_t i = 0; i < model->symbol_count; i++) {
+        const SemanticSymbol *s = &model->symbols[i];
+        const AstDeclarationNode *d = s->declaration;
+        if (!d || !d->generic_origin ||
+            (s->kind != SEMANTIC_SYMBOL_STRUCT && s->kind != SEMANTIC_SYMBOL_ENUM)) continue;
+        AstType arguments[DMM_MAX_TYPE_PARAMETERS];
+        size_t count = 0;
+        for (const AstTypeArgument *arg = d->specialization_arguments; arg && count < DMM_MAX_TYPE_PARAMETERS; arg = arg->next)
+            arguments[count++] = arg->type;
+        analyzer.program = (AstProgram *)s->source_program;
+        if (!generic_bounds_satisfied(&analyzer, s->source_program, d->generic_origin, arguments))
+            semantic_error(&analyzer, d->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                           "Generic aggregate type arguments do not satisfy interface bounds");
+    }
+    analyzer.program = program;
     validate_native_declarations(&analyzer);
     for (size_t unit_index = 0; unit_index <= program->owned_import_count; unit_index++) {
         AstProgram *unit = unit_index == 0 ? program : program->owned_imports[unit_index - 1];

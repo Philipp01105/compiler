@@ -1,5 +1,5 @@
 package stdlib;
-import "stdlib/core";
+import core "stdlib/core/raw";
 // Fixed-width integer output uses DMM arithmetic and raw byte writes.
 pub func print_fixed_unsigned(value:u64) -> void {
     var digits:u8[20];

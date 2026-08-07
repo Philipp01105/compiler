@@ -77,6 +77,7 @@ const char *ast_declaration_kind_name(AstDeclarationKind kind) {
         case AST_DECL_INTERFACE: return "interface";
         case AST_DECL_INVALID: return "invalid";
         case AST_DECL_EXTERN: return "extern";
+        case AST_DECL_TYPE_RULE: return "type-rule";
     }
     return "invalid";
 }
@@ -403,6 +404,8 @@ static int valid_declarations(const AstProgram *program) {
                 if (method->kind != AST_DECL_FUNCTION ||
                     !valid_function_declaration(program, method))
                     return 0;
+        } else if (declaration->kind == AST_DECL_TYPE_RULE) {
+            if (!declaration->auto_rules || !valid_type(program, &declaration->rule_target, 0)) return 0;
         } else if (declaration->kind == AST_DECL_INTERFACE) {
             if (!valid_token(program, declaration->name_token)) return 0;
             const AstDeclarationNode *methods = declaration->as.interface_decl.methods;

@@ -46,6 +46,19 @@ select the concrete method by tag; destruction dispatches to concrete drop glue 
 
 ## Component ownership
 
+Auto-interface identities and explicit rules are represented in the AST and substituted with generic aggregates.
+`semantic_satisfies` in `semantic_interfaces.c` is the common property/constraint query. Canonical stdlib/core Send and
+Sync declarations bind to language roles; their spellings do not grant roles to other interfaces. Auto properties do
+not enter structural implementation selection or interface-table emission. `semantic_requires_explicit_init` is a
+separate monotone query over concrete representations, including first-variant enum defaults.
+
+Ownership dataflow tracks live, never initialized, moved, and explicitly destroyed storage. The latter three states
+have no live value, with distinct diagnostics. Transparent wrappers around initialize/destroy intrinsics retain their
+effects at callers. Typed IR preserves lifetime starts as INIT and explicit ends as DESTROY; replacement retains drop
+and reinitialization effects, including runtime flags at mixed control-flow joins. Raw heap operations retain the
+caller's lifetime contract. Shared uses these general mechanisms entirely as stdlib source; there is no Shared type
+name special case in the compiler. The dependency-free core/raw implementation keeps core -> stdlib -> raw acyclic.
+
 This section assigns implementation responsibilities. Source-language ownership and borrow semantics are defined only
 in [LANGUAGE_SPEC.md](LANGUAGE_SPEC.md).
 

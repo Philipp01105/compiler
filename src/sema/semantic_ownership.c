@@ -8,7 +8,8 @@
 enum {
     OWNERSHIP_UNINITIALIZED = 1u << 0,
     OWNERSHIP_LIVE = 1u << 1,
-    OWNERSHIP_MOVED = 1u << 2
+    OWNERSHIP_MOVED = 1u << 2,
+    OWNERSHIP_DESTROYED = 1u << 3
 };
 
 typedef struct {
@@ -57,6 +58,7 @@ static OwnershipFlow flow_new(OwnershipChecker *checker, int reachable) {
         free(flow.move_tokens);
         flow.values = NULL;
         flow.move_tokens = NULL;
+        flow.reachable = 0;
     }
     if (flow.move_tokens != NULL)
         for (size_t i = 0; i < checker->count; i++)
@@ -135,6 +137,22 @@ static void ownership_error(OwnershipChecker *checker, size_t token,
         token = checker->deferred_error_token;
     semantic_error(checker->analyzer, token, ERROR_CATEGORY_SEMANTIC,
                    ERR_SEM_INVALID_DECLARATION, message);
+}
+
+static int explicit_init_symbol(const OwnershipChecker *checker, size_t id) {
+    if (id >= checker->count) return 0;
+    const SemanticSymbol *s = &checker->analyzer->model->symbols[id];
+    if (s->kind != SEMANTIC_SYMBOL_LOCAL && s->kind != SEMANTIC_SYMBOL_PARAMETER &&
+        s->kind != SEMANTIC_SYMBOL_VARIABLE) return 0;
+    return semantic_requires_explicit_init(checker->analyzer->model, s->source_program,
+                                          &s->declared_type);
+}
+
+static int tracked_symbol(const OwnershipChecker *checker, size_t id) {
+    if (id >= checker->count) return 0;
+    SemanticSymbolKind kind = checker->analyzer->model->symbols[id].kind;
+    return kind == SEMANTIC_SYMBOL_LOCAL || kind == SEMANTIC_SYMBOL_PARAMETER ||
+           kind == SEMANTIC_SYMBOL_VARIABLE;
 }
 
 static int must_consume_symbol(const OwnershipChecker *checker, size_t id) {
@@ -232,7 +250,7 @@ static int expression_available(OwnershipChecker *checker,
                                 OwnershipFlow *flow,
                                 const AstExpression *expression) {
     if (expression == NULL || expression->kind != AST_EXPR_NAME ||
-        !move_only_symbol(checker, expression->resolved_symbol_id))
+        !tracked_symbol(checker, expression->resolved_symbol_id))
         return 1;
     size_t symbol = expression->resolved_symbol_id;
     if (symbol >= checker->count || flow->values[symbol] == OWNERSHIP_LIVE)
@@ -242,7 +260,11 @@ static int expression_available(OwnershipChecker *checker,
         deferred_use_after_move_error(checker, flow->move_tokens[symbol]);
     else
         ownership_error(checker, expression->value_token,
-                        "Cannot read, borrow, copy, or move a value after ownership was moved");
+                        (flow->values[symbol] & OWNERSHIP_DESTROYED)
+                            ? "Cannot use a value after its lifetime was destroyed; initialize it first"
+                            : (flow->values[symbol] & OWNERSHIP_MOVED)
+                            ? "Cannot read, borrow, copy, or move a value after ownership was moved"
+                            : "Cannot read, borrow, copy, or move an uninitialized value; initialize the whole value first");
     return 0;
 }
 
@@ -289,6 +311,44 @@ static void consume_expression(OwnershipChecker *checker,
 
 static void read_call(OwnershipChecker *checker, OwnershipFlow *flow,
                       const AstExpression *expression) {
+    if (expression->lifetime_operation) {
+        const AstExpression *ptr = expression->arguments;
+        const AstExpression *place = ptr && ptr->kind == AST_EXPR_UNARY &&
+            ptr->operator_type == TOKEN_AMPERSAND ? ptr->right : NULL;
+        size_t id = place && place->kind == AST_EXPR_NAME ? place->resolved_symbol_id : AST_SYMBOL_NONE;
+        if (place && (place->kind == AST_EXPR_MEMBER || place->kind == AST_EXPR_INDEX)) {
+            const AstExpression *root = place;
+            int indirect = 0;
+            while (root && (root->kind == AST_EXPR_MEMBER || root->kind == AST_EXPR_INDEX)) {
+                if (root->left && (root->left->resolved_pointer_depth || root->left->resolved_outer_pointer_depth ||
+                                   root->left->resolved_is_slice)) indirect = 1;
+                root = root->left;
+            }
+            if (!indirect && root && root->kind == AST_EXPR_NAME && tracked_symbol(checker, root->resolved_symbol_id))
+                ownership_error(checker, expression->first_token,
+                    "Lifetime operations on tracked subobjects require a whole value; partial lifetimes are unsupported");
+        }
+        if (tracked_symbol(checker, id)) {
+            ((AstExpression *)expression)->lifetime_origin = id;
+            if (expression->lifetime_operation == LIFETIME_INITIALIZE) {
+                if (flow->values[id] & OWNERSHIP_LIVE)
+                    ownership_error(checker, expression->first_token,
+                                    "initialize requires storage without a live value");
+                consume_expression(checker, flow, ptr->next);
+                flow->values[id] = OWNERSHIP_LIVE;
+            } else {
+                (void)expression_available(checker, flow, place);
+                flow->values[id] = OWNERSHIP_DESTROYED;
+            }
+        } else {
+            AstExpression pointer = ptr ? *ptr : (AstExpression){0};
+            pointer.next = NULL;
+            if (ptr) read_expression(checker, flow, &pointer);
+            if (expression->lifetime_operation == LIFETIME_INITIALIZE)
+                consume_expression(checker, flow, ptr ? ptr->next : NULL);
+        }
+        return;
+    }
     if (expression->async_operation) {
         if (expression->left && expression->left->kind == AST_EXPR_MEMBER &&
             expression->async_operation != ASYNC_CREATE) {
@@ -472,10 +532,11 @@ static OwnershipFlow check_match(OwnershipChecker *checker,
     for (const AstMatchArm *arm = statement->match_arms;
          arm != NULL; arm = arm->next) {
         OwnershipFlow branch = flow_clone(checker, &flow);
+        if (!branch.values) { flow_free(&branch); continue; }
         for (const AstParameter *binding = arm->bindings;
              binding != NULL; binding = binding->next)
             if (binding->resolved_symbol_id < checker->count &&
-                move_only_symbol(checker, binding->resolved_symbol_id)) {
+                tracked_symbol(checker, binding->resolved_symbol_id)) {
                 branch.values[binding->resolved_symbol_id] = OWNERSHIP_LIVE;
                 branch.move_tokens[binding->resolved_symbol_id] =
                     AST_TOKEN_NONE;
@@ -540,10 +601,11 @@ static OwnershipFlow check_control_expression(OwnershipChecker *checker,
         if (control->is_type_match && arm != control->selected_type_arm)
             continue;
         OwnershipFlow branch = flow_clone(checker, &flow);
+        if (!branch.values) { flow_free(&branch); continue; }
         for (const AstParameter *binding = arm->bindings; binding;
              binding = binding->next)
             if (binding->resolved_symbol_id < checker->count &&
-                move_only_symbol(checker, binding->resolved_symbol_id)) {
+                tracked_symbol(checker, binding->resolved_symbol_id)) {
                 branch.values[binding->resolved_symbol_id] = OWNERSHIP_LIVE;
                 branch.move_tokens[binding->resolved_symbol_id] =
                     AST_TOKEN_NONE;
@@ -582,15 +644,25 @@ static OwnershipFlow check_statements_tail(OwnershipChecker *checker,
                         read_expression(checker, &flow, statement->value);
                 }
                 if (statement->resolved_symbol_id < checker->count &&
-                    move_only_symbol(checker, statement->resolved_symbol_id)) {
+                    tracked_symbol(checker, statement->resolved_symbol_id)) {
                     flow.values[statement->resolved_symbol_id] = statement->value == NULL &&
-                        must_consume_symbol(checker, statement->resolved_symbol_id)
+                        (must_consume_symbol(checker, statement->resolved_symbol_id) ||
+                         explicit_init_symbol(checker, statement->resolved_symbol_id))
                             ? OWNERSHIP_UNINITIALIZED : OWNERSHIP_LIVE;
                     flow.move_tokens[statement->resolved_symbol_id] =
                         AST_TOKEN_NONE;
                 }
                 break;
             case AST_STMT_ASSIGNMENT:
+                if (statement->expression && statement->expression->kind == AST_EXPR_NAME &&
+                    tracked_symbol(checker, statement->expression->resolved_symbol_id)) {
+                    size_t id = statement->expression->resolved_symbol_id;
+                    ((AstStatement *)statement)->begins_lifetime = flow.values[id] == OWNERSHIP_UNINITIALIZED ||
+                                                                  flow.values[id] == OWNERSHIP_MOVED ||
+                                                                  flow.values[id] == OWNERSHIP_DESTROYED;
+                    if (statement->assignment_operator != TOKEN_EQUAL)
+                        (void)expression_available(checker, &flow, statement->expression);
+                }
                 if (statement->assignment_operator == TOKEN_EQUAL &&
                     statement->expression != NULL && statement->value != NULL &&
                     statement->expression->kind == AST_EXPR_NAME &&
@@ -614,7 +686,7 @@ static OwnershipFlow check_statements_tail(OwnershipChecker *checker,
                     statement->expression != NULL &&
                     statement->expression->kind == AST_EXPR_NAME &&
                     statement->expression->resolved_symbol_id < checker->count &&
-                    move_only_symbol(checker,
+                    tracked_symbol(checker,
                                      statement->expression->resolved_symbol_id)) {
                     finish_binding(checker, &flow, statement->expression->resolved_symbol_id,
                                    statement->first_token);
@@ -767,10 +839,16 @@ void validate_function_ownership(Analyzer *analyzer,
     };
     OwnershipFlow flow = flow_new(&checker, 1);
     if (flow.values == NULL) return;
+    for (size_t id = 0; id < checker.count; id++) {
+        const SemanticSymbol *s = &analyzer->model->symbols[id];
+        if (s->kind == SEMANTIC_SYMBOL_VARIABLE)
+            flow.values[id] = explicit_init_symbol(&checker, id) && s->declaration &&
+                !s->declaration->as.constant.value ? OWNERSHIP_UNINITIALIZED : OWNERSHIP_LIVE;
+    }
     for (const AstParameter *parameter = function->as.function.parameters;
          parameter != NULL; parameter = parameter->next)
         if (parameter->resolved_symbol_id < checker.count &&
-            move_only_symbol(&checker, parameter->resolved_symbol_id)) {
+            tracked_symbol(&checker, parameter->resolved_symbol_id)) {
             flow.values[parameter->resolved_symbol_id] = OWNERSHIP_LIVE;
             flow.move_tokens[parameter->resolved_symbol_id] = AST_TOKEN_NONE;
         }

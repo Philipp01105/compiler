@@ -1,5 +1,5 @@
 package stdio;
-import "stdlib/core";
+import core "stdlib/core/raw";
 
 // Decimal integer output is DMM arithmetic, including both 64-bit extremes.
 pub func writeUint(destination:*Stream, value:u64) -> Transfer {

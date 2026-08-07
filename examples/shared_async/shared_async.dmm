@@ -1,0 +1,33 @@
+package main;
+import "stdlib/core";
+import "stdlib";
+
+async func increment(shared:core.Shared<core.AtomicUsize>) -> void {
+    var counter=shared.get();
+    for (var i=0;i<1000;i+=1) {
+        var count=counter.load();
+        while (counter.compareExchange(count,count+1.(usize)) != count) { count=counter.load(); }
+    }
+}
+
+async func join(handle:JoinHandle<void>) -> void {
+    var result=handle.await();
+}
+
+func main() -> int {
+    match (core.shared(core.atomicUsize(0.(usize)))) {
+        Ok(shared) => {
+            var executor=Executor.create(2);
+            var first=executor.spawn(increment(shared.clone()));
+            var second=executor.spawn(increment(shared.clone()));
+            executor.block_on(join(first));
+            executor.block_on(join(second));
+            block_on(executor.shutdown(ShutdownMode.Drain));
+            var counter=shared.get();
+            stdlib.println(counter.load());
+            if (counter.load() == 2000.(usize)) { return 0; }
+            return 1;
+        }
+        Err(error) => { stdlib.println("Allocation failed"); return 2; }
+    }
+}

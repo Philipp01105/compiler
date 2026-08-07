@@ -1,5 +1,5 @@
 package stdio;
-import "stdlib/core";
+import core "stdlib/core/raw";
 
 // Owned byte collection. view() is borrowed; release() also releases partial results.
 // Do not copy this owner or release a view returned by view().

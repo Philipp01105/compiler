@@ -109,10 +109,29 @@ static AstDeclarationKind declaration_kind(TokenType first, TokenType second) {
     return AST_DECL_INVALID;
 }
 
+static AstDeclarationKind declaration_kind_at(const AstProgram *program, size_t first) {
+    size_t index = first;
+    while (index < program->token_count && program->tokens[index].type == TOKEN_AT) {
+        index++;
+        if (index >= program->token_count) return AST_DECL_INVALID;
+        int brackets = 0;
+        do {
+            if (program->tokens[index].type == TOKEN_LBRACKET) brackets++;
+            if (program->tokens[index].type == TOKEN_RBRACKET) brackets--;
+            index++;
+        } while (index < program->token_count && brackets > 0);
+    }
+    if (index >= program->token_count) return AST_DECL_INVALID;
+    if (program->tokens[index].type == TOKEN_KEYWORD_PUB) index++;
+    if (index >= program->token_count) return AST_DECL_INVALID;
+    if (!strcmp(program->tokens[index].lexeme, "auto")) return AST_DECL_INTERFACE;
+    if (!strcmp(program->tokens[index].lexeme, "type")) return AST_DECL_TYPE_RULE;
+    return declaration_kind(program->tokens[index].type,
+        index + 1 < program->token_count ? program->tokens[index + 1].type : TOKEN_EOF);
+}
+
 static size_t declaration_end(const AstProgram *program, size_t first) {
-    AstDeclarationKind kind = declaration_kind(
-        program->tokens[first].type,
-        first + 1 < program->token_count ? program->tokens[first + 1].type : TOKEN_EOF);
+    AstDeclarationKind kind = declaration_kind_at(program, first);
 
     if (kind == AST_DECL_IMPORT) {
         size_t index = first;
@@ -121,9 +140,9 @@ static size_t declaration_end(const AstProgram *program, size_t first) {
             index++;
         return index < program->token_count && program->tokens[index].type == TOKEN_SEMICOLON ? index + 1 : index;
     }
-    if (kind == AST_DECL_CONSTANT || kind == AST_DECL_VARIABLE) {
+    if (kind == AST_DECL_CONSTANT || kind == AST_DECL_VARIABLE || kind == AST_DECL_TYPE_RULE) {
         size_t index = first + 1;
-        if (kind == AST_DECL_CONSTANT || kind == AST_DECL_VARIABLE) {
+        if (kind == AST_DECL_CONSTANT || kind == AST_DECL_VARIABLE || kind == AST_DECL_TYPE_RULE) {
             while (index < program->token_count &&
                    program->tokens[index].type != TOKEN_SEMICOLON &&
                    program->tokens[index].type != TOKEN_EOF)
@@ -179,9 +198,7 @@ static int build_declarations(AstProgram *program) {
             capacity = next;
         }
         AstDeclaration *declaration = &program->declarations[program->declaration_count++];
-        declaration->kind = declaration_kind(
-            program->tokens[index].type,
-            index + 1 < program->token_count ? program->tokens[index + 1].type : TOKEN_EOF);
+        declaration->kind = declaration_kind_at(program, index);
         declaration->first_token = index;
         declaration->token_count = end - index;
         declaration->span.begin = program->tokens[index].span.begin;

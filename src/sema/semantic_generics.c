@@ -240,6 +240,11 @@ void normalize_generic_type(Analyzer *analyzer, AstType *type, unsigned depth) {
                                "Generic type argument count does not match declaration");
                 return;
             }
+            if (analyzer->model->symbol_count && !generic_bounds_satisfied(analyzer, unit, d, arguments)) {
+                semantic_error(analyzer, type->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                               "Generic aggregate type arguments do not satisfy interface bounds");
+                return;
+            }
             AstDeclarationNode *instance = ast_specialize_function(unit, d, arguments, count, analyzer->program);
             if (!instance) {
                 semantic_error(analyzer, type->name_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_COMPLEXITY_LIMIT,
@@ -261,6 +266,9 @@ void normalize_generic_type(Analyzer *analyzer, AstType *type, unsigned depth) {
             type->arguments = NULL;
             AstProgram *saved = analyzer->program;
             analyzer->program = unit;
+            for (AstAutoRule *r = instance->auto_rules; r; r = r->next)
+                for (AstAutoCondition *c = r->conditions; c; c = c->next)
+                    normalize_generic_type(analyzer, &c->type, depth + 1);
             if (instance->kind == AST_DECL_STRUCT) {
                 for (AstField *f = instance->as.struct_decl.fields; f; f = f->next)
                     normalize_generic_type(analyzer, &f->type, depth + 1);
@@ -366,7 +374,7 @@ void normalize_function_types(Analyzer *analyzer, AstDeclarationNode *d) {
     normalize_statement_types(analyzer, d->as.function.body);
 }
 
-static AstDeclarationNode *find_language_declaration(const AstProgram *root, const AstProgram *file,
+AstDeclarationNode *find_language_declaration(const AstProgram *root, const AstProgram *file,
                                                      const char *name, AstDeclarationKind kind, AstProgram **source) {
     int canonical = strstr(name, "::") != NULL;
     const DmmPackage *target = lookup_package(file, &name);
@@ -465,7 +473,8 @@ void prepare_interfaces(Analyzer *a, AstProgram *root) {
                     if (!same_package(unit, previous_unit)) continue;
                     for (AstDeclarationNode *previous = previous_unit->root; previous && previous != d;
                          previous = previous->next)
-                        if ((d->generic_parameters || previous->generic_parameters) &&
+                        if (d->kind != AST_DECL_TYPE_RULE && previous->kind != AST_DECL_TYPE_RULE &&
+                            (d->generic_parameters || previous->generic_parameters) &&
                             !strcmp(ast_program_lexeme(unit, d->name_token),
                                     ast_program_lexeme(previous_unit, previous->name_token)) &&
                             (d->kind != AST_DECL_FUNCTION || previous->kind != AST_DECL_FUNCTION ||
@@ -522,6 +531,11 @@ int generic_bounds_satisfied(Analyzer *a, const AstProgram *declaration_unit,
                                                                            AST_DECL_INTERFACE, NULL);
             size_t owner_id = resolve_named_symbol_id(a, a->program,
                                                        named_type_token(a->program, &arguments[index]));
+            if (required_interface && required_interface->is_auto_interface) {
+                if (!semantic_satisfies(a->model, a->program, &arguments[index],
+                                       required_interface->resolved_symbol_id)) return 0;
+                continue;
+            }
             if (!required_interface || owner_id >= a->model->symbol_count ||
                 (a->model->symbols[owner_id].kind != SEMANTIC_SYMBOL_STRUCT &&
                  a->model->symbols[owner_id].kind != SEMANTIC_SYMBOL_ENUM) ||

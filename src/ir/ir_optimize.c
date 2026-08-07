@@ -267,7 +267,7 @@ static int initialize(Pass *p) {
         }
     for (size_t i = 0; i < n; ++i) {
         const IrInstruction *in = &f->instructions[i];
-        if (in->opcode == IR_OP_STORE) {
+        if (in->opcode == IR_OP_STORE || in->opcode == IR_OP_INIT) {
             const IrInstruction *target = definition(p, in->operand_a);
             if (target && target->opcode == IR_OP_LOAD && target->symbol_id < symbols)
                 p->written_symbols[target->symbol_id] = 1;
@@ -276,7 +276,7 @@ static int initialize(Pass *p) {
             p->local_index[in->symbol_id] = p->local_count;
             p->locals[p->local_count++] = (Local){in->symbol_id, i, in->type_id};
         }
-        if (in->opcode == IR_OP_STORE) protect(p, in->operand_a);
+        if (in->opcode == IR_OP_STORE || in->opcode == IR_OP_INIT) protect(p, in->operand_a);
         if (in->opcode == IR_OP_NATIVE_COPY) protect(p, in->operand_a);
         if (in->opcode == IR_OP_UNARY && in->operator_type == TOKEN_AMPERSAND) protect(p, in->operand_b);
         if (in->opcode == IR_OP_MEMBER || in->opcode == IR_OP_SLICE_LENGTH || in->opcode == IR_OP_SLICE_DATA || in->
@@ -454,7 +454,7 @@ static int analyze(Pass *p) {
                             p->scratch[l] = initial;
                         }
                     }
-                    if (in->opcode == IR_OP_STORE) {
+                    if (in->opcode == IR_OP_STORE || in->opcode == IR_OP_INIT) {
                         const IrInstruction *target = definition(p, in->operand_a);
                         l = local(p, target);
                         if (l != IR_VALUE_NONE) p->scratch[l] = stored(p, in, l, p->scratch[l]);
@@ -549,7 +549,7 @@ static int pure(Pass *p, const IrInstruction *in) {
 }
 
 static int memory_effect(const IrInstruction *in) {
-    return in->opcode == IR_OP_STORE || in->opcode == IR_OP_DECLARE ||
+    return in->opcode == IR_OP_STORE || in->opcode == IR_OP_INIT || in->opcode == IR_OP_DESTROY || in->opcode == IR_OP_DECLARE ||
            in->opcode == IR_OP_DROP || in->opcode == IR_OP_MOVE ||
            in->opcode == IR_OP_REINIT || in->opcode == IR_OP_FREE_SLICE_BACKING ||
            in->opcode == IR_OP_AWAIT || in->opcode == IR_OP_EXECUTOR || in->opcode == IR_OP_CANCEL_CHECK ||

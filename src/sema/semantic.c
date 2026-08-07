@@ -445,6 +445,7 @@ DataType promoted_numeric(DataType left, DataType right) {
 }
 
 DataType builtin_result_type(const char *name) {
+    if (!strcmp(name, "__dmm_intrinsic_initialize") || !strcmp(name, "__dmm_intrinsic_destroy")) return TYPE_VOID;
     const CoreIntrinsic *core = core_intrinsic_find(name);
     if (core != NULL) return core_value_type(core->result);
     if (strcmp(name, "strlen") == 0 || strcmp(name, "strcmp") == 0 ||
@@ -464,6 +465,47 @@ DataType builtin_result_type(const char *name) {
 int is_builtin_name(const char *name) {
     return builtin_result_type(name) != TYPE_UNKNOWN || strcmp(name, "malloc") == 0 ||
            strcmp(name, "read") == 0;
+}
+
+AstLifetimeOperation semantic_lifetime_operation(const Analyzer *a, const AstExpression *call) {
+    if (!call || call->kind != AST_EXPR_CALL) return LIFETIME_NONE;
+    const AstExpression *callee = call->left;
+    AstProgram *unit = a->program;
+    const AstDeclarationNode *declaration = NULL;
+    size_t function_id = call->resolved_symbol_id;
+    if (function_id >= a->model->symbol_count && callee && callee->kind == AST_EXPR_NAME) {
+        const SemanticSymbol *s = scoped_find_global(a->model, a->program,
+            ast_program_lexeme(a->program, callee->value_token), SEMANTIC_SYMBOL_FUNCTION);
+        if (s) function_id = s->id;
+        else declaration = find_language_declaration((AstProgram *)a->model->program, a->program,
+            ast_program_lexeme(a->program, callee->value_token), AST_DECL_FUNCTION, &unit);
+    }
+    if (function_id < a->model->symbol_count) {
+        const SemanticSymbol *s = &a->model->symbols[function_id];
+        if (!s->declaration || s->kind != SEMANTIC_SYMBOL_FUNCTION) return LIFETIME_NONE;
+        declaration = s->declaration;
+        unit = (AstProgram *)s->source_program;
+    }
+    if (declaration) {
+        const AstStatement *body = declaration->as.function.body;
+        const AstStatement *statement = body && body->kind == AST_STMT_BLOCK ? body->body : body;
+        if (!statement || statement->next || !statement->expression ||
+            statement->expression->kind != AST_EXPR_CALL) return LIFETIME_NONE;
+        /* A transparent forwarding wrapper carries exactly its intrinsic's effect. */
+        const AstParameter *parameter = declaration->as.function.parameters;
+        const AstExpression *argument = statement->expression->arguments;
+        for (; parameter && argument; parameter = parameter->next, argument = argument->next)
+            if (argument->kind != AST_EXPR_NAME || strcmp(ast_program_lexeme(unit, argument->value_token),
+                                                          ast_program_lexeme(unit, parameter->name_token)))
+                return LIFETIME_NONE;
+        if (parameter || argument) return LIFETIME_NONE;
+        callee = statement->expression->left;
+    }
+    if (!callee || callee->kind != AST_EXPR_NAME) return LIFETIME_NONE;
+    const char *name = ast_program_lexeme(unit, callee->value_token);
+    if (!strcmp(name, "__dmm_intrinsic_initialize")) return LIFETIME_INITIALIZE;
+    if (!strcmp(name, "__dmm_intrinsic_destroy")) return LIFETIME_DESTROY;
+    return LIFETIME_NONE;
 }
 
 static int same_declared_type(const Analyzer *analyzer,
@@ -546,6 +588,8 @@ void validate_overload_sets(Analyzer *analyzer) {
 }
 
 static size_t builtin_arity(const char *name) {
+    if (!strcmp(name, "__dmm_intrinsic_initialize")) return 2;
+    if (!strcmp(name, "__dmm_intrinsic_destroy")) return 1;
     const CoreIntrinsic *core = core_intrinsic_find(name);
     if (core != NULL) return core->argument_count;
     if (strcmp(name, "scanfInt") == 0 || strcmp(name, "scanfChar") == 0 ||
@@ -926,7 +970,7 @@ static int argument_conversion_rank(const Analyzer *analyzer,
 }
 
 int contains_type_parameter(const AstProgram *unit, const AstType *type, const AstDeclarationNode *origin) {
-    if (!origin || origin->kind != AST_DECL_FUNCTION) return 0;
+    if (!origin) return 0;
     for (const AstGenericParameter *g = origin->generic_parameters; g; g = g->next)
         if (!strcmp(ast_program_lexeme(unit, g->name_token), ast_program_lexeme(unit, type->name_token))) return 1;
     for (const AstTypeArgument *a = type->arguments; a; a = a->next)
@@ -1079,7 +1123,12 @@ static void validate_builtin_arguments(Analyzer *analyzer,
     const AstExpression *c = b == NULL ? NULL : b->next;
     int valid = 1;
     const CoreIntrinsic *core = core_intrinsic_find(name);
-    if (core != NULL) {
+    if (expression->lifetime_operation) {
+        valid = a && pointer_expression(a) && !a->resolved_is_slice && !a->resolved_is_array;
+        if (expression->lifetime_operation == LIFETIME_INITIALIZE)
+            valid &= b && expression_to_declared_type_allowed(analyzer, b, analyzer->program,
+                                                              &expression->allocated_type);
+    } else if (core != NULL) {
         const AstExpression *argument = a;
         for (size_t i = 0; i < core->argument_count; ++i, argument = argument->next) {
             if (argument == NULL) {
@@ -1361,7 +1410,18 @@ void validate_expression(Analyzer *analyzer, AstExpression *expression,
                 if (declared != NULL)
                     overload_error(analyzer, expression, name, AST_SYMBOL_NONE, 0, ambiguous);
                 else {
-                    (void) snprintf(message, sizeof(message), "Function '%s' not found", name);
+                    const AstDeclarationNode *generic = find_language_declaration(analyzer->model->program,
+                        analyzer->program, name, AST_DECL_FUNCTION, NULL);
+                    int auto_bound = 0;
+                    if (generic) for (const AstGenericParameter *p = generic->generic_parameters; p; p = p->next)
+                        for (const AstInterfaceBound *b = p->bounds; b; b = b->next) {
+                            const AstDeclarationNode *required = find_language_declaration(analyzer->model->program,
+                                analyzer->program, ast_program_lexeme(analyzer->program, b->name_token), AST_DECL_INTERFACE, NULL);
+                            if (required && required->is_auto_interface) auto_bound = 1;
+                        }
+                    if (auto_bound)
+                        (void)snprintf(message, sizeof(message), "No generic function matches the argument types and interface bounds");
+                    else (void) snprintf(message, sizeof(message), "Function '%s' not found", name);
                     semantic_error(analyzer, expression->left->value_token,
                                    ERROR_CATEGORY_SEMANTIC, ERR_SEM_UNDEFINED_FUNCTION, message);
                 }
@@ -1857,6 +1917,8 @@ static int known_declared_type_with_binders(const Analyzer *analyzer,
                                                named_type_token(analyzer->program, type));
     if (symbol_id == AST_SYMBOL_NONE) return 0;
     const SemanticSymbol *symbol = &analyzer->model->symbols[symbol_id];
+    if (symbol->kind == SEMANTIC_SYMBOL_INTERFACE && symbol->declaration &&
+        symbol->declaration->is_auto_interface) return 0;
     if (symbol->declaration && symbol->declaration->is_opaque &&
         !type->pointer_depth && !type->outer_pointer_depth) return 0;
     return 1;

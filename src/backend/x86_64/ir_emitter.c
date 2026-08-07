@@ -1115,7 +1115,9 @@ static int emit_ownership_effect(Emitter *emitter,
                                   : parameter_flag_offset(emitter, parameter));
         return 1;
     }
-    if (instruction->opcode != IR_OP_DROP) return 0;
+    if (instruction->opcode == IR_OP_DESTROY &&
+        !(ir_type_properties(emitter->module, instruction->type_id) & SEMANTIC_TYPE_NEEDS_DROP)) return 1;
+    if (instruction->opcode != IR_OP_DROP && instruction->opcode != IR_OP_DESTROY) return 0;
     if (instruction->operand_a != IR_VALUE_NONE) {
         write_value_load(emitter, "rax", instruction->operand_a);
         IrTypeKind kind=emitter->module->types[instruction->type_id].kind;
@@ -1796,7 +1798,7 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                 }
                 if (ir_type_properties(emitter->module, instruction->type_id) &
                     SEMANTIC_TYPE_NEEDS_DROP) {
-                    write_immediate(emitter, "rax", 1);
+                    write_immediate(emitter, "rax", instruction->uninitialized_storage ? 0 : 1);
                     write_local_store(emitter, "rax",
                                       declaration_flag_offset(emitter,
                                                               instruction));
@@ -1821,7 +1823,7 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             write_local_store(emitter, "rax", offset);
             if (ir_type_properties(emitter->module, instruction->type_id) &
                 SEMANTIC_TYPE_NEEDS_DROP) {
-                write_immediate(emitter, "rax", 1);
+                write_immediate(emitter, "rax", instruction->uninitialized_storage ? 0 : 1);
                 write_local_store(emitter, "rax",
                                   declaration_flag_offset(emitter,
                                                           instruction));
@@ -1862,11 +1864,22 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
         case IR_OP_CANCEL_DROP:
         case IR_OP_CANCEL_RETURN:
             return emit_async_cancel_instruction(emitter, instruction, index);
+        case IR_OP_DESTROY:
         case IR_OP_DROP:
         case IR_OP_MOVE:
         case IR_OP_REINIT:
             return emit_ownership_effect(emitter, instruction, index);
+        case IR_OP_INIT:
         case IR_OP_STORE: {
+            if (instruction->lifetime_pointer) {
+                write_value_load(emitter, "rbx", instruction->operand_a);
+                write_value_load(emitter, "rax", instruction->operand_b);
+                const IrType *type = &emitter->module->types[instruction->type_id];
+                if (type->kind == IR_TYPE_ARRAY || type->kind == IR_TYPE_NAMED || type->kind == IR_TYPE_SLICE)
+                    copy_typed_value(emitter, instruction->type_id, "rax", "rbx");
+                else write_typed_indirect_store(emitter, instruction->type, type->kind == IR_TYPE_POINTER, "rbx");
+                return 1;
+            }
             const IrInstruction *target = producer(function, instruction->operand_a);
             if (emitter->module->optimized && target && target->opcode == IR_OP_LOAD &&
                 target->type == TYPE_INT && target->pointer_depth == 0 && !target->is_array &&

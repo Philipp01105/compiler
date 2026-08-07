@@ -2,6 +2,7 @@
 /build/
 /build-stage2-*/
 /build-stage4-*/
+/build-shared-*/
 /cmake-build-*/
 /*-build/
 /_codeql_build_dir/

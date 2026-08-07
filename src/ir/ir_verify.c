@@ -391,6 +391,9 @@ static int verify_instruction_types(const IrModule *module,
         case IR_OP_LOAD:
             return instruction->auxiliary_token < function->source_program->token_count;
         case IR_OP_DECLARE:
+            if (instruction->uninitialized_storage && a) return 0;
+            if (!a && ir_type_requires_explicit_init(module, instruction->type_id) &&
+                !instruction->uninitialized_storage) return 0;
             return a == NULL || ir_types_assignable(module, a->type_id,
                                                     instruction->type_id, a->opcode);
         case IR_OP_NATIVE_COPY: {
@@ -412,6 +415,14 @@ static int verify_instruction_types(const IrModule *module,
                    semantic_implements_interface(module->semantics,
                        module->types[instruction->type_id].symbol_id,
                        module->types[a->type_id].symbol_id);
+        case IR_OP_INIT:
+            if (instruction->operator_type != TOKEN_EQUAL) return 0;
+            if (instruction->lifetime_pointer)
+                return a && b && a->type_id < module->type_count &&
+                    module->types[a->type_id].kind == IR_TYPE_POINTER &&
+                    module->types[a->type_id].element_type == instruction->type_id &&
+                    ir_types_assignable(module, b->type_id, instruction->type_id, b->opcode);
+            /* fall through */
         case IR_OP_STORE:
             if (a == NULL || a->type_id != instruction->type_id) return 0;
             if (a->opcode != IR_OP_LOAD && a->opcode != IR_OP_INDEX &&
@@ -571,6 +582,15 @@ static int verify_instruction_types(const IrModule *module,
             }
             return 1;
         }
+        case IR_OP_DESTROY:
+            if (instruction->operand_a != IR_VALUE_NONE)
+                return a && a->type_id < module->type_count && instruction->lifetime_pointer &&
+                    module->types[a->type_id].kind == IR_TYPE_POINTER &&
+                    module->types[a->type_id].element_type == instruction->type_id;
+            return instruction->symbol_id < module->semantics->symbol_count &&
+                (module->semantics->symbols[instruction->symbol_id].kind == SEMANTIC_SYMBOL_LOCAL ||
+                 module->semantics->symbols[instruction->symbol_id].kind == SEMANTIC_SYMBOL_PARAMETER ||
+                 module->semantics->symbols[instruction->symbol_id].kind == SEMANTIC_SYMBOL_VARIABLE);
         case IR_OP_DROP:
             if ((ir_type_properties(module, instruction->type_id) &
                  SEMANTIC_TYPE_NEEDS_DROP) == 0)
@@ -1090,6 +1110,7 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                 case IR_OP_MOVE:
                 case IR_OP_REINIT:
                     break;
+                case IR_OP_DESTROY:
                 case IR_OP_DROP:
                     if (instruction->operand_a != IR_VALUE_NONE)
                         REQUIRE_VALUE(instruction->operand_a);
@@ -1110,6 +1131,7 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                     if (instruction->operand_a != IR_VALUE_NONE)
                         REQUIRE_VALUE(instruction->operand_a);
                     break;
+                case IR_OP_INIT:
                 case IR_OP_STORE:
                     REQUIRE_VALUE(instruction->operand_a);
                     if (instruction->operator_type != TOKEN_PLUS_PLUS &&

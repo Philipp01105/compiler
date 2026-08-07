@@ -121,3 +121,14 @@ static unsigned ir_type_properties_depth(const IrModule *module, IrTypeId id,
 unsigned ir_type_properties(const IrModule *module, IrTypeId type) {
     return ir_type_properties_depth(module, type, 0);
 }
+
+int ir_type_requires_explicit_init(const IrModule *module, IrTypeId id) {
+    if (!module || id >= module->type_count) return 0;
+    const IrType *type = &module->types[id];
+    if (type->kind == IR_TYPE_ARRAY)
+        return type->array_length && ir_type_requires_explicit_init(module, type->element_type);
+    if (type->kind != IR_TYPE_NAMED || type->symbol_id >= module->semantics->symbol_count) return 0;
+    const SemanticSymbol *s = &module->semantics->symbols[type->symbol_id];
+    AstType declared = {.kind = AST_TYPE_NAMED, .name_token = s->name_token};
+    return semantic_requires_explicit_init(module->semantics, s->source_program, &declared);
+}

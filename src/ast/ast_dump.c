@@ -307,9 +307,11 @@ static int dump_declaration(FILE *output, const AstProgram *program,
             output, declaration->span) ||
         !symbol_field(output, declaration->resolved_symbol_id))
         return 0;
-    if (declaration->name_token != AST_TOKEN_NONE &&
-        !token_field(output, program, "name", declaration->name_token))
-        return 0;
+      if (declaration->name_token != AST_TOKEN_NONE &&
+          !token_field(output, program, "name", declaration->name_token))
+          return 0;
+      if (declaration->no_default && fputs(" no-default=1", output) == EOF) return 0;
+      if (declaration->is_auto_interface && fputs(" interface-kind=auto", output) == EOF) return 0;
     if (declaration->is_native_export &&
         (fputs(" native-export=1", output) == EOF ||
          !token_field(output, program, "abi", declaration->native_abi_token))) return 0;
@@ -363,6 +365,24 @@ static int dump_declaration(FILE *output, const AstProgram *program,
         return 0;
     if (fprintf(output, " visibility=%s", declaration->is_public ? "public" : "private") < 0) return 0;
     if (fputc('\n', output) == EOF) return 0;
+    if (declaration->kind == AST_DECL_TYPE_RULE &&
+        (!indent(output, depth + 1) || fputs("rule-target type=", output) == EOF ||
+         !dump_type(output, program, &declaration->rule_target) || fputc('\n', output) == EOF)) return 0;
+    for (const AstAutoRule *rule = declaration->auto_rules; rule; rule = rule->next) {
+        if (!indent(output, depth + 1) || fputs("auto-rule interfaces=[", output) == EOF) return 0;
+        for (const AstInterfaceBound *bound = rule->interfaces; bound; bound = bound->next) {
+            if (bound != rule->interfaces && fputc(',', output) == EOF) return 0;
+            if (!quoted(output, ast_program_lexeme(program, bound->name_token))) return 0;
+        }
+        if (fputs("]\n", output) == EOF) return 0;
+        for (const AstAutoCondition *condition = rule->conditions; condition; condition = condition->next) {
+            if (!indent(output, depth + 2) || fputs("condition type=", output) == EOF ||
+                !dump_type(output, program, &condition->type)) return 0;
+            for (const AstInterfaceBound *bound = condition->bounds; bound; bound = bound->next)
+                if (fputs(" bound=", output) == EOF || !dump_type(output, program, &bound->type)) return 0;
+            if (fputc('\n', output) == EOF) return 0;
+        }
+    }
     if (declaration->generic_origin) {
         if (!indent(output, depth + 1) || fputs("generic-origin name=", output) == EOF ||
             !quoted(output, ast_program_lexeme(program, declaration->generic_origin->name_token)) || fputc('\n', output)

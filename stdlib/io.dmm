@@ -1,5 +1,5 @@
 package stdlib;
-import "stdlib/core";
+import core "stdlib/core/raw";
 import "stdlib/stdio";
 // Compatibility input scanning. New byte-oriented I/O uses stdlib/stdio streams.
 pub struct Input {

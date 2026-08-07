@@ -1,0 +1,48 @@
+package core;
+import "stdlib";
+
+struct SharedStorage<T> {
+    var references:AtomicUsize;
+    var value:T;
+}
+
+@[no_default]
+@[Send + Sync where T: Send + Sync]
+pub struct Shared<T> {
+    var storage:*SharedStorage<T>;
+
+    pub func clone() -> Shared<T> {
+        var count:usize=storage.references.load();
+        while (true) {
+            if (count == 18446744073709551615.(usize)) { __dmm_intrinsic_trap(); }
+            var previous:usize=storage.references.compareExchange(count,count+1.(usize));
+            if (previous == count) { return Shared<T>{storage:storage}; }
+            count=previous;
+        }
+        __dmm_intrinsic_trap();
+    }
+
+    pub func get() -> &T { return &storage.value; }
+
+    destructor {
+        var count:usize=storage.references.load();
+        while (true) {
+            var previous:usize=storage.references.compareExchange(count,count-1.(usize));
+            if (previous == count) { break; }
+            count=previous;
+        }
+        if (count == 1.(usize)) {
+            destroy<T>(&storage.value);
+            core_release(storage.(*u8));
+        }
+    }
+}
+
+pub func shared<T>(value:T) -> stdlib.Result<Shared<T>,stdlib.AllocationError> {
+    var block:*SharedStorage<T>=core_alloc(sizeof(SharedStorage<T>)).(*SharedStorage<T>);
+    if (block == null<SharedStorage<T>>()) {
+        return stdlib.Result<Shared<T>,stdlib.AllocationError>.Err(stdlib.AllocationError.OutOfMemory);
+    }
+    initialize<SharedStorage<T>>(block,SharedStorage<T>{references:atomicUsize(1.(usize)),value:value});
+    return stdlib.Result<Shared<T>,stdlib.AllocationError>.Ok(Shared<T>{storage:block});
+}

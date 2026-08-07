@@ -1,7 +1,10 @@
 # stdlib/core
 
-`import "stdlib/core";` loads the low-level DMM package independently of the higher-level standard library. It provides
+`import "stdlib/core";` loads low-level operations and shared ownership. It provides
 ordinary typed DMM functions over compiler intrinsics. It participates in the module/package visibility model.
+The dependency-free `stdlib/core/raw` package implements allocation, byte operations, raw I/O, and process operations.
+Core forwards that API and imports stdlib for Result and AllocationError. Stdlib and stdio use raw internally to keep
+the package graph acyclic.
 The separate `stdlib/core/net` package provides move-only sockets/address lists and typed asynchronous TCP/UDP/DNS
 over the private platform runtime. Its API and ownership/completion contract are in
 [stdlib/core/net/README.md](net/README.md).
@@ -21,7 +24,30 @@ func main() -> int {
 }
 ```
 
-## Primitive interface
+## Shared ownership and lifetimes
+
+`core.shared(value)` takes ownership and returns `stdlib.Result<core.Shared<T>,stdlib.AllocationError>`.
+Every successful handle owns a non-null heap block containing an atomic reference count and one initialized payload.
+`handle.clone()` borrows the handle and increments only its reference count; `handle.get()` returns a checked `&T`
+whose lifetime is tied to that handle. The final release destroys the payload once and frees the block. Reference-count
+operations use sequentially consistent compare-exchange loops and trap before overflow. Allocation failure destroys
+the incoming value and returns OutOfMemory.
+
+Shared handles are move-only and require explicit initialization. Shared has Send and Sync exactly when its payload
+has both. Tasks receive their own clones; synchronized payloads such as AtomicUsize support shared mutation. Borrowed
+payload views retain their origins through construction, cloning, and aggregate transfer. Weak references, exclusive
+mutation, copy-on-write, mutexes, and channels are not provided.
+
+`core.initialize<T>(ptr,value)` starts a lifetime in valid, aligned storage without a live T, taking ownership without
+dropping previous contents. `core.destroy<T>(ptr)` invokes the same destructor and field/payload cleanup as ordinary
+scope cleanup and ends the lifetime without freeing memory. For a directly tracked whole value, the compiler verifies
+state and loans and updates cleanup flags. For untracked heap pointers the caller guarantees these preconditions.
+Initialize before reading or destroying that storage again. Byte allocation/zeroing alone does not initialize a type
+requiring explicit initialization.
+
+See [the executable Shared Async example](../../examples/shared_async/shared_async.dmm).
+
+## Byte operations
 
 | Function                                                         | Contract                                                                                      |
 |------------------------------------------------------------------|-----------------------------------------------------------------------------------------------|

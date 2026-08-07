@@ -341,7 +341,8 @@ static int returned_borrow_place(BorrowChecker *checker,
         function->owner_symbol_id < checker->analyzer->model->symbol_count &&
         semantic_type_is_move_only(checker->analyzer,
                                    function->owner_symbol_id) &&
-        (call->resolved_is_slice || call->resolved_type == TYPE_STRING))
+        (call->resolved_is_slice || call->resolved_type == TYPE_STRING ||
+         call->resolved_borrow_kind != AST_BORROW_NONE))
         return canonical_place(checker, call->left->left, place);
     return 0;
 }
@@ -515,6 +516,22 @@ static void release_future_value(BorrowChecker *checker, const AstExpression *va
 
 static void check_call(BorrowChecker *checker,
                        const AstExpression *expression) {
+    if (expression->lifetime_operation) {
+        const AstExpression *ptr = expression->arguments;
+        const AstExpression *place = ptr && ptr->kind == AST_EXPR_UNARY &&
+            ptr->operator_type == TOKEN_AMPERSAND ? ptr->right : NULL;
+        if (place) check_place_access(checker, place, BORROW_ACCESS_WRITE);
+        else {
+            BorrowPlace origin;
+            if (ptr && canonical_place(checker, ptr, &origin) && origin.through)
+                report_borrow_error(checker, expression->first_token,
+                                   "Cannot change a value's lifetime while it is borrowed");
+            check_expression(checker, ptr, BORROW_ACCESS_READ);
+        }
+        if (expression->lifetime_operation == LIFETIME_INITIALIZE)
+            check_expression(checker, ptr ? ptr->next : NULL, BORROW_ACCESS_WRITE);
+        return;
+    }
     const AstParameter *parameter = NULL;
     const SemanticSymbol *function = NULL;
     if (expression->resolved_symbol_id < checker->analyzer->model->symbol_count) {
@@ -867,8 +884,7 @@ static void capture_future_borrows(BorrowChecker *checker,
 
 static void check_future_return(BorrowChecker *checker, const AstExpression *value) {
     if (value == NULL || (!semantic_expression_is_future(value) &&
-        !(semantic_symbol_type_properties(checker->analyzer->model,
-                                          value->resolved_named_symbol_id) & SEMANTIC_TYPE_MUST_CONSUME))) return;
+        !semantic_expression_is_move_only(checker->analyzer, value))) return;
     AstExpression escaped = {.kind = AST_EXPR_NAME,
         .resolved_symbol_id = checker->analyzer->current_function_symbol_id};
     BorrowRecord *boundary = checker->borrows;
@@ -877,12 +893,14 @@ static void check_future_return(BorrowChecker *checker, const AstExpression *val
     else
         clone_aggregate_borrows(checker, &escaped, value, checker->current_scope_depth);
     for (BorrowRecord *loan = checker->borrows; loan; loan = loan->next) {
-        if (loan->active && loan->captured_by_future &&
+        if (loan->active &&
             (loan->borrower_symbol == escaped.resolved_symbol_id ||
              (value->kind == AST_EXPR_NAME && loan->borrower_symbol == value->resolved_symbol_id)) &&
             checker->analyzer->model->symbols[loan->owner_symbol].kind == SEMANTIC_SYMBOL_LOCAL)
             report_borrow_error(checker, value->first_token,
-                               "A returned Future cannot capture a borrow of a local value");
+                               semantic_expression_is_future(value)
+                                   ? "A returned Future cannot capture a borrow of a local value"
+                                   : "A returned owner cannot capture a borrow of a local value");
     }
     while (checker->borrows != boundary) {
         BorrowRecord *next = checker->borrows->next;
@@ -902,6 +920,10 @@ static void clone_aggregate_borrows(BorrowChecker *checker,
                                     const AstExpression *target,
                                     const AstExpression *source,
                                     size_t scope_depth) {
+    if (source && source->kind == AST_EXPR_PROPAGATE) {
+        clone_aggregate_borrows(checker, target, source->left, scope_depth);
+        return;
+    }
     if (source != NULL && source->kind == AST_EXPR_STRUCT_LITERAL) {
         BorrowPlace place;
         if (!expression_place(target, &place)) return;
@@ -943,17 +965,25 @@ static void clone_aggregate_borrows(BorrowChecker *checker,
         return;
     }
     if (source != NULL && source->kind == AST_EXPR_CALL &&
-        (semantic_symbol_type_properties(checker->analyzer->model,
-                                         source->resolved_named_symbol_id) & SEMANTIC_TYPE_MUST_CONSUME)) {
+        (semantic_expression_is_move_only(checker->analyzer, source) ||
+         (semantic_symbol_type_properties(checker->analyzer->model,
+                                          source->resolved_named_symbol_id) & SEMANTIC_TYPE_MUST_CONSUME))) {
+        if (source->left && source->left->kind == AST_EXPR_MEMBER && source->left->left) {
+            AstExpression receiver = *source->left->left;
+            receiver.resolved_borrow_kind = AST_BORROW_IMMUTABLE;
+            clone_aggregate_borrows(checker, target, &receiver, scope_depth);
+        }
         /* A synchronous wrapper may transfer a pending Future inside its result.
            Preserve argument loans until the returned owner is consumed. */
         for (const AstExpression *argument = source->arguments; argument; argument = argument->next) {
             if (semantic_expression_is_future(argument)) {
                 capture_future_borrows(checker, target, argument, scope_depth);
-            } else if (argument->resolved_borrow_kind != AST_BORROW_NONE) {
+            } else if (argument->resolved_borrow_kind != AST_BORROW_NONE || argument->resolved_is_slice) {
                 BorrowRecord *loan = add_borrow_mode(checker, target, argument, scope_depth, 1);
                 if (loan != NULL) {
-                    loan->captured_by_future = 1;
+                    loan->captured_by_future = semantic_expression_is_future(source) ||
+                        (semantic_symbol_type_properties(checker->analyzer->model,
+                                                         source->resolved_named_symbol_id) & SEMANTIC_TYPE_MUST_CONSUME) != 0;
                     if (loan->borrower_symbol < checker->analyzer->model->symbol_count) {
                         loan->scope_depth = checker->analyzer->model->symbols[loan->borrower_symbol].scope_depth;
                         const SemanticSymbol *origin = &checker->analyzer->model->symbols[loan->owner_symbol];

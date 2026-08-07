@@ -108,6 +108,12 @@ void normalize_function_types(Analyzer *analyzer, AstDeclarationNode *declaratio
 void replace_self_type(Analyzer *analyzer, AstType *type, const AstType *self);
 void replace_self_statement(Analyzer *analyzer, AstStatement *statement, const AstType *self);
 void prepare_interfaces(Analyzer *analyzer, AstProgram *root);
+void validate_auto_rules(Analyzer *analyzer);
+size_t semantic_auto_role(const SemanticModel *model, unsigned role);
+AstLifetimeOperation semantic_lifetime_operation(const Analyzer *analyzer, const AstExpression *call);
+AstDeclarationNode *find_language_declaration(const AstProgram *root, const AstProgram *file,
+                                              const char *name, AstDeclarationKind kind,
+                                              AstProgram **unit);
 int generic_bounds_satisfied(Analyzer *analyzer, const AstProgram *declaration_unit,
                              const AstDeclarationNode *declaration, const AstType *arguments);
 AstType argument_type_copy(Analyzer *analyzer, const AstProgram *unit, AstType type);

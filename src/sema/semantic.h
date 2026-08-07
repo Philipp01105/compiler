@@ -90,6 +90,10 @@ int semantic_native_field_offset(const SemanticModel *model, size_t symbol_id,
 
 int semantic_implements_interface(const SemanticModel *model, size_t interface_id,
                                   size_t struct_id);
+int semantic_satisfies(const SemanticModel *model, const AstProgram *unit,
+                       const AstType *type, size_t interface_id);
+int semantic_requires_explicit_init(const SemanticModel *model, const AstProgram *unit,
+                                    const AstType *type);
 int semantic_implements_specialized_interface(
     const SemanticModel *model, size_t interface_id, size_t owner_id,
     const AstProgram *argument_unit, const AstType *interface_type);

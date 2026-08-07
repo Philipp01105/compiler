@@ -1711,6 +1711,65 @@ static AstDeclarationNode *parse_extern(SyntaxParser *parser) {
     return head;
 }
 
+static int spelling(SyntaxParser *parser, const char *text) {
+    return !strcmp(ast_program_lexeme(parser->program, parser->current), text);
+}
+
+static AstInterfaceBound *parse_auto_bounds(SyntaxParser *parser) {
+    AstInterfaceBound *head = NULL, **tail = &head;
+    do {
+        AstInterfaceBound *bound = allocate(parser, sizeof(*bound));
+        AstType type = parse_type(parser);
+        if (bound) {
+            bound->type = type;
+            bound->name_token = type.name_token;
+            *tail = bound;
+            tail = &bound->next;
+        }
+    } while (match(parser, TOKEN_PLUS));
+    return head;
+}
+
+static AstAutoRule *parse_attributes(SyntaxParser *parser, int *no_default) {
+    AstAutoRule *head = NULL, **tail = &head;
+    while (match(parser, TOKEN_AT)) {
+        (void)consume(parser, TOKEN_LBRACKET);
+        if (spelling(parser, "no_default")) {
+            if (*no_default) parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
+                                            "Duplicate no_default attribute");
+            *no_default = 1;
+            parser->current++;
+        } else {
+            AstAutoRule *rule = allocate(parser, sizeof(*rule));
+            AstInterfaceBound *interfaces = parse_auto_bounds(parser);
+            AstAutoCondition *conditions = NULL, **condition_tail = &conditions;
+            if (spelling(parser, "where")) {
+                parser->current++;
+                do {
+                    AstAutoCondition *condition = allocate(parser, sizeof(*condition));
+                    AstType type = parse_type(parser);
+                    (void)consume(parser, TOKEN_COLON);
+                    AstInterfaceBound *bounds = parse_auto_bounds(parser);
+                    if (condition) {
+                        condition->type = type;
+                        condition->bounds = bounds;
+                        *condition_tail = condition;
+                        condition_tail = &condition->next;
+                    }
+                } while (match(parser, TOKEN_COMMA));
+            }
+            if (rule) {
+                rule->interfaces = interfaces;
+                rule->conditions = conditions;
+                *tail = rule;
+                tail = &rule->next;
+            }
+        }
+        (void)consume(parser, TOKEN_RBRACKET);
+    }
+    return head;
+}
+
 int frontend_build_structured_ast_recover(AstProgram *program, int recover_syntax) {
     if (program == NULL) return 0;
     program->structured_error_token = AST_TOKEN_NONE;
@@ -1731,6 +1790,8 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
         size_t first = parser.current;
         if (recover_syntax) parser.reported = 0;
         AstDeclarationNode *declaration = NULL;
+        int no_default = 0;
+        AstAutoRule *rules = parse_attributes(&parser, &no_default);
         int is_public = match(&parser, TOKEN_KEYWORD_PUB);
         if (check(&parser, TOKEN_KEYWORD_EXTERN)) {
             if (is_public) parser_failure(&parser, ERR_PARSE_INVALID_DECLARATION,
@@ -1755,6 +1816,34 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
         else if (check(&parser, TOKEN_KEYWORD_STRUCT)) declaration = parse_struct(&parser);
         else if (check(&parser, TOKEN_KEYWORD_ENUM)) declaration = parse_enum(&parser);
         else if (check(&parser, TOKEN_KEYWORD_INTERFACE)) declaration = parse_interface(&parser);
+        else if (spelling(&parser, "auto")) {
+            parser.current++;
+            if (!check(&parser, TOKEN_KEYWORD_INTERFACE))
+                parser_failure(&parser, ERR_PARSE_INVALID_DECLARATION, "auto requires an interface declaration");
+            else {
+                declaration = parse_interface(&parser);
+                if (declaration) {
+                    declaration->is_auto_interface = 1;
+                    if (declaration->generic_parameters || declaration->as.interface_decl.methods)
+                        parser_failure(&parser, ERR_PARSE_INVALID_DECLARATION,
+                                       "Auto interfaces cannot have members or type parameters");
+                }
+            }
+        }
+        else if (spelling(&parser, "type")) {
+            parser.current++;
+            declaration = new_declaration(&parser, AST_DECL_TYPE_RULE, first);
+            AstType target = parse_type(&parser);
+            (void)consume(&parser, TOKEN_SEMICOLON);
+            if (declaration) {
+                declaration->rule_target = target;
+                declaration->name_token = target.name_token;
+                if (!rules || no_default)
+                    parser_failure(&parser, ERR_PARSE_INVALID_DECLARATION,
+                                   "External type rules require auto attributes and a concrete target");
+                finish_declaration(&parser, declaration);
+            }
+        }
         else if (check(&parser, TOKEN_KEYWORD_PACKAGE))
             parser_failure(&parser, ERR_PACKAGE_DECLARATION,
                            "Package declaration must appear exactly once, before all declarations");
@@ -1764,6 +1853,14 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
         else
             parser_failure(&parser, ERR_PARSE_INVALID_DECLARATION,
                            "Expected function declaration");
+        if (declaration && (rules || no_default)) {
+            if (declaration->kind != AST_DECL_STRUCT && declaration->kind != AST_DECL_ENUM &&
+                declaration->kind != AST_DECL_TYPE_RULE)
+                parser_failure(&parser, ERR_PARSE_INVALID_DECLARATION,
+                               "Type attributes require a struct, enum or external type rule");
+            declaration->no_default = no_default;
+            declaration->auto_rules = rules;
+        }
         if (parser.failed && recover_syntax && !parser.allocation_failed) {
             int braces = 0;
             for (size_t i = first; i < parser.current && i < program->token_count; i++) {

@@ -584,6 +584,41 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         return in->result;
     }
     if (expression == NULL) return IR_VALUE_NONE;
+    if (expression->lifetime_operation) {
+        const AstExpression *ptr = expression->arguments;
+        size_t address = lower_expression(builder, ptr);
+        IrTypeId type = type_from_ast(builder->module, builder->program, &expression->allocated_type);
+        if (expression->lifetime_operation == LIFETIME_DESTROY) {
+            IrInstruction *drop = emit(builder, IR_OP_DESTROY, expression->span);
+            if (!drop) return IR_VALUE_NONE;
+            drop->type = TYPE_VOID;
+            drop->type_id = type;
+            if (expression->lifetime_origin != AST_SYMBOL_NONE) drop->symbol_id = expression->lifetime_origin;
+            else { drop->operand_a = address; drop->lifetime_pointer = 1; }
+        } else {
+            size_t value = lower_expression(builder, ptr ? ptr->next : NULL);
+            value = coerce_value(builder, value, type, expression->span);
+            IrInstruction *init = emit(builder, IR_OP_INIT, expression->span);
+            if (!init) return IR_VALUE_NONE;
+            init->type_id = type;
+            init->type = ir_ast_type_data_type(builder->program, &expression->allocated_type);
+            init->operand_a = address;
+            init->lifetime_pointer = 1;
+            init->operand_b = value;
+            init->operator_type = TOKEN_EQUAL;
+            emit_move_if_owned(builder, ptr ? ptr->next : NULL);
+            if (expression->lifetime_origin != AST_SYMBOL_NONE &&
+                (ir_type_properties(builder->module, type) & SEMANTIC_TYPE_NEEDS_DROP)) {
+                IrInstruction *live = emit(builder, IR_OP_REINIT, expression->span);
+                if (live) {
+                    live->type = TYPE_VOID;
+                    live->type_id = type;
+                    live->symbol_id = expression->lifetime_origin;
+                }
+            }
+        }
+        return IR_VALUE_NONE;
+    }
     if (expression->kind == AST_EXPR_CONTROL)
         return lower_control_expression(builder, expression);
     if (expression->kind == AST_EXPR_PROPAGATE) {
@@ -1858,6 +1893,8 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
             if (instruction != NULL) {
                 instruction->operand_a = value;
                 instruction->auxiliary_token = statement->name_token;
+                instruction->uninitialized_storage = !statement->value &&
+                    semantic_requires_explicit_init(builder->module->semantics, builder->program, runtime_type);
                 instruction->symbol_id = statement->resolved_symbol_id;
                 instruction->type = ir_ast_type_data_type(builder->program, &statement->type);
                 instruction->type_id = statement->type.kind == AST_TYPE_INFERRED &&
@@ -1880,6 +1917,41 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
                                             resolved_outer_pointer_depth == 0;
                     instruction->is_slice = statement->value->resolved_is_slice && !statement->value->
                                             resolved_outer_pointer_depth;
+                }
+                /* Reserve first; an explicit initializer starts the lifetime through INIT. */
+                if (statement->value && ir_type_requires_explicit_init(builder->module, instruction->type_id)) {
+                    IrInstruction declaration = *instruction;
+                    instruction->operand_a = IR_VALUE_NONE;
+                    instruction->uninitialized_storage = 1;
+                    IrInstruction *target = emit(builder, IR_OP_LOAD, statement->span);
+                    if (!target) return;
+                    *target = declaration;
+                    target->opcode = IR_OP_LOAD;
+                    target->operand_a = IR_VALUE_NONE;
+                    target->result = new_value(builder);
+                    target->uninitialized_storage = 0;
+                    size_t address = target->result;
+                    IrInstruction *init = emit(builder, IR_OP_INIT, statement->span);
+                    if (!init) return;
+                    *init = declaration;
+                    init->opcode = IR_OP_INIT;
+                    init->operand_a = address;
+                    init->operand_b = value;
+                    init->symbol_id = AST_SYMBOL_NONE;
+                    init->operator_type = TOKEN_EQUAL;
+                    if (type_needs_drop(builder, declaration.type_id)) {
+                        IrInstruction *live = emit(builder, IR_OP_REINIT, statement->span);
+                        if (live) {
+                            live->type = TYPE_VOID;
+                            live->type_id = declaration.type_id;
+                            live->symbol_id = declaration.symbol_id;
+                        }
+                    }
+                    /* emit() may relocate the instruction array. */
+                    instruction = NULL;
+                    emit_move_if_owned(builder, statement->value);
+                    register_local_drop(builder, declaration.symbol_id, declaration.type_id, statement->span);
+                    continue;
                 }
                 emit_move_if_owned(builder, statement->value);
                 instruction->owns_slice_backing = statement->value != NULL &&
@@ -1924,6 +1996,7 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
                 }
             }
             if (statement->assignment_operator == TOKEN_EQUAL &&
+                !statement->begins_lifetime &&
                 statement->expression != NULL &&
                 statement->expression->kind == AST_EXPR_NAME &&
                 type_needs_drop(builder, target_type)) {
@@ -1937,13 +2010,7 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
             if (statement->assignment_operator == TOKEN_EQUAL &&
                 statement->expression != NULL &&
                 statement->expression->kind != AST_EXPR_NAME &&
-                target_type < builder->module->type_count &&
-                builder->module->types[target_type].kind == IR_TYPE_NAMED &&
-                builder->module->types[target_type].symbol_id <
-                    builder->module->semantics->symbol_count &&
-                builder->module->semantics->symbols[
-                    builder->module->types[target_type].symbol_id].kind ==
-                    SEMANTIC_SYMBOL_INTERFACE) {
+                type_needs_drop(builder, target_type)) {
                 IrInstruction *drop = emit(builder, IR_OP_DROP, statement->span);
                 if (drop != NULL) {
                     drop->type = TYPE_VOID;
@@ -1951,7 +2018,11 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
                     drop->operand_a = target;
                 }
             }
-            IrInstruction *instruction = emit(builder, IR_OP_STORE, statement->span);
+            int starts_lifetime = statement->begins_lifetime ||
+                (statement->assignment_operator == TOKEN_EQUAL &&
+                 (ir_type_requires_explicit_init(builder->module, target_type) ||
+                  type_needs_drop(builder, target_type)));
+            IrInstruction *instruction = emit(builder, starts_lifetime ? IR_OP_INIT : IR_OP_STORE, statement->span);
             if (instruction != NULL) {
                 instruction->operand_a = target;
                 instruction->operand_b = value;

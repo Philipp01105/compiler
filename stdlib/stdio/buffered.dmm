@@ -1,5 +1,5 @@
 package stdio;
-import "stdlib/core";
+import core "stdlib/core/raw";
 
 func bufferedRead(stream:*Stream, storage:u8[], position:&mut usize, end:&mut usize, active:bit, destination:u8[]) -> Transfer {
     if (!active) { return transfer(0,Status.Closed,0); }

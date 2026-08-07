@@ -331,7 +331,9 @@ static int emit_file(Emitter *emitter, int deterministic) {
             if (emitter->native) {
                 if (!native_define(emitter->native, flag, 0, 0)) return 0;
             } else fprintf(output, "%s:\n", flag);
-            write_quad(emitter, global->runtime_initializer == NULL ? 1 : 0);
+            write_quad(emitter, global->runtime_initializer == NULL &&
+                !semantic_requires_explicit_init(emitter->module->semantics, symbol->source_program,
+                                                 &symbol->declared_type) ? 1 : 0);
         }
         if (global_type != NULL && global_type->kind == IR_TYPE_SLICE) {
             char owner[4096];

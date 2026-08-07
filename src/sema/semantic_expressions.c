@@ -861,6 +861,18 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
     }
     for (AstExpression *argument = expression->arguments; argument != NULL; argument = argument->next)
         analyze_expression_context(analyzer, argument, 0);
+    if (semantic_lifetime_operation(analyzer, expression) && expression->arguments) {
+        AstExpression *ptr = expression->arguments;
+        if (ptr->resolved_borrow_kind != AST_BORROW_NONE) {
+            ptr->resolved_borrow_kind = AST_BORROW_NONE;
+            if (ptr->has_resolved_ast_type) {
+                ptr->resolved_ast_type.borrow_kind = AST_BORROW_NONE;
+                if (ptr->resolved_ast_type.is_array || ptr->resolved_ast_type.is_slice)
+                    ptr->resolved_ast_type.outer_pointer_depth++;
+                else ptr->resolved_ast_type.pointer_depth++;
+            }
+        }
+    }
 
     if (expression->kind == AST_EXPR_AWAIT) {
         if (analyzer->current_function == NULL || !analyzer->current_function->as.function.is_async)
@@ -1780,6 +1792,14 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
     else if (expression->resolved_symbol_id < analyzer->model->symbol_count)
         expression->resolved_array_length = analyzer->model->symbols[expression->resolved_symbol_id].declared_type.
                 resolved_array_length;
+    expression->lifetime_operation = semantic_lifetime_operation(analyzer, expression);
+    expression->lifetime_origin = AST_SYMBOL_NONE;
+    if (expression->lifetime_operation && expression->arguments) {
+        AstType pointee = inferred_argument_type(analyzer, expression->arguments);
+        if (pointee.outer_pointer_depth) pointee.outer_pointer_depth--;
+        else if (pointee.pointer_depth) pointee.pointer_depth--;
+        expression->allocated_type = pointee;
+    }
     /* Overload and generic callees acquire their type from the enclosing call. */
     if (expression->resolved_type == TYPE_UNKNOWN &&
         expression->resolved_named_type_token == AST_TOKEN_NONE &&

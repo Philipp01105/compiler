@@ -1,5 +1,5 @@
 package stdio;
-import "stdlib/core";
+import core "stdlib/core/raw";
 
 pub enum Status {
     pub Ok,

@@ -80,7 +80,9 @@ typedef enum {
        can mutate their source through native pointers. */
     IR_OP_NATIVE_COPY,
     /* Fresh zeroed aggregate storage, filled by ordinary member stores. */
-    IR_OP_STRUCT_LITERAL
+    IR_OP_STRUCT_LITERAL,
+    /* Object lifetime start, distinct from an assignment to a live value. */
+    IR_OP_INIT, IR_OP_DESTROY
 } IrOpcode;
 
 typedef struct {
@@ -98,6 +100,8 @@ typedef struct {
     int is_array;
     int is_slice;
     int owns_slice_backing;
+    int uninitialized_storage;
+    int lifetime_pointer;
     size_t result;
     size_t operand_a;
     size_t operand_b;
@@ -314,6 +318,7 @@ int ir_dump_function(FILE *output, const IrModule *module, size_t function_index
 int ir_type_layout(const IrModule *module, IrTypeId type, IrTypeLayout *layout);
 
 unsigned ir_type_properties(const IrModule *module, IrTypeId type);
+int ir_type_requires_explicit_init(const IrModule *module, IrTypeId type);
 
 /* Stable, nonzero wire identity for a concrete aggregate in an interface value. */
 uint64_t ir_interface_type_tag(const IrModule *module, size_t symbol_id);
