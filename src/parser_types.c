@@ -74,12 +74,14 @@ void escape_string_for_comment(const char *str, char *output, size_t output_size
 /*
  * Platform detection for calling convention differences
  */
+static TargetFormat active_target = TARGET_ELF;
+
+void set_target_format(TargetFormat target) {
+    active_target = target;
+}
+
 static int is_windows_platform() {
-#if defined(_WIN32) || defined(_WIN64) || defined(__CYGWIN__)
-    return 1;
-#else
-    return 0;
-#endif
+    return active_target == TARGET_COFF;
 }
 
 /*
@@ -121,7 +123,7 @@ int get_shadow_space() {
 
 int get_call_stack_space() {
     if (is_windows_platform()) {
-        return 40;
+        return 32;
     } else {
         return 0;
     }

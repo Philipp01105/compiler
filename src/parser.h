@@ -45,6 +45,8 @@ int datatype_size(DataType type);
 
 DataType token_to_datatype(TokenType token);
 
+void set_target_format(TargetFormat target);
+
 /* Top-level parsing */
 int parse_program(Parser *parser, const char *source_file);
 
@@ -66,6 +68,8 @@ void parse_variable_declaration(Parser *parser);
 void parse_assignment(Parser *parser);
 
 void parse_for_loop(Parser *parser);
+
+void parse_while_loop(Parser *parser);
 
 void parse_if_statement(Parser *parser);
 

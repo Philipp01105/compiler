@@ -179,6 +179,8 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    set_target_format(target_format);
+
     if (debug_mode || show_tokens) {
         print_header(source_file);
 
@@ -191,6 +193,13 @@ int main(int argc, char *argv[]) {
     TokenStream *tokens = tokenize_file(source_file, debug_mode);
     if (!tokens) {
         fprintf(stderr, "[ERROR] Lexer failed!\n");
+        return 1;
+    }
+
+    if (tokens->has_error) {
+        fprintf(stderr, "[ERROR] Lexical analysis failed\n");
+        free_token_stream(tokens);
+        error_handler_free(error_handler);
         return 1;
     }
 

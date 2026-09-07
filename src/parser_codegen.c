@@ -1,5 +1,158 @@
 #include "parser.h"
 #include "parser_internal.h"
+#include <stdlib.h>
+
+static int floating_type(DataType type) {
+    return type == TYPE_FLOAT || type == TYPE_DOUBLE;
+}
+
+void convert_stack_value(Parser *parser, DataType from, DataType to) {
+    if (from == to || from == TYPE_UNKNOWN || to == TYPE_UNKNOWN) return;
+    if (!floating_type(from) && !floating_type(to)) return;
+    code_printf(parser, "    popq %%rax\n");
+    if (from == TYPE_DOUBLE) {
+        code_printf(parser, "    movq %%rax, %%xmm0\n");
+        if (to == TYPE_FLOAT) code_printf(parser, "    cvtsd2ss %%xmm0, %%xmm0\n");
+        else if (!floating_type(to)) code_printf(parser, "    cvttsd2si %%xmm0, %%eax\n");
+    } else if (from == TYPE_FLOAT) {
+        code_printf(parser, "    movd %%eax, %%xmm0\n");
+        if (to == TYPE_DOUBLE) code_printf(parser, "    cvtss2sd %%xmm0, %%xmm0\n");
+        else if (!floating_type(to)) code_printf(parser, "    cvttss2si %%xmm0, %%eax\n");
+    } else if (to == TYPE_DOUBLE) {
+        code_printf(parser, "    cvtsi2sd %%eax, %%xmm0\n");
+    } else {
+        code_printf(parser, "    cvtsi2ss %%eax, %%xmm0\n");
+    }
+    if (floating_type(to)) code_printf(parser, "    movq %%xmm0, %%rax\n");
+    code_printf(parser, "    pushq %%rax\n");
+}
+
+void generate_system_io_call(Parser *parser, const char *operation, int keep_result) {
+    if (parser->target_format == TARGET_COFF) {
+        if (operation[0] == 'c') {
+            code_printf(parser, "    popq %%rcx\n");
+        } else if (operation[0] == 'o') {
+            code_printf(parser, "    popq %%r8\n");
+            code_printf(parser, "    popq %%rdx\n");
+            code_printf(parser, "    popq %%rcx\n");
+            code_printf(parser, "    movl %%edx, %%r10d\n");
+            code_printf(parser, "    andl $3, %%edx\n");
+            code_printf(parser, "    testl $64, %%r10d\n");
+            code_printf(parser, "    jz .L_open_no_create_%d\n", parser->label_counter);
+            code_printf(parser, "    orl $256, %%edx\n");
+            code_printf(parser, ".L_open_no_create_%d:\n", parser->label_counter);
+            code_printf(parser, "    testl $512, %%r10d\n");
+            code_printf(parser, "    jz .L_open_no_trunc_%d\n", parser->label_counter);
+            code_printf(parser, "    orl $512, %%edx\n");
+            code_printf(parser, ".L_open_no_trunc_%d:\n", parser->label_counter);
+            code_printf(parser, "    testl $1024, %%r10d\n");
+            code_printf(parser, "    jz .L_open_no_append_%d\n", parser->label_counter);
+            code_printf(parser, "    orl $8, %%edx\n");
+            code_printf(parser, ".L_open_no_append_%d:\n", parser->label_counter++);
+            code_printf(parser, "    orl $32768, %%edx\n");
+            code_printf(parser, "    movl $384, %%r8d\n");
+        } else {
+            code_printf(parser, "    popq %%r8\n");
+            code_printf(parser, "    popq %%rdx\n");
+            code_printf(parser, "    popq %%rcx\n");
+        }
+        generate_stack_align(parser);
+        code_printf(parser, "    call _%s\n", operation);
+        generate_stack_restore(parser);
+    } else {
+        if (operation[0] == 'c') {
+            code_printf(parser, "    popq %%rdi\n");
+            code_printf(parser, "    movq $3, %%rax\n");
+        } else {
+            code_printf(parser, "    popq %%rdx\n");
+            code_printf(parser, "    popq %%rsi\n");
+            code_printf(parser, "    popq %%rdi\n");
+            code_printf(parser, "    movq $%d, %%rax\n",
+                        operation[0] == 'w' ? 1 : operation[0] == 'o' ? 2 : 0);
+        }
+        code_printf(parser, "    syscall\n");
+    }
+    if (keep_result) code_printf(parser, "    pushq %%rax\n");
+    parser->expression_type = TYPE_INT;
+}
+
+void generate_function_call(Parser *parser, Function *func, const char *name, int arg_count) {
+    int integer_index = 0;
+    int float_index = 0;
+    int stack_count = 0;
+    int *stack_slots = calloc((size_t) arg_count, sizeof(*stack_slots));
+    int *register_slots = calloc((size_t) arg_count, sizeof(*register_slots));
+    int *register_indices = calloc((size_t) arg_count, sizeof(*register_indices));
+    if (arg_count > 0 && (!stack_slots || !register_slots || !register_indices)) {
+        free(stack_slots);
+        free(register_slots);
+        free(register_indices);
+        parser_error(parser, "Out of memory while preparing function call");
+        return;
+    }
+    const int max_integer = parser->target_format == TARGET_COFF ? 4 : 6;
+    const int max_float = parser->target_format == TARGET_COFF ? 4 : 8;
+
+    for (int i = 0; i < arg_count; i++) {
+        int is_float = func->param_types[i] == TYPE_FLOAT || func->param_types[i] == TYPE_DOUBLE;
+        int index;
+        if (parser->target_format == TARGET_COFF) {
+            index = i;
+        } else if (is_float) {
+            index = float_index++;
+        } else {
+            index = integer_index++;
+        }
+        int limit = is_float ? max_float : max_integer;
+        if (index < limit) {
+            register_slots[i] = 1;
+            register_indices[i] = index;
+        } else {
+            stack_slots[i] = stack_count++;
+        }
+    }
+
+    code_printf(parser, "    movq %%rsp, %%r11\n");
+    const char **regs64 = get_arg_registers_64();
+    const char **regs32 = get_arg_registers_32();
+    const char **regs8 = get_arg_registers_8();
+    for (int i = 0; i < arg_count; i++) {
+        if (!register_slots[i]) continue;
+        int source_offset = (arg_count - 1 - i) * 8;
+        int reg = register_indices[i];
+        DataType type = func->param_types[i];
+        if (type == TYPE_FLOAT || type == TYPE_DOUBLE) {
+            code_printf(parser, "    movq %d(%%r11), %%xmm%d\n", source_offset, reg);
+        } else if (type == TYPE_CHAR || type == TYPE_BYTE || type == TYPE_BIT) {
+            code_printf(parser, "    movb %d(%%r11), %s\n", source_offset, regs8[reg]);
+        } else if (type == TYPE_STRING || func->param_is_array[i] || func->param_is_pointer[i]) {
+            code_printf(parser, "    movq %d(%%r11), %s\n", source_offset, regs64[reg]);
+        } else {
+            code_printf(parser, "    movl %d(%%r11), %s\n", source_offset, regs32[reg]);
+        }
+    }
+
+    int base_space = stack_count * 8 + (parser->target_format == TARGET_COFF ? 32 : 0);
+    int reserve = base_space;
+    if (((arg_count * 8 + reserve) & 15) != 0) reserve += 8;
+    if (reserve > 0) code_printf(parser, "    subq $%d, %%rsp\n", reserve);
+
+    int stack_base = parser->target_format == TARGET_COFF ? 32 : 0;
+    for (int i = 0; i < arg_count; i++) {
+        if (register_slots[i]) continue;
+        int source_offset = (arg_count - 1 - i) * 8;
+        int destination_offset = stack_base + stack_slots[i] * 8;
+        code_printf(parser, "    movq %d(%%r11), %%rax\n", source_offset);
+        code_printf(parser, "    movq %%rax, %d(%%rsp)\n", destination_offset);
+    }
+
+    code_printf(parser, "    call %s\n", name);
+    int cleanup = reserve + arg_count * 8;
+    if (cleanup > 0) code_printf(parser, "    addq $%d, %%rsp\n", cleanup);
+    free(stack_slots);
+    free(register_slots);
+    free(register_indices);
+}
 
 /*
  * generate_write_syscall - Emit write syscall assembly

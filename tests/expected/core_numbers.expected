@@ -1,0 +1,11 @@
+sub=5
+negative=-3,-1
+equal=1
+double=3.500000
+math=-1.750000
+float=1.750000
+convert=-3
+compare=111
+small=255,A,1
+short=01
+nan=0101

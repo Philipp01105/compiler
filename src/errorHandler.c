@@ -609,6 +609,12 @@ void error_handler_flush(ErrorHandler *handler) {
                     handler->warning_count != 1 ? "s" : "", color_reset);
         }
     }
+
+    for (int i = 0; i < handler->buffer_count; i++) {
+        error_context_free(handler->buffer[i]);
+        handler->buffer[i] = NULL;
+    }
+    handler->buffer_count = 0;
 }
 
 int error_handler_get_error_count(const ErrorHandler *handler) {

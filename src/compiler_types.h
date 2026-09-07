@@ -148,6 +148,7 @@ typedef struct {
     int count; /* Total number of tokens */
     int current; /* Current position in stream */
     int capacity; /* Allocated capacity */
+    int has_error; /* Lexical or allocation error */
 } TokenStream;
 
 /*
@@ -172,11 +173,12 @@ typedef struct {
  */
 typedef struct {
     char name[MAX_TOKEN];
-    char params[10][MAX_TOKEN];
-    DataType param_types[10]; /* Parameter types */
-    int param_is_array[10]; /* Array parameter flags */
-    int param_is_pointer[10]; /* Pointer parameter flags */
+    char (*params)[MAX_TOKEN];
+    DataType *param_types;
+    int *param_is_array;
+    int *param_is_pointer;
     int param_count;
+    int param_capacity;
     DataType return_type; /* Return value type */
     int return_is_array; /* Array return flag */
     char struct_name[MAX_TOKEN]; /* Struct for methods */
@@ -300,6 +302,8 @@ typedef struct {
 
     TargetFormat target_format; /* ELF or COFF output */
     SyntaxMode syntax_mode; /* AT&T or Intel syntax */
+    DataType expression_type; /* Type of the most recently parsed expression */
+    DataType current_return_type; /* Return type of the function being generated */
 } Parser;
 
 #endif

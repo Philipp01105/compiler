@@ -5,6 +5,136 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
+
+static int ensure_param_capacity(Parser *parser, Function *func, int needed) {
+    if (needed <= func->param_capacity) return 1;
+    int capacity = func->param_capacity > 0 ? func->param_capacity : 8;
+    while (capacity < needed) {
+        if (capacity > INT_MAX / 2) {
+            parser_error(parser, "Function has too many parameters");
+            return 0;
+        }
+        capacity *= 2;
+    }
+
+    char (*params)[MAX_TOKEN] = realloc(func->params, sizeof(*params) * (size_t) capacity);
+    if (!params) { parser_error(parser, "Out of memory while storing function parameters"); return 0; }
+    func->params = params;
+    DataType *types = realloc(func->param_types, sizeof(*types) * (size_t) capacity);
+    if (!types) { parser_error(parser, "Out of memory while storing parameter types"); return 0; }
+    func->param_types = types;
+    int *arrays = realloc(func->param_is_array, sizeof(*arrays) * (size_t) capacity);
+    if (!arrays) { parser_error(parser, "Out of memory while storing array parameters"); return 0; }
+    func->param_is_array = arrays;
+    int *pointers = realloc(func->param_is_pointer, sizeof(*pointers) * (size_t) capacity);
+    if (!pointers) { parser_error(parser, "Out of memory while storing pointer parameters"); return 0; }
+    func->param_is_pointer = pointers;
+    func->param_capacity = capacity;
+    return 1;
+}
+
+static void save_function_parameters(Parser *parser, Function *func, int first_var) {
+    const char **regs64 = get_arg_registers_64();
+    const char **regs32 = get_arg_registers_32();
+    const char **regs8 = get_arg_registers_8();
+    int integer_index = 0;
+    int float_index = 0;
+    int stack_index = 0;
+
+    for (int i = 0; i < func->param_count; i++) {
+        Variable *var = &parser->vars[first_var + i];
+        int is_float = var->type == TYPE_FLOAT || var->type == TYPE_DOUBLE;
+        int reg_index;
+        int in_register;
+        if (parser->target_format == TARGET_COFF) {
+            reg_index = i;
+            in_register = i < 4;
+        } else if (is_float) {
+            reg_index = float_index++;
+            in_register = reg_index < 8;
+        } else {
+            reg_index = integer_index++;
+            in_register = reg_index < 6;
+        }
+
+        if (in_register) {
+            if (var->is_array || var->is_pointer || var->type == TYPE_STRING) {
+                code_printf(parser, "    movq %s, %d(%%rbp)\n", regs64[reg_index], var->offset);
+            } else if (var->type == TYPE_FLOAT) {
+                code_printf(parser, "    movss %%xmm%d, %d(%%rbp)\n", reg_index, var->offset);
+            } else if (var->type == TYPE_DOUBLE) {
+                code_printf(parser, "    movsd %%xmm%d, %d(%%rbp)\n", reg_index, var->offset);
+            } else if (var->type == TYPE_CHAR || var->type == TYPE_BYTE || var->type == TYPE_BIT) {
+                code_printf(parser, "    movb %s, %d(%%rbp)\n", regs8[reg_index], var->offset);
+            } else {
+                code_printf(parser, "    movl %s, %d(%%rbp)\n", regs32[reg_index], var->offset);
+            }
+        } else {
+            int source_offset = (parser->target_format == TARGET_COFF ? 48 : 16) + stack_index++ * 8;
+            if (var->is_array || var->is_pointer || var->type == TYPE_STRING || var->type == TYPE_DOUBLE) {
+                code_printf(parser, "    movq %d(%%rbp), %%rax\n", source_offset);
+                code_printf(parser, "    movq %%rax, %d(%%rbp)\n", var->offset);
+            } else {
+                code_printf(parser, "    movl %d(%%rbp), %%eax\n", source_offset);
+                code_printf(parser, "    movl %%eax, %d(%%rbp)\n", var->offset);
+            }
+        }
+    }
+}
+
+static int function_frame_size(Parser *parser, int first_var) {
+    int required = 0;
+    for (int i = first_var; i < parser->var_count; i++) {
+        if (parser->vars[i].offset < 0 && -parser->vars[i].offset > required) {
+            required = -parser->vars[i].offset;
+        }
+    }
+    if (required < 16) required = 16;
+    return (required + 15) & ~15;
+}
+
+static void collect_function_signatures(Parser *parser) {
+    TokenStream *tokens = parser->tokens;
+    int depth = 0;
+    for (int i = 0; i < tokens->count; i++) {
+        Token token = tokens->tokens[i];
+        if (token.type == TOKEN_LBRACE) { depth++; continue; }
+        if (token.type == TOKEN_RBRACE) { if (depth > 0) depth--; continue; }
+        if (depth != 0 || token.type != TOKEN_KEYWORD_FUNC || i + 2 >= tokens->count) continue;
+
+        Token name = tokens->tokens[++i];
+        if (name.type != TOKEN_IDENTIFIER || tokens->tokens[++i].type != TOKEN_LPAREN) continue;
+        if (find_function(parser, name.value)) continue;
+        if (parser->function_count >= MAX_FUNCTIONS) break;
+
+        Function *func = &parser->functions[parser->function_count++];
+        memset(func, 0, sizeof(*func));
+        strncpy(func->name, name.value, MAX_TOKEN - 1);
+        while (i + 1 < tokens->count && tokens->tokens[i + 1].type != TOKEN_RPAREN) {
+            if (!ensure_param_capacity(parser, func, func->param_count + 1)) return;
+            Token param = tokens->tokens[++i];
+            strncpy(func->params[func->param_count], param.value, MAX_TOKEN - 1);
+            if (i + 1 < tokens->count && tokens->tokens[i + 1].type == TOKEN_LBRACKET) {
+                func->param_is_array[func->param_count] = 1;
+                i += 2;
+            }
+            if (i + 1 < tokens->count && tokens->tokens[i + 1].type == TOKEN_COLON) i++;
+            if (i + 1 < tokens->count && tokens->tokens[i + 1].type == TOKEN_STAR) {
+                func->param_is_pointer[func->param_count] = 1;
+                i++;
+            }
+            if (i + 1 < tokens->count) {
+                func->param_types[func->param_count] = token_to_datatype(tokens->tokens[++i].type);
+            }
+            func->param_count++;
+            if (i + 1 < tokens->count && tokens->tokens[i + 1].type == TOKEN_COMMA) i++;
+        }
+        if (i + 1 < tokens->count && tokens->tokens[i + 1].type == TOKEN_RPAREN) i++;
+        if (i + 1 < tokens->count && tokens->tokens[i + 1].type == TOKEN_ARROW) i++;
+        if (i + 1 < tokens->count) func->return_type = token_to_datatype(tokens->tokens[++i].type);
+    }
+}
 
 /*
  * parse_program - Parse entire program
@@ -16,6 +146,7 @@
  */
 int parse_program(Parser *parser, const char *source_file) {
     parser_load_source(parser, source_file);
+    collect_function_signatures(parser);
 
     if (parser->debug_mode) {
         printf("\n================================================================\n");
@@ -24,6 +155,7 @@ int parse_program(Parser *parser, const char *source_file) {
     }
 
     while (!is_at_end(parser->tokens)) {
+        if (global_error_handler && error_handler_should_stop(global_error_handler)) break;
         if (check(parser->tokens, TOKEN_HASH)) {
             parse_import(parser, source_file);
         } else if (check(parser->tokens, TOKEN_KEYWORD_STRUCT)) {
@@ -121,6 +253,7 @@ void parse_struct(Parser *parser) {
             snprintf(mangled_name, sizeof(mangled_name), "%s_%s", struct_name, method_name);
 
             Function *func = &parser->functions[parser->function_count];
+            memset(func, 0, sizeof(*func));
             strcpy(func->name, mangled_name);
             strcpy(func->struct_name, struct_name);
             func->param_count = 0;
@@ -162,10 +295,7 @@ void parse_struct(Parser *parser) {
             while (!check(parser->tokens, TOKEN_RPAREN) && !is_at_end(parser->tokens)) {
                 Token param_token = consume(parser->tokens);
 
-                if (func->param_count >= 9) {
-                    parser_error(parser, "Too many parameters (max 8 explicit parameters plus implicit 'this')");
-                    return;
-                }
+                if (!ensure_param_capacity(parser, func, func->param_count + 1)) return;
 
                 strcpy(func->params[func->param_count], param_token.value);
 
@@ -263,7 +393,13 @@ void parse_struct(Parser *parser) {
             code_comment(parser, "Function prologue");
             emit_push(parser, "rbp");
             emit_mov_reg_reg(parser, "rbp", "rsp");
-            emit_sub_reg_imm(parser, "rsp", 8192);
+            if (parser->target_format == TARGET_COFF) {
+                code_printf(parser, "    movq $.L_frame_%s, %%rax\n", mangled_name);
+                code_printf(parser, "    call ___chkstk_ms\n");
+                code_printf(parser, "    subq %%rax, %%rsp\n");
+            } else {
+                code_printf(parser, "    subq $.L_frame_%s, %%rsp\n", mangled_name);
+            }
 
             /* Windows ABI: Save non-volatile registers RDI and RSI */
             if (parser->target_format == TARGET_COFF) {
@@ -315,6 +451,9 @@ void parse_struct(Parser *parser) {
             strcpy(parser->current_struct_context, struct_name);
 
             parse_function_body(parser);
+
+            data_printf(parser, ".set .L_frame_%s, %d\n", mangled_name,
+                        function_frame_size(parser, saved_var_count));
 
             cleanup_scope(parser, parser->current_scope);
             parser->current_scope = 0;
@@ -640,28 +779,28 @@ void parse_function(Parser *parser) {
     char func_name[MAX_TOKEN];
     strcpy(func_name, name_token.value);
 
-    if (parser->function_count >= MAX_FUNCTIONS) {
+    Function *func = find_function(parser, func_name);
+    if (!func && parser->function_count >= MAX_FUNCTIONS) {
         parser_error(parser, "Too many functions (max %d)", MAX_FUNCTIONS);
         return;
     }
 
-    Function *func = &parser->functions[parser->function_count];
-    strcpy(func->name, func_name);
+    if (!func) {
+        func = &parser->functions[parser->function_count++];
+        memset(func, 0, sizeof(*func));
+        strcpy(func->name, func_name);
+    }
     func->param_count = 0;
-    parser->function_count++;
 
     expect(parser, TOKEN_LPAREN, "Expected '(' after function name");
 
     int saved_var_count = parser->var_count;
-    int param_offset = 8;
+    int param_offset = 0;
 
     while (!check(parser->tokens, TOKEN_RPAREN) && !is_at_end(parser->tokens)) {
         Token param_token = consume(parser->tokens);
 
-        if (func->param_count >= 10) {
-            parser_error(parser, "Too many parameters (max 10)");
-            return;
-        }
+        if (!ensure_param_capacity(parser, func, func->param_count + 1)) return;
 
         strcpy(func->params[func->param_count], param_token.value);
 
@@ -710,12 +849,9 @@ void parse_function(Parser *parser) {
             var->size = datatype_size(param_type);
         }
 
-        var->offset = -param_offset;
+        if (var->size == 8) param_offset = (param_offset + 7) & ~7;
         param_offset += var->size;
-
-        if (var->size == 8) {
-            param_offset = ((param_offset + 7) / 8) * 8;
-        }
+        var->offset = -param_offset;
 
         var->scope = 1;
         parser->var_count++;
@@ -780,7 +916,13 @@ void parse_function(Parser *parser) {
     code_comment(parser, "Function prologue");
     emit_push(parser, "rbp");
     emit_mov_reg_reg(parser, "rbp", "rsp");
-    emit_sub_reg_imm(parser, "rsp", 8192);
+    if (parser->target_format == TARGET_COFF) {
+        code_printf(parser, "    movq $.L_frame_%s, %%rax\n", func_name);
+        code_printf(parser, "    call ___chkstk_ms\n");
+        code_printf(parser, "    subq %%rax, %%rsp\n");
+    } else {
+        code_printf(parser, "    subq $.L_frame_%s, %%rsp\n", func_name);
+    }
 
     /* Windows ABI: Save non-volatile registers RDI and RSI */
     if (parser->target_format == TARGET_COFF) {
@@ -793,39 +935,21 @@ void parse_function(Parser *parser) {
         code_comment(parser, "Save parameters to stack");
     }
 
-    const char **param_regs_64 = get_arg_registers_64();
-    const char **param_regs_32 = get_arg_registers_32();
-    const char *param_regs_float[] = {"%xmm0", "%xmm1", "%xmm2", "%xmm3"};
-
-    for (int i = 0; i < func->param_count && i < 4; i++) {
-        Variable *var = &parser->vars[saved_var_count + i];
-
-        if (var->is_array || var->is_pointer) {
-            code_printf(parser, "    movq %s, %d(%%rbp)\n", param_regs_64[i], var->offset);
-        } else if (var->type == TYPE_FLOAT || var->type == TYPE_DOUBLE) {
-            if (var->type == TYPE_FLOAT) {
-                code_printf(parser, "    movss %s, %d(%%rbp)\n", param_regs_float[i], var->offset);
-            } else {
-                code_printf(parser, "    movsd %s, %d(%%rbp)\n", param_regs_float[i], var->offset);
-            }
-        } else if (var->type == TYPE_CHAR || var->type == TYPE_BYTE || var->type == TYPE_BIT) {
-            const char **param_regs_8 = get_arg_registers_8();
-            code_printf(parser, "    movb %s, %d(%%rbp)\n", param_regs_8[i], var->offset);
-        } else if (var->type == TYPE_STRING) {
-            code_printf(parser, "    movq %s, %d(%%rbp)\n", param_regs_64[i], var->offset);
-        } else {
-            code_printf(parser, "    movl %s, %d(%%rbp)\n", param_regs_32[i], var->offset);
-        }
-    }
+    save_function_parameters(parser, func, saved_var_count);
 
     parser->current_scope = 1;
     parser->scope_depth = 1;
+    parser->current_return_type = func->return_type;
 
     parse_function_body(parser);
+
+    data_printf(parser, ".set .L_frame_%s, %d\n", func_name,
+                function_frame_size(parser, saved_var_count));
 
     cleanup_scope(parser, parser->current_scope);
     parser->current_scope = 0;
     parser->scope_depth = 0;
+    parser->current_return_type = TYPE_VOID;
     parser->var_count = saved_var_count;
 
     if (func->return_type == TYPE_VOID) {

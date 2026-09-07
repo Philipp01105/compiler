@@ -25,3 +25,16 @@ add_executable(compiler
         src/syntax_converter.c
         src/syntax_converter.h
 )
+
+include(CTest)
+if(BUILD_TESTING)
+    find_program(DMM_ASSEMBLER NAMES gcc)
+    if(DMM_ASSEMBLER)
+        add_test(NAME dmm_regression
+                COMMAND ${CMAKE_COMMAND}
+                    -DCOMPILER=$<TARGET_FILE:compiler>
+                    -DASSEMBLER=${DMM_ASSEMBLER}
+                    -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/test_output
+                    -P ${CMAKE_SOURCE_DIR}/tests/run_tests.cmake)
+    endif()
+endif()

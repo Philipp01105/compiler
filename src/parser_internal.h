@@ -35,6 +35,14 @@ int get_shadow_space();
 
 int get_call_stack_space();
 
+void set_target_format(TargetFormat target);
+
+void generate_function_call(Parser *parser, Function *func, const char *name, int arg_count);
+
+void convert_stack_value(Parser *parser, DataType from, DataType to);
+
+void generate_system_io_call(Parser *parser, const char *operation, int keep_result);
+
 /* Assembly code generation utilities */
 const char *escape_char_for_comment(const char *ch_value);
 
