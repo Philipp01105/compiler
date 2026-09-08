@@ -1,10 +1,11 @@
 #ifndef COMPILER_TYPES_H
 #define COMPILER_TYPES_H
 
+#include "token.h"
+
 /*
  * Maximum sizes for compiler data structures
  */
-#define MAX_TOKEN 512               /* Maximum token length */
 #define MAX_LINE 1024               /* Maximum line length */
 #define MAX_VARS 400                /* Maximum variables per scope */
 #define MAX_FUNCTIONS 200           /* Maximum functions in program */
@@ -17,142 +18,6 @@
 #define MAX_LOCAL_STORAGE (8 * 1024 * 1024) /* Maximum stack storage per function */
 #define MAX_OBJECT_SIZE (8 * 1024 * 1024)   /* Maximum size of one array/struct */
 #define MAX_EXPRESSION_TOKENS 512    /* Maximum tokens in one expression */
-
-/*
- * Token types for lexical analysis
- */
-typedef enum {
-    TOKEN_KEYWORD_FUNC,
-    TOKEN_KEYWORD_VAR,
-    TOKEN_KEYWORD_RETURN,
-    TOKEN_KEYWORD_FOR,
-    TOKEN_KEYWORD_IF,
-    TOKEN_KEYWORD_ELSE,
-    TOKEN_KEYWORD_WHILE,
-    TOKEN_KEYWORD_PRINT,
-    TOKEN_KEYWORD_PRINTLINE,
-    TOKEN_KEYWORD_BREAK,
-    TOKEN_KEYWORD_CONTINUE,
-    TOKEN_KEYWORD_STRUCT,
-    TOKEN_KEYWORD_ENUM,
-    TOKEN_KEYWORD_IMPORT,
-    TOKEN_KEYWORD_STATIC,
-    TOKEN_KEYWORD_RESERVE,
-    TOKEN_KEYWORD_FREE,
-    TOKEN_KEYWORD_GC,
-
-    TOKEN_TYPE_INT,
-    TOKEN_TYPE_CHAR,
-    TOKEN_TYPE_BYTE,
-    TOKEN_TYPE_BIT,
-    TOKEN_TYPE_FLOAT,
-    TOKEN_TYPE_DOUBLE,
-    TOKEN_TYPE_STRING,
-    TOKEN_TYPE_VOID,
-
-    TOKEN_IDENTIFIER,
-    TOKEN_NUMBER,
-    TOKEN_FLOAT_LITERAL,
-    TOKEN_CHAR_LITERAL,
-    TOKEN_STRING_LITERAL,
-
-    TOKEN_PLUS,
-    TOKEN_MINUS,
-    TOKEN_STAR,
-    TOKEN_SLASH,
-    TOKEN_PERCENT,
-
-    TOKEN_EQUAL,
-    TOKEN_EQUAL_EQUAL,
-    TOKEN_BANG_EQUAL,
-    TOKEN_LESS,
-    TOKEN_LESS_EQUAL,
-    TOKEN_GREATER,
-    TOKEN_GREATER_EQUAL,
-
-    TOKEN_AMP_AMP,
-    TOKEN_PIPE_PIPE,
-    TOKEN_BANG,
-    TOKEN_AMPERSAND,
-
-    TOKEN_PLUS_EQUAL,
-    TOKEN_MINUS_EQUAL,
-    TOKEN_STAR_EQUAL,
-    TOKEN_SLASH_EQUAL,
-    TOKEN_PLUS_PLUS,
-    TOKEN_MINUS_MINUS,
-
-    TOKEN_LPAREN,
-    TOKEN_RPAREN,
-    TOKEN_LBRACE,
-    TOKEN_RBRACE,
-    TOKEN_LBRACKET,
-    TOKEN_RBRACKET,
-    TOKEN_SEMICOLON,
-    TOKEN_COMMA,
-    TOKEN_COLON,
-    TOKEN_ARROW,
-    TOKEN_DOT,
-    TOKEN_HASH,
-    TOKEN_AT,
-
-    TOKEN_COMMENT,
-    TOKEN_NEWLINE,
-    TOKEN_EOF,
-    TOKEN_ERROR
-} TokenType;
-
-/*
- * Data types supported by the compiler
- */
-typedef enum {
-    TYPE_INT, /* 32-bit signed integer */
-    TYPE_CHAR, /* 8-bit signed character */
-    TYPE_BYTE, /* 8-bit unsigned */
-    TYPE_BIT, /* Boolean (0 or 1) */
-    TYPE_FLOAT, /* 32-bit floating point */
-    TYPE_DOUBLE, /* 64-bit floating point */
-    TYPE_STRING, /* String type */
-    TYPE_VOID, /* No return value */
-    TYPE_UNKNOWN
-} DataType;
-
-/*
- * Target format for assembly output
- */
-typedef enum {
-    TARGET_ELF, /* Linux/Unix ELF format (default) */
-    TARGET_COFF /* Windows COFF format */
-} TargetFormat;
-
-/*
- * Assembly syntax mode
- */
-typedef enum {
-    SYNTAX_ATT, /* AT&T syntax (legacy) */
-    SYNTAX_INTEL /* Intel syntax (default) */
-} SyntaxMode;
-
-/*
- * Lexical token with position information
- */
-typedef struct {
-    TokenType type;
-    char value[MAX_TOKEN];
-    int line;
-    int column;
-} Token;
-
-/*
- * Token stream for parser consumption
- */
-typedef struct {
-    Token *tokens;
-    int count; /* Total number of tokens */
-    int current; /* Current position in stream */
-    int capacity; /* Allocated capacity */
-    int has_error; /* Lexical or allocation error */
-} TokenStream;
 
 /*
  * Variable with type and scope information

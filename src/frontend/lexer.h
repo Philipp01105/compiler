@@ -2,7 +2,7 @@
 #define LEXER_H
 
 #include <stddef.h>
-#include "compiler_types.h"
+#include "token.h"
 
 /* Token stream management */
 TokenStream *create_token_stream(void);
