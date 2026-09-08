@@ -1,5 +1,6 @@
 #include "parser.h"
 #include "parser_internal.h"
+#include "instruction_builder.h"
 #include <stdlib.h>
 
 static int floating_type(DataType type) {
@@ -332,6 +333,41 @@ void generate_stack_restore(Parser *parser) {
     if (stack_adj > 0) {
         code_printf(parser, "    addq $%d, %%rsp\n", stack_adj);
     }
+}
+
+void generate_printf_call(Parser *parser) {
+    if (parser->target_format == TARGET_ELF) {
+        /* SysV variadic ABI: AL is an upper bound on vector arguments. */
+        code_printf(parser, "    movl $1, %%eax\n");
+    }
+    code_printf(parser, "    call printf\n");
+}
+
+void save_nonvolatile_registers(Parser *parser) {
+    emit_push(parser, "rbx");
+    emit_push(parser, "r12");
+    emit_push(parser, "r13");
+    emit_push(parser, "r14");
+    emit_push(parser, "r15");
+    if (parser->target_format == TARGET_COFF) {
+        emit_push(parser, "rdi");
+        emit_push(parser, "rsi");
+    }
+    /* Both register sets contain an odd number of entries. */
+    code_printf(parser, "    subq $8, %%rsp\n");
+}
+
+void restore_nonvolatile_registers(Parser *parser) {
+    code_printf(parser, "    addq $8, %%rsp\n");
+    if (parser->target_format == TARGET_COFF) {
+        emit_pop(parser, "rsi");
+        emit_pop(parser, "rdi");
+    }
+    emit_pop(parser, "r15");
+    emit_pop(parser, "r14");
+    emit_pop(parser, "r13");
+    emit_pop(parser, "r12");
+    emit_pop(parser, "rbx");
 }
 
 const char *get_arg_reg_64(int index) {
