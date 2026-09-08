@@ -6,7 +6,19 @@ static int floating_type(DataType type) {
     return type == TYPE_FLOAT || type == TYPE_DOUBLE;
 }
 
-void convert_stack_value(Parser *parser, DataType from, DataType to) {
+static int integral_type(DataType type) {
+    return type == TYPE_INT || type == TYPE_CHAR || type == TYPE_BYTE || type == TYPE_BIT;
+}
+
+int can_implicitly_convert(DataType from, DataType to) {
+    if (from == TYPE_UNKNOWN || to == TYPE_UNKNOWN || from == to) return 1;
+    if (integral_type(from) && integral_type(to)) return 1;
+    if (integral_type(from) && floating_type(to)) return 1;
+    if (from == TYPE_FLOAT && to == TYPE_DOUBLE) return 1;
+    return 0;
+}
+
+static void emit_stack_conversion(Parser *parser, DataType from, DataType to) {
     if (from == to || from == TYPE_UNKNOWN || to == TYPE_UNKNOWN) return;
     if (!floating_type(from) && !floating_type(to)) return;
     code_printf(parser, "    popq %%rax\n");
@@ -25,6 +37,32 @@ void convert_stack_value(Parser *parser, DataType from, DataType to) {
     }
     if (floating_type(to)) code_printf(parser, "    movq %%xmm0, %%rax\n");
     code_printf(parser, "    pushq %%rax\n");
+}
+
+void convert_stack_value(Parser *parser, DataType from, DataType to) {
+    if (!can_implicitly_convert(from, to)) {
+        parser_error(parser, "Cannot implicitly convert %s to %s",
+                     datatype_to_string(from), datatype_to_string(to));
+        return;
+    }
+    emit_stack_conversion(parser, from, to);
+}
+
+void convert_stack_value_explicit(Parser *parser, DataType from, DataType to) {
+    emit_stack_conversion(parser, from, to);
+}
+
+void emit_static_array_bounds_check(Parser *parser, const Variable *var) {
+    if (var == NULL || !var->is_array || var->array_size <= 0) return;
+    int label = parser->label_counter++;
+    code_printf(parser, "    cmpq $0, %%rax\n");
+    code_printf(parser, "    jl .L_bounds_fail_%d\n", label);
+    code_printf(parser, "    cmpq $%d, %%rax\n", var->array_size);
+    code_printf(parser, "    jge .L_bounds_fail_%d\n", label);
+    code_printf(parser, "    jmp .L_bounds_ok_%d\n", label);
+    code_printf(parser, ".L_bounds_fail_%d:\n", label);
+    code_printf(parser, "    ud2\n");
+    code_printf(parser, ".L_bounds_ok_%d:\n", label);
 }
 
 void generate_system_io_call(Parser *parser, const char *operation, int keep_result) {

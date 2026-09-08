@@ -146,7 +146,7 @@ void error_context_add_child(ErrorContext *parent, ErrorContext *child) {
         int new_capacity = parent->child_capacity == 0 ? 4 : parent->child_capacity * 2;
         ErrorContext **new_children = (ErrorContext **) realloc(
             parent->children,
-            sizeof(ErrorContext *) * new_capacity
+            sizeof(ErrorContext *) * (size_t) new_capacity
         );
         if (!new_children) {
             return;
@@ -289,7 +289,7 @@ static void print_source_context(
         fprintf(out, "%s", error_color);
         int underline_len = 1;
         if (ctx->token_value) {
-            underline_len = strlen(ctx->token_value);
+            underline_len = (int) strlen(ctx->token_value);
             if (underline_len > 20) underline_len = 20;
             if (underline_len < 1) underline_len = 1;
         }
@@ -458,7 +458,7 @@ void error_report_context(ErrorHandler *handler, ErrorContext *ctx) {
             int new_capacity = handler->buffer_capacity == 0 ? 16 : handler->buffer_capacity * 2;
             ErrorContext **new_buffer = (ErrorContext **) realloc(
                 handler->buffer,
-                sizeof(ErrorContext *) * new_capacity
+                sizeof(ErrorContext *) * (size_t) new_capacity
             );
             if (!new_buffer) {
                 return;
@@ -469,9 +469,6 @@ void error_report_context(ErrorHandler *handler, ErrorContext *ctx) {
 
         handler->buffer[handler->buffer_count++] = ctx;
 
-        if (ctx->severity == SEVERITY_FATAL || error_handler_should_stop(handler)) {
-            error_handler_flush(handler);
-        }
         return;
     }
 

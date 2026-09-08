@@ -3,6 +3,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <errno.h>
+#include <limits.h>
+#include "errorHandler.h"
 
 #define INITIAL_CAPACITY 1000
 
@@ -17,7 +20,7 @@ TokenStream *create_token_stream(void) {
     stream->capacity = INITIAL_CAPACITY;
     stream->count = 0;
     stream->current = 0;
-    stream->tokens = malloc(sizeof(Token) * stream->capacity);
+    stream->tokens = malloc(sizeof(Token) * (size_t) stream->capacity);
     stream->has_error = stream->tokens == NULL;
     if (!stream->tokens) {
         free(stream);
@@ -38,10 +41,18 @@ void add_token(TokenStream *stream, TokenType type, const char *value, int line,
     if (stream == NULL) return;
 
     if (stream->count >= stream->capacity) {
+        if (stream->capacity > INT_MAX / 2) {
+            stream->has_error = 1;
+            error_report(global_error_handler, SEVERITY_FATAL, line, column, ERROR_CATEGORY_LEXER,
+                         ERR_LEX_FILE_READ_ERROR, NULL, "Token stream capacity overflow");
+            return;
+        }
         int new_capacity = stream->capacity * 2;
-        Token *new_tokens = realloc(stream->tokens, sizeof(Token) * new_capacity);
+        Token *new_tokens = realloc(stream->tokens, sizeof(Token) * (size_t) new_capacity);
         if (!new_tokens) {
             stream->has_error = 1;
+            error_report(global_error_handler, SEVERITY_FATAL, line, column, ERROR_CATEGORY_LEXER,
+                         ERR_LEX_FILE_READ_ERROR, NULL, "Out of memory while growing token stream");
             return;
         }
         stream->capacity = new_capacity;
@@ -142,32 +153,51 @@ static TokenType get_keyword_type(const char *str) {
 }
 
 TokenStream *tokenize_file(const char *filename, int debug_mode) {
+    (void) debug_mode;
     FILE *file = fopen(filename, "rb");
     if (!file) {
-        fprintf(stderr, "Fehler: Datei '%s' konnte nicht geöffnet werden\n", filename);
+        error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_LEXER,
+                     ERR_LEX_FILE_NOT_FOUND, filename, "Could not open source file");
         return nullptr;
     }
 
-    fseek(file, 0, SEEK_END);
-    long file_size = ftell(file);
-    fseek(file, 0, SEEK_SET);
-
-    if (file_size < 0) {
+    if (fseek(file, 0, SEEK_END) != 0) {
         fclose(file);
+        error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_LEXER,
+                     ERR_LEX_FILE_READ_ERROR, filename, "Could not seek in source file");
         return NULL;
     }
+    long file_size = ftell(file);
+    if (file_size < 0 || fseek(file, 0, SEEK_SET) != 0) {
+        fclose(file);
+        error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_LEXER,
+                     ERR_LEX_FILE_READ_ERROR, filename, "Could not determine source file size");
+        return NULL;
+    }
+
     char *source = malloc((size_t) file_size + 1);
     if (!source) {
         fclose(file);
+        error_report(global_error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_LEXER,
+                     ERR_LEX_FILE_READ_ERROR, filename, "Out of memory while reading source file");
         return NULL;
     }
-    size_t bytes_read = fread(source, 1, file_size, file);
+    size_t bytes_read = fread(source, 1, (size_t) file_size, file);
+    if (bytes_read != (size_t) file_size && ferror(file)) {
+        fclose(file);
+        free(source);
+        error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_LEXER,
+                     ERR_LEX_FILE_READ_ERROR, filename, "Could not read source file");
+        return NULL;
+    }
     source[bytes_read] = '\0';
     fclose(file);
 
     TokenStream *stream = create_token_stream();
     if (!stream) {
         free(source);
+        error_report(global_error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_LEXER,
+                     ERR_LEX_FILE_READ_ERROR, filename, "Out of memory while creating token stream");
         return NULL;
     }
 
@@ -205,10 +235,10 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
             i++;
             column++;
 
-            char str[MAX_LINE] = {0};
+            char str[MAX_TOKEN] = {0};
             int j = 0;
 
-            while (i < length && source[i] != '"' && j < MAX_LINE - 1) {
+            while (i < length && source[i] != '"' && j < MAX_TOKEN - 1) {
                 if (source[i] == '\n') {
                     line++;
                     column = 1;
@@ -231,7 +261,7 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
                         str[j++] = source[i++];
                         int continuation_count = 0;
                         while (i < length && continuation_count < 3 &&
-                               ((unsigned char) source[i] & 0xC0) == 0x80 && j < MAX_LINE - 1) {
+                               ((unsigned char) source[i] & 0xC0) == 0x80 && j < MAX_TOKEN - 1) {
                             str[j++] = source[i++];
                             continuation_count++;
                         }
@@ -247,13 +277,21 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
 
             str[j] = '\0';
 
-            if (i < length && source[i] == '"') {
+            if (j == MAX_TOKEN - 1 && i < length && source[i] != '"') {
+                error_report(global_error_handler, SEVERITY_ERROR, start_line, start_col,
+                             ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_SYNTAX, filename,
+                             "Token exceeds maximum length of %d bytes", MAX_TOKEN - 1);
+                stream->has_error = 1;
+                while (i < length && source[i] != '"') { i++; column++; }
+                if (i < length) { i++; column++; }
+            } else if (i < length && source[i] == '"') {
                 i++;
                 column++;
                 add_token(stream, TOKEN_STRING_LITERAL, str, start_line, start_col);
             } else {
-                fprintf(stderr, "Fehler (Zeile %d, Spalte %d): Ungeschlossenes String-Literal\n",
-                        start_line, start_col);
+                error_report(global_error_handler, SEVERITY_ERROR, start_line, start_col,
+                             ERROR_CATEGORY_LEXER, ERR_LEX_UNCLOSED_STRING, filename,
+                             "Unclosed string literal");
                 stream->has_error = 1;
             }
 
@@ -283,8 +321,9 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
                         case '\\': ch[j++] = '\\'; break;
                         case '\'': ch[j++] = '\''; break;
                         default:
-                            fprintf(stderr, "Warnung (Zeile %d): Unbekannte Escape-Sequenz '\\%c'\n",
-                                    line, esc);
+                            error_report(global_error_handler, SEVERITY_WARNING, line, column,
+                                         ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_ESCAPE, filename,
+                                         "Unknown escape sequence '\\%c'", esc);
                             ch[j++] = esc;
                     }
                     i++;
@@ -300,10 +339,18 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
             if (i < length && source[i] == '\'') {
                 i++;
                 column++;
-                add_token(stream, TOKEN_CHAR_LITERAL, ch, start_line, start_col);
+                if (j != 1) {
+                    error_report(global_error_handler, SEVERITY_ERROR, start_line, start_col,
+                                 ERROR_CATEGORY_LEXER, ERR_LEX_UNCLOSED_CHAR, filename,
+                                 "Character literal must contain exactly one byte");
+                    stream->has_error = 1;
+                } else {
+                    add_token(stream, TOKEN_CHAR_LITERAL, ch, start_line, start_col);
+                }
             } else {
-                fprintf(stderr, "Fehler (Zeile %d, Spalte %d): Ungeschlossenes Character-Literal\n",
-                        start_line, start_col);
+                error_report(global_error_handler, SEVERITY_ERROR, start_line, start_col,
+                             ERROR_CATEGORY_LEXER, ERR_LEX_UNCLOSED_CHAR, filename,
+                             "Unclosed character literal");
                 stream->has_error = 1;
             }
 
@@ -333,9 +380,17 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
                     column++;
                 }
 
+                size_t exponent_start = i;
                 while (i < length && isdigit((unsigned char)source[i]) && j < MAX_TOKEN - 1) {
                     num[j++] = source[i++];
                     column++;
+                }
+
+                if (i == exponent_start) {
+                    error_report(global_error_handler, SEVERITY_ERROR, line, start_col,
+                                 ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_SYNTAX, filename,
+                                 "Invalid floating-point literal: exponent requires digits");
+                    stream->has_error = 1;
                 }
 
                 has_dot = 1;   
@@ -343,8 +398,22 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
 
             num[j] = '\0';
 
+            if (!has_dot) {
+                errno = 0;
+                char *end = NULL;
+                unsigned long value = strtoul(num, &end, 10);
+                if (errno == ERANGE || end == num || *end != '\0' || value > INT_MAX) {
+                    error_report(global_error_handler, SEVERITY_ERROR, line, start_col,
+                                 ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_SYNTAX, filename,
+                                 "Integer literal is outside signed 32-bit range");
+                    stream->has_error = 1;
+                }
+            }
+
             if (i < length && (isdigit((unsigned char) source[i]) || source[i] == '.')) {
-                fprintf(stderr, "Fehler (Zeile %d, Spalte %d): Zahlenliteral ist zu lang\n", line, start_col);
+                error_report(global_error_handler, SEVERITY_ERROR, line, start_col,
+                             ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_SYNTAX, filename,
+                             "Numeric token exceeds maximum length");
                 stream->has_error = 1;
                 while (i < length && (isdigit((unsigned char) source[i]) || source[i] == '.')) { i++; column++; }
             }
@@ -371,7 +440,9 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
             ident[j] = '\0';
 
             if (i < length && (isalnum((unsigned char) source[i]) || source[i] == '_')) {
-                fprintf(stderr, "Fehler (Zeile %d, Spalte %d): Bezeichner ist zu lang\n", line, start_col);
+                error_report(global_error_handler, SEVERITY_ERROR, line, start_col,
+                             ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_SYNTAX, filename,
+                             "Token exceeds maximum length");
                 stream->has_error = 1;
                 while (i < length && (isalnum((unsigned char) source[i]) || source[i] == '_')) { i++; column++; }
             }
@@ -443,36 +514,12 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
             continue;
         }
 
-        fprintf(stderr, "Warnung (Zeile %d, Spalte %d): Unbekanntes Zeichen '%c' (0x%02X)\n",
-                line, column, c, (unsigned char)c);
+        error_report(global_error_handler, SEVERITY_ERROR, line, column,
+                     ERROR_CATEGORY_LEXER, ERR_LEX_UNKNOWN_CHAR, filename,
+                     "Unknown character '%c' (0x%02X)", c, (unsigned char)c);
         stream->has_error = 1;
         i++;
         column++;
-    }
-
-    int last_valid = stream->count - 1;
-    while (last_valid >= 0) {
-        Token *t = &stream->tokens[last_valid];
-        if (t->type != TOKEN_ERROR &&
-            t->type != TOKEN_EOF &&
-            strlen(t->value) > 0 &&
-            (t->type == TOKEN_RBRACE ||
-             t->type == TOKEN_SEMICOLON ||
-             t->type == TOKEN_RPAREN ||
-             isalnum((unsigned char)t->value[0]) ||
-             t->value[0] == '_' ||
-             t->value[0] == '"')) {
-            break;
-        }
-        last_valid--;
-    }
-
-    if (last_valid >= 0 && last_valid < stream->count - 1) {
-        if (debug_mode) {
-            fprintf(stderr, "[LEXER] Entferne %d Token(s) nach letztem gültigen Token\n",
-                    stream->count - last_valid - 1);
-        }
-        stream->count = last_valid + 1;
     }
 
     add_token(stream, TOKEN_EOF, "", line, column);

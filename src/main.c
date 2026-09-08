@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <time.h>
 #include <sys/stat.h>
@@ -8,6 +9,10 @@
 #include "errorHandler.h"
 #include "asm_optimizer.h"
 #include "instruction_builder.h"
+
+#ifndef DMM_VERSION
+#define DMM_VERSION "development"
+#endif
 
 /*
  * print_usage - Display command line usage information
@@ -22,7 +27,10 @@ void print_usage(const char *program_name) {
     printf("  --formatError  Output errors in JSON format\n");
     printf("  --syntax=MODE  Assembly syntax: att or intel (default: intel)\n");
     printf("  --target=FMT   Target format: elf or coff (default: auto-detect)\n");
+    printf("  -o FILE        Write assembly to FILE\n");
+    printf("  --deterministic Omit timestamps from generated assembly\n");
     printf("  --help         Show this help message\n");
+    printf("  --version      Show compiler version\n");
     printf("\n");
     printf("Examples:\n");
     printf("  %s program.txt\n", program_name);
@@ -34,8 +42,8 @@ void print_usage(const char *program_name) {
 }
 
 void print_header(const char *source_file) {
-    struct stat st;
-    stat(source_file, &st);
+    struct stat st = {0};
+    (void) stat(source_file, &st);
 
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
@@ -87,11 +95,45 @@ void write_escaped_string(FILE *out, const char *str) {
     }
 }
 
+static void remove_stale_output(const char *source_file, const char *requested_output) {
+    /* Never delete an explicit path before validating it as a safe output. */
+    if (requested_output != NULL) return;
+    size_t length = strlen(source_file);
+    if (length > SIZE_MAX - 3) return;
+    char *path = malloc(length + 3);
+    if (path == NULL) return;
+    memcpy(path, source_file, length);
+    memcpy(path + length, ".s", 3);
+    (void) remove(path);
+    free(path);
+}
+
+static int output_conflicts_with_source(const char *source_file, const char *output_file) {
+    if (output_file == NULL) return 0;
+    if (strcmp(source_file, output_file) == 0) return 1;
+#ifdef _WIN32
+    char *source_absolute = _fullpath(NULL, source_file, 0);
+    char *output_absolute = _fullpath(NULL, output_file, 0);
+    int conflicts = source_absolute != NULL && output_absolute != NULL &&
+                    _stricmp(source_absolute, output_absolute) == 0;
+    free(source_absolute);
+    free(output_absolute);
+    return conflicts;
+#else
+    struct stat source_status;
+    struct stat output_status;
+    return stat(source_file, &source_status) == 0 && stat(output_file, &output_status) == 0 &&
+           source_status.st_dev == output_status.st_dev && source_status.st_ino == output_status.st_ino;
+#endif
+}
+
 int main(int argc, char *argv[]) {
     int show_tokens = 0;
     int debug_mode = 0;
     int format_error = 0;
+    int deterministic = 0;
     const char *source_file = NULL;
+    const char *requested_output = NULL;
     SyntaxMode syntax_mode = SYNTAX_INTEL; /* Default to Intel syntax */
     TargetFormat target_format = TARGET_ELF; /* Auto-detect later */
     int target_format_explicit = 0; /* Whether user specified target */
@@ -101,16 +143,32 @@ int main(int argc, char *argv[]) {
         error_handler_set_global(error_handler);
     }
 
+    /* Select the diagnostic format before reporting any option error. */
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--formatError") == 0) {
+            format_error = 1;
+            if (error_handler) error_handler_set_json_output(error_handler, 1);
+        }
+    }
+
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--tokens") == 0) {
             show_tokens = 1;
         } else if (strcmp(argv[i], "--debug") == 0) {
             debug_mode = 1;
         } else if (strcmp(argv[i], "--formatError") == 0) {
-            format_error = 1;
-            if (error_handler) {
-                error_handler_set_json_output(error_handler, 1);
+            /* Handled by the pre-scan above. */
+        } else if (strcmp(argv[i], "--deterministic") == 0) {
+            deterministic = 1;
+        } else if (strcmp(argv[i], "-o") == 0) {
+            if (++i >= argc) {
+                error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                             ERR_COMP_INVALID_OPTION, NULL, "Option '-o' requires a filename");
+                error_handler_flush(error_handler);
+                error_handler_free(error_handler);
+                return 1;
             }
+            requested_output = argv[i];
         } else if (strncmp(argv[i], "--syntax=", 9) == 0) {
             const char *mode = argv[i] + 9;
             if (strcmp(mode, "intel") == 0) {
@@ -147,7 +205,18 @@ int main(int argc, char *argv[]) {
             print_usage(argv[0]);
             error_handler_free(error_handler);
             return 0;
+        } else if (strcmp(argv[i], "--version") == 0) {
+            printf("DMM Compiler %s\n", DMM_VERSION);
+            error_handler_free(error_handler);
+            return 0;
         } else if (argv[i][0] != '-') {
+            if (source_file != NULL) {
+                error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                             ERR_COMP_INVALID_OPTION, NULL, "Multiple source files are not supported");
+                error_handler_flush(error_handler);
+                error_handler_free(error_handler);
+                return 1;
+            }
             source_file = argv[i];
         } else {
             error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
@@ -192,12 +261,24 @@ int main(int argc, char *argv[]) {
 
     TokenStream *tokens = tokenize_file(source_file, debug_mode);
     if (!tokens) {
-        fprintf(stderr, "[ERROR] Lexer failed!\n");
+        error_handler_flush(error_handler);
+        error_handler_free(error_handler);
         return 1;
     }
 
+    if (output_conflicts_with_source(source_file, requested_output)) {
+        error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                     ERR_COMP_INVALID_OPTION, source_file, "Output file must differ from source file");
+        error_handler_flush(error_handler);
+        error_handler_free(error_handler);
+        return 1;
+    }
+
+    /* A failed compilation must not leave an older output looking current. */
+    remove_stale_output(source_file, requested_output);
+
     if (tokens->has_error) {
-        fprintf(stderr, "[ERROR] Lexical analysis failed\n");
+        error_handler_flush(error_handler);
         free_token_stream(tokens);
         error_handler_free(error_handler);
         return 1;
@@ -213,12 +294,18 @@ int main(int argc, char *argv[]) {
     }
 
     Parser *parser = create_parser(tokens);
+    if (!parser) {
+        error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
+                     ERR_CODEGEN_OUTPUT_FAILED, source_file,
+                     "Out of memory while creating compiler state");
+        error_handler_flush(error_handler);
+        free_token_stream(tokens);
+        error_handler_free(error_handler);
+        return 1;
+    }
     parser->debug_mode = debug_mode;
     parser->target_format = target_format;
     parser->syntax_mode = syntax_mode;
-
-    /* Set instruction builder syntax mode */
-    set_syntax_mode(syntax_mode);
 
     if (!parse_program(parser, source_file)) {
         error_handler_flush(error_handler);
@@ -239,14 +326,34 @@ int main(int argc, char *argv[]) {
         printf("\n");
     }
 
-    char output_filename[512];
-    snprintf(output_filename, sizeof(output_filename), "%s.s", source_file);
+    char *generated_output = NULL;
+    const char *output_filename = requested_output;
+    if (output_filename == NULL) {
+        size_t source_length = strlen(source_file);
+        if (source_length > SIZE_MAX - 3 || (generated_output = malloc(source_length + 3)) == NULL) {
+            error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
+                         ERR_CODEGEN_OUTPUT_FAILED, source_file, "Out of memory while creating output path");
+            error_handler_flush(error_handler);
+            free_parser(parser);
+            free_token_stream(tokens);
+            error_handler_free(error_handler);
+            return 1;
+        }
+        memcpy(generated_output, source_file, source_length);
+        memcpy(generated_output + source_length, ".s", 3);
+        output_filename = generated_output;
+    }
 
     FILE *output = fopen(output_filename, "w");
     if (!output) {
-        fprintf(stderr, "Error: Could not create output file '%s'\n", output_filename);
+        error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                     ERR_CODEGEN_OUTPUT_FAILED, source_file,
+                     "Could not create output file '%s'", output_filename);
+        error_handler_flush(error_handler);
+        free(generated_output);
         free_parser(parser);
         free_token_stream(tokens);
+        error_handler_free(error_handler);
         return 1;
     }
 
@@ -261,7 +368,7 @@ int main(int argc, char *argv[]) {
 
     fprintf(output, "# Generated by Philipp01105's Compiler\n");
     fprintf(output, "# Source: %s\n", source_file);
-    fprintf(output, "# Date: %s\n", datetime);
+    if (!deterministic) fprintf(output, "# Date: %s\n", datetime);
     fprintf(output, "# Target Format: %s\n", format_name);
     fprintf(output, "# Syntax: %s\n", syntax_name);
 
@@ -323,14 +430,16 @@ int main(int argc, char *argv[]) {
 
             if (is_double) {
                 double dval = strtod(parser->float_literals[i].value, NULL);
-                unsigned long long *double_bits = (unsigned long long *) &dval;
+                unsigned long long double_bits;
+                memcpy(&double_bits, &dval, sizeof(double_bits));
                 fprintf(output, "    .quad 0x%016llx    # double %s\n",
-                        *double_bits, parser->float_literals[i].value);
+                        double_bits, parser->float_literals[i].value);
             } else {
                 float fval = strtof(parser->float_literals[i].value, NULL);
-                unsigned int *float_bits = (unsigned int *) &fval;
+                unsigned int float_bits;
+                memcpy(&float_bits, &fval, sizeof(float_bits));
                 fprintf(output, "    .long 0x%08x    # float %s\n",
-                        *float_bits, parser->float_literals[i].value);
+                        float_bits, parser->float_literals[i].value);
             }
         }
         fprintf(output, "\n");
@@ -349,11 +458,28 @@ int main(int argc, char *argv[]) {
     fprintf(output, "    .text\n");
     fprintf(output, "%s", parser->function_code_buffer);
 
-    fclose(output);
+    if (fclose(output) != 0) {
+        error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                     ERR_CODEGEN_OUTPUT_FAILED, source_file,
+                     "Failed while writing output file '%s'", output_filename);
+        error_handler_flush(error_handler);
+        free(generated_output);
+        free_parser(parser);
+        free_token_stream(tokens);
+        error_handler_free(error_handler);
+        return 1;
+    }
 
     // Post-process: Clean up unreachable code from assembly
     if (cleanup_assembly_file(output_filename) != 0) {
-        fprintf(stderr, "Warning: Assembly cleanup pass failed\n");
+        error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_CODEGEN,
+                     ERR_CODEGEN_OUTPUT_FAILED, source_file, "Assembly cleanup pass failed");
+        error_handler_flush(error_handler);
+        free(generated_output);
+        free_parser(parser);
+        free_token_stream(tokens);
+        error_handler_free(error_handler);
+        return 1;
     }
 
     if (debug_mode) {
@@ -377,6 +503,7 @@ int main(int argc, char *argv[]) {
 
     free_parser(parser);
     free_token_stream(tokens);
+    free(generated_output);
 
     if (error_handler) {
         error_handler_flush(error_handler);

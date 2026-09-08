@@ -30,6 +30,22 @@ static void load_numeric_operand(Parser *parser, const char *gpr, const char *xm
 }
 
 void parse_expression(Parser *parser) {
+    int depth = 0;
+    int token_count = 0;
+    for (int i = parser->tokens->current; i < parser->tokens->count; ++i) {
+        TokenType type = parser->tokens->tokens[i].type;
+        if (depth == 0 && (type == TOKEN_SEMICOLON || type == TOKEN_COMMA ||
+                           type == TOKEN_RPAREN || type == TOKEN_RBRACKET ||
+                           type == TOKEN_RBRACE || type == TOKEN_EOF)) {
+            break;
+        }
+        if (type == TOKEN_LPAREN || type == TOKEN_LBRACKET) ++depth;
+        if (type == TOKEN_RPAREN || type == TOKEN_RBRACKET) --depth;
+        if (++token_count > MAX_EXPRESSION_TOKENS) {
+            parser_error(parser, "Expression tree exceeds the supported complexity limit");
+            return;
+        }
+    }
     parse_logical_or(parser);
 }
 
@@ -133,6 +149,15 @@ void parse_comparison(Parser *parser) {
             }
             else if (op == TOKEN_GREATER) code_printf(parser, "    seta %%al\n");
             else code_printf(parser, "    setae %%al\n");
+        } else if (left_type == TYPE_STRING && right_type == TYPE_STRING &&
+                   (op == TOKEN_EQUAL_EQUAL || op == TOKEN_BANG_EQUAL)) {
+            code_printf(parser, "    movq %%rax, %s\n", get_arg_reg_64(0));
+            code_printf(parser, "    movq %%rbx, %s\n", get_arg_reg_64(1));
+            generate_stack_align(parser);
+            code_printf(parser, "    call strcmp\n");
+            generate_stack_restore(parser);
+            code_printf(parser, "    testl %%eax, %%eax\n");
+            code_printf(parser, op == TOKEN_EQUAL_EQUAL ? "    sete %%al\n" : "    setne %%al\n");
         } else if (op == TOKEN_EQUAL_EQUAL || op == TOKEN_BANG_EQUAL) {
             code_printf(parser, "    cmpq %%rbx, %%rax\n");
 
@@ -211,7 +236,7 @@ void parse_factor(Parser *parser) {
         DataType result_type = common_numeric_type(left_type, right_type);
         if (is_floating(result_type)) {
             if (op == TOKEN_PERCENT) {
-                parser_error(parser, "Remainder is not supported for floating-point values");
+                parser_error(parser, "Remainder requires integer operands");
                 return;
             }
             load_numeric_operand(parser, "rbx", "xmm1", right_type, result_type);
@@ -373,7 +398,7 @@ void parse_unary(Parser *parser) {
         Token var_token = consume(parser->tokens);
         Variable *var = find_variable(parser, var_token.value);
         if (var == NULL) {
-            semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", var_token.value);
+            semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Undefined variable '%s'", var_token.value);
             return;
         }
 
@@ -517,7 +542,7 @@ void parse_primary(Parser *parser) {
         consume(parser->tokens);
         parse_expression(parser);
         expect(parser, TOKEN_RPAREN, "Expected ')' after conversion expression");
-        convert_stack_value(parser, parser->expression_type, cast_type);
+        convert_stack_value_explicit(parser, parser->expression_type, cast_type);
         if (cast_type == TYPE_BIT) {
             code_printf(parser, "    popq %%rax\n");
             code_printf(parser, "    testl %%eax, %%eax\n");
@@ -553,13 +578,14 @@ void parse_primary(Parser *parser) {
                     expect(parser, TOKEN_RPAREN, "Expected ')'");
 
                     code_comment(parser, "Built-in: strlen()");
-                    code_printf(parser, "    popq %%rcx\n");
+                    code_printf(parser, "    popq %s\n", get_arg_reg_64(0));
                     {
                         generate_stack_align(parser);
                         code_printf(parser, "    call strlen\n");
                         generate_stack_restore(parser);
                     }
                     code_printf(parser, "    pushq %%rax\n");
+                    parser->expression_type = TYPE_INT;
                     return;
                 } else if (strcmp(name.value, "strcmp") == 0) {
                     parse_expression(parser);
@@ -569,13 +595,14 @@ void parse_primary(Parser *parser) {
 
                     code_comment(parser, "Built-in: strcmp()");
                     code_printf(parser, "    popq %s\n", get_arg_reg_64(1));
-                    code_printf(parser, "    popq %%rcx\n");
+                    code_printf(parser, "    popq %s\n", get_arg_reg_64(0));
                     {
                         generate_stack_align(parser);
                         code_printf(parser, "    call strcmp\n");
                         generate_stack_restore(parser);
                     }
                     code_printf(parser, "    pushq %%rax\n");
+                    parser->expression_type = TYPE_INT;
                     return;
                 } else if (strcmp(name.value, "strcpy") == 0) {
                     parse_expression(parser);
@@ -585,13 +612,14 @@ void parse_primary(Parser *parser) {
 
                     code_comment(parser, "Built-in: strcpy()");
                     code_printf(parser, "    popq %s\n", get_arg_reg_64(1));
-                    code_printf(parser, "    popq %%rcx\n");
+                    code_printf(parser, "    popq %s\n", get_arg_reg_64(0));
                     {
                         generate_stack_align(parser);
                         code_printf(parser, "    call strcpy\n");
                         generate_stack_restore(parser);
                     }
                     code_printf(parser, "    pushq %%rax\n");
+                    parser->expression_type = TYPE_STRING;
                     return;
                 } else if (strcmp(name.value, "strcat") == 0) {
                     parse_expression(parser);
@@ -601,26 +629,28 @@ void parse_primary(Parser *parser) {
 
                     code_comment(parser, "Built-in: strcat()");
                     code_printf(parser, "    popq %s\n", get_arg_reg_64(1));
-                    code_printf(parser, "    popq %%rcx\n");
+                    code_printf(parser, "    popq %s\n", get_arg_reg_64(0));
                     {
                         generate_stack_align(parser);
                         code_printf(parser, "    call strcat\n");
                         generate_stack_restore(parser);
                     }
                     code_printf(parser, "    pushq %%rax\n");
+                    parser->expression_type = TYPE_STRING;
                     return;
                 } else if (strcmp(name.value, "strdup") == 0) {
                     parse_expression(parser);
                     expect(parser, TOKEN_RPAREN, "Expected ')'");
 
                     code_comment(parser, "Built-in: strdup()");
-                    code_printf(parser, "    popq %%rcx\n");
+                    code_printf(parser, "    popq %s\n", get_arg_reg_64(0));
                     {
                         generate_stack_align(parser);
                         code_printf(parser, "    call strdup\n");
                         generate_stack_restore(parser);
                     }
                     code_printf(parser, "    pushq %%rax\n");
+                    parser->expression_type = TYPE_STRING;
                     return;
                 }
             }
@@ -633,13 +663,14 @@ void parse_primary(Parser *parser) {
                     expect(parser, TOKEN_RPAREN, "Expected ')'");
 
                     code_comment(parser, "Built-in: malloc()");
-                    code_printf(parser, "    popq %%rcx\n");
+                    code_printf(parser, "    popq %s\n", get_arg_reg_64(0));
                     {
                         generate_stack_align(parser);
                         code_printf(parser, "    call malloc\n");
                         generate_stack_restore(parser);
                     }
                     code_printf(parser, "    pushq %%rax\n");
+                    parser->expression_type = TYPE_INT;
                     return;
                 } else if (strcmp(name.value, "free") == 0) {
                     parse_expression(parser);
@@ -653,6 +684,7 @@ void parse_primary(Parser *parser) {
                         code_printf(parser, "    call free\n");
                         generate_stack_restore(parser);
                     }
+                    parser->expression_type = TYPE_VOID;
                     return;
                 }
             }
@@ -686,6 +718,7 @@ void parse_primary(Parser *parser) {
                     code_printf(parser, "    addq $16, %%rsp\n");
                     code_printf(parser, "    cltq\n");
                     code_printf(parser, "    pushq %%rax\n");
+                    parser->expression_type = TYPE_INT;
                     return;
                 } else if (strcmp(name.value, "scanfChar") == 0) {
                     code_comment(parser, "Built-in: scanfChar()");
@@ -711,6 +744,7 @@ void parse_primary(Parser *parser) {
                     code_printf(parser, "    movzbl (%%r15), %%eax\n");
                     code_printf(parser, "    addq $16, %%rsp\n");
                     code_printf(parser, "    pushq %%rax\n");
+                    parser->expression_type = TYPE_CHAR;
                     return;
                 } else if (strcmp(name.value, "scanfString") == 0) {
                     code_comment(parser, "Built-in: scanfString()");
@@ -753,6 +787,7 @@ void parse_primary(Parser *parser) {
 
                     code_printf(parser, "    pushq %%rax\n");
                     parser->label_counter++;
+                    parser->expression_type = TYPE_STRING;
                     return;
                 }
             }
@@ -813,6 +848,7 @@ void parse_primary(Parser *parser) {
                     code_printf(parser, "    popq %%rdi\n");
                     generate_strlen_code(parser, "%rdi", "%rax");
                     code_printf(parser, "    pushq %%rax\n");
+                    parser->expression_type = TYPE_INT;
                     return;
                 } else if (strcmp(name.value, "io_int_to_str") == 0) {
                     code_comment(parser, "Built-in: io_int_to_str(value, buffer, buffer_size)");
@@ -831,6 +867,7 @@ void parse_primary(Parser *parser) {
 
                     generate_strlen_code(parser, "%rdi", "%rax");
                     code_printf(parser, "    pushq %%rax\n");
+                    parser->expression_type = TYPE_INT;
                     return;
                 } else if (strcmp(name.value, "io_str_to_int") == 0) {
                     code_comment(parser, "Built-in: io_str_to_int(s)");
@@ -865,6 +902,7 @@ void parse_primary(Parser *parser) {
                     code_printf(parser, "    negq %%rax\n");
                     code_printf(parser, ".Lstr2int_positive_%d:\n", label_num);
                     code_printf(parser, "    pushq %%rax\n");
+                    parser->expression_type = TYPE_INT;
                     return;
                 } else if (strcmp(name.value, "read") == 0) {
                     code_comment(parser, "Built-in: read(stream, format)");
@@ -927,6 +965,7 @@ void parse_primary(Parser *parser) {
 
                         code_printf(parser, "    addq $32, %%rsp\n");
                         code_printf(parser, "    pushq %%rax\n");
+                        parser->expression_type = TYPE_INT;
                         return;
                     } else if (strcmp(format, "%c") == 0) {
                         code_comment(parser, "Read character from stream");
@@ -943,6 +982,7 @@ void parse_primary(Parser *parser) {
                         code_printf(parser, "    movzbl (%%rsp), %%eax\n");
                         code_printf(parser, "    addq $16, %%rsp\n");
                         code_printf(parser, "    pushq %%rax\n");
+                        parser->expression_type = TYPE_CHAR;
                         return;
                     } else if (strcmp(format, "%s") == 0) {
                         parser_error(parser, "Use read_string() function for string input instead of read()");
@@ -1409,7 +1449,7 @@ void parse_primary(Parser *parser) {
                     return;
                 }
 
-                semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Variable '%s' not found", name.value);
+                semantic_error(parser, ERR_SEM_UNDEFINED_VARIABLE, "Undefined variable '%s'", name.value);
                 return;
             }
 
@@ -1676,6 +1716,17 @@ void parse_primary(Parser *parser) {
                     return;
                 }
 
+                if (var->is_array && var->array_size > 0 &&
+                    check(parser->tokens, TOKEN_NUMBER)) {
+                    unsigned long index = strtoul(peek(parser->tokens).value, NULL, 10);
+                    if (index >= (unsigned long) var->array_size) {
+                        semantic_error_at_token(parser, peek(parser->tokens), ERR_SEM_NOT_ARRAY,
+                                                "Array index %lu is outside declared bounds [0, %d)",
+                                                index, var->array_size);
+                        return;
+                    }
+                }
+
                 parse_expression(parser);
 
                 expect(parser, TOKEN_RBRACKET, "Expected ']' after array index");
@@ -1683,6 +1734,7 @@ void parse_primary(Parser *parser) {
                 int element_size = datatype_size(var->type);
 
                 code_printf(parser, "    popq %%rax\n");
+                emit_static_array_bounds_check(parser, var);
 
                 if (var->is_array && var->array_size == 0) {
                     code_printf(parser, "    movq %d(%%rbp), %%rbx\n", var->offset);

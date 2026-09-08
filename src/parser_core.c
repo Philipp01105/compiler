@@ -16,7 +16,10 @@
  * code buffers, and compilation context.
  */
 Parser *create_parser(TokenStream *tokens) {
-    Parser *parser = malloc(sizeof(Parser));
+    Parser *parser = calloc(1, sizeof(Parser));
+    if (!parser) {
+        return NULL;
+    }
 
     parser->tokens = tokens;
     parser->var_count = 0;
@@ -46,9 +49,6 @@ Parser *create_parser(TokenStream *tokens) {
     parser->expression_type = TYPE_UNKNOWN;
     parser->current_return_type = TYPE_VOID;
 
-    memset(parser->code_buffer, 0, CODE_BUFFER_SIZE);
-    memset(parser->function_code_buffer, 0, CODE_BUFFER_SIZE);
-
     return parser;
 }
 
@@ -70,23 +70,40 @@ void free_parser(Parser *parser) {
     }
 }
 
-void parser_load_source(Parser *parser, const char *filename) {
+int parser_load_source(Parser *parser, const char *filename) {
     FILE *file = fopen(filename, "r");
     if (!file) {
-        return;
+        parser_error(parser, "Could not reopen source file for diagnostics");
+        return 0;
     }
 
-    fseek(file, 0, SEEK_END);
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
+        parser_error(parser, "Could not determine source file size");
+        return 0;
+    }
     long size = ftell(file);
-    fseek(file, 0, SEEK_SET);
+    if (size < 0 || fseek(file, 0, SEEK_SET) != 0) {
+        fclose(file);
+        parser_error(parser, "Could not determine source file size");
+        return 0;
+    }
 
-    parser->source_content = malloc(size + 1);
+    parser->source_content = malloc((size_t) size + 1);
     if (!parser->source_content) {
         fclose(file);
-        return;
+        parser_error(parser, "Out of memory while loading source diagnostics");
+        return 0;
     }
 
-    size_t bytes_read = fread(parser->source_content, 1, size, file);
+    size_t bytes_read = fread(parser->source_content, 1, (size_t) size, file);
+    if (bytes_read != (size_t) size && ferror(file)) {
+        fclose(file);
+        free(parser->source_content);
+        parser->source_content = NULL;
+        parser_error(parser, "Could not read source file for diagnostics");
+        return 0;
+    }
     parser->source_content[bytes_read] = '\0';
     fclose(file);
 
@@ -97,9 +114,12 @@ void parser_load_source(Parser *parser, const char *filename) {
         }
     }
 
-    parser->source_lines = malloc(sizeof(char *) * line_count);
+    parser->source_lines = malloc(sizeof(char *) * (size_t) line_count);
     if (!parser->source_lines) {
-        return;
+        free(parser->source_content);
+        parser->source_content = NULL;
+        parser_error(parser, "Out of memory while indexing source lines");
+        return 0;
     }
 
     parser->source_lines[0] = parser->source_content;
@@ -115,6 +135,7 @@ void parser_load_source(Parser *parser, const char *filename) {
     }
 
     parser->source_filename = filename;
+    return 1;
 }
 
 const char *parser_get_source_line(Parser *parser, int line) {
@@ -128,27 +149,46 @@ void code_printf(Parser *parser, const char *format, ...) {
     va_list args;
     va_start(args, format);
 
-    char buffer[1024];
-    vsnprintf(buffer, sizeof(buffer), format, args);
+    char buffer[4096];
+    int formatted = vsnprintf(buffer, sizeof(buffer), format, args);
+    if (formatted < 0 || (size_t) formatted >= sizeof(buffer)) {
+        va_end(args);
+        if (!parser->has_error) {
+            parser->has_error = 1;
+            error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_CODEGEN,
+                         ERR_CODEGEN_OUTPUT_FAILED, parser->source_filename,
+                         "Generated instruction exceeds the maximum line length");
+        }
+        return;
+    }
 
     /* Convert syntax if needed */
-    char final_buffer[1024];
+    char final_buffer[4096];
     if (parser->syntax_mode == SYNTAX_INTEL) {
-        convert_att_to_intel(buffer, final_buffer, sizeof(final_buffer));
+        if (convert_att_to_intel(buffer, final_buffer, sizeof(final_buffer)) < 0) {
+            va_end(args);
+            if (!parser->has_error) {
+                parser->has_error = 1;
+                error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_CODEGEN,
+                             ERR_CODEGEN_OUTPUT_FAILED, parser->source_filename,
+                             "Converted instruction exceeds the maximum line length");
+            }
+            return;
+        }
     } else {
         strncpy(final_buffer, buffer, sizeof(final_buffer) - 1);
         final_buffer[sizeof(final_buffer) - 1] = '\0';
     }
 
-    int len = strlen(final_buffer);
-    if (parser->function_code_pos + len < CODE_BUFFER_SIZE) {
+    size_t len = strlen(final_buffer);
+    if ((size_t) parser->function_code_pos + len < CODE_BUFFER_SIZE) {
         strcpy(parser->function_code_buffer + parser->function_code_pos, final_buffer);
-        parser->function_code_pos += len;
+        parser->function_code_pos += (int) len;
     } else if (!parser->has_error) {
         parser->has_error = 1;
         error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_CODEGEN,
                      ERR_CODEGEN_OUTPUT_FAILED, parser->source_filename,
-                     "Generated assembly exceeds the %d-byte code buffer", CODE_BUFFER_SIZE);
+                     "Assembly code exceeds buffer capacity (%d bytes)", CODE_BUFFER_SIZE);
     }
 
     va_end(args);
@@ -161,10 +201,10 @@ void data_printf(Parser *parser, const char *format, ...) {
     char buffer[1024];
     vsnprintf(buffer, sizeof(buffer), format, args);
 
-    int len = strlen(buffer);
-    if (parser->code_pos + len < CODE_BUFFER_SIZE) {
+    size_t len = strlen(buffer);
+    if ((size_t) parser->code_pos + len < CODE_BUFFER_SIZE) {
         strcpy(parser->code_buffer + parser->code_pos, buffer);
-        parser->code_pos += len;
+        parser->code_pos += (int) len;
     } else if (!parser->has_error) {
         parser->has_error = 1;
         error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_CODEGEN,
@@ -221,7 +261,7 @@ void parser_error_code(Parser *parser, int error_code, const char *format, ...) 
                 error_context_set_source_line(ctx, source_line);
             }
 
-            char token_info[512];
+            char token_info[MAX_TOKEN * 2];
             snprintf(token_info, sizeof(token_info), "%s '%s'",
                      token_type_to_string(current.type), current.value);
             error_context_set_token(ctx, token_info);
@@ -271,7 +311,7 @@ void parser_error(Parser *parser, const char *format, ...) {
                 error_context_set_source_line(ctx, source_line);
             }
 
-            char token_info[512];
+            char token_info[MAX_TOKEN * 2];
             snprintf(token_info, sizeof(token_info), "%s '%s'",
                      token_type_to_string(current.type), current.value);
             error_context_set_token(ctx, token_info);
@@ -581,7 +621,7 @@ static char *resolve_import_path(const char *base_path, const char *import_file)
         const char *separator = last_slash > last_backslash ? last_slash : last_backslash;
 
         if (separator) {
-            int dir_len = separator - base_path + 1;
+            size_t dir_len = (size_t) (separator - base_path) + 1;
             if (dir_len < MAX_PATH) {
                 strncpy(temp_path, base_path, dir_len);
                 temp_path[dir_len] = '\0';
@@ -602,7 +642,7 @@ static char *resolve_import_path(const char *base_path, const char *import_file)
 }
 
 void parse_import(Parser *parser, const char *base_path) {
-    Token import_token = consume(parser->tokens);
+    consume(parser->tokens);
 
     if (!match(parser->tokens, TOKEN_KEYWORD_IMPORT)) {
         parser_error(parser, "Expected 'import' after '#'");
@@ -659,8 +699,6 @@ void parse_import(Parser *parser, const char *base_path) {
         }
 
         TokenStream *original_stream = parser->tokens;
-        int original_pos = parser->tokens->current;
-
         parser->tokens = imported_stream;
 
         while (!is_at_end(parser->tokens)) {
@@ -709,8 +747,6 @@ void parse_import(Parser *parser, const char *base_path) {
         }
 
         TokenStream *original_stream = parser->tokens;
-        int original_pos = parser->tokens->current;
-
         parser->tokens = imported_stream;
 
         while (!is_at_end(parser->tokens)) {

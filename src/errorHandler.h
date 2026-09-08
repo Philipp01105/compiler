@@ -18,6 +18,7 @@ typedef enum {
 #define ERR_LEX_UNKNOWN_CHAR            103
 #define ERR_LEX_FILE_NOT_FOUND          104
 #define ERR_LEX_FILE_READ_ERROR         105
+#define ERR_LEX_INVALID_SYNTAX          106
 
 #define ERR_PARSE_UNEXPECTED_TOKEN      100
 #define ERR_PARSE_EXPECTED_TOKEN        101
