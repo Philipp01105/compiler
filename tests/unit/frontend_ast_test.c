@@ -36,6 +36,24 @@ int main(int argc, char **argv) {
         error_handler_free(errors);
         return 1;
     }
+    if (!program->structured_ast_complete || program->structured_declaration_count != 4 ||
+        program->root == NULL || program->root->kind != AST_DECL_STRUCT) {
+        fprintf(stderr, "frontend did not build a complete structured AST\n");
+        ast_program_free(program);
+        error_handler_free(errors);
+        return 1;
+    }
+    const AstDeclarationNode *function = program->root->next->next;
+    if (function == NULL || function->kind != AST_DECL_FUNCTION ||
+        function->as.function.body == NULL || function->as.function.body->body == NULL ||
+        function->as.function.body->body->kind != AST_STMT_RETURN ||
+        function->as.function.body->body->value == NULL ||
+        function->as.function.body->body->value->kind != AST_EXPR_BINARY) {
+        fprintf(stderr, "function body/expression nodes are incomplete\n");
+        ast_program_free(program);
+        error_handler_free(errors);
+        return 1;
+    }
 
     ast_program_free(program);
     error_handler_free(errors);

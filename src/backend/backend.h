@@ -1,7 +1,7 @@
 #ifndef DMM_BACKEND_H
 #define DMM_BACKEND_H
 
-#include "ast.h"
+#include "ir.h"
 
 typedef struct {
     TargetFormat target_format;
@@ -10,8 +10,8 @@ typedef struct {
     int deterministic;
 } BackendOptions;
 
-/* Emit one assembly file. This is the only public AST-to-machine boundary. */
-int backend_emit_file(const AstProgram *program, const BackendOptions *options,
+/* Emit one assembly file from the verified target-neutral module. */
+int backend_emit_file(const IrModule *module, const BackendOptions *options,
                       const char *output_path);
 
 #endif

@@ -13,7 +13,11 @@ set(DMM_INCLUDE_DIRS
         ${CMAKE_CURRENT_SOURCE_DIR}/src/common
         ${CMAKE_CURRENT_SOURCE_DIR}/src/ast
         ${CMAKE_CURRENT_SOURCE_DIR}/src/frontend
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/sema
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/ir
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/compat
         ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend/x86_64
         ${CMAKE_CURRENT_SOURCE_DIR}/src/diagnostics
         ${CMAKE_CURRENT_SOURCE_DIR}/src/driver)
 
@@ -26,8 +30,18 @@ add_executable(compiler
         src/frontend/frontend.h
         src/frontend/lexer.c
         src/frontend/lexer.h
+        src/frontend/syntax_parser.c
+        src/frontend/syntax_parser.h
+        src/sema/semantic.c
+        src/sema/semantic.h
+        src/ir/ir.c
+        src/ir/ir.h
+        src/compat/compat_backend.c
+        src/compat/compat_backend.h
         src/backend/backend.c
         src/backend/backend.h
+        src/backend/x86_64/ir_emitter.c
+        src/backend/x86_64/ir_emitter.h
         src/backend/compiler_types.h
         src/backend/parser_types.c
         src/backend/parser_codegen.c
@@ -136,15 +150,36 @@ if(BUILD_TESTING)
 
     add_executable(dmm_frontend_ast_test
             tests/unit/frontend_ast_test.c
-            src/ast/ast.c src/frontend/frontend.c src/frontend/lexer.c src/diagnostics/errorHandler.c)
+            src/ast/ast.c src/frontend/frontend.c src/frontend/syntax_parser.c
+            src/frontend/lexer.c src/diagnostics/errorHandler.c)
     target_include_directories(dmm_frontend_ast_test PRIVATE ${DMM_INCLUDE_DIRS})
     add_test(NAME frontend_ast_unit COMMAND dmm_frontend_ast_test
              ${CMAKE_SOURCE_DIR}/tests/unit/frontend_ast_fixture.dmm)
     set_tests_properties(frontend_ast_unit PROPERTIES LABELS "unit;frontend;ast;safety")
 
+    add_executable(dmm_pipeline_test
+            tests/unit/pipeline_test.c src/ast/ast.c src/frontend/frontend.c
+            src/frontend/syntax_parser.c src/frontend/lexer.c src/sema/semantic.c
+            src/ir/ir.c src/diagnostics/errorHandler.c)
+    target_include_directories(dmm_pipeline_test PRIVATE ${DMM_INCLUDE_DIRS})
+    file(GLOB_RECURSE DMM_FRONTEND_CORPUS CONFIGURE_DEPENDS
+            ${CMAKE_SOURCE_DIR}/tests/execution/*.dmm)
+    file(GLOB DMM_EXAMPLE_CORPUS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/examples/*.dmm)
+    add_test(NAME frontend_pipeline_unit COMMAND dmm_pipeline_test
+             ${CMAKE_SOURCE_DIR}/tests/unit/frontend_ast_fixture.dmm
+             ${DMM_FRONTEND_CORPUS} ${DMM_EXAMPLE_CORPUS})
+    set_tests_properties(frontend_pipeline_unit PROPERTIES LABELS "unit;frontend;ast;sema;ir;safety")
+
     add_test(NAME architecture_boundaries COMMAND ${CMAKE_COMMAND}
              -P ${CMAKE_SOURCE_DIR}/tests/architecture_test.cmake)
     set_tests_properties(architecture_boundaries PROPERTIES LABELS "unit;architecture;safety")
+
+    add_test(NAME ir_backend_native COMMAND ${CMAKE_COMMAND}
+             -DCOMPILER=$<TARGET_FILE:compiler>
+             -DASSEMBLER=${DMM_ASSEMBLER}
+             -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/ir_backend_test
+             -P ${CMAKE_SOURCE_DIR}/tests/ir_backend_test.cmake)
+    set_tests_properties(ir_backend_native PROPERTIES LABELS "integration;backend;ir;safety")
 
     add_test(NAME diagnostics_json COMMAND ${CMAKE_COMMAND}
              -DCOMPILER=$<TARGET_FILE:compiler>
@@ -176,7 +211,8 @@ if(BUILD_TESTING)
     set_tests_properties(stress_limits PROPERTIES LABELS "integration;stress;safety")
 
     if(DMM_SANITIZERS)
-        foreach(test_target dmm_optimizer_test dmm_syntax_converter_test dmm_lexer_test dmm_frontend_ast_test)
+        foreach(test_target dmm_optimizer_test dmm_syntax_converter_test dmm_lexer_test
+                            dmm_frontend_ast_test dmm_pipeline_test)
             target_compile_options(${test_target} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
             target_link_options(${test_target} PRIVATE -fsanitize=address,undefined)
         endforeach()

@@ -14,7 +14,8 @@ The project is suitable for learning and experimentation. It is not yet intended
 - Linux ELF and Windows COFF assembly output
 - Intel syntax by default, with AT&T syntax available
 - Human-readable or JSON diagnostics
-- An owned AST boundary separating frontend input handling from backend emission
+- A recursive owned AST, independent semantic model, and verified typed IR
+  separating frontend analysis from backend emission
 
 ## Requirements
 
@@ -97,7 +98,8 @@ cmake --build fuzz-build --target fuzz_lexer fuzz_syntax_converter
 - [Architecture](ARCHITECTURE.md): compiler pipeline, module ownership, backend, and validation design.
 
 Source code is grouped by ownership under `src/common`, `src/ast`,
-`src/frontend`, `src/backend`, `src/diagnostics`, and `src/driver`.
+`src/ast`, `src/frontend`, `src/sema`, `src/ir`, `src/backend`, `src/compat`,
+`src/diagnostics`, and `src/driver`.
 
 ## License
 

@@ -77,11 +77,11 @@ field-declaration
                 = "var", identifier, ":", type, ["[", integer, "]"], ";" ;
 
 enum-declaration
-                = "enum", identifier, "(", enum-field-list, ")",
+                = "enum", identifier, ["(", enum-field-list, ")"],
                   "{", enum-value, { ",", enum-value }, [","], "}" ;
 enum-field-list = enum-field, { ",", enum-field } ;
 enum-field      = identifier, ":", type ;
-enum-value      = identifier, "(", [enum-argument-list], ")" ;
+enum-value      = identifier, ["(", [enum-argument-list], ")"] ;
 enum-argument-list
                 = enum-argument, { ",", enum-argument } ;
 enum-argument   = integer | floating | character | string
