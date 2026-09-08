@@ -172,9 +172,19 @@ void generate_function_call(Parser *parser, Function *func, const char *name, in
     }
 
     int base_space = stack_count * 8 + (parser->target_format == TARGET_COFF ? 32 : 0);
-    int reserve = base_space;
-    if (((arg_count * 8 + reserve) & 15) != 0) reserve += 8;
-    if (reserve > 0) code_printf(parser, "    subq $%d, %%rsp\n", reserve);
+
+    /*
+     * Expressions are evaluated directly on the machine stack.  A call may
+     * therefore have values belonging to an enclosing expression below its
+     * own arguments.  Align the actual stack pointer instead of predicting
+     * alignment from this call's argument count.  R15 is non-volatile on both
+     * supported ABIs, so it safely carries the exact restoration point across
+     * the call; its previous value remains on the expression stack.
+     */
+    code_printf(parser, "    pushq %%r15\n");
+    code_printf(parser, "    movq %%rsp, %%r15\n");
+    if (base_space > 0) code_printf(parser, "    subq $%d, %%rsp\n", base_space);
+    code_printf(parser, "    andq $-16, %%rsp\n");
 
     int stack_base = parser->target_format == TARGET_COFF ? 32 : 0;
     for (int i = 0; i < arg_count; i++) {
@@ -186,8 +196,9 @@ void generate_function_call(Parser *parser, Function *func, const char *name, in
     }
 
     code_printf(parser, "    call %s\n", name);
-    int cleanup = reserve + arg_count * 8;
-    if (cleanup > 0) code_printf(parser, "    addq $%d, %%rsp\n", cleanup);
+    code_printf(parser, "    movq %%r15, %%rsp\n");
+    code_printf(parser, "    popq %%r15\n");
+    if (arg_count > 0) code_printf(parser, "    addq $%d, %%rsp\n", arg_count * 8);
     free(stack_slots);
     free(register_slots);
     free(register_indices);
@@ -322,17 +333,19 @@ const char *get_register_for_type(DataType type, int reg_num) {
 }
 
 void generate_stack_align(Parser *parser) {
+    code_printf(parser, "    pushq %%r15\n");
+    code_printf(parser, "    movq %%rsp, %%r15\n");
     int stack_adj = get_call_stack_space();
     if (stack_adj > 0) {
         code_printf(parser, "    subq $%d, %%rsp\n", stack_adj);
     }
+    code_printf(parser, "    andq $-16, %%rsp\n");
 }
 
 void generate_stack_restore(Parser *parser) {
-    int stack_adj = get_call_stack_space();
-    if (stack_adj > 0) {
-        code_printf(parser, "    addq $%d, %%rsp\n", stack_adj);
-    }
+    (void) parser;
+    code_printf(parser, "    movq %%r15, %%rsp\n");
+    code_printf(parser, "    popq %%r15\n");
 }
 
 void generate_printf_call(Parser *parser) {
