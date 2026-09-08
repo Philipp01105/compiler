@@ -16,7 +16,8 @@ typedef enum {
 typedef enum { AST_TYPE_INFERRED, AST_TYPE_NAMED } AstTypeKind;
 typedef enum {
     AST_EXPR_ERROR, AST_EXPR_LITERAL, AST_EXPR_NAME, AST_EXPR_UNARY,
-    AST_EXPR_BINARY, AST_EXPR_CALL, AST_EXPR_INDEX, AST_EXPR_MEMBER, AST_EXPR_RESERVE
+    AST_EXPR_BINARY, AST_EXPR_CALL, AST_EXPR_INDEX, AST_EXPR_MEMBER, AST_EXPR_RESERVE,
+    AST_EXPR_CAST, AST_EXPR_FREE
 } AstExpressionKind;
 typedef enum {
     AST_STMT_ERROR, AST_STMT_BLOCK, AST_STMT_VARIABLE, AST_STMT_EXPRESSION,
@@ -46,6 +47,7 @@ typedef struct AstParameter AstParameter;
 typedef struct AstField AstField;
 typedef struct AstEnumValue AstEnumValue;
 typedef struct AstDeclarationNode AstDeclarationNode;
+typedef struct AstProgram AstProgram;
 
 struct AstExpression {
     AstExpressionKind kind;
@@ -61,6 +63,7 @@ struct AstExpression {
     DataType resolved_type;
     unsigned resolved_pointer_depth;
     size_t resolved_named_type_token;
+    size_t resolved_named_symbol_id;
     int resolved_is_array;
     size_t resolved_symbol_id;
 };
@@ -83,6 +86,7 @@ struct AstStatement {
     AstStatement *next;
     int is_gc;
     int print_newline;
+    size_t resolved_symbol_id;
 };
 
 struct AstParameter {
@@ -90,6 +94,7 @@ struct AstParameter {
     size_t name_token;
     AstType type;
     int is_array;
+    size_t resolved_symbol_id;
     AstParameter *next;
 };
 
@@ -97,6 +102,7 @@ struct AstField {
     AstSourceSpan span;
     size_t name_token;
     AstType type;
+    size_t resolved_symbol_id;
     AstField *next;
 };
 
@@ -104,6 +110,7 @@ struct AstEnumValue {
     AstSourceSpan span;
     size_t name_token;
     AstExpression *arguments;
+    size_t resolved_symbol_id;
     AstEnumValue *next;
 };
 
@@ -113,9 +120,15 @@ struct AstDeclarationNode {
     size_t first_token;
     size_t token_count;
     size_t name_token;
+    size_t resolved_symbol_id;
     AstDeclarationNode *next;
     union {
-        struct { size_t path_token; size_t path_first_token; size_t path_token_count; } import_decl;
+        struct {
+            size_t path_token;
+            size_t path_first_token;
+            size_t path_token_count;
+            AstProgram *resolved_program;
+        } import_decl;
         struct {
             AstParameter *parameters;
             AstType return_type;
@@ -136,7 +149,7 @@ typedef struct {
     size_t token_count;
 } AstDeclaration;
 
-typedef struct AstProgram {
+struct AstProgram {
     char *source_path;
     AstToken *tokens;
     size_t token_count;
@@ -147,12 +160,16 @@ typedef struct AstProgram {
     int structured_ast_complete;
     size_t structured_error_token;
     void *arena;
-} AstProgram;
+    AstProgram **owned_imports;
+    size_t owned_import_count;
+    size_t owned_import_capacity;
+};
 
 void ast_program_free(AstProgram *program);
 void *ast_program_alloc(AstProgram *program, size_t size);
 const AstToken *ast_program_token(const AstProgram *program, size_t index);
 const char *ast_program_lexeme(const AstProgram *program, size_t index);
 const char *ast_declaration_kind_name(AstDeclarationKind kind);
+int ast_validate_program(const AstProgram *program);
 
 #endif

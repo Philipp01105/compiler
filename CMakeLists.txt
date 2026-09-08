@@ -167,6 +167,7 @@ if(BUILD_TESTING)
     file(GLOB DMM_EXAMPLE_CORPUS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/examples/*.dmm)
     add_test(NAME frontend_pipeline_unit COMMAND dmm_pipeline_test
              ${CMAKE_SOURCE_DIR}/tests/unit/frontend_ast_fixture.dmm
+             ${CMAKE_SOURCE_DIR}/tests/unit/import_root.dmm
              ${DMM_FRONTEND_CORPUS} ${DMM_EXAMPLE_CORPUS})
     set_tests_properties(frontend_pipeline_unit PROPERTIES LABELS "unit;frontend;ast;sema;ir;safety")
 

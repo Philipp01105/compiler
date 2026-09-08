@@ -104,6 +104,7 @@ static AstExpression *new_expression(SyntaxParser *parser, AstExpressionKind kin
     expression->value_token = AST_TOKEN_NONE;
     expression->resolved_type = TYPE_UNKNOWN;
     expression->resolved_named_type_token = AST_TOKEN_NONE;
+    expression->resolved_named_symbol_id = AST_SYMBOL_NONE;
     expression->resolved_symbol_id = AST_SYMBOL_NONE;
     return expression;
 }
@@ -147,9 +148,22 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
 
     while (!parser->failed && expression != NULL) {
         if (match(parser, TOKEN_LPAREN)) {
-            AstExpression *call = new_expression(parser, AST_EXPR_CALL, first);
+            AstExpressionKind call_kind = AST_EXPR_CALL;
+            if (expression->kind == AST_EXPR_RESERVE) call_kind = AST_EXPR_RESERVE;
+            else if (expression->kind == AST_EXPR_NAME &&
+                     expression->value_token < parser->program->token_count) {
+                TokenType callee = parser->program->tokens[expression->value_token].type;
+                if (callee >= TOKEN_TYPE_INT && callee <= TOKEN_TYPE_VOID)
+                    call_kind = AST_EXPR_CAST;
+                else if (callee == TOKEN_KEYWORD_FREE)
+                    call_kind = AST_EXPR_FREE;
+            }
+            AstExpression *call = new_expression(parser, call_kind, first);
             AstExpression **tail = call == NULL ? NULL : &call->arguments;
-            if (call != NULL) call->left = expression;
+            if (call != NULL) {
+                call->left = call_kind == AST_EXPR_CALL ? expression : NULL;
+                call->value_token = expression->value_token;
+            }
             if (!check(parser, TOKEN_RPAREN)) {
                 do {
                     AstExpression *argument = parse_expression(parser);
@@ -258,6 +272,7 @@ static AstStatement *new_statement(SyntaxParser *parser, AstStatementKind kind,
     statement->kind = kind;
     statement->first_token = first;
     statement->name_token = AST_TOKEN_NONE;
+    statement->resolved_symbol_id = AST_SYMBOL_NONE;
     statement->type = inferred_type();
     return statement;
 }
@@ -469,6 +484,7 @@ static AstParameter *parse_parameter(SyntaxParser *parser) {
         parameter->name_token = name;
         parameter->type = type;
         parameter->is_array = is_array;
+        parameter->resolved_symbol_id = AST_SYMBOL_NONE;
         parameter->span = range_span(parser, first, parser->current);
     }
     return parameter;
@@ -481,6 +497,7 @@ static AstDeclarationNode *new_declaration(SyntaxParser *parser,
         declaration->kind = kind;
         declaration->first_token = first;
         declaration->name_token = AST_TOKEN_NONE;
+        declaration->resolved_symbol_id = AST_SYMBOL_NONE;
     }
     return declaration;
 }
@@ -539,6 +556,7 @@ static AstField *parse_field(SyntaxParser *parser) {
     if (field != NULL) {
         field->name_token = name;
         field->type = type;
+        field->resolved_symbol_id = AST_SYMBOL_NONE;
         field->span = range_span(parser, first, parser->current);
     }
     return field;
@@ -596,6 +614,7 @@ static AstDeclarationNode *parse_enum(SyntaxParser *parser) {
                 if (field != NULL) {
                     field->name_token = field_name;
                     field->type = field_type;
+                    field->resolved_symbol_id = AST_SYMBOL_NONE;
                     field->span = range_span(parser, field_first, parser->current);
                     *field_tail = field;
                     field_tail = &field->next;
@@ -626,6 +645,7 @@ static AstDeclarationNode *parse_enum(SyntaxParser *parser) {
         if (value != NULL) {
             value->name_token = value_name;
             value->arguments = arguments;
+            value->resolved_symbol_id = AST_SYMBOL_NONE;
             value->span = range_span(parser, value_first, parser->current);
             *value_tail = value;
             value_tail = &value->next;

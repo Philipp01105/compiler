@@ -7,6 +7,24 @@
 #include "semantic.h"
 
 #define IR_VALUE_NONE ((size_t)-1)
+#define IR_TYPE_NONE ((size_t)-1)
+
+typedef size_t IrTypeId;
+
+typedef enum {
+    IR_TYPE_PRIMITIVE,
+    IR_TYPE_NAMED,
+    IR_TYPE_POINTER,
+    IR_TYPE_ARRAY
+} IrTypeKind;
+
+typedef struct {
+    IrTypeKind kind;
+    DataType primitive;
+    size_t symbol_id;
+    IrTypeId element_type;
+    size_t array_length;
+} IrType;
 
 typedef enum {
     IR_OP_CONSTANT,
@@ -18,7 +36,9 @@ typedef enum {
     IR_OP_CALL,
     IR_OP_INDEX,
     IR_OP_MEMBER,
-    IR_OP_RESERVE,
+    IR_OP_CAST,
+    IR_OP_ALLOC,
+    IR_OP_FREE,
     IR_OP_PRINT,
     IR_OP_RETURN,
     IR_OP_BRANCH,
@@ -30,6 +50,7 @@ typedef struct {
     IrOpcode opcode;
     AstSourceSpan span;
     DataType type;
+    IrTypeId type_id;
     unsigned pointer_depth;
     size_t type_name_token;
     int is_array;
@@ -46,19 +67,24 @@ typedef struct {
 } IrInstruction;
 
 typedef struct {
+    const AstProgram *source_program;
     size_t name_token;
     size_t symbol_id;
     DataType type;
+    IrTypeId type_id;
     unsigned pointer_depth;
     size_t type_name_token;
     int is_array;
 } IrParameter;
 
 typedef struct {
+    const AstProgram *source_program;
     size_t name_token;
     size_t owner_token;
+    size_t owner_symbol_id;
     size_t symbol_id;
     AstType return_type;
+    IrTypeId return_type_id;
     IrParameter *parameters;
     size_t parameter_count;
     IrInstruction *instructions;
@@ -72,11 +98,72 @@ typedef struct {
 } IrFunction;
 
 typedef struct {
+    const AstProgram *source_program;
+    size_t name_token;
+    size_t symbol_id;
+    IrTypeId type_id;
+} IrFieldDefinition;
+
+typedef struct {
+    const AstProgram *source_program;
+    size_t name_token;
+    size_t symbol_id;
+    IrFieldDefinition *fields;
+    size_t field_count;
+} IrAggregate;
+
+typedef struct {
+    const AstProgram *source_program;
+    size_t name_token;
+    size_t symbol_id;
+    size_t first_argument;
+    size_t argument_count;
+} IrEnumVariant;
+
+typedef struct {
+    size_t token;
+    IrTypeId type_id;
+} IrEnumArgument;
+
+typedef struct {
+    const AstProgram *source_program;
+    size_t name_token;
+    size_t symbol_id;
+    IrFieldDefinition *fields;
+    size_t field_count;
+    IrEnumVariant *variants;
+    size_t variant_count;
+    IrEnumArgument *variant_arguments;
+    size_t variant_argument_count;
+} IrEnum;
+
+typedef struct {
+    const AstProgram *source_program;
+    size_t symbol_id;
+    size_t path_token;
+    size_t path_first_token;
+    size_t path_token_count;
+    const AstProgram *resolved_program;
+} IrImport;
+
+typedef struct {
     const AstProgram *program;
     const SemanticModel *semantics;
     IrFunction *functions;
     size_t function_count;
     size_t function_capacity;
+    IrType *types;
+    size_t type_count;
+    size_t type_capacity;
+    IrAggregate *structures;
+    size_t structure_count;
+    size_t structure_capacity;
+    IrEnum *enums;
+    size_t enum_count;
+    size_t enum_capacity;
+    IrImport *imports;
+    size_t import_count;
+    size_t import_capacity;
     int verified;
 } IrModule;
 

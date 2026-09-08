@@ -37,7 +37,8 @@ int main(int argc, char **argv) {
         return 1;
     }
     if (!program->structured_ast_complete || program->structured_declaration_count != 4 ||
-        program->root == NULL || program->root->kind != AST_DECL_STRUCT) {
+        program->root == NULL || program->root->kind != AST_DECL_STRUCT ||
+        !ast_validate_program(program)) {
         fprintf(stderr, "frontend did not build a complete structured AST\n");
         ast_program_free(program);
         error_handler_free(errors);
