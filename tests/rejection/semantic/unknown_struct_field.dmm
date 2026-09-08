@@ -1,0 +1,2 @@
+struct Point { var x:int; }
+func main() -> void { var p:Point; println(p.y); }

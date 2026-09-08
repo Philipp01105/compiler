@@ -448,6 +448,9 @@ void parse_struct(Parser *parser) {
 
                 if (check(parser->tokens, TOKEN_COMMA)) {
                     consume(parser->tokens);
+                } else if (!check(parser->tokens, TOKEN_RPAREN)) {
+                    parser_error(parser, "Expected ',' or ')' after parameter");
+                    return;
                 }
             }
 
@@ -759,6 +762,9 @@ void parse_enum(Parser *parser) {
 
         if (check(parser->tokens, TOKEN_COMMA)) {
             consume(parser->tokens);
+        } else if (!check(parser->tokens, TOKEN_RPAREN)) {
+            parser_error(parser, "Expected ',' or ')' after parameter");
+            return;
         }
     }
 
@@ -793,6 +799,14 @@ void parse_enum(Parser *parser) {
         if (enum_def->value_count >= 50) {
             parser_error(parser, "Too many enum values (max 50)");
             return;
+        }
+
+        for (int i = 0; i < enum_def->value_count; ++i) {
+            if (strcmp(enum_def->values[i].name, value_name_token.value) == 0) {
+                parser_error_code(parser, ERR_PARSE_DUPLICATE_DEFINITION,
+                                  "Enum member '%s' is already defined", value_name_token.value);
+                return;
+            }
         }
 
         EnumValue *enum_value = &enum_def->values[enum_def->value_count];
@@ -979,6 +993,9 @@ void parse_function(Parser *parser) {
 
         if (check(parser->tokens, TOKEN_COMMA)) {
             consume(parser->tokens);
+        } else if (!check(parser->tokens, TOKEN_RPAREN)) {
+            parser_error(parser, "Expected ',' or ')' after parameter");
+            return;
         }
     }
 

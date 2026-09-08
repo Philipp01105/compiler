@@ -77,10 +77,19 @@ field-declaration
                 = "var", identifier, ":", type, ["[", integer, "]"], ";" ;
 
 enum-declaration
-                = "enum", identifier, "{", enum-body, "}" ;
+                = "enum", identifier, "(", enum-field-list, ")",
+                  "{", enum-value, { ",", enum-value }, [","], "}" ;
+enum-field-list = enum-field, { ",", enum-field } ;
+enum-field      = identifier, ":", type ;
+enum-value      = identifier, "(", [enum-argument-list], ")" ;
+enum-argument-list
+                = enum-argument, { ",", enum-argument } ;
+enum-argument   = integer | floating | character | string
+                | "true" | "false" ;
 ```
 
-The detailed enum value constraints are semantic: field names and value records must agree with the declared enum layout.
+Enum field and member names are unique. Each value supplies exactly one
+compatible argument for every declared field.
 
 ## Statements
 

@@ -1,0 +1,2 @@
+func value() -> int { var x:int = 1; }
+func main() -> void {}

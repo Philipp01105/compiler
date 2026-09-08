@@ -1,0 +1,1 @@
+func main() -> void { var [5] values:int; values[5] = 1; }

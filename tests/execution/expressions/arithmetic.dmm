@@ -1,0 +1,12 @@
+// Basic arithmetic operations test
+func main() -> void {
+    var a:int = 10;
+    var b:int = 5;
+    
+    println("Addition: " + (a + b));
+    println("Subtraction: " + (a - b));
+    println("Multiplication: " + (a * b));
+    println("Division: " + (a / b));
+    println("Modulo: " + (a % b));
+}
+// Category: execution/expressions

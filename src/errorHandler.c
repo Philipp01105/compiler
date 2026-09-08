@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdio.h>
 
 #define COLOR_RESET   "\033[0m"
 #define COLOR_RED     "\033[1;31m"
@@ -392,6 +393,9 @@ static void print_error_context_json(
 
     for (int i = 0; i < indent_level + 1; i++) fprintf(out, "  ");
     fprintf(out, "\"errorCode\": \"%s\",\n", error_code_str);
+
+    for (int i = 0; i < indent_level + 1; i++) fprintf(out, "  ");
+    fprintf(out, "\"category\": \"%c\",\n", ctx->error_category);
 
     for (int i = 0; i < indent_level + 1; i++) fprintf(out, "  ");
     fprintf(out, "\"line\": %d,\n", ctx->line);

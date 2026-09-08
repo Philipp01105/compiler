@@ -1,0 +1,1 @@
+func main() -> void { var x:int; var p:*int = &x; var q:*int = p + 1; }

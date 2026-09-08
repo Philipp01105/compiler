@@ -1,0 +1,1 @@
+func main() -> void { println(x); var x:int = 1; }

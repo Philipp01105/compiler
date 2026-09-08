@@ -1,0 +1,9 @@
+func rhs() -> bit {
+    println("RIGHT OPERAND EXECUTED");
+    return true;
+}
+
+func main() -> void {
+    if (true || rhs()) { println("OR PASS"); }
+    if (false && rhs()) { println("unreachable"); } else { println("AND PASS"); }
+}

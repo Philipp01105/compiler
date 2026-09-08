@@ -39,7 +39,7 @@ Failed compilation removes the default stale assembly output. Explicit output pa
 
 ## Front end
 
-`src/lexer.c` converts source bytes into the token types declared in `src/compiler_types.h`. Tokens retain line and column positions. Lexical failures use the common diagnostic handler and can therefore be emitted as human-readable text or one JSON document.
+`src/lexer.c` converts files or in-memory byte sequences into the token types declared in `src/compiler_types.h`. Tokens retain line and column positions. Lexical failures use the common diagnostic handler and can therefore be emitted as human-readable text or one JSON document. The in-memory entry point is also the boundary used by the lexer fuzzer.
 
 The parser is divided by responsibility:
 
@@ -93,7 +93,7 @@ Generated instructions have a bounded intermediate representation. The syntax co
 
 The root `CMakeLists.txt` builds the compiler, exposes strict-warning and sanitizer options, and registers labeled tests. CTest separates native execution, ABI, rejection, backend safety, optimizer, converter, JSON diagnostics, CLI behavior, and imports. The execution corpus compiles, assembles, and runs programs in both assembly syntaxes.
 
-GitHub Actions validates Linux, Linux with AddressSanitizer/UndefinedBehaviorSanitizer, and Windows with MinGW-w64. A Clang libFuzzer target is available for the syntax converter through `DMM_BUILD_FUZZERS`.
+GitHub Actions validates Linux, Linux with AddressSanitizer/UndefinedBehaviorSanitizer, and Windows with MinGW-w64. Clang libFuzzer targets are available for the lexer and syntax converter through `DMM_BUILD_FUZZERS`.
 
 ## Known structural constraint
 

@@ -1,0 +1,15 @@
+// Variable types test
+func main() -> void {
+    var int_val:int = 42;
+    
+    println("Integer: " + int_val);
+    
+    // Variable reassignment
+    int_val = 100;
+    println("Updated integer: " + int_val);
+    
+    // Another variable
+    var another:int = 200;
+    println("Another integer: " + another);
+}
+// Category: execution/scopes

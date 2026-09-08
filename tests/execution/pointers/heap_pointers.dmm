@@ -1,0 +1,9 @@
+// Test pointer type declarations
+func main() -> void {
+    var p:*int;
+    var q:*char;
+    var r:*string;
+    
+    println("Pointer types declared successfully");
+}
+// Category: execution/pointers

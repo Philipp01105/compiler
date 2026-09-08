@@ -10,14 +10,28 @@ execute_process(COMMAND "${COMPILER}" "${source}" --formatError
 if(result EQUAL 0)
     message(FATAL_ERROR "Invalid source was accepted")
 endif()
+if(NOT output STREQUAL "")
+    message(FATAL_ERROR "JSON diagnostics wrote unexpected stdout: ${output}")
+endif()
 string(JSON error_count ERROR_VARIABLE json_error GET "${diagnostics}" summary errorCount)
-if(json_error OR error_count LESS 1)
+string(JSON array_count ERROR_VARIABLE array_error LENGTH "${diagnostics}" errors)
+string(JSON category ERROR_VARIABLE category_error GET "${diagnostics}" errors 0 category)
+string(JSON line ERROR_VARIABLE line_error GET "${diagnostics}" errors 0 line)
+string(JSON column ERROR_VARIABLE column_error GET "${diagnostics}" errors 0 column)
+string(ASCII 27 escape)
+string(FIND "${diagnostics}" "${escape}" ansi_position)
+if(json_error OR array_error OR category_error OR line_error OR column_error OR
+   error_count LESS 1 OR NOT array_count EQUAL error_count OR
+   NOT category STREQUAL "P" OR line LESS 1 OR column LESS 1 OR
+   NOT ansi_position EQUAL -1)
     message(FATAL_ERROR "Diagnostics are not valid JSON: ${diagnostics}")
 endif()
 file(WRITE "${source}" "func main() -> void {} $ $ $ $ $ $ $ $ $ $ $ $\n")
 execute_process(COMMAND "${COMPILER}" --formatError "${source}"
-    RESULT_VARIABLE result ERROR_VARIABLE diagnostics)
+    RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE diagnostics)
 string(JSON error_count ERROR_VARIABLE json_error GET "${diagnostics}" summary errorCount)
-if(result EQUAL 0 OR json_error OR error_count LESS 10)
+string(JSON array_count ERROR_VARIABLE array_error LENGTH "${diagnostics}" errors)
+if(result EQUAL 0 OR NOT output STREQUAL "" OR json_error OR array_error OR
+   error_count LESS 10 OR NOT array_count EQUAL error_count)
     message(FATAL_ERROR "Multiple diagnostics were not emitted as one JSON document: ${diagnostics}")
 endif()

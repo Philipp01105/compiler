@@ -11,7 +11,7 @@ First value: 100
 Second value: 200
   [OK] Multiple pointers work
 [TEST 3] Heap allocated pointer dereference
-  [OK] Heap pointer allocated
+Heap value: 73
   [OK] Heap pointer freed
 
 ============================================

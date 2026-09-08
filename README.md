@@ -36,8 +36,8 @@ Enable warnings as errors with `-DDMM_STRICT_WARNINGS=ON`.
 ## Compile a program
 
 ```sh
-./build/compiler tests/hello.dmm
-gcc -no-pie tests/hello.dmm.s -o hello
+./build/compiler tests/execution/basics/hello.dmm
+gcc -no-pie tests/execution/basics/hello.dmm.s -o hello
 ./hello
 ```
 
@@ -62,14 +62,31 @@ Useful options:
 
 CTest includes:
 
-- native execution of the language corpus in both syntax modes;
-- C ABI interoperability;
-- semantic and syntax rejection cases;
-- large-source and code-capacity stress cases;
-- target calling-convention and runtime array-bounds checks;
-- focused optimizer, syntax-converter, JSON-diagnostic, and CLI tests.
+- `tests/execution/`: happy paths and edge cases with exact expected output;
+- `tests/rejection/`: individual lexer, parser, semantic, and type failures;
+- `tests/runtime_failure/`: programs that must compile and then trap;
+- `tests/abi/`: native ABI boundaries and C interoperability;
+- `tests/regression/`: minimal reproductions of fixed compiler bugs;
+- `tests/stress/`: generated `limit-1`, `limit`, and `limit+1` cases;
+- `tests/unit/`: lexer, optimizer, and syntax-converter unit tests;
+- `tests/fuzz/`: libFuzzer entry points for the lexer and syntax converter.
+
+Every normal DMM execution test is compiled, assembled, and run in both Intel
+and AT&T syntax. Both runs must have exit code zero, empty stderr, and output
+identical to the checked-in `.expected` file. This makes syntax equivalence a
+standard property of every execution test rather than a separate smoke test.
 
 Test labels can select a subset, for example `ctest --test-dir build -L unit`.
+On Linux, `-DDMM_SANITIZERS=ON` instruments the compiler and unit tests and also
+links generated execution/ABI programs against ASan/UBSan runtimes. CI runs the
+`safety` label with leak detection enabled.
+
+Clang users can build both fuzzers with:
+
+```sh
+cmake -S . -B fuzz-build -DDMM_BUILD_FUZZERS=ON -DCMAKE_C_COMPILER=clang
+cmake --build fuzz-build --target fuzz_lexer fuzz_syntax_converter
+```
 
 ## Documentation
 

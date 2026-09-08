@@ -1,0 +1,32 @@
+func main() -> void {
+    println(abi_ints(1,2,3,4,5,6,7,8));
+    println(abi_floats(1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0));
+    println(abi_mixed(1,2.0,3,4.0,5,6.0,7,8.0,9,10.0,11,12.0,13,14.0,15,16.0,17.0,18.0,19.0));
+    println(abi_float(1.25,2.5,3.75,4.0,5.0));
+}
+func abi_ints(a:int,b:int,c:int,d:int,e:int,f:int,g:int,h:int) -> int {
+    return a+2*b+3*c+4*d+5*e+6*f+7*g+8*h;
+}
+func abi_zero() -> int { return 42; }
+func abi_one(a:int) -> int { return a+1; }
+func abi_six(a:int,b:int,c:int,d:int,e:int,f:int) -> int { return a+b+c+d+e+f; }
+func abi_seven(a:int,b:int,c:int,d:int,e:int,f:int,g:int) -> int { return a+b+c+d+e+f+g; }
+func abi_eight(a:int,b:int,c:int,d:int,e:int,f:int,g:int,h:int) -> int { return a+b+c+d+e+f+g+h; }
+func abi_double_one(a:double) -> double { return a; }
+func abi_double_eight(a:double,b:double,c:double,d:double,e:double,f:double,g:double,h:double) -> double {
+    return a+b+c+d+e+f+g+h;
+}
+func abi_double_nine(a:double,b:double,c:double,d:double,e:double,f:double,g:double,h:double,i:double) -> double {
+    return a+b+c+d+e+f+g+h+i;
+}
+func abi_floats(a:double,b:double,c:double,d:double,e:double,f:double,g:double,h:double,i:double) -> double {
+    return a+2*b+3*c+4*d+5*e+6*f+7*g+8*h+9*i;
+}
+func abi_mixed(a:int,b:double,c:int,d:double,e:int,f:double,g:int,h:double,i:int,j:double,k:int,l:double,m:int,n:double,o:int,p:double,q:double,r:double,s:double) -> double {
+    return a+2*b+3*c+4*d+5*e+6*f+7*g+8*h+9*i+10*j+11*k+12*l+13*m+14*n+15*o+16*p+17*q+18*r+19*s;
+}
+func abi_float(a:float,b:float,c:float,d:float,e:float) -> float {
+    return a+b+c+d+e;
+}
+func abi_strings(a:string,b:string) -> bit { return a==b; }
+// ABI: System V register and stack argument boundaries.

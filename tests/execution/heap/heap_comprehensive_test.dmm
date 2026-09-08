@@ -1,0 +1,430 @@
+// ============================================================================
+// COMPREHENSIVE HEAP MANAGEMENT TEST
+// ============================================================================
+// This file tests all heap management features including:
+// - Pointer type declarations for all data types
+// - reserve() function with different types (primitives and structs)
+// - free() function for manual memory management
+// - @gc annotation for automatic garbage collection
+// - Mixed manual and GC memory management
+// - Error cases and edge cases
+// ============================================================================
+
+// Test structs
+struct Point {
+    var x:int;
+    var y:int;
+}
+
+struct Data {
+    var value:int;
+}
+
+// Test 1: Pointer declarations for all types
+func test1_pointer_declarations() -> void {
+    println("[TEST 1] Pointer Declarations");
+    
+    var intPtr:*int;
+    var charPtr:*char;
+    var bytePtr:*byte;
+    var floatPtr:*float;
+    var doublePtr:*double;
+    var stringPtr:*string;
+    
+    println("  [OK] All pointer types declared");
+}
+
+// Test 2: Basic reserve and free with int
+func test2_basic_int() -> void {
+    println("[TEST 2] Basic int allocation");
+    
+    var p:*int = reserve(int);
+    println("  [OK] Int allocated");
+    
+    free(p);
+    println("  [OK] Int freed");
+}
+
+// Test 3: Basic reserve and free with char
+func test3_basic_char() -> void {
+    println("[TEST 3] Basic char allocation");
+    
+    var p:*char = reserve(char);
+    println("  [OK] Char allocated");
+    
+    free(p);
+    println("  [OK] Char freed");
+}
+
+// Test 4: Basic reserve and free with float
+func test4_basic_float() -> void {
+    println("[TEST 4] Basic float allocation");
+    
+    var p:*float = reserve(float);
+    println("  [OK] Float allocated");
+    
+    free(p);
+    println("  [OK] Float freed");
+}
+
+// Test 5: Basic reserve and free with double
+func test5_basic_double() -> void {
+    println("[TEST 5] Basic double allocation");
+    
+    var p:*double = reserve(double);
+    println("  [OK] Double allocated");
+    
+    free(p);
+    println("  [OK] Double freed");
+}
+
+// Test 6: Multiple allocations of same type
+func test6_multiple_same_type() -> void {
+    println("[TEST 6] Multiple allocations of same type");
+    
+    var p1:*int = reserve(int);
+    var p2:*int = reserve(int);
+    var p3:*int = reserve(int);
+    
+    println("  [OK] Three ints allocated");
+    
+    free(p1);
+    free(p2);
+    free(p3);
+    
+    println("  [OK] All three ints freed");
+}
+
+// Test 7: Multiple allocations of different types
+func test7_multiple_different_types() -> void {
+    println("[TEST 7] Multiple allocations of different types");
+    
+    var intPtr:*int = reserve(int);
+    var charPtr:*char = reserve(char);
+    var floatPtr:*float = reserve(float);
+    var doublePtr:*double = reserve(double);
+    
+    println("  [OK] Multiple types allocated");
+    
+    free(intPtr);
+    free(charPtr);
+    free(floatPtr);
+    free(doublePtr);
+    
+    println("  [OK] All types freed");
+}
+
+// Test 8: Garbage collection with int
+func test8_gc_int() -> void {
+    println("[TEST 8] GC with int");
+    
+    @gc
+    var p:*int = reserve(int);
+    
+    println("  [OK] GC int allocated (auto-freed)");
+}
+
+// Test 9: Garbage collection with multiple types
+func test9_gc_multiple() -> void {
+    println("[TEST 9] GC with multiple types");
+    
+    @gc
+    var intPtr:*int = reserve(int);
+    
+    @gc
+    var charPtr:*char = reserve(char);
+    
+    @gc
+    var floatPtr:*float = reserve(float);
+    
+    println("  [OK] Multiple GC allocations (auto-freed)");
+}
+
+// Test 10: Mixed manual and GC management
+func test10_mixed_management() -> void {
+    println("[TEST 10] Mixed manual and GC management");
+    
+    var manual1:*int = reserve(int);
+    
+    @gc
+    var gc1:*int = reserve(int);
+    
+    var manual2:*char = reserve(char);
+    
+    @gc
+    var gc2:*float = reserve(float);
+    
+    println("  [OK] Mixed allocations created");
+    
+    free(manual1);
+    free(manual2);
+    
+    println("  [OK] Manual pointers freed (GC auto-freed)");
+}
+
+// Test 11: Sequential allocation and freeing
+func test11_sequential() -> void {
+    println("[TEST 11] Sequential allocation and freeing");
+    
+    var p1:*int = reserve(int);
+    println("  [OK] Allocated p1");
+    free(p1);
+    println("  [OK] Freed p1");
+    
+    var p2:*char = reserve(char);
+    println("  [OK] Allocated p2");
+    free(p2);
+    println("  [OK] Freed p2");
+    
+    var p3:*double = reserve(double);
+    println("  [OK] Allocated p3");
+    free(p3);
+    println("  [OK] Freed p3");
+}
+
+// Test 12: Nested scope with GC
+func test12_nested_gc() -> void {
+    println("[TEST 12] Nested scope with GC");
+    
+    var outer:*int = reserve(int);
+    println("  [OK] Outer manual allocation");
+    
+    @gc
+    var gcOuter:*int = reserve(int);
+    println("  [OK] Outer GC allocation");
+    
+    free(outer);
+    println("  [OK] Outer manual freed");
+}
+
+// Test 13: Allocate many pointers
+func test13_many_pointers() -> void {
+    println("[TEST 13] Many pointers");
+    
+    var p1:*int = reserve(int);
+    var p2:*int = reserve(int);
+    var p3:*int = reserve(int);
+    var p4:*int = reserve(int);
+    var p5:*int = reserve(int);
+    var p6:*int = reserve(int);
+    var p7:*int = reserve(int);
+    var p8:*int = reserve(int);
+    var p9:*int = reserve(int);
+    var p10:*int = reserve(int);
+    
+    println("  [OK] 10 pointers allocated");
+    
+    free(p1);
+    free(p2);
+    free(p3);
+    free(p4);
+    free(p5);
+    free(p6);
+    free(p7);
+    free(p8);
+    free(p9);
+    free(p10);
+    
+    println("  [OK] 10 pointers freed");
+}
+
+// Test 14: Byte type allocation
+func test14_byte_type() -> void {
+    println("[TEST 14] Byte type allocation");
+    
+    var p:*byte = reserve(byte);
+    println("  [OK] Byte allocated");
+    
+    free(p);
+    println("  [OK] Byte freed");
+}
+
+// Test 15: Different order of free
+func test15_free_order() -> void {
+    println("[TEST 15] Different order of free");
+    
+    var p1:*int = reserve(int);
+    var p2:*char = reserve(char);
+    var p3:*float = reserve(float);
+    
+    println("  [OK] Three allocations");
+    
+    free(p2);
+    println("  [OK] Freed middle one");
+    free(p3);
+    println("  [OK] Freed last one");
+    free(p1);
+    println("  [OK] Freed first one");
+}
+
+// Test 16: GC in function scope
+func test16_gc_function_scope() -> void {
+    println("[TEST 16] GC in function scope");
+    
+    @gc
+    var temp:*int = reserve(int);
+    
+    println("  [OK] GC variable in function");
+    // Auto-freed when function returns
+}
+
+// Test 17: Multiple reserve calls
+func test17_multiple_reserve_calls() -> void {
+    println("[TEST 17] Multiple reserve calls");
+    
+    var p:*int = reserve(int);
+    println("  [OK] First reserve");
+    free(p);
+    
+    p = reserve(int);
+    println("  [OK] Second reserve");
+    free(p);
+    
+    p = reserve(int);
+    println("  [OK] Third reserve");
+    free(p);
+}
+
+// Test 18: All data types together
+func test18_all_types_together() -> void {
+    println("[TEST 18] All data types together");
+    
+    var intP:*int = reserve(int);
+    var charP:*char = reserve(char);
+    var byteP:*byte = reserve(byte);
+    var floatP:*float = reserve(float);
+    var doubleP:*double = reserve(double);
+    
+    println("  [OK] All 5 basic types allocated");
+    
+    free(doubleP);
+    free(floatP);
+    free(byteP);
+    free(charP);
+    free(intP);
+    
+    println("  [OK] All 5 basic types freed (reverse order)");
+}
+
+// Test 19: GC with all types
+func test19_gc_all_types() -> void {
+    println("[TEST 19] GC with all types");
+    
+    @gc
+    var intP:*int = reserve(int);
+    
+    @gc
+    var charP:*char = reserve(char);
+    
+    @gc
+    var floatP:*float = reserve(float);
+    
+    @gc
+    var doubleP:*double = reserve(double);
+    
+    println("  [OK] All GC types allocated (auto-freed)");
+}
+
+// Test 20: Alternating manual and GC
+func test20_alternating() -> void {
+    println("[TEST 20] Alternating manual and GC");
+    
+    var m1:*int = reserve(int);
+    
+    @gc
+    var g1:*int = reserve(int);
+    
+    var m2:*int = reserve(int);
+    
+    @gc
+    var g2:*int = reserve(int);
+    
+    var m3:*int = reserve(int);
+    
+    println("  [OK] Alternating allocations");
+    
+    free(m1);
+    free(m2);
+    free(m3);
+    
+    println("  [OK] Manual pointers freed");
+}
+
+// Test 21: Struct allocation
+func test21_struct_allocation() -> void {
+    println("[TEST 21] Struct allocation");
+    
+    var p:*Point = reserve(Point);
+    println("  [OK] Struct allocated");
+    
+    free(p);
+    println("  [OK] Struct freed");
+}
+
+// Test 22: Multiple struct allocations
+func test22_multiple_structs() -> void {
+    println("[TEST 22] Multiple struct allocations");
+    
+    var p1:*Point = reserve(Point);
+    var p2:*Point = reserve(Point);
+    var d:*Data = reserve(Data);
+    
+    println("  [OK] Multiple structs allocated");
+    
+    free(p1);
+    free(p2);
+    free(d);
+    
+    println("  [OK] Multiple structs freed");
+}
+
+// Test 23: GC with structs
+func test23_gc_structs() -> void {
+    println("[TEST 23] GC with structs");
+    
+    @gc
+    var p:*Point = reserve(Point);
+    
+    @gc
+    var d:*Data = reserve(Data);
+    
+    println("  [OK] GC structs allocated (auto-freed)");
+}
+
+// Main test runner
+func main() -> void {
+    println("============================================");
+    println("  COMPREHENSIVE HEAP MANAGEMENT TEST");
+    println("============================================");
+    println("");
+    
+    test1_pointer_declarations();
+    test2_basic_int();
+    test3_basic_char();
+    test4_basic_float();
+    test5_basic_double();
+    test6_multiple_same_type();
+    test7_multiple_different_types();
+    test8_gc_int();
+    test9_gc_multiple();
+    test10_mixed_management();
+    test11_sequential();
+    test12_nested_gc();
+    test13_many_pointers();
+    test14_byte_type();
+    test15_free_order();
+    test16_gc_function_scope();
+    test17_multiple_reserve_calls();
+    test18_all_types_together();
+    test19_gc_all_types();
+    test20_alternating();
+    test21_struct_allocation();
+    test22_multiple_structs();
+    test23_gc_structs();
+    
+    println("");
+    println("============================================");
+    println("  ALL TESTS PASSED!");
+    println("============================================");
+}
+// Category: execution/heap

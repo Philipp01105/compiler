@@ -1,9 +1,0 @@
-// Function call test
-func add(x:int, y:int) -> int {
-    return x + y;
-}
-
-func main() -> void {
-    var result:int = add(7, 3);
-    println("7 + 3 = " + result);
-}

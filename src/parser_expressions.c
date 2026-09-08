@@ -30,6 +30,7 @@ static void load_numeric_operand(Parser *parser, const char *gpr, const char *xm
 }
 
 void parse_expression(Parser *parser) {
+    parser->expression_is_pointer = 0;
     int depth = 0;
     int token_count = 0;
     for (int i = parser->tokens->current; i < parser->tokens->count; ++i) {
@@ -188,6 +189,7 @@ void parse_comparison(Parser *parser) {
 void parse_term(Parser *parser) {
     parse_factor(parser);
     DataType left_type = parser->expression_type;
+    int left_is_pointer = parser->expression_is_pointer;
 
     while (check(parser->tokens, TOKEN_PLUS) || check(parser->tokens, TOKEN_MINUS)) {
         TokenType op = peek(parser->tokens).type;
@@ -195,6 +197,12 @@ void parse_term(Parser *parser) {
 
         parse_factor(parser);
         DataType right_type = parser->expression_type;
+        int right_is_pointer = parser->expression_is_pointer;
+
+        if (left_is_pointer || right_is_pointer) {
+            parser_error(parser, "Pointer arithmetic is not supported");
+            return;
+        }
 
         code_printf(parser, "    popq %%rbx\n");
         code_printf(parser, "    popq %%rax\n");
@@ -214,13 +222,16 @@ void parse_term(Parser *parser) {
 
         code_printf(parser, "    pushq %%rax\n");
         parser->expression_type = result_type;
+        parser->expression_is_pointer = 0;
         left_type = result_type;
+        left_is_pointer = 0;
     }
 }
 
 void parse_factor(Parser *parser) {
     parse_unary(parser);
     DataType left_type = parser->expression_type;
+    int left_is_pointer = parser->expression_is_pointer;
 
     while (check(parser->tokens, TOKEN_STAR) || check(parser->tokens, TOKEN_SLASH) || check(
                parser->tokens, TOKEN_PERCENT)) {
@@ -229,6 +240,12 @@ void parse_factor(Parser *parser) {
 
         parse_unary(parser);
         DataType right_type = parser->expression_type;
+        int right_is_pointer = parser->expression_is_pointer;
+
+        if (left_is_pointer || right_is_pointer) {
+            parser_error(parser, "Pointer arithmetic is not supported");
+            return;
+        }
 
         code_printf(parser, "    popq %%rbx\n");
         code_printf(parser, "    popq %%rax\n");
@@ -257,7 +274,9 @@ void parse_factor(Parser *parser) {
 
         code_printf(parser, "    pushq %%rax\n");
         parser->expression_type = result_type;
+        parser->expression_is_pointer = 0;
         left_type = result_type;
+        left_is_pointer = 0;
     }
 }
 
@@ -359,7 +378,11 @@ void parse_unary(Parser *parser) {
         if (check(parser->tokens, TOKEN_IDENTIFIER)) {
             Token var_token = peek(parser->tokens);
             Variable *var = find_variable(parser, var_token.value);
-            if (var && var->is_pointer) {
+            if (var && !var->is_pointer) {
+                parser_error(parser, "Dereference requires a pointer; '%s' is not a pointer", var_token.value);
+                return;
+            }
+            if (var) {
                 pointed_type = var->type;
             }
         }
@@ -385,6 +408,8 @@ void parse_unary(Parser *parser) {
         }
 
         code_printf(parser, "    pushq %%rax\n");
+        parser->expression_type = pointed_type;
+        parser->expression_is_pointer = 0;
         return;
     }
 
@@ -402,8 +427,37 @@ void parse_unary(Parser *parser) {
             return;
         }
 
-        code_printf(parser, "    leaq %d(%%rbp), %%rax\n", var->offset);
+        if (check(parser->tokens, TOKEN_LBRACKET)) {
+            if (!var->is_array) {
+                parser_error(parser, "Variable '%s' is not an array", var_token.value);
+                return;
+            }
+            consume(parser->tokens);
+            if (var->array_size > 0 && check(parser->tokens, TOKEN_NUMBER)) {
+                unsigned long index = strtoul(peek(parser->tokens).value, NULL, 10);
+                if (index >= (unsigned long) var->array_size) {
+                    semantic_error_at_token(parser, peek(parser->tokens), ERR_SEM_NOT_ARRAY,
+                                            "Array index %lu is outside declared bounds [0, %d)",
+                                            index, var->array_size);
+                    return;
+                }
+            }
+            parse_expression(parser);
+            expect(parser, TOKEN_RBRACKET, "Expected ']' after array index");
+            code_printf(parser, "    popq %%rax\n");
+            emit_static_array_bounds_check(parser, var);
+            code_printf(parser, "    imulq $%d, %%rax, %%rax\n", datatype_size(var->type));
+            if (var->array_size == 0) {
+                code_printf(parser, "    addq %d(%%rbp), %%rax\n", var->offset);
+            } else {
+                code_printf(parser, "    leaq %d(%%rbp, %%rax), %%rax\n", var->offset);
+            }
+        } else {
+            code_printf(parser, "    leaq %d(%%rbp), %%rax\n", var->offset);
+        }
         code_printf(parser, "    pushq %%rax\n");
+        parser->expression_type = var->type;
+        parser->expression_is_pointer = 1;
         return;
     }
 
@@ -531,6 +585,8 @@ void parse_primary(Parser *parser) {
             generate_stack_restore(parser);
         }
         code_printf(parser, "    pushq %%rax\n");
+        parser->expression_type = type == TYPE_UNKNOWN ? TYPE_INT : type;
+        parser->expression_is_pointer = 1;
         return;
     }
 
@@ -1453,6 +1509,8 @@ void parse_primary(Parser *parser) {
                 return;
             }
 
+            int indexed_value = 0;
+
             if (check(parser->tokens, TOKEN_DOT)) {
                 consume(parser->tokens);
 
@@ -1709,6 +1767,7 @@ void parse_primary(Parser *parser) {
             }
 
             if (check(parser->tokens, TOKEN_LBRACKET)) {
+                indexed_value = 1;
                 consume(parser->tokens);
 
                 if (!var->is_array && var->type != TYPE_STRING) {
@@ -1725,6 +1784,13 @@ void parse_primary(Parser *parser) {
                                                 index, var->array_size);
                         return;
                     }
+                } else if (var->is_array && var->array_size > 0 &&
+                           check(parser->tokens, TOKEN_MINUS) &&
+                           peek_ahead(parser->tokens, 1).type == TOKEN_NUMBER) {
+                    semantic_error_at_token(parser, peek(parser->tokens), ERR_SEM_NOT_ARRAY,
+                                            "Array index is outside declared bounds [0, %d)",
+                                            var->array_size);
+                    return;
                 }
 
                 parse_expression(parser);
@@ -1806,7 +1872,9 @@ void parse_primary(Parser *parser) {
                     code_printf(parser, "    pushq %%rax\n");
                 }
             }
-            parser->expression_type = var->is_array || var->is_pointer ? TYPE_INT : var->type;
+            parser->expression_type = indexed_value ? var->type :
+                                      (var->is_array || var->is_pointer ? TYPE_INT : var->type);
+            parser->expression_is_pointer = !indexed_value && (var->is_array || var->is_pointer);
         }
         return;
     }

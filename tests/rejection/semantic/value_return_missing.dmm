@@ -1,0 +1,2 @@
+func value() -> int { return; }
+func main() -> void {}

@@ -1,0 +1,15 @@
+// Conditional test
+func main() -> void {
+    var x:int = 10;
+    
+    if (x > 5) {
+        println("x is greater than 5");
+    } else {
+        println("x is not greater than 5");
+    }
+    
+    if (x == 10) {
+        println("x equals 10");
+    }
+}
+// Category: execution/control_flow

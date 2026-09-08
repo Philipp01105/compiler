@@ -1,0 +1,16 @@
+func allocate(value:int) -> int {
+    @gc var p:*int = reserve(int);
+    *p = value;
+    var alias:*int = p;
+    return *alias;
+}
+
+func main() -> void {
+    var total:int = 0;
+    for (var i:int = 0; i < 10; i++) { total += allocate(i); }
+    println(total);
+    var manual:*int = reserve(int);
+    *manual = 7;
+    println(*manual);
+    free(manual);
+}

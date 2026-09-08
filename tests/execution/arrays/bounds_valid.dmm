@@ -1,0 +1,17 @@
+func sum(a[]:int) -> int {
+    var total:int = 0;
+    for (var i:int = 0; i < 5; i++) { total += a[i]; }
+    return total;
+}
+
+func main() -> void {
+    var [5] values:int;
+    values[0] = 1;
+    values[1] = 2;
+    values[2] = 3;
+    values[3] = 4;
+    values[4] = 5;
+    println(values[0]);
+    println(values[4]);
+    println(sum(values));
+}

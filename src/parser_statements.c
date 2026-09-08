@@ -194,6 +194,7 @@ void parse_statement(Parser *parser) {
                          star_token.line, ptr_token.value, field_name.value);
 
             parse_expression(parser);
+            convert_stack_value(parser, parser->expression_type, field->type);
 
             expect(parser, TOKEN_SEMICOLON, "Expected ';' after *p.field assignment");
 
@@ -231,6 +232,9 @@ void parse_statement(Parser *parser) {
                          star_token.line, ptr_token.value);
 
             parse_expression(parser);
+            if (pointer_op == TOKEN_EQUAL) {
+                convert_stack_value(parser, parser->expression_type, ptr_var->type);
+            }
 
             expect(parser, TOKEN_SEMICOLON, "Expected ';' after pointer dereference assignment");
 
@@ -848,9 +852,29 @@ void parse_assignment(Parser *parser) {
             parser_error(parser, "Expected assignment operator after array index");
             return;
         }
+
+        if (var->is_array && var->array_size > 0 && check(parser->tokens, TOKEN_NUMBER)) {
+            unsigned long index = strtoul(peek(parser->tokens).value, NULL, 10);
+            if (index >= (unsigned long) var->array_size) {
+                semantic_error_at_token(parser, peek(parser->tokens), ERR_SEM_NOT_ARRAY,
+                                        "Array index %lu is outside declared bounds [0, %d)",
+                                        index, var->array_size);
+                return;
+            }
+        } else if (var->is_array && var->array_size > 0 &&
+                   check(parser->tokens, TOKEN_MINUS) &&
+                   peek_ahead(parser->tokens, 1).type == TOKEN_NUMBER) {
+            semantic_error_at_token(parser, peek(parser->tokens), ERR_SEM_NOT_ARRAY,
+                                    "Array index is outside declared bounds [0, %d)",
+                                    var->array_size);
+            return;
+        }
         consume(parser->tokens);
 
         parse_expression(parser);
+        if (array_op == TOKEN_EQUAL) {
+            convert_stack_value(parser, parser->expression_type, var->type);
+        }
 
         code_printf(parser, "    popq %%rcx\n");
         code_printf(parser, "    popq %%rax\n");
@@ -1458,8 +1482,10 @@ void parse_if_statement(Parser *parser) {
 void parse_return_statement(Parser *parser) {
     Token return_token = peek(parser->tokens);
     consume(parser->tokens);
+    int has_return_value = 0;
 
     if (!check(parser->tokens, TOKEN_SEMICOLON)) {
+        has_return_value = 1;
         code_comment(parser, "Line %d: return <expression>", return_token.line);
 
         if (parser->current_return_type == TYPE_VOID) {
@@ -1494,8 +1520,23 @@ void parse_return_statement(Parser *parser) {
 
     expect(parser, TOKEN_SEMICOLON, "Expected ';' after return");
 
+    /* Runtime cleanup calls may clobber RAX/XMM0. Preserve the raw return
+       bits in a 16-byte slot so call-site stack alignment stays unchanged. */
+    if (has_return_value && parser->current_return_type != TYPE_VOID) {
+        code_printf(parser, "    subq $16, %%rsp\n");
+        code_printf(parser, "    movq %%rax, (%%rsp)\n");
+    }
+
     // Clean up @gc variables before returning
     cleanup_scope(parser, parser->current_scope);
+
+    if (has_return_value && parser->current_return_type != TYPE_VOID) {
+        code_printf(parser, "    movq (%%rsp), %%rax\n");
+        code_printf(parser, "    addq $16, %%rsp\n");
+        if (parser->current_return_type == TYPE_FLOAT || parser->current_return_type == TYPE_DOUBLE) {
+            code_printf(parser, "    movq %%rax, %%xmm0\n");
+        }
+    }
 
     /* Windows ABI: Restore non-volatile registers before return */
     if (parser->target_format == TARGET_COFF) {
@@ -1857,6 +1898,13 @@ void parse_print_statement(Parser *parser) {
                                                 index, var->array_size);
                         return;
                     }
+                } else if (var->is_array && var->array_size > 0 &&
+                           check(parser->tokens, TOKEN_MINUS) &&
+                           peek_ahead(parser->tokens, 1).type == TOKEN_NUMBER) {
+                    semantic_error_at_token(parser, peek(parser->tokens), ERR_SEM_NOT_ARRAY,
+                                            "Array index is outside declared bounds [0, %d)",
+                                            var->array_size);
+                    return;
                 }
 
                 parse_expression(parser);
@@ -2013,19 +2061,7 @@ void parse_print_statement(Parser *parser) {
             }
         } else {
             parse_expression(parser);
-
-            code_printf(parser, "    popq %s\n", get_arg_reg_64(1));
-            code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_reg_64(0));
-            {
-                int stack_adj_fallback = get_call_stack_space();
-                if (stack_adj_fallback > 0) {
-                    code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_fallback);
-                }
-                code_printf(parser, "    call printf\n");
-                if (stack_adj_fallback > 0) {
-                    code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_fallback);
-                }
-            }
+            emit_printed_expression(parser);
         }
 
     print_next_item:
@@ -2321,6 +2357,23 @@ void parse_printline_statement(Parser *parser) {
                     return;
                 }
 
+                if (var->is_array && var->array_size > 0 && check(parser->tokens, TOKEN_NUMBER)) {
+                    unsigned long index = strtoul(peek(parser->tokens).value, NULL, 10);
+                    if (index >= (unsigned long) var->array_size) {
+                        semantic_error_at_token(parser, peek(parser->tokens), ERR_SEM_NOT_ARRAY,
+                                                "Array index %lu is outside declared bounds [0, %d)",
+                                                index, var->array_size);
+                        return;
+                    }
+                } else if (var->is_array && var->array_size > 0 &&
+                           check(parser->tokens, TOKEN_MINUS) &&
+                           peek_ahead(parser->tokens, 1).type == TOKEN_NUMBER) {
+                    semantic_error_at_token(parser, peek(parser->tokens), ERR_SEM_NOT_ARRAY,
+                                            "Array index is outside declared bounds [0, %d)",
+                                            var->array_size);
+                    return;
+                }
+
                 parse_expression(parser);
 
                 expect(parser, TOKEN_RBRACKET, "Expected ']' after array index");
@@ -2483,19 +2536,7 @@ void parse_printline_statement(Parser *parser) {
             }
         } else {
             parse_expression(parser);
-
-            code_printf(parser, "    popq %s\n", get_arg_reg_64(1));
-            code_printf(parser, "    leaq .LC_int_format(%%rip), %s\n", get_arg_reg_64(0));
-            {
-                int stack_adj_fallback = get_call_stack_space();
-                if (stack_adj_fallback > 0) {
-                    code_printf(parser, "    subq $%d, %%rsp\n", stack_adj_fallback);
-                }
-                code_printf(parser, "    call printf\n");
-                if (stack_adj_fallback > 0) {
-                    code_printf(parser, "    addq $%d, %%rsp\n", stack_adj_fallback);
-                }
-            }
+            emit_printed_expression(parser);
         }
 
     print_next_item:
@@ -2938,6 +2979,9 @@ void parse_function_call_statement(Parser *parser) {
 
         if (check(parser->tokens, TOKEN_COMMA)) {
             consume(parser->tokens);
+        } else if (!check(parser->tokens, TOKEN_RPAREN)) {
+            parser_error(parser, "Expected ',' or ')' after parameter");
+            return;
         }
     }
 
