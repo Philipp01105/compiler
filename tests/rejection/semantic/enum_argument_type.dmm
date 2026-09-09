@@ -1,0 +1,2 @@
+enum Number(value:int) { Broken("text") }
+func main() -> void {}

@@ -25,7 +25,7 @@ typedef enum {
     AST_STMT_RETURN, AST_STMT_BREAK, AST_STMT_CONTINUE, AST_STMT_PRINT
 } AstStatementKind;
 
-/* Lossless leaves remain temporarily available to the compatibility emitter. */
+/* Lossless token leaves own source spellings referenced by syntax and IR nodes. */
 typedef struct {
     TokenType type;
     char lexeme[MAX_TOKEN];
@@ -141,7 +141,7 @@ struct AstDeclarationNode {
     } as;
 };
 
-/* Top-level token index retained until the old emitter is retired. */
+/* Compact top-level index used by tooling alongside the structured tree. */
 typedef struct {
     AstDeclarationKind kind;
     AstSourceSpan span;

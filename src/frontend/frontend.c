@@ -120,8 +120,7 @@ static AstProgram *parse_single_file(const char *source_path, const FrontendOpti
                      ERR_CODEGEN_OUTPUT_FAILED, source_path, "Out of memory while building AST");
         return NULL;
     }
-    /* The compatibility declaration index above remains available to the old
-       emitter; all new compiler stages consume the structured tree. */
+    /* Semantic analysis and IR lowering consume the structured tree. */
     (void) frontend_build_structured_ast(program);
     return program;
 
@@ -147,6 +146,53 @@ static char *relative_import_path(const char *source_path, const char *import_pa
     return result;
 }
 
+static char *joined_path(const char *directory, const char *path) {
+    size_t directory_length = strlen(directory);
+    size_t path_length = strlen(path);
+    int separator = directory_length != 0 && directory[directory_length - 1] != '/' &&
+                    directory[directory_length - 1] != '\\';
+    if (directory_length > SIZE_MAX - path_length - (size_t) separator - 1U) return NULL;
+    char *result = malloc(directory_length + path_length + (size_t) separator + 1U);
+    if (result == NULL) return NULL;
+    memcpy(result, directory, directory_length);
+    if (separator) result[directory_length++] = '/';
+    memcpy(result + directory_length, path, path_length + 1U);
+    return result;
+}
+
+static char *import_path_text(const AstProgram *unit,
+                              const AstDeclarationNode *declaration) {
+    if (declaration->as.import_decl.path_token != AST_TOKEN_NONE) {
+        const char *text = ast_program_lexeme(unit, declaration->as.import_decl.path_token);
+        size_t length = strlen(text);
+        char *copy = malloc(length + 1U);
+        if (copy != NULL) memcpy(copy, text, length + 1U);
+        return copy;
+    }
+    size_t length = 0;
+    size_t first = declaration->as.import_decl.path_first_token;
+    size_t count = declaration->as.import_decl.path_token_count;
+    for (size_t i = 0; i < count && first + i < unit->token_count; i++) {
+        const AstToken *token = &unit->tokens[first + i];
+        if (token->type == TOKEN_GREATER) break;
+        size_t token_length = strlen(token->lexeme);
+        if (length > SIZE_MAX - token_length) return NULL;
+        length += token_length;
+    }
+    char *result = malloc(length + 1U);
+    if (result == NULL) return NULL;
+    size_t offset = 0;
+    for (size_t i = 0; i < count && first + i < unit->token_count; i++) {
+        const AstToken *token = &unit->tokens[first + i];
+        if (token->type == TOKEN_GREATER) break;
+        size_t token_length = strlen(token->lexeme);
+        memcpy(result + offset, token->lexeme, token_length);
+        offset += token_length;
+    }
+    result[offset] = '\0';
+    return result;
+}
+
 static AstProgram *known_import(const AstProgram *root, const char *path) {
     if (strcmp(root->source_path, path) == 0) return (AstProgram *) root;
     for (size_t i = 0; i < root->owned_import_count; i++)
@@ -169,40 +215,62 @@ static int append_owned_import(AstProgram *root, AstProgram *imported) {
     return 1;
 }
 
-static int resolve_quoted_imports(AstProgram *root, AstProgram *unit,
-                                  const FrontendOptions *options) {
+static int resolve_imports(AstProgram *root, AstProgram *unit,
+                           const FrontendOptions *options) {
     for (AstDeclarationNode *declaration = unit->root; declaration != NULL;
          declaration = declaration->next) {
-        if (declaration->kind != AST_DECL_IMPORT ||
-            declaration->as.import_decl.path_token == AST_TOKEN_NONE) continue;
-        char *path = relative_import_path(unit->source_path,
-            ast_program_lexeme(unit, declaration->as.import_decl.path_token));
-        if (path == NULL) return 0;
+        if (declaration->kind != AST_DECL_IMPORT) continue;
+        char *import_text = import_path_text(unit, declaration);
+        if (import_text == NULL) return 0;
+        char *path = relative_import_path(unit->source_path, import_text);
+        if (path == NULL) {
+            free(import_text);
+            return 0;
+        }
         AstProgram *imported = known_import(root, path);
         if (imported == NULL) {
             FILE *probe = fopen(path, "rb");
-            if (probe == NULL) {
+            if (probe == NULL && declaration->as.import_decl.path_token == AST_TOKEN_NONE) {
                 free(path);
+                path = joined_path(DMM_SOURCE_ROOT, import_text);
+                if (path == NULL) {
+                    free(import_text);
+                    return 0;
+                }
+                probe = fopen(path, "rb");
+            }
+            if (probe == NULL) {
+                error_report(global_error_handler, SEVERITY_ERROR,
+                             declaration->span.begin.line,
+                             declaration->span.begin.column,
+                             ERROR_CATEGORY_COMPILER, ERR_LEX_FILE_NOT_FOUND,
+                             unit->source_path, "Failed to open import file '%s'", path);
+                free(path);
+                free(import_text);
                 continue;
             }
             (void) fclose(probe);
             imported = parse_single_file(path, options);
             if (imported == NULL) {
                 free(path);
+                free(import_text);
                 continue;
             }
             if (!append_owned_import(root, imported)) {
                 ast_program_free(imported);
                 free(path);
+                free(import_text);
                 return 0;
             }
-            if (!resolve_quoted_imports(root, imported, options)) {
+            if (!resolve_imports(root, imported, options)) {
                 free(path);
+                free(import_text);
                 return 0;
             }
         }
         declaration->as.import_decl.resolved_program = imported;
         free(path);
+        free(import_text);
     }
     return 1;
 }
@@ -210,7 +278,7 @@ static int resolve_quoted_imports(AstProgram *root, AstProgram *unit,
 AstProgram *frontend_parse_file(const char *source_path, const FrontendOptions *options) {
     AstProgram *program = parse_single_file(source_path, options);
     if (program == NULL) return NULL;
-    if (!resolve_quoted_imports(program, program, options)) {
+    if (!resolve_imports(program, program, options)) {
         ast_program_free(program);
         error_report(global_error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
                      ERR_CODEGEN_OUTPUT_FAILED, source_path,

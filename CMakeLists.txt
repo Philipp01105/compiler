@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.21)
 project(compiler VERSION 5.1.0 LANGUAGES C)
 
+add_compile_definitions(DMM_SOURCE_ROOT="${CMAKE_SOURCE_DIR}")
+
 set(CMAKE_C_STANDARD 23)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
@@ -15,7 +17,6 @@ set(DMM_INCLUDE_DIRS
         ${CMAKE_CURRENT_SOURCE_DIR}/src/frontend
         ${CMAKE_CURRENT_SOURCE_DIR}/src/sema
         ${CMAKE_CURRENT_SOURCE_DIR}/src/ir
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/compat
         ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
         ${CMAKE_CURRENT_SOURCE_DIR}/src/backend/x86_64
         ${CMAKE_CURRENT_SOURCE_DIR}/src/diagnostics
@@ -36,25 +37,12 @@ add_executable(compiler
         src/sema/semantic.h
         src/ir/ir.c
         src/ir/ir.h
-        src/compat/compat_backend.c
-        src/compat/compat_backend.h
         src/backend/backend.c
         src/backend/backend.h
         src/backend/x86_64/ir_emitter.c
         src/backend/x86_64/ir_emitter.h
-        src/backend/compiler_types.h
-        src/backend/parser_types.c
-        src/backend/parser_codegen.c
-        src/backend/parser_core.c
-        src/backend/parser_declarations.c
-        src/backend/parser_statements.c
-        src/backend/parser_expressions.c
-        src/backend/parser.h
-        src/backend/parser_internal.h
         src/backend/asm_optimizer.c
         src/backend/asm_optimizer.h
-        src/backend/instruction_builder.c
-        src/backend/instruction_builder.h
         src/backend/syntax_converter.c
         src/backend/syntax_converter.h
         src/diagnostics/errorHandler.c
@@ -63,7 +51,8 @@ add_executable(compiler
 )
 
 target_include_directories(compiler PRIVATE ${DMM_INCLUDE_DIRS})
-target_compile_definitions(compiler PRIVATE DMM_VERSION="${PROJECT_VERSION}")
+target_compile_definitions(compiler PRIVATE
+        DMM_VERSION="${PROJECT_VERSION}")
 if(MSVC)
     target_compile_options(compiler PRIVATE /W4)
     if(DMM_STRICT_WARNINGS)
@@ -85,6 +74,7 @@ if(DMM_SANITIZERS)
 endif()
 
 install(TARGETS compiler RUNTIME DESTINATION bin)
+install(DIRECTORY stdlib/ DESTINATION share/dmm/stdlib)
 
 if(DMM_BUILD_FUZZERS)
     if(NOT CMAKE_C_COMPILER_ID MATCHES "Clang")

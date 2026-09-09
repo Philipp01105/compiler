@@ -19,8 +19,6 @@ typedef struct {
     size_t bounds_sequence;
 } Emitter;
 
-#define IR_NATIVE_MAX_LOCALS 400U
-
 static int is_integral(DataType type) {
     return type == TYPE_INT || type == TYPE_CHAR || type == TYPE_BYTE ||
            type == TYPE_BIT;
@@ -39,22 +37,9 @@ static int is_pointer_value(const IrInstruction *instruction) {
            (instruction->pointer_depth != 0 || instruction->is_array);
 }
 
-static int is_runtime_scalar(const IrInstruction *instruction) {
-    return instruction != NULL && (is_numeric(instruction->type) ||
-           instruction->type == TYPE_STRING || is_pointer_value(instruction));
-}
-
 static int is_named_value(const IrModule *module, const IrInstruction *instruction) {
     return instruction != NULL && instruction->type_id < module->type_count &&
            module->types[instruction->type_id].kind == IR_TYPE_NAMED;
-}
-
-static int can_initialize(DataType from, DataType to, IrOpcode producer_opcode) {
-    if (from == TYPE_STRING || to == TYPE_STRING) return from == to;
-    if (from == to || (is_integral(from) && is_integral(to))) return 1;
-    if (is_integral(from) && is_floating(to)) return 1;
-    if (from == TYPE_FLOAT && to == TYPE_DOUBLE) return 1;
-    return from == TYPE_DOUBLE && to == TYPE_FLOAT && producer_opcode == IR_OP_CONSTANT;
 }
 
 static DataType ir_ast_type(const AstProgram *program, const AstType *type) {
@@ -77,30 +62,6 @@ static const IrInstruction *producer(const IrFunction *function, size_t value) {
     for (size_t i = 0; i < function->instruction_count; i++)
         if (function->instructions[i].result == value) return &function->instructions[i];
     return NULL;
-}
-
-static int label_exists(const IrFunction *function, size_t label) {
-    size_t matches = 0;
-    for (size_t i = 0; i < function->instruction_count; i++)
-        if (function->instructions[i].opcode == IR_OP_LABEL &&
-            function->instructions[i].target_a == label) matches++;
-    return matches == 1;
-}
-
-static unsigned maximum_loop_depth(const AstStatement *statement, unsigned depth) {
-    unsigned maximum = depth;
-    for (; statement != NULL; statement = statement->next) {
-        unsigned nested = depth;
-        if (statement->kind == AST_STMT_WHILE || statement->kind == AST_STMT_FOR)
-            nested++;
-        unsigned body = maximum_loop_depth(statement->body, nested);
-        unsigned alternative = maximum_loop_depth(statement->else_body, nested);
-        unsigned initializer = maximum_loop_depth(statement->initializer, nested);
-        if (body > maximum) maximum = body;
-        if (alternative > maximum) maximum = alternative;
-        if (initializer > maximum) maximum = initializer;
-    }
-    return maximum;
 }
 
 static const IrInstruction *local_declaration(const IrFunction *function,
@@ -129,12 +90,18 @@ static const IrFunction *called_function(const IrModule *module, size_t symbol_i
     return NULL;
 }
 
-static size_t native_builtin_arity(const char *name) {
-    if (strcmp(name, "io_strlen") == 0 || strcmp(name, "strlen") == 0 ||
-        strcmp(name, "sys_close") == 0) return 1;
-    if (strcmp(name, "sys_write") == 0 || strcmp(name, "sys_read") == 0 ||
-        strcmp(name, "sys_open") == 0) return 3;
-    return IR_VALUE_NONE;
+static const IrParameter *function_receiver(const IrFunction *function) {
+    return function != NULL && function->parameter_count != 0 &&
+           function->parameters[0].is_receiver ? &function->parameters[0] : NULL;
+}
+
+static const char *function_link_name(const IrFunction *function, char *buffer,
+                                      size_t buffer_size) {
+    const char *name = ast_program_lexeme(function->source_program, function->name_token);
+    if (function->owner_token == AST_TOKEN_NONE) return name;
+    const char *owner = ast_program_lexeme(function->source_program, function->owner_token);
+    (void) snprintf(buffer, buffer_size, "%s_%s", owner, name);
+    return buffer;
 }
 
 static int supported_module(const IrModule *module) {
@@ -142,252 +109,8 @@ static int supported_module(const IrModule *module) {
         module->semantics == NULL || module->function_count == 0) return 0;
     const SemanticSymbol *main_symbol = semantic_find_global(module->semantics, "main",
                                                               SEMANTIC_SYMBOL_FUNCTION);
-    if (main_symbol == NULL || main_symbol->declaration == NULL ||
-        main_symbol->declaration->as.function.parameters != NULL) return 0;
-    for (const AstDeclarationNode *declaration = module->program->root;
-         declaration != NULL; declaration = declaration->next)
-        if (declaration->kind == AST_DECL_INVALID)
-            return 0;
-    int module_has_call = 0;
-    int single_function_reason = 0;
-    for (size_t f = 0; f < module->function_count; f++) {
-      const IrFunction *function = &module->functions[f];
-      if (function->owner_token != AST_TOKEN_NONE ||
-          function->source_program == NULL ||
-          function->return_type.name_token >= function->source_program->token_count ||
-          maximum_loop_depth(module->semantics->symbols[function->symbol_id].declaration
-                                 ->as.function.body, 0) > 100U) return 0;
-      DataType return_type = ir_ast_type(function->source_program, &function->return_type);
-      if (!is_numeric(return_type) && return_type != TYPE_STRING &&
-          return_type != TYPE_VOID && function->return_type.pointer_depth == 0) return 0;
-      for (size_t p = 0; p < function->parameter_count; p++)
-          if ((!is_numeric(function->parameters[p].type) &&
-               function->parameters[p].type != TYPE_STRING &&
-               function->parameters[p].pointer_depth == 0 &&
-               !function->parameters[p].is_array))
-              return 0;
-      size_t declarations = 0;
-      for (size_t i = 0; i < function->instruction_count; i++) {
-        const IrInstruction *instruction = &function->instructions[i];
-        if (instruction->result != IR_VALUE_NONE &&
-            producer(function, instruction->result) != instruction) return 0;
-        switch (instruction->opcode) {
-            case IR_OP_CONSTANT:
-                if (!is_runtime_scalar(instruction) ||
-                    instruction->auxiliary_token >= function->source_program->token_count) return 0;
-                if (is_floating(instruction->type)) single_function_reason = 1;
-                break;
-            case IR_OP_LOAD: {
-                if ((!is_runtime_scalar(instruction) &&
-                     !is_named_value(module, instruction) &&
-                     !(instruction->type == TYPE_VOID &&
-                       called_function(module, instruction->symbol_id) != NULL)) ||
-                    instruction->auxiliary_token >= function->source_program->token_count) return 0;
-                const char *name = ast_program_lexeme(function->source_program,
-                                                      instruction->auxiliary_token);
-                int type_symbol = instruction->symbol_id < module->semantics->symbol_count &&
-                    (module->semantics->symbols[instruction->symbol_id].kind ==
-                         SEMANTIC_SYMBOL_STRUCT ||
-                     module->semantics->symbols[instruction->symbol_id].kind ==
-                         SEMANTIC_SYMBOL_ENUM);
-                int builtin = native_builtin_arity(name) != IR_VALUE_NONE;
-                if (strcmp(name, "true") != 0 && strcmp(name, "false") != 0 &&
-                    local_declaration(function, instruction->symbol_id, i) == NULL &&
-                    function_parameter(function, instruction->symbol_id) == NULL &&
-                    called_function(module, instruction->symbol_id) == NULL && !type_symbol &&
-                    !builtin)
-                    return 0;
-                break;
-            }
-            case IR_OP_DECLARE:
-            {
-                const IrInstruction *initializer = instruction->operand_a == IR_VALUE_NONE
-                    ? NULL : producer(function, instruction->operand_a);
-                if ((!is_runtime_scalar(instruction) && !instruction->is_array &&
-                     !is_named_value(module, instruction)) ||
-                    instruction->auxiliary_token >= function->source_program->token_count ||
-                    (initializer != NULL &&
-                     ((is_pointer_value(instruction) && !is_pointer_value(initializer)) ||
-                      (instruction->type == TYPE_STRING && instruction->pointer_depth == 0 &&
-                       initializer->type != TYPE_STRING) ||
-                      (instruction->type != TYPE_STRING &&
-                       !is_pointer_value(instruction) &&
-                       (!is_numeric(initializer->type) ||
-                        !can_initialize(initializer->type, instruction->type,
-                                        initializer->opcode))))) ||
-                    (instruction->operand_a != IR_VALUE_NONE && initializer == NULL)) return 0;
-                if (instruction->symbol_id == AST_SYMBOL_NONE) return 0;
-                for (size_t j = 0; j < i; j++)
-                    if (function->instructions[j].opcode == IR_OP_DECLARE &&
-                        function->instructions[j].symbol_id == instruction->symbol_id) return 0;
-                declarations++;
-                if (declarations > IR_NATIVE_MAX_LOCALS) return 0;
-                if (is_floating(instruction->type)) single_function_reason = 1;
-                break;
-            }
-            case IR_OP_STORE: {
-                const IrInstruction *target = producer(function, instruction->operand_a);
-                const IrInstruction *stored = instruction->operand_b == IR_VALUE_NONE
-                    ? NULL : producer(function, instruction->operand_b);
-                if (target == NULL ||
-                    (target->opcode != IR_OP_LOAD && target->opcode != IR_OP_INDEX &&
-                     target->opcode != IR_OP_MEMBER &&
-                     !(target->opcode == IR_OP_UNARY &&
-                       target->operator_type == TOKEN_STAR))) return 0;
-                if (target->opcode == IR_OP_LOAD &&
-                    local_declaration(function, target->symbol_id, i) == NULL &&
-                    function_parameter(function, target->symbol_id) == NULL) return 0;
-                if (target->type == TYPE_BIT && instruction->operator_type != TOKEN_EQUAL)
-                    return 0;
-                if (instruction->operator_type != TOKEN_PLUS_PLUS &&
-                    instruction->operator_type != TOKEN_MINUS_MINUS &&
-                    (stored == NULL || !is_numeric(stored->type))) return 0;
-                if (!is_numeric(target->type) && target->type != TYPE_STRING &&
-                    !is_pointer_value(target)) return 0;
-                if (instruction->operator_type == TOKEN_EQUAL && stored != NULL &&
-                    !is_pointer_value(target) &&
-                    !can_initialize(stored->type, target->type, stored->opcode)) return 0;
-                single_function_reason = 1;
-                break;
-            }
-            case IR_OP_UNARY:
-            {
-                const IrInstruction *operand = producer(function, instruction->operand_b);
-                int address_operation = instruction->operator_type == TOKEN_AMPERSAND ||
-                                        instruction->operator_type == TOKEN_STAR;
-                if ((!is_numeric(instruction->type) && !address_operation) ||
-                    (instruction->operator_type != TOKEN_MINUS &&
-                     instruction->operator_type != TOKEN_BANG && !address_operation) ||
-                    operand == NULL ||
-                    (instruction->operator_type == TOKEN_MINUS &&
-                     operand->type == TYPE_BIT) ||
-                    (instruction->operator_type == TOKEN_STAR && !is_pointer_value(operand)))
-                    return 0;
-                single_function_reason = 1;
-                break;
-            }
-            case IR_OP_BINARY:
-            {
-                const IrInstruction *left_value = producer(function, instruction->operand_a);
-                const IrInstruction *right_value = producer(function, instruction->operand_b);
-                int string_compare = instruction->type == TYPE_BIT &&
-                    (instruction->operator_type == TOKEN_EQUAL_EQUAL ||
-                     instruction->operator_type == TOKEN_BANG_EQUAL) &&
-                    left_value != NULL && right_value != NULL &&
-                    left_value->type == TYPE_STRING && right_value->type == TYPE_STRING;
-                int numeric_binary = left_value != NULL && right_value != NULL &&
-                    is_numeric(left_value->type) && is_numeric(right_value->type) &&
-                    is_numeric(instruction->type);
-                if ((!numeric_binary && !string_compare) ||
-                    instruction->operator_type == TOKEN_AMP_AMP ||
-                    instruction->operator_type == TOKEN_PIPE_PIPE ||
-                    left_value == NULL || right_value == NULL) return 0;
-                if (instruction->operator_type >= TOKEN_PLUS &&
-                    instruction->operator_type <= TOKEN_PERCENT &&
-                    (left_value->type == TYPE_BIT || right_value->type == TYPE_BIT)) return 0;
-                if (instruction->operator_type == TOKEN_PERCENT &&
-                    (is_floating(left_value->type) || is_floating(right_value->type))) return 0;
-                break;
-            }
-            case IR_OP_PRINT: {
-                const IrInstruction *value = producer(function, instruction->operand_a);
-                if (value == NULL || (!is_numeric(value->type) &&
-                    value->type != TYPE_STRING)) return 0;
-                if (value->type == TYPE_STRING || is_floating(value->type))
-                    single_function_reason = 1;
-                break;
-            }
-            case IR_OP_PHI:
-                if (!is_integral(instruction->type) ||
-                    producer(function, instruction->operand_a) == NULL ||
-                    producer(function, instruction->operand_b) == NULL ||
-                    !is_integral(producer(function, instruction->operand_a)->type) ||
-                    !is_integral(producer(function, instruction->operand_b)->type) ||
-                    !label_exists(function, instruction->target_a) ||
-                    !label_exists(function, instruction->target_b)) return 0;
-                single_function_reason = 1;
-                break;
-            case IR_OP_RETURN:
-                if ((return_type == TYPE_VOID && instruction->operand_a != IR_VALUE_NONE) ||
-                    (return_type != TYPE_VOID &&
-                     (instruction->operand_a == IR_VALUE_NONE ||
-                      !is_runtime_scalar(producer(function, instruction->operand_a))))) return 0;
-                break;
-            case IR_OP_BRANCH:
-                if (producer(function, instruction->operand_a) == NULL ||
-                    !label_exists(function, instruction->target_a) ||
-                    !label_exists(function, instruction->target_b)) return 0;
-                single_function_reason = 1;
-                break;
-            case IR_OP_JUMP:
-            case IR_OP_LABEL:
-                if (!label_exists(function, instruction->target_a)) return 0;
-                break;
-            case IR_OP_CALL: {
-                const IrFunction *callee = called_function(module, instruction->symbol_id);
-                const IrInstruction *callee_value = producer(function, instruction->operand_a);
-                const char *builtin_name = callee_value == NULL ? "" :
-                    ast_program_lexeme(function->source_program,
-                                       callee_value->auxiliary_token);
-                size_t builtin_arity = native_builtin_arity(builtin_name);
-                if ((callee == NULL && builtin_arity == IR_VALUE_NONE) ||
-                    (callee != NULL && instruction->argument_count != callee->parameter_count) ||
-                    (callee == NULL && instruction->argument_count != builtin_arity) ||
-                    (!is_numeric(instruction->type) && instruction->type != TYPE_STRING &&
-                     instruction->type != TYPE_VOID && instruction->pointer_depth == 0)) return 0;
-                for (size_t a = 0; a < instruction->argument_count; a++) {
-                    const IrInstruction *argument = producer(function,
-                        function->arguments[instruction->first_argument + a]);
-                    if (callee == NULL) {
-                        if (!is_runtime_scalar(argument)) return 0;
-                        continue;
-                    }
-                    int pointer_parameter = callee->parameters[a].pointer_depth != 0 ||
-                                            callee->parameters[a].is_array;
-                    if (!is_runtime_scalar(argument) ||
-                        (pointer_parameter && !is_pointer_value(argument)) ||
-                        (!pointer_parameter &&
-                         !can_initialize(argument->type, callee->parameters[a].type,
-                                         argument->opcode))) return 0;
-                }
-                module_has_call = 1;
-                single_function_reason = 1;
-                break;
-            }
-            case IR_OP_CAST:
-                if (!is_numeric(instruction->type) ||
-                    producer(function, instruction->operand_a) == NULL ||
-                    !is_numeric(producer(function, instruction->operand_a)->type)) return 0;
-                single_function_reason = 1;
-                break;
-            case IR_OP_INDEX:
-                if (producer(function, instruction->operand_a) == NULL ||
-                    !is_pointer_value(producer(function, instruction->operand_a)) ||
-                    producer(function, instruction->operand_b) == NULL ||
-                    !is_integral(producer(function, instruction->operand_b)->type)) return 0;
-                single_function_reason = 1;
-                break;
-            case IR_OP_MEMBER:
-                if (producer(function, instruction->operand_a) == NULL ||
-                    instruction->symbol_id == AST_SYMBOL_NONE ||
-                    instruction->symbol_id >= module->semantics->symbol_count) return 0;
-                single_function_reason = 1;
-                break;
-            case IR_OP_FREE:
-                if (producer(function, instruction->operand_a) == NULL ||
-                    !is_pointer_value(producer(function, instruction->operand_a))) return 0;
-                single_function_reason = 1;
-                break;
-            case IR_OP_ALLOC:
-                if (!is_pointer_value(instruction)) return 0;
-                single_function_reason = 1;
-                break;
-        }
-    }
-      if (function->next_value > (SIZE_MAX / 8U) - declarations - function->parameter_count)
-          return 0;
-    }
-    return module->function_count == 1 ? single_function_reason : module_has_call;
+    return main_symbol != NULL && main_symbol->declaration != NULL &&
+           main_symbol->declaration->as.function.parameters == NULL;
 }
 
 int x86_64_ir_supports_module(const IrModule *module) {
@@ -398,12 +121,12 @@ static size_t value_offset(size_t value) {
     return (value + 2U) * 8U;
 }
 
-static size_t type_slots(const IrModule *module, IrTypeId type_id) {
-    if (type_id >= module->type_count) return 0;
+static size_t type_slots_depth(const IrModule *module, IrTypeId type_id, size_t depth) {
+    if (type_id >= module->type_count || depth > module->type_count) return 0;
     const IrType *type = &module->types[type_id];
     if (type->kind == IR_TYPE_POINTER || type->kind == IR_TYPE_PRIMITIVE) return 1;
     if (type->kind == IR_TYPE_ARRAY) {
-        size_t element = type_slots(module, type->element_type);
+        size_t element = type_slots_depth(module, type->element_type, depth + 1U);
         if (element == 0 || type->array_length > SIZE_MAX / element) return 0;
         return type->array_length * element;
     }
@@ -411,7 +134,8 @@ static size_t type_slots(const IrModule *module, IrTypeId type_id) {
         if (module->structures[s].symbol_id != type->symbol_id) continue;
         size_t slots = 0;
         for (size_t f = 0; f < module->structures[s].field_count; f++) {
-            size_t field = type_slots(module, module->structures[s].fields[f].type_id);
+            size_t field = type_slots_depth(module, module->structures[s].fields[f].type_id,
+                                            depth + 1U);
             if (field == 0 || slots > SIZE_MAX - field) return 0;
             slots += field;
         }
@@ -421,7 +145,8 @@ static size_t type_slots(const IrModule *module, IrTypeId type_id) {
         if (module->enums[e].symbol_id != type->symbol_id) continue;
         size_t slots = 0;
         for (size_t f = 0; f < module->enums[e].field_count; f++) {
-            size_t field = type_slots(module, module->enums[e].fields[f].type_id);
+            size_t field = type_slots_depth(module, module->enums[e].fields[f].type_id,
+                                            depth + 1U);
             if (field == 0 || slots > SIZE_MAX - field) return 0;
             slots += field;
         }
@@ -430,10 +155,14 @@ static size_t type_slots(const IrModule *module, IrTypeId type_id) {
     return 1;
 }
 
+static size_t type_slots(const IrModule *module, IrTypeId type_id) {
+    return type_slots_depth(module, type_id, 0);
+}
+
 static size_t declaration_slots(const Emitter *emitter,
                                 const IrInstruction *declaration) {
     size_t slots = type_slots(emitter->module, declaration->type_id);
-    return slots == 0 ? 1 : slots;
+    return slots;
 }
 
 static size_t declaration_offset(const Emitter *emitter,
@@ -604,23 +333,39 @@ static int emit_string_compare(Emitter *emitter, const IrInstruction *instructio
     write_value_load(emitter, "rcx", instruction->operand_b);
     if (emitter->syntax == SYNTAX_INTEL) {
         fprintf(emitter->output,
-                "    cmp rax, rcx\n    je .LIR_string_equal_%zu_%zu\n"
-                "    test rax, rax\n    jz .LIR_string_unequal_%zu_%zu\n"
-                "    test rcx, rcx\n    jz .LIR_string_unequal_%zu_%zu\n",
-                emitter->function_index, instruction->result,
-                emitter->function_index, instruction->result,
+                "    cmp rax, rcx\n    je .LIR_string_equal_%zu_%zu\n",
                 emitter->function_index, instruction->result);
     } else {
         fprintf(emitter->output,
-                "    cmpq %%rcx, %%rax\n    je .LIR_string_equal_%zu_%zu\n"
-                "    testq %%rax, %%rax\n    jz .LIR_string_unequal_%zu_%zu\n"
-                "    testq %%rcx, %%rcx\n    jz .LIR_string_unequal_%zu_%zu\n",
-                emitter->function_index, instruction->result,
-                emitter->function_index, instruction->result,
+                "    cmpq %%rcx, %%rax\n    je .LIR_string_equal_%zu_%zu\n",
                 emitter->function_index, instruction->result);
     }
     write_value_load(emitter, left_argument, instruction->operand_a);
+    if (emitter->syntax == SYNTAX_INTEL)
+        fprintf(emitter->output,
+                "    test %s, %s\n    jnz .LIR_string_left_%zu_%zu\n"
+                "    lea %s, [rip + .LIR_empty_string_0]\n.LIR_string_left_%zu_%zu:\n",
+                left_argument, left_argument, emitter->function_index, instruction->result,
+                left_argument, emitter->function_index, instruction->result);
+    else
+        fprintf(emitter->output,
+                "    testq %%%s, %%%s\n    jnz .LIR_string_left_%zu_%zu\n"
+                "    leaq .LIR_empty_string_0(%%rip), %%%s\n.LIR_string_left_%zu_%zu:\n",
+                left_argument, left_argument, emitter->function_index, instruction->result,
+                left_argument, emitter->function_index, instruction->result);
     write_value_load(emitter, right_argument, instruction->operand_b);
+    if (emitter->syntax == SYNTAX_INTEL)
+        fprintf(emitter->output,
+                "    test %s, %s\n    jnz .LIR_string_right_%zu_%zu\n"
+                "    lea %s, [rip + .LIR_empty_string_0]\n.LIR_string_right_%zu_%zu:\n",
+                right_argument, right_argument, emitter->function_index, instruction->result,
+                right_argument, emitter->function_index, instruction->result);
+    else
+        fprintf(emitter->output,
+                "    testq %%%s, %%%s\n    jnz .LIR_string_right_%zu_%zu\n"
+                "    leaq .LIR_empty_string_0(%%rip), %%%s\n.LIR_string_right_%zu_%zu:\n",
+                right_argument, right_argument, emitter->function_index, instruction->result,
+                right_argument, emitter->function_index, instruction->result);
     write_call(emitter, "strcmp");
     fputs(emitter->syntax == SYNTAX_INTEL ? "    cmp eax, 0\n" :
                                            "    cmpl $0, %eax\n", emitter->output);
@@ -640,6 +385,44 @@ static int emit_string_compare(Emitter *emitter, const IrInstruction *instructio
     write_immediate(emitter, "rax", equal_result ? 0 : 1);
     fprintf(emitter->output, ".LIR_string_done_%zu_%zu:\n",
             emitter->function_index, instruction->result);
+    write_value_store(emitter, "rax", instruction->result);
+    return 1;
+}
+
+static int emit_string_concat(Emitter *emitter, const IrInstruction *instruction) {
+    const char *first = emitter->target == TARGET_COFF ? "rcx" : "rdi";
+    const char *second = emitter->target == TARGET_COFF ? "rdx" : "rsi";
+    fputs(emitter->syntax == SYNTAX_INTEL ? "    sub rsp, 16\n" :
+                                           "    subq $16, %rsp\n", emitter->output);
+    write_value_load(emitter, first, instruction->operand_a);
+    write_call(emitter, "strlen");
+    if (emitter->syntax == SYNTAX_INTEL) fputs("    mov QWORD PTR [rsp], rax\n", emitter->output);
+    else fputs("    movq %rax, (%rsp)\n", emitter->output);
+    write_value_load(emitter, first, instruction->operand_b);
+    write_call(emitter, "strlen");
+    if (emitter->syntax == SYNTAX_INTEL)
+        fputs("    add rax, QWORD PTR [rsp]\n    inc rax\n", emitter->output);
+    else fputs("    addq (%rsp), %rax\n    incq %rax\n", emitter->output);
+    write_immediate(emitter, first, 1);
+    if (emitter->syntax == SYNTAX_INTEL)
+        fprintf(emitter->output, "    mov %s, rax\n", second);
+    else
+        fprintf(emitter->output, "    movq %%rax, %%%s\n", second);
+    write_call(emitter, "calloc");
+    if (emitter->syntax == SYNTAX_INTEL) fputs("    mov QWORD PTR [rsp + 8], rax\n", emitter->output);
+    else fputs("    movq %rax, 8(%rsp)\n", emitter->output);
+    if (emitter->syntax == SYNTAX_INTEL) fprintf(emitter->output, "    mov %s, rax\n", first);
+    else fprintf(emitter->output, "    movq %%rax, %%%s\n", first);
+    write_value_load(emitter, second, instruction->operand_a);
+    write_call(emitter, "strcpy");
+    if (emitter->syntax == SYNTAX_INTEL) fprintf(emitter->output,
+        "    mov %s, QWORD PTR [rsp + 8]\n", first);
+    else fprintf(emitter->output, "    movq 8(%%rsp), %%%s\n", first);
+    write_value_load(emitter, second, instruction->operand_b);
+    write_call(emitter, "strcat");
+    if (emitter->syntax == SYNTAX_INTEL)
+        fputs("    mov rax, QWORD PTR [rsp + 8]\n    add rsp, 16\n", emitter->output);
+    else fputs("    movq 8(%rsp), %rax\n    addq $16, %rsp\n", emitter->output);
     write_value_store(emitter, "rax", instruction->result);
     return 1;
 }
@@ -771,8 +554,9 @@ static int emit_typed_call(Emitter *emitter, const IrInstruction *instruction,
             fprintf(emitter->output, "    movq %%rax, %%%s\n",
                     argument_register(emitter->target, register_index));
     }
+    char callee_buffer[MAX_TOKEN * 2U + 2U];
     fprintf(emitter->output, "    call %s\n",
-            ast_program_lexeme(callee->source_program, callee->name_token));
+            function_link_name(callee, callee_buffer, sizeof(callee_buffer)));
     size_t cleanup = stack_count * 8U + (emitter->target == TARGET_COFF ? 32U : 0U) +
                      (((stack_count & 1U) != 0) ? 8U : 0U);
     if (cleanup != 0) {
@@ -800,8 +584,140 @@ static int emit_builtin_call(Emitter *emitter, const IrInstruction *instruction,
         size_t value = function->arguments[instruction->first_argument];
         write_value_load(emitter, emitter->target == TARGET_COFF ? "rcx" : "rdi", value);
         write_call(emitter, "strlen");
+    } else if (strcmp(name, "strcmp") == 0 || strcmp(name, "strcpy") == 0 ||
+               strcmp(name, "strcat") == 0) {
+        static const char *coff_registers[] = {"rcx", "rdx"};
+        static const char *elf_registers[] = {"rdi", "rsi"};
+        const char **registers = emitter->target == TARGET_COFF
+            ? coff_registers : elf_registers;
+        for (size_t a = 0; a < 2; a++)
+            write_value_load(emitter, registers[a],
+                function->arguments[instruction->first_argument + a]);
+        write_call(emitter, name);
+    } else if (strcmp(name, "strdup") == 0) {
+        write_value_load(emitter, emitter->target == TARGET_COFF ? "rcx" : "rdi",
+            function->arguments[instruction->first_argument]);
+        write_call(emitter, emitter->target == TARGET_COFF ? "_strdup" : "strdup");
+    } else if (strcmp(name, "malloc") == 0) {
+        write_value_load(emitter, emitter->target == TARGET_COFF ? "rcx" : "rdi",
+            function->arguments[instruction->first_argument]);
+        write_call(emitter, "malloc");
+    } else if (strcmp(name, "scanfInt") == 0 || strcmp(name, "scanfChar") == 0) {
+        fputs(emitter->syntax == SYNTAX_INTEL ? "    sub rsp, 16\n" :
+                                               "    subq $16, %rsp\n", emitter->output);
+        write_address(emitter, emitter->target == TARGET_COFF ? "rcx" : "rdi",
+                      strcmp(name, "scanfInt") == 0 ? ".LIR_scan_int_format_" :
+                                                       ".LIR_scan_char_format_", 0);
+        if (emitter->syntax == SYNTAX_INTEL)
+            fprintf(emitter->output, "    lea %s, [rsp]\n",
+                    emitter->target == TARGET_COFF ? "rdx" : "rsi");
+        else
+            fprintf(emitter->output, "    leaq (%%rsp), %%%s\n",
+                    emitter->target == TARGET_COFF ? "rdx" : "rsi");
+        fputs(emitter->syntax == SYNTAX_INTEL ? "    xor eax, eax\n" :
+                                               "    xorl %eax, %eax\n", emitter->output);
+        write_call(emitter, "scanf");
+        if (emitter->syntax == SYNTAX_INTEL)
+            fputs(strcmp(name, "scanfInt") == 0 ?
+                  "    movsxd rax, DWORD PTR [rsp]\n" :
+                  "    movzx eax, BYTE PTR [rsp]\n", emitter->output);
+        else
+            fputs(strcmp(name, "scanfInt") == 0 ?
+                  "    movslq (%rsp), %rax\n" : "    movzbl (%rsp), %eax\n",
+                  emitter->output);
+        fputs(emitter->syntax == SYNTAX_INTEL ? "    add rsp, 16\n" :
+                                               "    addq $16, %rsp\n", emitter->output);
+    } else if (strcmp(name, "scanfString") == 0) {
+        write_address(emitter, emitter->target == TARGET_COFF ? "rcx" : "rdi",
+                      ".LIR_scan_string_format_", 0);
+        write_address(emitter, emitter->target == TARGET_COFF ? "rdx" : "rsi",
+                      ".LIR_scan_string_buffer_", 0);
+        fputs(emitter->syntax == SYNTAX_INTEL ? "    xor eax, eax\n" :
+                                               "    xorl %eax, %eax\n", emitter->output);
+        write_call(emitter, "scanf");
+        write_address(emitter, "rax", ".LIR_scan_string_buffer_", 0);
+    } else if (strcmp(name, "io_int_to_str") == 0) {
+        size_t value = function->arguments[instruction->first_argument];
+        size_t buffer = function->arguments[instruction->first_argument + 1U];
+        size_t capacity = function->arguments[instruction->first_argument + 2U];
+        if (emitter->target == TARGET_COFF) {
+            write_value_load(emitter, "rcx", buffer);
+            write_value_load(emitter, "rdx", capacity);
+            write_address(emitter, "r8", ".LIR_int_format_", 0);
+            write_value_load(emitter, "r9", value);
+        } else {
+            write_value_load(emitter, "rdi", buffer);
+            write_value_load(emitter, "rsi", capacity);
+            write_address(emitter, "rdx", ".LIR_int_format_", 0);
+            write_value_load(emitter, "rcx", value);
+        }
+        fputs(emitter->syntax == SYNTAX_INTEL ? "    xor eax, eax\n" :
+                                               "    xorl %eax, %eax\n", emitter->output);
+        write_call(emitter, "snprintf");
+        write_value_load(emitter, emitter->target == TARGET_COFF ? "rcx" : "rdi", buffer);
+        write_call(emitter, "strlen");
+    } else if (strcmp(name, "io_str_to_int") == 0) {
+        size_t value = function->arguments[instruction->first_argument];
+        write_value_load(emitter, emitter->target == TARGET_COFF ? "rcx" : "rdi", value);
+        write_immediate(emitter, emitter->target == TARGET_COFF ? "rdx" : "rsi", 0);
+        write_immediate(emitter, emitter->target == TARGET_COFF ? "r8" : "rdx", 10);
+        write_call(emitter, "strtoll");
+    } else if (strcmp(name, "read") == 0) {
+        size_t descriptor = function->arguments[instruction->first_argument];
+        const IrInstruction *format = producer(function,
+            function->arguments[instruction->first_argument + 1U]);
+        const char *format_text = format != NULL && format->opcode == IR_OP_CONSTANT
+            ? ast_program_lexeme(function->source_program, format->auxiliary_token) : "%i";
+        fputs(emitter->syntax == SYNTAX_INTEL ? "    sub rsp, 64\n" :
+                                               "    subq $64, %rsp\n", emitter->output);
+        write_value_load(emitter, emitter->target == TARGET_COFF ? "rcx" : "rdi", descriptor);
+        if (emitter->syntax == SYNTAX_INTEL)
+            fprintf(emitter->output, "    lea %s, [rsp]\n",
+                    emitter->target == TARGET_COFF ? "rdx" : "rsi");
+        else
+            fprintf(emitter->output, "    leaq (%%rsp), %%%s\n",
+                    emitter->target == TARGET_COFF ? "rdx" : "rsi");
+        write_immediate(emitter, emitter->target == TARGET_COFF ? "r8" : "rdx", 63);
+        write_call(emitter, emitter->target == TARGET_COFF ? "_read" : "read");
+        if (emitter->syntax == SYNTAX_INTEL)
+            fprintf(emitter->output,
+                    "    test eax, eax\n    jle .LIR_read_empty_%zu_%zu\n"
+                    "    mov BYTE PTR [rsp + rax], 0\n",
+                    emitter->function_index, instruction->result);
+        else
+            fprintf(emitter->output,
+                    "    testl %%eax, %%eax\n    jle .LIR_read_empty_%zu_%zu\n"
+                    "    movb $0, (%%rsp,%%rax)\n",
+                    emitter->function_index, instruction->result);
+        if (strcmp(format_text, "%c") == 0) {
+            fputs(emitter->syntax == SYNTAX_INTEL ? "    movzx eax, BYTE PTR [rsp]\n" :
+                                                   "    movzbl (%rsp), %eax\n", emitter->output);
+        } else {
+            if (emitter->syntax == SYNTAX_INTEL)
+                fprintf(emitter->output, "    lea %s, [rsp]\n",
+                        emitter->target == TARGET_COFF ? "rcx" : "rdi");
+            else
+                fprintf(emitter->output, "    leaq (%%rsp), %%%s\n",
+                        emitter->target == TARGET_COFF ? "rcx" : "rdi");
+            write_immediate(emitter, emitter->target == TARGET_COFF ? "rdx" : "rsi", 0);
+            write_immediate(emitter, emitter->target == TARGET_COFF ? "r8" : "rdx", 10);
+            write_call(emitter, "strtoll");
+        }
+        fprintf(emitter->output, "    jmp .LIR_read_done_%zu_%zu\n"
+                ".LIR_read_empty_%zu_%zu:\n",
+                emitter->function_index, instruction->result,
+                emitter->function_index, instruction->result);
+        write_immediate(emitter, "rax", 0);
+        fprintf(emitter->output, ".LIR_read_done_%zu_%zu:\n",
+                emitter->function_index, instruction->result);
+        fputs(emitter->syntax == SYNTAX_INTEL ? "    add rsp, 64\n" :
+                                               "    addq $64, %rsp\n", emitter->output);
     } else if (emitter->target == TARGET_ELF) {
         static const char *registers[] = {"rdi", "rsi", "rdx"};
+        if (strcmp(name, "sys_write") == 0 || strcmp(name, "sys_read") == 0) {
+            write_immediate(emitter, "rdi", 0);
+            write_call(emitter, "fflush");
+        }
         for (size_t a = 0; a < instruction->argument_count; a++)
             write_value_load(emitter, registers[a],
                 function->arguments[instruction->first_argument + a]);
@@ -812,6 +728,10 @@ static int emit_builtin_call(Emitter *emitter, const IrInstruction *instruction,
         fputs("    syscall\n", emitter->output);
     } else {
         static const char *registers[] = {"rcx", "rdx", "r8"};
+        if (strcmp(name, "sys_write") == 0 || strcmp(name, "sys_read") == 0) {
+            write_immediate(emitter, "rcx", 0);
+            write_call(emitter, "fflush");
+        }
         for (size_t a = 0; a < instruction->argument_count; a++)
             write_value_load(emitter, registers[a],
                 function->arguments[instruction->first_argument + a]);
@@ -864,12 +784,26 @@ static int emit_builtin_call(Emitter *emitter, const IrInstruction *instruction,
 
 static size_t fixed_array_length(const Emitter *emitter,
                                  const IrInstruction *base) {
-    if (base == NULL || base->opcode != IR_OP_LOAD) return 0;
-    const IrInstruction *declaration = local_declaration(emitter->function,
-        base->symbol_id, emitter->function->instruction_count);
-    if (declaration == NULL || declaration->type_id >= emitter->module->type_count) return 0;
-    const IrType *type = &emitter->module->types[declaration->type_id];
-    return type->kind == IR_TYPE_ARRAY ? type->array_length : 0;
+    if (base == NULL) return 0;
+    if (base->opcode == IR_OP_LOAD) {
+        const IrInstruction *declaration = local_declaration(emitter->function,
+            base->symbol_id, emitter->function->instruction_count);
+        if (declaration != NULL && declaration->type_id < emitter->module->type_count) {
+            const IrType *type = &emitter->module->types[declaration->type_id];
+            if (type->kind == IR_TYPE_ARRAY) return type->array_length;
+        }
+    }
+    if (base->opcode == IR_OP_MEMBER &&
+        base->symbol_id < emitter->module->semantics->symbol_count) {
+        const SemanticSymbol *symbol = &emitter->module->semantics->symbols[base->symbol_id];
+        const AstField *field = symbol->kind == SEMANTIC_SYMBOL_FIELD
+            ? (const AstField *) symbol->node : NULL;
+        if (field != NULL && field->type.is_array &&
+            field->type.array_length_token < symbol->source_program->token_count)
+            return (size_t) strtoull(ast_program_lexeme(symbol->source_program,
+                field->type.array_length_token), NULL, 10);
+    }
+    return 0;
 }
 
 static const IrAggregate *aggregate_for_symbol(const IrModule *module,
@@ -946,6 +880,25 @@ static int emit_lvalue_address(Emitter *emitter, const IrInstruction *target,
             else
                 fprintf(emitter->output, "    leaq -%zu(%%rbp), %%rbx\n", offset);
             return 1;
+        }
+        const IrParameter *receiver = function_receiver(emitter->function);
+        if (receiver != NULL && target->symbol_id < emitter->module->semantics->symbol_count) {
+            const SemanticSymbol *field =
+                &emitter->module->semantics->symbols[target->symbol_id];
+            const IrAggregate *aggregate = aggregate_for_symbol(emitter->module,
+                                                                 field->owner_symbol_id);
+            size_t field_offset = aggregate == NULL ? SIZE_MAX :
+                aggregate_field_offset(emitter, aggregate, target->symbol_id);
+            if (field->kind == SEMANTIC_SYMBOL_FIELD && field_offset != SIZE_MAX) {
+                write_local_load(emitter, "rbx", parameter_offset(emitter, receiver));
+                if (field_offset != 0) {
+                    if (emitter->syntax == SYNTAX_INTEL)
+                        fprintf(emitter->output, "    add rbx, %zu\n", field_offset);
+                    else
+                        fprintf(emitter->output, "    addq $%zu, %%rbx\n", field_offset);
+                }
+                return 1;
+            }
         }
         return 0;
     }
@@ -1139,12 +1092,17 @@ static int emit_binary(Emitter *emitter, const IrInstruction *instruction) {
     const IrInstruction *left = producer(emitter->function, instruction->operand_a);
     const IrInstruction *right = producer(emitter->function, instruction->operand_b);
     if (left != NULL && right != NULL && left->type == TYPE_STRING &&
-        right->type == TYPE_STRING)
+        right->type == TYPE_STRING) {
+        if (instruction->operator_type == TOKEN_PLUS)
+            return emit_string_concat(emitter, instruction);
         return emit_string_compare(emitter, instruction);
+    }
     if (left != NULL && right != NULL &&
         (is_floating(left->type) || is_floating(right->type))) {
-        DataType operation_type = left->type == TYPE_DOUBLE || right->type == TYPE_DOUBLE
-            ? TYPE_DOUBLE : TYPE_FLOAT;
+        DataType operation_type = is_floating(instruction->type)
+            ? instruction->type
+            : (left->type == TYPE_DOUBLE || right->type == TYPE_DOUBLE
+                ? TYPE_DOUBLE : TYPE_FLOAT);
         return emit_floating_binary(emitter, instruction, operation_type);
     }
     write_value_load(emitter, "rax", instruction->operand_a);
@@ -1259,6 +1217,16 @@ static void convert_rax(Emitter *emitter, DataType from, DataType to) {
     }
 }
 
+static void emit_gc_cleanup(Emitter *emitter) {
+    for (size_t i = 0; i < emitter->function->instruction_count; i++) {
+        const IrInstruction *declaration = &emitter->function->instructions[i];
+        if (declaration->opcode != IR_OP_DECLARE || !declaration->is_gc) continue;
+        write_local_load(emitter, emitter->target == TARGET_COFF ? "rcx" : "rdi",
+                         declaration_offset(emitter, declaration));
+        write_call(emitter, "free");
+    }
+}
+
 static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                             size_t index) {
     const IrFunction *function = emitter->function;
@@ -1304,8 +1272,10 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                     write_local_load(emitter, "rax", declaration_offset(emitter, declaration));
                 else if (parameter != NULL)
                     write_local_load(emitter, "rax", parameter_offset(emitter, parameter));
-                else
-                    write_immediate(emitter, "rax", 0);
+                else if (emit_lvalue_address(emitter, instruction, index))
+                    write_typed_indirect_load(emitter, instruction->type,
+                                              instruction->pointer_depth, "rbx");
+                else write_immediate(emitter, "rax", 0);
             }
             write_value_store(emitter, "rax", instruction->result);
             return 1;
@@ -1458,7 +1428,15 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             const IrInstruction *value = producer(function, instruction->operand_a);
             const char *first = emitter->target == TARGET_COFF ? "rcx" : "rdi";
             const char *second = emitter->target == TARGET_COFF ? "rdx" : "rsi";
-            if (value->type == TYPE_STRING) {
+            if (value == NULL) {
+                if (instruction->operator_type == TOKEN_KEYWORD_PRINTLINE) {
+                    write_immediate(emitter, first, 10);
+                    write_call(emitter, "putchar");
+                }
+                return 1;
+            }
+            if (value->type == TYPE_STRING ||
+                (value->type == TYPE_CHAR && is_pointer_value(value))) {
                 write_value_load(emitter, "rax", instruction->operand_a);
                 if (instruction->operator_type == TOKEN_KEYWORD_PRINTLINE) {
                     if (emitter->syntax == SYNTAX_INTEL)
@@ -1511,6 +1489,7 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             return 1;
         }
         case IR_OP_RETURN:
+            emit_gc_cleanup(emitter);
             if (instruction->operand_a == IR_VALUE_NONE) write_immediate(emitter, "rax", 0);
             else {
                 const IrInstruction *value = producer(function, instruction->operand_a);
@@ -1619,15 +1598,15 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                              instruction->operand_a);
             write_call(emitter, "free");
             return 1;
-            return 0;
     }
     return 0;
 }
 
 static int emit_function(Emitter *emitter) {
     FILE *output = emitter->output;
-    const char *name = ast_program_lexeme(emitter->function->source_program,
-                                          emitter->function->name_token);
+    char name_buffer[MAX_TOKEN * 2U + 2U];
+    const char *name = function_link_name(emitter->function, name_buffer,
+                                          sizeof(name_buffer));
     emitter->current_label = IR_VALUE_NONE;
     emitter->bounds_sequence = 0;
     fprintf(output, "    .globl %s\n", name);
@@ -1642,6 +1621,12 @@ static int emit_function(Emitter *emitter) {
         fputs("    pushq %rbp\n    movq %rsp, %rbp\n    pushq %rbx\n", output);
     }
     write_frame_allocation(emitter);
+    write_immediate(emitter, "rax", 0);
+    for (size_t i = 0; i < emitter->function->instruction_count; i++) {
+        const IrInstruction *declaration = &emitter->function->instructions[i];
+        if (declaration->opcode == IR_OP_DECLARE && declaration->is_gc)
+            write_local_store(emitter, "rax", declaration_offset(emitter, declaration));
+    }
     for (size_t p = 0; p < emitter->function->parameter_count; p++) {
         const IrParameter *parameter = &emitter->function->parameters[p];
         size_t register_index = parameter_register_index(emitter->function,
@@ -1667,12 +1652,15 @@ static int emit_function(Emitter *emitter) {
                 fprintf(output, "    movq %%%s, %%rax\n",
                         argument_register(emitter->target, register_index));
         }
-        if (is_integral(parameter->type))
+        if (is_integral(parameter->type) && parameter->pointer_depth == 0 &&
+            !parameter->is_array)
             normalize_integral_parameter(emitter, parameter->type);
         write_local_store(emitter, "rax", parameter_offset(emitter, parameter));
     }
-    for (size_t i = 0; i < emitter->function->instruction_count; i++)
+    for (size_t i = 0; i < emitter->function->instruction_count; i++) {
         if (!emit_instruction(emitter, &emitter->function->instructions[i], i)) return 0;
+    }
+    emit_gc_cleanup(emitter);
     write_immediate(emitter, "rax", 0);
     fprintf(output, ".LIR_epilogue_%zu:\n", emitter->function_index);
     fputs(emitter->syntax == SYNTAX_INTEL ?
@@ -1704,9 +1692,17 @@ static int emit_file(Emitter *emitter, int deterministic) {
               "    .def putchar; .scl 2; .type 32; .endef\n"
               "    .def puts; .scl 2; .type 32; .endef\n"
               "    .def strcmp; .scl 2; .type 32; .endef\n"
+              "    .def strcpy; .scl 2; .type 32; .endef\n"
+              "    .def strcat; .scl 2; .type 32; .endef\n"
+              "    .def _strdup; .scl 2; .type 32; .endef\n"
+              "    .def malloc; .scl 2; .type 32; .endef\n"
               "    .def calloc; .scl 2; .type 32; .endef\n"
               "    .def free; .scl 2; .type 32; .endef\n"
               "    .def strlen; .scl 2; .type 32; .endef\n"
+              "    .def strtoll; .scl 2; .type 32; .endef\n"
+              "    .def scanf; .scl 2; .type 32; .endef\n"
+              "    .def snprintf; .scl 2; .type 32; .endef\n"
+              "    .def fflush; .scl 2; .type 32; .endef\n"
               "    .def _write; .scl 2; .type 32; .endef\n"
               "    .def _read; .scl 2; .type 32; .endef\n"
               "    .def _open; .scl 2; .type 32; .endef\n"
@@ -1715,10 +1711,15 @@ static int emit_file(Emitter *emitter, int deterministic) {
     } else {
         fputs("    .section .rodata\n", output);
     }
-    fputs(".LIR_int_format_0:\n    .ascii \"%lld\\0\"\n"
+    fputs(".LIR_empty_string_0:\n    .ascii \"\\0\"\n"
+          ".LIR_int_format_0:\n    .ascii \"%lld\\0\"\n"
           ".LIR_char_format_0:\n    .ascii \"%c\\0\"\n"
           ".LIR_float_format_0:\n    .ascii \"%f\\0\"\n"
-          ".LIR_string_format_0:\n    .ascii \"%s\\0\"\n", output);
+          ".LIR_string_format_0:\n    .ascii \"%s\\0\"\n"
+          ".LIR_scan_int_format_0:\n    .ascii \"%d\\0\"\n"
+          ".LIR_scan_char_format_0:\n    .ascii \" %c\\0\"\n"
+          ".LIR_scan_string_format_0:\n    .ascii \"%255s\\0\"\n"
+          "    .comm .LIR_scan_string_buffer_0,256\n", output);
     for (size_t f = 0; f < emitter->module->function_count; f++) {
         const IrFunction *function = &emitter->module->functions[f];
         for (size_t i = 0; i < function->instruction_count; i++) {
@@ -1755,7 +1756,11 @@ static int emit_file(Emitter *emitter, int deterministic) {
                 if (slots == 0 || declarations > SIZE_MAX - slots) return 0;
                 declarations += slots;
             }
+        if (function->next_value > SIZE_MAX - function->parameter_count ||
+            function->next_value + function->parameter_count > SIZE_MAX - declarations)
+            return 0;
         size_t slots = function->next_value + function->parameter_count + declarations;
+        if (slots > (8U * 1024U * 1024U - 8U) / 8U) return 0;
         size_t bytes = slots * 8U;
         emitter->function = function;
         emitter->function_index = f;

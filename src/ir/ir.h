@@ -55,6 +55,7 @@ typedef struct {
     unsigned pointer_depth;
     size_t type_name_token;
     int is_array;
+    int is_gc;
     size_t result;
     size_t operand_a;
     size_t operand_b;
@@ -76,6 +77,7 @@ typedef struct {
     unsigned pointer_depth;
     size_t type_name_token;
     int is_array;
+    int is_receiver;
 } IrParameter;
 
 typedef struct {
@@ -169,7 +171,6 @@ typedef struct {
 } IrModule;
 
 IrModule *ir_lower_program(const AstProgram *program, const SemanticModel *semantics);
-IrModule *ir_create_compatibility_module(const AstProgram *program);
 void ir_module_free(IrModule *module);
 int ir_verify_module(const IrModule *module);
 

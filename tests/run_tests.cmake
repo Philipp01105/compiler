@@ -475,14 +475,6 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "rejection")
             "Expression tree exceeds"
     )
 
-    string(REPEAT "println(1);\n" 12000 large_body)
-
-    reject_case(
-            code_capacity
-            "func main() -> void {\n${large_body}}"
-            "Assembly code exceeds buffer capacity"
-    )
-
 endif()
 
 
@@ -535,10 +527,9 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
                 assembly
         )
 
-        set(nonvolatile_registers rbx r12 r13 r14 r15)
-        if(target STREQUAL "coff")
-            list(APPEND nonvolatile_registers rdi rsi)
-        endif()
+        # The typed emitter currently reserves only RBX. Callee-saved registers
+        # that are never touched do not need artificial save/restore pairs.
+        set(nonvolatile_registers rbx)
         foreach(nonvolatile IN LISTS nonvolatile_registers)
             string(FIND "${assembly}" "pushq %${nonvolatile}" saved_register)
             string(FIND "${assembly}" "popq %${nonvolatile}" restored_register)
@@ -549,15 +540,15 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
         endforeach()
 
         if(target STREQUAL "elf")
-            set(register "%esi")
-            string(FIND "${assembly}" "movl $1, %eax
+            set(register "%rsi")
+            string(FIND "${assembly}" "xorl %eax, %eax
     call printf" variadic_marker)
             if(variadic_marker EQUAL -1)
                 message(FATAL_ERROR
                         "ELF backend does not initialize AL for variadic calls")
             endif()
         else()
-            set(register "%edx")
+            set(register "%rdx")
         endif()
 
         string(

@@ -1,0 +1,16 @@
+struct Counter {
+    var value:int;
+
+    func init(start:int) -> void { value = start; }
+    func add(amount:int) -> void { value += amount; }
+    func get() -> int { return value; }
+    static func twice(value:int) -> int { return value * 2; }
+}
+
+func main() -> void {
+    var counter:Counter;
+    counter.init(10);
+    counter.add(7);
+    println(counter.get());
+    println(Counter.twice(counter.get()));
+}
