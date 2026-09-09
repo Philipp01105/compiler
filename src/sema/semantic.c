@@ -471,7 +471,7 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                     expression->resolved_named_symbol_id = enumeration->id;
                 } else if (function != NULL) {
                     expression->resolved_symbol_id = function->id;
-                    expression->resolved_type = primitive_type(analyzer->program,
+                    expression->resolved_type = primitive_type(function->source_program,
                                                                &function->declared_type);
                 }
             }
@@ -685,7 +685,9 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
     analyzer->scope_depth++;
     for (AstParameter *parameter = function->as.function.parameters;
          parameter != NULL; parameter = parameter->next) {
-        LocalSymbol *local = push_local(analyzer, parameter->name_token, parameter->type,
+        AstType parameter_type = parameter->type;
+        if (parameter->is_array) parameter_type.is_array = 1;
+        LocalSymbol *local = push_local(analyzer, parameter->name_token, parameter_type,
                                         SEMANTIC_SYMBOL_PARAMETER, NULL);
         if (local != NULL) parameter->resolved_symbol_id = local->symbol_id;
     }

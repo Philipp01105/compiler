@@ -46,17 +46,17 @@ foreach(case conditional break_continue)
     endif()
 endforeach()
 
-set(fallback "${OUTPUT_DIR}/function_fallback.s")
+set(function_output "${OUTPUT_DIR}/function_native.s")
 execute_process(
-        COMMAND "${COMPILER}" --deterministic -o "${fallback}"
+        COMMAND "${COMPILER}" --deterministic -o "${function_output}"
                 "${ROOT}/tests/execution/functions/function.dmm"
         RESULT_VARIABLE result ERROR_VARIABLE errors)
 if(NOT result STREQUAL "0")
-    message(FATAL_ERROR "Compatibility emission failed: ${errors}")
+    message(FATAL_ERROR "IR-native function emission failed: ${errors}")
 endif()
-file(READ "${fallback}" assembly)
-if(NOT assembly MATCHES "# Lowering: compatibility")
-    message(FATAL_ERROR "unsupported IR module did not use compatibility lowering")
+file(READ "${function_output}" assembly)
+if(NOT assembly MATCHES "# Lowering: typed IR")
+    message(FATAL_ERROR "integer function/string stream did not use typed IR")
 endif()
 
 foreach(target elf coff)
@@ -89,6 +89,71 @@ foreach(target elf coff)
     if(NOT result STREQUAL "0" OR NOT output_text STREQUAL "3" OR NOT errors STREQUAL "")
         message(FATAL_ERROR "IR-native integer call runtime failed (${result}): ${output_text}${errors}")
     endif()
+    endif()
+  endforeach()
+endforeach()
+
+foreach(case operator_precedence short_circuit)
+    set(source "${ROOT}/tests/execution/expressions/${case}.dmm")
+    set(output "${OUTPUT_DIR}/${case}_native.s")
+    execute_process(
+            COMMAND "${COMPILER}" --deterministic --target=elf --syntax=intel
+                    -o "${output}" "${source}"
+            RESULT_VARIABLE result ERROR_VARIABLE errors)
+    if(NOT result STREQUAL "0")
+        message(FATAL_ERROR "IR-native ${case} emission failed: ${errors}")
+    endif()
+    file(READ "${output}" assembly)
+    if(NOT assembly MATCHES "# Lowering: typed IR")
+        message(FATAL_ERROR "${case} did not use typed IR")
+    endif()
+endforeach()
+
+set(float_output "${OUTPUT_DIR}/float_literal_native.s")
+execute_process(
+        COMMAND "${COMPILER}" --deterministic --target=elf --syntax=intel
+                -o "${float_output}" "${ROOT}/tests/execution/expressions/float_literal.dmm"
+        RESULT_VARIABLE result ERROR_VARIABLE errors)
+if(NOT result STREQUAL "0")
+    message(FATAL_ERROR "IR-native float literal emission failed: ${errors}")
+endif()
+file(READ "${float_output}" assembly)
+if(NOT assembly MATCHES "# Lowering: typed IR")
+    message(FATAL_ERROR "float literal did not use typed IR")
+endif()
+
+foreach(target elf coff)
+  foreach(syntax att intel)
+    set(output "${OUTPUT_DIR}/scalar_${target}_${syntax}.s")
+    set(executable "${OUTPUT_DIR}/scalar_${target}_${syntax}.exe")
+    execute_process(
+            COMMAND "${COMPILER}" --deterministic "--target=${target}" "--syntax=${syntax}"
+                    -o "${output}" "${ROOT}/tests/unit/ir_scalar_fixture.dmm"
+            RESULT_VARIABLE result ERROR_VARIABLE errors)
+    if(NOT result STREQUAL "0")
+        message(FATAL_ERROR "IR-native scalar emission failed: ${errors}")
+    endif()
+    file(READ "${output}" assembly)
+    if(NOT assembly MATCHES "# Lowering: typed IR")
+        message(FATAL_ERROR "scalar program did not use typed IR (${target}/${syntax})")
+    endif()
+    if(target STREQUAL "coff")
+      execute_process(
+              COMMAND "${ASSEMBLER}" -no-pie "${output}" -o "${executable}"
+              RESULT_VARIABLE result ERROR_VARIABLE errors)
+      if(NOT result STREQUAL "0")
+          message(FATAL_ERROR "IR-native scalar assembly failed: ${errors}")
+      endif()
+      execute_process(
+              COMMAND "${executable}"
+              RESULT_VARIABLE result OUTPUT_VARIABLE output_text ERROR_VARIABLE errors)
+      string(REPLACE "\r\n" "\n" output_text "${output_text}")
+      string(REGEX REPLACE "\n+$" "" output_text "${output_text}")
+      if(NOT result STREQUAL "0" OR NOT output_text STREQUAL "20\n-20\n1" OR
+         NOT errors STREQUAL "")
+          message(FATAL_ERROR
+                  "IR-native scalar runtime failed (${result}): ${output_text}${errors}")
+      endif()
     endif()
   endforeach()
 endforeach()

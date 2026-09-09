@@ -43,7 +43,8 @@ typedef enum {
     IR_OP_RETURN,
     IR_OP_BRANCH,
     IR_OP_JUMP,
-    IR_OP_LABEL
+    IR_OP_LABEL,
+    IR_OP_PHI
 } IrOpcode;
 
 typedef struct {
