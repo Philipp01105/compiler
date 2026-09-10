@@ -1,0 +1,7 @@
+func printf(value:int) -> int { return value + 1; }
+func strlen(value:int) -> int { return value * 2; }
+
+func main() -> void {
+    println(printf(4));
+    println(strlen(5));
+}

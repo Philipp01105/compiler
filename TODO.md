@@ -23,6 +23,13 @@ parser/type-checker/emitter have been removed from the build and source tree.
   arguments, imported functions, instance-method receivers, and mangled methods.
 - Native lowering for numeric types, strings, arrays, structs, enums, pointers,
   heap allocation, `@gc`, printing, input, filesystem intrinsics, and stdlib I/O.
+- Nominal aggregate checking and by-value struct initialization, assignment,
+  parameters, nested storage, and returns; first-class enum values and constant
+  scalar payload lookup.
+- Typed verifier coverage for every opcode, including operations, calls, returns,
+  aggregate access, control flow, and malformed-definition mutation tests.
+- Collision-safe method/runtime symbol mangling while preserving ordinary
+  top-level names for C ABI interoperability.
 - Dual Intel/AT&T execution tests plus independent ABI, diagnostics, import,
   runtime-failure, stress, and IR-native tests.
 

@@ -31,7 +31,7 @@ static IrInstruction *emit(IrBuilder *builder, IrOpcode opcode, AstSourceSpan sp
         return NULL;
     }
     IrInstruction *instruction = &function->instructions[function->instruction_count++];
-    *instruction = (IrInstruction) {
+    *instruction = (IrInstruction){
         .opcode = opcode,
         .span = span,
         .type = TYPE_VOID,
@@ -103,7 +103,8 @@ static IrTypeId intern_type(IrModule *module, IrType type) {
         if (same_ir_type(&module->types[i], &type)) return i;
     if (module->type_count == module->type_capacity &&
         !grow_array((void **) &module->types, &module->type_capacity,
-                    sizeof(*module->types))) return IR_TYPE_NONE;
+                    sizeof(*module->types)))
+        return IR_TYPE_NONE;
     module->types[module->type_count] = type;
     return module->type_count++;
 }
@@ -113,7 +114,7 @@ static size_t named_symbol_id(const IrModule *module, const AstProgram *program,
     if (name_token >= program->token_count) return AST_SYMBOL_NONE;
     const char *name = ast_program_lexeme(program, name_token);
     const SemanticSymbol *symbol = semantic_find_global(module->semantics, name,
-                                                         SEMANTIC_SYMBOL_STRUCT);
+                                                        SEMANTIC_SYMBOL_STRUCT);
     if (symbol == NULL)
         symbol = semantic_find_global(module->semantics, name, SEMANTIC_SYMBOL_ENUM);
     return symbol == NULL ? AST_SYMBOL_NONE : symbol->id;
@@ -128,9 +129,10 @@ static IrTypeId type_from_parts(IrModule *module, DataType primitive,
         .kind = named_type_token != AST_TOKEN_NONE ? IR_TYPE_NAMED : IR_TYPE_PRIMITIVE,
         .primitive = primitive,
         .symbol_id = resolved_named_symbol_id != AST_SYMBOL_NONE
-            ? resolved_named_symbol_id
-            : (named_type_token == AST_TOKEN_NONE ? AST_SYMBOL_NONE
-                : named_symbol_id(module, source_program, named_type_token)),
+                         ? resolved_named_symbol_id
+                         : (named_type_token == AST_TOKEN_NONE
+                                ? AST_SYMBOL_NONE
+                                : named_symbol_id(module, source_program, named_type_token)),
         .element_type = IR_TYPE_NONE
     };
     IrTypeId result = intern_type(module, base);
@@ -168,7 +170,8 @@ static IrTypeId type_from_ast(IrModule *module, const AstProgram *program,
                               const AstType *type) {
     size_t named = type != NULL && type->name_token < program->token_count &&
                    program->tokens[type->name_token].type == TOKEN_IDENTIFIER
-        ? type->name_token : AST_TOKEN_NONE;
+                       ? type->name_token
+                       : AST_TOKEN_NONE;
     return type_from_parts(module, ast_type_data_type(program, type),
                            type == NULL ? 0 : type->pointer_depth, named,
                            type != NULL && type->is_array,
@@ -199,7 +202,7 @@ static void set_void_type(IrBuilder *builder, IrInstruction *instruction) {
     if (instruction == NULL) return;
     instruction->type = TYPE_VOID;
     instruction->type_id = type_from_parts(builder->module, TYPE_VOID, 0,
-        AST_TOKEN_NONE, 0, 0, builder->program, AST_SYMBOL_NONE);
+                                           AST_TOKEN_NONE, 0, 0, builder->program, AST_SYMBOL_NONE);
     if (instruction->type_id == IR_TYPE_NONE) builder->failed = 1;
 }
 
@@ -211,12 +214,14 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
                       expression->left->kind == AST_EXPR_MEMBER &&
                       expression->resolved_symbol_id < builder->module->semantics->symbol_count;
     const SemanticSymbol *method = method_call
-        ? &builder->module->semantics->symbols[expression->resolved_symbol_id] : NULL;
+                                       ? &builder->module->semantics->symbols[expression->resolved_symbol_id]
+                                       : NULL;
     int has_receiver = method != NULL && method->kind == SEMANTIC_SYMBOL_FUNCTION &&
                        method->declaration != NULL &&
                        !method->declaration->as.function.is_static;
     size_t receiver = has_receiver
-        ? lower_expression(builder, expression->left->left) : IR_VALUE_NONE;
+                          ? lower_expression(builder, expression->left->left)
+                          : IR_VALUE_NONE;
     size_t left = method_call ? IR_VALUE_NONE : lower_expression(builder, expression->left);
     if (expression->kind == AST_EXPR_BINARY &&
         (expression->operator_type == TOKEN_AMP_AMP ||
@@ -228,11 +233,13 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         if (branch != NULL) {
             branch->operand_a = left;
             branch->target_a = expression->operator_type == TOKEN_PIPE_PIPE
-                ? short_label : right_label;
+                                   ? short_label
+                                   : right_label;
             branch->target_b = expression->operator_type == TOKEN_PIPE_PIPE
-                ? right_label : short_label;
+                                   ? right_label
+                                   : short_label;
         }
-        set_expression_type(builder, branch, expression->left);
+        set_void_type(builder, branch);
         emit_label(builder, short_label, expression->span);
         IrInstruction *short_jump = emit(builder, IR_OP_JUMP, expression->span);
         if (short_jump != NULL) short_jump->target_a = end_label;
@@ -259,17 +266,28 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         left = lower_expression(builder, expression->arguments);
     IrOpcode opcode = IR_OP_CONSTANT;
     switch (expression->kind) {
-        case AST_EXPR_LITERAL: opcode = IR_OP_CONSTANT; break;
-        case AST_EXPR_NAME: opcode = IR_OP_LOAD; break;
-        case AST_EXPR_UNARY: opcode = IR_OP_UNARY; break;
-        case AST_EXPR_BINARY: opcode = IR_OP_BINARY; break;
-        case AST_EXPR_CALL: opcode = IR_OP_CALL; break;
-        case AST_EXPR_INDEX: opcode = IR_OP_INDEX; break;
-        case AST_EXPR_MEMBER: opcode = IR_OP_MEMBER; break;
-        case AST_EXPR_RESERVE: opcode = IR_OP_ALLOC; break;
-        case AST_EXPR_CAST: opcode = IR_OP_CAST; break;
-        case AST_EXPR_FREE: opcode = IR_OP_FREE; break;
-        case AST_EXPR_ERROR: builder->failed = 1; return IR_VALUE_NONE;
+        case AST_EXPR_LITERAL: opcode = IR_OP_CONSTANT;
+            break;
+        case AST_EXPR_NAME: opcode = IR_OP_LOAD;
+            break;
+        case AST_EXPR_UNARY: opcode = IR_OP_UNARY;
+            break;
+        case AST_EXPR_BINARY: opcode = IR_OP_BINARY;
+            break;
+        case AST_EXPR_CALL: opcode = IR_OP_CALL;
+            break;
+        case AST_EXPR_INDEX: opcode = IR_OP_INDEX;
+            break;
+        case AST_EXPR_MEMBER: opcode = IR_OP_MEMBER;
+            break;
+        case AST_EXPR_RESERVE: opcode = IR_OP_ALLOC;
+            break;
+        case AST_EXPR_CAST: opcode = IR_OP_CAST;
+            break;
+        case AST_EXPR_FREE: opcode = IR_OP_FREE;
+            break;
+        case AST_EXPR_ERROR: builder->failed = 1;
+            return IR_VALUE_NONE;
     }
     size_t first_argument = IR_VALUE_NONE;
     size_t argument_count = 0;
@@ -335,12 +353,21 @@ static void lower_print_value(IrBuilder *builder, const AstExpression *expressio
     }
     size_t value = lower_expression(builder, expression);
     AstSourceSpan span = expression == NULL
-        ? (AstSourceSpan) {{0, 0}, {0, 0}} : expression->span;
+                             ? (AstSourceSpan)
+    {
+        {
+            0, 0
+        },
+        {
+            0, 0
+        }
+    } : expression->span;
     IrInstruction *instruction = emit(builder, IR_OP_PRINT, span);
     if (instruction != NULL) {
         instruction->operand_a = value;
         instruction->operator_type = print_newline
-            ? TOKEN_KEYWORD_PRINTLINE : TOKEN_KEYWORD_PRINT;
+                                         ? TOKEN_KEYWORD_PRINTLINE
+                                         : TOKEN_KEYWORD_PRINT;
     }
     if (expression == NULL) set_void_type(builder, instruction);
     else set_expression_type(builder, instruction, expression);
@@ -360,8 +387,8 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
                 instruction->type = ast_type_data_type(builder->program, &statement->type);
                 instruction->type_id = statement->type.kind == AST_TYPE_INFERRED &&
                                        statement->value != NULL
-                    ? type_from_expression(builder->module, builder->program, statement->value)
-                    : type_from_ast(builder->module, builder->program, &statement->type);
+                                           ? type_from_expression(builder->module, builder->program, statement->value)
+                                           : type_from_ast(builder->module, builder->program, &statement->type);
                 if (instruction->type_id == IR_TYPE_NONE) builder->failed = 1;
                 instruction->pointer_depth = statement->type.pointer_depth;
                 instruction->type_name_token = statement->type.name_token;
@@ -397,7 +424,8 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
         } else if (statement->kind == AST_STMT_BREAK ||
                    statement->kind == AST_STMT_CONTINUE) {
             size_t target = statement->kind == AST_STMT_BREAK
-                ? builder->break_label : builder->continue_label;
+                                ? builder->break_label
+                                : builder->continue_label;
             /* An unresolved target is retained for sema/diagnostic recovery;
                valid modules always resolve it to an enclosing loop label. */
             IrInstruction *jump = emit(builder, IR_OP_JUMP, statement->span);
@@ -414,7 +442,7 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
                 branch->target_a = then_label;
                 branch->target_b = statement->else_body == NULL ? end_label : else_label;
             }
-            set_expression_type(builder, branch, statement->condition);
+            set_void_type(builder, branch);
             emit_label(builder, then_label, statement->span);
             lower_statement(builder, statement->body);
             IrInstruction *jump = emit(builder, IR_OP_JUMP, statement->span);
@@ -429,7 +457,8 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
             size_t condition_label = new_label(builder);
             size_t body_label = new_label(builder);
             size_t update_label = statement->kind == AST_STMT_FOR
-                ? new_label(builder) : condition_label;
+                                      ? new_label(builder)
+                                      : condition_label;
             size_t end_label = new_label(builder);
             size_t saved_break = builder->break_label;
             size_t saved_continue = builder->continue_label;
@@ -449,7 +478,7 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
                     branch->target_a = body_label;
                     branch->target_b = end_label;
                 }
-                set_expression_type(builder, branch, statement->condition);
+                set_void_type(builder, branch);
             }
             emit_label(builder, body_label, statement->span);
             lower_statement(builder, statement->body);
@@ -469,9 +498,10 @@ static int append_function(IrModule *module, const AstProgram *program,
                            const AstDeclarationNode *declaration) {
     if (module->function_count == module->function_capacity &&
         !grow_array((void **) &module->functions, &module->function_capacity,
-                    sizeof(*module->functions))) return 0;
+                    sizeof(*module->functions)))
+        return 0;
     IrFunction *function = &module->functions[module->function_count++];
-    *function = (IrFunction) {
+    *function = (IrFunction){
         .source_program = program,
         .name_token = declaration->name_token,
         .owner_token = declaration->as.function.owner_token,
@@ -510,18 +540,20 @@ static int append_function(IrModule *module, const AstProgram *program,
         receiver->type_name_token = function->owner_token;
         receiver->is_receiver = 1;
         receiver->type_id = type_from_parts(module, TYPE_UNKNOWN, 1,
-            function->owner_token, 0, 0, program, function->owner_symbol_id);
+                                            function->owner_token, 0, 0, program, function->owner_symbol_id);
         if (receiver->type_id == IR_TYPE_NONE) return 0;
     }
     for (const AstParameter *parameter = declaration->as.function.parameters;
          parameter != NULL; parameter = parameter->next, parameter_index++) {
         IrParameter *ir_parameter = &function->parameters[parameter_index];
-        *ir_parameter = (IrParameter) {
+        AstType parameter_type = parameter->type;
+        if (parameter->is_array) parameter_type.is_array = 1;
+        *ir_parameter = (IrParameter){
             .source_program = program,
             .name_token = parameter->name_token,
             .symbol_id = parameter->resolved_symbol_id,
             .type = ast_type_data_type(program, &parameter->type),
-            .type_id = type_from_ast(module, program, &parameter->type),
+            .type_id = type_from_ast(module, program, &parameter_type),
             .pointer_depth = parameter->type.pointer_depth,
             .type_name_token = parameter->type.name_token,
             .is_array = parameter->type.is_array || parameter->is_array
@@ -547,7 +579,7 @@ static int copy_fields(IrModule *module, const AstProgram *program, const AstFie
     if (*output == NULL) return 0;
     size_t index = 0;
     for (const AstField *field = fields; field != NULL; field = field->next, index++) {
-        (*output)[index] = (IrFieldDefinition) {
+        (*output)[index] = (IrFieldDefinition){
             .source_program = program,
             .name_token = field->name_token,
             .symbol_id = field->resolved_symbol_id,
@@ -562,9 +594,10 @@ static int append_structure(IrModule *module, const AstProgram *program,
                             const AstDeclarationNode *declaration) {
     if (module->structure_count == module->structure_capacity &&
         !grow_array((void **) &module->structures, &module->structure_capacity,
-                    sizeof(*module->structures))) return 0;
+                    sizeof(*module->structures)))
+        return 0;
     IrAggregate *structure = &module->structures[module->structure_count++];
-    *structure = (IrAggregate) {
+    *structure = (IrAggregate){
         .source_program = program,
         .name_token = declaration->name_token,
         .symbol_id = declaration->resolved_symbol_id
@@ -577,15 +610,17 @@ static int append_enum(IrModule *module, const AstProgram *program,
                        const AstDeclarationNode *declaration) {
     if (module->enum_count == module->enum_capacity &&
         !grow_array((void **) &module->enums, &module->enum_capacity,
-                    sizeof(*module->enums))) return 0;
+                    sizeof(*module->enums)))
+        return 0;
     IrEnum *enumeration = &module->enums[module->enum_count++];
-    *enumeration = (IrEnum) {
+    *enumeration = (IrEnum){
         .source_program = program,
         .name_token = declaration->name_token,
         .symbol_id = declaration->resolved_symbol_id
     };
     if (!copy_fields(module, program, declaration->as.enum_decl.fields,
-                     &enumeration->fields, &enumeration->field_count)) return 0;
+                     &enumeration->fields, &enumeration->field_count))
+        return 0;
     for (const AstEnumValue *value = declaration->as.enum_decl.values;
          value != NULL; value = value->next) {
         enumeration->variant_count++;
@@ -595,12 +630,12 @@ static int append_enum(IrModule *module, const AstProgram *program,
     }
     if (enumeration->variant_count != 0) {
         enumeration->variants = calloc(enumeration->variant_count,
-                                        sizeof(*enumeration->variants));
+                                       sizeof(*enumeration->variants));
         if (enumeration->variants == NULL) return 0;
     }
     if (enumeration->variant_argument_count != 0) {
         enumeration->variant_arguments = calloc(enumeration->variant_argument_count,
-                                                  sizeof(*enumeration->variant_arguments));
+                                                sizeof(*enumeration->variant_arguments));
         if (enumeration->variant_arguments == NULL) return 0;
     }
     size_t variant_index = 0;
@@ -608,7 +643,7 @@ static int append_enum(IrModule *module, const AstProgram *program,
     for (const AstEnumValue *value = declaration->as.enum_decl.values;
          value != NULL; value = value->next, variant_index++) {
         IrEnumVariant *variant = &enumeration->variants[variant_index];
-        *variant = (IrEnumVariant) {
+        *variant = (IrEnumVariant){
             .source_program = program,
             .name_token = value->name_token,
             .symbol_id = value->resolved_symbol_id,
@@ -616,9 +651,13 @@ static int append_enum(IrModule *module, const AstProgram *program,
         };
         for (const AstExpression *argument = value->arguments;
              argument != NULL; argument = argument->next) {
-            enumeration->variant_arguments[argument_index++] = (IrEnumArgument) {
-                .token = argument->value_token,
-                .type_id = type_from_expression(module, program, argument)
+            const AstExpression *constant = argument->kind == AST_EXPR_UNARY &&
+                                            argument->operator_type == TOKEN_MINUS
+                ? argument->right : argument;
+            enumeration->variant_arguments[argument_index++] = (IrEnumArgument){
+                .token = constant->value_token,
+                .type_id = type_from_expression(module, program, argument),
+                .negative = constant != argument
             };
             if (enumeration->variant_arguments[argument_index - 1].type_id == IR_TYPE_NONE)
                 return 0;
@@ -632,8 +671,9 @@ static int append_import(IrModule *module, const AstProgram *program,
                          const AstDeclarationNode *declaration) {
     if (module->import_count == module->import_capacity &&
         !grow_array((void **) &module->imports, &module->import_capacity,
-                    sizeof(*module->imports))) return 0;
-    module->imports[module->import_count++] = (IrImport) {
+                    sizeof(*module->imports)))
+        return 0;
+    module->imports[module->import_count++] = (IrImport){
         .source_program = program,
         .symbol_id = declaration->resolved_symbol_id,
         .path_token = declaration->as.import_decl.path_token,
@@ -651,11 +691,13 @@ static int lower_unit(IrModule *module, const AstProgram *program) {
         if (declaration->kind == AST_DECL_IMPORT && !append_import(module, program, declaration))
             return 0;
         if (declaration->kind == AST_DECL_STRUCT &&
-            !append_structure(module, program, declaration)) return 0;
+            !append_structure(module, program, declaration))
+            return 0;
         if (declaration->kind == AST_DECL_ENUM && !append_enum(module, program, declaration))
             return 0;
         if (declaration->kind == AST_DECL_FUNCTION &&
-            !append_function(module, program, declaration)) return 0;
+            !append_function(module, program, declaration))
+            return 0;
         if (declaration->kind == AST_DECL_STRUCT) {
             for (const AstDeclarationNode *method = declaration->as.struct_decl.methods;
                  method != NULL; method = method->next)
@@ -667,7 +709,8 @@ static int lower_unit(IrModule *module, const AstProgram *program) {
 
 IrModule *ir_lower_program(const AstProgram *program, const SemanticModel *semantics) {
     if (program == NULL || semantics == NULL || semantics->program != program ||
-        !program->structured_ast_complete) return NULL;
+        !program->structured_ast_complete)
+        return NULL;
     IrModule *module = calloc(1, sizeof(*module));
     if (module == NULL) return NULL;
     module->program = program;
@@ -693,14 +736,240 @@ static int instruction_produces_value(const IrInstruction *instruction) {
            opcode == IR_OP_PHI;
 }
 
+static const IrInstruction *verified_producer(const IrFunction *function,
+                                              size_t value, size_t before) {
+    if (value == IR_VALUE_NONE) return NULL;
+    for (size_t i = 0; i < before; i++)
+        if (function->instructions[i].result == value) return &function->instructions[i];
+    return NULL;
+}
+
+static int ir_integral_type(const IrModule *module, IrTypeId type_id) {
+    if (type_id >= module->type_count || module->types[type_id].kind != IR_TYPE_PRIMITIVE)
+        return 0;
+    DataType type = module->types[type_id].primitive;
+    return type == TYPE_INT || type == TYPE_CHAR || type == TYPE_BYTE || type == TYPE_BIT;
+}
+
+static int ir_floating_type(const IrModule *module, IrTypeId type_id) {
+    if (type_id >= module->type_count || module->types[type_id].kind != IR_TYPE_PRIMITIVE)
+        return 0;
+    DataType type = module->types[type_id].primitive;
+    return type == TYPE_FLOAT || type == TYPE_DOUBLE;
+}
+
+static int ir_numeric_type(const IrModule *module, IrTypeId type_id) {
+    return ir_integral_type(module, type_id) || ir_floating_type(module, type_id);
+}
+
+static int ir_pointer_type(const IrModule *module, IrTypeId type_id) {
+    return type_id < module->type_count &&
+           (module->types[type_id].kind == IR_TYPE_POINTER ||
+            module->types[type_id].kind == IR_TYPE_ARRAY);
+}
+
+static int ir_string_type(const IrModule *module, IrTypeId type_id) {
+    return type_id < module->type_count &&
+           module->types[type_id].kind == IR_TYPE_PRIMITIVE &&
+           module->types[type_id].primitive == TYPE_STRING;
+}
+
+static int ir_types_assignable(const IrModule *module, IrTypeId source,
+                               IrTypeId target, IrOpcode source_opcode) {
+    if (source >= module->type_count || target >= module->type_count) return 0;
+    if (source == target) return 1;
+    const IrType *from = &module->types[source];
+    const IrType *to = &module->types[target];
+    if (from->kind == IR_TYPE_ARRAY && to->kind == IR_TYPE_ARRAY)
+        return from->element_type == to->element_type;
+    if (from->kind == IR_TYPE_ARRAY && to->kind == IR_TYPE_POINTER)
+        return from->element_type == to->element_type;
+    if (from->kind == IR_TYPE_POINTER && to->kind == IR_TYPE_ARRAY)
+        return from->element_type == to->element_type;
+    if (from->kind == IR_TYPE_POINTER && to->kind == IR_TYPE_POINTER) {
+        const IrType *element = &module->types[from->element_type];
+        return from->element_type == to->element_type ||
+               (element->kind == IR_TYPE_PRIMITIVE &&
+                element->primitive == TYPE_UNKNOWN);
+    }
+    if (from->kind != IR_TYPE_PRIMITIVE || to->kind != IR_TYPE_PRIMITIVE) return 0;
+    if (ir_integral_type(module, source) && ir_integral_type(module, target)) return 1;
+    if (ir_integral_type(module, source) && ir_floating_type(module, target)) return 1;
+    if (from->primitive == TYPE_FLOAT && to->primitive == TYPE_DOUBLE) return 1;
+    return from->primitive == TYPE_DOUBLE && to->primitive == TYPE_FLOAT &&
+           source_opcode == IR_OP_CONSTANT;
+}
+
+static const IrFunction *ir_called_function(const IrModule *module, size_t symbol_id) {
+    for (size_t i = 0; i < module->function_count; i++)
+        if (module->functions[i].symbol_id == symbol_id) return &module->functions[i];
+    return NULL;
+}
+
+static int ir_void_type(const IrModule *module, IrTypeId type_id) {
+    return type_id < module->type_count &&
+           module->types[type_id].kind == IR_TYPE_PRIMITIVE &&
+           module->types[type_id].primitive == TYPE_VOID;
+}
+
+static int verify_instruction_types(const IrModule *module,
+                                    const IrFunction *function,
+                                    const IrInstruction *instruction,
+                                    size_t index) {
+    const IrInstruction *a = verified_producer(function, instruction->operand_a, index);
+    const IrInstruction *b = verified_producer(function, instruction->operand_b, index);
+    switch (instruction->opcode) {
+        case IR_OP_CONSTANT:
+            return instruction->auxiliary_token < function->source_program->token_count &&
+                   (ir_numeric_type(module, instruction->type_id) ||
+                    ir_string_type(module, instruction->type_id));
+        case IR_OP_LOAD:
+            return instruction->auxiliary_token < function->source_program->token_count;
+        case IR_OP_DECLARE:
+            return a == NULL || ir_types_assignable(module, a->type_id,
+                                                    instruction->type_id, a->opcode);
+        case IR_OP_STORE:
+            if (a == NULL || a->type_id != instruction->type_id) return 0;
+            if (a->opcode != IR_OP_LOAD && a->opcode != IR_OP_INDEX &&
+                a->opcode != IR_OP_MEMBER &&
+                !(a->opcode == IR_OP_UNARY && a->operator_type == TOKEN_STAR))
+                return 0;
+            if (instruction->operator_type == TOKEN_PLUS_PLUS ||
+                instruction->operator_type == TOKEN_MINUS_MINUS)
+                return ir_numeric_type(module, a->type_id);
+            if (b == NULL || !ir_types_assignable(module, b->type_id, a->type_id,
+                                                  b->opcode))
+                return 0;
+            return instruction->operator_type == TOKEN_EQUAL ||
+                   ((instruction->operator_type == TOKEN_PLUS_EQUAL ||
+                     instruction->operator_type == TOKEN_MINUS_EQUAL ||
+                     instruction->operator_type == TOKEN_STAR_EQUAL ||
+                     instruction->operator_type == TOKEN_SLASH_EQUAL) &&
+                    ir_numeric_type(module, a->type_id));
+        case IR_OP_UNARY:
+            if (b == NULL) return 0;
+            if (instruction->operator_type == TOKEN_MINUS)
+                return ir_numeric_type(module, b->type_id) &&
+                       instruction->type_id == b->type_id;
+            if (instruction->operator_type == TOKEN_BANG)
+                return ir_numeric_type(module, b->type_id) &&
+                       instruction->type == TYPE_BIT;
+            if (instruction->operator_type == TOKEN_STAR)
+                return ir_pointer_type(module, b->type_id) &&
+                       module->types[b->type_id].element_type == instruction->type_id;
+            if (instruction->operator_type == TOKEN_AMPERSAND)
+                return module->types[instruction->type_id].kind == IR_TYPE_POINTER &&
+                       (module->types[instruction->type_id].element_type == b->type_id ||
+                        (module->types[b->type_id].kind == IR_TYPE_ARRAY &&
+                         module->types[instruction->type_id].element_type ==
+                         module->types[b->type_id].element_type));
+            return 0;
+        case IR_OP_BINARY: {
+            if (a == NULL || b == NULL) return 0;
+            TokenType operation = instruction->operator_type;
+            if (operation == TOKEN_AMP_AMP || operation == TOKEN_PIPE_PIPE)
+                return ir_numeric_type(module, a->type_id) &&
+                       ir_numeric_type(module, b->type_id) && instruction->type == TYPE_BIT;
+            if (operation >= TOKEN_EQUAL_EQUAL && operation <= TOKEN_GREATER_EQUAL)
+                return instruction->type == TYPE_BIT;
+            if (operation < TOKEN_PLUS || operation > TOKEN_PERCENT) return 0;
+            if (operation == TOKEN_PLUS && ir_string_type(module, instruction->type_id))
+                return (ir_string_type(module, a->type_id) ||
+                        ir_numeric_type(module, a->type_id) ||
+                        ir_pointer_type(module, a->type_id)) &&
+                       (ir_string_type(module, b->type_id) ||
+                        ir_numeric_type(module, b->type_id) ||
+                        ir_pointer_type(module, b->type_id));
+            return ir_numeric_type(module, a->type_id) &&
+                   ir_numeric_type(module, b->type_id) &&
+                   ir_numeric_type(module, instruction->type_id) &&
+                   !(operation == TOKEN_PERCENT &&
+                     (ir_floating_type(module, a->type_id) ||
+                      ir_floating_type(module, b->type_id)));
+        }
+        case IR_OP_CALL: {
+            if (instruction->symbol_id == AST_SYMBOL_NONE) return a != NULL;
+            const IrFunction *callee = ir_called_function(module, instruction->symbol_id);
+            if (callee == NULL || instruction->argument_count != callee->parameter_count ||
+                instruction->type_id != callee->return_type_id)
+                return 0;
+            for (size_t argument = 0; argument < instruction->argument_count; argument++) {
+                const IrInstruction *value = verified_producer(function,
+                                                               function->arguments[
+                                                                   instruction->first_argument + argument], index);
+                if (value == NULL) return 0;
+                const IrParameter *parameter = &callee->parameters[argument];
+                if (parameter->is_receiver) {
+                    const IrType *pointer = &module->types[parameter->type_id];
+                    if (pointer->kind != IR_TYPE_POINTER ||
+                        pointer->element_type != value->type_id)
+                        return 0;
+                } else if (!ir_types_assignable(module, value->type_id,
+                                                parameter->type_id, value->opcode))
+                    return 0;
+            }
+            return 1;
+        }
+        case IR_OP_INDEX:
+            return a != NULL && b != NULL && ir_pointer_type(module, a->type_id) &&
+                   ir_integral_type(module, b->type_id) &&
+                   module->types[a->type_id].element_type == instruction->type_id;
+        case IR_OP_MEMBER:
+            return a != NULL && instruction->symbol_id < module->semantics->symbol_count &&
+                   (module->semantics->symbols[instruction->symbol_id].kind ==
+                    SEMANTIC_SYMBOL_FIELD ||
+                    module->semantics->symbols[instruction->symbol_id].kind ==
+                    SEMANTIC_SYMBOL_ENUM_VALUE ||
+                    module->semantics->symbols[instruction->symbol_id].kind ==
+                    SEMANTIC_SYMBOL_FUNCTION);
+        case IR_OP_CAST:
+            return a != NULL && ir_numeric_type(module, a->type_id) &&
+                   ir_numeric_type(module, instruction->type_id);
+        case IR_OP_ALLOC:
+            return ir_pointer_type(module, instruction->type_id);
+        case IR_OP_FREE:
+            return a != NULL && (ir_pointer_type(module, a->type_id) ||
+                                 ir_string_type(module, a->type_id)) &&
+                   ir_void_type(module, instruction->type_id);
+        case IR_OP_PRINT:
+            return a == NULL
+                       ? ir_void_type(module, instruction->type_id)
+                       : (ir_numeric_type(module, a->type_id) || ir_string_type(module, a->type_id) ||
+                          (ir_pointer_type(module, a->type_id) && a->type == TYPE_CHAR));
+        case IR_OP_RETURN:
+            return a == NULL
+                       ? ir_void_type(module, function->return_type_id)
+                       : ir_types_assignable(module, a->type_id, function->return_type_id, a->opcode);
+        case IR_OP_BRANCH:
+            return a != NULL && ir_numeric_type(module, a->type_id) &&
+                   ir_void_type(module, instruction->type_id);
+        case IR_OP_JUMP:
+        case IR_OP_LABEL:
+            return ir_void_type(module, instruction->type_id);
+        case IR_OP_PHI:
+            return a != NULL && b != NULL && instruction->type == TYPE_BIT &&
+                   a->type == TYPE_BIT && b->type == TYPE_BIT;
+    }
+    return 0;
+}
+
 int ir_verify_module(const IrModule *module) {
     if (module == NULL || module->program == NULL || module->semantics == NULL) return 0;
     for (size_t t = 0; t < module->type_count; t++) {
         const IrType *type = &module->types[t];
+        if (type->kind < IR_TYPE_PRIMITIVE || type->kind > IR_TYPE_ARRAY) return 0;
         if ((type->kind == IR_TYPE_POINTER || type->kind == IR_TYPE_ARRAY) &&
-            (type->element_type == IR_TYPE_NONE || type->element_type >= t)) return 0;
+            (type->element_type == IR_TYPE_NONE || type->element_type >= t))
+            return 0;
         if ((type->kind == IR_TYPE_PRIMITIVE || type->kind == IR_TYPE_NAMED) &&
-            type->element_type != IR_TYPE_NONE) return 0;
+            type->element_type != IR_TYPE_NONE)
+            return 0;
+        if (type->kind == IR_TYPE_NAMED &&
+            (type->symbol_id == AST_SYMBOL_NONE ||
+             type->symbol_id >= module->semantics->symbol_count ||
+             (module->semantics->symbols[type->symbol_id].kind != SEMANTIC_SYMBOL_STRUCT &&
+              module->semantics->symbols[type->symbol_id].kind != SEMANTIC_SYMBOL_ENUM)))
+            return 0;
     }
     for (size_t s = 0; s < module->structure_count; s++) {
         const IrAggregate *structure = &module->structures[s];
@@ -710,7 +979,8 @@ int ir_verify_module(const IrModule *module) {
             return 0;
         for (size_t field = 0; field < structure->field_count; field++)
             if (structure->fields[field].type_id >= module->type_count ||
-                structure->fields[field].symbol_id == AST_SYMBOL_NONE) return 0;
+                structure->fields[field].symbol_id == AST_SYMBOL_NONE)
+                return 0;
     }
     for (size_t e = 0; e < module->enum_count; e++) {
         const IrEnum *enumeration = &module->enums[e];
@@ -721,12 +991,15 @@ int ir_verify_module(const IrModule *module) {
         for (size_t variant = 0; variant < enumeration->variant_count; variant++) {
             const IrEnumVariant *item = &enumeration->variants[variant];
             if (item->symbol_id == AST_SYMBOL_NONE ||
+                item->argument_count != enumeration->field_count ||
                 item->first_argument > enumeration->variant_argument_count ||
                 item->argument_count > enumeration->variant_argument_count -
-                    item->first_argument) return 0;
+                item->first_argument)
+                return 0;
             for (size_t argument = 0; argument < item->argument_count; argument++)
                 if (enumeration->variant_arguments[item->first_argument + argument].type_id >=
-                    module->type_count) return 0;
+                    module->type_count)
+                    return 0;
         }
     }
     for (size_t f = 0; f < module->function_count; f++) {
@@ -734,29 +1007,34 @@ int ir_verify_module(const IrModule *module) {
         if (function->symbol_id == AST_SYMBOL_NONE ||
             function->symbol_id >= module->semantics->symbol_count ||
             module->semantics->symbols[function->symbol_id].kind !=
-                SEMANTIC_SYMBOL_FUNCTION ||
+            SEMANTIC_SYMBOL_FUNCTION ||
             module->semantics->symbols[function->symbol_id].source_program !=
-                function->source_program ||
+            function->source_program ||
             module->semantics->symbols[function->symbol_id].name_token !=
-                function->name_token || function->return_type_id >= module->type_count) return 0;
+            function->name_token || function->return_type_id >= module->type_count)
+            return 0;
         if ((function->owner_token == AST_TOKEN_NONE) !=
-            (function->owner_symbol_id == AST_SYMBOL_NONE)) return 0;
+            (function->owner_symbol_id == AST_SYMBOL_NONE))
+            return 0;
         if (function->owner_symbol_id != AST_SYMBOL_NONE &&
             (function->owner_symbol_id >= module->semantics->symbol_count ||
              module->semantics->symbols[function->owner_symbol_id].kind !=
-                 SEMANTIC_SYMBOL_STRUCT)) return 0;
+             SEMANTIC_SYMBOL_STRUCT))
+            return 0;
         for (size_t p = 0; p < function->parameter_count; p++) {
             const IrParameter *parameter = &function->parameters[p];
             if (parameter->is_receiver) {
                 if (p != 0 || function->owner_symbol_id == AST_SYMBOL_NONE ||
                     parameter->symbol_id != function->owner_symbol_id ||
                     parameter->pointer_depth != 1 ||
-                    parameter->type_id >= module->type_count) return 0;
+                    parameter->type_id >= module->type_count)
+                    return 0;
                 continue;
             }
             const SemanticSymbol *symbol = parameter->symbol_id <
-                module->semantics->symbol_count
-                    ? &module->semantics->symbols[parameter->symbol_id] : NULL;
+                                           module->semantics->symbol_count
+                                               ? &module->semantics->symbols[parameter->symbol_id]
+                                               : NULL;
             if (parameter->source_program == NULL ||
                 parameter->name_token >= parameter->source_program->token_count ||
                 parameter->symbol_id == AST_SYMBOL_NONE ||
@@ -766,7 +1044,7 @@ int ir_verify_module(const IrModule *module) {
                 symbol->name_token != parameter->name_token ||
                 symbol->owner_token != function->name_token ||
                 ast_type_data_type(symbol->source_program, &symbol->declared_type) !=
-                    parameter->type ||
+                parameter->type ||
                 symbol->declared_type.pointer_depth != parameter->pointer_depth)
                 return 0;
             if (parameter->type_id >= module->type_count) return 0;
@@ -835,7 +1113,8 @@ int ir_verify_module(const IrModule *module) {
                     REQUIRE_VALUE(instruction->operand_a);
                     break;
                 case IR_OP_DECLARE:
-                    if (instruction->operand_a != IR_VALUE_NONE) REQUIRE_VALUE(instruction->operand_a);
+                    if (instruction->operand_a != IR_VALUE_NONE)
+                        REQUIRE_VALUE(instruction->operand_a);
                     break;
                 case IR_OP_STORE:
                     REQUIRE_VALUE(instruction->operand_a);
@@ -869,11 +1148,11 @@ int ir_verify_module(const IrModule *module) {
                     if (instruction->symbol_id != AST_SYMBOL_NONE &&
                         (instruction->symbol_id >= module->semantics->symbol_count ||
                          module->semantics->symbols[instruction->symbol_id].kind !=
-                             SEMANTIC_SYMBOL_FUNCTION))
+                         SEMANTIC_SYMBOL_FUNCTION))
                         valid = 0;
                     if (instruction->first_argument > function->argument_count ||
                         instruction->argument_count >
-                            function->argument_count - instruction->first_argument) {
+                        function->argument_count - instruction->first_argument) {
                         valid = 0;
                     } else {
                         for (size_t a = 0; a < instruction->argument_count; a++)
@@ -885,7 +1164,8 @@ int ir_verify_module(const IrModule *module) {
                         REQUIRE_VALUE(instruction->operand_a);
                     break;
                 case IR_OP_RETURN:
-                    if (instruction->operand_a != IR_VALUE_NONE) REQUIRE_VALUE(instruction->operand_a);
+                    if (instruction->operand_a != IR_VALUE_NONE)
+                        REQUIRE_VALUE(instruction->operand_a);
                     break;
                 case IR_OP_BRANCH:
                     REQUIRE_VALUE(instruction->operand_a);
@@ -901,6 +1181,8 @@ int ir_verify_module(const IrModule *module) {
             }
 #undef REQUIRE_LABEL
 #undef REQUIRE_VALUE
+            if (valid && !verify_instruction_types(module, function, instruction, i))
+                valid = 0;
             if (valid && instruction->result != IR_VALUE_NONE)
                 defined[instruction->result] = 1;
         }

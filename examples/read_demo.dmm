@@ -9,7 +9,7 @@
 //   format: "%i" or "%d" for integers, "%c" for characters
 // ===================================================================
 
-#import <stdlib/io.txt>
+#import <stdlib/io.dmm>
 
 func main() -> void {
     println("╔════════════════════════════════════════╗");

@@ -1,0 +1,39 @@
+struct Pair {
+    var x:int;
+    var y:int;
+}
+
+struct Box {
+    var pair:Pair;
+    var marker:char;
+}
+
+func changed(value:Pair) -> Pair {
+    value.x = value.x + 10;
+    return value;
+}
+
+func main() -> void {
+    var original:Pair;
+    original.x = 1;
+    original.y = 2;
+    var copy:Pair = changed(original);
+    println(original.x);
+    println(copy.x);
+    var assigned:Pair;
+    assigned = copy;
+    assigned.y = 9;
+    println(copy.y);
+    println(assigned.y);
+
+    var box:Box;
+    box.pair = assigned;
+    box.marker = 'Z';
+    println(box.pair.x);
+    println(box.marker);
+
+    var [2] items:Pair;
+    items[1] = box.pair;
+    println(items[1].x);
+    println(items[1].y);
+}

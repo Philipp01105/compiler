@@ -1,0 +1,2 @@
+func __dmm_hidden(value:int) -> int { return value; }
+func main() -> void {}

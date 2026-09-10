@@ -1,0 +1,3 @@
+struct Payload { var value:int; }
+enum State(payload:Payload) { Broken(Payload) }
+func main() -> void {}

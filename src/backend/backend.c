@@ -17,10 +17,6 @@ int backend_emit_file(const IrModule *module, const BackendOptions *options,
                       const char *output_path) {
     if (module == NULL || module->program == NULL || options == NULL || output_path == NULL)
         return 0;
-    if (!x86_64_ir_supports_module(module))
-        return output_error(module->program,
-                            "Typed IR module is not supported by the x86-64 backend: '%s'",
-                            output_path);
     if (!x86_64_emit_ir_file(module, options->target_format, options->syntax_mode,
                              options->deterministic, output_path))
         return output_error(module->program, "Could not emit typed IR output '%s'", output_path);

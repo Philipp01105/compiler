@@ -3,7 +3,6 @@
 
 #include "ir.h"
 
-int x86_64_ir_supports_module(const IrModule *module);
 int x86_64_emit_ir_file(const IrModule *module, TargetFormat target,
                         SyntaxMode syntax, int deterministic,
                         const char *output_path);

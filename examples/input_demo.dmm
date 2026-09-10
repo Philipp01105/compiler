@@ -1,5 +1,5 @@
 // Test for Input struct functionality
-#import <stdlib/io.txt>
+#import <stdlib/io.dmm>
 
 func main() -> void {
     var input:Input;

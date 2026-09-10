@@ -66,21 +66,23 @@ aggregate pointer; implicit field names lower against that receiver. `@gc`
 declarations are initialized safely and released along every function exit.
 
 The verifier rejects malformed type graphs, duplicate or missing value
-definitions, invalid symbol ownership, nonexistent labels, and bad operand or
-argument references before backend emission.
+definitions, invalid symbol ownership, nonexistent labels, ill-typed operations,
+calls and returns, and bad operand or argument references before backend emission.
 
 ## x86-64 backend
 
 Virtual values, parameters, and locals receive frame offsets before instructions
 are emitted. Large frames are probed a page at a time. Fixed arrays and aggregate
-storage live directly in the frame; pointers and scalar values use eight-byte
-virtual slots while indirect memory operations honor their actual element width.
+storage live directly in the frame and are copied by value; pointers and scalar
+values use eight-byte virtual slots while indirect memory operations honor their
+actual element width.
 
 System V classifies integer and SSE arguments independently and spills overflow
 arguments in source order. Windows x64 uses positional registers, shadow space,
 and its CRT syscall shims. Both targets preserve stack alignment and the RBX
-callee-saved register used by address lowering. Method symbols are mangled with
-their owning type.
+callee-saved register used by address lowering. User functions that overlap the
+runtime are mangled into a private DMM namespace; method symbols also encode their
+owning type. Other top-level symbols remain available for C ABI interoperability.
 
 The runtime surface includes printing, string comparison/concatenation and C
 string intrinsics, numeric conversion, formatted/scalar input, allocation,
