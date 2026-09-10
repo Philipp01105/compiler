@@ -81,6 +81,28 @@ int main(int argc, char **argv) {
             fprintf(stderr, "imported AST/sema/IR graph is incomplete\n");
             failed = 1;
         }
+        if (strstr(argv[i], "import_root.dmm") != NULL &&
+            program != NULL && program->owned_import_count == 1) {
+            AstProgram *imported = program->owned_imports[0];
+            const char *root_func = NULL;
+            const char *import_func = NULL;
+            for (size_t token = 0; token < program->token_count; token++)
+                if (program->tokens[token].type == TOKEN_KEYWORD_FUNC) {
+                    root_func = program->tokens[token].lexeme;
+                    break;
+                }
+            for (size_t token = 0; token < imported->token_count; token++)
+                if (imported->tokens[token].type == TOKEN_KEYWORD_FUNC) {
+                    import_func = imported->tokens[token].lexeme;
+                    break;
+                }
+            if (program->strings == NULL || imported->strings != program->strings ||
+                !program->owns_strings || imported->owns_strings ||
+                root_func == NULL || root_func != import_func) {
+                fprintf(stderr, "source strings are not interned across imports\n");
+                failed = 1;
+            }
+        }
         if (program == NULL || !program->structured_ast_complete ||
             !ast_validate_program(program) || semantics == NULL ||
             module == NULL || !ir_verify_module(module) || module->function_count == 0) {

@@ -15,14 +15,25 @@
  * Returns dynamically allocated token stream with initial capacity.
  */
 TokenStream *create_token_stream(void) {
+    return create_token_stream_with_interner(NULL);
+}
+
+TokenStream *create_token_stream_with_interner(StringInterner *interner) {
     TokenStream *stream = malloc(sizeof(TokenStream));
     if (!stream) return NULL;
     stream->capacity = INITIAL_CAPACITY;
     stream->count = 0;
     stream->current = 0;
+    stream->strings = interner == NULL ? string_interner_create() : interner;
+    stream->owns_strings = interner == NULL;
+    if (stream->strings == NULL) {
+        free(stream);
+        return NULL;
+    }
     stream->tokens = malloc(sizeof(Token) * (size_t) stream->capacity);
     stream->has_error = stream->tokens == NULL;
     if (!stream->tokens) {
+        if (stream->owns_strings) string_interner_free(stream->strings);
         free(stream);
         return NULL;
     }
@@ -32,6 +43,7 @@ TokenStream *create_token_stream(void) {
 void free_token_stream(TokenStream *stream) {
     if (stream) {
         free(stream->tokens);
+        if (stream->owns_strings) string_interner_free(stream->strings);
         free(stream);
     }
 }
@@ -64,11 +76,12 @@ void add_token(TokenStream *stream, TokenType type, const char *value, int line,
     token->line = line;
     token->column = column;
 
-    if (value) {
-        strncpy(token->value, value, MAX_TOKEN - 1);
-        token->value[MAX_TOKEN - 1] = '\0';
-    } else {
-        token->value[0] = '\0';
+    token->value = string_interner_intern(stream->strings, value == NULL ? "" : value);
+    if (token->value == NULL) {
+        stream->has_error = 1;
+        error_report(global_error_handler, SEVERITY_FATAL, line, column, ERROR_CATEGORY_LEXER,
+                     ERR_LEX_FILE_READ_ERROR, NULL, "Out of memory while interning token text");
+        return;
     }
 
     stream->count++;
@@ -153,6 +166,11 @@ static TokenType get_keyword_type(const char *str) {
 }
 
 TokenStream *tokenize_file(const char *filename, int debug_mode) {
+    return tokenize_file_with_interner(filename, debug_mode, NULL);
+}
+
+TokenStream *tokenize_file_with_interner(const char *filename, int debug_mode,
+                                         StringInterner *interner) {
     (void) debug_mode;
     FILE *file = fopen(filename, "rb");
     if (!file) {
@@ -193,13 +211,19 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
     source[bytes_read] = '\0';
     fclose(file);
 
-    TokenStream *stream = tokenize_source(source, bytes_read, filename);
+    TokenStream *stream = tokenize_source_with_interner(source, bytes_read, filename, interner);
     free(source);
     return stream;
 }
 
 TokenStream *tokenize_source(const char *source, size_t length, const char *filename) {
-    TokenStream *stream = create_token_stream();
+    return tokenize_source_with_interner(source, length, filename, NULL);
+}
+
+TokenStream *tokenize_source_with_interner(const char *source, size_t length,
+                                           const char *filename,
+                                           StringInterner *interner) {
+    TokenStream *stream = create_token_stream_with_interner(interner);
     if (!stream) {
         error_report(global_error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_LEXER,
                      ERR_LEX_FILE_READ_ERROR, filename, "Out of memory while creating token stream");

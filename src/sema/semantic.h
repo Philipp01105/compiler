@@ -39,6 +39,8 @@ typedef struct {
     SemanticSymbol *symbols;
     size_t symbol_count;
     size_t symbol_capacity;
+    size_t *symbol_index;
+    size_t symbol_index_capacity;
     size_t unresolved_expression_count;
     size_t duplicate_symbol_count;
     size_t error_count;
