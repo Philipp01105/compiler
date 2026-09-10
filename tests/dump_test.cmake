@@ -1,0 +1,60 @@
+cmake_minimum_required(VERSION 3.21)
+if(NOT DEFINED COMPILER OR NOT DEFINED SOURCE_DIR OR NOT DEFINED OUTPUT_DIR)
+    message(FATAL_ERROR "COMPILER, SOURCE_DIR, and OUTPUT_DIR are required")
+endif()
+file(MAKE_DIRECTORY "${OUTPUT_DIR}")
+
+set(fixture "${SOURCE_DIR}/tests/unit/frontend_ast_fixture.dmm")
+set(ast "${OUTPUT_DIR}/fixture.ast")
+set(ir "${OUTPUT_DIR}/fixture.ir")
+set(intel_map "${OUTPUT_DIR}/fixture-intel.map")
+set(att_map "${OUTPUT_DIR}/fixture-att.map")
+execute_process(COMMAND "${COMPILER}" --deterministic --syntax=intel
+    --dump-ast "${ast}" --dump-ir "${ir}" --source-map "${intel_map}"
+    -o "${OUTPUT_DIR}/fixture-intel.s" "${fixture}" RESULT_VARIABLE intel_result)
+execute_process(COMMAND "${COMPILER}" --deterministic --syntax=att
+    --source-map "${att_map}" -o "${OUTPUT_DIR}/fixture-att.s" "${fixture}"
+    RESULT_VARIABLE att_result)
+if(NOT intel_result EQUAL 0 OR NOT att_result EQUAL 0)
+    message(FATAL_ERROR "Could not produce dump-format fixtures")
+endif()
+file(SHA256 "${intel_map}" intel_map_hash)
+file(SHA256 "${att_map}" att_map_hash)
+if(NOT intel_map_hash STREQUAL att_map_hash)
+    message(FATAL_ERROR "Instruction source maps differ between assembly syntaxes")
+endif()
+
+file(READ "${ast}" ast_dump)
+file(READ "${ir}" ir_dump)
+foreach(fragment "declaration struct" "declaration enum" "variant name=\"North\""
+                 "operator=\"+\"" "expression left name" "expression argument literal")
+    string(FIND "${ast_dump}" "${fragment}" position)
+    if(position LESS 0)
+        message(FATAL_ERROR "AST dump is missing '${fragment}'")
+    endif()
+endforeach()
+foreach(fragment "struct #0" "enum #0" "opcode=binary" "operator=\"+\""
+                 "opcode=call" "values=[")
+    string(FIND "${ir_dump}" "${fragment}" position)
+    if(position LESS 0)
+        message(FATAL_ERROR "IR dump is missing '${fragment}'")
+    endif()
+endforeach()
+
+set(import_source "${SOURCE_DIR}/tests/unit/import_root.dmm")
+set(import_ast "${OUTPUT_DIR}/import.ast")
+set(import_map "${OUTPUT_DIR}/import.map")
+execute_process(COMMAND "${COMPILER}" --deterministic --dump-ast "${import_ast}"
+    --source-map "${import_map}" -o "${OUTPUT_DIR}/import.s" "${import_source}"
+    RESULT_VARIABLE import_result)
+if(NOT import_result EQUAL 0)
+    message(FATAL_ERROR "Could not produce imported-unit dumps")
+endif()
+file(READ "${import_ast}" import_ast_dump)
+file(READ "${import_map}" import_source_map)
+string(FIND "${import_ast_dump}" "role=import" imported_program)
+string(FIND "${import_source_map}" "function=\"imported_square\"" imported_mapping)
+string(FIND "${import_source_map}" "import_math.dmm" imported_path)
+if(imported_program LESS 0 OR imported_mapping LESS 0 OR imported_path LESS 0)
+    message(FATAL_ERROR "Imported source units are missing from dumps or source maps")
+endif()

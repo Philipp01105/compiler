@@ -28,12 +28,14 @@ is no alternate compatibility emitter.
 - `src/common/string_interner.c` owns the module-wide canonical spelling table.
   Root files and imports share it, so equal source strings have pointer identity.
 - `src/ast` owns program lifetime, the shared string interner, spans, and AST storage.
+- `src/ast/ast_dump.c` serializes the resolved tree as versioned `dmm-ast-v1`.
 - `src/sema` collects global/member/local symbols, resolves expressions and
   named types, validates scopes, calls, conversions, lvalues, returns, bounds,
   and control-flow placement, and annotates AST nodes with stable IDs and types.
 - `src/ir` lowers typed AST nodes to explicit values and control flow, interns
   types, describes aggregate/enum layouts and imports, and verifies every use,
   definition, label, type, and symbol reference.
+- `src/ir/ir_dump.c` serializes verified modules as versioned `dmm-ir-v1`.
 - `src/backend/x86_64` consumes only verified IR. It owns stack layout, System V
   and Windows x64 calling conventions, scalar/SSE conversion, aggregate address
   calculation, runtime calls, and Intel/AT&T assembly formatting.
@@ -74,6 +76,13 @@ declarations are initialized safely and released along every function exit.
 The verifier rejects malformed type graphs, duplicate or missing value
 definitions, invalid symbol ownership, nonexistent labels, ill-typed operations,
 calls and returns, and bad operand or argument references before backend emission.
+
+Every IR instruction retains its originating AST span. During x86 lowering,
+that span and its IR index are attached to each structured machine instruction.
+The optional `dmm-source-map-v1` artifact records this mapping with source unit
+and function names, and explicitly marks generated ABI, prologue, cleanup, and
+epilogue instructions as source-less. `DUMP_FORMATS.md` defines the stable
+serialization contracts.
 
 ## x86-64 backend
 

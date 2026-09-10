@@ -8,6 +8,15 @@
 #include <stdint.h>
 
 typedef struct {
+    FILE *output;
+    size_t instruction_index;
+    size_t current_ir_instruction;
+    AstSourceSpan current_span;
+    int has_source;
+    int failed;
+} SourceMapWriter;
+
+typedef struct {
     const IrModule *module;
     const IrFunction *function;
     TargetFormat target;
@@ -18,9 +27,48 @@ typedef struct {
     size_t frame_size;
     size_t current_label;
     size_t bounds_sequence;
+    SourceMapWriter *source_map;
 } Emitter;
 
+static int map_quoted(FILE *output, const char *text) {
+    if (fputc('"', output) == EOF) return 0;
+    for (const unsigned char *p = (const unsigned char *) (text == NULL ? "" : text); *p; p++) {
+        if (*p == '"' || *p == '\\') {
+            if (fputc('\\', output) == EOF || fputc(*p, output) == EOF) return 0;
+        } else if (*p == '\n') {
+            if (fputs("\\n", output) == EOF) return 0;
+        } else if (*p == '\r') {
+            if (fputs("\\r", output) == EOF) return 0;
+        } else if (*p == '\t') {
+            if (fputs("\\t", output) == EOF) return 0;
+        } else if (*p < 0x20) {
+            if (fprintf(output, "\\x%02x", *p) < 0) return 0;
+        } else if (fputc(*p, output) == EOF) return 0;
+    }
+    return fputc('"', output) != EOF;
+}
+
 static void write_x64(const Emitter *emitter, X64Instruction instruction) {
+    SourceMapWriter *map = emitter->source_map;
+    if (map != NULL) {
+        if (map->has_source)
+            instruction = x64_instruction_with_source(instruction, map->current_ir_instruction,
+                map->current_span.begin.line, map->current_span.begin.column,
+                map->current_span.end.line, map->current_span.end.column);
+        if (fprintf(map->output, "instruction %zu function=", map->instruction_index) < 0 ||
+            !map_quoted(map->output, emitter->function == NULL ? "" :
+                ast_program_lexeme(emitter->function->source_program, emitter->function->name_token)) ||
+            fputs(" source=", map->output) == EOF ||
+            !map_quoted(map->output, emitter->function == NULL ? "" :
+                emitter->function->source_program->source_path)) {
+            map->failed = 1;
+        } else if (instruction.has_source) {
+            if (fprintf(map->output, " ir=%zu span=%d:%d-%d:%d\n", instruction.ir_instruction,
+                    instruction.source_begin_line, instruction.source_begin_column,
+                    instruction.source_end_line, instruction.source_end_column) < 0) map->failed = 1;
+        } else if (fputs(" ir=- span=-\n", map->output) == EOF) map->failed = 1;
+        map->instruction_index++;
+    }
     (void) x64_print_instruction(emitter->output, emitter->syntax, &instruction);
 }
 
@@ -1894,8 +1942,14 @@ static int emit_function(Emitter *emitter) {
         write_local_store(emitter, "rax", parameter_offset(emitter, parameter));
     }
     for (size_t i = 0; i < emitter->function->instruction_count; i++) {
+        if (emitter->source_map != NULL) {
+            emitter->source_map->current_ir_instruction = i;
+            emitter->source_map->current_span = emitter->function->instructions[i].span;
+            emitter->source_map->has_source = emitter->function->instructions[i].span.begin.line > 0;
+        }
         if (!emit_instruction(emitter, &emitter->function->instructions[i], i)) return 0;
     }
+    if (emitter->source_map != NULL) emitter->source_map->has_source = 0;
     emit_gc_cleanup(emitter);
     write_immediate(emitter, "rax", 0);
     fprintf(output, ".LIR_epilogue_%zu:\n", emitter->function_index);
@@ -2074,18 +2128,33 @@ static int emit_file(Emitter *emitter, int deterministic) {
 
 int x86_64_emit_ir_file(const IrModule *module, TargetFormat target,
                         SyntaxMode syntax, int deterministic,
-                        const char *output_path) {
+                        const char *output_path, const char *source_map_path) {
     if (!valid_module(module) || output_path == NULL) return 0;
     FILE *output = fopen(output_path, "w");
     if (output == NULL) return 0;
+    SourceMapWriter map = {0};
+    if (source_map_path != NULL) {
+        map.output = fopen(source_map_path, "w");
+        if (map.output == NULL) {
+            fclose(output);
+            (void) remove(output_path);
+            return 0;
+        }
+        if (fputs("dmm-source-map-v1\nsource path=", map.output) == EOF ||
+            !map_quoted(map.output, module->program->source_path) ||
+            fputs("\n", map.output) == EOF) map.failed = 1;
+    }
     Emitter emitter = {
         .module = module,
         .target = target,
         .syntax = syntax,
-        .output = output
+        .output = output,
+        .source_map = source_map_path == NULL ? NULL : &map
     };
     int success = emit_file(&emitter, deterministic);
     if (fclose(output) != 0) success = 0;
+    if (map.output != NULL && (fclose(map.output) != 0 || map.failed)) success = 0;
     if (!success) (void) remove(output_path);
+    if (!success && source_map_path != NULL) (void) remove(source_map_path);
     return success;
 }

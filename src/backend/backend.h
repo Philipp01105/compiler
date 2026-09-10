@@ -8,6 +8,7 @@ typedef struct {
     SyntaxMode syntax_mode;
     int debug;
     int deterministic;
+    const char *source_map_path;
 } BackendOptions;
 
 /* Emit one assembly file from the verified target-neutral module. */

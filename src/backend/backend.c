@@ -18,7 +18,7 @@ int backend_emit_file(const IrModule *module, const BackendOptions *options,
     if (module == NULL || module->program == NULL || options == NULL || output_path == NULL)
         return 0;
     if (!x86_64_emit_ir_file(module, options->target_format, options->syntax_mode,
-                             options->deterministic, output_path))
+                             options->deterministic, output_path, options->source_map_path))
         return output_error(module->program, "Could not emit typed IR output '%s'", output_path);
     if (cleanup_assembly_file(output_path) != 0)
         return output_error(module->program, "Assembly cleanup pass failed for '%s'", output_path);

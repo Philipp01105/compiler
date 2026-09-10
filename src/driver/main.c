@@ -27,6 +27,9 @@ void print_usage(const char *program_name) {
     printf("  --formatError  Output errors in JSON format\n");
     printf("  --syntax=MODE  Assembly syntax: att or intel (default: intel)\n");
     printf("  --target=FMT   Target format: elf or coff (default: auto-detect)\n");
+    printf("  --dump-ast FILE Write the stable dmm-ast-v1 dump to FILE\n");
+    printf("  --dump-ir FILE  Write the stable dmm-ir-v1 dump to FILE\n");
+    printf("  --source-map FILE Write the instruction source map to FILE\n");
     printf("  -o FILE        Write assembly to FILE\n");
     printf("  --deterministic Omit timestamps from generated assembly\n");
     printf("  --help         Show this help message\n");
@@ -95,6 +98,24 @@ static int output_conflicts_with_source(const char *source_file, const char *out
 #endif
 }
 
+static int dump_file(const char *path, int (*writer)(FILE *, const void *),
+                     const void *value) {
+    FILE *output = fopen(path, "w");
+    if (output == NULL) return 0;
+    int success = writer(output, value);
+    if (fclose(output) != 0) success = 0;
+    if (!success) (void) remove(path);
+    return success;
+}
+
+static int write_ast_dump(FILE *output, const void *value) {
+    return ast_dump(output, value);
+}
+
+static int write_ir_dump(FILE *output, const void *value) {
+    return ir_dump(output, value);
+}
+
 int main(int argc, char *argv[]) {
     int show_tokens = 0;
     int debug_mode = 0;
@@ -102,6 +123,9 @@ int main(int argc, char *argv[]) {
     int deterministic = 0;
     const char *source_file = NULL;
     const char *requested_output = NULL;
+    const char *ast_dump_path = NULL;
+    const char *ir_dump_path = NULL;
+    const char *source_map_path = NULL;
     SyntaxMode syntax_mode = SYNTAX_INTEL; /* Default to Intel syntax */
     TargetFormat target_format = TARGET_ELF; /* Auto-detect later */
     int target_format_explicit = 0; /* Whether user specified target */
@@ -137,6 +161,20 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
             requested_output = argv[i];
+        } else if (strcmp(argv[i], "--dump-ast") == 0 ||
+                   strcmp(argv[i], "--dump-ir") == 0 ||
+                   strcmp(argv[i], "--source-map") == 0) {
+            const char *option = argv[i];
+            if (++i >= argc) {
+                error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                             ERR_COMP_INVALID_OPTION, NULL, "Option '%s' requires a filename", option);
+                error_handler_flush(error_handler);
+                error_handler_free(error_handler);
+                return 1;
+            }
+            if (strcmp(option, "--dump-ast") == 0) ast_dump_path = argv[i];
+            else if (strcmp(option, "--dump-ir") == 0) ir_dump_path = argv[i];
+            else source_map_path = argv[i];
         } else if (strncmp(argv[i], "--syntax=", 9) == 0) {
             const char *mode = argv[i] + 9;
             if (strcmp(mode, "intel") == 0) {
@@ -290,6 +328,32 @@ int main(int argc, char *argv[]) {
         memcpy(generated_output + source_length, ".s", 3);
         output_filename = generated_output;
     }
+    const char *artifacts[] = {output_filename, ast_dump_path, ir_dump_path, source_map_path};
+    for (size_t i = 0; i < sizeof(artifacts) / sizeof(artifacts[0]); i++) {
+        if (artifacts[i] != NULL && output_conflicts_with_source(source_file, artifacts[i])) {
+            error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                         ERR_COMP_INVALID_OPTION, source_file,
+                         "Generated artifact must differ from source file");
+            error_handler_flush(error_handler);
+            free(generated_output);
+            ast_program_free(program);
+            error_handler_free(error_handler);
+            return 1;
+        }
+        for (size_t j = i + 1; j < sizeof(artifacts) / sizeof(artifacts[0]); j++) {
+            if (artifacts[i] != NULL && artifacts[j] != NULL &&
+                strcmp(artifacts[i], artifacts[j]) == 0) {
+                error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                             ERR_COMP_INVALID_OPTION, source_file,
+                             "Generated artifact paths must be distinct");
+                error_handler_flush(error_handler);
+                free(generated_output);
+                ast_program_free(program);
+                error_handler_free(error_handler);
+                return 1;
+            }
+        }
+    }
     if (requested_output != NULL) (void) remove(requested_output);
 
     if (debug_mode) {
@@ -302,7 +366,8 @@ int main(int argc, char *argv[]) {
         .target_format = target_format,
         .syntax_mode = syntax_mode,
         .debug = debug_mode,
-        .deterministic = deterministic
+        .deterministic = deterministic,
+        .source_map_path = source_map_path
     };
     SemanticModel *semantics = NULL;
     IrModule *module = NULL;
@@ -335,6 +400,19 @@ int main(int argc, char *argv[]) {
                          "Could not create lowering module");
             error_handler_flush(error_handler);
             free(generated_output);
+            semantic_model_free(semantics);
+            ast_program_free(program);
+            error_handler_free(error_handler);
+            return 1;
+        }
+        if ((ast_dump_path != NULL && !dump_file(ast_dump_path, write_ast_dump, program)) ||
+            (ir_dump_path != NULL && !dump_file(ir_dump_path, write_ir_dump, module))) {
+            error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                         ERR_CODEGEN_OUTPUT_FAILED, source_file,
+                         "Could not write requested frontend dump");
+            error_handler_flush(error_handler);
+            free(generated_output);
+            ir_module_free(module);
             semantic_model_free(semantics);
             ast_program_free(program);
             error_handler_free(error_handler);
