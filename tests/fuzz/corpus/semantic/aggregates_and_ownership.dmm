@@ -1,0 +1,91 @@
+enum PacketKind(id:int, name:string, reliable:bit, weight:double) {
+    data(10, "data", true, 1.25),
+    retry(20, "retry", false, 2.5),
+    done(30, "done", true, 0.5)
+}
+
+struct PacketBuffer {
+    var used:int;
+    var checksum:int;
+    var bytes:byte[12];
+
+    func initialize(seed:int) -> void {
+        used = 0;
+        checksum = seed;
+        for (var i:int = 0; i < 12; i++) {
+            bytes[i] = byte(0);
+        }
+    }
+
+    func push(value:int) -> bit {
+        if (used >= 12) {
+            return false;
+        }
+        bytes[used] = byte(value);
+        checksum += int(bytes[used]);
+        used++;
+        return true;
+    }
+
+    func at(index:int) -> int {
+        return int(bytes[index]);
+    }
+
+    static func normalize(value:double) -> float {
+        return float(value / 10.0);
+    }
+}
+
+func rotate_kind(kind:PacketKind, attempts:int) -> PacketKind {
+    if (kind == PacketKind.done) {
+        return kind;
+    }
+    if (attempts > 2) {
+        return PacketKind.retry;
+    }
+    return PacketKind.data;
+}
+
+func fill(buffer:PacketBuffer, base:int) -> PacketBuffer {
+    var row:int = 0;
+    while (row < 3) {
+        for (var column:int = 0; column < 4; column++) {
+            var value:int = base + row * 4 + column;
+            if (value % 2 == 0) {
+                buffer.push(value);
+            } else {
+                buffer.push(value * 3);
+            }
+        }
+        row++;
+    }
+    return buffer;
+}
+
+func allocated_value(value:int) -> int {
+    @gc var storage:*int = reserve(int);
+    *storage = value;
+    return *storage;
+}
+
+func main() -> void {
+    var buffer:PacketBuffer;
+    buffer.initialize(17);
+    buffer = fill(buffer, 4);
+
+    var kind:PacketKind = rotate_kind(PacketKind.data, buffer.at(3));
+    var [4] samples:double;
+    for (var i:int = 0; i < 4; i++) {
+        samples[i] = double(buffer.at(i)) / 3.0;
+    }
+
+    var manual:*double = reserve(double);
+    *manual = double(PacketBuffer.normalize(samples[2]));
+    var label:string = "packet=" + kind.name + ",id=" + kind.id
+        + ",reliable=" + kind.reliable + ",checksum=" + buffer.checksum
+        + ",allocated=" + allocated_value(buffer.used)
+        + ",weight=" + *manual;
+    println(label);
+    free(label);
+    free(manual);
+}
