@@ -30,6 +30,20 @@ jobs:
           UBSAN_OPTIONS: halt_on_error=1
         run: ctest --test-dir build -L safety --output-on-failure
 
+  fuzzers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure libFuzzer targets
+        run: cmake -S . -B build-fuzz -DCMAKE_C_COMPILER=clang -DDMM_BUILD_FUZZERS=ON -DBUILD_TESTING=OFF -DDMM_STRICT_WARNINGS=ON
+      - name: Build libFuzzer targets
+        run: cmake --build build-fuzz --parallel
+      - name: Short fuzzing smoke run
+        run: |
+          ./build-fuzz/fuzz_parser tests/fuzz/corpus/parser -dict=tests/fuzz/dmm.dict -max_total_time=5 -timeout=2
+          ./build-fuzz/fuzz_semantic tests/fuzz/corpus/semantic -dict=tests/fuzz/dmm.dict -max_total_time=5 -timeout=2
+          ./build-fuzz/fuzz_ir tests/fuzz/corpus/ir -dict=tests/fuzz/dmm.dict -max_total_time=5 -timeout=2
+
   windows:
     runs-on: windows-latest
     steps:

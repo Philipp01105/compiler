@@ -1,0 +1,15 @@
+enum Result(message:string, code:int) {
+    Ok("ok", 0),
+    Error("error", 1)
+}
+
+struct Box {
+    var values:int[4];
+}
+
+func main() -> void {
+    var box:Box;
+    box.values[2] = 7;
+    println(box.values[2]);
+    println(Result.Error.code);
+}
