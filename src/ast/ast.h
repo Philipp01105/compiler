@@ -39,7 +39,9 @@ typedef struct AstType {
     AstSourceSpan span;
     size_t name_token;
     unsigned pointer_depth;
+    unsigned outer_pointer_depth;
     int is_array;
+    int is_slice;
     size_t array_length_token;
 } AstType;
 
@@ -62,6 +64,7 @@ struct AstExpression {
     AstExpression *right;
     AstExpression *arguments;
     AstExpression *next;
+    AstType allocated_type;
     DataType resolved_type;
     unsigned resolved_pointer_depth;
     size_t resolved_named_type_token;
