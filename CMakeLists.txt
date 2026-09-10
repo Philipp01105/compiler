@@ -41,6 +41,8 @@ add_executable(compiler
         src/backend/backend.h
         src/backend/x86_64/ir_emitter.c
         src/backend/x86_64/ir_emitter.h
+        src/backend/x86_64/instruction.c
+        src/backend/x86_64/instruction.h
         src/backend/asm_optimizer.c
         src/backend/asm_optimizer.h
         src/backend/syntax_converter.c
@@ -133,6 +135,12 @@ if(BUILD_TESTING)
     add_test(NAME syntax_converter_unit COMMAND dmm_syntax_converter_test)
     set_tests_properties(syntax_converter_unit PROPERTIES LABELS "unit;safety")
 
+    add_executable(dmm_x86_instruction_test
+            tests/unit/x86_instruction_test.c src/backend/x86_64/instruction.c)
+    target_include_directories(dmm_x86_instruction_test PRIVATE ${DMM_INCLUDE_DIRS})
+    add_test(NAME x86_instruction_unit COMMAND dmm_x86_instruction_test)
+    set_tests_properties(x86_instruction_unit PROPERTIES LABELS "unit;backend;safety")
+
     add_executable(dmm_lexer_test tests/unit/lexer_test.c src/frontend/lexer.c src/diagnostics/errorHandler.c)
     target_include_directories(dmm_lexer_test PRIVATE ${DMM_INCLUDE_DIRS})
     add_test(NAME lexer_unit COMMAND dmm_lexer_test)
@@ -202,7 +210,7 @@ if(BUILD_TESTING)
     set_tests_properties(stress_limits PROPERTIES LABELS "integration;stress;safety")
 
     if(DMM_SANITIZERS)
-        foreach(test_target dmm_optimizer_test dmm_syntax_converter_test dmm_lexer_test
+        foreach(test_target dmm_optimizer_test dmm_syntax_converter_test dmm_x86_instruction_test dmm_lexer_test
                             dmm_frontend_ast_test dmm_pipeline_test)
             target_compile_options(${test_target} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
             target_link_options(${test_target} PRIVATE -fsanitize=address,undefined)

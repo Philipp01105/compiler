@@ -1,4 +1,5 @@
 #include "ir_emitter.h"
+#include "instruction.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,6 +19,49 @@ typedef struct {
     size_t current_label;
     size_t bounds_sequence;
 } Emitter;
+
+static void write_x64(const Emitter *emitter, X64Instruction instruction) {
+    (void) x64_print_instruction(emitter->output, emitter->syntax, &instruction);
+}
+
+static void write_x64_0(const Emitter *emitter, X64Opcode opcode) {
+    write_x64(emitter, x64_instruction0(opcode, X64_WIDTH_NONE));
+}
+
+static void write_x64_1(const Emitter *emitter, X64Opcode opcode, X64Width width,
+                        X64Operand operand) {
+    write_x64(emitter, x64_instruction1(opcode, width, operand));
+}
+
+static void write_x64_2(const Emitter *emitter, X64Opcode opcode, X64Width width,
+                        X64Operand destination, X64Operand source) {
+    write_x64(emitter, x64_instruction2(opcode, width, destination, source));
+}
+
+static void write_register_move(const Emitter *emitter, const char *destination,
+                                const char *source) {
+    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                x64_register(destination), x64_register(source));
+}
+
+static void write_stack_load(const Emitter *emitter, const char *destination,
+                             size_t offset) {
+    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD, x64_register(destination),
+                x64_memory(X64_WIDTH_QWORD, "rsp", (long long) offset));
+}
+
+static void write_stack_store(const Emitter *emitter, size_t offset,
+                              const char *source) {
+    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                x64_memory(X64_WIDTH_QWORD, "rsp", (long long) offset),
+                x64_register(source));
+}
+
+static void write_stack_address(const Emitter *emitter, const char *destination,
+                                size_t offset) {
+    write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD, x64_register(destination),
+                x64_memory(X64_WIDTH_NONE, "rsp", (long long) offset));
+}
 
 static int is_integral(DataType type) {
     return type == TYPE_INT || type == TYPE_CHAR || type == TYPE_BYTE ||
@@ -217,59 +261,57 @@ static void write_escaped(FILE *output, const char *text) {
 }
 
 static void write_value_load(const Emitter *emitter, const char *reg, size_t value) {
-    if (emitter->syntax == SYNTAX_INTEL)
-        fprintf(emitter->output, "    mov %s, QWORD PTR [rbp - %zu]\n", reg,
-                value_offset(value));
-    else
-        fprintf(emitter->output, "    movq -%zu(%%rbp), %%%s\n", value_offset(value), reg);
+    X64Instruction instruction = x64_instruction2(X64_OP_MOV, X64_WIDTH_QWORD,
+        x64_register(reg), x64_memory(X64_WIDTH_QWORD, "rbp",
+                                      -(long long) value_offset(value)));
+    (void) x64_print_instruction(emitter->output, emitter->syntax, &instruction);
 }
 
 static void write_value_store(const Emitter *emitter, const char *reg, size_t value) {
-    if (emitter->syntax == SYNTAX_INTEL)
-        fprintf(emitter->output, "    mov QWORD PTR [rbp - %zu], %s\n",
-                value_offset(value), reg);
-    else
-        fprintf(emitter->output, "    movq %%%s, -%zu(%%rbp)\n", reg, value_offset(value));
+    X64Instruction instruction = x64_instruction2(X64_OP_MOV, X64_WIDTH_QWORD,
+        x64_memory(X64_WIDTH_QWORD, "rbp", -(long long) value_offset(value)),
+        x64_register(reg));
+    (void) x64_print_instruction(emitter->output, emitter->syntax, &instruction);
 }
 
 static void write_local_load(const Emitter *emitter, const char *reg, size_t offset) {
-    if (emitter->syntax == SYNTAX_INTEL)
-        fprintf(emitter->output, "    mov %s, QWORD PTR [rbp - %zu]\n", reg, offset);
-    else
-        fprintf(emitter->output, "    movq -%zu(%%rbp), %%%s\n", offset, reg);
+    X64Instruction instruction = x64_instruction2(X64_OP_MOV, X64_WIDTH_QWORD,
+        x64_register(reg), x64_memory(X64_WIDTH_QWORD, "rbp", -(long long) offset));
+    (void) x64_print_instruction(emitter->output, emitter->syntax, &instruction);
 }
 
 static void write_local_store(const Emitter *emitter, const char *reg, size_t offset) {
-    if (emitter->syntax == SYNTAX_INTEL)
-        fprintf(emitter->output, "    mov QWORD PTR [rbp - %zu], %s\n", offset, reg);
-    else
-        fprintf(emitter->output, "    movq %%%s, -%zu(%%rbp)\n", reg, offset);
+    X64Instruction instruction = x64_instruction2(X64_OP_MOV, X64_WIDTH_QWORD,
+        x64_memory(X64_WIDTH_QWORD, "rbp", -(long long) offset), x64_register(reg));
+    (void) x64_print_instruction(emitter->output, emitter->syntax, &instruction);
 }
 
 static void write_immediate(const Emitter *emitter, const char *reg, long long value) {
-    if (emitter->syntax == SYNTAX_INTEL)
-        fprintf(emitter->output, "    mov %s, %lld\n", reg, value);
-    else
-        fprintf(emitter->output, "    movq $%lld, %%%s\n", value, reg);
+    X64Instruction instruction = x64_instruction2(X64_OP_MOV, X64_WIDTH_QWORD,
+        x64_register(reg), x64_immediate(value));
+    (void) x64_print_instruction(emitter->output, emitter->syntax, &instruction);
 }
 
 static void write_address(const Emitter *emitter, const char *reg, const char *label,
                           size_t suffix) {
-    if (emitter->syntax == SYNTAX_INTEL)
-        fprintf(emitter->output, "    lea %s, [rip + %s%zu]\n", reg, label, suffix);
-    else
-        fprintf(emitter->output, "    leaq %s%zu(%%rip), %%%s\n", label, suffix, reg);
+    X64Instruction instruction = x64_instruction2(X64_OP_LEA, X64_WIDTH_QWORD,
+        x64_register(reg), x64_rip_memory(X64_WIDTH_NONE, label, suffix));
+    (void) x64_print_instruction(emitter->output, emitter->syntax, &instruction);
 }
 
 static void write_call(const Emitter *emitter, const char *name) {
     if (emitter->target == TARGET_COFF) {
-        fputs(emitter->syntax == SYNTAX_INTEL ? "    sub rsp, 32\n" :
-                                               "    subq $32, %rsp\n", emitter->output);
+        X64Instruction stack = x64_instruction2(X64_OP_SUB, X64_WIDTH_QWORD,
+            x64_register("rsp"), x64_immediate(32));
+        (void) x64_print_instruction(emitter->output, emitter->syntax, &stack);
     }
-    fprintf(emitter->output, "    call %s\n", name);
+    X64Instruction call = x64_instruction1(X64_OP_CALL, X64_WIDTH_NONE,
+                                            x64_label(name));
+    (void) x64_print_instruction(emitter->output, emitter->syntax, &call);
     if (emitter->target == TARGET_COFF) {
-        fputs(emitter->syntax == SYNTAX_INTEL ? "    add rsp, 32\n" :
-                                               "    addq $32, %rsp\n", emitter->output);
+        X64Instruction stack = x64_instruction2(X64_OP_ADD, X64_WIDTH_QWORD,
+            x64_register("rsp"), x64_immediate(32));
+        (void) x64_print_instruction(emitter->output, emitter->syntax, &stack);
     }
 }
 
@@ -307,25 +349,31 @@ static size_t stack_parameter_count(const IrFunction *function, TargetFormat tar
 
 static void write_positive_frame_load(const Emitter *emitter, const char *reg,
                                       size_t offset) {
-    if (emitter->syntax == SYNTAX_INTEL)
-        fprintf(emitter->output, "    mov %s, QWORD PTR [rbp + %zu]\n", reg, offset);
-    else
-        fprintf(emitter->output, "    movq %zu(%%rbp), %%%s\n", offset, reg);
+    X64Instruction instruction = x64_instruction2(X64_OP_MOV, X64_WIDTH_QWORD,
+        x64_register(reg), x64_memory(X64_WIDTH_QWORD, "rbp", (long long) offset));
+    (void) x64_print_instruction(emitter->output, emitter->syntax, &instruction);
 }
 
 static void normalize_integral_parameter(const Emitter *emitter, DataType type) {
     if (type == TYPE_INT) {
-        fputs(emitter->syntax == SYNTAX_INTEL ? "    movsxd rax, eax\n" :
-                                               "    movslq %eax, %rax\n", emitter->output);
+        X64Instruction instruction = x64_instruction2(X64_OP_MOVSX, X64_WIDTH_QWORD,
+            x64_sized_register(X64_WIDTH_QWORD, "rax"),
+            x64_sized_register(X64_WIDTH_DWORD, "eax"));
+        (void) x64_print_instruction(emitter->output, emitter->syntax, &instruction);
     } else if (type == TYPE_CHAR) {
-        fputs(emitter->syntax == SYNTAX_INTEL ? "    movsx rax, al\n" :
-                                               "    movsbq %al, %rax\n", emitter->output);
+        X64Instruction instruction = x64_instruction2(X64_OP_MOVSX, X64_WIDTH_QWORD,
+            x64_sized_register(X64_WIDTH_QWORD, "rax"),
+            x64_sized_register(X64_WIDTH_BYTE, "al"));
+        (void) x64_print_instruction(emitter->output, emitter->syntax, &instruction);
     } else if (type == TYPE_BYTE) {
-        fputs(emitter->syntax == SYNTAX_INTEL ? "    movzx eax, al\n" :
-                                               "    movzbl %al, %eax\n", emitter->output);
+        X64Instruction instruction = x64_instruction2(X64_OP_MOVZX, X64_WIDTH_DWORD,
+            x64_sized_register(X64_WIDTH_DWORD, "eax"),
+            x64_sized_register(X64_WIDTH_BYTE, "al"));
+        (void) x64_print_instruction(emitter->output, emitter->syntax, &instruction);
     } else if (type == TYPE_BIT) {
-        fputs(emitter->syntax == SYNTAX_INTEL ? "    and eax, 1\n" :
-                                               "    andl $1, %eax\n", emitter->output);
+        X64Instruction instruction = x64_instruction2(X64_OP_AND, X64_WIDTH_DWORD,
+            x64_sized_register(X64_WIDTH_DWORD, "eax"), x64_immediate(1));
+        (void) x64_print_instruction(emitter->output, emitter->syntax, &instruction);
     }
 }
 
@@ -339,62 +387,39 @@ static long long constant_value(const AstProgram *program,
     return strtoll(token->lexeme, NULL, 10);
 }
 
+static void load_nullable_string(Emitter *emitter, const char *reg, size_t value);
+
 static int emit_string_compare(Emitter *emitter, const IrInstruction *instruction) {
     const char *left_argument = emitter->target == TARGET_COFF ? "rcx" : "rdi";
     const char *right_argument = emitter->target == TARGET_COFF ? "rdx" : "rsi";
     int equal_result = instruction->operator_type == TOKEN_EQUAL_EQUAL;
     write_value_load(emitter, "rax", instruction->operand_a);
     write_value_load(emitter, "rcx", instruction->operand_b);
-    if (emitter->syntax == SYNTAX_INTEL) {
-        fprintf(emitter->output,
-                "    cmp rax, rcx\n    je .LIR_string_equal_%zu_%zu\n",
-                emitter->function_index, instruction->result);
-    } else {
-        fprintf(emitter->output,
-                "    cmpq %%rcx, %%rax\n    je .LIR_string_equal_%zu_%zu\n",
-                emitter->function_index, instruction->result);
-    }
-    write_value_load(emitter, left_argument, instruction->operand_a);
-    if (emitter->syntax == SYNTAX_INTEL)
-        fprintf(emitter->output,
-                "    test %s, %s\n    jnz .LIR_string_left_%zu_%zu\n"
-                "    lea %s, [rip + .LIR_empty_string_0]\n.LIR_string_left_%zu_%zu:\n",
-                left_argument, left_argument, emitter->function_index, instruction->result,
-                left_argument, emitter->function_index, instruction->result);
-    else
-        fprintf(emitter->output,
-                "    testq %%%s, %%%s\n    jnz .LIR_string_left_%zu_%zu\n"
-                "    leaq .LIR_empty_string_0(%%rip), %%%s\n.LIR_string_left_%zu_%zu:\n",
-                left_argument, left_argument, emitter->function_index, instruction->result,
-                left_argument, emitter->function_index, instruction->result);
-    write_value_load(emitter, right_argument, instruction->operand_b);
-    if (emitter->syntax == SYNTAX_INTEL)
-        fprintf(emitter->output,
-                "    test %s, %s\n    jnz .LIR_string_right_%zu_%zu\n"
-                "    lea %s, [rip + .LIR_empty_string_0]\n.LIR_string_right_%zu_%zu:\n",
-                right_argument, right_argument, emitter->function_index, instruction->result,
-                right_argument, emitter->function_index, instruction->result);
-    else
-        fprintf(emitter->output,
-                "    testq %%%s, %%%s\n    jnz .LIR_string_right_%zu_%zu\n"
-                "    leaq .LIR_empty_string_0(%%rip), %%%s\n.LIR_string_right_%zu_%zu:\n",
-                right_argument, right_argument, emitter->function_index, instruction->result,
-                right_argument, emitter->function_index, instruction->result);
+    char equal_label[64];
+    char done_label[64];
+    (void) snprintf(equal_label, sizeof(equal_label), ".LIR_string_equal_%zu_%zu",
+                    emitter->function_index, instruction->result);
+    (void) snprintf(done_label, sizeof(done_label), ".LIR_string_done_%zu_%zu",
+                    emitter->function_index, instruction->result);
+    write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_QWORD,
+                x64_register("rax"), x64_register("rcx"));
+    write_x64_1(emitter, X64_OP_JE, X64_WIDTH_NONE, x64_label(equal_label));
+    load_nullable_string(emitter, left_argument, instruction->operand_a);
+    load_nullable_string(emitter, right_argument, instruction->operand_b);
     write_call(emitter, "strcmp");
-    fputs(emitter->syntax == SYNTAX_INTEL ? "    cmp eax, 0\n" :
-                                           "    cmpl $0, %eax\n", emitter->output);
-    fprintf(emitter->output, "    set%s %s\n",
-            equal_result ? "e" : "ne", emitter->syntax == SYNTAX_INTEL ? "al" : "%al");
-    fputs(emitter->syntax == SYNTAX_INTEL ? "    movzx rax, al\n" :
-                                           "    movzbq %al, %rax\n", emitter->output);
-    fprintf(emitter->output, "    jmp .LIR_string_done_%zu_%zu\n"
-            ".LIR_string_equal_%zu_%zu:\n",
-            emitter->function_index, instruction->result,
+    write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_DWORD,
+                x64_register("eax"), x64_immediate(0));
+    write_x64_1(emitter, equal_result ? X64_OP_SETE : X64_OP_SETNE,
+                X64_WIDTH_NONE, x64_register("al"));
+    write_x64_2(emitter, X64_OP_MOVZX, X64_WIDTH_QWORD,
+                x64_sized_register(X64_WIDTH_QWORD, "rax"),
+                x64_sized_register(X64_WIDTH_BYTE, "al"));
+    write_x64_1(emitter, X64_OP_JMP, X64_WIDTH_NONE, x64_label(done_label));
+    fprintf(emitter->output, ".LIR_string_equal_%zu_%zu:\n",
             emitter->function_index, instruction->result);
     write_immediate(emitter, "rax", equal_result ? 1 : 0);
-    fprintf(emitter->output, "    jmp .LIR_string_done_%zu_%zu\n"
-            ".LIR_string_unequal_%zu_%zu:\n",
-            emitter->function_index, instruction->result,
+    write_x64_1(emitter, X64_OP_JMP, X64_WIDTH_NONE, x64_label(done_label));
+    fprintf(emitter->output, ".LIR_string_unequal_%zu_%zu:\n",
             emitter->function_index, instruction->result);
     write_immediate(emitter, "rax", equal_result ? 0 : 1);
     fprintf(emitter->output, ".LIR_string_done_%zu_%zu:\n",
@@ -415,32 +440,23 @@ static void emit_concat_operand(Emitter *emitter, const IrInstruction *value,
     if (value->type == TYPE_STRING ||
         (value->type == TYPE_CHAR && is_pointer_value(value))) {
         write_value_load(emitter, "rax", value_id);
-        if (emitter->syntax == SYNTAX_INTEL)
-            fprintf(emitter->output,
-                    "    test rax, rax\n    jnz .LIR_concat_value_%zu_%zu_%u\n"
-                    "    lea rax, [rip + .LIR_empty_string_0]\n"
-                    ".LIR_concat_value_%zu_%zu_%u:\n",
-                    emitter->function_index, result_id, operand_index,
-                    emitter->function_index, result_id, operand_index);
-        else
-            fprintf(emitter->output,
-                    "    testq %%rax, %%rax\n    jnz .LIR_concat_value_%zu_%zu_%u\n"
-                    "    leaq .LIR_empty_string_0(%%rip), %%rax\n"
-                    ".LIR_concat_value_%zu_%zu_%u:\n",
-                    emitter->function_index, result_id, operand_index,
-                    emitter->function_index, result_id, operand_index);
+        char nonnull[80];
+        (void) snprintf(nonnull, sizeof(nonnull), ".LIR_concat_value_%zu_%zu_%u",
+                        emitter->function_index, result_id, operand_index);
+        write_x64_2(emitter, X64_OP_TEST, X64_WIDTH_QWORD,
+                    x64_register("rax"), x64_register("rax"));
+        write_x64_1(emitter, X64_OP_JNE, X64_WIDTH_NONE, x64_label(nonnull));
+        write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD, x64_register("rax"),
+                    x64_rip_memory(X64_WIDTH_NONE, ".LIR_empty_string_", 0));
+        fprintf(emitter->output, ".LIR_concat_value_%zu_%zu_%u:\n",
+                emitter->function_index, result_id, operand_index);
         return;
     }
 
     const char *destination = emitter->target == TARGET_COFF ? "rcx" : "rdi";
     const char *capacity = emitter->target == TARGET_COFF ? "rdx" : "rsi";
     const char *format = emitter->target == TARGET_COFF ? "r8" : "rdx";
-    if (emitter->syntax == SYNTAX_INTEL)
-        fprintf(emitter->output, "    lea %s, [rsp + %zu]\n", destination,
-                buffer_offset);
-    else
-        fprintf(emitter->output, "    leaq %zu(%%rsp), %%%s\n", buffer_offset,
-                destination);
+    write_stack_address(emitter, destination, buffer_offset);
     write_immediate(emitter, capacity, 64);
     write_address(emitter, format,
                   value->type == TYPE_CHAR ? ".LIR_char_format_" :
@@ -449,30 +465,19 @@ static void emit_concat_operand(Emitter *emitter, const IrInstruction *value,
     write_value_load(emitter, "rax", value_id);
     if (is_floating(value->type)) {
         convert_rax(emitter, value->type, TYPE_DOUBLE);
-        if (emitter->syntax == SYNTAX_INTEL)
-            fprintf(emitter->output, "    movq xmm%d, rax\n",
-                    emitter->target == TARGET_COFF ? 3 : 0);
-        else
-            fprintf(emitter->output, "    movq %%rax, %%xmm%d\n",
-                    emitter->target == TARGET_COFF ? 3 : 0);
+        write_x64_2(emitter, X64_OP_MOVQ, X64_WIDTH_NONE,
+                    x64_register(emitter->target == TARGET_COFF ? "xmm3" : "xmm0"),
+                    x64_register("rax"));
         if (emitter->target == TARGET_COFF)
-            fputs(emitter->syntax == SYNTAX_INTEL ? "    mov r9, rax\n" :
-                                                   "    movq %rax, %r9\n",
-                  emitter->output);
+            write_register_move(emitter, "r9", "rax");
         else write_immediate(emitter, "rax", 1);
     } else {
         const char *argument = emitter->target == TARGET_COFF ? "r9" : "rcx";
-        if (emitter->syntax == SYNTAX_INTEL)
-            fprintf(emitter->output, "    mov %s, rax\n", argument);
-        else
-            fprintf(emitter->output, "    movq %%rax, %%%s\n", argument);
+        write_register_move(emitter, argument, "rax");
         if (emitter->target == TARGET_ELF) write_immediate(emitter, "rax", 0);
     }
     write_call(emitter, "snprintf");
-    if (emitter->syntax == SYNTAX_INTEL)
-        fprintf(emitter->output, "    lea rax, [rsp + %zu]\n", buffer_offset);
-    else
-        fprintf(emitter->output, "    leaq %zu(%%rsp), %%rax\n", buffer_offset);
+    write_stack_address(emitter, "rax", buffer_offset);
 }
 
 static int emit_string_concat(Emitter *emitter, const IrInstruction *instruction) {
@@ -481,75 +486,48 @@ static int emit_string_concat(Emitter *emitter, const IrInstruction *instruction
     if (left == NULL || right == NULL) return 0;
     const char *first = emitter->target == TARGET_COFF ? "rcx" : "rdi";
     const char *second = emitter->target == TARGET_COFF ? "rdx" : "rsi";
-    fputs(emitter->syntax == SYNTAX_INTEL ? "    sub rsp, 160\n" :
-                                           "    subq $160, %rsp\n", emitter->output);
+    write_x64_2(emitter, X64_OP_SUB, X64_WIDTH_QWORD,
+                x64_register("rsp"), x64_immediate(160));
     emit_concat_operand(emitter, left, instruction->operand_a, 0, 0,
                         instruction->result);
-    if (emitter->syntax == SYNTAX_INTEL) fputs("    mov QWORD PTR [rsp + 128], rax\n",
-                                               emitter->output);
-    else fputs("    movq %rax, 128(%rsp)\n", emitter->output);
+    write_stack_store(emitter, 128, "rax");
     emit_concat_operand(emitter, right, instruction->operand_b, 64, 1,
                         instruction->result);
-    if (emitter->syntax == SYNTAX_INTEL) fputs("    mov QWORD PTR [rsp + 136], rax\n",
-                                               emitter->output);
-    else fputs("    movq %rax, 136(%rsp)\n", emitter->output);
-    if (emitter->syntax == SYNTAX_INTEL) fprintf(emitter->output,
-        "    mov %s, QWORD PTR [rsp + 128]\n", first);
-    else fprintf(emitter->output, "    movq 128(%%rsp), %%%s\n", first);
+    write_stack_store(emitter, 136, "rax");
+    write_stack_load(emitter, first, 128);
     write_call(emitter, "strlen");
-    if (emitter->syntax == SYNTAX_INTEL) fputs("    mov QWORD PTR [rsp + 144], rax\n",
-                                               emitter->output);
-    else fputs("    movq %rax, 144(%rsp)\n", emitter->output);
-    if (emitter->syntax == SYNTAX_INTEL) fprintf(emitter->output,
-        "    mov %s, QWORD PTR [rsp + 136]\n", first);
-    else fprintf(emitter->output, "    movq 136(%%rsp), %%%s\n", first);
+    write_stack_store(emitter, 144, "rax");
+    write_stack_load(emitter, first, 136);
     write_call(emitter, "strlen");
-    if (emitter->syntax == SYNTAX_INTEL)
-        fputs("    add rax, QWORD PTR [rsp + 144]\n    inc rax\n", emitter->output);
-    else fputs("    addq 144(%rsp), %rax\n    incq %rax\n", emitter->output);
+    write_x64_2(emitter, X64_OP_ADD, X64_WIDTH_QWORD, x64_register("rax"),
+                x64_memory(X64_WIDTH_QWORD, "rsp", 144));
+    write_x64_1(emitter, X64_OP_INC, X64_WIDTH_QWORD, x64_register("rax"));
     write_immediate(emitter, first, 1);
-    if (emitter->syntax == SYNTAX_INTEL)
-        fprintf(emitter->output, "    mov %s, rax\n", second);
-    else
-        fprintf(emitter->output, "    movq %%rax, %%%s\n", second);
+    write_register_move(emitter, second, "rax");
     write_call(emitter, "calloc");
-    if (emitter->syntax == SYNTAX_INTEL) fputs("    mov QWORD PTR [rsp + 152], rax\n", emitter->output);
-    else fputs("    movq %rax, 152(%rsp)\n", emitter->output);
-    if (emitter->syntax == SYNTAX_INTEL) fprintf(emitter->output, "    mov %s, rax\n", first);
-    else fprintf(emitter->output, "    movq %%rax, %%%s\n", first);
-    if (emitter->syntax == SYNTAX_INTEL) fprintf(emitter->output,
-        "    mov %s, QWORD PTR [rsp + 128]\n", second);
-    else fprintf(emitter->output, "    movq 128(%%rsp), %%%s\n", second);
+    write_stack_store(emitter, 152, "rax");
+    write_register_move(emitter, first, "rax");
+    write_stack_load(emitter, second, 128);
     write_call(emitter, "strcpy");
-    if (emitter->syntax == SYNTAX_INTEL) fprintf(emitter->output,
-        "    mov %s, QWORD PTR [rsp + 152]\n", first);
-    else fprintf(emitter->output, "    movq 152(%%rsp), %%%s\n", first);
-    if (emitter->syntax == SYNTAX_INTEL) fprintf(emitter->output,
-        "    mov %s, QWORD PTR [rsp + 136]\n", second);
-    else fprintf(emitter->output, "    movq 136(%%rsp), %%%s\n", second);
+    write_stack_load(emitter, first, 152);
+    write_stack_load(emitter, second, 136);
     write_call(emitter, "strcat");
     /* A concatenation result is an owned temporary.  When it is consumed by a
        larger concatenation, the new buffer already contains its bytes and the
        intermediate buffer can be released immediately. */
     if (left->opcode == IR_OP_BINARY && left->operator_type == TOKEN_PLUS &&
         left->type == TYPE_STRING) {
-        if (emitter->syntax == SYNTAX_INTEL)
-            fprintf(emitter->output, "    mov %s, QWORD PTR [rsp + 128]\n", first);
-        else
-            fprintf(emitter->output, "    movq 128(%%rsp), %%%s\n", first);
+        write_stack_load(emitter, first, 128);
         write_call(emitter, "free");
     }
     if (right->opcode == IR_OP_BINARY && right->operator_type == TOKEN_PLUS &&
         right->type == TYPE_STRING) {
-        if (emitter->syntax == SYNTAX_INTEL)
-            fprintf(emitter->output, "    mov %s, QWORD PTR [rsp + 136]\n", first);
-        else
-            fprintf(emitter->output, "    movq 136(%%rsp), %%%s\n", first);
+        write_stack_load(emitter, first, 136);
         write_call(emitter, "free");
     }
-    if (emitter->syntax == SYNTAX_INTEL)
-        fputs("    mov rax, QWORD PTR [rsp + 152]\n    add rsp, 160\n", emitter->output);
-    else fputs("    movq 152(%rsp), %rax\n    addq $160, %rsp\n", emitter->output);
+    write_stack_load(emitter, "rax", 152);
+    write_x64_2(emitter, X64_OP_ADD, X64_WIDTH_QWORD,
+                x64_register("rsp"), x64_immediate(160));
     write_value_store(emitter, "rax", instruction->result);
     return 1;
 }
@@ -559,26 +537,20 @@ static void load_floating_value(Emitter *emitter, size_t value, DataType target,
     const IrInstruction *source = producer(emitter->function, value);
     write_value_load(emitter, "rax", value);
     convert_rax(emitter, source->type, target);
-    if (emitter->syntax == SYNTAX_INTEL)
-        fprintf(emitter->output, "    mov%c xmm%u, %s\n",
-                target == TYPE_FLOAT ? 'd' : 'q', xmm,
-                target == TYPE_FLOAT ? "eax" : "rax");
-    else
-        fprintf(emitter->output, "    mov%c %%%s, %%xmm%u\n",
-                target == TYPE_FLOAT ? 'd' : 'q',
-                target == TYPE_FLOAT ? "eax" : "rax", xmm);
+    char destination[16];
+    (void) snprintf(destination, sizeof(destination), "xmm%u", xmm);
+    write_x64_2(emitter, target == TYPE_FLOAT ? X64_OP_MOVD : X64_OP_MOVQ,
+                X64_WIDTH_NONE, x64_register(destination),
+                x64_register(target == TYPE_FLOAT ? "eax" : "rax"));
 }
 
 static void store_floating_result(Emitter *emitter, DataType type, unsigned xmm,
                                   size_t result) {
-    if (emitter->syntax == SYNTAX_INTEL)
-        fprintf(emitter->output, "    mov%c %s, xmm%u\n",
-                type == TYPE_FLOAT ? 'd' : 'q',
-                type == TYPE_FLOAT ? "eax" : "rax", xmm);
-    else
-        fprintf(emitter->output, "    mov%c %%xmm%u, %%%s\n",
-                type == TYPE_FLOAT ? 'd' : 'q', xmm,
-                type == TYPE_FLOAT ? "eax" : "rax");
+    char source[16];
+    (void) snprintf(source, sizeof(source), "xmm%u", xmm);
+    write_x64_2(emitter, type == TYPE_FLOAT ? X64_OP_MOVD : X64_OP_MOVQ,
+                X64_WIDTH_NONE, x64_register(type == TYPE_FLOAT ? "eax" : "rax"),
+                x64_register(source));
     write_value_store(emitter, "rax", result);
 }
 
@@ -586,53 +558,50 @@ static int emit_floating_binary(Emitter *emitter, const IrInstruction *instructi
                                 DataType operation_type) {
     load_floating_value(emitter, instruction->operand_a, operation_type, 2);
     load_floating_value(emitter, instruction->operand_b, operation_type, 1);
-    const char *suffix = operation_type == TYPE_FLOAT ? "ss" : "sd";
     if (instruction->operator_type >= TOKEN_PLUS &&
         instruction->operator_type <= TOKEN_SLASH) {
-        const char *operation = instruction->operator_type == TOKEN_PLUS ? "add" :
-                                instruction->operator_type == TOKEN_MINUS ? "sub" :
-                                instruction->operator_type == TOKEN_STAR ? "mul" : "div";
-        if (emitter->syntax == SYNTAX_INTEL)
-            fprintf(emitter->output, "    %s%s xmm2, xmm1\n", operation, suffix);
-        else
-            fprintf(emitter->output, "    %s%s %%xmm1, %%xmm2\n", operation, suffix);
+        static const X64Opcode float_operations[] = {
+            X64_OP_ADDSS, X64_OP_SUBSS, X64_OP_MULSS, X64_OP_DIVSS
+        };
+        static const X64Opcode double_operations[] = {
+            X64_OP_ADDSD, X64_OP_SUBSD, X64_OP_MULSD, X64_OP_DIVSD
+        };
+        size_t operation = (size_t) (instruction->operator_type - TOKEN_PLUS);
+        write_x64_2(emitter, operation_type == TYPE_FLOAT
+                    ? float_operations[operation] : double_operations[operation],
+                    X64_WIDTH_NONE, x64_register("xmm2"), x64_register("xmm1"));
         store_floating_result(emitter, instruction->type, 2, instruction->result);
         return 1;
     }
     if (instruction->operator_type < TOKEN_EQUAL_EQUAL ||
         instruction->operator_type > TOKEN_GREATER_EQUAL) return 0;
-    if (emitter->syntax == SYNTAX_INTEL)
-        fprintf(emitter->output, "    ucomi%s xmm2, xmm1\n", suffix);
-    else
-        fprintf(emitter->output, "    ucomi%s %%xmm1, %%xmm2\n", suffix);
-    const char *condition = "e";
+    write_x64_2(emitter, operation_type == TYPE_FLOAT ? X64_OP_UCOMISS : X64_OP_UCOMISD,
+                X64_WIDTH_NONE, x64_register("xmm2"), x64_register("xmm1"));
+    X64Opcode condition = X64_OP_SETE;
     int require_ordered = 0;
     int include_unordered = 0;
     if (instruction->operator_type == TOKEN_BANG_EQUAL) {
-        condition = "ne";
+        condition = X64_OP_SETNE;
         include_unordered = 1;
     } else if (instruction->operator_type == TOKEN_LESS) {
-        condition = "b";
+        condition = X64_OP_SETB;
         require_ordered = 1;
     } else if (instruction->operator_type == TOKEN_LESS_EQUAL) {
-        condition = "be";
+        condition = X64_OP_SETBE;
         require_ordered = 1;
-    } else if (instruction->operator_type == TOKEN_GREATER) condition = "a";
-    else if (instruction->operator_type == TOKEN_GREATER_EQUAL) condition = "ae";
+    } else if (instruction->operator_type == TOKEN_GREATER) condition = X64_OP_SETA;
+    else if (instruction->operator_type == TOKEN_GREATER_EQUAL) condition = X64_OP_SETAE;
     else require_ordered = 1;
-    fprintf(emitter->output, "    set%s %s\n", condition,
-            emitter->syntax == SYNTAX_INTEL ? "al" : "%al");
+    write_x64_1(emitter, condition, X64_WIDTH_NONE, x64_register("al"));
     if (require_ordered || include_unordered) {
-        fprintf(emitter->output, "    set%s %s\n",
-                include_unordered ? "p" : "np",
-                emitter->syntax == SYNTAX_INTEL ? "dl" : "%dl");
-        fputs(emitter->syntax == SYNTAX_INTEL ?
-              (include_unordered ? "    or al, dl\n" : "    and al, dl\n") :
-              (include_unordered ? "    orb %dl, %al\n" : "    andb %dl, %al\n"),
-              emitter->output);
+        write_x64_1(emitter, include_unordered ? X64_OP_SETP : X64_OP_SETNP,
+                    X64_WIDTH_NONE, x64_register("dl"));
+        write_x64_2(emitter, include_unordered ? X64_OP_OR : X64_OP_AND,
+                    X64_WIDTH_BYTE, x64_register("al"), x64_register("dl"));
     }
-    fputs(emitter->syntax == SYNTAX_INTEL ? "    movzx rax, al\n" :
-                                           "    movzbq %al, %rax\n", emitter->output);
+    write_x64_2(emitter, X64_OP_MOVZX, X64_WIDTH_QWORD,
+                x64_sized_register(X64_WIDTH_QWORD, "rax"),
+                x64_sized_register(X64_WIDTH_BYTE, "al"));
     write_value_store(emitter, "rax", instruction->result);
     return 1;
 }
@@ -641,22 +610,20 @@ static int emit_typed_call(Emitter *emitter, const IrInstruction *instruction,
                            const IrFunction *callee) {
     const IrFunction *caller = emitter->function;
     size_t stack_count = stack_parameter_count(callee, emitter->target);
-    if ((stack_count & 1U) != 0) {
-        fputs(emitter->syntax == SYNTAX_INTEL ? "    sub rsp, 8\n" :
-                                               "    subq $8, %rsp\n", emitter->output);
-    }
+    if ((stack_count & 1U) != 0)
+        write_x64_2(emitter, X64_OP_SUB, X64_WIDTH_QWORD,
+                    x64_register("rsp"), x64_immediate(8));
     for (size_t a = instruction->argument_count; a-- > 0;) {
         if (parameter_register_index(callee, emitter->target, a) != IR_VALUE_NONE) continue;
         size_t value_id = caller->arguments[instruction->first_argument + a];
         const IrInstruction *value = producer(caller, value_id);
         write_value_load(emitter, "rax", value_id);
         convert_rax(emitter, value->type, callee->parameters[a].type);
-        fputs(emitter->syntax == SYNTAX_INTEL ? "    push rax\n" :
-                                               "    pushq %rax\n", emitter->output);
+        write_x64_1(emitter, X64_OP_PUSH, X64_WIDTH_QWORD, x64_register("rax"));
     }
     if (emitter->target == TARGET_COFF)
-        fputs(emitter->syntax == SYNTAX_INTEL ? "    sub rsp, 32\n" :
-                                               "    subq $32, %rsp\n", emitter->output);
+        write_x64_2(emitter, X64_OP_SUB, X64_WIDTH_QWORD,
+                    x64_register("rsp"), x64_immediate(32));
 
     for (size_t a = instruction->argument_count; a-- > 0;) {
         size_t register_index = parameter_register_index(callee, emitter->target, a);
@@ -672,42 +639,34 @@ static int emit_typed_call(Emitter *emitter, const IrInstruction *instruction,
         const IrInstruction *value = producer(caller, value_id);
         write_value_load(emitter, "rax", value_id);
         convert_rax(emitter, value->type, callee->parameters[a].type);
-        if (emitter->syntax == SYNTAX_INTEL)
-            fprintf(emitter->output, "    mov %s, rax\n",
-                    argument_register(emitter->target, register_index));
-        else
-            fprintf(emitter->output, "    movq %%rax, %%%s\n",
-                    argument_register(emitter->target, register_index));
+        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                    x64_register(argument_register(emitter->target, register_index)),
+                    x64_register("rax"));
     }
     char callee_buffer[MAX_TOKEN * 2U + 64U];
-    fprintf(emitter->output, "    call %s\n",
-            function_link_name(callee, callee_buffer, sizeof(callee_buffer)));
+    write_x64_1(emitter, X64_OP_CALL, X64_WIDTH_NONE,
+                x64_label(function_link_name(callee, callee_buffer, sizeof(callee_buffer))));
     size_t cleanup = stack_count * 8U + (emitter->target == TARGET_COFF ? 32U : 0U) +
                      (((stack_count & 1U) != 0) ? 8U : 0U);
-    if (cleanup != 0) {
-        if (emitter->syntax == SYNTAX_INTEL)
-            fprintf(emitter->output, "    add rsp, %zu\n", cleanup);
-        else
-            fprintf(emitter->output, "    addq $%zu, %%rsp\n", cleanup);
-    }
+    if (cleanup != 0)
+        write_x64_2(emitter, X64_OP_ADD, X64_WIDTH_QWORD,
+                    x64_register("rsp"), x64_immediate((long long) cleanup));
     if (instruction->type != TYPE_VOID) {
         if (is_inline_structure(emitter->module, instruction)) {
             size_t offset = aggregate_result_offset(emitter, instruction);
             size_t slots = type_slots(emitter->module, instruction->type_id);
             if (offset == 0 || slots == 0) return 0;
-            if (emitter->syntax == SYNTAX_INTEL)
-                fprintf(emitter->output, "    lea rbx, [rbp - %zu]\n", offset);
-            else
-                fprintf(emitter->output, "    leaq -%zu(%%rbp), %%rbx\n", offset);
+            write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD, x64_register("rbx"),
+                        x64_memory(X64_WIDTH_NONE, "rbp", -(long long) offset));
             copy_aggregate(emitter, slots, "rax", "rbx");
-            if (emitter->syntax == SYNTAX_INTEL) fputs("    mov rax, rbx\n", emitter->output);
-            else fputs("    movq %rbx, %rax\n", emitter->output);
+            write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                        x64_register("rax"), x64_register("rbx"));
         } else if (instruction->type == TYPE_FLOAT)
-            fputs(emitter->syntax == SYNTAX_INTEL ? "    movd eax, xmm0\n" :
-                                                   "    movd %xmm0, %eax\n", emitter->output);
+            write_x64_2(emitter, X64_OP_MOVD, X64_WIDTH_NONE,
+                        x64_register("eax"), x64_register("xmm0"));
         else if (instruction->type == TYPE_DOUBLE)
-            fputs(emitter->syntax == SYNTAX_INTEL ? "    movq rax, xmm0\n" :
-                                                   "    movq %xmm0, %rax\n", emitter->output);
+            write_x64_2(emitter, X64_OP_MOVQ, X64_WIDTH_NONE,
+                        x64_register("rax"), x64_register("xmm0"));
         write_value_store(emitter, "rax", instruction->result);
     }
     return 1;
@@ -716,20 +675,16 @@ static int emit_typed_call(Emitter *emitter, const IrInstruction *instruction,
 static void load_nullable_string(Emitter *emitter, const char *reg, size_t value) {
     size_t label = emitter->bounds_sequence++;
     write_value_load(emitter, reg, value);
-    if (emitter->syntax == SYNTAX_INTEL)
-        fprintf(emitter->output,
-                "    test %s, %s\n    jnz .LIR_nonnull_%zu_%zu\n"
-                "    lea %s, [rip + .LIR_empty_string_0]\n"
-                ".LIR_nonnull_%zu_%zu:\n",
-                reg, reg, emitter->function_index, label, reg,
-                emitter->function_index, label);
-    else
-        fprintf(emitter->output,
-                "    testq %%%s, %%%s\n    jnz .LIR_nonnull_%zu_%zu\n"
-                "    leaq .LIR_empty_string_0(%%rip), %%%s\n"
-                ".LIR_nonnull_%zu_%zu:\n",
-                reg, reg, emitter->function_index, label, reg,
-                emitter->function_index, label);
+    char nonnull[64];
+    (void) snprintf(nonnull, sizeof(nonnull), ".LIR_nonnull_%zu_%zu",
+                    emitter->function_index, label);
+    write_x64_2(emitter, X64_OP_TEST, X64_WIDTH_QWORD,
+                x64_register(reg), x64_register(reg));
+    write_x64_1(emitter, X64_OP_JNE, X64_WIDTH_NONE, x64_label(nonnull));
+    write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD, x64_register(reg),
+                x64_rip_memory(X64_WIDTH_NONE, ".LIR_empty_string_", 0));
+    fprintf(emitter->output, ".LIR_nonnull_%zu_%zu:\n",
+            emitter->function_index, label);
 }
 
 static int emit_builtin_call(Emitter *emitter, const IrInstruction *instruction,
@@ -763,37 +718,35 @@ static int emit_builtin_call(Emitter *emitter, const IrInstruction *instruction,
             function->arguments[instruction->first_argument]);
         write_call(emitter, "malloc");
     } else if (strcmp(name, "scanfInt") == 0 || strcmp(name, "scanfChar") == 0) {
-        fputs(emitter->syntax == SYNTAX_INTEL ? "    sub rsp, 16\n" :
-                                               "    subq $16, %rsp\n", emitter->output);
+        write_x64_2(emitter, X64_OP_SUB, X64_WIDTH_QWORD,
+                    x64_register("rsp"), x64_immediate(16));
         write_address(emitter, emitter->target == TARGET_COFF ? "rcx" : "rdi",
                       strcmp(name, "scanfInt") == 0 ? ".LIR_scan_int_format_" :
                                                        ".LIR_scan_char_format_", 0);
-        if (emitter->syntax == SYNTAX_INTEL)
-            fprintf(emitter->output, "    lea %s, [rsp]\n",
-                    emitter->target == TARGET_COFF ? "rdx" : "rsi");
-        else
-            fprintf(emitter->output, "    leaq (%%rsp), %%%s\n",
-                    emitter->target == TARGET_COFF ? "rdx" : "rsi");
-        fputs(emitter->syntax == SYNTAX_INTEL ? "    xor eax, eax\n" :
-                                               "    xorl %eax, %eax\n", emitter->output);
+        write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD,
+                    x64_register(emitter->target == TARGET_COFF ? "rdx" : "rsi"),
+                    x64_memory(X64_WIDTH_NONE, "rsp", 0));
+        write_x64_2(emitter, X64_OP_XOR, X64_WIDTH_DWORD,
+                    x64_register("eax"), x64_register("eax"));
         write_call(emitter, "scanf");
-        if (emitter->syntax == SYNTAX_INTEL)
-            fputs(strcmp(name, "scanfInt") == 0 ?
-                  "    movsxd rax, DWORD PTR [rsp]\n" :
-                  "    movzx eax, BYTE PTR [rsp]\n", emitter->output);
-        else
-            fputs(strcmp(name, "scanfInt") == 0 ?
-                  "    movslq (%rsp), %rax\n" : "    movzbl (%rsp), %eax\n",
-                  emitter->output);
-        fputs(emitter->syntax == SYNTAX_INTEL ? "    add rsp, 16\n" :
-                                               "    addq $16, %rsp\n", emitter->output);
+        X64Width source_width = strcmp(name, "scanfInt") == 0
+            ? X64_WIDTH_DWORD : X64_WIDTH_BYTE;
+        X64Width destination_width = strcmp(name, "scanfInt") == 0
+            ? X64_WIDTH_QWORD : X64_WIDTH_DWORD;
+        write_x64_2(emitter, strcmp(name, "scanfInt") == 0 ? X64_OP_MOVSX : X64_OP_MOVZX,
+                    destination_width,
+                    x64_sized_register(destination_width,
+                        destination_width == X64_WIDTH_QWORD ? "rax" : "eax"),
+                    x64_memory(source_width, "rsp", 0));
+        write_x64_2(emitter, X64_OP_ADD, X64_WIDTH_QWORD,
+                    x64_register("rsp"), x64_immediate(16));
     } else if (strcmp(name, "scanfString") == 0) {
         write_address(emitter, emitter->target == TARGET_COFF ? "rcx" : "rdi",
                       ".LIR_scan_string_format_", 0);
         write_address(emitter, emitter->target == TARGET_COFF ? "rdx" : "rsi",
                       ".LIR_scan_string_buffer_", 0);
-        fputs(emitter->syntax == SYNTAX_INTEL ? "    xor eax, eax\n" :
-                                               "    xorl %eax, %eax\n", emitter->output);
+        write_x64_2(emitter, X64_OP_XOR, X64_WIDTH_DWORD,
+                    x64_register("eax"), x64_register("eax"));
         write_call(emitter, "scanf");
         write_address(emitter, "rax", ".LIR_scan_string_buffer_", 0);
     } else if (strcmp(name, "io_int_to_str") == 0) {
@@ -811,8 +764,8 @@ static int emit_builtin_call(Emitter *emitter, const IrInstruction *instruction,
             write_address(emitter, "rdx", ".LIR_int_format_", 0);
             write_value_load(emitter, "rcx", value);
         }
-        fputs(emitter->syntax == SYNTAX_INTEL ? "    xor eax, eax\n" :
-                                               "    xorl %eax, %eax\n", emitter->output);
+        write_x64_2(emitter, X64_OP_XOR, X64_WIDTH_DWORD,
+                    x64_register("eax"), x64_register("eax"));
         write_call(emitter, "snprintf");
         write_value_load(emitter, emitter->target == TARGET_COFF ? "rcx" : "rdi", buffer);
         write_call(emitter, "strlen");
@@ -830,50 +783,44 @@ static int emit_builtin_call(Emitter *emitter, const IrInstruction *instruction,
             ? ast_program_lexeme(function->source_program, format->auxiliary_token) : "%i";
         write_immediate(emitter, emitter->target == TARGET_COFF ? "rcx" : "rdi", 0);
         write_call(emitter, "fflush");
-        fputs(emitter->syntax == SYNTAX_INTEL ? "    sub rsp, 64\n" :
-                                               "    subq $64, %rsp\n", emitter->output);
+        write_x64_2(emitter, X64_OP_SUB, X64_WIDTH_QWORD,
+                    x64_register("rsp"), x64_immediate(64));
         write_value_load(emitter, emitter->target == TARGET_COFF ? "rcx" : "rdi", descriptor);
-        if (emitter->syntax == SYNTAX_INTEL)
-            fprintf(emitter->output, "    lea %s, [rsp]\n",
-                    emitter->target == TARGET_COFF ? "rdx" : "rsi");
-        else
-            fprintf(emitter->output, "    leaq (%%rsp), %%%s\n",
-                    emitter->target == TARGET_COFF ? "rdx" : "rsi");
+        write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD,
+                    x64_register(emitter->target == TARGET_COFF ? "rdx" : "rsi"),
+                    x64_memory(X64_WIDTH_NONE, "rsp", 0));
         write_immediate(emitter, emitter->target == TARGET_COFF ? "r8" : "rdx", 63);
         write_call(emitter, emitter->target == TARGET_COFF ? "_read" : "read");
-        if (emitter->syntax == SYNTAX_INTEL)
-            fprintf(emitter->output,
-                    "    test eax, eax\n    jle .LIR_read_empty_%zu_%zu\n"
-                    "    mov BYTE PTR [rsp + rax], 0\n",
-                    emitter->function_index, instruction->result);
-        else
-            fprintf(emitter->output,
-                    "    testl %%eax, %%eax\n    jle .LIR_read_empty_%zu_%zu\n"
-                    "    movb $0, (%%rsp,%%rax)\n",
-                    emitter->function_index, instruction->result);
+        char empty_label[64];
+        char done_label[64];
+        (void) snprintf(empty_label, sizeof(empty_label), ".LIR_read_empty_%zu_%zu",
+                        emitter->function_index, instruction->result);
+        (void) snprintf(done_label, sizeof(done_label), ".LIR_read_done_%zu_%zu",
+                        emitter->function_index, instruction->result);
+        write_x64_2(emitter, X64_OP_TEST, X64_WIDTH_DWORD,
+                    x64_register("eax"), x64_register("eax"));
+        write_x64_1(emitter, X64_OP_JLE, X64_WIDTH_NONE, x64_label(empty_label));
+        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_BYTE,
+                    x64_indexed_memory(X64_WIDTH_BYTE, "rsp", "rax", 1, 0),
+                    x64_immediate(0));
         if (strcmp(format_text, "%c") == 0) {
-            fputs(emitter->syntax == SYNTAX_INTEL ? "    movzx eax, BYTE PTR [rsp]\n" :
-                                                   "    movzbl (%rsp), %eax\n", emitter->output);
+            write_x64_2(emitter, X64_OP_MOVZX, X64_WIDTH_DWORD,
+                        x64_sized_register(X64_WIDTH_DWORD, "eax"),
+                        x64_memory(X64_WIDTH_BYTE, "rsp", 0));
         } else {
-            if (emitter->syntax == SYNTAX_INTEL)
-                fprintf(emitter->output, "    lea %s, [rsp]\n",
-                        emitter->target == TARGET_COFF ? "rcx" : "rdi");
-            else
-                fprintf(emitter->output, "    leaq (%%rsp), %%%s\n",
-                        emitter->target == TARGET_COFF ? "rcx" : "rdi");
+            write_stack_address(emitter, emitter->target == TARGET_COFF ? "rcx" : "rdi", 0);
             write_immediate(emitter, emitter->target == TARGET_COFF ? "rdx" : "rsi", 0);
             write_immediate(emitter, emitter->target == TARGET_COFF ? "r8" : "rdx", 10);
             write_call(emitter, "strtoll");
         }
-        fprintf(emitter->output, "    jmp .LIR_read_done_%zu_%zu\n"
-                ".LIR_read_empty_%zu_%zu:\n",
-                emitter->function_index, instruction->result,
+        write_x64_1(emitter, X64_OP_JMP, X64_WIDTH_NONE, x64_label(done_label));
+        fprintf(emitter->output, ".LIR_read_empty_%zu_%zu:\n",
                 emitter->function_index, instruction->result);
         write_immediate(emitter, "rax", 0);
         fprintf(emitter->output, ".LIR_read_done_%zu_%zu:\n",
                 emitter->function_index, instruction->result);
-        fputs(emitter->syntax == SYNTAX_INTEL ? "    add rsp, 64\n" :
-                                               "    addq $64, %rsp\n", emitter->output);
+        write_x64_2(emitter, X64_OP_ADD, X64_WIDTH_QWORD,
+                    x64_register("rsp"), x64_immediate(64));
     } else if (emitter->target == TARGET_ELF) {
         static const char *registers[] = {"rdi", "rsi", "rdx"};
         if (strcmp(name, "sys_write") == 0 || strcmp(name, "sys_read") == 0) {
@@ -887,7 +834,7 @@ static int emit_builtin_call(Emitter *emitter, const IrInstruction *instruction,
                                    strcmp(name, "sys_open") == 0 ? 2 :
                                    strcmp(name, "sys_close") == 0 ? 3 : 0;
         write_immediate(emitter, "rax", syscall_number);
-        fputs("    syscall\n", emitter->output);
+        write_x64_0(emitter, X64_OP_SYSCALL);
     } else {
         static const char *registers[] = {"rcx", "rdx", "r8"};
         if (strcmp(name, "sys_write") == 0 || strcmp(name, "sys_read") == 0) {
@@ -898,38 +845,29 @@ static int emit_builtin_call(Emitter *emitter, const IrInstruction *instruction,
             write_value_load(emitter, registers[a],
                 function->arguments[instruction->first_argument + a]);
         if (strcmp(name, "sys_open") == 0) {
-            if (emitter->syntax == SYNTAX_INTEL)
-                fprintf(emitter->output,
-                        "    mov r10d, edx\n    and edx, 3\n"
-                        "    test r10d, 64\n    jz .LIR_open_no_create_%zu_%zu\n"
-                        "    or edx, 256\n.LIR_open_no_create_%zu_%zu:\n"
-                        "    test r10d, 512\n    jz .LIR_open_no_trunc_%zu_%zu\n"
-                        "    or edx, 512\n.LIR_open_no_trunc_%zu_%zu:\n"
-                        "    test r10d, 1024\n    jz .LIR_open_no_append_%zu_%zu\n"
-                        "    or edx, 8\n.LIR_open_no_append_%zu_%zu:\n"
-                        "    or edx, 32768\n    mov r8d, 384\n",
-                        emitter->function_index, instruction->result,
-                        emitter->function_index, instruction->result,
-                        emitter->function_index, instruction->result,
-                        emitter->function_index, instruction->result,
-                        emitter->function_index, instruction->result,
-                        emitter->function_index, instruction->result);
-            else
-                fprintf(emitter->output,
-                        "    movl %%edx, %%r10d\n    andl $3, %%edx\n"
-                        "    testl $64, %%r10d\n    jz .LIR_open_no_create_%zu_%zu\n"
-                        "    orl $256, %%edx\n.LIR_open_no_create_%zu_%zu:\n"
-                        "    testl $512, %%r10d\n    jz .LIR_open_no_trunc_%zu_%zu\n"
-                        "    orl $512, %%edx\n.LIR_open_no_trunc_%zu_%zu:\n"
-                        "    testl $1024, %%r10d\n    jz .LIR_open_no_append_%zu_%zu\n"
-                        "    orl $8, %%edx\n.LIR_open_no_append_%zu_%zu:\n"
-                        "    orl $32768, %%edx\n    movl $384, %%r8d\n",
-                        emitter->function_index, instruction->result,
-                        emitter->function_index, instruction->result,
-                        emitter->function_index, instruction->result,
-                        emitter->function_index, instruction->result,
-                        emitter->function_index, instruction->result,
-                        emitter->function_index, instruction->result);
+            const char *kinds[] = {"create", "trunc", "append"};
+            const long long source_flags[] = {64, 512, 1024};
+            const long long target_flags[] = {256, 512, 8};
+            write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_DWORD,
+                        x64_register("r10d"), x64_register("edx"));
+            write_x64_2(emitter, X64_OP_AND, X64_WIDTH_DWORD,
+                        x64_register("edx"), x64_immediate(3));
+            for (size_t flag = 0; flag < 3; flag++) {
+                char skip_label[80];
+                (void) snprintf(skip_label, sizeof(skip_label), ".LIR_open_no_%s_%zu_%zu",
+                                kinds[flag], emitter->function_index, instruction->result);
+                write_x64_2(emitter, X64_OP_TEST, X64_WIDTH_DWORD,
+                            x64_register("r10d"), x64_immediate(source_flags[flag]));
+                write_x64_1(emitter, X64_OP_JE, X64_WIDTH_NONE, x64_label(skip_label));
+                write_x64_2(emitter, X64_OP_OR, X64_WIDTH_DWORD,
+                            x64_register("edx"), x64_immediate(target_flags[flag]));
+                fprintf(emitter->output, ".LIR_open_no_%s_%zu_%zu:\n",
+                        kinds[flag], emitter->function_index, instruction->result);
+            }
+            write_x64_2(emitter, X64_OP_OR, X64_WIDTH_DWORD,
+                        x64_register("edx"), x64_immediate(32768));
+            write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_DWORD,
+                        x64_register("r8d"), x64_immediate(384));
         }
         const char *runtime_name = strcmp(name, "sys_write") == 0 ? "_write" :
                                    strcmp(name, "sys_read") == 0 ? "_read" :
@@ -1014,16 +952,11 @@ static void copy_aggregate(Emitter *emitter, size_t slots,
                            const char *source, const char *destination) {
     for (size_t slot = 0; slot < slots; slot++) {
         size_t offset = slot * 8U;
-        if (emitter->syntax == SYNTAX_INTEL)
-            fprintf(emitter->output,
-                    "    mov rcx, QWORD PTR [%s + %zu]\n"
-                    "    mov QWORD PTR [%s + %zu], rcx\n",
-                    source, offset, destination, offset);
-        else
-            fprintf(emitter->output,
-                    "    movq %zu(%%%s), %%rcx\n"
-                    "    movq %%rcx, %zu(%%%s)\n",
-                    offset, source, offset, destination);
+        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rcx"),
+                    x64_memory(X64_WIDTH_QWORD, source, (long long) offset));
+        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                    x64_memory(X64_WIDTH_QWORD, destination, (long long) offset),
+                    x64_register("rcx"));
     }
 }
 
@@ -1088,10 +1021,8 @@ static int emit_lvalue_address(Emitter *emitter, const IrInstruction *target,
             target->symbol_id);
         if (declaration != NULL) {
             size_t offset = declaration_offset(emitter, declaration);
-            if (emitter->syntax == SYNTAX_INTEL)
-                fprintf(emitter->output, "    lea rbx, [rbp - %zu]\n", offset);
-            else
-                fprintf(emitter->output, "    leaq -%zu(%%rbp), %%rbx\n", offset);
+            write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD, x64_register("rbx"),
+                        x64_memory(X64_WIDTH_NONE, "rbp", -(long long) offset));
             return 1;
         }
         if (parameter != NULL && !parameter->is_array) {
@@ -1100,10 +1031,8 @@ static int emit_lvalue_address(Emitter *emitter, const IrInstruction *target,
                 write_local_load(emitter, "rbx", offset);
                 return 1;
             }
-            if (emitter->syntax == SYNTAX_INTEL)
-                fprintf(emitter->output, "    lea rbx, [rbp - %zu]\n", offset);
-            else
-                fprintf(emitter->output, "    leaq -%zu(%%rbp), %%rbx\n", offset);
+            write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD, x64_register("rbx"),
+                        x64_memory(X64_WIDTH_NONE, "rbp", -(long long) offset));
             return 1;
         }
         const IrParameter *receiver = function_receiver(emitter->function);
@@ -1116,12 +1045,10 @@ static int emit_lvalue_address(Emitter *emitter, const IrInstruction *target,
                 aggregate_field_offset(emitter, aggregate, target->symbol_id);
             if (field->kind == SEMANTIC_SYMBOL_FIELD && field_offset != SIZE_MAX) {
                 write_local_load(emitter, "rbx", parameter_offset(emitter, receiver));
-                if (field_offset != 0) {
-                    if (emitter->syntax == SYNTAX_INTEL)
-                        fprintf(emitter->output, "    add rbx, %zu\n", field_offset);
-                    else
-                        fprintf(emitter->output, "    addq $%zu, %%rbx\n", field_offset);
-                }
+                if (field_offset != 0)
+                    write_x64_2(emitter, X64_OP_ADD, X64_WIDTH_QWORD,
+                                x64_register("rbx"),
+                                x64_immediate((long long) field_offset));
                 return 1;
             }
         }
@@ -1138,18 +1065,15 @@ static int emit_lvalue_address(Emitter *emitter, const IrInstruction *target,
         size_t length = fixed_array_length(emitter, base);
         size_t bounds_id = emitter->bounds_sequence++;
         if (length != 0) {
-            if (emitter->syntax == SYNTAX_INTEL)
-                fprintf(emitter->output,
-                        "    cmp rcx, 0\n    jl .LIR_bounds_fail_%zu_%zu\n"
-                        "    cmp rcx, %zu\n    jge .LIR_bounds_fail_%zu_%zu\n",
-                        emitter->function_index, bounds_id, length,
-                        emitter->function_index, bounds_id);
-            else
-                fprintf(emitter->output,
-                        "    cmpq $0, %%rcx\n    jl .LIR_bounds_fail_%zu_%zu\n"
-                        "    cmpq $%zu, %%rcx\n    jge .LIR_bounds_fail_%zu_%zu\n",
-                        emitter->function_index, bounds_id, length,
-                        emitter->function_index, bounds_id);
+            char fail_label[64];
+            (void) snprintf(fail_label, sizeof(fail_label), ".LIR_bounds_fail_%zu_%zu",
+                            emitter->function_index, bounds_id);
+            write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_QWORD,
+                        x64_register("rcx"), x64_immediate(0));
+            write_x64_1(emitter, X64_OP_JL, X64_WIDTH_NONE, x64_label(fail_label));
+            write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_QWORD,
+                        x64_register("rcx"), x64_immediate((long long) length));
+            write_x64_1(emitter, X64_OP_JGE, X64_WIDTH_NONE, x64_label(fail_label));
         }
         size_t element_size = is_inline_structure(emitter->module, target)
                                   ? type_slots(emitter->module, target->type_id) * 8U :
@@ -1157,18 +1081,19 @@ static int emit_lvalue_address(Emitter *emitter, const IrInstruction *target,
                               (target->type == TYPE_CHAR || target->type == TYPE_BYTE ||
                                target->type == TYPE_BIT) ? 1U :
                               (target->type == TYPE_INT || target->type == TYPE_FLOAT) ? 4U : 8U;
-        if (emitter->syntax == SYNTAX_INTEL)
-            fprintf(emitter->output, "    imul rcx, %zu\n    lea rbx, [rax + rcx]\n",
-                    element_size);
-        else
-            fprintf(emitter->output, "    imulq $%zu, %%rcx\n    leaq (%%rax,%%rcx), %%rbx\n",
-                    element_size);
+        write_x64_2(emitter, X64_OP_IMUL, X64_WIDTH_QWORD,
+                    x64_register("rcx"), x64_immediate((long long) element_size));
+        write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD, x64_register("rbx"),
+                    x64_indexed_memory(X64_WIDTH_NONE, "rax", "rcx", 1, 0));
         if (length != 0) {
-            fprintf(emitter->output, "    jmp .LIR_bounds_ok_%zu_%zu\n"
-                    ".LIR_bounds_fail_%zu_%zu:\n    ud2\n"
-                    ".LIR_bounds_ok_%zu_%zu:\n",
-                    emitter->function_index, bounds_id,
-                    emitter->function_index, bounds_id,
+            char ok_label[64];
+            (void) snprintf(ok_label, sizeof(ok_label), ".LIR_bounds_ok_%zu_%zu",
+                            emitter->function_index, bounds_id);
+            write_x64_1(emitter, X64_OP_JMP, X64_WIDTH_NONE, x64_label(ok_label));
+            fprintf(emitter->output, ".LIR_bounds_fail_%zu_%zu:\n",
+                    emitter->function_index, bounds_id);
+            write_x64_0(emitter, X64_OP_UD2);
+            fprintf(emitter->output, ".LIR_bounds_ok_%zu_%zu:\n",
                     emitter->function_index, bounds_id);
         }
         return 1;
@@ -1188,12 +1113,9 @@ static int emit_lvalue_address(Emitter *emitter, const IrInstruction *target,
         }
         size_t offset = aggregate_field_offset(emitter, aggregate, target->symbol_id);
         if (offset == SIZE_MAX) return 0;
-        if (offset != 0) {
-            if (emitter->syntax == SYNTAX_INTEL)
-                fprintf(emitter->output, "    add rbx, %zu\n", offset);
-            else
-                fprintf(emitter->output, "    addq $%zu, %%rbx\n", offset);
-        }
+        if (offset != 0)
+            write_x64_2(emitter, X64_OP_ADD, X64_WIDTH_QWORD,
+                        x64_register("rbx"), x64_immediate((long long) offset));
         return 1;
     }
     return 0;
@@ -1201,18 +1123,16 @@ static int emit_lvalue_address(Emitter *emitter, const IrInstruction *target,
 
 static void write_indirect_load(const Emitter *emitter, const char *destination,
                                 const char *address) {
-    if (emitter->syntax == SYNTAX_INTEL)
-        fprintf(emitter->output, "    mov %s, QWORD PTR [%s]\n", destination, address);
-    else
-        fprintf(emitter->output, "    movq (%%%s), %%%s\n", address, destination);
+    X64Instruction instruction = x64_instruction2(X64_OP_MOV, X64_WIDTH_QWORD,
+        x64_register(destination), x64_memory(X64_WIDTH_QWORD, address, 0));
+    (void) x64_print_instruction(emitter->output, emitter->syntax, &instruction);
 }
 
 static void write_indirect_store(const Emitter *emitter, const char *address,
                                  const char *source) {
-    if (emitter->syntax == SYNTAX_INTEL)
-        fprintf(emitter->output, "    mov QWORD PTR [%s], %s\n", address, source);
-    else
-        fprintf(emitter->output, "    movq %%%s, (%%%s)\n", source, address);
+    X64Instruction instruction = x64_instruction2(X64_OP_MOV, X64_WIDTH_QWORD,
+        x64_memory(X64_WIDTH_QWORD, address, 0), x64_register(source));
+    (void) x64_print_instruction(emitter->output, emitter->syntax, &instruction);
 }
 
 static void write_typed_indirect_load(const Emitter *emitter, DataType type,
@@ -1220,18 +1140,18 @@ static void write_typed_indirect_load(const Emitter *emitter, DataType type,
     if (pointer_depth != 0 || type == TYPE_DOUBLE || type == TYPE_STRING ||
         type == TYPE_UNKNOWN) {
         write_indirect_load(emitter, "rax", address);
-    } else if (emitter->syntax == SYNTAX_INTEL) {
-        if (type == TYPE_INT) fprintf(emitter->output, "    movsxd rax, DWORD PTR [%s]\n", address);
-        else if (type == TYPE_CHAR) fprintf(emitter->output, "    movsx rax, BYTE PTR [%s]\n", address);
-        else if (type == TYPE_BYTE || type == TYPE_BIT)
-            fprintf(emitter->output, "    movzx eax, BYTE PTR [%s]\n", address);
-        else fprintf(emitter->output, "    mov eax, DWORD PTR [%s]\n", address);
     } else {
-        if (type == TYPE_INT) fprintf(emitter->output, "    movslq (%%%s), %%rax\n", address);
-        else if (type == TYPE_CHAR) fprintf(emitter->output, "    movsbq (%%%s), %%rax\n", address);
-        else if (type == TYPE_BYTE || type == TYPE_BIT)
-            fprintf(emitter->output, "    movzbl (%%%s), %%eax\n", address);
-        else fprintf(emitter->output, "    movl (%%%s), %%eax\n", address);
+        X64Opcode opcode = type == TYPE_INT || type == TYPE_CHAR ? X64_OP_MOVSX :
+                           type == TYPE_BYTE || type == TYPE_BIT ? X64_OP_MOVZX : X64_OP_MOV;
+        X64Width source_width = type == TYPE_INT || type == TYPE_FLOAT
+            ? X64_WIDTH_DWORD : X64_WIDTH_BYTE;
+        X64Width destination_width = type == TYPE_INT || type == TYPE_CHAR
+            ? X64_WIDTH_QWORD : X64_WIDTH_DWORD;
+        X64Instruction instruction = x64_instruction2(opcode, destination_width,
+            x64_sized_register(destination_width,
+                destination_width == X64_WIDTH_QWORD ? "rax" : "eax"),
+            x64_memory(source_width, address, 0));
+        (void) x64_print_instruction(emitter->output, emitter->syntax, &instruction);
     }
 }
 
@@ -1240,30 +1160,31 @@ static void write_typed_indirect_store(const Emitter *emitter, DataType type,
     if (pointer_depth != 0 || type == TYPE_DOUBLE || type == TYPE_STRING ||
         type == TYPE_UNKNOWN) {
         write_indirect_store(emitter, address, "rax");
-    } else if (emitter->syntax == SYNTAX_INTEL) {
-        if (type == TYPE_INT || type == TYPE_FLOAT)
-            fprintf(emitter->output, "    mov DWORD PTR [%s], eax\n", address);
-        else fprintf(emitter->output, "    mov BYTE PTR [%s], al\n", address);
     } else {
-        if (type == TYPE_INT || type == TYPE_FLOAT)
-            fprintf(emitter->output, "    movl %%eax, (%%%s)\n", address);
-        else fprintf(emitter->output, "    movb %%al, (%%%s)\n", address);
+        X64Width width = type == TYPE_INT || type == TYPE_FLOAT
+            ? X64_WIDTH_DWORD : X64_WIDTH_BYTE;
+        X64Instruction instruction = x64_instruction2(X64_OP_MOV, width,
+            x64_memory(width, address, 0),
+            x64_sized_register(width, width == X64_WIDTH_DWORD ? "eax" : "al"));
+        (void) x64_print_instruction(emitter->output, emitter->syntax, &instruction);
     }
 }
 
 static void write_frame_allocation(const Emitter *emitter) {
     size_t remaining = emitter->frame_size;
     while (remaining > 4096U) {
-        fputs(emitter->syntax == SYNTAX_INTEL ?
-              "    sub rsp, 4096\n    mov BYTE PTR [rsp], 0\n" :
-              "    subq $4096, %rsp\n    movb $0, (%rsp)\n", emitter->output);
+        X64Instruction subtract = x64_instruction2(X64_OP_SUB, X64_WIDTH_QWORD,
+            x64_register("rsp"), x64_immediate(4096));
+        X64Instruction probe = x64_instruction2(X64_OP_MOV, X64_WIDTH_BYTE,
+            x64_memory(X64_WIDTH_BYTE, "rsp", 0), x64_immediate(0));
+        (void) x64_print_instruction(emitter->output, emitter->syntax, &subtract);
+        (void) x64_print_instruction(emitter->output, emitter->syntax, &probe);
         remaining -= 4096U;
     }
     if (remaining != 0) {
-        if (emitter->syntax == SYNTAX_INTEL)
-            fprintf(emitter->output, "    sub rsp, %zu\n", remaining);
-        else
-            fprintf(emitter->output, "    subq $%zu, %%rsp\n", remaining);
+        X64Instruction subtract = x64_instruction2(X64_OP_SUB, X64_WIDTH_QWORD,
+            x64_register("rsp"), x64_immediate((long long) remaining));
+        (void) x64_print_instruction(emitter->output, emitter->syntax, &subtract);
     }
 }
 
@@ -1301,10 +1222,8 @@ static int emit_enum_member(Emitter *emitter, const IrInstruction *instruction) 
         char table[64];
         (void) snprintf(table, sizeof(table), ".LIR_enum_field_%zu_", enum_index);
         write_address(emitter, "rcx", table, field_index);
-        if (emitter->syntax == SYNTAX_INTEL)
-            fputs("    mov rax, QWORD PTR [rcx + rax*8]\n", emitter->output);
-        else
-            fputs("    movq (%rcx,%rax,8), %rax\n", emitter->output);
+        write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rax"),
+                    x64_indexed_memory(X64_WIDTH_QWORD, "rcx", "rax", 8, 0));
         write_value_store(emitter, "rax", instruction->result);
         return 1;
     }
@@ -1353,25 +1272,24 @@ static int emit_binary(Emitter *emitter, const IrInstruction *instruction) {
     write_value_load(emitter, "rcx", instruction->operand_b);
     switch (instruction->operator_type) {
         case TOKEN_PLUS:
-            fputs(emitter->syntax == SYNTAX_INTEL ? "    add rax, rcx\n" :
-                                                   "    addq %rcx, %rax\n", emitter->output);
+            write_x64_2(emitter, X64_OP_ADD, X64_WIDTH_QWORD,
+                        x64_register("rax"), x64_register("rcx"));
             break;
         case TOKEN_MINUS:
-            fputs(emitter->syntax == SYNTAX_INTEL ? "    sub rax, rcx\n" :
-                                                   "    subq %rcx, %rax\n", emitter->output);
+            write_x64_2(emitter, X64_OP_SUB, X64_WIDTH_QWORD,
+                        x64_register("rax"), x64_register("rcx"));
             break;
         case TOKEN_STAR:
-            fputs(emitter->syntax == SYNTAX_INTEL ? "    imul rax, rcx\n" :
-                                                   "    imulq %rcx, %rax\n", emitter->output);
+            write_x64_2(emitter, X64_OP_IMUL, X64_WIDTH_QWORD,
+                        x64_register("rax"), x64_register("rcx"));
             break;
         case TOKEN_SLASH:
         case TOKEN_PERCENT:
-            fputs("    cqo\n", emitter->output);
-            fputs(emitter->syntax == SYNTAX_INTEL ? "    idiv rcx\n" :
-                                                   "    idivq %rcx\n", emitter->output);
+            write_x64_0(emitter, X64_OP_CQO);
+            write_x64_1(emitter, X64_OP_IDIV, X64_WIDTH_QWORD, x64_register("rcx"));
             if (instruction->operator_type == TOKEN_PERCENT)
-                fputs(emitter->syntax == SYNTAX_INTEL ? "    mov rax, rdx\n" :
-                                                       "    movq %rdx, %rax\n", emitter->output);
+                write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                            x64_register("rax"), x64_register("rdx"));
             break;
         case TOKEN_EQUAL_EQUAL:
         case TOKEN_BANG_EQUAL:
@@ -1379,20 +1297,18 @@ static int emit_binary(Emitter *emitter, const IrInstruction *instruction) {
         case TOKEN_LESS_EQUAL:
         case TOKEN_GREATER:
         case TOKEN_GREATER_EQUAL: {
-            fputs(emitter->syntax == SYNTAX_INTEL ? "    cmp rax, rcx\n" :
-                                                   "    cmpq %rcx, %rax\n", emitter->output);
-            const char *condition = "e";
-            if (instruction->operator_type == TOKEN_BANG_EQUAL) condition = "ne";
-            else if (instruction->operator_type == TOKEN_LESS) condition = "l";
-            else if (instruction->operator_type == TOKEN_LESS_EQUAL) condition = "le";
-            else if (instruction->operator_type == TOKEN_GREATER) condition = "g";
-            else if (instruction->operator_type == TOKEN_GREATER_EQUAL) condition = "ge";
-            if (emitter->syntax == SYNTAX_INTEL)
-                fprintf(emitter->output, "    set%s al\n", condition);
-            else
-                fprintf(emitter->output, "    set%s %%al\n", condition);
-            fputs(emitter->syntax == SYNTAX_INTEL ? "    movzx rax, al\n" :
-                                                   "    movzbq %al, %rax\n", emitter->output);
+            write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_QWORD,
+                        x64_register("rax"), x64_register("rcx"));
+            X64Opcode condition = X64_OP_SETE;
+            if (instruction->operator_type == TOKEN_BANG_EQUAL) condition = X64_OP_SETNE;
+            else if (instruction->operator_type == TOKEN_LESS) condition = X64_OP_SETL;
+            else if (instruction->operator_type == TOKEN_LESS_EQUAL) condition = X64_OP_SETLE;
+            else if (instruction->operator_type == TOKEN_GREATER) condition = X64_OP_SETG;
+            else if (instruction->operator_type == TOKEN_GREATER_EQUAL) condition = X64_OP_SETGE;
+            write_x64_1(emitter, condition, X64_WIDTH_NONE, x64_register("al"));
+            write_x64_2(emitter, X64_OP_MOVZX, X64_WIDTH_QWORD,
+                        x64_sized_register(X64_WIDTH_QWORD, "rax"),
+                        x64_sized_register(X64_WIDTH_BYTE, "al"));
             break;
         }
         default: return 0;
@@ -1420,10 +1336,12 @@ static void emit_phi_moves(Emitter *emitter, size_t destination_label) {
         if (incoming != IR_VALUE_NONE) {
             write_value_load(emitter, "rax", incoming);
             if (phi->type == TYPE_BIT) {
-                fputs(emitter->syntax == SYNTAX_INTEL ?
-                      "    cmp rax, 0\n    setne al\n    movzx rax, al\n" :
-                      "    cmpq $0, %rax\n    setne %al\n    movzbq %al, %rax\n",
-                      emitter->output);
+                write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_QWORD,
+                            x64_register("rax"), x64_immediate(0));
+                write_x64_1(emitter, X64_OP_SETNE, X64_WIDTH_NONE, x64_register("al"));
+                write_x64_2(emitter, X64_OP_MOVZX, X64_WIDTH_QWORD,
+                            x64_sized_register(X64_WIDTH_QWORD, "rax"),
+                            x64_sized_register(X64_WIDTH_BYTE, "al"));
             }
             write_value_store(emitter, "rax", phi->result);
         }
@@ -1435,55 +1353,73 @@ static void emit_phi_moves(Emitter *emitter, size_t destination_label) {
 static void convert_rax(Emitter *emitter, DataType from, DataType to) {
     if (from == to || !is_numeric(from) || !is_numeric(to)) return;
     if (is_integral(from) && to == TYPE_DOUBLE) {
-        fputs(emitter->syntax == SYNTAX_INTEL ?
-              "    cvtsi2sd xmm0, rax\n    movq rax, xmm0\n" :
-              "    cvtsi2sdq %rax, %xmm0\n    movq %xmm0, %rax\n", emitter->output);
+        write_x64_2(emitter, X64_OP_CVTSI2SDQ, X64_WIDTH_NONE,
+                    x64_register("xmm0"), x64_register("rax"));
+        write_x64_2(emitter, X64_OP_MOVQ, X64_WIDTH_NONE,
+                    x64_register("rax"), x64_register("xmm0"));
     } else if (is_integral(from) && to == TYPE_FLOAT) {
-        fputs(emitter->syntax == SYNTAX_INTEL ?
-              "    cvtsi2ss xmm0, rax\n    movd eax, xmm0\n" :
-              "    cvtsi2ssq %rax, %xmm0\n    movd %xmm0, %eax\n", emitter->output);
+        write_x64_2(emitter, X64_OP_CVTSI2SSQ, X64_WIDTH_NONE,
+                    x64_register("xmm0"), x64_register("rax"));
+        write_x64_2(emitter, X64_OP_MOVD, X64_WIDTH_NONE,
+                    x64_register("eax"), x64_register("xmm0"));
     } else if (from == TYPE_FLOAT && to == TYPE_DOUBLE) {
-        fputs(emitter->syntax == SYNTAX_INTEL ?
-              "    movd xmm0, eax\n    cvtss2sd xmm0, xmm0\n    movq rax, xmm0\n" :
-              "    movd %eax, %xmm0\n    cvtss2sd %xmm0, %xmm0\n    movq %xmm0, %rax\n", emitter->output);
+        write_x64_2(emitter, X64_OP_MOVD, X64_WIDTH_NONE,
+                    x64_register("xmm0"), x64_register("eax"));
+        write_x64_2(emitter, X64_OP_CVTSS2SD, X64_WIDTH_NONE,
+                    x64_register("xmm0"), x64_register("xmm0"));
+        write_x64_2(emitter, X64_OP_MOVQ, X64_WIDTH_NONE,
+                    x64_register("rax"), x64_register("xmm0"));
     } else if (from == TYPE_DOUBLE && to == TYPE_FLOAT) {
-        fputs(emitter->syntax == SYNTAX_INTEL ?
-              "    movq xmm0, rax\n    cvtsd2ss xmm0, xmm0\n    movd eax, xmm0\n" :
-              "    movq %rax, %xmm0\n    cvtsd2ss %xmm0, %xmm0\n    movd %xmm0, %eax\n", emitter->output);
+        write_x64_2(emitter, X64_OP_MOVQ, X64_WIDTH_NONE,
+                    x64_register("xmm0"), x64_register("rax"));
+        write_x64_2(emitter, X64_OP_CVTSD2SS, X64_WIDTH_NONE,
+                    x64_register("xmm0"), x64_register("xmm0"));
+        write_x64_2(emitter, X64_OP_MOVD, X64_WIDTH_NONE,
+                    x64_register("eax"), x64_register("xmm0"));
     } else if (from == TYPE_FLOAT && is_integral(to)) {
-        fputs(emitter->syntax == SYNTAX_INTEL ?
-              "    movd xmm0, eax\n    cvttss2si rax, xmm0\n" :
-              "    movd %eax, %xmm0\n    cvttss2siq %xmm0, %rax\n", emitter->output);
+        write_x64_2(emitter, X64_OP_MOVD, X64_WIDTH_NONE,
+                    x64_register("xmm0"), x64_register("eax"));
+        write_x64_2(emitter, X64_OP_CVTTSS2SIQ, X64_WIDTH_NONE,
+                    x64_register("rax"), x64_register("xmm0"));
     } else if (from == TYPE_DOUBLE && is_integral(to)) {
-        fputs(emitter->syntax == SYNTAX_INTEL ?
-              "    movq xmm0, rax\n    cvttsd2si rax, xmm0\n" :
-              "    movq %rax, %xmm0\n    cvttsd2siq %xmm0, %rax\n", emitter->output);
+        write_x64_2(emitter, X64_OP_MOVQ, X64_WIDTH_NONE,
+                    x64_register("xmm0"), x64_register("rax"));
+        write_x64_2(emitter, X64_OP_CVTTSD2SIQ, X64_WIDTH_NONE,
+                    x64_register("rax"), x64_register("xmm0"));
     }
 }
 
 static void normalize_truth_rax(Emitter *emitter, DataType type) {
     if (type == TYPE_FLOAT) {
-        fputs(emitter->syntax == SYNTAX_INTEL ?
-              "    movd xmm0, eax\n    xorps xmm1, xmm1\n"
-              "    ucomiss xmm0, xmm1\n    setne al\n    setp dl\n"
-              "    or al, dl\n    movzx rax, al\n" :
-              "    movd %eax, %xmm0\n    xorps %xmm1, %xmm1\n"
-              "    ucomiss %xmm1, %xmm0\n    setne %al\n    setp %dl\n"
-              "    orb %dl, %al\n    movzbq %al, %rax\n", emitter->output);
+        write_x64_2(emitter, X64_OP_MOVD, X64_WIDTH_NONE,
+                    x64_register("xmm0"), x64_register("eax"));
+        write_x64_2(emitter, X64_OP_XORPS, X64_WIDTH_NONE,
+                    x64_register("xmm1"), x64_register("xmm1"));
+        write_x64_2(emitter, X64_OP_UCOMISS, X64_WIDTH_NONE,
+                    x64_register("xmm0"), x64_register("xmm1"));
     } else if (type == TYPE_DOUBLE) {
-        fputs(emitter->syntax == SYNTAX_INTEL ?
-              "    movq xmm0, rax\n    xorpd xmm1, xmm1\n"
-              "    ucomisd xmm0, xmm1\n    setne al\n    setp dl\n"
-              "    or al, dl\n    movzx rax, al\n" :
-              "    movq %rax, %xmm0\n    xorpd %xmm1, %xmm1\n"
-              "    ucomisd %xmm1, %xmm0\n    setne %al\n    setp %dl\n"
-              "    orb %dl, %al\n    movzbq %al, %rax\n", emitter->output);
+        write_x64_2(emitter, X64_OP_MOVQ, X64_WIDTH_NONE,
+                    x64_register("xmm0"), x64_register("rax"));
+        write_x64_2(emitter, X64_OP_XORPD, X64_WIDTH_NONE,
+                    x64_register("xmm1"), x64_register("xmm1"));
+        write_x64_2(emitter, X64_OP_UCOMISD, X64_WIDTH_NONE,
+                    x64_register("xmm0"), x64_register("xmm1"));
     } else {
-        fputs(emitter->syntax == SYNTAX_INTEL ?
-              "    test rax, rax\n    setne al\n    movzx rax, al\n" :
-              "    testq %rax, %rax\n    setne %al\n    movzbq %al, %rax\n",
-              emitter->output);
+        write_x64_2(emitter, X64_OP_TEST, X64_WIDTH_QWORD,
+                    x64_register("rax"), x64_register("rax"));
+        write_x64_1(emitter, X64_OP_SETNE, X64_WIDTH_NONE, x64_register("al"));
+        write_x64_2(emitter, X64_OP_MOVZX, X64_WIDTH_QWORD,
+                    x64_sized_register(X64_WIDTH_QWORD, "rax"),
+                    x64_sized_register(X64_WIDTH_BYTE, "al"));
+        return;
     }
+    write_x64_1(emitter, X64_OP_SETNE, X64_WIDTH_NONE, x64_register("al"));
+    write_x64_1(emitter, X64_OP_SETP, X64_WIDTH_NONE, x64_register("dl"));
+    write_x64_2(emitter, X64_OP_OR, X64_WIDTH_BYTE,
+                x64_register("al"), x64_register("dl"));
+    write_x64_2(emitter, X64_OP_MOVZX, X64_WIDTH_QWORD,
+                x64_sized_register(X64_WIDTH_QWORD, "rax"),
+                x64_sized_register(X64_WIDTH_BYTE, "al"));
 }
 
 static void emit_gc_cleanup(Emitter *emitter) {
@@ -1534,10 +1470,9 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                     (declaration->is_array || is_inline_structure(emitter->module,
                                                                   declaration))) {
                     size_t offset = declaration_offset(emitter, declaration);
-                    if (emitter->syntax == SYNTAX_INTEL)
-                        fprintf(emitter->output, "    lea rax, [rbp - %zu]\n", offset);
-                    else
-                        fprintf(emitter->output, "    leaq -%zu(%%rbp), %%rax\n", offset);
+                    write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD,
+                                x64_register("rax"),
+                                x64_memory(X64_WIDTH_NONE, "rbp", -(long long) offset));
                 } else if (declaration != NULL)
                     write_local_load(emitter, "rax", declaration_offset(emitter, declaration));
                 else if (parameter != NULL)
@@ -1557,10 +1492,9 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                 if (instruction->operand_a != IR_VALUE_NONE &&
                     is_inline_structure(emitter->module, instruction)) {
                     write_value_load(emitter, "rax", instruction->operand_a);
-                    if (emitter->syntax == SYNTAX_INTEL)
-                        fprintf(emitter->output, "    lea rbx, [rbp - %zu]\n", offset);
-                    else
-                        fprintf(emitter->output, "    leaq -%zu(%%rbp), %%rbx\n", offset);
+                    write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD,
+                                x64_register("rbx"),
+                                x64_memory(X64_WIDTH_NONE, "rbp", -(long long) offset));
                     copy_aggregate(emitter, slots, "rax", "rbx");
                 } else {
                     write_immediate(emitter, "rax", 0);
@@ -1595,77 +1529,63 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                     write_value_load(emitter, "rax", instruction->operand_b);
                     convert_rax(emitter, stored->type, target->type);
                 } else {
-                    if (emitter->syntax == SYNTAX_INTEL)
-                        fprintf(emitter->output, "    mov%c xmm2, %s\n",
-                                target->type == TYPE_FLOAT ? 'd' : 'q',
-                                target->type == TYPE_FLOAT ? "eax" : "rax");
-                    else
-                        fprintf(emitter->output, "    mov%c %%%s, %%xmm2\n",
-                                target->type == TYPE_FLOAT ? 'd' : 'q',
-                                target->type == TYPE_FLOAT ? "eax" : "rax");
+                    write_x64_2(emitter, target->type == TYPE_FLOAT
+                                ? X64_OP_MOVD : X64_OP_MOVQ, X64_WIDTH_NONE,
+                                x64_register("xmm2"),
+                                x64_register(target->type == TYPE_FLOAT ? "eax" : "rax"));
                     if (instruction->operator_type == TOKEN_PLUS_PLUS ||
                         instruction->operator_type == TOKEN_MINUS_MINUS) {
                         write_immediate(emitter, "rax", 1);
                         convert_rax(emitter, TYPE_INT, target->type);
-                        if (emitter->syntax == SYNTAX_INTEL)
-                            fprintf(emitter->output, "    mov%c xmm1, %s\n",
-                                    target->type == TYPE_FLOAT ? 'd' : 'q',
-                                    target->type == TYPE_FLOAT ? "eax" : "rax");
-                        else
-                            fprintf(emitter->output, "    mov%c %%%s, %%xmm1\n",
-                                    target->type == TYPE_FLOAT ? 'd' : 'q',
-                                    target->type == TYPE_FLOAT ? "eax" : "rax");
+                        write_x64_2(emitter, target->type == TYPE_FLOAT
+                                    ? X64_OP_MOVD : X64_OP_MOVQ, X64_WIDTH_NONE,
+                                    x64_register("xmm1"),
+                                    x64_register(target->type == TYPE_FLOAT ? "eax" : "rax"));
                     } else {
                         load_floating_value(emitter, instruction->operand_b,
                                             target->type, 1);
                     }
-                    const char *operation =
-                        (instruction->operator_type == TOKEN_PLUS_EQUAL ||
-                         instruction->operator_type == TOKEN_PLUS_PLUS) ? "add" :
-                        (instruction->operator_type == TOKEN_MINUS_EQUAL ||
-                         instruction->operator_type == TOKEN_MINUS_MINUS) ? "sub" :
-                        instruction->operator_type == TOKEN_STAR_EQUAL ? "mul" : "div";
-                    if (emitter->syntax == SYNTAX_INTEL)
-                        fprintf(emitter->output, "    %s%s xmm2, xmm1\n", operation,
-                                target->type == TYPE_FLOAT ? "ss" : "sd");
-                    else
-                        fprintf(emitter->output, "    %s%s %%xmm1, %%xmm2\n", operation,
-                                target->type == TYPE_FLOAT ? "ss" : "sd");
-                    if (emitter->syntax == SYNTAX_INTEL)
-                        fprintf(emitter->output, "    mov%c %s, xmm2\n",
-                                target->type == TYPE_FLOAT ? 'd' : 'q',
-                                target->type == TYPE_FLOAT ? "eax" : "rax");
-                    else
-                        fprintf(emitter->output, "    mov%c %%xmm2, %%%s\n",
-                                target->type == TYPE_FLOAT ? 'd' : 'q',
-                                target->type == TYPE_FLOAT ? "eax" : "rax");
+                    int add = instruction->operator_type == TOKEN_PLUS_EQUAL ||
+                              instruction->operator_type == TOKEN_PLUS_PLUS;
+                    int subtract = instruction->operator_type == TOKEN_MINUS_EQUAL ||
+                                   instruction->operator_type == TOKEN_MINUS_MINUS;
+                    X64Opcode operation = target->type == TYPE_FLOAT
+                        ? (add ? X64_OP_ADDSS : subtract ? X64_OP_SUBSS :
+                           instruction->operator_type == TOKEN_STAR_EQUAL
+                               ? X64_OP_MULSS : X64_OP_DIVSS)
+                        : (add ? X64_OP_ADDSD : subtract ? X64_OP_SUBSD :
+                           instruction->operator_type == TOKEN_STAR_EQUAL
+                               ? X64_OP_MULSD : X64_OP_DIVSD);
+                    write_x64_2(emitter, operation, X64_WIDTH_NONE,
+                                x64_register("xmm2"), x64_register("xmm1"));
+                    write_x64_2(emitter, target->type == TYPE_FLOAT
+                                ? X64_OP_MOVD : X64_OP_MOVQ, X64_WIDTH_NONE,
+                                x64_register(target->type == TYPE_FLOAT ? "eax" : "rax"),
+                                x64_register("xmm2"));
                 }
             } else if (instruction->operator_type == TOKEN_PLUS_PLUS ||
                 instruction->operator_type == TOKEN_MINUS_MINUS) {
-                if (emitter->syntax == SYNTAX_INTEL)
-                    fprintf(emitter->output, "    %s rax\n",
-                            instruction->operator_type == TOKEN_PLUS_PLUS ? "inc" : "dec");
-                else
-                    fprintf(emitter->output, "    %sq %%rax\n",
-                            instruction->operator_type == TOKEN_PLUS_PLUS ? "inc" : "dec");
+                write_x64_1(emitter, instruction->operator_type == TOKEN_PLUS_PLUS
+                            ? X64_OP_INC : X64_OP_DEC, X64_WIDTH_QWORD,
+                            x64_register("rax"));
             } else {
                 write_value_load(emitter, "rcx", instruction->operand_b);
                 if (instruction->operator_type == TOKEN_EQUAL)
-                    fputs(emitter->syntax == SYNTAX_INTEL ? "    mov rax, rcx\n" :
-                                                           "    movq %rcx, %rax\n", emitter->output);
+                    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                                x64_register("rax"), x64_register("rcx"));
                 else if (instruction->operator_type == TOKEN_PLUS_EQUAL)
-                    fputs(emitter->syntax == SYNTAX_INTEL ? "    add rax, rcx\n" :
-                                                           "    addq %rcx, %rax\n", emitter->output);
+                    write_x64_2(emitter, X64_OP_ADD, X64_WIDTH_QWORD,
+                                x64_register("rax"), x64_register("rcx"));
                 else if (instruction->operator_type == TOKEN_MINUS_EQUAL)
-                    fputs(emitter->syntax == SYNTAX_INTEL ? "    sub rax, rcx\n" :
-                                                           "    subq %rcx, %rax\n", emitter->output);
+                    write_x64_2(emitter, X64_OP_SUB, X64_WIDTH_QWORD,
+                                x64_register("rax"), x64_register("rcx"));
                 else if (instruction->operator_type == TOKEN_STAR_EQUAL)
-                    fputs(emitter->syntax == SYNTAX_INTEL ? "    imul rax, rcx\n" :
-                                                           "    imulq %rcx, %rax\n", emitter->output);
+                    write_x64_2(emitter, X64_OP_IMUL, X64_WIDTH_QWORD,
+                                x64_register("rax"), x64_register("rcx"));
                 else if (instruction->operator_type == TOKEN_SLASH_EQUAL) {
-                    fputs("    cqo\n", emitter->output);
-                    fputs(emitter->syntax == SYNTAX_INTEL ? "    idiv rcx\n" :
-                                                           "    idivq %rcx\n", emitter->output);
+                    write_x64_0(emitter, X64_OP_CQO);
+                    write_x64_1(emitter, X64_OP_IDIV, X64_WIDTH_QWORD,
+                                x64_register("rcx"));
                 } else return 0;
             }
             write_typed_indirect_store(emitter, target->type, target->pointer_depth, "rbx");
@@ -1676,8 +1596,8 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             const IrInstruction *operand = producer(function, instruction->operand_b);
             if (instruction->operator_type == TOKEN_AMPERSAND) {
                 if (!emit_lvalue_address(emitter, operand, index)) return 0;
-                if (emitter->syntax == SYNTAX_INTEL) fputs("    mov rax, rbx\n", emitter->output);
-                else fputs("    movq %rbx, %rax\n", emitter->output);
+                write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                            x64_register("rax"), x64_register("rbx"));
                 write_value_store(emitter, "rax", instruction->result);
                 return 1;
             }
@@ -1690,23 +1610,23 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             }
             if (instruction->operator_type == TOKEN_MINUS) {
                 if (instruction->type == TYPE_FLOAT)
-                    fputs(emitter->syntax == SYNTAX_INTEL ? "    xor eax, 0x80000000\n" :
-                                                           "    xorl $0x80000000, %eax\n",
-                          emitter->output);
+                    write_x64_2(emitter, X64_OP_XOR, X64_WIDTH_DWORD,
+                                x64_register("eax"), x64_immediate(0x80000000LL));
                 else if (instruction->type == TYPE_DOUBLE)
-                    fputs(emitter->syntax == SYNTAX_INTEL ?
-                          "    movabs rcx, 0x8000000000000000\n    xor rax, rcx\n" :
-                          "    movabsq $0x8000000000000000, %rcx\n    xorq %rcx, %rax\n",
-                          emitter->output);
+                {
+                    write_x64_2(emitter, X64_OP_MOVABS, X64_WIDTH_QWORD,
+                                x64_register("rcx"), x64_immediate((long long) UINT64_C(0x8000000000000000)));
+                    write_x64_2(emitter, X64_OP_XOR, X64_WIDTH_QWORD,
+                                x64_register("rax"), x64_register("rcx"));
+                }
                 else
-                    fputs(emitter->syntax == SYNTAX_INTEL ? "    neg rax\n" :
-                                                           "    negq %rax\n", emitter->output);
+                    write_x64_1(emitter, X64_OP_NEG, X64_WIDTH_QWORD,
+                                x64_register("rax"));
             }
             else {
                 normalize_truth_rax(emitter, operand->type);
-                fputs(emitter->syntax == SYNTAX_INTEL ? "    xor rax, 1\n" :
-                                                       "    xorq $1, %rax\n",
-                      emitter->output);
+                write_x64_2(emitter, X64_OP_XOR, X64_WIDTH_QWORD,
+                            x64_register("rax"), x64_immediate(1));
             }
             write_value_store(emitter, "rax", instruction->result);
             return 1;
@@ -1725,50 +1645,31 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             }
             if (value->type == TYPE_STRING ||
                 (value->type == TYPE_CHAR && is_pointer_value(value))) {
-                write_value_load(emitter, "rax", instruction->operand_a);
-                if (emitter->syntax == SYNTAX_INTEL)
-                    fprintf(emitter->output,
-                        "    test rax, rax\n    jnz .LIR_print_string_%zu_%zu\n"
-                        "    lea rax, [rip + .LIR_empty_string_0]\n"
-                        ".LIR_print_string_%zu_%zu:\n",
-                        emitter->function_index, index,
-                        emitter->function_index, index);
-                else
-                    fprintf(emitter->output,
-                        "    testq %%rax, %%rax\n    jnz .LIR_print_string_%zu_%zu\n"
-                        "    leaq .LIR_empty_string_0(%%rip), %%rax\n"
-                        ".LIR_print_string_%zu_%zu:\n",
-                        emitter->function_index, index,
-                        emitter->function_index, index);
+                load_nullable_string(emitter, "rax", instruction->operand_a);
                 if (instruction->operator_type == TOKEN_KEYWORD_PRINTLINE) {
-                    if (emitter->syntax == SYNTAX_INTEL)
-                        fprintf(emitter->output, "    mov %s, rax\n", first);
-                    else
-                        fprintf(emitter->output, "    movq %%rax, %%%s\n", first);
+                    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                                x64_register(first), x64_register("rax"));
                     write_call(emitter, "puts");
                 } else {
                     write_address(emitter, first, ".LIR_string_format_", 0);
-                    if (emitter->syntax == SYNTAX_INTEL)
-                        fprintf(emitter->output, "    mov %s, rax\n", second);
-                    else
-                        fprintf(emitter->output, "    movq %%rax, %%%s\n", second);
-                    fputs(emitter->syntax == SYNTAX_INTEL ? "    xor eax, eax\n" :
-                                                           "    xorl %eax, %eax\n", emitter->output);
+                    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                                x64_register(second), x64_register("rax"));
+                    write_x64_2(emitter, X64_OP_XOR, X64_WIDTH_DWORD,
+                                x64_register("eax"), x64_register("eax"));
                     write_call(emitter, "printf");
                 }
             } else if (is_floating(value->type)) {
                 write_address(emitter, first, ".LIR_float_format_", 0);
                 write_value_load(emitter, "rax", instruction->operand_a);
                 convert_rax(emitter, value->type, TYPE_DOUBLE);
-                if (emitter->syntax == SYNTAX_INTEL)
-                    fprintf(emitter->output, "    movq xmm%d, rax\n",
-                            emitter->target == TARGET_COFF ? 1 : 0);
-                else
-                    fprintf(emitter->output, "    movq %%rax, %%xmm%d\n",
-                            emitter->target == TARGET_COFF ? 1 : 0);
+                char float_argument[16];
+                (void) snprintf(float_argument, sizeof(float_argument), "xmm%d",
+                                emitter->target == TARGET_COFF ? 1 : 0);
+                write_x64_2(emitter, X64_OP_MOVQ, X64_WIDTH_NONE,
+                            x64_register(float_argument), x64_register("rax"));
                 if (emitter->target == TARGET_COFF)
-                    fputs(emitter->syntax == SYNTAX_INTEL ? "    mov rdx, rax\n" :
-                                                           "    movq %rax, %rdx\n", emitter->output);
+                    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                                x64_register("rdx"), x64_register("rax"));
                 else
                     write_immediate(emitter, "rax", 1);
                 write_call(emitter, "printf");
@@ -1780,8 +1681,8 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                 write_address(emitter, first, value->type == TYPE_CHAR ?
                               ".LIR_char_format_" : ".LIR_int_format_", 0);
                 write_value_load(emitter, second, instruction->operand_a);
-                fputs(emitter->syntax == SYNTAX_INTEL ? "    xor eax, eax\n" :
-                                                       "    xorl %eax, %eax\n", emitter->output);
+                write_x64_2(emitter, X64_OP_XOR, X64_WIDTH_DWORD,
+                            x64_register("eax"), x64_register("eax"));
                 write_call(emitter, "printf");
                 if (instruction->operator_type == TOKEN_KEYWORD_PRINTLINE) {
                     write_immediate(emitter, first, 10);
@@ -1800,29 +1701,41 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                 write_value_load(emitter, "rax", instruction->operand_a);
                 convert_rax(emitter, value->type, return_type);
                 if (return_type == TYPE_FLOAT)
-                    fputs(emitter->syntax == SYNTAX_INTEL ? "    movd xmm0, eax\n" :
-                                                           "    movd %eax, %xmm0\n", emitter->output);
+                    write_x64_2(emitter, X64_OP_MOVD, X64_WIDTH_NONE,
+                                x64_register("xmm0"), x64_register("eax"));
                 else if (return_type == TYPE_DOUBLE)
-                    fputs(emitter->syntax == SYNTAX_INTEL ? "    movq xmm0, rax\n" :
-                                                           "    movq %rax, %xmm0\n", emitter->output);
+                    write_x64_2(emitter, X64_OP_MOVQ, X64_WIDTH_NONE,
+                                x64_register("xmm0"), x64_register("rax"));
             }
-            fprintf(emitter->output, "    jmp .LIR_epilogue_%zu\n", emitter->function_index);
+            char epilogue[64];
+            (void) snprintf(epilogue, sizeof(epilogue), ".LIR_epilogue_%zu",
+                            emitter->function_index);
+            write_x64_1(emitter, X64_OP_JMP, X64_WIDTH_NONE, x64_label(epilogue));
             return 1;
         case IR_OP_BRANCH:
             write_value_load(emitter, "rax", instruction->operand_a);
             normalize_truth_rax(emitter,
                 producer(function, instruction->operand_a)->type);
-            fputs(emitter->syntax == SYNTAX_INTEL ? "    cmp rax, 0\n" :
-                                                   "    cmpq $0, %rax\n", emitter->output);
-            fprintf(emitter->output, "    jne .LIR_%zu_%zu\n    jmp .LIR_%zu_%zu\n",
-                    emitter->function_index, instruction->target_a,
-                    emitter->function_index, instruction->target_b);
+            write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_QWORD,
+                        x64_register("rax"), x64_immediate(0));
+            char true_label[64];
+            char false_label[64];
+            (void) snprintf(true_label, sizeof(true_label), ".LIR_%zu_%zu",
+                            emitter->function_index, instruction->target_a);
+            (void) snprintf(false_label, sizeof(false_label), ".LIR_%zu_%zu",
+                            emitter->function_index, instruction->target_b);
+            write_x64_1(emitter, X64_OP_JNE, X64_WIDTH_NONE, x64_label(true_label));
+            write_x64_1(emitter, X64_OP_JMP, X64_WIDTH_NONE, x64_label(false_label));
             return 1;
         case IR_OP_JUMP:
             emit_phi_moves(emitter, instruction->target_a);
-            fprintf(emitter->output, "    jmp .LIR_%zu_%zu\n", emitter->function_index,
-                    instruction->target_a);
+        {
+            char target_label[64];
+            (void) snprintf(target_label, sizeof(target_label), ".LIR_%zu_%zu",
+                            emitter->function_index, instruction->target_a);
+            write_x64_1(emitter, X64_OP_JMP, X64_WIDTH_NONE, x64_label(target_label));
             return 1;
+        }
         case IR_OP_LABEL:
             emitter->current_label = instruction->target_a;
             fprintf(emitter->output, ".LIR_%zu_%zu:\n", emitter->function_index,
@@ -1835,26 +1748,34 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             write_value_load(emitter, "rax", instruction->operand_a);
             if (instruction->type == TYPE_BIT && is_floating(source->type)) {
                 if (source->type == TYPE_FLOAT)
-                    fputs(emitter->syntax == SYNTAX_INTEL ?
-                          "    movd xmm0, eax\n    xorps xmm1, xmm1\n    ucomiss xmm0, xmm1\n" :
-                          "    movd %eax, %xmm0\n    xorps %xmm1, %xmm1\n    ucomiss %xmm1, %xmm0\n",
-                          emitter->output);
+                {
+                    write_x64_2(emitter, X64_OP_MOVD, X64_WIDTH_NONE,
+                                x64_register("xmm0"), x64_register("eax"));
+                    write_x64_2(emitter, X64_OP_XORPS, X64_WIDTH_NONE,
+                                x64_register("xmm1"), x64_register("xmm1"));
+                    write_x64_2(emitter, X64_OP_UCOMISS, X64_WIDTH_NONE,
+                                x64_register("xmm0"), x64_register("xmm1"));
+                }
                 else
-                    fputs(emitter->syntax == SYNTAX_INTEL ?
-                          "    movq xmm0, rax\n    xorpd xmm1, xmm1\n    ucomisd xmm0, xmm1\n" :
-                          "    movq %rax, %xmm0\n    xorpd %xmm1, %xmm1\n    ucomisd %xmm1, %xmm0\n",
-                          emitter->output);
-                fputs(emitter->syntax == SYNTAX_INTEL ?
-                      "    setne al\n    setp dl\n    or al, dl\n    movzx rax, al\n" :
-                      "    setne %al\n    setp %dl\n    orb %dl, %al\n    movzbq %al, %rax\n",
-                      emitter->output);
+                {
+                    write_x64_2(emitter, X64_OP_MOVQ, X64_WIDTH_NONE,
+                                x64_register("xmm0"), x64_register("rax"));
+                    write_x64_2(emitter, X64_OP_XORPD, X64_WIDTH_NONE,
+                                x64_register("xmm1"), x64_register("xmm1"));
+                    write_x64_2(emitter, X64_OP_UCOMISD, X64_WIDTH_NONE,
+                                x64_register("xmm0"), x64_register("xmm1"));
+                }
+                write_x64_1(emitter, X64_OP_SETNE, X64_WIDTH_NONE, x64_register("al"));
+                write_x64_1(emitter, X64_OP_SETP, X64_WIDTH_NONE, x64_register("dl"));
+                write_x64_2(emitter, X64_OP_OR, X64_WIDTH_BYTE,
+                            x64_register("al"), x64_register("dl"));
+                write_x64_2(emitter, X64_OP_MOVZX, X64_WIDTH_QWORD,
+                            x64_sized_register(X64_WIDTH_QWORD, "rax"),
+                            x64_sized_register(X64_WIDTH_BYTE, "al"));
             } else {
                 convert_rax(emitter, source->type, instruction->type);
                 if (instruction->type == TYPE_BIT)
-                    fputs(emitter->syntax == SYNTAX_INTEL ?
-                          "    test rax, rax\n    setne al\n    movzx rax, al\n" :
-                          "    testq %rax, %rax\n    setne %al\n    movzbq %al, %rax\n",
-                          emitter->output);
+                    normalize_truth_rax(emitter, source->type);
             }
             write_value_store(emitter, "rax", instruction->result);
             return 1;
@@ -1873,8 +1794,8 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
         case IR_OP_INDEX:
             if (!emit_lvalue_address(emitter, instruction, index)) return 0;
             if (is_inline_structure(emitter->module, instruction)) {
-                if (emitter->syntax == SYNTAX_INTEL) fputs("    mov rax, rbx\n", emitter->output);
-                else fputs("    movq %rbx, %rax\n", emitter->output);
+                write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                            x64_register("rax"), x64_register("rbx"));
             } else
                 write_typed_indirect_load(emitter, instruction->type,
                                           instruction->pointer_depth, "rbx");
@@ -1884,8 +1805,8 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             if (emit_enum_member(emitter, instruction)) return 1;
             if (!emit_lvalue_address(emitter, instruction, index)) return 0;
             if (is_inline_structure(emitter->module, instruction)) {
-                if (emitter->syntax == SYNTAX_INTEL) fputs("    mov rax, rbx\n", emitter->output);
-                else fputs("    movq %rbx, %rax\n", emitter->output);
+                write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                            x64_register("rax"), x64_register("rbx"));
             } else
                 write_typed_indirect_load(emitter, instruction->type,
                                           instruction->pointer_depth, "rbx");
@@ -1927,11 +1848,10 @@ static int emit_function(Emitter *emitter) {
     else
         fprintf(output, "    .type %s, @function\n", name);
     fprintf(output, "%s:\n", name);
-    if (emitter->syntax == SYNTAX_INTEL) {
-        fputs("    push rbp\n    mov rbp, rsp\n    push rbx\n", output);
-    } else {
-        fputs("    pushq %rbp\n    movq %rsp, %rbp\n    pushq %rbx\n", output);
-    }
+    write_x64_1(emitter, X64_OP_PUSH, X64_WIDTH_QWORD, x64_register("rbp"));
+    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                x64_register("rbp"), x64_register("rsp"));
+    write_x64_1(emitter, X64_OP_PUSH, X64_WIDTH_QWORD, x64_register("rbx"));
     write_frame_allocation(emitter);
     write_immediate(emitter, "rax", 0);
     for (size_t i = 0; i < emitter->function->instruction_count; i++) {
@@ -1948,21 +1868,16 @@ static int emit_function(Emitter *emitter) {
             write_positive_frame_load(emitter, "rax", first_stack_offset +
                 stack_parameter_index(emitter->function, emitter->target, p) * 8U);
         } else if (is_floating(parameter->type)) {
-            if (emitter->syntax == SYNTAX_INTEL)
-                fprintf(output, "    mov%c %s, xmm%zu\n",
-                        parameter->type == TYPE_FLOAT ? 'd' : 'q',
-                        parameter->type == TYPE_FLOAT ? "eax" : "rax", register_index);
-            else
-                fprintf(output, "    mov%c %%xmm%zu, %%%s\n",
-                        parameter->type == TYPE_FLOAT ? 'd' : 'q', register_index,
-                        parameter->type == TYPE_FLOAT ? "eax" : "rax");
+            char source[32];
+            (void) snprintf(source, sizeof(source), "xmm%zu", register_index);
+            write_x64_2(emitter, parameter->type == TYPE_FLOAT ? X64_OP_MOVD : X64_OP_MOVQ,
+                        X64_WIDTH_NONE,
+                        x64_register(parameter->type == TYPE_FLOAT ? "eax" : "rax"),
+                        x64_register(source));
         } else {
-            if (emitter->syntax == SYNTAX_INTEL)
-                fprintf(output, "    mov rax, %s\n",
-                        argument_register(emitter->target, register_index));
-            else
-                fprintf(output, "    movq %%%s, %%rax\n",
-                        argument_register(emitter->target, register_index));
+            write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                        x64_register("rax"),
+                        x64_register(argument_register(emitter->target, register_index)));
         }
         if (is_integral(parameter->type) && parameter->pointer_depth == 0 &&
             !parameter->is_array)
@@ -1970,13 +1885,11 @@ static int emit_function(Emitter *emitter) {
         if (type_is_structure(emitter->module, parameter->type_id)) {
             size_t copy_offset = parameter_copy_offset(emitter, p);
             size_t copy_slots = type_slots(emitter->module, parameter->type_id);
-            if (emitter->syntax == SYNTAX_INTEL)
-                fprintf(output, "    lea rbx, [rbp - %zu]\n", copy_offset);
-            else
-                fprintf(output, "    leaq -%zu(%%rbp), %%rbx\n", copy_offset);
+            write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD, x64_register("rbx"),
+                        x64_memory(X64_WIDTH_NONE, "rbp", -(long long) copy_offset));
             copy_aggregate(emitter, copy_slots, "rax", "rbx");
-            if (emitter->syntax == SYNTAX_INTEL) fputs("    mov rax, rbx\n", output);
-            else fputs("    movq %rbx, %rax\n", output);
+            write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+                        x64_register("rax"), x64_register("rbx"));
         }
         write_local_store(emitter, "rax", parameter_offset(emitter, parameter));
     }
@@ -1986,9 +1899,11 @@ static int emit_function(Emitter *emitter) {
     emit_gc_cleanup(emitter);
     write_immediate(emitter, "rax", 0);
     fprintf(output, ".LIR_epilogue_%zu:\n", emitter->function_index);
-    fputs(emitter->syntax == SYNTAX_INTEL ?
-          "    lea rsp, [rbp - 8]\n    pop rbx\n    pop rbp\n    ret\n" :
-          "    leaq -8(%rbp), %rsp\n    popq %rbx\n    popq %rbp\n    ret\n", output);
+    write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD,
+                x64_register("rsp"), x64_memory(X64_WIDTH_NONE, "rbp", -8));
+    write_x64_1(emitter, X64_OP_POP, X64_WIDTH_QWORD, x64_register("rbx"));
+    write_x64_1(emitter, X64_OP_POP, X64_WIDTH_QWORD, x64_register("rbp"));
+    write_x64_0(emitter, X64_OP_RET);
     if (emitter->target == TARGET_ELF) fprintf(output, "    .size %s, .-%s\n", name, name);
     return 1;
 }
