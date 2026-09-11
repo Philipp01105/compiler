@@ -1,3 +1,5 @@
+import <stdlib>
+
 // Basic arithmetic operations test
 func main() -> void {
     var a:int = 10;

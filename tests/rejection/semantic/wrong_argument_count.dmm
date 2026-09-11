@@ -1,2 +1,4 @@
+import <stdlib>
+
 func one(x:int) -> int { return x; }
 func main() -> void { println(one()); }

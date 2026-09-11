@@ -1,3 +1,5 @@
+import <stdlib>
+
 func main() -> void {
     var value:int = 2;
     value += 3;

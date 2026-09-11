@@ -1,3 +1,5 @@
+import <stdlib>
+
 // ============================================================================
 // COMPREHENSIVE HEAP MANAGEMENT TEST
 // ============================================================================
@@ -5,7 +7,7 @@
 // - Pointer type declarations for all data types
 // - reserve() function with different types (primitives and structs)
 // - free() function for manual memory management
-// - @gc annotation for automatic garbage collection
+// - annotation for automatic garbage collection
 // - Mixed manual and GC memory management
 // - Error cases and edge cases
 // ============================================================================
@@ -118,7 +120,6 @@ func test7_multiple_different_types() -> void {
 func test8_gc_int() -> void {
     println("[TEST 8] GC with int");
     
-    @gc
     var p:*int = reserve(int);
     
     println("  [OK] GC int allocated (auto-freed)");
@@ -128,13 +129,10 @@ func test8_gc_int() -> void {
 func test9_gc_multiple() -> void {
     println("[TEST 9] GC with multiple types");
     
-    @gc
     var intPtr:*int = reserve(int);
     
-    @gc
     var charPtr:*char = reserve(char);
     
-    @gc
     var floatPtr:*float = reserve(float);
     
     println("  [OK] Multiple GC allocations (auto-freed)");
@@ -146,12 +144,10 @@ func test10_mixed_management() -> void {
     
     var manual1:*int = reserve(int);
     
-    @gc
     var gc1:*int = reserve(int);
     
     var manual2:*char = reserve(char);
     
-    @gc
     var gc2:*float = reserve(float);
     
     println("  [OK] Mixed allocations created");
@@ -189,7 +185,6 @@ func test12_nested_gc() -> void {
     var outer:*int = reserve(int);
     println("  [OK] Outer manual allocation");
     
-    @gc
     var gcOuter:*int = reserve(int);
     println("  [OK] Outer GC allocation");
     
@@ -261,7 +256,6 @@ func test15_free_order() -> void {
 func test16_gc_function_scope() -> void {
     println("[TEST 16] GC in function scope");
     
-    @gc
     var temp:*int = reserve(int);
     
     println("  [OK] GC variable in function");
@@ -310,16 +304,12 @@ func test18_all_types_together() -> void {
 func test19_gc_all_types() -> void {
     println("[TEST 19] GC with all types");
     
-    @gc
     var intP:*int = reserve(int);
     
-    @gc
     var charP:*char = reserve(char);
     
-    @gc
     var floatP:*float = reserve(float);
     
-    @gc
     var doubleP:*double = reserve(double);
     
     println("  [OK] All GC types allocated (auto-freed)");
@@ -331,12 +321,10 @@ func test20_alternating() -> void {
     
     var m1:*int = reserve(int);
     
-    @gc
     var g1:*int = reserve(int);
     
     var m2:*int = reserve(int);
     
-    @gc
     var g2:*int = reserve(int);
     
     var m3:*int = reserve(int);
@@ -382,10 +370,8 @@ func test22_multiple_structs() -> void {
 func test23_gc_structs() -> void {
     println("[TEST 23] GC with structs");
     
-    @gc
     var p:*Point = reserve(Point);
     
-    @gc
     var d:*Data = reserve(Data);
     
     println("  [OK] GC structs allocated (auto-freed)");

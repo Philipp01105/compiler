@@ -1,3 +1,5 @@
+import <stdlib>
+
 // Conditional test
 func main() -> void {
     var x:int = 10;

@@ -1,2 +1,4 @@
+import <stdlib>
+
 enum State(code:int) { Ready(1), Done(2) }
 func main() -> void { print(State.Missing.code); }

@@ -1,3 +1,5 @@
+import <stdlib>
+
 func main() -> void {
     var empty:string;
     var count:int = -12;

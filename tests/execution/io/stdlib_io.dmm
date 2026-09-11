@@ -1,13 +1,12 @@
-#import <stdlib/io.dmm>
-
+import <stdlib>
 func main() -> void {
     println(System.in.fd);
     println(System.out.fd);
     var result:int = write_file("stdlib_io.tmp", "ok");
     println(result);
-    var [8] buffer:char;
+    var buffer:char[8];
     var count:int = read_file("stdlib_io.tmp", buffer, 7);
     println(count);
     sys_write(System.out.fd, buffer, count);
-    println();
+    println("");
 }

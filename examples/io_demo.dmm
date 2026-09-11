@@ -10,8 +10,7 @@
 //   - String operations and conversions
 // ===================================================================
 
-#import <stdlib/io.dmm>
-
+import <stdlib>
 func main() -> void {
     println("╔════════════════════════════════════════╗");
     println("║   DMM Syscall-Based I/O System Demo   ║");

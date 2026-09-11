@@ -1,3 +1,5 @@
+import <stdlib>
+
 // Test reserve keyword for heap allocation
 func main() -> void {
     var p:*int = reserve(int);  // Allocate memory for int

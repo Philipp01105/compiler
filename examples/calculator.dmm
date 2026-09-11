@@ -1,3 +1,5 @@
+import <stdlib>
+
 // =================================================================
 // CALCULATOR
 // A simple calculator with memory and history

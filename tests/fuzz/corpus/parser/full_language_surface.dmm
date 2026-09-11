@@ -1,3 +1,5 @@
+import <stdlib>
+
 enum JobState(code:int, label:string, progress:float, terminal:bit) {
     queued(1, "queued", 0.0, false),
     running(2, "running", 0.5, false),
@@ -54,7 +56,7 @@ func weighted(value:int, divisor:double) -> double {
 func main() -> void {
     var queue:WorkQueue;
     queue.clear();
-    var [6] scratch:int;
+    var scratch:int[6];
     var outer:int = 0;
 
     while (outer < 3) {
@@ -71,7 +73,7 @@ func main() -> void {
     }
 
     var state:JobState = choose_state(queue.sum());
-    @gc var automatic:*int = reserve(int);
+    var automatic:*int = reserve(int);
     *automatic = queue.sum();
     var manual:*int = reserve(int);
     *manual = int(weighted(*automatic, 2.0));

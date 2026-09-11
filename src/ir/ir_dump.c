@@ -28,7 +28,7 @@ static const char *primitive_name(DataType type) {
 
 static const char *opcode_name(IrOpcode opcode) {
     static const char *names[] = {"constant", "load", "declare", "store", "unary",
-        "binary", "call", "index", "member", "cast", "alloc", "free", "print",
+        "binary", "call", "index", "member", "slice-length", "cast", "alloc", "free",
         "return", "branch", "jump", "label", "phi"};
     return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_PHI ? names[opcode] : "invalid";
 }
@@ -46,8 +46,6 @@ static const char *operator_name(TokenType type) {
         case TOKEN_PLUS_EQUAL: return "+="; case TOKEN_MINUS_EQUAL: return "-=";
         case TOKEN_STAR_EQUAL: return "*="; case TOKEN_SLASH_EQUAL: return "/=";
         case TOKEN_PLUS_PLUS: return "++"; case TOKEN_MINUS_MINUS: return "--";
-        case TOKEN_KEYWORD_PRINT: return "print";
-        case TOKEN_KEYWORD_PRINTLINE: return "println";
         default: return "-";
     }
 }
@@ -84,6 +82,9 @@ static int dump_types(FILE *output, const IrModule *module) {
                 if (fprintf(output, "array element=@%zu length=%zu", type->element_type,
                             type->array_length) < 0) return 0;
                 break;
+            case IR_TYPE_SLICE:
+                if (fprintf(output, "slice element=@%zu", type->element_type) < 0) return 0;
+                break;
             default: return 0;
         }
         if (fputc('\n', output) == EOF) return 0;
@@ -98,9 +99,9 @@ static int dump_instruction(FILE *output, const IrFunction *function,
         !print_id(output, "%", instruction->result, IR_VALUE_NONE) ||
         fputs(" type=", output) == EOF ||
         !print_id(output, "@", instruction->type_id, IR_TYPE_NONE) ||
-        fprintf(output, " primitive=%s pointers=%u array=%d gc=%d a=",
+        fprintf(output, " primitive=%s pointers=%u array=%d slice=%d a=",
                 primitive_name(instruction->type), instruction->pointer_depth,
-                instruction->is_array, instruction->is_gc) < 0 ||
+                instruction->is_array, instruction->is_slice) < 0 ||
         !print_id(output, "%", instruction->operand_a, IR_VALUE_NONE) ||
         fputs(" b=", output) == EOF ||
         !print_id(output, "%", instruction->operand_b, IR_VALUE_NONE) ||
@@ -128,7 +129,7 @@ static int dump_instruction(FILE *output, const IrFunction *function,
         if (fputc(']', output) == EOF) return 0;
     }
     if ((instruction->opcode == IR_OP_UNARY || instruction->opcode == IR_OP_BINARY ||
-         instruction->opcode == IR_OP_STORE || instruction->opcode == IR_OP_PRINT) &&
+         instruction->opcode == IR_OP_STORE) &&
         (fputs(" operator=", output) == EOF ||
          !quoted(output, operator_name(instruction->operator_type)))) return 0;
     return fputc('\n', output) != EOF;

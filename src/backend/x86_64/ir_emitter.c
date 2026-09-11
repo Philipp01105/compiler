@@ -195,6 +195,24 @@ static const IrParameter *function_receiver(const IrFunction *function) {
            function->parameters[0].is_receiver ? &function->parameters[0] : NULL;
 }
 
+static size_t slice_parameter_count(const IrFunction *function) {
+    size_t count = 0;
+    for (size_t i = 0; i < function->parameter_count; i++)
+        if (function->parameters[i].is_slice) count++;
+    return count;
+}
+
+static size_t parameter_storage_slots(const IrFunction *function) {
+    return function->parameter_count + slice_parameter_count(function);
+}
+
+static size_t slice_length_ordinal(const IrFunction *function, size_t parameter_index) {
+    size_t ordinal = 0;
+    for (size_t i = 0; i < parameter_index; i++)
+        if (function->parameters[i].is_slice) ordinal++;
+    return ordinal;
+}
+
 static int runtime_link_name(const char *name) {
     static const char *runtime_names[] = {
         "printf", "putchar", "puts", "strcmp", "strcpy", "strcat", "strdup",
@@ -206,17 +224,108 @@ static int runtime_link_name(const char *name) {
     return 0;
 }
 
-static const char *function_link_name(const IrFunction *function, char *buffer,
-                                      size_t buffer_size) {
-    const char *name = ast_program_lexeme(function->source_program, function->name_token);
-    if (function->owner_token == AST_TOKEN_NONE) {
-        if (!runtime_link_name(name)) return name;
-        (void) snprintf(buffer, buffer_size, "__dmm_function_%zu_%s", strlen(name), name);
-        return buffer;
+static int mangle_append(char *buffer, size_t buffer_size, size_t *used,
+                         const char *text) {
+    size_t length = strlen(text);
+    if (*used > buffer_size || length >= buffer_size - *used) return 0;
+    memcpy(buffer + *used, text, length + 1U);
+    *used += length;
+    return 1;
+}
+
+static int mangle_type(const IrModule *module, IrTypeId type_id, char *buffer,
+                       size_t buffer_size, size_t *used, size_t depth) {
+    if (type_id >= module->type_count || depth > module->type_count) return 0;
+    const IrType *type = &module->types[type_id];
+    char part[96];
+    if (type->kind == IR_TYPE_PRIMITIVE) {
+        static const char codes[] = {'i', 'c', 'y', 'b', 'f', 'd', 's', 'v'};
+        if (type->primitive < TYPE_INT || type->primitive > TYPE_VOID) return 0;
+        part[0] = codes[type->primitive];
+        part[1] = '\0';
+        return mangle_append(buffer, buffer_size, used, part);
     }
-    const char *owner = ast_program_lexeme(function->source_program, function->owner_token);
-    (void) snprintf(buffer, buffer_size, "__dmm_method_%zu_%s_%s",
-                    strlen(owner), owner, name);
+    if (type->kind == IR_TYPE_POINTER)
+        return mangle_append(buffer, buffer_size, used, "p") &&
+               mangle_type(module, type->element_type, buffer, buffer_size, used, depth + 1U);
+    if (type->kind == IR_TYPE_ARRAY) {
+        (void) snprintf(part, sizeof(part), "a%zu_", type->array_length);
+        return mangle_append(buffer, buffer_size, used, part) &&
+               mangle_type(module, type->element_type, buffer, buffer_size, used, depth + 1U);
+    }
+    if (type->kind == IR_TYPE_SLICE)
+        return mangle_append(buffer, buffer_size, used, "l") &&
+               mangle_type(module, type->element_type, buffer, buffer_size, used, depth + 1U);
+    if (type->kind != IR_TYPE_NAMED || type->symbol_id >= module->semantics->symbol_count)
+        return 0;
+    const SemanticSymbol *symbol = &module->semantics->symbols[type->symbol_id];
+    const char *identity = symbol->source_program->module_identity == NULL
+        ? "." : symbol->source_program->module_identity;
+    const char *name = ast_program_lexeme(symbol->source_program, symbol->name_token);
+    (void) snprintf(part, sizeof(part), "n%zu_", strlen(identity));
+    if (!mangle_append(buffer, buffer_size, used, part)) return 0;
+    for (const unsigned char *p = (const unsigned char *) identity; *p != '\0'; p++) {
+        (void) snprintf(part, sizeof(part), "%02x", *p);
+        if (!mangle_append(buffer, buffer_size, used, part)) return 0;
+    }
+    (void) snprintf(part, sizeof(part), "_%zu_", strlen(name));
+    return mangle_append(buffer, buffer_size, used, part) &&
+           mangle_append(buffer, buffer_size, used, name);
+}
+
+static int function_is_overloaded(const IrModule *module, const IrFunction *function) {
+    const char *name = ast_program_lexeme(function->source_program, function->name_token);
+    size_t matches = 0;
+    for (size_t i = 0; i < module->function_count; i++) {
+        const IrFunction *candidate = &module->functions[i];
+        if (candidate->owner_symbol_id != function->owner_symbol_id) continue;
+        if (function->owner_symbol_id != AST_SYMBOL_NONE) {
+            const SemanticSymbol *left = &module->semantics->symbols[function->symbol_id];
+            const SemanticSymbol *right = &module->semantics->symbols[candidate->symbol_id];
+            if (left->declaration->as.function.is_static !=
+                right->declaration->as.function.is_static) continue;
+        }
+        if (strcmp(ast_program_lexeme(candidate->source_program, candidate->name_token),
+                   name) == 0) matches++;
+    }
+    return matches > 1;
+}
+
+static const char *function_link_name(const IrModule *module, const IrFunction *function,
+                                      char *buffer, size_t buffer_size) {
+    const char *name = ast_program_lexeme(function->source_program, function->name_token);
+    if (strcmp(name, "main") == 0) return name;
+    if (function->owner_symbol_id == AST_SYMBOL_NONE &&
+        !function_is_overloaded(module, function) && !runtime_link_name(name)) return name;
+    size_t used = 0;
+    buffer[0] = '\0';
+    char part[128];
+    if (function->owner_symbol_id == AST_SYMBOL_NONE) {
+        (void) snprintf(part, sizeof(part), "__dmm_f%zu_%s__%zu", strlen(name), name,
+                        function->parameter_count);
+        if (!mangle_append(buffer, buffer_size, &used, part)) return NULL;
+    } else {
+        IrTypeId owner_type = IR_TYPE_NONE;
+        for (IrTypeId t = 0; t < module->type_count; t++)
+            if (module->types[t].kind == IR_TYPE_NAMED &&
+                module->types[t].symbol_id == function->owner_symbol_id) {
+                owner_type = t;
+                break;
+            }
+        if (!mangle_append(buffer, buffer_size, &used, "__dmm_m") ||
+            !mangle_type(module, owner_type, buffer, buffer_size, &used, 0)) return NULL;
+        const SemanticSymbol *symbol = &module->semantics->symbols[function->symbol_id];
+        (void) snprintf(part, sizeof(part), "_%c_%zu_%s__%zu",
+                        symbol->declaration->as.function.is_static ? 's' : 'i',
+                        strlen(name), name,
+                        function->parameter_count - (function_receiver(function) != NULL ? 1U : 0U));
+        if (!mangle_append(buffer, buffer_size, &used, part)) return NULL;
+    }
+    size_t first = function_receiver(function) != NULL ? 1U : 0U;
+    for (size_t i = first; i < function->parameter_count; i++)
+        if (!mangle_append(buffer, buffer_size, &used, "_") ||
+            !mangle_type(module, function->parameters[i].type_id, buffer,
+                         buffer_size, &used, 0)) return NULL;
     return buffer;
 }
 
@@ -276,7 +385,7 @@ static size_t declaration_offset(const Emitter *emitter,
         const IrInstruction *candidate = &emitter->function->instructions[i];
         if (candidate->opcode != IR_OP_DECLARE) continue;
         if (candidate == declaration)
-            return (emitter->function->next_value + emitter->function->parameter_count +
+            return (emitter->function->next_value + parameter_storage_slots(emitter->function) +
                     slots_before + declaration_slots(emitter, candidate) + 1U) * 8U;
         slots_before += declaration_slots(emitter, candidate);
     }
@@ -313,6 +422,11 @@ static void write_value_load(const Emitter *emitter, const char *reg, size_t val
         x64_register(reg), x64_memory(X64_WIDTH_QWORD, "rbp",
                                       -(long long) value_offset(value)));
     (void) x64_print_instruction(emitter->output, emitter->syntax, &instruction);
+}
+
+static size_t slice_length_offset(const Emitter *emitter, size_t parameter_index) {
+    return (emitter->function->next_value + emitter->function->parameter_count +
+            slice_length_ordinal(emitter->function, parameter_index) + 2U) * 8U;
 }
 
 static void write_value_store(const Emitter *emitter, const char *reg, size_t value) {
@@ -369,28 +483,63 @@ static const char *argument_register(TargetFormat target, size_t index) {
     return target == TARGET_COFF ? coff[index] : sysv[index];
 }
 
+static size_t physical_parameter_count(const IrFunction *function) {
+    return function->parameter_count + slice_parameter_count(function);
+}
+
+static int physical_parameter(const IrFunction *function, size_t physical_index,
+                              size_t *source_index, int *is_length) {
+    size_t physical = 0;
+    for (size_t source = 0; source < function->parameter_count; source++) {
+        if (physical == physical_index) {
+            *source_index = source;
+            *is_length = 0;
+            return 1;
+        }
+        physical++;
+        if (function->parameters[source].is_slice) {
+            if (physical == physical_index) {
+                *source_index = source;
+                *is_length = 1;
+                return 1;
+            }
+            physical++;
+        }
+    }
+    return 0;
+}
+
+static int physical_is_floating(const IrFunction *function, size_t physical_index) {
+    size_t source = 0;
+    int is_length = 0;
+    return physical_parameter(function, physical_index, &source, &is_length) &&
+           !is_length && !function->parameters[source].is_slice &&
+           is_floating(function->parameters[source].type);
+}
+
 static size_t parameter_register_index(const IrFunction *function, TargetFormat target,
-                                       size_t parameter_index) {
-    if (target == TARGET_COFF) return parameter_index < 4 ? parameter_index : IR_VALUE_NONE;
+                                       size_t physical_index) {
+    if (target == TARGET_COFF)
+        return physical_index < 4 ? physical_index : IR_VALUE_NONE;
     size_t class_index = 0;
-    int floating = is_floating(function->parameters[parameter_index].type);
-    for (size_t i = 0; i < parameter_index; i++)
-        if (is_floating(function->parameters[i].type) == floating) class_index++;
+    int floating = physical_is_floating(function, physical_index);
+    for (size_t i = 0; i < physical_index; i++)
+        if (physical_is_floating(function, i) == floating) class_index++;
     size_t limit = floating ? 8U : 6U;
     return class_index < limit ? class_index : IR_VALUE_NONE;
 }
 
 static size_t stack_parameter_index(const IrFunction *function, TargetFormat target,
-                                    size_t parameter_index) {
+                                    size_t physical_index) {
     size_t stack_index = 0;
-    for (size_t i = 0; i < parameter_index; i++)
+    for (size_t i = 0; i < physical_index; i++)
         if (parameter_register_index(function, target, i) == IR_VALUE_NONE) stack_index++;
     return stack_index;
 }
 
 static size_t stack_parameter_count(const IrFunction *function, TargetFormat target) {
     size_t count = 0;
-    for (size_t i = 0; i < function->parameter_count; i++)
+    for (size_t i = 0; i < physical_parameter_count(function); i++)
         if (parameter_register_index(function, target, i) == IR_VALUE_NONE) count++;
     return count;
 }
@@ -658,42 +807,88 @@ static int emit_typed_call(Emitter *emitter, const IrInstruction *instruction,
                            const IrFunction *callee) {
     const IrFunction *caller = emitter->function;
     size_t stack_count = stack_parameter_count(callee, emitter->target);
+    size_t physical_count = physical_parameter_count(callee);
     if ((stack_count & 1U) != 0)
         write_x64_2(emitter, X64_OP_SUB, X64_WIDTH_QWORD,
                     x64_register("rsp"), x64_immediate(8));
-    for (size_t a = instruction->argument_count; a-- > 0;) {
-        if (parameter_register_index(callee, emitter->target, a) != IR_VALUE_NONE) continue;
-        size_t value_id = caller->arguments[instruction->first_argument + a];
+    for (size_t physical = physical_count; physical-- > 0;) {
+        if (parameter_register_index(callee, emitter->target, physical) != IR_VALUE_NONE)
+            continue;
+        size_t source = 0;
+        int is_length = 0;
+        if (!physical_parameter(callee, physical, &source, &is_length)) return 0;
+        size_t value_id = caller->arguments[instruction->first_argument + source];
         const IrInstruction *value = producer(caller, value_id);
-        write_value_load(emitter, "rax", value_id);
-        convert_rax(emitter, value->type, callee->parameters[a].type);
+        if (is_length) {
+            if (value == NULL || value->type_id >= emitter->module->type_count) return 0;
+            const IrType *value_type = &emitter->module->types[value->type_id];
+            if (value_type->kind == IR_TYPE_ARRAY)
+                write_immediate(emitter, "rax", (long long) value_type->array_length);
+            else if (value_type->kind == IR_TYPE_SLICE && value->opcode == IR_OP_LOAD) {
+                size_t p = 0;
+                for (; p < caller->parameter_count; p++)
+                    if (caller->parameters[p].symbol_id == value->symbol_id &&
+                        caller->parameters[p].is_slice) break;
+                if (p == caller->parameter_count) return 0;
+                write_local_load(emitter, "rax", slice_length_offset(emitter, p));
+            } else return 0;
+        } else {
+            if (value == NULL) return 0;
+            write_value_load(emitter, "rax", value_id);
+            convert_rax(emitter, value->type, callee->parameters[source].type);
+        }
         write_x64_1(emitter, X64_OP_PUSH, X64_WIDTH_QWORD, x64_register("rax"));
     }
     if (emitter->target == TARGET_COFF)
         write_x64_2(emitter, X64_OP_SUB, X64_WIDTH_QWORD,
                     x64_register("rsp"), x64_immediate(32));
 
-    for (size_t a = instruction->argument_count; a-- > 0;) {
-        size_t register_index = parameter_register_index(callee, emitter->target, a);
-        if (register_index == IR_VALUE_NONE || !is_floating(callee->parameters[a].type)) continue;
-        size_t value_id = caller->arguments[instruction->first_argument + a];
-        load_floating_value(emitter, value_id, callee->parameters[a].type,
+    for (size_t physical = physical_count; physical-- > 0;) {
+        size_t register_index = parameter_register_index(callee, emitter->target, physical);
+        if (register_index == IR_VALUE_NONE || !physical_is_floating(callee, physical)) continue;
+        size_t source = 0;
+        int is_length = 0;
+        if (!physical_parameter(callee, physical, &source, &is_length) || is_length) return 0;
+        size_t value_id = caller->arguments[instruction->first_argument + source];
+        load_floating_value(emitter, value_id, callee->parameters[source].type,
                             (unsigned) register_index);
     }
-    for (size_t a = 0; a < instruction->argument_count; a++) {
-        size_t register_index = parameter_register_index(callee, emitter->target, a);
-        if (register_index == IR_VALUE_NONE || is_floating(callee->parameters[a].type)) continue;
-        size_t value_id = caller->arguments[instruction->first_argument + a];
+    for (size_t physical = 0; physical < physical_count; physical++) {
+        size_t register_index = parameter_register_index(callee, emitter->target, physical);
+        if (register_index == IR_VALUE_NONE || physical_is_floating(callee, physical)) continue;
+        size_t source = 0;
+        int is_length = 0;
+        if (!physical_parameter(callee, physical, &source, &is_length)) return 0;
+        size_t value_id = caller->arguments[instruction->first_argument + source];
         const IrInstruction *value = producer(caller, value_id);
-        write_value_load(emitter, "rax", value_id);
-        convert_rax(emitter, value->type, callee->parameters[a].type);
+        if (is_length) {
+            if (value == NULL || value->type_id >= emitter->module->type_count) return 0;
+            const IrType *value_type = &emitter->module->types[value->type_id];
+            if (value_type->kind == IR_TYPE_ARRAY)
+                write_immediate(emitter, "rax", (long long) value_type->array_length);
+            else if (value_type->kind == IR_TYPE_SLICE && value->opcode == IR_OP_LOAD) {
+                size_t p = 0;
+                for (; p < caller->parameter_count; p++)
+                    if (caller->parameters[p].symbol_id == value->symbol_id &&
+                        caller->parameters[p].is_slice) break;
+                if (p == caller->parameter_count) return 0;
+                write_local_load(emitter, "rax", slice_length_offset(emitter, p));
+            } else return 0;
+        } else {
+            if (value == NULL) return 0;
+            write_value_load(emitter, "rax", value_id);
+            convert_rax(emitter, value->type, callee->parameters[source].type);
+        }
         write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
                     x64_register(argument_register(emitter->target, register_index)),
                     x64_register("rax"));
     }
-    char callee_buffer[MAX_TOKEN * 2U + 64U];
+    char callee_buffer[4096];
+    const char *callee_name = function_link_name(emitter->module, callee, callee_buffer,
+                                                  sizeof(callee_buffer));
+    if (callee_name == NULL) return 0;
     write_x64_1(emitter, X64_OP_CALL, X64_WIDTH_NONE,
-                x64_label(function_link_name(callee, callee_buffer, sizeof(callee_buffer))));
+                x64_label(callee_name));
     size_t cleanup = stack_count * 8U + (emitter->target == TARGET_COFF ? 32U : 0U) +
                      (((stack_count & 1U) != 0) ? 8U : 0U);
     if (cleanup != 0)
@@ -964,7 +1159,8 @@ static size_t aggregate_result_offset(const Emitter *emitter,
             continue;
         size_t slots = type_slots(emitter->module, candidate->type_id);
         if (candidate == result)
-            return (emitter->function->next_value + emitter->function->parameter_count +
+            return (emitter->function->next_value +
+                    parameter_storage_slots(emitter->function) +
                     emitter->declaration_count + slots_before + slots + 1U) * 8U;
         slots_before += slots;
     }
@@ -991,7 +1187,7 @@ static size_t parameter_copy_offset(const Emitter *emitter, size_t parameter_ind
                 emitter->function->parameters[i].type_id);
     size_t slots = type_slots(emitter->module,
                               emitter->function->parameters[parameter_index].type_id);
-    return (emitter->function->next_value + emitter->function->parameter_count +
+    return (emitter->function->next_value + parameter_storage_slots(emitter->function) +
             emitter->declaration_count + aggregate_result_slots(emitter) +
             slots_before + slots + 1U) * 8U;
 }
@@ -1111,8 +1307,20 @@ static int emit_lvalue_address(Emitter *emitter, const IrInstruction *target,
         write_value_load(emitter, "rax", target->operand_a);
         write_value_load(emitter, "rcx", target->operand_b);
         size_t length = fixed_array_length(emitter, base);
+        int dynamic_length = 0;
+        if (base != NULL && base->type_id < emitter->module->type_count &&
+            emitter->module->types[base->type_id].kind == IR_TYPE_SLICE &&
+            base->opcode == IR_OP_LOAD) {
+            size_t p = 0;
+            for (; p < emitter->function->parameter_count; p++)
+                if (emitter->function->parameters[p].symbol_id == base->symbol_id &&
+                    emitter->function->parameters[p].is_slice) break;
+            if (p == emitter->function->parameter_count) return 0;
+            write_local_load(emitter, "rdx", slice_length_offset(emitter, p));
+            dynamic_length = 1;
+        }
         size_t bounds_id = emitter->bounds_sequence++;
-        if (length != 0) {
+        if (length != 0 || dynamic_length) {
             char fail_label[64];
             (void) snprintf(fail_label, sizeof(fail_label), ".LIR_bounds_fail_%zu_%zu",
                             emitter->function_index, bounds_id);
@@ -1120,7 +1328,8 @@ static int emit_lvalue_address(Emitter *emitter, const IrInstruction *target,
                         x64_register("rcx"), x64_immediate(0));
             write_x64_1(emitter, X64_OP_JL, X64_WIDTH_NONE, x64_label(fail_label));
             write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_QWORD,
-                        x64_register("rcx"), x64_immediate((long long) length));
+                        x64_register("rcx"), dynamic_length
+                            ? x64_register("rdx") : x64_immediate((long long) length));
             write_x64_1(emitter, X64_OP_JGE, X64_WIDTH_NONE, x64_label(fail_label));
         }
         size_t element_size = is_inline_structure(emitter->module, target)
@@ -1133,7 +1342,7 @@ static int emit_lvalue_address(Emitter *emitter, const IrInstruction *target,
                     x64_register("rcx"), x64_immediate((long long) element_size));
         write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD, x64_register("rbx"),
                     x64_indexed_memory(X64_WIDTH_NONE, "rax", "rcx", 1, 0));
-        if (length != 0) {
+        if (length != 0 || dynamic_length) {
             char ok_label[64];
             (void) snprintf(ok_label, sizeof(ok_label), ".LIR_bounds_ok_%zu_%zu",
                             emitter->function_index, bounds_id);
@@ -1470,16 +1679,6 @@ static void normalize_truth_rax(Emitter *emitter, DataType type) {
                 x64_sized_register(X64_WIDTH_BYTE, "al"));
 }
 
-static void emit_gc_cleanup(Emitter *emitter) {
-    for (size_t i = 0; i < emitter->function->instruction_count; i++) {
-        const IrInstruction *declaration = &emitter->function->instructions[i];
-        if (declaration->opcode != IR_OP_DECLARE || !declaration->is_gc) continue;
-        write_local_load(emitter, emitter->target == TARGET_COFF ? "rcx" : "rdi",
-                         declaration_offset(emitter, declaration));
-        write_call(emitter, "free");
-    }
-}
-
 static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                             size_t index) {
     const IrFunction *function = emitter->function;
@@ -1680,67 +1879,7 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             return 1;
         case IR_OP_BINARY:
             return emit_binary(emitter, instruction);
-        case IR_OP_PRINT: {
-            const IrInstruction *value = producer(function, instruction->operand_a);
-            const char *first = emitter->target == TARGET_COFF ? "rcx" : "rdi";
-            const char *second = emitter->target == TARGET_COFF ? "rdx" : "rsi";
-            if (value == NULL) {
-                if (instruction->operator_type == TOKEN_KEYWORD_PRINTLINE) {
-                    write_immediate(emitter, first, 10);
-                    write_call(emitter, "putchar");
-                }
-                return 1;
-            }
-            if (value->type == TYPE_STRING ||
-                (value->type == TYPE_CHAR && is_pointer_value(value))) {
-                load_nullable_string(emitter, "rax", instruction->operand_a);
-                if (instruction->operator_type == TOKEN_KEYWORD_PRINTLINE) {
-                    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
-                                x64_register(first), x64_register("rax"));
-                    write_call(emitter, "puts");
-                } else {
-                    write_address(emitter, first, ".LIR_string_format_", 0);
-                    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
-                                x64_register(second), x64_register("rax"));
-                    write_x64_2(emitter, X64_OP_XOR, X64_WIDTH_DWORD,
-                                x64_register("eax"), x64_register("eax"));
-                    write_call(emitter, "printf");
-                }
-            } else if (is_floating(value->type)) {
-                write_address(emitter, first, ".LIR_float_format_", 0);
-                write_value_load(emitter, "rax", instruction->operand_a);
-                convert_rax(emitter, value->type, TYPE_DOUBLE);
-                char float_argument[16];
-                (void) snprintf(float_argument, sizeof(float_argument), "xmm%d",
-                                emitter->target == TARGET_COFF ? 1 : 0);
-                write_x64_2(emitter, X64_OP_MOVQ, X64_WIDTH_NONE,
-                            x64_register(float_argument), x64_register("rax"));
-                if (emitter->target == TARGET_COFF)
-                    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
-                                x64_register("rdx"), x64_register("rax"));
-                else
-                    write_immediate(emitter, "rax", 1);
-                write_call(emitter, "printf");
-                if (instruction->operator_type == TOKEN_KEYWORD_PRINTLINE) {
-                    write_immediate(emitter, first, 10);
-                    write_call(emitter, "putchar");
-                }
-            } else {
-                write_address(emitter, first, value->type == TYPE_CHAR ?
-                              ".LIR_char_format_" : ".LIR_int_format_", 0);
-                write_value_load(emitter, second, instruction->operand_a);
-                write_x64_2(emitter, X64_OP_XOR, X64_WIDTH_DWORD,
-                            x64_register("eax"), x64_register("eax"));
-                write_call(emitter, "printf");
-                if (instruction->operator_type == TOKEN_KEYWORD_PRINTLINE) {
-                    write_immediate(emitter, first, 10);
-                    write_call(emitter, "putchar");
-                }
-            }
-            return 1;
-        }
         case IR_OP_RETURN:
-            emit_gc_cleanup(emitter);
             if (instruction->operand_a == IR_VALUE_NONE) write_immediate(emitter, "rax", 0);
             else {
                 const IrInstruction *value = producer(function, instruction->operand_a);
@@ -1860,6 +1999,20 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                                           instruction->pointer_depth, "rbx");
             write_value_store(emitter, "rax", instruction->result);
             return 1;
+        case IR_OP_SLICE_LENGTH: {
+            const IrInstruction *slice = producer(function, instruction->operand_a);
+            if (slice == NULL || slice->opcode != IR_OP_LOAD) return 0;
+            size_t parameter_index = 0;
+            for (; parameter_index < function->parameter_count; parameter_index++)
+                if (function->parameters[parameter_index].symbol_id == slice->symbol_id &&
+                    function->parameters[parameter_index].is_slice) break;
+            if (parameter_index == function->parameter_count) return 0;
+            write_local_load(emitter, "rax",
+                             slice_length_offset(emitter, parameter_index));
+            normalize_integral_parameter(emitter, TYPE_INT);
+            write_value_store(emitter, "rax", instruction->result);
+            return 1;
+        }
         case IR_OP_ALLOC: {
             size_t slots = 1;
             if (instruction->type_id < emitter->module->type_count) {
@@ -1885,9 +2038,10 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
 
 static int emit_function(Emitter *emitter) {
     FILE *output = emitter->output;
-    char name_buffer[MAX_TOKEN * 2U + 64U];
-    const char *name = function_link_name(emitter->function, name_buffer,
+    char name_buffer[4096];
+    const char *name = function_link_name(emitter->module, emitter->function, name_buffer,
                                           sizeof(name_buffer));
+    if (name == NULL) return 0;
     emitter->current_label = IR_VALUE_NONE;
     emitter->bounds_sequence = 0;
     fprintf(output, "    .globl %s\n", name);
@@ -1902,20 +2056,19 @@ static int emit_function(Emitter *emitter) {
     write_x64_1(emitter, X64_OP_PUSH, X64_WIDTH_QWORD, x64_register("rbx"));
     write_frame_allocation(emitter);
     write_immediate(emitter, "rax", 0);
-    for (size_t i = 0; i < emitter->function->instruction_count; i++) {
-        const IrInstruction *declaration = &emitter->function->instructions[i];
-        if (declaration->opcode == IR_OP_DECLARE && declaration->is_gc)
-            write_local_store(emitter, "rax", declaration_offset(emitter, declaration));
-    }
-    for (size_t p = 0; p < emitter->function->parameter_count; p++) {
+    for (size_t physical = 0;
+         physical < physical_parameter_count(emitter->function); physical++) {
+        size_t p = 0;
+        int is_length = 0;
+        if (!physical_parameter(emitter->function, physical, &p, &is_length)) return 0;
         const IrParameter *parameter = &emitter->function->parameters[p];
         size_t register_index = parameter_register_index(emitter->function,
-                                                         emitter->target, p);
+                                                         emitter->target, physical);
         if (register_index == IR_VALUE_NONE) {
             size_t first_stack_offset = emitter->target == TARGET_COFF ? 48U : 16U;
             write_positive_frame_load(emitter, "rax", first_stack_offset +
-                stack_parameter_index(emitter->function, emitter->target, p) * 8U);
-        } else if (is_floating(parameter->type)) {
+                stack_parameter_index(emitter->function, emitter->target, physical) * 8U);
+        } else if (physical_is_floating(emitter->function, physical)) {
             char source[32];
             (void) snprintf(source, sizeof(source), "xmm%zu", register_index);
             write_x64_2(emitter, parameter->type == TYPE_FLOAT ? X64_OP_MOVD : X64_OP_MOVQ,
@@ -1927,10 +2080,10 @@ static int emit_function(Emitter *emitter) {
                         x64_register("rax"),
                         x64_register(argument_register(emitter->target, register_index)));
         }
-        if (is_integral(parameter->type) && parameter->pointer_depth == 0 &&
-            !parameter->is_array)
+        if (!is_length && is_integral(parameter->type) &&
+            parameter->pointer_depth == 0 && !parameter->is_array && !parameter->is_slice)
             normalize_integral_parameter(emitter, parameter->type);
-        if (type_is_structure(emitter->module, parameter->type_id)) {
+        if (!is_length && type_is_structure(emitter->module, parameter->type_id)) {
             size_t copy_offset = parameter_copy_offset(emitter, p);
             size_t copy_slots = type_slots(emitter->module, parameter->type_id);
             write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD, x64_register("rbx"),
@@ -1939,7 +2092,8 @@ static int emit_function(Emitter *emitter) {
             write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
                         x64_register("rax"), x64_register("rbx"));
         }
-        write_local_store(emitter, "rax", parameter_offset(emitter, parameter));
+        write_local_store(emitter, "rax", is_length
+            ? slice_length_offset(emitter, p) : parameter_offset(emitter, parameter));
     }
     for (size_t i = 0; i < emitter->function->instruction_count; i++) {
         if (emitter->source_map != NULL) {
@@ -1950,7 +2104,6 @@ static int emit_function(Emitter *emitter) {
         if (!emit_instruction(emitter, &emitter->function->instructions[i], i)) return 0;
     }
     if (emitter->source_map != NULL) emitter->source_map->has_source = 0;
-    emit_gc_cleanup(emitter);
     write_immediate(emitter, "rax", 0);
     fprintf(output, ".LIR_epilogue_%zu:\n", emitter->function_index);
     write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD,
@@ -2107,10 +2260,11 @@ static int emit_file(Emitter *emitter, int deterministic) {
                 return 0;
             aggregate_parameters += parameter_slots;
         }
-        if (function->next_value > SIZE_MAX - function->parameter_count ||
-            function->next_value + function->parameter_count > SIZE_MAX - declarations)
+        size_t parameter_slots = parameter_storage_slots(function);
+        if (function->next_value > SIZE_MAX - parameter_slots ||
+            function->next_value + parameter_slots > SIZE_MAX - declarations)
             return 0;
-        size_t slots = function->next_value + function->parameter_count + declarations;
+        size_t slots = function->next_value + parameter_slots + declarations;
         if (slots > SIZE_MAX - aggregate_results) return 0;
         slots += aggregate_results;
         if (slots > SIZE_MAX - aggregate_parameters) return 0;

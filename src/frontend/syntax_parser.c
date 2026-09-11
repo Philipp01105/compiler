@@ -364,11 +364,11 @@ static AstStatement *parse_block(SyntaxParser *parser) {
     return block;
 }
 
-static AstStatement *parse_variable(SyntaxParser *parser, size_t first, int is_gc,
+static AstStatement *parse_variable(SyntaxParser *parser, size_t first,
                                     int consume_semicolon) {
-    (void) consume(parser, TOKEN_KEYWORD_VAR);
+    int is_const = check(parser, TOKEN_KEYWORD_CONST);
+    parser->current++;
     AstStatement *statement = new_statement(parser, AST_STMT_VARIABLE, first);
-    if (statement != NULL) statement->is_gc = is_gc;
     size_t name = consume(parser, TOKEN_IDENTIFIER);
     AstType type = inferred_type();
     if (match(parser, TOKEN_COLON)) type = parse_type(parser);
@@ -379,6 +379,7 @@ static AstStatement *parse_variable(SyntaxParser *parser, size_t first, int is_g
         statement->name_token = name;
         statement->type = type;
         statement->value = value;
+        statement->is_const = is_const;
     }
     finish_statement(parser, statement);
     return statement;
@@ -416,7 +417,8 @@ static AstStatement *parse_expression_statement(SyntaxParser *parser, int consum
 static AstStatement *parse_statement_impl(SyntaxParser *parser) {
     size_t first = parser->current;
     if (check(parser, TOKEN_LBRACE)) return parse_block(parser);
-    if (check(parser, TOKEN_KEYWORD_VAR)) return parse_variable(parser, first, 0, 1);
+    if (check(parser, TOKEN_KEYWORD_VAR) || check(parser, TOKEN_KEYWORD_CONST))
+        return parse_variable(parser, first, 1);
 
     if (match(parser, TOKEN_KEYWORD_IF)) {
         AstStatement *statement = new_statement(parser, AST_STMT_IF, first);
@@ -449,8 +451,9 @@ static AstStatement *parse_statement_impl(SyntaxParser *parser) {
         (void) consume(parser, TOKEN_LPAREN);
         AstStatement *initializer = NULL;
         if (!check(parser, TOKEN_SEMICOLON)) {
-            initializer = check(parser, TOKEN_KEYWORD_VAR)
-                ? parse_variable(parser, parser->current, 0, 0)
+            initializer = (check(parser, TOKEN_KEYWORD_VAR) ||
+                           check(parser, TOKEN_KEYWORD_CONST))
+                ? parse_variable(parser, parser->current, 0)
                 : parse_expression_statement(parser, 0);
         }
         (void) consume(parser, TOKEN_SEMICOLON);
@@ -511,7 +514,6 @@ static AstParameter *parse_parameter(SyntaxParser *parser) {
     if (parameter != NULL) {
         parameter->name_token = name;
         parameter->type = type;
-        parameter->is_array = type.is_slice;
         parameter->resolved_symbol_id = AST_SYMBOL_NONE;
         parameter->span = range_span(parser, first, parser->current);
     }
@@ -687,23 +689,56 @@ static AstDeclarationNode *parse_enum(SyntaxParser *parser) {
 
 static AstDeclarationNode *parse_import(SyntaxParser *parser) {
     size_t first = parser->current;
-    (void) consume(parser, TOKEN_HASH);
     (void) consume(parser, TOKEN_KEYWORD_IMPORT);
-    AstDeclarationNode *declaration = new_declaration(parser, AST_DECL_IMPORT, first);
-    size_t path_first = parser->current;
-    size_t path_token = AST_TOKEN_NONE;
-    if (check(parser, TOKEN_STRING_LITERAL)) {
-        path_token = parser->current++;
-    } else {
-        (void) consume(parser, TOKEN_LESS);
-        path_first = parser->current;
-        while (!check(parser, TOKEN_GREATER) && !check(parser, TOKEN_EOF)) parser->current++;
-        (void) consume(parser, TOKEN_GREATER);
-    }
+    int grouped = match(parser, TOKEN_LPAREN);
+    AstDeclarationNode *head = NULL;
+    AstDeclarationNode **tail = &head;
+    do {
+        if (grouped && check(parser, TOKEN_RPAREN)) break;
+        size_t path_start = parser->current;
+        AstDeclarationNode *declaration = new_declaration(parser, AST_DECL_IMPORT,
+                                                          grouped ? path_start : first);
+        size_t path_first = path_start;
+        size_t path_token = AST_TOKEN_NONE;
+        if (check(parser, TOKEN_STRING_LITERAL)) {
+            path_token = parser->current++;
+        } else if (match(parser, TOKEN_LESS)) {
+            path_first = parser->current;
+            while (!check(parser, TOKEN_GREATER) && !check(parser, TOKEN_EOF)) parser->current++;
+            (void) consume(parser, TOKEN_GREATER);
+        } else {
+            parser_failure(parser, ERR_PARSE_EXPECTED_TOKEN, "Expected import path");
+        }
+        if (declaration != NULL) {
+            declaration->as.import_decl.path_token = path_token;
+            declaration->as.import_decl.path_first_token = path_first;
+            declaration->as.import_decl.path_token_count = parser->current - path_first;
+            finish_declaration(parser, declaration);
+            *tail = declaration;
+            tail = &declaration->next;
+        }
+    } while (grouped && !parser->failed);
+    if (grouped) (void) consume(parser, TOKEN_RPAREN);
+    if (head == NULL && !parser->failed)
+        parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
+                       "Import group must contain at least one path");
+    return head;
+}
+
+static AstDeclarationNode *parse_constant(SyntaxParser *parser) {
+    size_t first = parser->current;
+    (void) consume(parser, TOKEN_KEYWORD_CONST);
+    AstDeclarationNode *declaration = new_declaration(parser, AST_DECL_CONSTANT, first);
+    size_t name = consume(parser, TOKEN_IDENTIFIER);
+    AstType type = inferred_type();
+    if (match(parser, TOKEN_COLON)) type = parse_type(parser);
+    (void) consume(parser, TOKEN_EQUAL);
+    AstExpression *value = parse_expression(parser);
+    (void) consume(parser, TOKEN_SEMICOLON);
     if (declaration != NULL) {
-        declaration->as.import_decl.path_token = path_token;
-        declaration->as.import_decl.path_first_token = path_first;
-        declaration->as.import_decl.path_token_count = parser->current - path_first;
+        declaration->name_token = name;
+        declaration->as.constant.type = type;
+        declaration->as.constant.value = value;
     }
     finish_declaration(parser, declaration);
     return declaration;
@@ -716,17 +751,20 @@ int frontend_build_structured_ast(AstProgram *program) {
     AstDeclarationNode **tail = &program->root;
     while (!parser.failed && !check(&parser, TOKEN_EOF)) {
         AstDeclarationNode *declaration = NULL;
-        if (check(&parser, TOKEN_HASH)) declaration = parse_import(&parser);
+        if (check(&parser, TOKEN_KEYWORD_IMPORT)) declaration = parse_import(&parser);
+        else if (check(&parser, TOKEN_KEYWORD_CONST)) declaration = parse_constant(&parser);
         else if (check(&parser, TOKEN_KEYWORD_FUNC))
             declaration = parse_function(&parser, 0, AST_TOKEN_NONE);
         else if (check(&parser, TOKEN_KEYWORD_STRUCT)) declaration = parse_struct(&parser);
         else if (check(&parser, TOKEN_KEYWORD_ENUM)) declaration = parse_enum(&parser);
         else parser_failure(&parser, ERR_PARSE_INVALID_DECLARATION,
                             "Expected function declaration");
-        if (declaration != NULL) {
+        while (declaration != NULL) {
+            AstDeclarationNode *next = declaration->next;
             *tail = declaration;
             tail = &declaration->next;
             program->structured_declaration_count++;
+            declaration = next;
         }
     }
     program->structured_ast_complete = !parser.failed && check(&parser, TOKEN_EOF);

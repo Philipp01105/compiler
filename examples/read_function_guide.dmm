@@ -21,8 +21,7 @@
 //   - Go's fmt.Scan()
 // ===================================================================
 
-#import <stdlib/io.dmm>
-
+import <stdlib>
 func main() -> void {
     println("╔═══════════════════════════════════════════════╗");
     println("║   Complete Guide to read() Function          ║");

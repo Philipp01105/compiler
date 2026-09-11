@@ -16,7 +16,8 @@ typedef enum {
     IR_TYPE_PRIMITIVE,
     IR_TYPE_NAMED,
     IR_TYPE_POINTER,
-    IR_TYPE_ARRAY
+    IR_TYPE_ARRAY,
+    IR_TYPE_SLICE
 } IrTypeKind;
 
 typedef struct {
@@ -37,10 +38,10 @@ typedef enum {
     IR_OP_CALL,
     IR_OP_INDEX,
     IR_OP_MEMBER,
+    IR_OP_SLICE_LENGTH,
     IR_OP_CAST,
     IR_OP_ALLOC,
     IR_OP_FREE,
-    IR_OP_PRINT,
     IR_OP_RETURN,
     IR_OP_BRANCH,
     IR_OP_JUMP,
@@ -56,7 +57,7 @@ typedef struct {
     unsigned pointer_depth;
     size_t type_name_token;
     int is_array;
-    int is_gc;
+    int is_slice;
     size_t result;
     size_t operand_a;
     size_t operand_b;
@@ -78,6 +79,7 @@ typedef struct {
     unsigned pointer_depth;
     size_t type_name_token;
     int is_array;
+    int is_slice;
     int is_receiver;
 } IrParameter;
 

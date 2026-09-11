@@ -39,14 +39,14 @@ static const char *data_type_name(DataType type) {
 
 static const char *expression_name(AstExpressionKind kind) {
     static const char *names[] = {"error", "literal", "name", "unary", "binary", "call",
-        "index", "member", "reserve", "cast", "free"};
+        "index", "member", "slice-length", "reserve", "cast", "free"};
     return kind >= AST_EXPR_ERROR && kind <= AST_EXPR_FREE ? names[kind] : "invalid";
 }
 
 static const char *statement_name(AstStatementKind kind) {
     static const char *names[] = {"error", "block", "variable", "expression", "assignment",
-        "if", "while", "for", "return", "break", "continue", "print"};
-    return kind >= AST_STMT_ERROR && kind <= AST_STMT_PRINT ? names[kind] : "invalid";
+        "if", "while", "for", "return", "break", "continue"};
+    return kind >= AST_STMT_ERROR && kind <= AST_STMT_CONTINUE ? names[kind] : "invalid";
 }
 
 static const char *operator_name(TokenType type) {
@@ -79,11 +79,18 @@ static int symbol_field(FILE *output, size_t symbol) {
 
 static int dump_type(FILE *output, const AstProgram *program, const AstType *type) {
     if (type->kind == AST_TYPE_INFERRED) return fputs("inferred", output) != EOF;
+    for (unsigned i = 0; i < type->outer_pointer_depth; i++)
+        if (fputc('*', output) == EOF) return 0;
+    if (type->outer_pointer_depth != 0 && (type->is_array || type->is_slice) &&
+        fputc('(', output) == EOF) return 0;
     for (unsigned i = 0; i < type->pointer_depth; i++)
         if (fputc('*', output) == EOF) return 0;
     if (fputs(ast_program_lexeme(program, type->name_token), output) == EOF) return 0;
     if (type->is_array && fprintf(output, "[%s]",
                                   ast_program_lexeme(program, type->array_length_token)) < 0) return 0;
+    if (type->is_slice && fputs("[]", output) == EOF) return 0;
+    if (type->outer_pointer_depth != 0 && (type->is_array || type->is_slice) &&
+        fputc(')', output) == EOF) return 0;
     return 1;
 }
 
@@ -105,8 +112,10 @@ static int dump_expression(FILE *output, const AstProgram *program,
     if (!indent(output, depth) || fprintf(output, "expression %s %s span=",
                                           role, expression_name(expression->kind)) < 0 ||
         !span(output, expression->span) ||
-        fprintf(output, " type=%s pointers=%u array=%d", data_type_name(expression->resolved_type),
-                expression->resolved_pointer_depth, expression->resolved_is_array) < 0 ||
+        fprintf(output, " type=%s pointers=%u outer-pointers=%u array=%d slice=%d",
+                data_type_name(expression->resolved_type), expression->resolved_pointer_depth,
+                expression->resolved_outer_pointer_depth, expression->resolved_is_array,
+                expression->resolved_is_slice) < 0 ||
         !symbol_field(output, expression->resolved_symbol_id)) return 0;
     if (expression->value_token != AST_TOKEN_NONE &&
         !token_field(output, program, "token", expression->value_token)) return 0;
@@ -140,14 +149,12 @@ static int dump_statement(FILE *output, const AstProgram *program,
     if (statement->name_token != AST_TOKEN_NONE &&
         !token_field(output, program, "name", statement->name_token)) return 0;
     if (statement->kind == AST_STMT_VARIABLE) {
-        if (fputs(" type=", output) == EOF || !dump_type(output, program, &statement->type) ||
-            fprintf(output, " gc=%d", statement->is_gc) < 0) return 0;
+        if (fputs(" type=", output) == EOF || !dump_type(output, program, &statement->type)) return 0;
+        if (fprintf(output, " const=%d", statement->is_const) < 0) return 0;
     }
     if (statement->kind == AST_STMT_ASSIGNMENT &&
         (fputs(" operator=", output) == EOF ||
          !quoted(output, operator_name(statement->assignment_operator)))) return 0;
-    if (statement->kind == AST_STMT_PRINT &&
-        fprintf(output, " newline=%d", statement->print_newline) < 0) return 0;
     if (fputc('\n', output) == EOF) return 0;
     return dump_statement(output, program, statement->initializer, depth + 1, "initializer") &&
            dump_expression(output, program, statement->expression, depth + 1, "expression") &&
@@ -198,6 +205,13 @@ static int dump_declaration(FILE *output, const AstProgram *program,
     if (fputc('\n', output) == EOF) return 0;
     if (declaration->kind == AST_DECL_FUNCTION)
         return dump_function(output, program, declaration, depth + 1);
+    if (declaration->kind == AST_DECL_CONSTANT) {
+        if (!indent(output, depth + 1) || fputs("type=", output) == EOF ||
+            !dump_type(output, program, &declaration->as.constant.type) ||
+            fputc('\n', output) == EOF) return 0;
+        return dump_expression(output, program, declaration->as.constant.value,
+                               depth + 1, "value");
+    }
     const AstField *fields = declaration->kind == AST_DECL_STRUCT ? declaration->as.struct_decl.fields :
                              declaration->kind == AST_DECL_ENUM ? declaration->as.enum_decl.fields : NULL;
     for (const AstField *field = fields; field != NULL; field = field->next) {

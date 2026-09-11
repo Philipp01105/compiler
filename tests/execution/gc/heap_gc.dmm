@@ -1,6 +1,7 @@
-// Test @gc annotation for garbage collection
+import <stdlib>
+
+// Test annotation for garbage collection
 func main() -> void {
-    @gc
     var p:*int = reserve(int);
     
     println("GC-managed memory allocated");

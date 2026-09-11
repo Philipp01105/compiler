@@ -1,3 +1,5 @@
+import <stdlib>
+
 func choose(value:int) -> int {
     if (value > 0 && value < 10) { return value; }
     return 0 - value;

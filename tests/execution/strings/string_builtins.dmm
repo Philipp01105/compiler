@@ -1,5 +1,7 @@
+import <stdlib>
+
 func main() -> void {
-    var [32] buffer:char;
+    var buffer:char[32];
     strcpy(buffer, "typed");
     strcat(buffer, " IR");
     println(buffer);
@@ -9,7 +11,7 @@ func main() -> void {
     println(copy == "typed IR");
     free(copy);
 
-    var [16] number:char;
+    var number:char[16];
     println(io_int_to_str(-123, number, 16));
     println(number);
     println(io_str_to_int(number));

@@ -1,9 +1,11 @@
+import <stdlib>
+
 func main() -> void {
-    var [2] chars:char;
-    var [2] bytes:byte;
-    var [2] bits:bit;
-    var [2] floats:float;
-    var [2] doubles:double;
+    var chars:char[2];
+    var bytes:byte[2];
+    var bits:bit[2];
+    var floats:float[2];
+    var doubles:double[2];
     chars[1] = 'Z';
     bytes[1] = 255;
     bits[1] = true;

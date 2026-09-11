@@ -1,1 +1,3 @@
-func main() -> void { var [5] values:int; println(values[-1]); }
+import <stdlib>
+
+func main() -> void { var values:int[5]; println(values[-1]); }

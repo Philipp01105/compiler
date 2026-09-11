@@ -1,3 +1,5 @@
+import <stdlib>
+
 enum PacketKind(id:int, name:string, reliable:bit, weight:double) {
     data(10, "data", true, 1.25),
     retry(20, "retry", false, 2.5),
@@ -63,7 +65,7 @@ func fill(buffer:PacketBuffer, base:int) -> PacketBuffer {
 }
 
 func allocated_value(value:int) -> int {
-    @gc var storage:*int = reserve(int);
+    var storage:*int = reserve(int);
     *storage = value;
     return *storage;
 }
@@ -74,7 +76,7 @@ func main() -> void {
     buffer = fill(buffer, 4);
 
     var kind:PacketKind = rotate_kind(PacketKind.data, buffer.at(3));
-    var [4] samples:double;
+    var samples:double[4];
     for (var i:int = 0; i < 4; i++) {
         samples[i] = double(buffer.at(i)) / 3.0;
     }

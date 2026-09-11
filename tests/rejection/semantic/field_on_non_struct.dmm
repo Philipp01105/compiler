@@ -1,1 +1,3 @@
+import <stdlib>
+
 func main() -> void { var x:int; println(x.value); }

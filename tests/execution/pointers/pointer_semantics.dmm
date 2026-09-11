@@ -1,3 +1,5 @@
+import <stdlib>
+
 func write(p:*int, value:int) -> void { *p = value; }
 
 func main() -> void {
@@ -9,7 +11,7 @@ func main() -> void {
     println(value);
     println(*first == *second);
 
-    var [2] values:int;
+    var values:int[2];
     values[1] = 77;
     var element:*int = &values[1];
     println(*element);

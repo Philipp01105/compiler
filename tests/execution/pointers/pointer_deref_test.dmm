@@ -1,3 +1,5 @@
+import <stdlib>
+
 // Test pointer dereferencing, address-of, and writes through heap pointers.
 
 // Test 1: Basic pointer and dereference
