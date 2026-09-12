@@ -50,6 +50,31 @@ parser/type-checker/emitter have been removed from the build and source tree.
 | P2       | Direct object emission                  | Avoid the external assembler when the instruction model is mature.                                        |
 | P3       | New language features                   | Add globals, richer arrays, interfaces, and generics after the middle-end remains stable. |
 
+## Open diagnostic improvements
+
+- [ ] Reject unsupported method references during semantic analysis, before IR
+  emission. Reproducer: a struct `Node` defines `func Next() -> *Node`, and
+  `var node3 = node.Next;` currently reaches the backend and fails with the
+  generic `error[G103]: Could not emit typed IR output '…'`. Report a focused
+  diagnostic at `node.Next` explaining that methods must be called with `()`;
+  `var node3 = node.Next();` compiles successfully. Add a rejection regression
+  test and retain a positive test for the actual method call.
+- [ ] Source-related errors should show the filename, line and column, the
+  offending source line, and a caret/underline over the relevant source span.
+  Preserve this context for imported files and expose it in `--formatError`
+  JSON so IDE plugins can display the same location and source context. For
+  errors without a source location, explain the failing operation instead of
+  inventing a line number. Cover tabs, Unicode, CRLF, and end-of-file errors.
+- [ ] Offer a concrete correction when it can be determined safely. For an
+  unambiguous zero-argument method used as a value, suggest replacing
+  `node.Next` with `node.Next()`. Only present an actionable fix when symbol
+  resolution, argument requirements, and the replacement are certain; do not
+  guess arguments or apply edits automatically. Otherwise give an explanatory
+  hint. Include suggestions in human-readable and JSON diagnostics; structured
+  fixes should carry the source file, exact replacement span, and replacement
+  text so IDEs can offer a user-invoked quick fix. Test both safe suggestions
+  and cases where ambiguity or required arguments must suppress a fix.
+
 ## P1 syntax migration plan
 
 This is an intentionally breaking language revision. The lexer, parser, AST,
