@@ -1,7 +1,7 @@
 const base:int = 2 + 3;
 
 func select(value:int) -> int { return value + 1; }
-func select(value:double) -> int { return int(value) + 2; }
+func select(value:double) -> int { return (value).(int) + 2; }
 
 func sum(values:int[]) -> int {
     var total:int = 0;
@@ -17,6 +17,6 @@ func main() -> int {
     var values:int[3];
     values[0] = base;
     values[1] = select(4);
-    values[2] = select(double(1));
+    values[2] = select((1).(double));
     return forward(values);
 }

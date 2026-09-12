@@ -43,7 +43,11 @@ func test3_heap_deref() -> void {
     var p:*int = reserve(int);
     
     *p = 73;
-    println("Heap value: " + *p);
+    {
+        var _output0:string = "Heap value: " + *p;
+        println(_output0);
+        free(_output0);
+    }
     
     free(p);
     println("  [OK] Heap pointer freed");

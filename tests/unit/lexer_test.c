@@ -50,6 +50,19 @@ int main(void) {
     assert(tokens->tokens[0].value[0] == '"');
     assert(tokens->tokens[1].type == TOKEN_CHAR_LITERAL);
     assert(tokens->tokens[1].value[0] == '\'');
+    assert(tokens->tokens[0].end_column == tokens->tokens[0].column + 4);
+    assert(tokens->tokens[1].end_column == tokens->tokens[1].column + 4);
+    free_token_stream(tokens);
+
+    const char postfix_casts[] = "3.(int) 3.5.(float) \"\\n\"";
+    tokens = lex(postfix_casts, sizeof(postfix_casts)-1);
+    assert(tokens != NULL && !tokens->has_error && tokens->count == 12);
+    assert(tokens->tokens[0].type == TOKEN_NUMBER);
+    assert(tokens->tokens[1].type == TOKEN_DOT);
+    assert(tokens->tokens[5].type == TOKEN_FLOAT_LITERAL);
+    assert(tokens->tokens[6].type == TOKEN_DOT);
+    assert(tokens->tokens[10].type == TOKEN_STRING_LITERAL);
+    assert(tokens->tokens[10].end_column == tokens->tokens[10].column + 4);
     free_token_stream(tokens);
 
     const char bad_escape[] = "\"bad\\q\"";

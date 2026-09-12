@@ -9,6 +9,8 @@ typedef struct {
     const char *value;
     int line;
     int column;
+    int end_line;
+    int end_column;
 } Token;
 
 typedef struct {

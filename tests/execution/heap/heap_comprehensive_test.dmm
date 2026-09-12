@@ -7,8 +7,8 @@ import <stdlib>
 // - Pointer type declarations for all data types
 // - reserve() function with different types (primitives and structs)
 // - free() function for manual memory management
-// - annotation for automatic garbage collection
-// - Mixed manual and GC memory management
+// - annotation for automatic explicit allocation ownership
+// - Mixed manual and manual ownership memory management
 // - Error cases and edge cases
 // ============================================================================
 
@@ -116,18 +116,20 @@ func test7_multiple_different_types() -> void {
     println("  [OK] All types freed");
 }
 
-// Test 8: Garbage collection with int
+// Test 8: Explicit allocation ownership with int
 func test8_gc_int() -> void {
-    println("[TEST 8] GC with int");
+    println("[TEST 8] manual ownership with int");
     
     var p:*int = reserve(int);
     
-    println("  [OK] GC int allocated (auto-freed)");
+    println("  [OK] manual ownership int allocated (explicit release follows)");
+
+    free(p);
 }
 
-// Test 9: Garbage collection with multiple types
+// Test 9: Explicit allocation ownership with multiple types
 func test9_gc_multiple() -> void {
-    println("[TEST 9] GC with multiple types");
+    println("[TEST 9] manual ownership with multiple types");
     
     var intPtr:*int = reserve(int);
     
@@ -135,12 +137,16 @@ func test9_gc_multiple() -> void {
     
     var floatPtr:*float = reserve(float);
     
-    println("  [OK] Multiple GC allocations (auto-freed)");
+    println("  [OK] Multiple manual ownership allocations (explicit release follows)");
+
+    free(floatPtr);
+    free(charPtr);
+    free(intPtr);
 }
 
-// Test 10: Mixed manual and GC management
+// Test 10: Mixed manual and manual ownership management
 func test10_mixed_management() -> void {
-    println("[TEST 10] Mixed manual and GC management");
+    println("[TEST 10] Mixed manual and manual ownership management");
     
     var manual1:*int = reserve(int);
     
@@ -155,7 +161,10 @@ func test10_mixed_management() -> void {
     free(manual1);
     free(manual2);
     
-    println("  [OK] Manual pointers freed (GC auto-freed)");
+    println("  [OK] Manual pointers freed (explicit releases follow)");
+
+    free(gc2);
+    free(gc1);
 }
 
 // Test 11: Sequential allocation and freeing
@@ -178,18 +187,20 @@ func test11_sequential() -> void {
     println("  [OK] Freed p3");
 }
 
-// Test 12: Nested scope with GC
+// Test 12: Nested scope with manual ownership
 func test12_nested_gc() -> void {
-    println("[TEST 12] Nested scope with GC");
+    println("[TEST 12] Nested scope with manual ownership");
     
     var outer:*int = reserve(int);
     println("  [OK] Outer manual allocation");
     
     var gcOuter:*int = reserve(int);
-    println("  [OK] Outer GC allocation");
+    println("  [OK] Outer manual ownership allocation");
     
     free(outer);
     println("  [OK] Outer manual freed");
+
+    free(gcOuter);
 }
 
 // Test 13: Allocate many pointers
@@ -252,14 +263,16 @@ func test15_free_order() -> void {
     println("  [OK] Freed first one");
 }
 
-// Test 16: GC in function scope
+// Test 16: manual ownership in function scope
 func test16_gc_function_scope() -> void {
-    println("[TEST 16] GC in function scope");
+    println("[TEST 16] manual ownership in function scope");
     
     var temp:*int = reserve(int);
     
-    println("  [OK] GC variable in function");
+    println("  [OK] manual ownership variable in function");
     // Auto-freed when function returns
+
+    free(temp);
 }
 
 // Test 17: Multiple reserve calls
@@ -300,9 +313,9 @@ func test18_all_types_together() -> void {
     println("  [OK] All 5 basic types freed (reverse order)");
 }
 
-// Test 19: GC with all types
+// Test 19: manual ownership with all types
 func test19_gc_all_types() -> void {
-    println("[TEST 19] GC with all types");
+    println("[TEST 19] manual ownership with all types");
     
     var intP:*int = reserve(int);
     
@@ -312,12 +325,17 @@ func test19_gc_all_types() -> void {
     
     var doubleP:*double = reserve(double);
     
-    println("  [OK] All GC types allocated (auto-freed)");
+    println("  [OK] All manual ownership types allocated (explicit release follows)");
+
+    free(doubleP);
+    free(floatP);
+    free(charP);
+    free(intP);
 }
 
-// Test 20: Alternating manual and GC
+// Test 20: Alternating manual and manual ownership
 func test20_alternating() -> void {
-    println("[TEST 20] Alternating manual and GC");
+    println("[TEST 20] Alternating manual and manual ownership");
     
     var m1:*int = reserve(int);
     
@@ -336,6 +354,9 @@ func test20_alternating() -> void {
     free(m3);
     
     println("  [OK] Manual pointers freed");
+
+    free(g2);
+    free(g1);
 }
 
 // Test 21: Struct allocation
@@ -366,15 +387,18 @@ func test22_multiple_structs() -> void {
     println("  [OK] Multiple structs freed");
 }
 
-// Test 23: GC with structs
+// Test 23: manual ownership with structs
 func test23_gc_structs() -> void {
-    println("[TEST 23] GC with structs");
+    println("[TEST 23] manual ownership with structs");
     
     var p:*Point = reserve(Point);
     
     var d:*Data = reserve(Data);
     
-    println("  [OK] GC structs allocated (auto-freed)");
+    println("  [OK] manual ownership structs allocated (explicit release follows)");
+
+    free(d);
+    free(p);
 }
 
 // Main test runner

@@ -1,0 +1,2 @@
+func use(pointer:**(int[3])) -> void {}
+func main() -> void { var values:*int[3]; var pointer:*(*int[3]) = &values; use(pointer); }

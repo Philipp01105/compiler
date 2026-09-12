@@ -28,14 +28,14 @@ is no alternate compatibility emitter.
 - `src/common/string_interner.c` owns the module-wide canonical spelling table.
   Root files and imports share it, so equal source strings have pointer identity.
 - `src/ast` owns program lifetime, the shared string interner, spans, and AST storage.
-- `src/ast/ast_dump.c` serializes the resolved tree as versioned `dmm-ast-v1`.
+- `src/ast/ast_dump.c` serializes the resolved tree as versioned `dmm-ast-v2`.
 - `src/sema` collects global/member/local symbols, resolves expressions and
   named types, validates scopes, calls, conversions, lvalues, returns, bounds,
   and control-flow placement, and annotates AST nodes with stable IDs and types.
 - `src/ir` lowers typed AST nodes to explicit values and control flow, interns
   types, describes aggregate/enum layouts and imports, and verifies every use,
   definition, label, type, and symbol reference.
-- `src/ir/ir_dump.c` serializes verified modules as versioned `dmm-ir-v1`.
+- `src/ir/ir_dump.c` serializes verified modules as versioned `dmm-ir-v2`.
 - `src/backend/x86_64` consumes only verified IR. It owns stack layout, System V
   and Windows x64 calling conventions, scalar/SSE conversion, aggregate address
   calculation, runtime calls, and Intel/AT&T assembly formatting.
@@ -62,16 +62,17 @@ legal.
 
 ## Typed IR
 
-IR types are primitive, named, pointer, or fixed-array types. Instructions cover
+IR types are primitive, named, pointer, fixed-array, or slice types. Instructions cover
 constants, loads/declarations/stores, unary and binary operations, calls,
-indexes, members, casts, allocation/free, printing, returns, branches, jumps,
+indexes, members, slice lengths, casts, allocation/free, returns, branches, jumps,
 labels, and PHI values. Calls store a contiguous ordered argument slice, so
 nested calls cannot corrupt argument ordering.
 
 Boolean `&&` and `||` lower to branch/jump/label/PHI control flow and therefore
 preserve short-circuit side effects. Instance methods receive an explicit hidden
-aggregate pointer; implicit field names lower against that receiver. `@gc`
-declarations are initialized safely and released along every function exit.
+aggregate pointer; implicit field names lower against that receiver. Slices expand
+to data pointer and length at calls. Allocation uses a complete type and releases
+are explicit. Stdlib output uses ordinary resolved overload calls.
 
 The verifier rejects malformed type graphs, duplicate or missing value
 definitions, invalid symbol ownership, nonexistent labels, ill-typed operations,

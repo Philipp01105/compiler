@@ -1,0 +1,7 @@
+func outside(values:int[]) -> int {
+    return values[values.length];
+}
+func main() -> int {
+    var values:int[3];
+    return outside(values);
+}

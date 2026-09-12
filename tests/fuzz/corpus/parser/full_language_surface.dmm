@@ -49,7 +49,7 @@ func choose_state(value:int) -> JobState {
 }
 
 func weighted(value:int, divisor:double) -> double {
-    var widened:double = double(value);
+    var widened:double = (value).(double);
     return widened / divisor;
 }
 
@@ -76,7 +76,7 @@ func main() -> void {
     var automatic:*int = reserve(int);
     *automatic = queue.sum();
     var manual:*int = reserve(int);
-    *manual = int(weighted(*automatic, 2.0));
+    *manual = (weighted(*automatic, 2.0)).(int);
 
     var message:string = "state=" + state.label + ",code=" + state.code
         + ",sum=" + *automatic + ",half=" + *manual

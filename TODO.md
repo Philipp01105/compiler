@@ -45,7 +45,7 @@ parser/type-checker/emitter have been removed from the build and source tree.
 
 | Priority | Addition                                | Why                                                                                                       |
 |----------|-----------------------------------------|-----------------------------------------------------------------------------------------------------------|
-| P1       | Language syntax and stdlib ABI revision | Add package imports, slices, constants and overloads; normalize arrays/pointers, remove implicit GC, and move printing into the stdlib. |
+| P1 (complete) | Language syntax and stdlib ABI revision | Package imports, slices, constants, overloads, normalized arrays/pointers, explicit ownership, and ordinary stdlib output are implemented and validated. |
 | P2       | Runtime library split                   | Move platform runtime shims out of the emitter while retaining typed runtime operations in IR.            |
 | P2       | Direct object emission                  | Avoid the external assembler when the instruction model is mature.                                        |
 | P3       | New language features                   | Add globals, richer arrays, interfaces, and generics after the middle-end remains stable. |
@@ -261,6 +261,41 @@ println("done");
   follow import visibility and duplicate-name rules.
 
 ### Implementation sequence
+
+#### Completed acceptance checkpoint (2026-09-12)
+
+The core syntax, overload selection/mangling, slice ABI, type-only allocation,
+manual allocation ownership, and ordinary stdlib print path are implemented.
+Repository acceptance migration now covers examples, generated regression
+programs, frontend/import fixtures, removed-syntax diagnostics, and output
+expectations for ordinary call evaluation. Package integration tests exercise
+grouped imports, manifest-only loading, canonical deduplication, and missing
+manifests. P1 execution tests cover stdlib output, overloads, deep allocation
+pointers, and slice forwarding/mutation across register and stack arguments.
+
+Constant initializers now fold during sema and materialize directly in IR;
+evaluated int constants supply fixed-array lengths. Casts now use the postfix
+`expression.(type)` syntax, with old type-first casts rejected. Regression
+coverage includes folding, overflow/division errors, cycles/forward references,
+and chained casts including byte narrowing.
+
+P1 is complete. Constant evaluation follows the import dependency graph, including
+shared dependencies; overload diagnostics list supplied types and candidate source
+signatures. Grouped pointer-to-array types preserve element pointer depth, outer
+pointer depth, and length through calls, assignments, returns, address-of, allocation,
+and member/index access. Nested arrays and slices remain unsupported and produce
+an explicit diagnostic. Slice lengths are read-only. Mangling preserves long names
+and validates link-name uniqueness before emission.
+The formal grammar now describes P1 and postfix casts; AST/IR dumps use v2,
+with AST folded values and cast/allocation type operands serialized explicitly.
+
+Acceptance: strict-warning builds pass on Windows/GCC and ELF/System V GCC.
+All 19 CTest suites pass on both platforms, including Intel/AT&T execution,
+ABI, rejection/runtime failure, imports, dump/source-map, architecture, malformed
+type-graph verification, and fuzz smoke. The ELF compiler and generated programs
+also pass ASan/UBSan with leak detection enabled. All 40 example code-generation
+cases pass across ELF/COFF and Intel/AT&T; COFF examples also assemble and link.
+Examples and heap fixtures use explicit releases, including temporary output strings.
 
 1. **Grammar and lexer:** add `const`; remove `#import`, `@gc`, and statement-form
    `print`/`println`; add single/grouped import parsing, postfix array type

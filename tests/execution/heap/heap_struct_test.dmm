@@ -46,15 +46,18 @@ func test2_multiple_structs() -> void {
     println("  [OK] Three structs freed");
 }
 
-// Test 3: GC with structs
+// Test 3: manual ownership with structs
 func test3_gc_structs() -> void {
-    println("[TEST 3] GC with structs");
+    println("[TEST 3] manual ownership with structs");
     
     var p:*Point = reserve(Point);
     
     var r:*Rectangle = reserve(Rectangle);
     
-    println("  [OK] GC structs allocated (auto-freed)");
+    println("  [OK] manual ownership structs allocated (explicit release follows)");
+
+    free(r);
+    free(p);
 }
 
 // Test 4: Mixed struct types
@@ -74,19 +77,21 @@ func test4_mixed_struct_types() -> void {
     println("  [OK] All struct types freed");
 }
 
-// Test 5: Manual and GC structs together
+// Test 5: Manual and manual ownership structs together
 func test5_manual_and_gc_structs() -> void {
-    println("[TEST 5] Manual and GC structs");
+    println("[TEST 5] Manual and manual ownership structs");
     
     var manual:*Point = reserve(Point);
     
     var automatic:*Rectangle = reserve(Rectangle);
     
-    println("  [OK] Manual and GC structs allocated");
+    println("  [OK] Manual and manual ownership structs allocated");
     
     free(manual);
     
-    println("  [OK] Manual struct freed (GC auto-freed)");
+    println("  [OK] Manual struct freed (explicit releases follow)");
+
+    free(automatic);
 }
 
 // Test 6: Sequential struct operations

@@ -210,8 +210,12 @@ static int valid_declarations(const AstProgram *program) {
         if (declaration->first_token >= program->token_count || declaration->token_count == 0 ||
             declaration->token_count > program->token_count - declaration->first_token) return 0;
         if (declaration->kind == AST_DECL_IMPORT) {
-            if (declaration->as.import_decl.path_token == AST_TOKEN_NONE &&
-                declaration->as.import_decl.path_token_count == 0) return 0;
+            if (declaration->as.import_decl.paths == NULL) return 0;
+            for (const AstImportPath *path=declaration->as.import_decl.paths; path != NULL; path=path->next) {
+                if (path->path_token != AST_TOKEN_NONE && !valid_token(program, path->path_token)) return 0;
+                if (path->path_token_count == 0 || path->path_first_token >= program->token_count ||
+                    path->path_token_count > program->token_count-path->path_first_token) return 0;
+            }
         } else if (declaration->kind == AST_DECL_FUNCTION) {
             if (!valid_function_declaration(program, declaration)) return 0;
         } else if (declaration->kind == AST_DECL_CONSTANT) {

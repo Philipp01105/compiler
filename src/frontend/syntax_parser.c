@@ -129,6 +129,11 @@ static AstType parse_type(SyntaxParser *parser) {
         type.pointer_depth = leading_pointers;
     }
     if (match(parser, TOKEN_LBRACKET)) {
+        if (type.is_array || type.is_slice) {
+            parser_failure(parser, ERR_PARSE_EXPECTED_TOKEN,
+                           "Nested array and slice types are not supported");
+            return type;
+        }
         if (match(parser, TOKEN_RBRACKET)) {
             type.is_slice = 1;
         } else {
@@ -198,7 +203,6 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
             expression->first_token = first;
             finish_expression(parser, expression);
         }
-        return expression;
     } else {
         parser->failed = 1;
         expression = new_expression(parser, AST_EXPR_ERROR, first);
@@ -215,8 +219,11 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
             if (expression->kind == AST_EXPR_NAME &&
                      expression->value_token < parser->program->token_count) {
                 TokenType callee = parser->program->tokens[expression->value_token].type;
-                if (callee >= TOKEN_TYPE_INT && callee <= TOKEN_TYPE_VOID)
-                    call_kind = AST_EXPR_CAST;
+                if (callee >= TOKEN_TYPE_INT && callee <= TOKEN_TYPE_VOID) {
+                    parser_failure(parser, ERR_PARSE_EXPECTED_TOKEN,
+                                   "Type-first casts were removed; use expression.(type)");
+                    break;
+                }
                 else if (callee == TOKEN_KEYWORD_FREE)
                     call_kind = AST_EXPR_FREE;
             }
@@ -246,6 +253,19 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
             (void) consume(parser, TOKEN_RBRACKET);
             expression = index;
         } else if (match(parser, TOKEN_DOT)) {
+            if (match(parser, TOKEN_LPAREN)) {
+                AstExpression *cast = new_expression(parser, AST_EXPR_CAST, first);
+                AstType target = parse_type(parser);
+                (void) consume(parser, TOKEN_RPAREN);
+                if (cast != NULL) {
+                    cast->arguments = expression;
+                    cast->allocated_type = target;
+                    cast->value_token = target.name_token;
+                }
+                expression = cast;
+                finish_expression(parser, expression);
+                continue;
+            }
             AstExpression *member = new_expression(parser, AST_EXPR_MEMBER, first);
             size_t name = consume_callable_name(parser);
             if (member != NULL) {
@@ -304,6 +324,14 @@ static AstExpression *parse_binary(SyntaxParser *parser, int minimum) {
         if (operation_precedence < minimum) break;
         size_t first = left == NULL ? parser->current : left->first_token;
         parser->current++;
+        if (operation == TOKEN_STAR &&
+            (check(parser, TOKEN_EQUAL) || check(parser, TOKEN_PLUS_EQUAL) ||
+             check(parser, TOKEN_MINUS_EQUAL) || check(parser, TOKEN_STAR_EQUAL) ||
+             check(parser, TOKEN_SLASH_EQUAL) || check(parser, TOKEN_SEMICOLON))) {
+            parser_failure(parser, ERR_PARSE_EXPECTED_TOKEN,
+                           "Postfix dereference is not supported; use *pointer");
+            break;
+        }
         AstExpression *right = parse_binary(parser, operation_precedence + 1);
         AstExpression *binary = new_expression(parser, AST_EXPR_BINARY, first);
         if (binary != NULL) {
@@ -368,6 +396,9 @@ static AstStatement *parse_variable(SyntaxParser *parser, size_t first,
                                     int consume_semicolon) {
     int is_const = check(parser, TOKEN_KEYWORD_CONST);
     parser->current++;
+    if (check(parser, TOKEN_LBRACKET))
+        parser_failure(parser, ERR_PARSE_EXPECTED_TOKEN,
+                       "Legacy array syntax was removed; use name:type[size]");
     AstStatement *statement = new_statement(parser, AST_STMT_VARIABLE, first);
     size_t name = consume(parser, TOKEN_IDENTIFIER);
     AstType type = inferred_type();
@@ -416,6 +447,11 @@ static AstStatement *parse_expression_statement(SyntaxParser *parser, int consum
 
 static AstStatement *parse_statement_impl(SyntaxParser *parser) {
     size_t first = parser->current;
+    if (check(parser, TOKEN_AT)) {
+        parser_failure(parser, ERR_PARSE_EXPECTED_TOKEN,
+                       "@gc was removed; use explicit free");
+        return NULL;
+    }
     if (check(parser, TOKEN_LBRACE)) return parse_block(parser);
     if (check(parser, TOKEN_KEYWORD_VAR) || check(parser, TOKEN_KEYWORD_CONST))
         return parse_variable(parser, first, 1);
@@ -691,13 +727,13 @@ static AstDeclarationNode *parse_import(SyntaxParser *parser) {
     size_t first = parser->current;
     (void) consume(parser, TOKEN_KEYWORD_IMPORT);
     int grouped = match(parser, TOKEN_LPAREN);
-    AstDeclarationNode *head = NULL;
-    AstDeclarationNode **tail = &head;
+    AstDeclarationNode *declaration = new_declaration(parser, AST_DECL_IMPORT, first);
+    AstImportPath *head = NULL;
+    AstImportPath **tail = &head;
     do {
         if (grouped && check(parser, TOKEN_RPAREN)) break;
         size_t path_start = parser->current;
-        AstDeclarationNode *declaration = new_declaration(parser, AST_DECL_IMPORT,
-                                                          grouped ? path_start : first);
+        AstImportPath *entry = allocate(parser, sizeof(*entry));
         size_t path_first = path_start;
         size_t path_token = AST_TOKEN_NONE;
         if (check(parser, TOKEN_STRING_LITERAL)) {
@@ -709,20 +745,25 @@ static AstDeclarationNode *parse_import(SyntaxParser *parser) {
         } else {
             parser_failure(parser, ERR_PARSE_EXPECTED_TOKEN, "Expected import path");
         }
-        if (declaration != NULL) {
-            declaration->as.import_decl.path_token = path_token;
-            declaration->as.import_decl.path_first_token = path_first;
-            declaration->as.import_decl.path_token_count = parser->current - path_first;
-            finish_declaration(parser, declaration);
-            *tail = declaration;
-            tail = &declaration->next;
+        if (entry != NULL) {
+            entry->path_token = path_token;
+            entry->path_first_token = path_first;
+            entry->path_token_count = parser->current - path_first;
+            entry->span = range_span(parser, path_start, parser->current);
+            entry->resolved_symbol_id = AST_SYMBOL_NONE;
+            *tail = entry;
+            tail = &entry->next;
         }
     } while (grouped && !parser->failed);
     if (grouped) (void) consume(parser, TOKEN_RPAREN);
     if (head == NULL && !parser->failed)
         parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
                        "Import group must contain at least one path");
-    return head;
+    if (declaration != NULL) {
+        declaration->as.import_decl.paths = head;
+        finish_declaration(parser, declaration);
+    }
+    return declaration;
 }
 
 static AstDeclarationNode *parse_constant(SyntaxParser *parser) {
@@ -757,6 +798,9 @@ int frontend_build_structured_ast(AstProgram *program) {
             declaration = parse_function(&parser, 0, AST_TOKEN_NONE);
         else if (check(&parser, TOKEN_KEYWORD_STRUCT)) declaration = parse_struct(&parser);
         else if (check(&parser, TOKEN_KEYWORD_ENUM)) declaration = parse_enum(&parser);
+        else if (check(&parser, TOKEN_HASH))
+            parser_failure(&parser, ERR_PARSE_INVALID_DECLARATION,
+                           "#import was removed; use import path");
         else parser_failure(&parser, ERR_PARSE_INVALID_DECLARATION,
                             "Expected function declaration");
         while (declaration != NULL) {

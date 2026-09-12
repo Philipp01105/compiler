@@ -31,9 +31,9 @@ character       = "'", (escape | character-byte), "'" ;
 string          = '"', { escape | string-byte }, '"' ;
 
 keyword         = "func" | "var" | "return" | "for" | "if" | "else"
-                | "while" | "print" | "println" | "break" | "continue"
+                | "while" | "const" | "break" | "continue"
                 | "struct" | "enum" | "import" | "static" | "reserve"
-                | "free" | "gc" ;
+                | "free" ;
 
 primitive-type  = "int" | "char" | "byte" | "bit"
                 | "float" | "double" | "string" | "void" ;
@@ -50,10 +50,12 @@ top-level-declaration
                 = import-declaration
                 | function-declaration
                 | struct-declaration
-                | enum-declaration ;
+                | enum-declaration
+                | constant-declaration ;
 
 import-declaration
-                = "#", "import", (string | "<", import-path, ">") ;
+                = "import", (import-entry | "(", {import-entry}, ")") ;
+import-entry    = string | "<", import-path, ">" ;
 import-path     = import-part, { import-part } ;
 import-part     = identifier | integer | "." | "/" | "-" ;
 
@@ -61,10 +63,12 @@ function-declaration
                 = "func", identifier, "(", [parameter-list], ")",
                   "->", return-type, block ;
 parameter-list  = parameter, { ",", parameter } ;
-parameter       = identifier, ["[", "]"], ":", parameter-type ;
-parameter-type  = ["*"], type ;
+parameter       = identifier, ":", type ;
 return-type     = type ;
-type            = primitive-type | identifier ;
+type            = {"*"}, (primitive-type | identifier | "(", type, ")"),
+                  ["[", [integer | identifier], "]"] ;
+constant-declaration
+                = "const", identifier, [":", type], "=", expression, ";" ;
 ```
 
 Struct and enum members use the same function and variable declaration forms accepted by their parser contexts:
@@ -74,7 +78,7 @@ struct-declaration
                 = "struct", identifier, "{", { struct-member }, "}" ;
 struct-member   = field-declaration | ["static"], function-declaration ;
 field-declaration
-                = "var", identifier, ":", type, ["[", integer, "]"], ";" ;
+                = "var", identifier, ":", type, ";" ;
 
 enum-declaration
                 = "enum", identifier, ["(", enum-field-list, ")"],
@@ -106,20 +110,17 @@ statement       = block
                 | return-statement
                 | break-statement
                 | continue-statement
-                | print-statement ;
+                | constant-declaration ;
 
 variable-declaration
-                = ["@", "gc"], "var", variable-shape, identifier,
-                  [":", variable-type], ["=", expression], ";" ;
-variable-shape  = ["[", integer, "]"] ;
-variable-type   = ["*"], type ;
+                = "var", identifier, [":", type], ["=", expression], ";" ;
 
 assignment-statement
                 = lvalue, assignment-operator, expression, ";"
                 | lvalue, ("++" | "--"), ";" ;
 assignment-operator
                 = "=" | "+=" | "-=" | "*=" | "/=" ;
-lvalue          = identifier, { "[", expression, "]" | ".", identifier | "*" } ;
+lvalue          = expression ; (* semantic analysis requires mutable storage *)
 
 call-statement  = call-expression, ";" ;
 if-statement    = "if", "(", expression, ")", statement,
@@ -135,7 +136,6 @@ for-update      = lvalue, assignment-operator, expression
 return-statement = "return", [expression], ";" ;
 break-statement  = "break", ";" ;
 continue-statement = "continue", ";" ;
-print-statement  = ("print" | "println"), "(", [expression], ")", ";" ;
 ```
 
 ## Expressions
@@ -151,18 +151,22 @@ comparison-operator
                 = "==" | "!=" | "<" | "<=" | ">" | ">=" ;
 additive        = multiplicative, { ("+" | "-"), multiplicative } ;
 multiplicative  = unary, { ("*" | "/" | "%"), unary } ;
-unary           = ("!" | "-" | "&" | "*"), unary | primary ;
+unary           = ("!" | "-" | "&" | "*"), unary | postfix-expression ;
+postfix-expression = primary, {postfix} ;
 
 primary         = integer | floating | character | string
                 | "true" | "false"
-                | identifier-expression
+                | identifier
+                | "reserve", "(", type, ")"
+                | "free"
                 | "(", expression, ")" ;
 
 identifier-expression
                 = identifier, { postfix } ;
 postfix         = "(", [argument-list], ")"
                 | "[", expression, "]"
-                | ".", identifier, ["(", [argument-list], ")"] ;
+                | ".", identifier
+                | ".", "(", type, ")" ;
 argument-list   = expression, { ",", expression } ;
 call-expression = identifier-expression ;
 ```

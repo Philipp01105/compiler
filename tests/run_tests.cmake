@@ -311,37 +311,37 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "rejection")
 
     reject_case(
             large_array
-            "func main() -> void { var [2147483647] a:int; }"
+            "import <stdlib>\nfunc main() -> void { var a:int[2147483647]; }"
             "Array length"
     )
 
     reject_case(
             combined_locals
-            "func main() -> void { var [1048576] a:double; var [1048576] b:double; var c:int; }"
+            "import <stdlib>\nfunc main() -> void { var a:double[1048576]; var b:double[1048576]; var c:int; }"
             "local storage exceeds"
     )
 
     reject_case(
             wrong_argument_type
-            "func f(a:int) -> int { return a; } func main() -> void { println(f(\"bad\")); }"
-            "Cannot implicitly convert"
+            "func f(a:int) -> int { return a; } func main() -> void { f(\"bad\"); }"
+            "No overload of 'f' matches"
     )
 
     reject_case(
             wrong_argument_count
             "func f(a:int) -> int { return a; } func main() -> void { f(); }"
-            "expects 1 arguments"
+            "No overload of 'f' matches"
     )
 
     reject_case(
             wrong_initializer
-            "func main() -> void { var n:int = \"bad\"; }"
+            "import <stdlib>\nfunc main() -> void { var n:int = \"bad\"; }"
             "Cannot implicitly convert"
     )
 
     reject_case(
             narrowing
-            "func main() -> void { var n:int = 1.5; }"
+            "import <stdlib>\nfunc main() -> void { var n:int = 1.5; }"
             "Cannot implicitly convert"
     )
 
@@ -359,103 +359,103 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "rejection")
 
     reject_case(
             void_return
-            "func main() -> void { return 1; }"
+            "import <stdlib>\nfunc main() -> void { return 1; }"
             "Void function cannot return a value"
     )
 
     reject_case(
             duplicate_local
-            "func main() -> void { var x:int; var x:int; }"
+            "import <stdlib>\nfunc main() -> void { var x:int; var x:int; }"
             "Duplicate variable"
     )
 
     reject_case(
             duplicate_function
-            "func main() -> void {} func main() -> void {}"
-            "Duplicate function"
+            "import <stdlib>\nfunc main() -> void {} func main() -> void {}"
+            "main cannot be overloaded"
     )
 
     reject_case(
             scope_escape
-            "func main() -> void { { var x:int=2; } println(x); }"
+            "import <stdlib>\nfunc main() -> void { { var x:int=2; } println(x); }"
             "Undefined variable"
     )
 
     reject_case(
             loop_escape
-            "func main() -> void { for (var i:int=0;i<1;i++) {} println(i); }"
+            "import <stdlib>\nfunc main() -> void { for (var i:int=0;i<1;i++) {} println(i); }"
             "Undefined variable"
     )
 
     reject_case(
             break_outside
-            "func main() -> void { break; }"
+            "import <stdlib>\nfunc main() -> void { break; }"
             "outside a loop"
     )
 
     reject_case(
             invalid_lvalue
-            "func main() -> void { 1=2; }"
+            "import <stdlib>\nfunc main() -> void { 1=2; }"
             "Assignment requires"
     )
 
     reject_case(
             float_remainder
-            "func main() -> void { println(1.5%2.0); }"
+            "import <stdlib>\nfunc main() -> void { println(1.5%2.0); }"
             "Remainder requires integer"
     )
 
     reject_case(
             pointer_mismatch
-            "func main() -> void { var x:int; var p:*double=&x; }"
+            "import <stdlib>\nfunc main() -> void { var x:int; var p:*double=&x; }"
             "Cannot implicitly convert"
     )
 
     reject_case(
             index_bounds
-            "func main() -> void { var [3] a:int; println(a[3]); }"
+            "import <stdlib>\nfunc main() -> void { var a:int[3]; println(a[3]); }"
             "outside declared bounds"
     )
 
     reject_case(
             unknown_character
-            "func main() -> void {} $"
+            "import <stdlib>\nfunc main() -> void {} $"
             "Unknown character"
     )
 
     reject_case(
             trailing_syntax
-            "func main() -> void {} +"
+            "import <stdlib>\nfunc main() -> void {} +"
             "Expected function declaration"
     )
 
     reject_case(
             empty_character
-            "func main() -> void { var c:char=''; }"
+            "import <stdlib>\nfunc main() -> void { var c:char=''; }"
             "exactly one byte"
     )
 
     reject_case(
             bad_exponent
-            "func main() -> void { var x:double=1e; }"
+            "import <stdlib>\nfunc main() -> void { var x:double=1e; }"
             "Invalid floating-point literal"
     )
 
     reject_case(
             integer_range
-            "func main() -> void { var x:int=2147483648; }"
+            "import <stdlib>\nfunc main() -> void { var x:int=2147483648; }"
             "outside signed 32-bit range"
     )
 
     reject_case(
             bit_arithmetic
-            "func main() -> void { var b:bit=true; b++; }"
+            "import <stdlib>\nfunc main() -> void { var b:bit=true; b++; }"
             "Boolean values do not support"
     )
 
     reject_case(
             reserved_name
-            "func main() -> void { var true:int=3; }"
+            "import <stdlib>\nfunc main() -> void { var true:int=3; }"
             "cannot be declared"
     )
 
@@ -463,7 +463,7 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "rejection")
 
     reject_case(
             long_string
-            "func main() -> void { println(\"${long_text}\"); }"
+            "import <stdlib>\nfunc main() -> void { println(\"${long_text}\"); }"
             "Token exceeds maximum length"
     )
 
@@ -471,7 +471,7 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "rejection")
 
     reject_case(
             deep_expression
-            "func main() -> void { println(${long_expression}1); }"
+            "import <stdlib>\nfunc main() -> void { println(${long_expression}1); }"
             "Expression tree exceeds"
     )
 
@@ -492,7 +492,7 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
     file(
             WRITE
             "${OUTPUT_DIR}/many_lines.dmm"
-            "func main() -> void {\n${body}}"
+            "import <stdlib>\nfunc main() -> void {\n${body}}"
     )
 
     run_case(
@@ -508,7 +508,7 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
         file(
                 WRITE
                 "${OUTPUT_DIR}/target.dmm"
-                "func main() -> void { println(7); }"
+                "import <stdlib>\nfunc main() -> void { println(7); }"
         )
 
         execute_process(
@@ -541,8 +541,8 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
 
         if(target STREQUAL "elf")
             set(register "%rsi")
-            string(FIND "${assembly}" "xorl %eax, %eax
-    call printf" variadic_marker)
+            string(FIND "${assembly}" "movq $0, %rax
+    call snprintf" variadic_marker)
             if(variadic_marker EQUAL -1)
                 message(FATAL_ERROR
                         "ELF backend does not initialize AL for variadic calls")

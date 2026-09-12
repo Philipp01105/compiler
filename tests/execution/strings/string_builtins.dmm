@@ -4,7 +4,11 @@ func main() -> void {
     var buffer:char[32];
     strcpy(buffer, "typed");
     strcat(buffer, " IR");
-    println(buffer);
+    {
+        var _output0:string = "" + buffer;
+        println(_output0);
+        free(_output0);
+    }
     println(strlen(buffer));
     println(strcmp(buffer, "typed IR"));
     var copy:string = strdup(buffer);
@@ -13,14 +17,18 @@ func main() -> void {
 
     var number:char[16];
     println(io_int_to_str(-123, number, 16));
-    println(number);
+    {
+        var _output1:string = "" + number;
+        println(_output1);
+        free(_output1);
+    }
     println(io_str_to_int(number));
 
     var joined:string = "native" + " backend";
     println(joined);
     free(joined);
 
-    var allocation:*int = malloc(8);
+    var allocation:*int = reserve(int);
     *allocation = 77;
     println(*allocation);
     free(allocation);

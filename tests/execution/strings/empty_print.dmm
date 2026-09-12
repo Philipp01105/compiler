@@ -1,7 +1,7 @@
 import <stdlib>
 
 func main() -> void {
-    print();
+    print("");
     println("");
     println("done");
 }

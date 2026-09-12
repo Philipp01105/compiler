@@ -1,0 +1,3 @@
+const first:int = second;
+const second:int = first;
+func main() -> void {}
