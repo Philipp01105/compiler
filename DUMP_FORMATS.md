@@ -30,6 +30,11 @@ Declarations, parameters, fields, enum variants, statements, expressions,
 resolved types, stable semantic symbol IDs, operators, folded constants, type operands, and source
 spans are included. A dash denotes an absent optional value.
 
+Generic parameter/bound records and specialization identities are explicit. Type
+arguments appear recursively in type spellings. Trait/implementation methods retain
+their source ownership; enum payload and match-arm/binding records describe the new
+nodes. Template declarations remain visible in AST dumps but are absent from IR.
+
 ## `dmm-ir-v3`
 
 The IR dump lists interned types and aggregate definitions before functions.

@@ -33,7 +33,7 @@ string          = '"', { escape | string-byte }, '"' ;
 keyword         = "func" | "var" | "return" | "for" | "if" | "else"
                 | "while" | "const" | "break" | "continue"
                 | "struct" | "enum" | "import" | "static" | "reserve"
-                | "free" ;
+                | "free" | "trait" | "impl" | "match" ;
 
 primitive-type  = "int" | "char" | "byte" | "bit"
                 | "float" | "double" | "string" | "void" ;
@@ -51,7 +51,7 @@ top-level-declaration
                 | function-declaration
                 | struct-declaration
                 | enum-declaration
-                | constant-declaration ;
+                | constant-declaration | trait-declaration | impl-declaration ;
 
 import-declaration
                 = "import", (import-entry | "(", {import-entry}, ")") ;
@@ -60,13 +60,16 @@ import-path     = import-part, { import-part } ;
 import-part     = identifier | integer | "." | "/" | "-" ;
 
 function-declaration
-                = "func", identifier, "(", [parameter-list], ")",
+                = "func", identifier, [generic-parameters], "(", [parameter-list], ")",
                   "->", return-type, block ;
 parameter-list  = parameter, { ",", parameter } ;
 parameter       = identifier, ":", type ;
 return-type     = type ;
-type            = {"*"}, (primitive-type | identifier | "(", type, ")"),
+type            = {"*"}, (primitive-type | identifier, [type-arguments] | "(", type, ")"),
                   ["[", [integer | identifier], "]"] ;
+type-arguments  = "<", type, {",", type}, ">" ;
+generic-parameters = "<", generic-parameter, {",", generic-parameter}, ">" ;
+generic-parameter = identifier, [":", identifier, {"+", identifier}] ;
 constant-declaration
                 = "const", identifier, [":", type], "=", expression, ";" ;
 ```
@@ -75,17 +78,21 @@ Struct and enum members use the same function and variable declaration forms acc
 
 ```ebnf
 struct-declaration
-                = "struct", identifier, "{", { struct-member }, "}" ;
+                = "struct", identifier, [generic-parameters], "{", { struct-member }, "}" ;
 struct-member   = field-declaration | ["static"], function-declaration ;
 field-declaration
                 = "var", identifier, ":", type, ";" ;
 
 enum-declaration
-                = "enum", identifier, ["(", enum-field-list, ")"],
+                = "enum", identifier, [generic-parameters], ["(", enum-field-list, ")"],
                   "{", enum-value, { ",", enum-value }, [","], "}" ;
 enum-field-list = enum-field, { ",", enum-field } ;
 enum-field      = identifier, ":", type ;
-enum-value      = identifier, ["(", [enum-argument-list], ")"] ;
+enum-value      = identifier, ["(", [enum-argument-list | type-list], ")"] ;
+type-list       = type, {",", type} ;
+trait-declaration = "trait", identifier, "{", {trait-method}, "}" ;
+trait-method    = "func", identifier, "(", [parameter-list], ")", "->", type, ";" ;
+impl-declaration = "impl", identifier, "for", type, "{", {function-declaration}, "}" ;
 enum-argument-list
                 = enum-argument, { ",", enum-argument } ;
 enum-argument   = integer | floating | character | string
@@ -93,7 +100,9 @@ enum-argument   = integer | floating | character | string
 ```
 
 Enum field and member names are unique. Each value supplies exactly one
-compatible argument for every declared field.
+compatible argument for every declared field. Without header fields, variant parentheses
+contain payload types rather than constant arguments. Generic nominal names followed
+by `.variant` accept type arguments in constructor expressions.
 
 ## Statements
 
@@ -110,6 +119,7 @@ statement       = block
                 | return-statement
                 | break-statement
                 | continue-statement
+                | match-statement
                 | constant-declaration ;
 
 variable-declaration
@@ -136,6 +146,9 @@ for-update      = lvalue, assignment-operator, expression
 return-statement = "return", [expression], ";" ;
 break-statement  = "break", ";" ;
 continue-statement = "continue", ";" ;
+match-statement = "match", "(", expression, ")", "{", {match-arm}, "}" ;
+match-arm       = (identifier, ["(", [identifier, {",", identifier}], ")"] | "_"),
+                  "=>", statement ;
 ```
 
 ## Expressions

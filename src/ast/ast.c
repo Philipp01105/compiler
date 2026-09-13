@@ -71,6 +71,8 @@ const char *ast_declaration_kind_name(AstDeclarationKind kind) {
         case AST_DECL_ENUM: return "enum";
         case AST_DECL_FUNCTION: return "function";
         case AST_DECL_CONSTANT: return "constant";
+        case AST_DECL_TRAIT: return "trait";
+        case AST_DECL_IMPL: return "impl";
         case AST_DECL_INVALID: return "invalid";
     }
     return "invalid";
@@ -80,11 +82,18 @@ static int valid_token(const AstProgram *program, size_t token) {
     return token != AST_TOKEN_NONE && token < program->token_count;
 }
 
-static int valid_type(const AstProgram *program, const AstType *type, int allow_inferred) {
+static int valid_type_depth(const AstProgram *program, const AstType *type, int allow_inferred, unsigned depth) {
+    if (depth > 512) return 0;
     if (type->kind == AST_TYPE_INFERRED) return allow_inferred;
     if (type->kind != AST_TYPE_NAMED || !valid_token(program, type->name_token)) return 0;
     if (type->is_array && !valid_token(program, type->array_length_token)) return 0;
+    unsigned count=0;
+    for (const AstTypeArgument *argument=type->arguments; argument; argument=argument->next)
+        if (++count > 16 || !valid_type_depth(program,&argument->type,0,depth+1)) return 0;
     return 1;
+}
+static int valid_type(const AstProgram *program, const AstType *type, int allow_inferred) {
+    return valid_type_depth(program,type,allow_inferred,0);
 }
 
 static int valid_expression(const AstProgram *program, const AstExpression *expression) {
@@ -105,6 +114,7 @@ static int valid_expression(const AstProgram *program, const AstExpression *expr
             if (!valid_expression(program, expression->left) ||
                 !valid_expression(program, expression->right)) return 0;
             break;
+        case AST_EXPR_ENUM_CONSTRUCT:
         case AST_EXPR_CALL:
             if (!valid_expression(program, expression->left)) return 0;
             break;
@@ -176,6 +186,14 @@ static int valid_statement(const AstProgram *program, const AstStatement *statem
             case AST_STMT_RETURN:
                 if (statement->value != NULL && !valid_expression(program, statement->value)) return 0;
                 break;
+            case AST_STMT_MATCH:
+                if (!valid_expression(program,statement->value) || !statement->match_arms) return 0;
+                for (const AstMatchArm *a=statement->match_arms; a; a=a->next) {
+                    if (!valid_token(program,a->variant_token) || !valid_statement(program,a->body)) return 0;
+                    for (const AstParameter *p=a->bindings; p; p=p->next)
+                        if (!valid_token(program,p->name_token)) return 0;
+                }
+                break;
             case AST_STMT_BREAK:
             case AST_STMT_CONTINUE:
                 break;
@@ -241,6 +259,13 @@ static int valid_declarations(const AstProgram *program) {
                      argument != NULL; argument = argument->next)
                     if (!valid_expression(program, argument)) return 0;
             }
+        } else if (declaration->kind == AST_DECL_TRAIT || declaration->kind == AST_DECL_IMPL) {
+            if (!valid_token(program,declaration->name_token)) return 0;
+            const AstDeclarationNode *methods=declaration->kind == AST_DECL_TRAIT
+                ? declaration->as.trait_decl.methods : declaration->as.impl_decl.methods;
+            if (declaration->kind == AST_DECL_IMPL && !valid_type(program,&declaration->as.impl_decl.for_type,0)) return 0;
+            for (; methods; methods=methods->next)
+                if (!valid_function_declaration(program,methods)) return 0;
         } else {
             return 0;
         }

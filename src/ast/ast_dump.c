@@ -39,14 +39,14 @@ static const char *data_type_name(DataType type) {
 
 static const char *expression_name(AstExpressionKind kind) {
     static const char *names[] = {"error", "literal", "name", "unary", "binary", "call",
-        "index", "member", "slice-length", "reserve", "cast", "free"};
-    return kind >= AST_EXPR_ERROR && kind <= AST_EXPR_FREE ? names[kind] : "invalid";
+        "index", "member", "slice-length", "reserve", "cast", "free", "enum-construct"};
+    return kind >= AST_EXPR_ERROR && kind <= AST_EXPR_ENUM_CONSTRUCT ? names[kind] : "invalid";
 }
 
 static const char *statement_name(AstStatementKind kind) {
     static const char *names[] = {"error", "block", "variable", "expression", "assignment",
-        "if", "while", "for", "return", "break", "continue"};
-    return kind >= AST_STMT_ERROR && kind <= AST_STMT_CONTINUE ? names[kind] : "invalid";
+        "if", "while", "for", "return", "break", "continue", "match"};
+    return kind >= AST_STMT_ERROR && kind <= AST_STMT_MATCH ? names[kind] : "invalid";
 }
 
 static const char *operator_name(TokenType type) {
@@ -86,6 +86,14 @@ static int dump_type(FILE *output, const AstProgram *program, const AstType *typ
     for (unsigned i = 0; i < type->pointer_depth; i++)
         if (fputc('*', output) == EOF) return 0;
     if (fputs(ast_program_lexeme(program, type->name_token), output) == EOF) return 0;
+    if (type->arguments) {
+        if (fputc('<',output) == EOF) return 0;
+        for (const AstTypeArgument *argument=type->arguments; argument; argument=argument->next) {
+            if (!dump_type(output,program,&argument->type)) return 0;
+            if (argument->next && fputc(',',output) == EOF) return 0;
+        }
+        if (fputc('>',output) == EOF) return 0;
+    }
     if (type->is_array && fprintf(output, "[%s]",
                                   ast_program_lexeme(program, type->array_length_token)) < 0) return 0;
     if (type->is_slice && fputs("[]", output) == EOF) return 0;
@@ -162,6 +170,15 @@ static int dump_statement(FILE *output, const AstProgram *program,
         (fputs(" operator=", output) == EOF ||
          !quoted(output, operator_name(statement->assignment_operator)))) return 0;
     if (fputc('\n', output) == EOF) return 0;
+    for (const AstMatchArm *a=statement->match_arms; a; a=a->next) {
+        if (!indent(output,depth+1) || fputs("pattern=",output) == EOF ||
+            !quoted(output,ast_program_lexeme(program,a->variant_token)) || fputc('\n',output) == EOF) return 0;
+        for (const AstParameter *binding=a->bindings; binding; binding=binding->next)
+            if (!indent(output,depth+2) || fputs("binding=",output) == EOF ||
+                !quoted(output,ast_program_lexeme(program,binding->name_token)) ||
+                fputs(" type=",output) == EOF || !dump_type(output,program,&binding->type) || fputc('\n',output) == EOF) return 0;
+        if (!dump_statement(output,program,a->body,depth+2,"arm")) return 0;
+    }
     return dump_statement(output, program, statement->initializer, depth + 1, "initializer") &&
            dump_expression(output, program, statement->expression, depth + 1, "expression") &&
            dump_expression(output, program, statement->value, depth + 1, "value") &&
@@ -212,6 +229,18 @@ static int dump_declaration(FILE *output, const AstProgram *program,
         }
         if (fputs("]", output) == EOF) return 0;
     }
+    if (declaration->generic_parameters) {
+        if (fputs(" generics=[",output) == EOF) return 0;
+        for (const AstGenericParameter *g=declaration->generic_parameters; g; g=g->next) {
+            if (g != declaration->generic_parameters && fputc(',',output) == EOF) return 0;
+            if (!quoted(output,ast_program_lexeme(program,g->name_token))) return 0;
+            for (const AstTraitBound *b=g->bounds; b; b=b->next)
+                if (fputc(':',output) == EOF || !quoted(output,ast_program_lexeme(program,b->name_token))) return 0;
+        }
+        if (fputc(']',output) == EOF) return 0;
+    }
+    if (declaration->specialization_identity &&
+        (fputs(" specialization=",output) == EOF || !quoted(output,declaration->specialization_identity))) return 0;
     if (fputc('\n', output) == EOF) return 0;
     if (declaration->kind == AST_DECL_FUNCTION)
         return dump_function(output, program, declaration, depth + 1);
@@ -221,6 +250,16 @@ static int dump_declaration(FILE *output, const AstProgram *program,
             fputc('\n', output) == EOF) return 0;
         return dump_expression(output, program, declaration->as.constant.value,
                                depth + 1, "value");
+    }
+    if (declaration->kind == AST_DECL_TRAIT || declaration->kind == AST_DECL_IMPL) {
+        const AstDeclarationNode *method=declaration->kind == AST_DECL_TRAIT
+            ? declaration->as.trait_decl.methods : declaration->as.impl_decl.methods;
+        if (declaration->kind == AST_DECL_IMPL &&
+            (!indent(output,depth+1) || fputs("for=",output) == EOF ||
+             !dump_type(output,program,&declaration->as.impl_decl.for_type) || fputc('\n',output) == EOF)) return 0;
+        for (; method; method=method->next)
+            if (!dump_declaration(output,program,method,depth+1)) return 0;
+        return 1;
     }
     const AstField *fields = declaration->kind == AST_DECL_STRUCT ? declaration->as.struct_decl.fields :
                              declaration->kind == AST_DECL_ENUM ? declaration->as.enum_decl.fields : NULL;
@@ -242,6 +281,10 @@ static int dump_declaration(FILE *output, const AstProgram *program,
                 !symbol_field(output, value->resolved_symbol_id) || fputs(" span=", output) == EOF ||
                 !span(output, value->span) || fputc('\n', output) == EOF ||
                 !dump_expression_list(output, program, value->arguments, depth + 2, "argument")) return 0;
+            for (const AstTypeArgument *p=value->payload_types; p; p=p->next)
+                if (!indent(output,depth+2) || fputs("payload=",output) == EOF ||
+                    !dump_type(output,program,&p->type) || fputc('\n',output) == EOF) return 0;
+
         }
     return 1;
 }

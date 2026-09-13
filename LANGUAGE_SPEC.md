@@ -4,7 +4,7 @@ Status: experimental. This document defines the tested source-language contract;
 
 ## Source and declarations
 
-A source file is UTF-8 text containing imports, structs, enums, and functions. Execution begins in a parameterless `main`, whose return type is `void` or `int`. Statements end with `;`. `//` introduces a line comment.
+A source file is UTF-8 text containing imports, structs, enums, traits, implementations, constants, and functions. Execution begins in a parameterless `main`, whose return type is `void` or `int`. Statements end with `;`. `//` introduces a line comment.
 
 Imports use `import "relative/path.dmm"` or `import <relative/path.dmm>`, individually or grouped as `import ( path ... )`. Directory imports load only `package.dmm` and its explicit imports. Canonical files are loaded once; unlisted files are never scanned.
 
@@ -37,10 +37,52 @@ Struct arguments, assignments, and return values have by-value semantics,
 including nested structs and fixed arrays contained in structs. Struct types are
 nominal and cannot be assigned merely because their layouts match.
 
-Enum member names must be unique within an enum. Enum values are first-class:
+Legacy enum member names must be unique within an enum. Legacy enum values are first-class:
 they can be stored, compared for equality, passed, and returned. Variant fields
 are scalar primitive types initialized by compile-time literals and can be read
 through member access. Unknown enum members are a compile error.
+
+## Compile-time abstraction and sum types
+
+Functions, structs and enums accept type parameters: `func identity<T>(value:T) -> T`,
+`struct Pair<A,B>`, and `enum Option<T> { Some(T), None, }`. Calls infer one consistent
+substitution from argument types; the expected return type does not infer missing
+arguments. Repeated occurrences of a parameter require the same concrete type.
+Generic nominal types are invariant, including pointer levels, fixed-array lengths,
+slice elements, and nested nominal arguments. An otherwise-equivalent concrete exact
+overload wins over a generic overload. Ambiguous substitutions are rejected.
+
+The compiler caches concrete specializations, with identities derived from the
+declaration and its complete type arguments. Each module permits at most 256
+specializations, declarations at most 16 type parameters, and aggregate instantiation
+nesting at most 64 levels. Encoded specialization identities must fit 4095 bytes.
+By-value recursive layouts require a pointer to break the
+cycle. Only concrete specializations reach typed IR and native emission.
+
+`trait Printable { func toString() -> string; }` declares signatures;
+`impl Printable for Person { func toString() -> string { return name; } }`
+provides an explicit implementation on a nominal struct. `Self` in signatures denotes
+that struct. Bounds such as `T:Printable + Equal` require every named implementation;
+matching methods alone do not satisfy a bound. Calls dispatch statically after
+specialization. Missing methods, signature mismatches and conflicting implementations
+are errors. Trait inheritance, associated types, default methods and trait objects
+are not supported.
+
+A sum enum gives each variant its own payload types. Construct values with
+`Option<int>.Some(42)` or `Option<int>.None`. The representation stores a tag followed
+by storage for the largest variant. Assignment, arguments and returns copy the complete
+aggregate; copying pointers or strings retains explicit ownership without destruction.
+Sum values do not support implicit equality or direct payload member access.
+
+`match (value) { Some(v) => return v; None => return fallback; }` is a statement.
+Variant names are relative to the scrutinee enum. Bindings have the exact payload
+types and are scoped to their arm. Every variant must be covered unless `_` provides
+a wildcard arm. Duplicate variants, wrong binding counts and unreachable arms are
+errors. Payload extraction is emitted only in a branch guarded by the corresponding
+tag test; typed IR verifies that guard. An invalid runtime tag traps.
+
+`<stdlib>` exports `Option<T>`, `Result<T,E>`, `Cell<T>` with `get`/`set` methods,
+`unwrapOr`, `Printable`, `Equal`, and `printValue`. See `tests/execution/generics` for executable examples.
 
 Functions declared inside a struct are invoked as instance methods, while
 `static func` members are invoked on the struct type. Top-level and method link
