@@ -30,16 +30,18 @@ void print_usage(const char *program_name) {
     printf("  --tokens       Show generated token stream\n");
     printf("  --debug        Enable debug output during parsing\n");
     printf("  --formatError  Output errors in JSON format\n");
-    printf("  --ide          Recover syntax for editor analysis; requires --dump-ast, emits no assembly\n");
+    printf("  --ide          Recover syntax for editor analysis; requires --dump-ast, emits no program\n");
     printf("  --ide-buffer FILE  Read editor contents from FILE while keeping the source path/imports (--ide only)\n");
-    printf("  --emit=MODE    Output asm, obj, or exe (default: asm); executable linking is internal\n");
-    printf("  --syntax=MODE  Assembly syntax: att or intel (default: intel)\n");
+    printf("  --emit=MODE    Output exe (default), obj, or asm; executable linking is internal\n");
+    printf("  -c             Emit a native object file (same as --emit=obj)\n");
+    printf("  -S             Emit assembly (same as --emit=asm)\n");
+    printf("  --syntax=MODE  Assembly printing syntax: att or intel (default: intel)\n");
     printf("  --target=FMT   Target format: elf or coff (default: auto-detect)\n");
     printf("  --dump-ast FILE Write the stable dmm-ast-v2 dump to FILE\n");
     printf("  --dump-ir FILE  Write the stable dmm-ir-v2 dump to FILE\n");
     printf("  --source-map FILE Write the instruction source map to FILE\n");
-    printf("  -o FILE        Write assembly to FILE\n");
-    printf("  --deterministic Omit timestamps from generated assembly\n");
+    printf("  -o FILE        Write the selected output to FILE\n");
+    printf("  --deterministic Produce reproducible output\n");
     printf("  --help         Show this help message\n");
     printf("  --version      Show compiler version\n");
     printf("\n");
@@ -47,8 +49,8 @@ void print_usage(const char *program_name) {
     printf("  %s program.txt\n", program_name);
     printf("  %s --tokens program.txt\n", program_name);
     printf("  %s --debug program.txt\n", program_name);
-    printf("  %s --syntax=intel --target=coff program.txt\n", program_name);
-    printf("  %s --syntax=att --target=elf program.txt\n", program_name);
+    printf("  %s -c --target=coff program.dmm -o program.obj\n", program_name);
+    printf("  %s -S --syntax=att --target=elf program.dmm\n", program_name);
     printf("\n");
 }
 
@@ -129,7 +131,8 @@ static int write_ir_dump(FILE *output, const void *value) {
 }
 
 int main(int argc, char *argv[]) {
-    BackendEmission emission = BACKEND_ASSEMBLY;
+    BackendEmission emission = BACKEND_EXECUTABLE;
+    int emission_requested = 0;
     int show_tokens = 0;
     int debug_mode = 0;
     int format_error = 0;
@@ -201,7 +204,11 @@ int main(int argc, char *argv[]) {
             if (strcmp(option, "--dump-ast") == 0) ast_dump_path = argv[i];
             else if (strcmp(option, "--dump-ir") == 0) ir_dump_path = argv[i];
             else source_map_path = argv[i];
+        } else if (!strcmp(argv[i], "-c") || !strcmp(argv[i], "-S")) {
+            emission = !strcmp(argv[i], "-c") ? BACKEND_OBJECT : BACKEND_ASSEMBLY;
+            emission_requested = 1;
         } else if (strncmp(argv[i], "--emit=", 7) == 0) {
+            emission_requested = 1;
             const char *mode=argv[i]+7;
             if (!strcmp(mode,"asm")) emission=BACKEND_ASSEMBLY;
             else if (!strcmp(mode,"obj")) emission=BACKEND_OBJECT;
@@ -297,7 +304,7 @@ int main(int argc, char *argv[]) {
     }
 
     if ((ide_buffer != NULL && !ide_mode) || (ide_mode && (ast_dump_path == NULL || requested_output != NULL || ir_dump_path != NULL ||
-                    source_map_path != NULL || debug_mode || show_tokens || emission != BACKEND_ASSEMBLY ||
+                    source_map_path != NULL || debug_mode || show_tokens || (emission_requested && emission != BACKEND_ASSEMBLY) ||
                     output_conflicts_with_source(source_file, ast_dump_path) ||
                     (ide_buffer != NULL && output_conflicts_with_source(ide_buffer, ast_dump_path))))) {
         error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,

@@ -13,13 +13,13 @@ set(ir_second "${OUTPUT_DIR}/second.ir")
 set(map_first "${OUTPUT_DIR}/first.map")
 set(map_second "${OUTPUT_DIR}/second.map")
 file(WRITE "${source}" "func main() -> int { var result:int=1; return result; }")
-execute_process(COMMAND "${COMPILER}" --deterministic
+execute_process(COMMAND "${COMPILER}" --emit=asm --deterministic
     --dump-ast "${ast_first}" --dump-ir "${ir_first}" --source-map "${map_first}"
     -o "${first}" "${source}" RESULT_VARIABLE first_result)
-execute_process(COMMAND "${COMPILER}" "${source}" --deterministic
+execute_process(COMMAND "${COMPILER}" --emit=asm "${source}" --deterministic
     --dump-ast "${ast_second}" --dump-ir "${ir_second}" --source-map "${map_second}"
     -o "${second}" RESULT_VARIABLE second_result)
-execute_process(COMMAND "${COMPILER}" --version RESULT_VARIABLE version_result OUTPUT_VARIABLE version)
+execute_process(COMMAND "${COMPILER}" --emit=asm --version RESULT_VARIABLE version_result OUTPUT_VARIABLE version)
 if(NOT first_result EQUAL 0 OR NOT second_result EQUAL 0 OR NOT version_result EQUAL 0)
     message(FATAL_ERROR "CLI command failed")
 endif()
@@ -51,7 +51,7 @@ if(NOT ast_header EQUAL 0 OR ast_declaration LESS 0 OR ast_statement LESS 0 OR
     message(FATAL_ERROR "Stable dump/source-map schema is incomplete")
 endif()
 file(SHA256 "${source}" source_hash)
-execute_process(COMMAND "${COMPILER}" -o "${source}" "${source}"
+execute_process(COMMAND "${COMPILER}" --emit=asm -o "${source}" "${source}"
     RESULT_VARIABLE conflict_result ERROR_VARIABLE conflict_error)
 file(SHA256 "${source}" protected_hash)
 if(conflict_result EQUAL 0 OR NOT source_hash STREQUAL protected_hash)
@@ -63,7 +63,7 @@ function(check_alias first second)
     file(WRITE "${source}" "func main() -> int { return 0; }")
     file(WRITE "${first}" "preserve-artifact")
     file(SHA256 "${first}" before)
-    execute_process(COMMAND "${COMPILER}" --formatError -o "${first}" --dump-ast "${second}" "${source}"
+    execute_process(COMMAND "${COMPILER}" --emit=asm --formatError -o "${first}" --dump-ast "${second}" "${source}"
         RESULT_VARIABLE result ERROR_VARIABLE diagnostic)
     file(SHA256 "${first}" after)
     string(JSON code GET "${diagnostic}" errors 0 errorCode)
@@ -77,7 +77,7 @@ check_alias("${OUTPUT_DIR}/alias.s" "${OUTPUT_DIR}/alias-dir/../alias.s")
 if(WIN32)
     check_alias("${OUTPUT_DIR}/alias.s" "${OUTPUT_DIR}/ALIAS.S")
 endif()
-execute_process(COMMAND "${COMPILER}" --formatError
+execute_process(COMMAND "${COMPILER}" --emit=asm --formatError
     --dump-ast "${OUTPUT_DIR}/future.ast" --dump-ir "${OUTPUT_DIR}/alias-dir/../future.ast" "${source}"
     RESULT_VARIABLE result ERROR_VARIABLE diagnostic)
 string(JSON code GET "${diagnostic}" errors 0 errorCode)
@@ -88,7 +88,7 @@ execute_process(COMMAND "${CMAKE_COMMAND}" -E create_hardlink "${source}" "${OUT
     RESULT_VARIABLE link_result ERROR_VARIABLE link_error)
 if(link_result EQUAL 0)
     file(SHA256 "${source}" before)
-    execute_process(COMMAND "${COMPILER}" --formatError -o "${OUTPUT_DIR}/source-link.dmm" "${source}"
+    execute_process(COMMAND "${COMPILER}" --emit=asm --formatError -o "${OUTPUT_DIR}/source-link.dmm" "${source}"
         RESULT_VARIABLE result ERROR_VARIABLE diagnostic)
     file(SHA256 "${source}" after)
     string(JSON code GET "${diagnostic}" errors 0 errorCode)
@@ -102,7 +102,7 @@ execute_process(COMMAND "${CMAKE_COMMAND}" -E create_symlink "${OUTPUT_DIR}/alia
     RESULT_VARIABLE link_result ERROR_VARIABLE link_error)
 if(link_result EQUAL 0)
     # Neither output exists; canonicalization must resolve their shared parent.
-    execute_process(COMMAND "${COMPILER}" --formatError
+    execute_process(COMMAND "${COMPILER}" --emit=asm --formatError
         -o "${OUTPUT_DIR}/alias-dir/future.s" --dump-ast "${OUTPUT_DIR}/directory-link/future.s" "${source}"
         RESULT_VARIABLE result ERROR_VARIABLE diagnostic)
     string(JSON code GET "${diagnostic}" errors 0 errorCode)
@@ -122,7 +122,7 @@ file(WRITE "${source}" "import \"imported.dmm\"\nfunc main() -> int { return imp
 foreach(protected "${source}" "${imported}" "${nested}")
     file(SHA256 "${protected}" before)
     foreach(option -o --dump-ast --dump-ir --source-map)
-        execute_process(COMMAND "${COMPILER}" --formatError "${option}" "${protected}" "${source}"
+        execute_process(COMMAND "${COMPILER}" --emit=asm --formatError "${option}" "${protected}" "${source}"
             RESULT_VARIABLE result ERROR_VARIABLE diagnostic)
         file(SHA256 "${protected}" after)
         string(JSON code GET "${diagnostic}" errors 0 errorCode)
@@ -130,7 +130,7 @@ foreach(protected "${source}" "${imported}" "${nested}")
             message(FATAL_ERROR "${option} did not protect ${protected}: ${diagnostic}")
         endif()
     endforeach()
-    execute_process(COMMAND "${COMPILER}" --ide --formatError --dump-ast "${protected}" "${source}"
+    execute_process(COMMAND "${COMPILER}" --emit=asm --ide --formatError --dump-ast "${protected}" "${source}"
         RESULT_VARIABLE result ERROR_VARIABLE diagnostic)
     file(SHA256 "${protected}" after)
     string(JSON code GET "${diagnostic}" errors 0 errorCode)
@@ -143,7 +143,7 @@ endforeach()
 file(WRITE "${source}.s" "func importedAssemblyPath() -> int { return 9; }")
 file(WRITE "${source}" "import \"input.dmm.s\"\nfunc main() -> int { return importedAssemblyPath(); }")
 file(SHA256 "${source}.s" before)
-execute_process(COMMAND "${COMPILER}" --formatError "${source}"
+execute_process(COMMAND "${COMPILER}" --emit=asm --formatError "${source}"
     RESULT_VARIABLE result ERROR_VARIABLE diagnostic)
 file(SHA256 "${source}.s" after)
 string(JSON code GET "${diagnostic}" errors 0 errorCode)
@@ -161,14 +161,14 @@ foreach(mode normal ide)
     else()
         set(options "")
     endif()
-    execute_process(COMMAND "${COMPILER}" --formatError ${options} "${source}"
+    execute_process(COMMAND "${COMPILER}" --emit=asm --formatError ${options} "${source}"
         RESULT_VARIABLE result ERROR_VARIABLE diagnostic)
     file(SHA256 "${source}.s" after)
     if(result EQUAL 0 OR NOT before STREQUAL after)
         message(FATAL_ERROR "Malformed loaded source was deleted during ${mode}: ${diagnostic}")
     endif()
 endforeach()
-execute_process(COMMAND "${COMPILER}" --formatError -o "${source}.s" "${source}"
+execute_process(COMMAND "${COMPILER}" --emit=asm --formatError -o "${source}.s" "${source}"
     RESULT_VARIABLE result ERROR_VARIABLE diagnostic)
 file(SHA256 "${source}.s" after)
 string(FIND "${diagnostic}" "C102" collision)

@@ -44,17 +44,17 @@ Enable warnings as errors with `-DDMM_STRICT_WARNINGS=ON`.
 Emit and internally link a native executable:
 
 ```sh
-./build/compiler --emit=exe tests/execution/basics/hello.dmm -o hello
+./build/compiler tests/execution/basics/hello.dmm -o hello
 ./hello
 ```
 
-On Windows use `-o hello.exe`. Use `--emit=obj` for a direct native object.
+On Windows use `-o hello.exe`. Use `-c` or `--emit=obj` for a direct native object. Executable output is the default.
 See [NATIVE_BACKEND.md](NATIVE_BACKEND.md) for target formats and linking details.
 
-The default assembly mode remains available:
+Assembly output is available with `-S` or `--emit=asm`:
 
 ```sh
-./build/compiler tests/execution/basics/hello.dmm
+./build/compiler -S tests/execution/basics/hello.dmm
 gcc -nostdlib -no-pie -Wl,-e,__dmm_entry tests/execution/basics/hello.dmm.s -o hello
 ./hello
 ```
@@ -70,7 +70,9 @@ test harnesses; emitted runtime instructions are not sanitizer-instrumented.
 Useful options:
 
 ```text
---emit=asm|obj|exe
+--emit=exe|obj|asm (default: exe)
+-c                  Native object output
+-S                  Assembly output
 --syntax=intel|att
 --target=elf|coff
 --formatError

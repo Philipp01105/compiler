@@ -18,7 +18,7 @@ file(WRITE "${OUTPUT_DIR}/main.dmm"
 foreach(syntax intel att)
     set(assembly "${OUTPUT_DIR}/main_${syntax}.s")
     set(program "${OUTPUT_DIR}/main_${syntax}.exe")
-    execute_process(COMMAND "${COMPILER}" --deterministic "--syntax=${syntax}" -o "${assembly}" "${OUTPUT_DIR}/main.dmm"
+    execute_process(COMMAND "${COMPILER}" --emit=asm --deterministic "--syntax=${syntax}" -o "${assembly}" "${OUTPUT_DIR}/main.dmm"
         RESULT_VARIABLE result ERROR_VARIABLE errors)
     if(NOT result EQUAL 0)
         message(FATAL_ERROR "Import compile failed (${syntax}): ${errors}")
@@ -45,7 +45,7 @@ file(WRITE "${OUTPUT_DIR}/cycle_main.dmm"
 foreach(syntax intel att)
     set(assembly "${OUTPUT_DIR}/cycle_${syntax}.s")
     set(program "${OUTPUT_DIR}/cycle_${syntax}.exe")
-    execute_process(COMMAND "${COMPILER}" --deterministic "--syntax=${syntax}" -o "${assembly}" "${OUTPUT_DIR}/cycle_main.dmm"
+    execute_process(COMMAND "${COMPILER}" --emit=asm --deterministic "--syntax=${syntax}" -o "${assembly}" "${OUTPUT_DIR}/cycle_main.dmm"
         RESULT_VARIABLE result ERROR_VARIABLE errors TIMEOUT 30)
     if(NOT result EQUAL 0)
         message(FATAL_ERROR "Cyclic import compile failed (${syntax}): ${errors}")
@@ -64,7 +64,7 @@ foreach(syntax intel att)
 endforeach()
 
 file(WRITE "${OUTPUT_DIR}/missing.dmm" "import \"does-not-exist.dmm\"\nimport <stdlib>\nfunc main() -> void {}\n")
-execute_process(COMMAND "${COMPILER}" --formatError "${OUTPUT_DIR}/missing.dmm"
+execute_process(COMMAND "${COMPILER}" --emit=asm --formatError "${OUTPUT_DIR}/missing.dmm"
     RESULT_VARIABLE result ERROR_VARIABLE diagnostics)
 if(result EQUAL 0 OR NOT diagnostics MATCHES "Failed to open import file")
     message(FATAL_ERROR "Missing import was not diagnosed: ${diagnostics}")
@@ -73,7 +73,7 @@ endif()
 file(WRITE "${OUTPUT_DIR}/broken_import.dmm" "func broken( -> int { return 1; }\n")
 file(WRITE "${OUTPUT_DIR}/imports_broken.dmm"
     "import \"broken_import.dmm\"\nimport <stdlib>\nfunc main() -> void {}\n")
-execute_process(COMMAND "${COMPILER}" --formatError "${OUTPUT_DIR}/imports_broken.dmm"
+execute_process(COMMAND "${COMPILER}" --emit=asm --formatError "${OUTPUT_DIR}/imports_broken.dmm"
     RESULT_VARIABLE result ERROR_VARIABLE diagnostics TIMEOUT 30)
 if(result EQUAL 0 OR NOT diagnostics MATCHES "errors")
     message(FATAL_ERROR "Broken imported source was not rejected: ${diagnostics}")
@@ -90,7 +90,7 @@ file(WRITE "${OUTPUT_DIR}/package_main.dmm"
 foreach(syntax intel att)
     set(assembly "${OUTPUT_DIR}/package_${syntax}.s")
     set(program "${OUTPUT_DIR}/package_${syntax}.exe")
-    execute_process(COMMAND "${COMPILER}" "--syntax=${syntax}" -o "${assembly}" "${OUTPUT_DIR}/package_main.dmm"
+    execute_process(COMMAND "${COMPILER}" --emit=asm "--syntax=${syntax}" -o "${assembly}" "${OUTPUT_DIR}/package_main.dmm"
         RESULT_VARIABLE result ERROR_VARIABLE errors)
     if(NOT result EQUAL 0)
         message(FATAL_ERROR "Package import failed (${syntax}): ${errors}")
@@ -107,7 +107,7 @@ foreach(syntax intel att)
 endforeach()
 file(WRITE "${OUTPUT_DIR}/missing_manifest/api.dmm" "func optional() -> int { return 1; }\n")
 file(WRITE "${OUTPUT_DIR}/missing_package.dmm" "import \"missing_manifest\"\nfunc main() -> void {}\n")
-execute_process(COMMAND "${COMPILER}" "${OUTPUT_DIR}/missing_package.dmm"
+execute_process(COMMAND "${COMPILER}" --emit=asm "${OUTPUT_DIR}/missing_package.dmm"
     RESULT_VARIABLE result ERROR_VARIABLE diagnostics)
 if(result EQUAL 0 OR NOT diagnostics MATCHES "package.dmm")
     message(FATAL_ERROR "Missing package manifest was not diagnosed: ${diagnostics}")
@@ -125,7 +125,7 @@ file(WRITE "${OUTPUT_DIR}/constant_main.dmm"
 foreach(syntax intel att)
     set(assembly "${OUTPUT_DIR}/constants_${syntax}.s")
     set(program "${OUTPUT_DIR}/constants_${syntax}.exe")
-    execute_process(COMMAND "${COMPILER}" "--syntax=${syntax}" -o "${assembly}" "${OUTPUT_DIR}/constant_main.dmm"
+    execute_process(COMMAND "${COMPILER}" --emit=asm "--syntax=${syntax}" -o "${assembly}" "${OUTPUT_DIR}/constant_main.dmm"
         RESULT_VARIABLE result ERROR_VARIABLE errors)
     if(NOT result EQUAL 0)
         message(FATAL_ERROR "Imported constants failed (${syntax}): ${errors}")

@@ -3,7 +3,7 @@ file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 function(check_case name text expected_code expected_line expected_column expected_message)
     set(source "${OUTPUT_DIR}/${name}.dmm")
     file(WRITE "${source}" "${text}")
-    execute_process(COMMAND "${COMPILER}" --formatError -o "${OUTPUT_DIR}/result.s" "${source}"
+    execute_process(COMMAND "${COMPILER}" --emit=asm --formatError -o "${OUTPUT_DIR}/result.s" "${source}"
         RESULT_VARIABLE result ERROR_VARIABLE json ENCODING UTF-8 TIMEOUT 5)
     string(JSON code GET "${json}" errors 0 errorCode)
     string(JSON line GET "${json}" errors 0 line)
@@ -59,13 +59,13 @@ string(JSON omitted GET "${last_json}" summary suppressedErrorCount)
 if(NOT displayed EQUAL 12 OR NOT count EQUAL 12 OR NOT omitted EQUAL 0)
     message(FATAL_ERROR "Display limit/summary is incorrect: ${last_json}")
 endif()
-execute_process(COMMAND "${COMPILER}" -o "${OUTPUT_DIR}/result.s" "${OUTPUT_DIR}/limit.dmm"
+execute_process(COMMAND "${COMPILER}" --emit=asm -o "${OUTPUT_DIR}/result.s" "${OUTPUT_DIR}/limit.dmm"
     RESULT_VARIABLE result ERROR_VARIABLE human ENCODING UTF-8 TIMEOUT 5)
 if(NOT human MATCHES "2 additional errors omitted.*display limit: 10")
     message(FATAL_ERROR "Human display limit is missing its omission notice: ${human}")
 endif()
 file(WRITE "${OUTPUT_DIR}/valid.dmm" "func main() -> void {}")
-execute_process(COMMAND "${COMPILER}" --formatError -o "${OUTPUT_DIR}/absent/result.s" "${OUTPUT_DIR}/valid.dmm"
+execute_process(COMMAND "${COMPILER}" --emit=asm --formatError -o "${OUTPUT_DIR}/absent/result.s" "${OUTPUT_DIR}/valid.dmm"
     RESULT_VARIABLE result ERROR_VARIABLE json ENCODING UTF-8 TIMEOUT 5)
 string(JSON count LENGTH "${json}" errors)
 string(JSON code GET "${json}" errors 0 errorCode)
@@ -73,14 +73,14 @@ string(JSON message GET "${json}" errors 0 message)
 if(NOT result EQUAL 1 OR NOT count EQUAL 1 OR NOT code STREQUAL "G103" OR NOT message MATCHES "Could not open assembly output.*absent/result.s.*:")
     message(FATAL_ERROR "Output failure is missing path/reason or reported twice: ${json}")
 endif()
-execute_process(COMMAND "${COMPILER}" --formatError --dump-ast "${OUTPUT_DIR}/absent/result.ast" -o "${OUTPUT_DIR}/result.s" "${OUTPUT_DIR}/valid.dmm"
+execute_process(COMMAND "${COMPILER}" --emit=asm --formatError --dump-ast "${OUTPUT_DIR}/absent/result.ast" -o "${OUTPUT_DIR}/result.s" "${OUTPUT_DIR}/valid.dmm"
     RESULT_VARIABLE result ERROR_VARIABLE json ENCODING UTF-8 TIMEOUT 5)
 string(JSON code GET "${json}" errors 0 errorCode)
 string(JSON message GET "${json}" errors 0 message)
 if(NOT result EQUAL 1 OR NOT code STREQUAL "C106" OR NOT message MATCHES "absent/result.ast")
     message(FATAL_ERROR "Dump failure is missing its output path: ${json}")
 endif()
-execute_process(COMMAND "${COMPILER}" --formatError --source-map "${OUTPUT_DIR}/absent/result.map" -o "${OUTPUT_DIR}/result.s" "${OUTPUT_DIR}/valid.dmm"
+execute_process(COMMAND "${COMPILER}" --emit=asm --formatError --source-map "${OUTPUT_DIR}/absent/result.map" -o "${OUTPUT_DIR}/result.s" "${OUTPUT_DIR}/valid.dmm"
     RESULT_VARIABLE result ERROR_VARIABLE json ENCODING UTF-8 TIMEOUT 5)
 string(JSON count LENGTH "${json}" errors)
 string(JSON message GET "${json}" errors 0 message)

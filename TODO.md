@@ -54,6 +54,9 @@ parser/type-checker/emitter have been removed from the build and source tree.
 | P3       | New language features                   | Add globals, richer arrays, interfaces, and generics after the middle-end remains stable. |
 | P3       | Selfhosting | Broaden the language until its lexer, parser, semantic analysis, IR and backend can be implemented in DMM; keep the C compiler as bootstrap until staged builds agree. |
 
+- [x] Executables are the default CLI output; `-c` selects objects and `-S`
+  selects assembly. Help, examples and assembly-specific tests use explicit modes.
+
 ## Standalone runtime migration and selfhosting
 
 The immediate goal is independence of generated programs from libc, Windows CRT,

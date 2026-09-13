@@ -9,10 +9,10 @@ set(ast "${OUTPUT_DIR}/fixture.ast")
 set(ir "${OUTPUT_DIR}/fixture.ir")
 set(intel_map "${OUTPUT_DIR}/fixture-intel.map")
 set(att_map "${OUTPUT_DIR}/fixture-att.map")
-execute_process(COMMAND "${COMPILER}" --deterministic --syntax=intel
+execute_process(COMMAND "${COMPILER}" --emit=asm --deterministic --syntax=intel
     --dump-ast "${ast}" --dump-ir "${ir}" --source-map "${intel_map}"
     -o "${OUTPUT_DIR}/fixture-intel.s" "${fixture}" RESULT_VARIABLE intel_result)
-execute_process(COMMAND "${COMPILER}" --deterministic --syntax=att
+execute_process(COMMAND "${COMPILER}" --emit=asm --deterministic --syntax=att
     --source-map "${att_map}" -o "${OUTPUT_DIR}/fixture-att.s" "${fixture}"
     RESULT_VARIABLE att_result)
 if(NOT intel_result EQUAL 0 OR NOT att_result EQUAL 0)
@@ -44,7 +44,7 @@ endforeach()
 set(import_source "${SOURCE_DIR}/tests/unit/import_root.dmm")
 set(import_ast "${OUTPUT_DIR}/import.ast")
 set(import_map "${OUTPUT_DIR}/import.map")
-execute_process(COMMAND "${COMPILER}" --deterministic --dump-ast "${import_ast}"
+execute_process(COMMAND "${COMPILER}" --emit=asm --deterministic --dump-ast "${import_ast}"
     --source-map "${import_map}" -o "${OUTPUT_DIR}/import.s" "${import_source}"
     RESULT_VARIABLE import_result)
 if(NOT import_result EQUAL 0)

@@ -33,7 +33,7 @@ function(run_case source expected syntax)
     file(COPY_FILE "${source}" "${work}/input.dmm")
 
     execute_process(
-            COMMAND "${COMPILER}" "--syntax=${syntax}" "${work}/input.dmm"
+            COMMAND "${COMPILER}" --emit=asm "--syntax=${syntax}" "${work}/input.dmm"
             RESULT_VARIABLE result
             OUTPUT_VARIABLE output
             ERROR_VARIABLE errors
@@ -175,7 +175,7 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "abi")
         )
 
         execute_process(
-                COMMAND "${COMPILER}" "--syntax=${syntax}" "${work}/input.dmm"
+                COMMAND "${COMPILER}" --emit=asm "--syntax=${syntax}" "${work}/input.dmm"
                 RESULT_VARIABLE result
                 ERROR_VARIABLE errors
                 TIMEOUT 30
@@ -241,7 +241,7 @@ function(reject_case name source diagnostic)
     file(WRITE "${work}/input.dmm.s" "stale output")
 
     execute_process(
-            COMMAND "${COMPILER}" "${work}/input.dmm"
+            COMMAND "${COMPILER}" --emit=asm "${work}/input.dmm"
             RESULT_VARIABLE result
             OUTPUT_VARIABLE output
             ERROR_VARIABLE errors
@@ -519,7 +519,7 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
         )
 
         execute_process(
-                COMMAND "${COMPILER}"
+                COMMAND "${COMPILER}" --emit=asm
                 "--target=${target}"
                 --syntax=att
                 "${OUTPUT_DIR}/target.dmm"
@@ -604,7 +604,7 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
             )
 
             execute_process(
-                    COMMAND "${COMPILER}"
+                    COMMAND "${COMPILER}" --emit=asm
                     "--syntax=${syntax}"
                     "${work}/input.dmm"
                     RESULT_VARIABLE result
