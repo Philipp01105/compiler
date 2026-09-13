@@ -13,6 +13,7 @@
 #include "semantic.h"
 #include "backend.h"
 #include "errorHandler.h"
+#include "path_identity.h"
 
 #ifndef DMM_VERSION
 #define DMM_VERSION "development"
@@ -31,6 +32,7 @@ void print_usage(const char *program_name) {
     printf("  --formatError  Output errors in JSON format\n");
     printf("  --ide          Recover syntax for editor analysis; requires --dump-ast, emits no assembly\n");
     printf("  --ide-buffer FILE  Read editor contents from FILE while keeping the source path/imports (--ide only)\n");
+    printf("  --emit=MODE    Output asm, obj, or exe (default: asm); executable linking is internal\n");
     printf("  --syntax=MODE  Assembly syntax: att or intel (default: intel)\n");
     printf("  --target=FMT   Target format: elf or coff (default: auto-detect)\n");
     printf("  --dump-ast FILE Write the stable dmm-ast-v2 dump to FILE\n");
@@ -72,36 +74,37 @@ void print_header(const char *source_file) {
     printf("\n");
 }
 
-static void remove_stale_output(const char *source_file, const char *requested_output) {
+static int artifact_conflicts_with_program(const AstProgram *program, const char *path);
+
+static void remove_stale_output(const AstProgram *program, const char *source_file, const char *requested_output,
+                                const char *ast_dump, const char *ir_dump, const char *source_map, const char *suffix) {
     /* Never delete an explicit path before validating it as a safe output. */
     if (requested_output != NULL) return;
     size_t length = strlen(source_file);
-    if (length > SIZE_MAX - 3) return;
-    char *path = malloc(length + 3);
+    size_t suffix_length = strlen(suffix)+1;
+    if (length > SIZE_MAX - suffix_length) return;
+    char *path = malloc(length + suffix_length);
     if (path == NULL) return;
     memcpy(path, source_file, length);
-    memcpy(path + length, ".s", 3);
-    (void) remove(path);
+    memcpy(path + length, suffix, suffix_length);
+    if (!artifact_conflicts_with_program(program, path) &&
+        path_identity_equal(path, ast_dump) == 0 &&
+        path_identity_equal(path, ir_dump) == 0 &&
+        path_identity_equal(path, source_map) == 0) (void) remove(path);
     free(path);
 }
 
 static int output_conflicts_with_source(const char *source_file, const char *output_file) {
-    if (output_file == NULL) return 0;
-    if (strcmp(source_file, output_file) == 0) return 1;
-#ifdef _WIN32
-    char *source_absolute = _fullpath(NULL, source_file, 0);
-    char *output_absolute = _fullpath(NULL, output_file, 0);
-    int conflicts = source_absolute != NULL && output_absolute != NULL &&
-                    _stricmp(source_absolute, output_absolute) == 0;
-    free(source_absolute);
-    free(output_absolute);
-    return conflicts;
-#else
-    struct stat source_status;
-    struct stat output_status;
-    return stat(source_file, &source_status) == 0 && stat(output_file, &output_status) == 0 &&
-           source_status.st_dev == output_status.st_dev && source_status.st_ino == output_status.st_ino;
-#endif
+    return path_identity_equal(source_file, output_file) != 0;
+}
+
+static int artifact_conflicts_with_program(const AstProgram *program, const char *path) {
+    if (output_conflicts_with_source(program->source_path, path)) return 1;
+    for (size_t i = 0; i < program->loaded_source_count; i++)
+        if (output_conflicts_with_source(program->loaded_source_paths[i], path)) return 1;
+    for (size_t i = 0; i < program->owned_import_count; i++)
+        if (artifact_conflicts_with_program(program->owned_imports[i], path)) return 1;
+    return 0;
 }
 
 static int dump_file(const char *path, int (*writer)(FILE *, const void *),
@@ -126,6 +129,7 @@ static int write_ir_dump(FILE *output, const void *value) {
 }
 
 int main(int argc, char *argv[]) {
+    BackendEmission emission = BACKEND_ASSEMBLY;
     int show_tokens = 0;
     int debug_mode = 0;
     int format_error = 0;
@@ -197,6 +201,13 @@ int main(int argc, char *argv[]) {
             if (strcmp(option, "--dump-ast") == 0) ast_dump_path = argv[i];
             else if (strcmp(option, "--dump-ir") == 0) ir_dump_path = argv[i];
             else source_map_path = argv[i];
+        } else if (strncmp(argv[i], "--emit=", 7) == 0) {
+            const char *mode=argv[i]+7;
+            if (!strcmp(mode,"asm")) emission=BACKEND_ASSEMBLY;
+            else if (!strcmp(mode,"obj")) emission=BACKEND_OBJECT;
+            else if (!strcmp(mode,"exe")) emission=BACKEND_EXECUTABLE;
+            else { error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                ERR_COMP_INVALID_OPTION, NULL, "Invalid emission mode: %s (use 'asm', 'obj' or 'exe')", mode); format_error=1; }
         } else if (strncmp(argv[i], "--syntax=", 9) == 0) {
             const char *mode = argv[i] + 9;
             if (strcmp(mode, "intel") == 0) {
@@ -286,7 +297,7 @@ int main(int argc, char *argv[]) {
     }
 
     if ((ide_buffer != NULL && !ide_mode) || (ide_mode && (ast_dump_path == NULL || requested_output != NULL || ir_dump_path != NULL ||
-                    source_map_path != NULL || debug_mode || show_tokens ||
+                    source_map_path != NULL || debug_mode || show_tokens || emission != BACKEND_ASSEMBLY ||
                     output_conflicts_with_source(source_file, ast_dump_path) ||
                     (ide_buffer != NULL && output_conflicts_with_source(ide_buffer, ast_dump_path))))) {
         error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
@@ -296,7 +307,6 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     /* Editor analysis must not remove or generate assembly artifacts. */
-    if (!ide_mode) remove_stale_output(source_file, requested_output);
 
     FrontendOptions frontend_options = {
         .debug = debug_mode,
@@ -322,6 +332,32 @@ int main(int argc, char *argv[]) {
         free(override_name);
         return 1;
     }
+    const char *requested_artifacts[] = {requested_output, ast_dump_path, ir_dump_path, source_map_path};
+    for (size_t i = 0; i < sizeof(requested_artifacts) / sizeof(requested_artifacts[0]); i++) {
+        if (artifact_conflicts_with_program(program, requested_artifacts[i])) {
+            error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                         ERR_COMP_INVALID_OPTION, source_file,
+                         "Generated artifact '%s' must differ from every loaded source file", requested_artifacts[i]);
+            error_handler_flush(error_handler);
+            ast_program_free(program);
+            error_handler_free(error_handler);
+            free(override_name);
+            return 1;
+        }
+        for (size_t j = i + 1; j < sizeof(requested_artifacts) / sizeof(requested_artifacts[0]); j++)
+            if (path_identity_equal(requested_artifacts[i], requested_artifacts[j]) != 0) {
+                error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                             ERR_COMP_INVALID_OPTION, source_file, "Generated artifact paths must be distinct");
+                error_handler_flush(error_handler);
+                ast_program_free(program);
+                error_handler_free(error_handler);
+                free(override_name);
+                return 1;
+            }
+    }
+    if (!ide_mode) remove_stale_output(program, source_file, requested_output,
+        ast_dump_path, ir_dump_path, source_map_path, emission==BACKEND_ASSEMBLY ? ".s" : emission==BACKEND_OBJECT ?
+        (target_format==TARGET_ELF ? ".o" : ".obj") : (target_format==TARGET_ELF ? ".out" : ".exe"));
     if (ide_mode) {
         SemanticModel *semantics = NULL;
         if (ast_validate_program(program)) {
@@ -381,11 +417,14 @@ int main(int argc, char *argv[]) {
         printf("\n");
     }
 
+    const char *output_suffix = emission==BACKEND_ASSEMBLY ? ".s" : emission==BACKEND_OBJECT ?
+        (target_format==TARGET_ELF ? ".o" : ".obj") : (target_format==TARGET_ELF ? ".out" : ".exe");
+    size_t suffix_length = strlen(output_suffix)+1;
     char *generated_output = NULL;
     const char *output_filename = requested_output;
     if (output_filename == NULL) {
         size_t source_length = strlen(source_file);
-        if (source_length > SIZE_MAX - 3 || (generated_output = malloc(source_length + 3)) == NULL) {
+        if (source_length > SIZE_MAX - suffix_length || (generated_output = malloc(source_length + suffix_length)) == NULL) {
             error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
                          ERR_COMP_INTERNAL_FAILURE, source_file, "Out of memory while creating output path");
             error_handler_flush(error_handler);
@@ -394,12 +433,12 @@ int main(int argc, char *argv[]) {
             return 1;
         }
         memcpy(generated_output, source_file, source_length);
-        memcpy(generated_output + source_length, ".s", 3);
+        memcpy(generated_output + source_length, output_suffix, suffix_length);
         output_filename = generated_output;
     }
     const char *artifacts[] = {output_filename, ast_dump_path, ir_dump_path, source_map_path};
     for (size_t i = 0; i < sizeof(artifacts) / sizeof(artifacts[0]); i++) {
-        if (artifacts[i] != NULL && output_conflicts_with_source(source_file, artifacts[i])) {
+        if (artifacts[i] != NULL && artifact_conflicts_with_program(program, artifacts[i])) {
             error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
                          ERR_COMP_INVALID_OPTION, source_file,
                          "Generated artifact must differ from source file");
@@ -411,7 +450,7 @@ int main(int argc, char *argv[]) {
         }
         for (size_t j = i + 1; j < sizeof(artifacts) / sizeof(artifacts[0]); j++) {
             if (artifacts[i] != NULL && artifacts[j] != NULL &&
-                strcmp(artifacts[i], artifacts[j]) == 0) {
+                path_identity_equal(artifacts[i], artifacts[j]) != 0) {
                 error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
                              ERR_COMP_INVALID_OPTION, source_file,
                              "Generated artifact paths must be distinct");
@@ -436,6 +475,7 @@ int main(int argc, char *argv[]) {
         .syntax_mode = syntax_mode,
         .debug = debug_mode,
         .deterministic = deterministic,
+        .emission = emission,
         .source_map_path = source_map_path
     };
     SemanticModel *semantics = NULL;

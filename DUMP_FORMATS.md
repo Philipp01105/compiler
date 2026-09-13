@@ -9,9 +9,17 @@ compiler --dump-ast program.ast --dump-ir program.ir \
   --source-map program.map -o program.s program.dmm
 ```
 
-Paths must be distinct from the source, assembly output, and one another. Dump
+Paths must be distinct from all loaded sources, generated output, and one another. Dump
 creation is part of compilation: an I/O or validation failure makes the command
 fail and removes the incomplete artifact.
+
+## `dmm-native-map-v1`
+
+Native `--emit=obj` and `--emit=exe` source maps begin with this marker. Records
+use the assembly map's instruction, function, source, IR index and span fields,
+prefixed with `text-offset N`, the instruction's byte offset in the text section.
+Executable offsets cover source-generated code before runtime/startup/import
+thunks are appended. They are section offsets, not file offsets or addresses.
 
 ## `dmm-ast-v2`
 

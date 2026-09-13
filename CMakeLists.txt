@@ -20,6 +20,7 @@ set(DMM_FUZZ_PIPELINE_SOURCES
         src/frontend/syntax_parser.c
         src/sema/semantic.c
         src/ir/ir.c
+        src/ir/ir_cfg.c
         src/diagnostics/errorHandler.c)
 
 set(DMM_INCLUDE_DIRS
@@ -29,6 +30,7 @@ set(DMM_INCLUDE_DIRS
         ${CMAKE_CURRENT_SOURCE_DIR}/src/sema
         ${CMAKE_CURRENT_SOURCE_DIR}/src/ir
         ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
         ${CMAKE_CURRENT_SOURCE_DIR}/src/backend/x86_64
         ${CMAKE_CURRENT_SOURCE_DIR}/src/diagnostics
         ${CMAKE_CURRENT_SOURCE_DIR}/src/driver)
@@ -37,6 +39,8 @@ add_executable(compiler
         src/common/language_types.h
         src/common/string_interner.c
         src/common/string_interner.h
+        src/common/path_identity.c
+        src/common/path_identity.h
         src/common/token.h
         src/ast/ast.c
         src/ast/ast.h
@@ -51,9 +55,17 @@ add_executable(compiler
         src/sema/semantic.h
         src/ir/ir.c
         src/ir/ir.h
+        src/ir/ir_cfg.c
+        src/ir/ir_cfg.h
         src/ir/ir_dump.c
         src/backend/backend.c
+        src/backend/native/object.c
+        src/backend/native/encoder.c
+        src/backend/native/linker.c
+        src/runtime/native_runtime.c
         src/backend/backend.h
+        src/backend/runtime_calls.c
+        src/backend/runtime_calls.h
         src/backend/x86_64/ir_emitter.c
         src/backend/x86_64/ir_emitter.h
         src/backend/x86_64/instruction.c
@@ -68,6 +80,23 @@ add_executable(compiler
 )
 
 target_include_directories(compiler PRIVATE ${DMM_INCLUDE_DIRS})
+
+add_library(dmm_runtime STATIC src/runtime/runtime.c src/runtime/platform_io.c)
+target_include_directories(dmm_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime)
+if(MSVC)
+    target_compile_options(dmm_runtime PRIVATE /W4)
+    if(DMM_STRICT_WARNINGS)
+        target_compile_options(dmm_runtime PRIVATE /WX)
+    endif()
+else()
+    target_compile_options(dmm_runtime PRIVATE -Wall -Wextra -Wpedantic)
+    if(DMM_STRICT_WARNINGS)
+        target_compile_options(dmm_runtime PRIVATE -Wconversion -Wshadow -Werror)
+    endif()
+endif()
+if(DMM_SANITIZERS)
+    target_compile_options(dmm_runtime PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+endif()
 target_compile_definitions(compiler PRIVATE
         DMM_VERSION="${PROJECT_VERSION}")
 if(MSVC)
@@ -91,6 +120,8 @@ if(DMM_SANITIZERS)
 endif()
 
 install(TARGETS compiler RUNTIME DESTINATION bin)
+install(TARGETS dmm_runtime ARCHIVE DESTINATION lib)
+install(FILES src/runtime/runtime.h DESTINATION include/dmm)
 install(DIRECTORY stdlib/ DESTINATION share/dmm/stdlib)
 
 if(DMM_BUILD_FUZZERS)
@@ -130,11 +161,21 @@ if(BUILD_TESTING)
     if(DMM_SANITIZERS)
         set(DMM_TEST_LINK_FLAGS "-fsanitize=address,undefined")
     endif()
+    add_executable(dmm_runtime_test tests/unit/runtime_test.c)
+    add_executable(dmm_native_test tests/unit/native_test.c src/backend/native/object.c
+        src/backend/native/encoder.c src/backend/native/linker.c src/runtime/native_runtime.c src/backend/x86_64/instruction.c)
+    target_include_directories(dmm_native_test PRIVATE ${DMM_INCLUDE_DIRS})
+    add_test(NAME native_binary_unit COMMAND dmm_native_test)
+    set_tests_properties(native_binary_unit PROPERTIES LABELS "unit;native;backend;safety")
+    target_link_libraries(dmm_runtime_test PRIVATE dmm_runtime)
+    add_test(NAME runtime_unit COMMAND dmm_runtime_test ${CMAKE_BINARY_DIR}/runtime_test.dat)
+    set_tests_properties(runtime_unit PROPERTIES LABELS "unit;runtime;safety")
     function(add_dmm_regression_stage stage label)
         add_test(NAME regression_${stage}
                 COMMAND ${CMAKE_COMMAND}
                     -DCOMPILER=$<TARGET_FILE:compiler>
                     -DASSEMBLER=${DMM_ASSEMBLER}
+                    -DRUNTIME_LIBRARY=$<TARGET_FILE:dmm_runtime>
                     "-DSANITIZER_FLAGS=${DMM_TEST_LINK_FLAGS}"
                     -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/test_output/${stage}
                     -DTEST_STAGE=${stage}
@@ -145,12 +186,22 @@ if(BUILD_TESTING)
     add_dmm_regression_stage(abi abi)
     add_dmm_regression_stage(rejection diagnostics)
     add_dmm_regression_stage(backend safety)
+    add_test(NAME direct_native_backend COMMAND ${CMAKE_COMMAND}
+        -DCOMPILER=$<TARGET_FILE:compiler> -DASSEMBLER=${DMM_ASSEMBLER}
+        -DRUNTIME_LIBRARY=$<TARGET_FILE:dmm_runtime> "-DSANITIZER_FLAGS=${DMM_TEST_LINK_FLAGS}"
+        -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/direct_native_test -P ${CMAKE_SOURCE_DIR}/tests/native_backend_test.cmake)
+    set_tests_properties(direct_native_backend PROPERTIES LABELS "integration;backend;native;safety")
+    add_test(NAME native_cli_contract COMMAND ${CMAKE_COMMAND} -DCOMPILER=$<TARGET_FILE:compiler>
+        -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/native_cli_test -P ${CMAKE_SOURCE_DIR}/tests/native_cli_test.cmake)
+    set_tests_properties(native_cli_contract PROPERTIES LABELS "integration;cli;native;safety")
     if(DMM_SANITIZERS)
         set_property(TEST regression_positive APPEND PROPERTY LABELS safety)
         set_property(TEST regression_abi APPEND PROPERTY LABELS safety)
     endif()
 
-    add_executable(dmm_optimizer_test tests/unit/optimizer_test.c src/backend/asm_optimizer.c)
+    add_executable(dmm_optimizer_test tests/unit/optimizer_test.c src/backend/asm_optimizer.c
+            src/backend/backend.c src/diagnostics/errorHandler.c)
+    target_compile_definitions(dmm_optimizer_test PRIVATE DMM_OPTIMIZER_FAULT_TEST)
     target_include_directories(dmm_optimizer_test PRIVATE ${DMM_INCLUDE_DIRS})
     add_test(NAME optimizer_unit COMMAND dmm_optimizer_test
              ${CMAKE_BINARY_DIR}/optimizer_test_input.s)
@@ -199,7 +250,7 @@ if(BUILD_TESTING)
     add_executable(dmm_pipeline_test
             tests/unit/pipeline_test.c src/ast/ast.c src/frontend/frontend.c
             src/frontend/syntax_parser.c src/frontend/lexer.c src/sema/semantic.c
-            src/ir/ir.c src/common/string_interner.c src/diagnostics/errorHandler.c)
+            src/ir/ir.c src/ir/ir_cfg.c src/common/string_interner.c src/diagnostics/errorHandler.c)
     target_include_directories(dmm_pipeline_test PRIVATE ${DMM_INCLUDE_DIRS})
     file(GLOB_RECURSE DMM_FRONTEND_CORPUS CONFIGURE_DEPENDS
             ${CMAKE_SOURCE_DIR}/tests/execution/*.dmm)
@@ -218,6 +269,8 @@ if(BUILD_TESTING)
     add_test(NAME ir_backend_native COMMAND ${CMAKE_COMMAND}
              -DCOMPILER=$<TARGET_FILE:compiler>
              -DASSEMBLER=${DMM_ASSEMBLER}
+             -DRUNTIME_LIBRARY=$<TARGET_FILE:dmm_runtime>
+             "-DSANITIZER_FLAGS=${DMM_TEST_LINK_FLAGS}"
              -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/ir_backend_test
              -P ${CMAKE_SOURCE_DIR}/tests/ir_backend_test.cmake)
     set_tests_properties(ir_backend_native PROPERTIES LABELS "integration;backend;ir;safety")
@@ -263,6 +316,7 @@ if(BUILD_TESTING)
     add_test(NAME imports_integration COMMAND ${CMAKE_COMMAND}
              -DCOMPILER=$<TARGET_FILE:compiler>
              -DASSEMBLER=${DMM_ASSEMBLER}
+             -DRUNTIME_LIBRARY=$<TARGET_FILE:dmm_runtime>
              "-DSANITIZER_FLAGS=${DMM_TEST_LINK_FLAGS}"
              -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/imports_test
              -P ${CMAKE_SOURCE_DIR}/tests/imports_test.cmake)
@@ -280,7 +334,7 @@ if(BUILD_TESTING)
     if(DMM_SANITIZERS)
         foreach(test_target dmm_optimizer_test dmm_syntax_converter_test dmm_x86_instruction_test
                             dmm_string_interner_test dmm_fuzz_pipeline_smoke_test dmm_lexer_test
-                            dmm_frontend_ast_test dmm_pipeline_test)
+                            dmm_frontend_ast_test dmm_pipeline_test dmm_runtime_test dmm_native_test)
             target_compile_options(${test_target} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
             target_link_options(${test_target} PRIVATE -fsanitize=address,undefined)
         endforeach()

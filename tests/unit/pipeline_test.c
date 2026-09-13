@@ -4,7 +4,92 @@
 #include "semantic.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+static int control_flow_regressions(void) {
+    const char *source =
+        "func main() -> int {"
+        "var condition = true && (false || true);"
+        "if (condition) { return 1; } return 0; }";
+    const FrontendOptions options = {0};
+    AstProgram *program = frontend_parse_source(source, strlen(source), "cfg-test.dmm", &options);
+    SemanticModel *semantics = program == NULL ? NULL : semantic_analyze(program);
+    IrModule *module = semantics == NULL || semantics->error_count != 0 ? NULL : ir_lower_program(program, semantics);
+    int failed = module == NULL || !ir_verify_module(module);
+    if (module != NULL) {
+        IrFunction *function = &module->functions[0];
+        size_t inner = IR_VALUE_NONE, outer = IR_VALUE_NONE, branch = IR_VALUE_NONE;
+        for (size_t i = 0; i < function->instruction_count; i++) {
+            if (function->instructions[i].opcode == IR_OP_PHI) {
+                if (inner == IR_VALUE_NONE) inner = i;
+                else outer = i;
+            }
+            if (outer != IR_VALUE_NONE && function->instructions[i].opcode == IR_OP_BRANCH) branch = i;
+        }
+        if (inner == IR_VALUE_NONE || outer == IR_VALUE_NONE || branch == IR_VALUE_NONE) failed = 1;
+        else {
+            IrInstruction saved = function->instructions[inner];
+            /* A value produced on one incoming branch is unavailable on the other. */
+            function->instructions[inner].operand_a = saved.operand_b;
+            if (ir_verify_module(module)) failed = 1;
+            function->instructions[inner] = saved;
+            function->instructions[inner].target_a = function->instructions[outer].target_a;
+            if (ir_verify_module(module)) failed = 1;
+            function->instructions[inner] = saved;
+            /* The inner PHI precedes this use in the array, but can be bypassed. */
+            size_t condition = function->instructions[branch].operand_a;
+            function->instructions[branch].operand_a = saved.result;
+            if (ir_verify_module(module)) failed = 1;
+            function->instructions[branch].operand_a = condition;
+            /* Remove an incoming edge while retaining both valid target labels. */
+            for (size_t i = 0; i < inner; i++)
+                if (function->instructions[i].opcode == IR_OP_LABEL &&
+                    function->instructions[i].target_a == saved.target_a) {
+                    size_t jump = i + 1;
+                    size_t target = function->instructions[jump].target_a;
+                    function->instructions[jump].target_a = function->instructions[outer].target_a;
+                    if (ir_verify_module(module)) failed = 1;
+                    function->instructions[jump].target_a = target;
+                    break;
+                }
+            /* A non-void reachable exit must retain its return terminator. */
+            function->instruction_count--;
+            if (ir_verify_module(module)) failed = 1;
+            function->instruction_count++;
+            /* Insert a valid fresh constant after a jump, before its next label. */
+            IrInstruction *original = function->instructions;
+            size_t n = function->instruction_count;
+            IrInstruction *mutated = malloc((n + 1) * sizeof(*mutated));
+            if (mutated == NULL) failed = 1;
+            else {
+                size_t at = 0, constant = 0;
+                for (size_t i = 0; i < n; i++) {
+                    if (function->instructions[i].opcode == IR_OP_JUMP && at == 0) at = i + 1;
+                    if (function->instructions[i].opcode == IR_OP_CONSTANT) constant = i;
+                }
+                memcpy(mutated, original, at * sizeof(*mutated));
+                mutated[at] = original[constant];
+                mutated[at].result = function->next_value++;
+                memcpy(mutated + at + 1, original + at, (n - at) * sizeof(*mutated));
+                function->instructions = mutated; function->instruction_count++;
+                if (ir_verify_module(module)) failed = 1;
+                /* PHIs must precede ordinary instructions in a join block. */
+                memcpy(mutated, original, inner * sizeof(*mutated));
+                mutated[inner] = original[constant];
+                mutated[inner].result = function->next_value - 1;
+                memcpy(mutated + inner + 1, original + inner, (n - inner) * sizeof(*mutated));
+                if (ir_verify_module(module)) failed = 1;
+                function->instructions = original; function->instruction_count--;
+                function->next_value--; free(mutated);
+            }
+            if (!ir_verify_module(module)) failed = 1;
+        }
+    }
+    ir_module_free(module); semantic_model_free(semantics); ast_program_free(program);
+    if (failed) fprintf(stderr, "CFG dominance/PHI/terminator regression failed\n");
+    return failed;
+}
 
 static void report_expression(const AstProgram *program, const AstExpression *expression) {
     if (expression == NULL) return;
@@ -50,7 +135,7 @@ int main(int argc, char **argv) {
     ErrorHandler *errors = error_handler_init();
     if (errors == NULL) return 1;
     error_handler_set_global(errors);
-    int failed = 0;
+    int failed = control_flow_regressions();
     int saw_cast = 0;
     int saw_alloc = 0;
     int saw_free = 0;

@@ -184,6 +184,10 @@ struct AstProgram {
     AstProgram **owned_imports;
     size_t owned_import_count;
     size_t owned_import_capacity;
+    /* Files opened by import resolution, including units rejected by the lexer. */
+    char **loaded_source_paths;
+    size_t loaded_source_count;
+    size_t loaded_source_capacity;
 };
 
 void ast_program_free(AstProgram *program);
