@@ -8,6 +8,7 @@ import <stdlib>
 // - Struct usage for calculator state
 // - Multiple operations
 // - Memory storage
+// - Result<int,string> and exhaustive match for division errors
 // - Operation history tracking
 // =================================================================
 
@@ -76,15 +77,17 @@ struct Calculator {
         lastOperation = 3;
     }
     
-    // Divide
-    func divide(value:int) -> void {
-        if (value != 0) {
-            currentValue = currentValue / value;
-            operationCount = operationCount + 1;
-            lastOperation = 4;
+    // A tagged result makes division failure explicit to callers.
+    func divide(value:int) -> Result<int,string> {
+        if (value == 0) {
+            return Result<int,string>.Err("Cannot divide by zero");
         }
+        currentValue = currentValue / value;
+        operationCount = operationCount + 1;
+        lastOperation = 4;
+        return Result<int,string>.Ok(currentValue);
     }
-    
+
     // Modulo
     func modulo(value:int) -> void {
         if (value != 0) {
@@ -147,6 +150,13 @@ struct Calculator {
     }
 }
 
+func showDivision(result:Result<int,string>) -> void {
+    match (result) {
+        Ok(value) => { }
+        Err(message) => println(message);
+    }
+}
+
 // Demonstrate basic operations
 func demonstrateBasicOps() -> void {
     printDoubleLine();
@@ -172,11 +182,14 @@ func demonstrateBasicOps() -> void {
     calc.subtract(20);
     calc.printStatus("Subtract 20");
     
-    calc.divide(5);
+    showDivision(calc.divide(5));
     calc.printStatus("Divide by 5");
     
     calc.modulo(3);
     calc.printStatus("Modulo 3");
+
+    // Err leaves the calculator value and operation count unchanged.
+    showDivision(calc.divide(0));
     
     println("");
     {
@@ -305,7 +318,7 @@ func demonstrateChain() -> void {
         free(_output7);
     }
     
-    calc.divide(4);
+    showDivision(calc.divide(4));
     {
         var _output8:string = "After /4: " + calc.getValue();
         println(_output8);

@@ -8,8 +8,12 @@ import <stdlib>
 // - Struct usage for game state
 // - Game logic with multiple outcomes
 // - Score tracking
-// - Enum-like constants (0=Rock, 1=Paper, 2=Scissors)
+// - Named compile-time constants for moves
 // =================================================================
+
+const ROCK:int = 0;
+const PAPER:int = 1;
+const SCISSORS:int = 2;
 
 // Helper functions
 func printLine() -> void {
@@ -54,22 +58,22 @@ struct RPSGame {
         }
         
         // Player 1 wins scenarios
-        if (p1Move == 0) {
-            if (p2Move == 2) {
+        if (p1Move == ROCK) {
+            if (p2Move == SCISSORS) {
                 player1Score = player1Score + 1;
                 return 1;
             }
         }
         
-        if (p1Move == 1) {
-            if (p2Move == 0) {
+        if (p1Move == PAPER) {
+            if (p2Move == ROCK) {
                 player1Score = player1Score + 1;
                 return 1;
             }
         }
         
-        if (p1Move == 2) {
-            if (p2Move == 1) {
+        if (p1Move == SCISSORS) {
+            if (p2Move == PAPER) {
                 player1Score = player1Score + 1;
                 return 1;
             }
@@ -111,9 +115,9 @@ struct RPSGame {
 
 // Convert move number to name
 func getMoveName(move:int) -> string {
-    if (move == 0) {
+    if (move == ROCK) {
         return "Rock";
-    } else if (move == 1) {
+    } else if (move == PAPER) {
         return "Paper";
     } else {
         return "Scissors";
@@ -136,18 +140,18 @@ func simulateGame() -> void {
     
     // Predefined moves for simulation
     var p1Moves:int[5];
-    p1Moves[0] = 0;
-    p1Moves[1] = 1;
-    p1Moves[2] = 2;
-    p1Moves[3] = 0;
-    p1Moves[4] = 1;
+    p1Moves[0] = ROCK;
+    p1Moves[1] = PAPER;
+    p1Moves[2] = SCISSORS;
+    p1Moves[3] = ROCK;
+    p1Moves[4] = PAPER;
     
     var p2Moves:int[5];
-    p2Moves[0] = 2;
-    p2Moves[1] = 0;
-    p2Moves[2] = 2;
-    p2Moves[3] = 1;
-    p2Moves[4] = 1;
+    p2Moves[0] = SCISSORS;
+    p2Moves[1] = ROCK;
+    p2Moves[2] = SCISSORS;
+    p2Moves[3] = PAPER;
+    p2Moves[4] = PAPER;
     
     for (var i:int = 0; i < 5; i++) {
         var p1Move:int = p1Moves[i];

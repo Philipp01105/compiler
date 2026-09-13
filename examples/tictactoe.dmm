@@ -6,12 +6,15 @@ import <stdlib>
 // =================================================================
 // This game demonstrates:
 // - Struct usage with fields and methods
-// - Array manipulation (game board)
+// - Constant array lengths and slice parameters for scripted moves
 // - Control flow (game loop, win condition checking)
 // - Object-oriented design principles
 // - Input validation
 // - State management
 // =================================================================
+
+const BOARD_CELLS:int = 9;
+const SCRIPTED_MOVES:int = 5;
 
 // Helper functions
 func printLine() -> void {
@@ -356,20 +359,25 @@ func simulateGame() -> void {
     println("           (Using Structs)");
     println("");
     
-    var game:TicTacToe;
-    game.init();
-    
     // Game moves: X at 4, O at 0, X at 1, O at 8, X at 7 (X wins)
-    var moves:int[5];
+    var moves:int[SCRIPTED_MOVES];
     moves[0] = 4;
     moves[1] = 0;
     moves[2] = 1;
     moves[3] = 8;
     moves[4] = 7;
     
+    playMoves(moves);
+}
+
+// Passing a fixed array supplies both the data and its checked slice length.
+func playMoves(moves:int[]) -> void {
+    var game:TicTacToe;
+    game.init();
+
     var moveCount:int = 0;
     
-    for (var turn:int = 0; turn < 5; turn++) {
+    for (var turn:int = 0; turn < moves.length; turn++) {
         game.printBoard();
         
         var move:int = moves[turn];
@@ -424,7 +432,7 @@ func simulateAIGame() -> void {
     var game:TicTacToe;
     game.init();
     
-    var maxMoves:int = 9;
+    var maxMoves:int = BOARD_CELLS;
     
     for (var turn:int = 0; turn < maxMoves; turn++) {
         game.printBoard();
