@@ -58,6 +58,9 @@ ErrorHandler *error_handler_init(void) {
     handler->max_errors = 10;
     handler->error_count = 0;
     handler->warning_count = 0;
+    handler->suppressed_error_count = 0;
+    handler->source_override_name = NULL;
+    handler->source_override_path = NULL;
     handler->json_output = 0;
     handler->buffered = 1;
     handler->buffer = nullptr;
@@ -117,7 +120,7 @@ ErrorContext *error_context_create(
     const char *filename,
     const char *message
 ) {
-    ErrorContext *ctx = (ErrorContext *) malloc(sizeof(ErrorContext));
+    ErrorContext *ctx = (ErrorContext *) calloc(1, sizeof(ErrorContext));
     if (!ctx) {
         return nullptr;
     }
@@ -125,6 +128,8 @@ ErrorContext *error_context_create(
     ctx->severity = severity;
     ctx->line = line;
     ctx->column = column;
+    ctx->end_line = line;
+    ctx->end_column = column > 0 ? column + 1 : 0;
     ctx->error_category = error_category;
     ctx->error_code = error_code;
     ctx->filename = filename ? strdup(filename) : nullptr;
@@ -203,8 +208,77 @@ void error_context_free(ErrorContext *ctx) {
     free(ctx->source_line);
     free(ctx->token_value);
     free(ctx->suggestion);
+    free(ctx->fix_replacement);
     free(ctx->children);
     free(ctx);
+}
+
+void error_context_set_span(ErrorContext *ctx, int end_line, int end_column) {
+    if (ctx == NULL) return;
+    ctx->end_line = end_line;
+    ctx->end_column = end_column;
+}
+
+void error_context_set_fix(ErrorContext *ctx, int line, int column,
+                           int end_line, int end_column, const char *replacement) {
+    if (ctx == NULL || replacement == NULL || line < 1 || column < 1 ||
+        end_line < line || (end_line == line && end_column < column)) return;
+    char *copy = strdup(replacement);
+    if (copy == NULL) return;
+    free(ctx->fix_replacement);
+    ctx->fix_replacement = copy;
+    ctx->fix_line = line;
+    ctx->fix_column = column;
+    ctx->fix_end_line = end_line;
+    ctx->fix_end_column = end_column;
+}
+
+/* Capture source context when the diagnostic is reported, including imported units.
+ * Failure to read context must never hide the original diagnostic. */
+const char *error_handler_source_path(const char *filename) {
+    if (filename != NULL && global_error_handler != NULL && global_error_handler->source_override_name != NULL &&
+        global_error_handler->source_override_path != NULL &&
+#ifdef _WIN32
+        _stricmp(filename, global_error_handler->source_override_name) == 0)
+#else
+        strcmp(filename, global_error_handler->source_override_name) == 0)
+#endif
+        return global_error_handler->source_override_path;
+    return filename;
+}
+
+static void capture_source_line(ErrorContext *ctx) {
+    for (int i = 0; i < ctx->child_count; i++) capture_source_line(ctx->children[i]);
+    if (ctx->source_line != NULL || ctx->filename == NULL || ctx->line < 1) return;
+    FILE *source = fopen(error_handler_source_path(ctx->filename), "rb");
+    if (source == NULL) return;
+    int line = 1;
+    int ch;
+    while (line < ctx->line && (ch = fgetc(source)) != EOF) {
+        if (ch == '\n') line++;
+    }
+    if (line == ctx->line) {
+        size_t size = 0, capacity = 128;
+        char *text = malloc(capacity);
+        if (text != NULL) {
+            while ((ch = fgetc(source)) != EOF && ch != '\n') {
+                if (size + 1 >= capacity) {
+                    if (capacity > (size_t)-1 / 2) { free(text); text = NULL; break; }
+                    capacity *= 2;
+                    char *grown = realloc(text, capacity);
+                    if (grown == NULL) { free(text); text = NULL; break; }
+                    text = grown;
+                }
+                text[size++] = (char)ch;
+            }
+            if (text != NULL) {
+                while (size > 0 && text[size - 1] == '\r') size--;
+                text[size] = '\0';
+                ctx->source_line = text;
+            }
+        }
+    }
+    fclose(source);
 }
 
 static void json_escape_string(FILE *out, const char *str) {
@@ -215,6 +289,24 @@ static void json_escape_string(FILE *out, const char *str) {
 
     fprintf(out, "\"");
     for (const char *p = str; *p; p++) {
+        unsigned char byte = (unsigned char)*p;
+        if (byte >= 0x80) {
+            int width = byte >= 0xC2 && byte <= 0xDF ? 2 :
+                        byte >= 0xE0 && byte <= 0xEF ? 3 :
+                        byte >= 0xF0 && byte <= 0xF4 ? 4 : 0;
+            unsigned value = byte & (width == 2 ? 0x1F : width == 3 ? 0x0F : 0x07);
+            int valid = width != 0;
+            for (int k = 1; valid && k < width; k++) {
+                unsigned char part = (unsigned char)p[k];
+                if ((part & 0xC0) != 0x80) valid = 0;
+                else value = (value << 6) | (part & 0x3F);
+            }
+            if ((width == 3 && value < 0x800) || (width == 4 && value < 0x10000) ||
+                value > 0x10FFFF || (value >= 0xD800 && value <= 0xDFFF)) valid = 0;
+            if (valid) { fwrite(p, 1, (size_t)width, out); p += width - 1; }
+            else fputs("\\uFFFD", out);
+            continue;
+        }
         switch (*p) {
             case '"': fprintf(out, "\\\"");
                 break;
@@ -231,7 +323,7 @@ static void json_escape_string(FILE *out, const char *str) {
             case '\t': fprintf(out, "\\t");
                 break;
             default:
-                if (*p < 32) {
+                if ((unsigned char)*p < 32) {
                     fprintf(out, "\\u%04x", (unsigned char) *p);
                 } else {
                     fputc(*p, out);
@@ -277,21 +369,26 @@ static void print_source_context(
     for (int i = 0; i < indent_level; i++) {
         fprintf(out, " ");
     }
-    fprintf(out, "%s%d |%s %s\n", color_blue, ctx->line, reset, ctx->source_line);
+    fprintf(out, "%s%4d |%s %s\n", color_blue, ctx->line, reset, ctx->source_line);
 
     if (ctx->column > 0) {
         for (int i = 0; i < indent_level; i++) {
             fprintf(out, " ");
         }
-        fprintf(out, "  %s|%s ", color_blue, reset);
+        fprintf(out, "     %s|%s ", color_blue, reset);
 
-        for (int i = 1; i < ctx->column; i++) {
-            fprintf(out, " ");
+        const unsigned char *cursor = (const unsigned char *)ctx->source_line;
+        for (int i = 1; i < ctx->column && *cursor != 0; i++) {
+            fputc(*cursor == '\t' ? '\t' : ' ', out);
+            cursor++;
+            while ((*cursor & 0xC0) == 0x80) cursor++;
         }
 
         fprintf(out, "%s", error_color);
         int underline_len = 1;
-        if (ctx->token_value) {
+        if (ctx->end_line == ctx->line && ctx->end_column > ctx->column) {
+            underline_len = ctx->end_column - ctx->column;
+        } else if (ctx->token_value) {
             underline_len = (int) strlen(ctx->token_value);
             if (underline_len > 20) underline_len = 20;
             if (underline_len < 1) underline_len = 1;
@@ -337,6 +434,11 @@ static void print_error_context_recursive(
 
     if (handler->show_source_context && ctx->source_line) {
         print_source_context(handler, ctx, indent_level);
+    } else if (ctx->filename != NULL) {
+        if (ctx->line > 0) fprintf(out, " --> %s:%d:%d\n", ctx->filename, ctx->line, ctx->column);
+        else fprintf(out, " --> %s\n", ctx->filename);
+    } else if (ctx->line > 0) {
+        fprintf(out, " --> line %d:%d\n", ctx->line, ctx->column);
     }
 
     if (handler->show_suggestions && ctx->suggestion) {
@@ -359,7 +461,7 @@ static void print_error_context_recursive(
         }
         const char *color_cyan = handler->use_colors ? COLOR_CYAN : "";
         const char *color_blue = handler->use_colors ? COLOR_BLUE : "";
-        fprintf(out, "  %s= %snote:%s caused by:\n",
+        fprintf(out, "  %s= %snote:%s related locations:\n",
                 color_blue, color_cyan, reset);
 
         for (int i = 0; i < ctx->child_count; i++) {
@@ -406,6 +508,11 @@ static void print_error_context_json(
     fprintf(out, "\"column\": %d,\n", ctx->column);
 
     for (int i = 0; i < indent_level + 1; i++) fprintf(out, "  ");
+    fprintf(out, "\"endLine\": %d,\n", ctx->end_line);
+    for (int i = 0; i < indent_level + 1; i++) fprintf(out, "  ");
+    fprintf(out, "\"endColumn\": %d,\n", ctx->end_column);
+
+    for (int i = 0; i < indent_level + 1; i++) fprintf(out, "  ");
     fprintf(out, "\"filename\": ");
     json_escape_string(out, ctx->filename);
     fprintf(out, ",\n");
@@ -428,6 +535,18 @@ static void print_error_context_json(
     for (int i = 0; i < indent_level + 1; i++) fprintf(out, "  ");
     fprintf(out, "\"suggestion\": ");
     json_escape_string(out, ctx->suggestion);
+    fprintf(out, ",\n");
+    for (int i = 0; i < indent_level + 1; i++) fprintf(out, "  ");
+    fprintf(out, "\"fix\": ");
+    if (ctx->fix_replacement == NULL || ctx->filename == NULL) fprintf(out, "null");
+    else {
+        fprintf(out, "{\"filename\": ");
+        json_escape_string(out, ctx->filename);
+        fprintf(out, ", \"line\": %d, \"column\": %d, \"endLine\": %d, \"endColumn\": %d, \"replacement\": ",
+                ctx->fix_line, ctx->fix_column, ctx->fix_end_line, ctx->fix_end_column);
+        json_escape_string(out, ctx->fix_replacement);
+        fprintf(out, "}");
+    }
 
     if (ctx->child_count > 0) {
         fprintf(out, ",\n");
@@ -452,12 +571,17 @@ void error_report_context(ErrorHandler *handler, ErrorContext *ctx) {
     if (!handler || !ctx) {
         return;
     }
-
     if (ctx->severity == SEVERITY_ERROR || ctx->severity == SEVERITY_FATAL) {
         handler->error_count++;
+        if (!handler->json_output && handler->max_errors > 0 && handler->error_count > handler->max_errors) {
+            handler->suppressed_error_count++;
+            if (handler->buffered) error_context_free(ctx);
+            return;
+        }
     } else if (ctx->severity == SEVERITY_WARNING) {
         handler->warning_count++;
     }
+    capture_source_line(ctx);
 
     if (handler->buffered) {
         if (handler->buffer_count >= handler->buffer_capacity) {
@@ -484,11 +608,6 @@ void error_report_context(ErrorHandler *handler, ErrorContext *ctx) {
         print_error_context_recursive(handler, ctx, 0);
     }
 
-    if (ctx->severity == SEVERITY_FATAL || error_handler_should_stop(handler)) {
-        fprintf(handler->output_stream, "\n%s[FATAL]%s Too many errors, stopping compilation.\n\n",
-                handler->use_colors ? COLOR_MAGENTA : "",
-                handler->use_colors ? COLOR_RESET : "");
-    }
 }
 
 void error_report(
@@ -582,13 +701,17 @@ void error_handler_flush(ErrorHandler *handler) {
         fprintf(out, "  ],\n");
         fprintf(out, "  \"summary\": {\n");
         fprintf(out, "    \"errorCount\": %d,\n", handler->error_count);
-        fprintf(out, "    \"warningCount\": %d\n", handler->warning_count);
+        fprintf(out, "    \"warningCount\": %d,\n", handler->warning_count);
+        fprintf(out, "    \"suppressedErrorCount\": %d\n", handler->suppressed_error_count);
         fprintf(out, "  }\n");
         fprintf(out, "}\n");
     } else {
         for (int i = 0; i < handler->buffer_count; i++) {
             print_error_context_recursive(handler, handler->buffer[i], 0);
         }
+        if (handler->suppressed_error_count > 0)
+            fprintf(out, "%d additional errors omitted (display limit: %d).\n\n",
+                    handler->suppressed_error_count, handler->max_errors);
 
         const char *color_red = handler->use_colors ? COLOR_RED : "";
         const char *color_yellow = handler->use_colors ? COLOR_YELLOW : "";
@@ -637,7 +760,10 @@ int error_handler_should_stop(ErrorHandler *handler) {
 
 void error_handler_reset(ErrorHandler *handler) {
     if (handler) {
+        for (int i = 0; i < handler->buffer_count; i++) error_context_free(handler->buffer[i]);
+        handler->buffer_count = 0;
         handler->error_count = 0;
         handler->warning_count = 0;
+        handler->suppressed_error_count = 0;
     }
 }

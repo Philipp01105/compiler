@@ -1,9 +1,13 @@
+#ifndef _WIN32
+#define _XOPEN_SOURCE 700
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
 #include <time.h>
 #include <sys/stat.h>
+#include <errno.h>
 #include "frontend.h"
 #include "ir.h"
 #include "semantic.h"
@@ -25,6 +29,8 @@ void print_usage(const char *program_name) {
     printf("  --tokens       Show generated token stream\n");
     printf("  --debug        Enable debug output during parsing\n");
     printf("  --formatError  Output errors in JSON format\n");
+    printf("  --ide          Recover syntax for editor analysis; requires --dump-ast, emits no assembly\n");
+    printf("  --ide-buffer FILE  Read editor contents from FILE while keeping the source path/imports (--ide only)\n");
     printf("  --syntax=MODE  Assembly syntax: att or intel (default: intel)\n");
     printf("  --target=FMT   Target format: elf or coff (default: auto-detect)\n");
     printf("  --dump-ast FILE Write the stable dmm-ast-v2 dump to FILE\n");
@@ -102,9 +108,12 @@ static int dump_file(const char *path, int (*writer)(FILE *, const void *),
                      const void *value) {
     FILE *output = fopen(path, "w");
     if (output == NULL) return 0;
+    errno = 0;
     int success = writer(output, value);
     if (fclose(output) != 0) success = 0;
+    int saved_errno = errno;
     if (!success) (void) remove(path);
+    errno = saved_errno;
     return success;
 }
 
@@ -121,6 +130,8 @@ int main(int argc, char *argv[]) {
     int debug_mode = 0;
     int format_error = 0;
     int deterministic = 0;
+    int ide_mode = 0;
+    const char *ide_buffer = NULL;
     const char *source_file = NULL;
     const char *requested_output = NULL;
     const char *ast_dump_path = NULL;
@@ -146,6 +157,17 @@ int main(int argc, char *argv[]) {
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--tokens") == 0) {
             show_tokens = 1;
+        } else if (strcmp(argv[i], "--ide") == 0) {
+            ide_mode = 1;
+        } else if (strcmp(argv[i], "--ide-buffer") == 0) {
+            if (++i >= argc) {
+                error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                             ERR_COMP_INVALID_OPTION, NULL, "Option '--ide-buffer' requires a filename");
+                error_handler_flush(error_handler);
+                error_handler_free(error_handler);
+                return 1;
+            }
+            ide_buffer = argv[i];
         } else if (strcmp(argv[i], "--debug") == 0) {
             debug_mode = 1;
         } else if (strcmp(argv[i], "--formatError") == 0) {
@@ -263,18 +285,65 @@ int main(int argc, char *argv[]) {
         printf("\n");
     }
 
-    /* Failed frontend compilation must not leave a default stale artifact. */
-    remove_stale_output(source_file, requested_output);
+    if ((ide_buffer != NULL && !ide_mode) || (ide_mode && (ast_dump_path == NULL || requested_output != NULL || ir_dump_path != NULL ||
+                    source_map_path != NULL || debug_mode || show_tokens ||
+                    output_conflicts_with_source(source_file, ast_dump_path) ||
+                    (ide_buffer != NULL && output_conflicts_with_source(ide_buffer, ast_dump_path))))) {
+        error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+            ERR_COMP_INVALID_OPTION, source_file, "--ide requires a distinct --dump-ast path and does not accept output/debug options");
+        error_handler_flush(error_handler);
+        error_handler_free(error_handler);
+        return 1;
+    }
+    /* Editor analysis must not remove or generate assembly artifacts. */
+    if (!ide_mode) remove_stale_output(source_file, requested_output);
 
     FrontendOptions frontend_options = {
         .debug = debug_mode,
-        .show_tokens = show_tokens
+        .show_tokens = show_tokens,
+        .recover_syntax = ide_mode
     };
+    char *override_name = NULL;
+    if (ide_buffer != NULL) {
+#ifdef _WIN32
+        override_name = _fullpath(NULL, source_file, 0);
+#else
+        override_name = realpath(source_file, NULL);
+#endif
+        if (override_name != NULL)
+            for (char *p = override_name; *p != '\0'; p++) if (*p == '\\') *p = '/';
+        error_handler->source_override_name = override_name == NULL ? source_file : override_name;
+        error_handler->source_override_path = ide_buffer;
+    }
     AstProgram *program = frontend_parse_file(source_file, &frontend_options);
     if (program == NULL) {
         error_handler_flush(error_handler);
         error_handler_free(error_handler);
+        free(override_name);
         return 1;
+    }
+    if (ide_mode) {
+        SemanticModel *semantics = NULL;
+        if (ast_validate_program(program)) {
+            semantics = semantic_analyze(program);
+            if (semantics == NULL)
+                error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
+                    ERR_COMP_INTERNAL_FAILURE, source_file, "Could not build typed frontend representation for editor analysis");
+            else if (!dump_file(ast_dump_path, write_ast_dump, program))
+                error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                    ERR_COMP_DUMP_FAILED, source_file, "Could not write editor AST information to '%s': %s", ast_dump_path,
+                    errno == 0 ? "internal serialization failure" : strerror(errno));
+        } else if (error_handler_get_error_count(error_handler) == 0) {
+            error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_PARSER,
+                ERR_PARSE_INVALID_SYNTAX, source_file, "Could not construct a safe editor syntax tree");
+        }
+        int failed = error_handler_get_error_count(error_handler) != 0;
+        error_handler_flush(error_handler);
+        semantic_model_free(semantics);
+        ast_program_free(program);
+        error_handler_free(error_handler);
+        free(override_name);
+        return failed;
     }
     if (!program->structured_ast_complete) {
         const AstToken *token = ast_program_token(program, program->structured_error_token);
@@ -318,7 +387,7 @@ int main(int argc, char *argv[]) {
         size_t source_length = strlen(source_file);
         if (source_length > SIZE_MAX - 3 || (generated_output = malloc(source_length + 3)) == NULL) {
             error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
-                         ERR_CODEGEN_OUTPUT_FAILED, source_file, "Out of memory while creating output path");
+                         ERR_COMP_INTERNAL_FAILURE, source_file, "Out of memory while creating output path");
             error_handler_flush(error_handler);
             ast_program_free(program);
             error_handler_free(error_handler);
@@ -384,7 +453,7 @@ int main(int argc, char *argv[]) {
         if (semantics != NULL) module = ir_lower_program(program, semantics);
         if (semantics == NULL) {
             error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
-                         ERR_CODEGEN_OUTPUT_FAILED, source_file,
+                         ERR_COMP_INTERNAL_FAILURE, source_file,
                          "Could not build typed frontend representation");
             error_handler_flush(error_handler);
             free(generated_output);
@@ -396,7 +465,7 @@ int main(int argc, char *argv[]) {
         }
         if (module == NULL) {
             error_report(error_handler, SEVERITY_FATAL, 0, 0, ERROR_CATEGORY_COMPILER,
-                         ERR_CODEGEN_OUTPUT_FAILED, source_file,
+                         ERR_COMP_INTERNAL_FAILURE, source_file,
                          "Could not create lowering module");
             error_handler_flush(error_handler);
             free(generated_output);
@@ -405,11 +474,14 @@ int main(int argc, char *argv[]) {
             error_handler_free(error_handler);
             return 1;
         }
-        if ((ast_dump_path != NULL && !dump_file(ast_dump_path, write_ast_dump, program)) ||
-            (ir_dump_path != NULL && !dump_file(ir_dump_path, write_ir_dump, module))) {
+        const char *failed_dump = NULL;
+        if (ast_dump_path != NULL && !dump_file(ast_dump_path, write_ast_dump, program)) failed_dump = ast_dump_path;
+        else if (ir_dump_path != NULL && !dump_file(ir_dump_path, write_ir_dump, module)) failed_dump = ir_dump_path;
+        if (failed_dump != NULL) {
             error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
-                         ERR_CODEGEN_OUTPUT_FAILED, source_file,
-                         "Could not write requested frontend dump");
+                         ERR_COMP_DUMP_FAILED, source_file,
+                         "Could not write requested frontend dump '%s': %s", failed_dump,
+                         errno == 0 ? "internal serialization failure" : strerror(errno));
             error_handler_flush(error_handler);
             free(generated_output);
             ir_module_free(module);

@@ -2,11 +2,114 @@ cmake_minimum_required(VERSION 3.21)
 if(NOT DEFINED COMPILER OR NOT DEFINED OUTPUT_DIR)
     message(FATAL_ERROR "COMPILER and OUTPUT_DIR are required")
 endif()
+
+# A method reference must fail in sema, show its source, and offer a precise edit.
+file(MAKE_DIRECTORY "${OUTPUT_DIR}")
+set(source "${OUTPUT_DIR}/invalid.dmm")
+set(method_source "struct Node {\n    var next:*Node;\n    func Next() -> *Node { return next; }\n}\nfunc main() -> int {\n    var node:Node;\n    var node3 = node.Next;\n    return 0;\n}\n")
+file(WRITE "${source}" "${method_source}")
+execute_process(COMMAND "${COMPILER}" --formatError "${source}"
+    RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE diagnostics ENCODING UTF-8)
+string(JSON code GET "${diagnostics}" errors 0 errorCode)
+string(JSON source_line GET "${diagnostics}" errors 0 sourceLine)
+string(JSON line GET "${diagnostics}" errors 0 line)
+string(JSON column GET "${diagnostics}" errors 0 column)
+string(JSON end_column GET "${diagnostics}" errors 0 endColumn)
+string(JSON replacement GET "${diagnostics}" errors 0 fix replacement)
+string(JSON fix_line GET "${diagnostics}" errors 0 fix line)
+string(JSON fix_column GET "${diagnostics}" errors 0 fix column)
+if(result EQUAL 0 OR NOT code STREQUAL "S111" OR NOT line EQUAL 7 OR
+   NOT column EQUAL 17 OR NOT end_column EQUAL 26 OR
+   NOT source_line STREQUAL "    var node3 = node.Next;" OR
+   NOT replacement STREQUAL "()" OR NOT fix_line EQUAL 7 OR NOT fix_column EQUAL 26)
+    message(FATAL_ERROR "Method reference diagnostic/fix is incorrect: ${diagnostics}")
+endif()
+execute_process(COMMAND "${COMPILER}" "${source}"
+    RESULT_VARIABLE result ERROR_VARIABLE diagnostics ENCODING UTF-8)
+if(NOT diagnostics MATCHES "invalid.dmm:7:17" OR
+   NOT diagnostics MATCHES "var node3 = node.Next;" OR
+   NOT diagnostics MATCHES "\\^\\^\\^\\^\\^\\^\\^\\^\\^" OR
+   NOT diagnostics MATCHES "help:.*Add '\\(\\)'")
+    message(FATAL_ERROR "Human-readable method context is missing: ${diagnostics}")
+endif()
+string(REPLACE "node.Next;" "node.Next();" corrected "${method_source}")
+file(WRITE "${source}" "${corrected}")
+execute_process(COMMAND "${COMPILER}" "${source}" RESULT_VARIABLE result ERROR_VARIABLE diagnostics ENCODING UTF-8)
+if(NOT result EQUAL 0)
+    message(FATAL_ERROR "Suggested method correction does not compile: ${diagnostics}")
+endif()
+
+# Required arguments, overloads, receiver mismatches, and void methods cannot get an edit.
+# The edit belongs after the method name, even inside grouping parentheses.
+string(REPLACE "node.Next;" "(node.Next);" grouped "${method_source}")
+file(WRITE "${source}" "${grouped}")
+execute_process(COMMAND "${COMPILER}" --formatError "${source}"
+    RESULT_VARIABLE result ERROR_VARIABLE diagnostics ENCODING UTF-8)
+string(JSON fix_column GET "${diagnostics}" errors 0 fix column)
+if(result EQUAL 0 OR NOT fix_column EQUAL 27)
+    message(FATAL_ERROR "Grouped method fix is at the wrong location: ${diagnostics}")
+endif()
+
+string(REPLACE "node.Next;" "Node.Next;" static_source "${method_source}")
+string(REPLACE "func Next() -> *Node { return next; }" "static func Next() -> int { return 1; }" static_source "${static_source}")
+file(WRITE "${source}" "${static_source}")
+execute_process(COMMAND "${COMPILER}" --formatError "${source}"
+    RESULT_VARIABLE result ERROR_VARIABLE diagnostics ENCODING UTF-8)
+string(JSON replacement GET "${diagnostics}" errors 0 fix replacement)
+if(result EQUAL 0 OR NOT replacement STREQUAL "()")
+    message(FATAL_ERROR "Valid static receiver did not get a safe fix: ${diagnostics}")
+endif()
+
+foreach(declaration IN ITEMS
+    "func Next(value:int) -> *Node { return next; }"
+    "func Next() -> *Node { return next; } func Next(value:int) -> *Node { return next; }"
+    "static func Next() -> int { return 1; }"
+    "func Next() -> void {}")
+    string(REPLACE "func Next() -> *Node { return next; }" "${declaration}" invalid "${method_source}")
+    file(WRITE "${source}" "${invalid}")
+    execute_process(COMMAND "${COMPILER}" --formatError "${source}"
+        RESULT_VARIABLE result ERROR_VARIABLE diagnostics ENCODING UTF-8)
+    string(JSON code GET "${diagnostics}" errors 0 errorCode)
+    string(JSON fix_type TYPE "${diagnostics}" errors 0 fix)
+    if(result EQUAL 0 OR NOT code STREQUAL "S111" OR NOT fix_type STREQUAL "NULL")
+        message(FATAL_ERROR "Unsafe method fix was offered: ${diagnostics}")
+    endif()
+endforeach()
+
+# Diagnostics must capture the imported file's line, not the importer's line.
+set(imported "${OUTPUT_DIR}/imported.dmm")
+file(WRITE "${imported}" "func broken() -> int { return missing; }\n")
+file(WRITE "${source}" "import \"imported.dmm\"\nfunc main() -> int { return 0; }\n")
+execute_process(COMMAND "${COMPILER}" --formatError "${source}"
+    RESULT_VARIABLE result ERROR_VARIABLE diagnostics ENCODING UTF-8)
+string(JSON filename GET "${diagnostics}" errors 0 filename)
+string(JSON source_line GET "${diagnostics}" errors 0 sourceLine)
+if(result EQUAL 0 OR NOT filename MATCHES "imported.dmm$" OR
+   NOT source_line STREQUAL "func broken() -> int { return missing; }")
+    message(FATAL_ERROR "Imported source context is incorrect: ${diagnostics}")
+endif()
+
+# Source capture strips CRLF and keeps tabs and Unicode; EOF still has a location.
+file(WRITE "${source}" "func main() -> void {\r\n\tvar text:string = \"ä\"; missing();\r\n}\r\n")
+execute_process(COMMAND "${COMPILER}" --formatError "${source}"
+    RESULT_VARIABLE result ERROR_VARIABLE diagnostics ENCODING UTF-8)
+string(JSON source_line GET "${diagnostics}" errors 0 sourceLine)
+if(result EQUAL 0 OR NOT source_line STREQUAL "\tvar text:string = \"ä\"; missing();")
+    message(FATAL_ERROR "CRLF/tab/Unicode source capture failed: ${diagnostics}")
+endif()
+file(WRITE "${source}" "func main() -> void {\n")
+execute_process(COMMAND "${COMPILER}" --formatError "${source}"
+    RESULT_VARIABLE result ERROR_VARIABLE diagnostics ENCODING UTF-8)
+string(JSON line GET "${diagnostics}" errors 0 line)
+string(JSON source_type TYPE "${diagnostics}" errors 0 sourceLine)
+if(result EQUAL 0 OR line LESS 1 OR NOT source_type STREQUAL "STRING")
+    message(FATAL_ERROR "EOF source location is missing: ${diagnostics}")
+endif()
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 set(source "${OUTPUT_DIR}/invalid.dmm")
 file(WRITE "${source}" "func main() -> void { @; }")
 execute_process(COMMAND "${COMPILER}" "${source}" --formatError
-    RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE diagnostics)
+    RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE diagnostics ENCODING UTF-8)
 if(result EQUAL 0)
     message(FATAL_ERROR "Invalid source was accepted")
 endif()
@@ -28,7 +131,7 @@ if(json_error OR array_error OR category_error OR line_error OR column_error OR
 endif()
 file(WRITE "${source}" "func main() -> void {} $ $ $ $ $ $ $ $ $ $ $ $\n")
 execute_process(COMMAND "${COMPILER}" --formatError "${source}"
-    RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE diagnostics)
+    RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE diagnostics ENCODING UTF-8)
 string(JSON error_count ERROR_VARIABLE json_error GET "${diagnostics}" summary errorCount)
 string(JSON array_count ERROR_VARIABLE array_error LENGTH "${diagnostics}" errors)
 if(result EQUAL 0 OR NOT output STREQUAL "" OR json_error OR array_error OR

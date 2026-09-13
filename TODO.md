@@ -17,12 +17,13 @@ parser/type-checker/emitter have been removed from the build and source tree.
 - Separate semantic pass for symbols, scopes, named types, conversions,
   lvalues, calls, returns, member access, loop control, and constant bounds.
 - Target-neutral typed IR with explicit values, calls, aggregate access,
-  allocation, cleanup, labels, branches, jumps, and short-circuit PHI nodes.
+  allocation, explicit releases, labels, branches, jumps, and short-circuit PHI nodes.
 - Verified IR as the sole x86-64 backend input.
 - System V and Windows x64 call lowering, including mixed integer/SSE and stack
   arguments, imported functions, instance-method receivers, and mangled methods.
 - Native lowering for numeric types, strings, arrays, structs, enums, pointers,
-  heap allocation, `@gc`, printing, input, filesystem intrinsics, and stdlib I/O.
+  manual heap allocation, ordinary stdlib output calls, input, filesystem
+  intrinsics, and stdlib I/O. P1 removed `@gc` and automatic cleanup.
 - Nominal aggregate checking and by-value struct initialization, assignment,
   parameters, nested storage, and returns; first-class enum values and constant
   scalar payload lookup.
@@ -46,26 +47,103 @@ parser/type-checker/emitter have been removed from the build and source tree.
 | Priority | Addition                                | Why                                                                                                       |
 |----------|-----------------------------------------|-----------------------------------------------------------------------------------------------------------|
 | P1 (complete) | Language syntax and stdlib ABI revision | Package imports, slices, constants, overloads, normalized arrays/pointers, explicit ownership, and ordinary stdlib output are implemented and validated. |
+| P1       | Artifact safety and verifier hardening | Protect all loaded sources and aliased output paths; verify control-flow availability of IR values. |
 | P2       | Runtime library split                   | Move platform runtime shims out of the emitter while retaining typed runtime operations in IR.            |
 | P2       | Direct object emission                  | Avoid the external assembler when the instruction model is mature.                                        |
 | P3       | New language features                   | Add globals, richer arrays, interfaces, and generics after the middle-end remains stable. |
 
-## Open diagnostic improvements
+## Reanalysis checkpoint (2026-09-13)
 
-- [ ] Reject unsupported method references during semantic analysis, before IR
+Reviewed the current working tree, including the uncommitted diagnostics and IDE
+changes. `cmake --build compiler/cmake-build-debug` reported no work to do;
+`ctest --test-dir compiler/cmake-build-debug --output-on-failure` passed **22/22**
+suites on Windows/MinGW. The existing build has `DMM_STRICT_WARNINGS=OFF`.
+This checkpoint does not revalidate Linux, sanitizers, a fresh strict-warning
+build, or the JetBrains plugin. The earlier 19-suite cross-platform acceptance
+below remains a historical checkpoint, not the current suite count.
+
+The following open items are based on source review; the passing regression
+suite does not establish coverage for these cases. No destructive overwrite
+reproducer or allocation/I/O fault injection was run.
+
+- [ ] **P1 — Protect every loaded source from every generated artifact.**
+  `src/driver/main.c` checks assembly/AST/IR/source-map paths against only the
+  root `source_file`. Imported source units are not checked, and the IDE branch
+  writes its AST dump before the normal artifact checks. Validate against all
+  loaded units before any removal or output open, including IDE dumps.
+  Acceptance: isolated temporary fixtures prove that an output or dump pointing
+  at an imported source, or an IDE dump pointing at the root source, is rejected
+  and every source remains byte-for-byte unchanged.
+- [ ] **P1 — Detect artifact aliases using canonical paths and file identity.**
+  Artifact pairs in `src/driver/main.c` are compared with `strcmp`, so different
+  relative spellings, Windows case variants, or links can bypass the distinct-path
+  check. Windows source protection uses `_fullpath` rather than file identity,
+  leaving link aliases unaccounted for. Apply consistent identity checks to
+  sources and artifact pairs, resolving the parent of outputs that do not exist.
+  Acceptance: cover `./`/`..`, case variants on Windows, and hard/symbolic links
+  where supported; collisions fail before truncation or deletion.
+- [ ] **P1 — Verify CFG dominance and PHI predecessor edges.**
+  `ir_verify_module` in `src/ir/ir.c` uses a linear `defined` bitmap and checks
+  that PHI target labels exist and differ. It does not establish that an ordinary
+  value definition dominates its use, or that a PHI input is available on its
+  actual incoming predecessor edge. Build explicit basic-block/predecessor
+  information and verify value availability and terminator structure against it.
+  Acceptance: malformed-IR mutations reject a branch-local value used on the
+  other branch, unrelated PHI labels, missing incoming edges, and invalid block
+  termination, while nested short-circuit expressions and loops still pass.
+- [ ] **P2 — Always close cleanup output and preserve the actual I/O failure.**
+  `cleanup_assembly_file` in `src/backend/asm_optimizer.c` uses
+  `fflush(output) != 0 || fclose(output) != 0`; a failed flush skips `fclose`.
+  Execute both operations, retain the first failure, and propagate the failing
+  operation/path plus `errno` or the Windows replacement error to `backend.c`
+  instead of only reporting "Assembly cleanup pass failed".
+  Acceptance: deterministic flush/close/replace failures leave no open stream
+  or temporary-file leak and produce precise human/JSON diagnostics.
+- [ ] **P2 — Finish public documentation migration.**
+  `README.md` still advertises garbage-collected allocations and imports through
+  `# import`, although both were removed. Audit the README and language examples
+  against P1, document ordinary stdlib output and explicit allocation ownership,
+  and clarify whether the language specification's integer-overflow/division
+  errors apply only to constant expressions or also to runtime arithmetic.
+  Acceptance: documented examples compile with the current frontend and no
+  supported-feature list presents removed syntax as available.
+
+## Diagnostic improvements
+
+- [x] Pass unsaved root documents via `--ide-buffer` without modifying source files
+  or changing import resolution. Make insertion-point diagnostics visible in the
+  JetBrains editor, annotate malformed tokens immediately, reuse identical analysis
+  results and terminate superseded compiler checks for the same document.
+- [x] Audit every defined diagnostic constant and reporting site; add checks for
+  human/JSON consistency across all rejection fixtures. Record active/unused codes
+  and verification limits in `DIAGNOSTICS_AUDIT.md`. Separate type and semantic
+  codes, improve expression locations, declaration/delimiter notes, conversion
+  details, filesystem paths/reasons, Unicode encoding and error display limits.
+- [ ] Include the failing IR instruction and its source span for internal lowering
+  and backend failures; retain precise filesystem errors for output failures.
+- [ ] Extend remaining operator/operand `T102` messages with supplied types.
+- [ ] Add deterministic allocation and I/O fault injection to verify resource-error
+  branches without depending on actual out-of-memory or disk-full conditions.
+- [x] Point missing-semicolon errors at the preceding statement's end, including
+  blank lines before the next token, and expose an exact insertion suggestion.
+- [x] Provide `--ide --dump-ast` analysis with syntax recovery and semantic data
+  for valid subtrees despite errors. Preserve hover types in the JetBrains plugin,
+  discard malformed statements, and leave assembly output untouched. Cover
+  multiple errors, missing closing braces, and subsequent valid declarations.
+- [x] Reject unsupported method references during semantic analysis, before IR
   emission. Reproducer: a struct `Node` defines `func Next() -> *Node`, and
-  `var node3 = node.Next;` currently reaches the backend and fails with the
-  generic `error[G103]: Could not emit typed IR output '…'`. Report a focused
+  `var node3 = node.Next;` previously reached the backend and failed with the
+  generic `error[G103]: Could not emit typed IR output '…'`. Now report `S111`
   diagnostic at `node.Next` explaining that methods must be called with `()`;
   `var node3 = node.Next();` compiles successfully. Add a rejection regression
   test and retain a positive test for the actual method call.
-- [ ] Source-related errors should show the filename, line and column, the
+- [x] Source-related errors show the filename, line and column, the
   offending source line, and a caret/underline over the relevant source span.
   Preserve this context for imported files and expose it in `--formatError`
   JSON so IDE plugins can display the same location and source context. For
   errors without a source location, explain the failing operation instead of
   inventing a line number. Cover tabs, Unicode, CRLF, and end-of-file errors.
-- [ ] Offer a concrete correction when it can be determined safely. For an
+- [x] Offer a concrete correction when it can be determined safely. For an
   unambiguous zero-argument method used as a value, suggest replacing
   `node.Next` with `node.Next()`. Only present an actionable fix when symbol
   resolution, argument requirements, and the replacement are certain; do not

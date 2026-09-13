@@ -43,18 +43,62 @@ typedef struct {
 
 static int known_declared_type(const Analyzer *analyzer, const AstType *type);
 
-static void semantic_error(Analyzer *analyzer, size_t token, int code,
+static void semantic_error_at(Analyzer *analyzer, size_t token, size_t last_token, char category, int code,
                            const char *message) {
     const AstToken *location = ast_program_token(analyzer->program, token);
-    error_report(global_error_handler, SEVERITY_ERROR,
+    const AstToken *end = ast_program_token(analyzer->program, last_token);
+    char named_message[1024];
+    if (location != NULL && ((category == ERROR_CATEGORY_TYPE && code == ERR_TYPE_UNKNOWN) ||
+        (category == ERROR_CATEGORY_SEMANTIC &&
+         (code == ERR_SEM_UNDEFINED_VARIABLE || code == ERR_SEM_DUPLICATE_DEFINITION ||
+          code == ERR_SEM_FIELD_NOT_FOUND)))) {
+        snprintf(named_message, sizeof(named_message), "%s '%s'", message, location->lexeme);
+        message = named_message;
+    }
+    ErrorContext *context = error_context_create(SEVERITY_ERROR,
                  location == NULL ? 0 : location->span.begin.line,
                  location == NULL ? 0 : location->span.begin.column,
-                 ERROR_CATEGORY_SEMANTIC, code, analyzer->program->source_path,
-                 "%s", message);
+                 category, code, analyzer->program->source_path,
+                 message);
+    if (location != NULL) {
+        error_context_set_span(context, end == NULL ? location->span.end.line : end->span.end.line,
+                               end == NULL ? location->span.end.column : end->span.end.column);
+        error_context_set_token(context, location->lexeme);
+    }
+    error_report_context(global_error_handler, context);
+    if (global_error_handler == NULL || !global_error_handler->buffered) error_context_free(context);
     analyzer->model->error_count++;
 }
 
+static void semantic_error(Analyzer *analyzer, size_t token, char category, int code,
+                           const char *message) {
+    semantic_error_at(analyzer, token, token, category, code, message);
+}
+
 static size_t named_type_token(const AstProgram *program, const AstType *type);
+
+static void semantic_duplicate(Analyzer *analyzer, size_t token,
+                                const AstProgram *previous_program, size_t previous_token,
+                                const char *message) {
+    const AstToken *location = ast_program_token(analyzer->program, token);
+    const AstToken *previous = ast_program_token(previous_program, previous_token);
+    char detail[1024];
+    snprintf(detail, sizeof(detail), "%s '%s'", message, ast_program_lexeme(analyzer->program, token));
+    ErrorContext *context = error_context_create(SEVERITY_ERROR,
+        location == NULL ? 0 : location->span.begin.line, location == NULL ? 0 : location->span.begin.column,
+        ERROR_CATEGORY_SEMANTIC, ERR_SEM_DUPLICATE_DEFINITION, analyzer->program->source_path, detail);
+    if (location != NULL) error_context_set_span(context, location->span.end.line, location->span.end.column);
+    if (previous != NULL) {
+        ErrorContext *note = error_context_create(SEVERITY_INFO, previous->span.begin.line, previous->span.begin.column,
+            ERROR_CATEGORY_SEMANTIC, ERR_SEM_DUPLICATE_DEFINITION, previous_program->source_path,
+            "Previous declaration is here");
+        error_context_set_span(note, previous->span.end.line, previous->span.end.column);
+        error_context_add_child(context, note);
+    }
+    error_report_context(global_error_handler, context);
+    if (global_error_handler == NULL || !global_error_handler->buffered) error_context_free(context);
+    analyzer->model->error_count++;
+}
 
 static DataType primitive_type(const AstProgram *program, const AstType *type) {
     if (type == NULL || type->kind != AST_TYPE_NAMED || type->name_token >= program->token_count)
@@ -201,7 +245,7 @@ static void add_global(Analyzer *analyzer, AstDeclarationNode *declaration,
     const char *name = ast_program_lexeme(analyzer->program, declaration->name_token);
     if (owner_token == AST_TOKEN_NONE && kind == SEMANTIC_SYMBOL_FUNCTION &&
         reserved_link_name(name))
-        semantic_error(analyzer, declaration->name_token, ERR_PARSE_INVALID_DECLARATION,
+        semantic_error(analyzer, declaration->name_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_INVALID_DECLARATION,
                        "Function name is reserved by the runtime");
     for (size_t i = 0; i < analyzer->model->symbol_count; i++) {
         const SemanticSymbol *existing = &analyzer->model->symbols[i];
@@ -214,8 +258,7 @@ static void add_global(Analyzer *analyzer, AstDeclarationNode *declaration,
             if (kind == SEMANTIC_SYMBOL_FUNCTION &&
                 existing->kind == SEMANTIC_SYMBOL_FUNCTION) continue;
             analyzer->model->duplicate_symbol_count++;
-            semantic_error(analyzer, declaration->name_token,
-                           ERR_PARSE_DUPLICATE_DEFINITION,
+            semantic_duplicate(analyzer, declaration->name_token, existing->source_program, existing->name_token,
                            kind == SEMANTIC_SYMBOL_FUNCTION ? "Duplicate function" :
                                                               "Duplicate type declaration");
             return;
@@ -262,7 +305,7 @@ static void add_member(Analyzer *analyzer, size_t name_token, size_t owner_token
         if (existing->owner_token != AST_TOKEN_NONE &&
             same_name(existing->source_program, existing->owner_token, owner_name) &&
             same_name(existing->source_program, existing->name_token, member_name)) {
-            semantic_error(analyzer, name_token, ERR_PARSE_DUPLICATE_DEFINITION,
+            semantic_duplicate(analyzer, name_token, existing->source_program, existing->name_token,
                            "Member is already defined");
             return;
         }
@@ -577,7 +620,7 @@ static void validate_overload_sets(Analyzer *analyzer) {
                 !same_name(right->source_program, right->name_token, name)) continue;
             if (strcmp(name, "main") == 0 || same_function_signature(analyzer, left, right)) {
                 analyzer->model->duplicate_symbol_count++;
-                semantic_error(analyzer, left->name_token, ERR_PARSE_DUPLICATE_DEFINITION,
+                semantic_duplicate(analyzer, left->name_token, right->source_program, right->name_token,
                     strcmp(name, "main") == 0 ? "main cannot be overloaded" :
                                                 "Duplicate function overload signature");
             }
@@ -916,6 +959,47 @@ static void diagnostic_type(DiagnosticText *text, const Analyzer *analyzer,
     if (outer != 0 && (array || slice)) diagnostic_append(text, ")");
 }
 
+static void conversion_error(Analyzer *analyzer, const AstExpression *value,
+                             const AstProgram *expected_program, const AstType *expected,
+                             const AstExpression *expected_value, const char *reason) {
+    // An unresolved value already has a name/type diagnostic; avoid a follow-up conversion error.
+    if (value->resolved_type == TYPE_UNKNOWN && value->resolved_named_symbol_id == AST_SYMBOL_NONE) return;
+    DiagnosticText message = {0};
+    diagnostic_append(&message, "%s; got '", reason);
+    const char *length = NULL;
+    if (value->resolved_symbol_id < analyzer->model->symbol_count) {
+        const SemanticSymbol *symbol = &analyzer->model->symbols[value->resolved_symbol_id];
+        length = ast_program_lexeme(symbol->source_program, symbol->declared_type.array_length_token);
+    }
+    diagnostic_type(&message, analyzer, value->resolved_type, value->resolved_named_symbol_id,
+        value->resolved_pointer_depth, value->resolved_outer_pointer_depth,
+        value->resolved_is_array, value->resolved_is_slice, length);
+    diagnostic_append(&message, "', expected '");
+    if (expected_value != NULL) {
+        const char *expected_length = NULL;
+        if (expected_value->resolved_symbol_id < analyzer->model->symbol_count) {
+            const SemanticSymbol *symbol = &analyzer->model->symbols[expected_value->resolved_symbol_id];
+            expected_length = ast_program_lexeme(symbol->source_program, symbol->declared_type.array_length_token);
+        }
+        if (expected_value->resolved_type == TYPE_UNKNOWN && expected_value->resolved_named_symbol_id == AST_SYMBOL_NONE) {
+            free(message.text);
+            return;
+        }
+        diagnostic_type(&message, analyzer, expected_value->resolved_type, expected_value->resolved_named_symbol_id,
+            expected_value->resolved_pointer_depth, expected_value->resolved_outer_pointer_depth,
+            expected_value->resolved_is_array, expected_value->resolved_is_slice, expected_length);
+    } else diagnostic_type(&message, analyzer, primitive_type(expected_program, expected),
+        resolve_named_symbol_id(analyzer, expected_program, named_type_token(expected_program, expected)),
+        expected->pointer_depth, expected->outer_pointer_depth, expected->is_array, expected->is_slice,
+        ast_program_lexeme(expected_program, expected->array_length_token));
+    diagnostic_append(&message, "'");
+    semantic_error_at(analyzer, value->first_token,
+        value->token_count == 0 ? value->first_token : value->first_token + value->token_count - 1,
+        ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
+        message.failed ? reason : message.text);
+    free(message.text);
+}
+
 static void overload_error(Analyzer *analyzer, const AstExpression *call,
                            const char *name, size_t owner, int is_static, int ambiguous) {
     DiagnosticText message={0};
@@ -963,7 +1047,7 @@ static void overload_error(Analyzer *analyzer, const AstExpression *call,
         diagnostic_append(&message, ")");
     }
     if (index == 0) diagnostic_append(&message, "<none>");
-    semantic_error(analyzer, call->left->value_token, ERR_TYPE_INCOMPATIBLE_TYPES,
+    semantic_error(analyzer, call->left->value_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
         message.failed ? "Could not format overload diagnostic" : message.text);
     free(message.text);
 }
@@ -1038,7 +1122,7 @@ static int fold_constant(Analyzer *analyzer, AstExpression *expression, DataType
             if (initializer != NULL) value = initializer->folded_constant;
         }
         if (value.lexeme == NULL) {
-            semantic_error(analyzer, expression->first_token, ERR_TYPE_INVALID_OPERATION,
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                            "Constant cycle or forward reference to an unevaluated constant");
             return 0;
         }
@@ -1093,7 +1177,7 @@ static int fold_constant(Analyzer *analyzer, AstExpression *expression, DataType
                 case TOKEN_SLASH:
                 case TOKEN_PERCENT:
                     if (y == 0 && expression->resolved_type != TYPE_FLOAT && expression->resolved_type != TYPE_DOUBLE) {
-                        semantic_error(analyzer, expression->first_token, ERR_TYPE_INVALID_OPERATION,
+                        semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                        "Division by zero in constant expression"); return 0;
                     }
                     result = expression->operator_type == TOKEN_PERCENT ?
@@ -1118,7 +1202,7 @@ static int fold_constant(Analyzer *analyzer, AstExpression *expression, DataType
         } else {
             if (target == TYPE_BIT) result = result != 0;
             if (!(result >= INT32_MIN && result <= INT32_MAX)) {
-                semantic_error(analyzer, expression->first_token, ERR_TYPE_INVALID_OPERATION,
+                semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                "Integer overflow in constant expression"); return 0;
             }
             long long integer = (long long) result;
@@ -1139,7 +1223,7 @@ static int fold_constant(Analyzer *analyzer, AstExpression *expression, DataType
     if (target != TYPE_UNKNOWN) expression->resolved_type = target;
     return value.lexeme != NULL;
 invalid:
-    semantic_error(analyzer, expression->first_token, ERR_TYPE_INVALID_OPERATION,
+    semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                    "Unsupported constant expression");
     return 0;
 }
@@ -1173,9 +1257,22 @@ static void validate_builtin_arguments(Analyzer *analyzer,
                 pointer_expression(b) && integral_expression(c);
     else if (strcmp(name, "read") == 0)
         valid = integral_expression(a) && string_expression(b);
-    if (!valid)
-        semantic_error(analyzer, expression->value_token, ERR_TYPE_INCOMPATIBLE_TYPES,
-                       "Builtin argument has an incompatible type");
+    if (!valid) {
+        const char *expected = "builtin parameter types";
+        if (strcmp(name, "strlen") == 0 || strcmp(name, "strdup") == 0 ||
+            strcmp(name, "io_strlen") == 0 || strcmp(name, "io_str_to_int") == 0) expected = "(string)";
+        else if (strcmp(name, "strcmp") == 0) expected = "(string, string)";
+        else if (strcmp(name, "strcpy") == 0 || strcmp(name, "strcat") == 0) expected = "(*char, string)";
+        else if (strcmp(name, "malloc") == 0 || strcmp(name, "sys_close") == 0) expected = "(integral)";
+        else if (strcmp(name, "sys_open") == 0) expected = "(string, integral, integral)";
+        else if (strcmp(name, "sys_read") == 0 || strcmp(name, "sys_write") == 0) expected = "(integral, string or pointer, integral)";
+        else if (strcmp(name, "io_int_to_str") == 0) expected = "(integral, *char, integral)";
+        else if (strcmp(name, "read") == 0) expected = "(integral, string)";
+        char message[256];
+        snprintf(message, sizeof(message), "Builtin argument has an incompatible type for '%s'; expected %s", name, expected);
+        semantic_error(analyzer, expression->value_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
+                       message);
+    }
 }
 
 static void validate_function_arguments(Analyzer *analyzer,
@@ -1192,7 +1289,7 @@ static void validate_function_arguments(Analyzer *analyzer,
         (void) snprintf(message, sizeof(message),
             "Function expects %zu arguments but received %zu", expected, actual);
         semantic_error(analyzer, expression->value_token,
-                       ERR_SEM_WRONG_ARG_COUNT, message);
+                       ERROR_CATEGORY_SEMANTIC, ERR_SEM_WRONG_ARG_COUNT, message);
         return;
     }
     const AstExpression *argument = expression->arguments;
@@ -1201,9 +1298,8 @@ static void validate_function_arguments(Analyzer *analyzer,
          argument = argument->next, parameter = parameter->next) {
         if (!expression_to_declared_type_allowed(analyzer, argument,
                 function->source_program, &parameter->type))
-            semantic_error(analyzer, argument->value_token,
-                ERR_TYPE_INCOMPATIBLE_TYPES,
-                "Cannot implicitly convert argument to parameter type");
+            conversion_error(analyzer, argument, function->source_program, &parameter->type,
+                             NULL, "Cannot implicitly convert argument to parameter type");
     }
 }
 
@@ -1211,9 +1307,45 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
                                 int is_callee) {
     if (expression == NULL) return;
     if (expression->token_count > 512U && !analyzer->complexity_error_reported) {
-        semantic_error(analyzer, expression->first_token, ERR_PARSE_TOO_MANY_ERRORS,
+        semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_COMPLEXITY_LIMIT,
                        "Expression tree exceeds 512 tokens");
         analyzer->complexity_error_reported = 1;
+    }
+    if (!is_callee && expression->kind == AST_EXPR_MEMBER && expression->left != NULL &&
+        expression->resolved_symbol_id < analyzer->model->symbol_count &&
+        analyzer->model->symbols[expression->resolved_symbol_id].kind == SEMANTIC_SYMBOL_FUNCTION) {
+        const SemanticSymbol *method = &analyzer->model->symbols[expression->resolved_symbol_id];
+        ErrorContext *context = error_context_create(SEVERITY_ERROR,
+            expression->span.begin.line, expression->span.begin.column,
+            ERROR_CATEGORY_SEMANTIC, ERR_SEM_METHOD_REFERENCE, analyzer->program->source_path,
+            "Methods cannot be used as values; call the method with parentheses");
+        error_context_set_span(context, expression->span.end.line, expression->span.end.column);
+        size_t candidates = 0;
+        const char *name = ast_program_lexeme(analyzer->program, expression->value_token);
+        for (size_t i = 0; i < analyzer->model->symbol_count; i++) {
+            const SemanticSymbol *symbol = &analyzer->model->symbols[i];
+            if (symbol->kind == SEMANTIC_SYMBOL_FUNCTION &&
+                symbol->owner_symbol_id == method->owner_symbol_id &&
+                same_name(symbol->source_program, symbol->name_token, name)) candidates++;
+        }
+        const AstExpression *receiver = expression->left;
+        int type_receiver = receiver->resolved_symbol_id < analyzer->model->symbol_count &&
+            analyzer->model->symbols[receiver->resolved_symbol_id].kind == SEMANTIC_SYMBOL_STRUCT;
+        if (candidates == 1 && method->declaration != NULL && parameter_count(method->declaration) == 0 &&
+            method->declaration->as.function.is_static == type_receiver &&
+            primitive_type(method->source_program, &method->declared_type) != TYPE_VOID) {
+            error_context_set_suggestion(context, "Add '()' after the method name to call this zero-argument method");
+            const AstToken *name_location = ast_program_token(analyzer->program, expression->value_token);
+            if (name_location != NULL)
+                error_context_set_fix(context, name_location->span.end.line, name_location->span.end.column,
+                    name_location->span.end.line, name_location->span.end.column, "()");
+        } else error_context_set_suggestion(context,
+            "Call the method with the required arguments and a valid receiver; method references are unsupported");
+        error_report_context(global_error_handler, context);
+        if (global_error_handler == NULL || !global_error_handler->buffered) error_context_free(context);
+        analyzer->model->error_count++;
+        validate_expression(analyzer, expression->left, 0);
+        return;
     }
     if (expression->kind == AST_EXPR_CALL) {
         if (expression->left != NULL && expression->left->kind == AST_EXPR_NAME) {
@@ -1236,7 +1368,7 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
                 else {
                     (void) snprintf(message, sizeof(message), "Function '%s' not found", name);
                     semantic_error(analyzer, expression->left->value_token,
-                                   ERR_SEM_UNDEFINED_FUNCTION, message);
+                                   ERROR_CATEGORY_SEMANTIC, ERR_SEM_UNDEFINED_FUNCTION, message);
                 }
             } else if (expression->resolved_symbol_id == AST_SYMBOL_NONE &&
                        is_builtin_name(name)) {
@@ -1249,7 +1381,7 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
                     (void) snprintf(message, sizeof(message),
                         "Function expects %zu arguments but received %zu", expected, actual);
                     semantic_error(analyzer, expression->left->value_token,
-                                   ERR_SEM_WRONG_ARG_COUNT, message);
+                                   ERROR_CATEGORY_SEMANTIC, ERR_SEM_WRONG_ARG_COUNT, message);
                 } else validate_builtin_arguments(analyzer, expression, name);
             } else if (expression->resolved_symbol_id < analyzer->model->symbol_count)
                 validate_function_arguments(analyzer, expression,
@@ -1269,12 +1401,12 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
             if (method->kind == SEMANTIC_SYMBOL_FUNCTION && method->declaration != NULL &&
                 !method->declaration->as.function.is_static && type_receiver)
                 semantic_error(analyzer, expression->value_token,
-                               ERR_TYPE_INVALID_OPERATION,
+                               ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                "Instance method requires a struct value receiver");
             if (method->kind == SEMANTIC_SYMBOL_FUNCTION && method->declaration != NULL &&
                 method->declaration->as.function.is_static && !type_receiver)
                 semantic_error(analyzer, expression->value_token,
-                               ERR_TYPE_INVALID_OPERATION,
+                               ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                "Static method requires a struct type receiver");
             validate_function_arguments(analyzer, expression,
                                         method);
@@ -1303,25 +1435,30 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
     validate_expression(analyzer, expression->right, 0);
     for (AstExpression *argument = expression->arguments; argument != NULL;
          argument = argument->next) validate_expression(analyzer, argument, 0);
+    if (expression->kind != AST_EXPR_NAME &&
+        ((expression->left != NULL && expression->left->resolved_type == TYPE_UNKNOWN &&
+          expression->left->resolved_named_symbol_id == AST_SYMBOL_NONE) ||
+         (expression->right != NULL && expression->right->resolved_type == TYPE_UNKNOWN &&
+          expression->right->resolved_named_symbol_id == AST_SYMBOL_NONE))) return;
     if (expression->kind == AST_EXPR_UNARY && expression->operator_type == TOKEN_AMPERSAND &&
         !assignable_expression(analyzer, expression->right)) {
-        semantic_error(analyzer, expression->first_token, ERR_TYPE_INVALID_OPERATION,
+        semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                        "Address-of requires a mutable lvalue");
     } else if (expression->kind == AST_EXPR_UNARY && expression->operator_type == TOKEN_STAR &&
         expression->right != NULL && expression->right->resolved_pointer_depth == 0 &&
         expression->right->resolved_outer_pointer_depth == 0) {
-        semantic_error(analyzer, expression->first_token, ERR_TYPE_INVALID_OPERATION,
+        semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                        "Dereference requires a pointer");
     } else if (expression->kind == AST_EXPR_UNARY &&
                (expression->operator_type == TOKEN_MINUS ||
                 expression->operator_type == TOKEN_BANG) &&
                !plain_numeric_expression(expression->right)) {
-        semantic_error(analyzer, expression->first_token, ERR_TYPE_INVALID_OPERATION,
+        semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                        "Unary numeric operator requires a numeric operand");
     } else if (expression->kind == AST_EXPR_UNARY &&
                expression->operator_type == TOKEN_MINUS && expression->right != NULL &&
                expression->right->resolved_type == TYPE_BIT) {
-        semantic_error(analyzer, expression->first_token, ERR_TYPE_INVALID_OPERATION,
+        semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                        "Boolean values do not support arithmetic");
     } else if (expression->kind == AST_EXPR_BINARY && expression->left != NULL &&
                expression->right != NULL) {
@@ -1335,39 +1472,39 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
              expression->right->resolved_type == TYPE_STRING);
         if ((pointer_expression(expression->left) || pointer_expression(expression->right)) &&
             !equality && !string_concat)
-            semantic_error(analyzer, expression->first_token, ERR_TYPE_INVALID_OPERATION,
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                            "Pointer arithmetic is not supported");
         if (operation == TOKEN_PERCENT &&
             (expression->left->resolved_type == TYPE_FLOAT ||
              expression->left->resolved_type == TYPE_DOUBLE ||
              expression->right->resolved_type == TYPE_FLOAT ||
              expression->right->resolved_type == TYPE_DOUBLE))
-            semantic_error(analyzer, expression->first_token, ERR_TYPE_INVALID_OPERATION,
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                            "Remainder requires integer operands");
         if (string_concat &&
             (!(string_expression(expression->left) ||
                plain_numeric_expression(expression->left)) ||
              !(string_expression(expression->right) ||
                plain_numeric_expression(expression->right))))
-            semantic_error(analyzer, expression->first_token, ERR_TYPE_INVALID_OPERATION,
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                            "String concatenation requires scalar operands");
         else if (arithmetic && !string_concat &&
                  (!plain_numeric_expression(expression->left) ||
                   !plain_numeric_expression(expression->right)))
-            semantic_error(analyzer, expression->first_token, ERR_TYPE_INVALID_OPERATION,
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                            "Arithmetic requires numeric operands");
         else if (arithmetic && !string_concat &&
                  (expression->left->resolved_type == TYPE_BIT ||
                   expression->right->resolved_type == TYPE_BIT))
-            semantic_error(analyzer, expression->first_token, ERR_TYPE_INVALID_OPERATION,
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                            "Boolean values do not support arithmetic");
         if (logical && (!plain_numeric_expression(expression->left) ||
                         !plain_numeric_expression(expression->right)))
-            semantic_error(analyzer, expression->first_token, ERR_TYPE_INVALID_OPERATION,
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                            "Logical operators require numeric operands");
         if (relational && (!plain_numeric_expression(expression->left) ||
                            !plain_numeric_expression(expression->right)))
-            semantic_error(analyzer, expression->first_token, ERR_TYPE_INVALID_OPERATION,
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                            "Relational comparison requires numeric operands");
         if (equality) {
             unsigned left_depth = expression->left->resolved_pointer_depth +
@@ -1397,15 +1534,15 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
                     SEMANTIC_SYMBOL_ENUM;
             if (!numeric && !strings && !pointers && !named)
                 semantic_error(analyzer, expression->first_token,
-                               ERR_TYPE_INCOMPATIBLE_TYPES,
+                               ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
                                "Equality comparison requires compatible operands");
         }
     } else if (expression->kind == AST_EXPR_INDEX && expression->left != NULL) {
         if (!pointer_expression(expression->left))
-            semantic_error(analyzer, expression->first_token, ERR_SEM_NOT_ARRAY,
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_NOT_ARRAY,
                            "Indexing requires an array or pointer");
         if (!integral_expression(expression->right))
-            semantic_error(analyzer, expression->first_token, ERR_TYPE_INVALID_OPERATION,
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                            "Array index must be integral");
     } else if (expression->kind == AST_EXPR_CAST) {
         const AstExpression *argument = expression->arguments;
@@ -1417,20 +1554,20 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
             expression->allocated_type.pointer_depth != 0 ||
             expression->allocated_type.outer_pointer_depth != 0 ||
             expression->allocated_type.is_array || expression->allocated_type.is_slice)
-            semantic_error(analyzer, expression->first_token, ERR_TYPE_INVALID_OPERATION,
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                            "Cast requires one numeric value and a numeric target type");
     } else if (expression->kind == AST_EXPR_FREE) {
         const AstExpression *argument = expression->arguments;
         if (argument == NULL || argument->next != NULL ||
             (!pointer_expression(argument) && argument->resolved_type != TYPE_STRING))
-            semantic_error(analyzer, expression->first_token, ERR_TYPE_INVALID_OPERATION,
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                            "free requires one pointer or owned string");
     } else if (expression->kind == AST_EXPR_RESERVE) {
         const AstType *allocated = &expression->allocated_type;
         if (!known_declared_type(analyzer, allocated) || allocated->is_slice ||
             (primitive_type(analyzer->program, allocated) == TYPE_VOID &&
              allocated->pointer_depth == 0 && allocated->outer_pointer_depth == 0))
-            semantic_error(analyzer, expression->first_token, ERR_TYPE_INVALID_OPERATION,
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                            "reserve requires one complete sized non-void type");
     }
     if (expression->kind == AST_EXPR_NAME && !is_callee &&
@@ -1439,7 +1576,7 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
         TokenType type = analyzer->program->tokens[expression->value_token].type;
         if (strcmp(name, "true") != 0 && strcmp(name, "false") != 0 &&
             !is_builtin_name(name) && !(type >= TOKEN_TYPE_INT && type <= TOKEN_TYPE_VOID))
-            semantic_error(analyzer, expression->value_token, ERR_SEM_UNDEFINED_VARIABLE,
+            semantic_error(analyzer, expression->value_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_UNDEFINED_VARIABLE,
                            "Undefined variable");
     } else if (expression->kind == AST_EXPR_INDEX && expression->left != NULL) {
         long long index = 0;
@@ -1454,17 +1591,17 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
                     base->declared_type.array_length_token), NULL, 10);
                 if (index < 0 || index >= length)
                     semantic_error(analyzer, expression->right->value_token,
-                                   ERR_SEM_NOT_ARRAY,
+                                   ERROR_CATEGORY_SEMANTIC, ERR_SEM_INDEX_OUT_OF_BOUNDS,
                                    "Array index is outside declared bounds");
             }
         }
     } else if (expression->kind == AST_EXPR_MEMBER && expression->left != NULL &&
                expression->resolved_symbol_id == AST_SYMBOL_NONE) {
         if (expression->left->resolved_named_symbol_id == AST_SYMBOL_NONE) {
-            semantic_error(analyzer, expression->value_token, ERR_SEM_NOT_STRUCT,
+            semantic_error(analyzer, expression->value_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_NOT_STRUCT,
                            "Member access target is not a struct");
         } else {
-            semantic_error(analyzer, expression->value_token, ERR_SEM_FIELD_NOT_FOUND,
+            semantic_error(analyzer, expression->value_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_FIELD_NOT_FOUND,
                            "Field or enum member not found");
         }
     } else if (expression->kind == AST_EXPR_MEMBER && expression->left != NULL &&
@@ -1476,7 +1613,7 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
                     SEMANTIC_SYMBOL_STRUCT ||
                 analyzer->model->symbols[expression->left->resolved_symbol_id].kind ==
                     SEMANTIC_SYMBOL_ENUM)) {
-        semantic_error(analyzer, expression->value_token, ERR_TYPE_INVALID_OPERATION,
+        semantic_error(analyzer, expression->value_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                        "Instance field requires a value receiver");
     }
 }
@@ -1591,7 +1728,7 @@ static int assignable_expression(const Analyzer *analyzer,
 static void validate_array_shape(Analyzer *analyzer, AstType *type) {
     if (type == NULL || !type->is_array) return;
     if (type->array_length_token >= analyzer->program->token_count) {
-        semantic_error(analyzer, type->name_token, ERR_TYPE_INVALID_OPERATION,
+        semantic_error(analyzer, type->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                        "Array length must be a compile-time integer");
         return;
     }
@@ -1603,7 +1740,7 @@ static void validate_array_shape(Analyzer *analyzer, AstType *type) {
         const AstExpression *value = symbol != NULL && symbol->kind == SEMANTIC_SYMBOL_CONSTANT ?
             constant_initializer(symbol) : NULL;
         if (value == NULL || value->resolved_type != TYPE_INT || value->folded_constant.lexeme == NULL) {
-            semantic_error(analyzer, type->array_length_token, ERR_TYPE_INVALID_OPERATION,
+            semantic_error(analyzer, type->array_length_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                            "Array length must be a visible evaluated int constant");
             return;
         }
@@ -1611,7 +1748,7 @@ static void validate_array_shape(Analyzer *analyzer, AstType *type) {
     }
     unsigned long long length = strtoull(text, NULL, 10);
     if (length == 0 || length > 1048576ULL)
-        semantic_error(analyzer, type->array_length_token, ERR_TYPE_INVALID_OPERATION,
+        semantic_error(analyzer, type->array_length_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                        "Array length must be positive and fit local storage");
     else type->resolved_array_length = (size_t)length;
     for (size_t i=0; i<analyzer->model->symbol_count; i++) {
@@ -1964,23 +2101,23 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
             analyze_expression(analyzer, statement->value);
             validate_expression(analyzer, statement->value, 0);
             if (!known_declared_type(analyzer, &statement->type))
-                semantic_error(analyzer, statement->type.name_token, ERR_TYPE_UNKNOWN,
+                semantic_error(analyzer, statement->type.name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN,
                                "Unknown variable type");
             if (statement->type.kind == AST_TYPE_INFERRED && statement->value == NULL)
-                semantic_error(analyzer, statement->name_token, ERR_TYPE_UNKNOWN,
+                semantic_error(analyzer, statement->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN,
                                "Inferred variable requires an initializer");
             if (statement->type.is_slice)
                 semantic_error(analyzer, statement->type.name_token,
-                               ERR_TYPE_INVALID_OPERATION,
+                               ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                "Slice types are only valid for function parameters");
             if (statement->is_const && statement->value == NULL)
                 semantic_error(analyzer, statement->name_token,
-                               ERR_PARSE_INVALID_DECLARATION,
+                               ERROR_CATEGORY_SEMANTIC, ERR_SEM_INVALID_DECLARATION,
                                "Constant requires an initializer");
             if (statement->is_const && statement->value != NULL &&
                 !constant_expression_allowed(analyzer, statement->value))
                 semantic_error(analyzer, statement->value->first_token,
-                               ERR_TYPE_INVALID_OPERATION,
+                               ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                "Constant initializer is not a constant expression");
             if (statement->is_const &&
                 (statement->type.pointer_depth != 0 ||
@@ -1989,24 +2126,23 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                  (statement->value != NULL &&
                   statement->value->resolved_named_symbol_id != AST_SYMBOL_NONE)))
                 semantic_error(analyzer, statement->name_token,
-                               ERR_TYPE_INVALID_OPERATION,
+                               ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                "Constants require a primitive or string type");
             if (primitive_type(analyzer->program, &statement->type) == TYPE_VOID &&
                 statement->type.pointer_depth == 0)
                 semantic_error(analyzer, statement->type.name_token,
-                               ERR_TYPE_INVALID_OPERATION,
+                               ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                "Variable cannot have type void");
             if (statement->type.kind != AST_TYPE_INFERRED && statement->value != NULL) {
                 if (!expression_to_declared_type_allowed(analyzer, statement->value,
                                                          analyzer->program,
                                                          &statement->type))
-                    semantic_error(analyzer, statement->name_token,
-                                   ERR_TYPE_INCOMPATIBLE_TYPES,
-                                   "Cannot implicitly convert initializer");
+                    conversion_error(analyzer, statement->value, analyzer->program, &statement->type,
+                                     NULL, "Cannot implicitly convert initializer");
             }
             if (statement->type.is_array && statement->type.outer_pointer_depth == 0 && statement->value != NULL)
                 semantic_error(analyzer, statement->name_token,
-                               ERR_TYPE_INVALID_OPERATION,
+                               ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                "Arrays cannot be initialized by assignment");
             if (statement->is_const && statement->value != NULL &&
                 analyzer->model->error_count == errors_before &&
@@ -2017,14 +2153,14 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
             if (same_name(analyzer->program, statement->name_token, "true") ||
                 same_name(analyzer->program, statement->name_token, "false"))
                 semantic_error(analyzer, statement->name_token,
-                               ERR_PARSE_INVALID_DECLARATION,
+                               ERROR_CATEGORY_SEMANTIC, ERR_SEM_INVALID_DECLARATION,
                                "Reserved name cannot be declared");
             if (statement->type.is_array &&
                 statement->type.array_length_token < analyzer->program->token_count) {
                 unsigned long long length = statement->type.resolved_array_length;
                 if (length == 0 || length > 1048576ULL)
                     semantic_error(analyzer, statement->type.array_length_token,
-                                   ERR_TYPE_INVALID_OPERATION,
+                                   ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                    "Array length must be positive and fit local storage");
             }
             size_t slots = semantic_type_slots(analyzer, analyzer->program,
@@ -2034,7 +2170,7 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                 storage_limit - slots * 8U) {
                 if (!analyzer->storage_error_reported)
                     semantic_error(analyzer, statement->name_token,
-                                   ERR_CODEGEN_TOO_MANY_VARIABLES,
+                                   ERROR_CATEGORY_SEMANTIC, ERR_SEM_STORAGE_LIMIT,
                                    "Function local storage exceeds supported limit");
                 analyzer->storage_error_reported = 1;
             } else analyzer->local_storage += slots * 8U;
@@ -2043,8 +2179,8 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                 if (existing->scope_depth == analyzer->scope_depth &&
                     same_name(analyzer->program, existing->name_token,
                               ast_program_lexeme(analyzer->program, statement->name_token))) {
-                    semantic_error(analyzer, statement->name_token,
-                                   ERR_PARSE_DUPLICATE_DEFINITION, "Duplicate variable");
+                    semantic_duplicate(analyzer, statement->name_token, analyzer->program, existing->name_token,
+                                       "Duplicate variable");
                     break;
                 }
             }
@@ -2061,7 +2197,7 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
             if (statement->condition != NULL &&
                 !plain_numeric_expression(statement->condition))
                 semantic_error(analyzer, statement->condition->first_token,
-                               ERR_TYPE_INVALID_OPERATION,
+                               ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                "Condition requires a numeric or bit expression");
             analyzer->loop_depth++;
             analyze_statement(analyzer, statement->body);
@@ -2082,25 +2218,24 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                 statement->condition != NULL &&
                 !plain_numeric_expression(statement->condition))
                 semantic_error(analyzer, statement->condition->first_token,
-                               ERR_TYPE_INVALID_OPERATION,
+                               ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                "Condition requires a numeric or bit expression");
             if (statement->kind == AST_STMT_ASSIGNMENT &&
                 !assignable_expression(analyzer, statement->expression))
                 semantic_error(analyzer, statement->first_token,
-                               ERR_PARSE_UNEXPECTED_TOKEN,
+                               ERROR_CATEGORY_SEMANTIC, ERR_SEM_INVALID_DECLARATION,
                                "Unexpected statement: Assignment requires an assignable target");
             if (statement->kind == AST_STMT_ASSIGNMENT && statement->expression != NULL &&
                 statement->value != NULL &&
                 !expression_assignment_allowed(analyzer, statement->value,
                                                statement->expression))
-                semantic_error(analyzer, statement->first_token,
-                               ERR_TYPE_INCOMPATIBLE_TYPES,
-                               "Cannot implicitly convert assigned value");
+                conversion_error(analyzer, statement->value, NULL, NULL, statement->expression,
+                                 "Cannot implicitly convert assigned value");
             if (statement->kind == AST_STMT_ASSIGNMENT && statement->expression != NULL &&
                 statement->expression->resolved_is_array &&
                 statement->expression->resolved_outer_pointer_depth == 0)
                 semantic_error(analyzer, statement->first_token,
-                               ERR_TYPE_INVALID_OPERATION,
+                               ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                "Arrays cannot be assigned as values");
             if (statement->kind == AST_STMT_ASSIGNMENT && statement->expression != NULL &&
                 statement->expression->resolved_named_symbol_id != AST_SYMBOL_NONE &&
@@ -2110,44 +2245,44 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                         SEMANTIC_SYMBOL_STRUCT &&
                 statement->assignment_operator != TOKEN_EQUAL)
                 semantic_error(analyzer, statement->first_token,
-                               ERR_TYPE_INVALID_OPERATION,
+                               ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                "Structures only support simple assignment");
             if (statement->kind == AST_STMT_ASSIGNMENT && statement->expression != NULL &&
                 statement->assignment_operator != TOKEN_EQUAL &&
                 !plain_numeric_expression(statement->expression))
                 semantic_error(analyzer, statement->first_token,
-                               ERR_TYPE_INVALID_OPERATION,
+                               ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                "Compound assignment requires a numeric target");
             if (statement->kind == AST_STMT_ASSIGNMENT && statement->expression != NULL &&
                 statement->expression->resolved_type == TYPE_BIT &&
                 statement->assignment_operator != TOKEN_EQUAL)
                 semantic_error(analyzer, statement->first_token,
-                               ERR_TYPE_INVALID_OPERATION,
+                               ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                "Boolean values do not support arithmetic assignment");
             if (statement->kind == AST_STMT_BREAK && analyzer->loop_depth == 0)
                 semantic_error(analyzer, statement->first_token,
-                               ERR_SEM_BREAK_OUTSIDE_LOOP, "Break used outside a loop");
+                               ERROR_CATEGORY_SEMANTIC, ERR_SEM_BREAK_OUTSIDE_LOOP, "Break used outside a loop");
             if (statement->kind == AST_STMT_CONTINUE && analyzer->loop_depth == 0)
                 semantic_error(analyzer, statement->first_token,
-                               ERR_SEM_CONTINUE_OUTSIDE_LOOP, "Continue used outside a loop");
+                               ERROR_CATEGORY_SEMANTIC, ERR_SEM_CONTINUE_OUTSIDE_LOOP, "Continue used outside a loop");
             if (statement->kind == AST_STMT_RETURN && analyzer->current_function != NULL) {
                 DataType expected = primitive_type(analyzer->program,
                     &analyzer->current_function->as.function.return_type);
                 if (expected == TYPE_VOID && statement->value != NULL)
                     semantic_error(analyzer, statement->first_token,
-                                   ERR_TYPE_INCOMPATIBLE_TYPES,
+                                   ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
                                    "Void function cannot return a value");
                 else if (expected != TYPE_VOID && statement->value == NULL)
                     semantic_error(analyzer, statement->first_token,
-                                   ERR_TYPE_INCOMPATIBLE_TYPES,
+                                   ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
                                    "Function must return a value");
                 else if (statement->value != NULL &&
                          !expression_to_declared_type_allowed(analyzer, statement->value,
                             analyzer->program,
                             &analyzer->current_function->as.function.return_type))
-                    semantic_error(analyzer, statement->first_token,
-                                   ERR_TYPE_INCOMPATIBLE_TYPES,
-                                   "Cannot implicitly convert returned value");
+                    conversion_error(analyzer, statement->value, analyzer->program,
+                        &analyzer->current_function->as.function.return_type,
+                        NULL, "Cannot implicitly convert returned value");
             }
             analyze_statement(analyzer, statement->initializer);
             if (statement->kind == AST_STMT_WHILE) analyzer->loop_depth++;
@@ -2180,29 +2315,29 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
     analyzer->complexity_error_reported = 0;
     if (!known_declared_type(analyzer, &function->as.function.return_type))
         semantic_error(analyzer, function->as.function.return_type.name_token,
-                       ERR_TYPE_UNKNOWN, "Unknown function return type");
+                       ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN, "Unknown function return type");
     validate_array_shape(analyzer, &function->as.function.return_type);
     if ((function->as.function.return_type.is_array &&
          function->as.function.return_type.outer_pointer_depth == 0) ||
         function->as.function.return_type.is_slice)
         semantic_error(analyzer, function->as.function.return_type.name_token,
-                       ERR_TYPE_INVALID_OPERATION,
+                       ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                        "Array and slice return types are not supported");
     analyzer->scope_depth++;
     for (AstParameter *parameter = function->as.function.parameters;
          parameter != NULL; parameter = parameter->next) {
         if (!known_declared_type(analyzer, &parameter->type))
             semantic_error(analyzer, parameter->type.name_token,
-                           ERR_TYPE_UNKNOWN, "Unknown parameter type");
+                           ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN, "Unknown parameter type");
         validate_array_shape(analyzer, &parameter->type);
         if (parameter->type.is_array && parameter->type.outer_pointer_depth == 0)
             semantic_error(analyzer, parameter->type.array_length_token,
-                           ERR_TYPE_INVALID_OPERATION,
+                           ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                            "Array parameters use an unsized slice type T[]");
         if (primitive_type(analyzer->program, &parameter->type) == TYPE_VOID &&
             parameter->type.pointer_depth == 0)
             semantic_error(analyzer, parameter->type.name_token,
-                           ERR_TYPE_INVALID_OPERATION,
+                           ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                            "Parameter cannot have type void");
         for (const LocalSymbol *existing = analyzer->locals; existing != NULL;
              existing = existing->next)
@@ -2210,15 +2345,14 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
                 same_name(analyzer->program, existing->name_token,
                           ast_program_lexeme(analyzer->program,
                                              parameter->name_token))) {
-                semantic_error(analyzer, parameter->name_token,
-                               ERR_PARSE_DUPLICATE_DEFINITION,
+                semantic_duplicate(analyzer, parameter->name_token, analyzer->program, existing->name_token,
                                "Duplicate parameter");
                 break;
             }
         if (same_name(analyzer->program, parameter->name_token, "true") ||
             same_name(analyzer->program, parameter->name_token, "false"))
             semantic_error(analyzer, parameter->name_token,
-                           ERR_PARSE_INVALID_DECLARATION,
+                           ERROR_CATEGORY_SEMANTIC, ERR_SEM_INVALID_DECLARATION,
                            "Reserved name cannot be declared");
         LocalSymbol *local = push_local(analyzer, parameter->name_token, parameter->type,
                                         SEMANTIC_SYMBOL_PARAMETER, NULL, 0);
@@ -2229,7 +2363,7 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
                                            &function->as.function.return_type);
     if (return_type != TYPE_VOID &&
         !statement_always_returns(function->as.function.body))
-        semantic_error(analyzer, function->name_token, ERR_TYPE_INCOMPATIBLE_TYPES,
+        semantic_error(analyzer, function->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
                        "Function does not return on all paths");
     pop_to(analyzer, saved);
     analyzer->scope_depth--;
@@ -2247,20 +2381,20 @@ static void analyze_constant_declaration(Analyzer *analyzer,
     analyze_expression(analyzer, value);
     validate_expression(analyzer, value, 0);
     if (value == NULL || !constant_expression_allowed(analyzer, value))
-        semantic_error(analyzer, declaration->name_token, ERR_TYPE_INVALID_OPERATION,
+        semantic_error(analyzer, declaration->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                        "Constant initializer is not a constant expression");
     if (!known_declared_type(analyzer, type))
-        semantic_error(analyzer, type->name_token, ERR_TYPE_UNKNOWN,
+        semantic_error(analyzer, type->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN,
                        "Unknown constant type");
     if (type->pointer_depth != 0 || type->outer_pointer_depth != 0 ||
         type->is_array || type->is_slice ||
         (value != NULL && value->resolved_named_symbol_id != AST_SYMBOL_NONE))
-        semantic_error(analyzer, declaration->name_token, ERR_TYPE_INVALID_OPERATION,
+        semantic_error(analyzer, declaration->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                        "Constants require a primitive or string type");
     if (type->kind != AST_TYPE_INFERRED && value != NULL &&
         !expression_to_declared_type_allowed(analyzer, value, analyzer->program, type))
-        semantic_error(analyzer, declaration->name_token, ERR_TYPE_INCOMPATIBLE_TYPES,
-                       "Cannot implicitly convert constant initializer");
+        conversion_error(analyzer, value, analyzer->program, type,
+                         NULL, "Cannot implicitly convert constant initializer");
     if (value != NULL && analyzer->model->error_count == errors_before &&
         constant_expression_allowed(analyzer, value))
         (void) fold_constant(analyzer, value, type->kind == AST_TYPE_INFERRED ?
@@ -2321,7 +2455,7 @@ SemanticModel *semantic_analyze(AstProgram *program) {
         if (symbol->kind != SEMANTIC_SYMBOL_STRUCT || symbol->declaration == NULL) continue;
         analyzer.program = (AstProgram *) symbol->source_program;
         if (aggregate_reaches(&analyzer, symbol->id, symbol->id, 0))
-            semantic_error(&analyzer, symbol->name_token, ERR_TYPE_INVALID_OPERATION,
+            semantic_error(&analyzer, symbol->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                            "Recursive structure requires a pointer field");
     }
     unsigned char *constant_states=calloc(program->owned_import_count+1, 1);
@@ -2360,16 +2494,16 @@ SemanticModel *semantic_analyze(AstProgram *program) {
                 for (AstField *field = declaration->as.struct_decl.fields;
                      field != NULL; field = field->next) {
                     if (!known_declared_type(&analyzer, &field->type))
-                        semantic_error(&analyzer, field->type.name_token, ERR_TYPE_UNKNOWN,
+                        semantic_error(&analyzer, field->type.name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN,
                                        "Unknown field type");
                     if (field->type.is_slice)
                         semantic_error(&analyzer, field->type.name_token,
-                                       ERR_TYPE_INVALID_OPERATION,
+                                       ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                        "Slice fields are not supported");
                     if (primitive_type(unit, &field->type) == TYPE_VOID &&
                         field->type.pointer_depth == 0)
                         semantic_error(&analyzer, field->type.name_token,
-                                       ERR_TYPE_INVALID_OPERATION,
+                                       ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                        "Field cannot have type void");
                     validate_array_shape(&analyzer, &field->type);
                 }
@@ -2380,21 +2514,21 @@ SemanticModel *semantic_analyze(AstProgram *program) {
                 for (AstField *field = declaration->as.enum_decl.fields;
                      field != NULL; field = field->next) {
                     if (!known_declared_type(&analyzer, &field->type))
-                        semantic_error(&analyzer, field->type.name_token, ERR_TYPE_UNKNOWN,
+                        semantic_error(&analyzer, field->type.name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN,
                                        "Unknown enum field type");
                     if (field->type.is_slice)
                         semantic_error(&analyzer, field->type.name_token,
-                                       ERR_TYPE_INVALID_OPERATION,
+                                       ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                        "Slice fields are not supported");
                     if (primitive_type(unit, &field->type) == TYPE_VOID &&
                         field->type.pointer_depth == 0)
                         semantic_error(&analyzer, field->type.name_token,
-                                       ERR_TYPE_INVALID_OPERATION,
+                                       ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                        "Enum field cannot have type void");
                     if (primitive_type(unit, &field->type) == TYPE_UNKNOWN ||
                         field->type.pointer_depth != 0 || field->type.is_array)
                         semantic_error(&analyzer, field->type.name_token,
-                                       ERR_TYPE_INVALID_OPERATION,
+                                       ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                        "Enum fields require scalar primitive types");
                     validate_array_shape(&analyzer, &field->type);
                 }
@@ -2416,7 +2550,7 @@ SemanticModel *semantic_analyze(AstProgram *program) {
                             "Enum value expects %zu arguments but received %zu",
                             field_count, argument_count);
                         semantic_error(&analyzer, value->name_token,
-                                       ERR_SEM_WRONG_ARG_COUNT, message);
+                                       ERROR_CATEGORY_SEMANTIC, ERR_SEM_WRONG_ARG_COUNT, message);
                     } else {
                         AstExpression *argument = value->arguments;
                         AstField *field = declaration->as.enum_decl.fields;
@@ -2424,13 +2558,12 @@ SemanticModel *semantic_analyze(AstProgram *program) {
                              argument = argument->next, field = field->next) {
                             if (!enum_constant_expression(&analyzer, argument))
                                 semantic_error(&analyzer, argument->first_token,
-                                    ERR_TYPE_INVALID_OPERATION,
+                                    ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                     "Enum arguments must be compile-time scalar constants");
                             if (!expression_to_declared_type_allowed(&analyzer, argument,
                                                                     unit, &field->type))
-                                semantic_error(&analyzer, argument->value_token,
-                                    ERR_TYPE_INCOMPATIBLE_TYPES,
-                                    "Cannot implicitly convert enum argument");
+                                conversion_error(&analyzer, argument, unit, &field->type, NULL,
+                                                 "Cannot implicitly convert enum argument");
                         }
                     }
                 }
@@ -2441,8 +2574,8 @@ SemanticModel *semantic_analyze(AstProgram *program) {
                                                               SEMANTIC_SYMBOL_FUNCTION);
     if (main_symbol == NULL || main_symbol->declaration == NULL) {
         analyzer.program = program;
-        semantic_error(&analyzer, AST_TOKEN_NONE, ERR_SEM_UNDEFINED_FUNCTION,
-                       "Program must define main");
+        semantic_error(&analyzer, AST_TOKEN_NONE, ERROR_CATEGORY_COMPILER, ERR_COMP_NO_MAIN_FUNCTION,
+                       "Program must define main: func main() -> int or func main() -> void");
     } else {
         analyzer.program = (AstProgram *) main_symbol->source_program;
         const AstDeclarationNode *main_declaration = main_symbol->declaration;
@@ -2452,7 +2585,7 @@ SemanticModel *semantic_analyze(AstProgram *program) {
             main_declaration->as.function.return_type.pointer_depth != 0 ||
             (main_type != TYPE_VOID && main_type != TYPE_INT))
             semantic_error(&analyzer, main_symbol->name_token,
-                           ERR_TYPE_INCOMPATIBLE_TYPES,
+                           ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
                            "main must have no parameters and return void or int");
     }
     pop_to(&analyzer, NULL);

@@ -172,24 +172,26 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
 TokenStream *tokenize_file_with_interner(const char *filename, int debug_mode,
                                          StringInterner *interner) {
     (void) debug_mode;
-    FILE *file = fopen(filename, "rb");
+    FILE *file = fopen(error_handler_source_path(filename), "rb");
     if (!file) {
         error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_LEXER,
-                     ERR_LEX_FILE_NOT_FOUND, filename, "Could not open source file");
+                     ERR_LEX_FILE_NOT_FOUND, filename, "Could not open source file '%s': %s", filename, strerror(errno));
         return nullptr;
     }
 
     if (fseek(file, 0, SEEK_END) != 0) {
+        int saved_errno = errno;
         fclose(file);
         error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_LEXER,
-                     ERR_LEX_FILE_READ_ERROR, filename, "Could not seek in source file");
+                     ERR_LEX_FILE_READ_ERROR, filename, "Could not seek in source file '%s': %s", filename, strerror(saved_errno));
         return NULL;
     }
     long file_size = ftell(file);
     if (file_size < 0 || fseek(file, 0, SEEK_SET) != 0) {
+        int saved_errno = errno;
         fclose(file);
         error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_LEXER,
-                     ERR_LEX_FILE_READ_ERROR, filename, "Could not determine source file size");
+                     ERR_LEX_FILE_READ_ERROR, filename, "Could not determine source file size for '%s': %s", filename, strerror(saved_errno));
         return NULL;
     }
 
@@ -202,10 +204,11 @@ TokenStream *tokenize_file_with_interner(const char *filename, int debug_mode,
     }
     size_t bytes_read = fread(source, 1, (size_t) file_size, file);
     if (bytes_read != (size_t) file_size && ferror(file)) {
+        int saved_errno = errno;
         fclose(file);
         free(source);
         error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_LEXER,
-                     ERR_LEX_FILE_READ_ERROR, filename, "Could not read source file");
+                     ERR_LEX_FILE_READ_ERROR, filename, "Could not read source file '%s': %s", filename, strerror(saved_errno));
         return NULL;
     }
     source[bytes_read] = '\0';
@@ -265,11 +268,8 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
             char str[MAX_TOKEN] = {0};
             int j = 0;
 
-            while (i < length && source[i] != '"' && j < MAX_TOKEN - 1) {
-                if (source[i] == '\n') {
-                    line++;
-                    column = 1;
-                } else if (source[i] == '\\' && i + 1 < length) {
+            while (i < length && source[i] != '"' && source[i] != '\n' && source[i] != '\r' && j < MAX_TOKEN - 1) {
+                if (source[i] == '\\' && i + 1 < length && source[i + 1] != '\n' && source[i + 1] != '\r') {
                     i++;
                     column++;
 
@@ -280,9 +280,11 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
                         case '0': str[j++] = '\0'; break;
                         case '\\': str[j++] = '\\'; break;
                         case '"': str[j++] = '"'; break;
+                        case '\'': str[j++] = '\''; break;
                         default:
-                            error_report(global_error_handler, SEVERITY_ERROR, line, column,
+                            error_report_with_suggestion(global_error_handler, SEVERITY_ERROR, line, column - 1,
                                          ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_ESCAPE, filename,
+                                         "Supported string escapes: \\n, \\t, \\r, \\0, \\\\, and \\\"",
                                          "Unknown escape sequence '\\%c'", source[i]);
                             stream->has_error = 1;
                             str[j++] = source[i];
@@ -312,7 +314,7 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
 
             if (j == MAX_TOKEN - 1 && i < length && source[i] != '"') {
                 error_report(global_error_handler, SEVERITY_ERROR, start_line, start_col,
-                             ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_SYNTAX, filename,
+                             ERROR_CATEGORY_LEXER, ERR_LEX_TOKEN_TOO_LONG, filename,
                              "Token exceeds maximum length of %d bytes", MAX_TOKEN - 1);
                 stream->has_error = 1;
                 while (i < length && source[i] != '"') { i++; column++; }
@@ -360,8 +362,9 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
                         case '"':  ch[j++] = '"'; break;
                         case '\'': ch[j++] = '\''; break;
                         default:
-                            error_report(global_error_handler, SEVERITY_ERROR, line, column,
+                            error_report_with_suggestion(global_error_handler, SEVERITY_ERROR, line, column - 1,
                                          ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_ESCAPE, filename,
+                                         "Use a supported escape such as \\n, \\t, \\\\, or \\'",
                                          "Unknown escape sequence '\\%c'", esc);
                             stream->has_error = 1;
                             ch[j++] = esc;
@@ -369,7 +372,7 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
                     i++;
                     column++;
                 }
-            } else if (i < length && source[i] != '\'') {
+            } else if (i < length && source[i] != '\'' && source[i] != '\n' && source[i] != '\r') {
                 ch[j++] = source[i++];
                 column++;
             }
@@ -381,7 +384,7 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
                 column++;
                 if (j != 1) {
                     error_report(global_error_handler, SEVERITY_ERROR, start_line, start_col,
-                                 ERROR_CATEGORY_LEXER, ERR_LEX_UNCLOSED_CHAR, filename,
+                                 ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_CHAR_LITERAL, filename,
                                  "Character literal must contain exactly one byte");
                     stream->has_error = 1;
                 } else {
@@ -393,6 +396,19 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
                     }
                 }
             } else {
+                size_t end = i;
+                while (end < length && source[end] != '\'' && source[end] != '\n' && source[end] != '\r') end++;
+                if (end < length && source[end] == '\'') {
+                    error_report(global_error_handler, SEVERITY_ERROR, start_line, start_col,
+                                 ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_CHAR_LITERAL, filename,
+                                 "Character literal must contain exactly one byte; use a string for multiple characters");
+                    column++; // Closing quote; UTF-8 continuation bytes do not add columns.
+                    for (size_t k = i; k < end; k++)
+                        if (((unsigned char)source[k] & 0xC0) != 0x80) column++;
+                    i = end + 1;
+                    stream->has_error = 1;
+                    continue;
+                }
                 error_report(global_error_handler, SEVERITY_ERROR, start_line, start_col,
                              ERROR_CATEGORY_LEXER, ERR_LEX_UNCLOSED_CHAR, filename,
                              "Unclosed character literal");
@@ -417,11 +433,11 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
                 column++;
             }
 
-            if (i < length && (source[i] == 'e' || source[i] == 'E')) {
+            if (j < MAX_TOKEN - 2 && i < length && (source[i] == 'e' || source[i] == 'E')) {
                 num[j++] = source[i++];
                 column++;
 
-                if (i < length && (source[i] == '+' || source[i] == '-')) {
+                if (j < MAX_TOKEN - 1 && i < length && (source[i] == '+' || source[i] == '-')) {
                     num[j++] = source[i++];
                     column++;
                 }
@@ -457,10 +473,12 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
             }
 
             if (i < length && (isdigit((unsigned char) source[i]) ||
-                (source[i] == '.' && !(i+1 < length && source[i+1] == '(')))) {
+                (source[i] == '.' && !(i+1 < length && source[i+1] == '(')) ||
+                (j >= MAX_TOKEN - 2 && (source[i] == 'e' || source[i] == 'E')))) {
                 error_report(global_error_handler, SEVERITY_ERROR, line, start_col,
-                             ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_SYNTAX, filename,
-                             "Numeric token exceeds maximum length");
+                             ERROR_CATEGORY_LEXER, j >= MAX_TOKEN - 2 ? ERR_LEX_TOKEN_TOO_LONG : ERR_LEX_INVALID_SYNTAX, filename,
+                             j >= MAX_TOKEN - 2 ? "Numeric token exceeds maximum length" :
+                             "Invalid numeric literal: multiple decimal points are not allowed");
                 stream->has_error = 1;
                 while (i < length && (isdigit((unsigned char) source[i]) || source[i] == '.')) { i++; column++; }
             }
@@ -474,7 +492,7 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
             continue;
         }
 
-        if (isalpha(c) || c == '_') {
+        if (isalpha((unsigned char)c) || c == '_') {
             int start_col = column;
             char ident[MAX_TOKEN];
             int j = 0;
@@ -488,7 +506,7 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
 
             if (i < length && (isalnum((unsigned char) source[i]) || source[i] == '_')) {
                 error_report(global_error_handler, SEVERITY_ERROR, line, start_col,
-                             ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_SYNTAX, filename,
+                             ERROR_CATEGORY_LEXER, ERR_LEX_TOKEN_TOO_LONG, filename,
                              "Token exceeds maximum length");
                 stream->has_error = 1;
                 while (i < length && (isalnum((unsigned char) source[i]) || source[i] == '_')) { i++; column++; }
@@ -561,11 +579,39 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
             continue;
         }
 
-        error_report(global_error_handler, SEVERITY_ERROR, line, column,
-                     ERROR_CATEGORY_LEXER, ERR_LEX_UNKNOWN_CHAR, filename,
-                     "Unknown character '%c' (0x%02X)", c, (unsigned char)c);
+        unsigned char byte = (unsigned char)c;
+        unsigned codepoint = byte;
+        size_t width = byte >= 0xC2 && byte <= 0xDF ? 2 :
+                       byte >= 0xE0 && byte <= 0xEF ? 3 :
+                       byte >= 0xF0 && byte <= 0xF4 ? 4 : 1;
+        int valid_utf8 = width > 1 && i + width <= length;
+        if (valid_utf8) {
+            codepoint = byte & (width == 2 ? 0x1F : width == 3 ? 0x0F : 0x07);
+            for (size_t k = 1; k < width; k++) {
+                unsigned char part = (unsigned char)source[i + k];
+                if ((part & 0xC0) != 0x80) valid_utf8 = 0;
+                codepoint = (codepoint << 6) | (part & 0x3F);
+            }
+            if ((width == 3 && codepoint < 0x800) || (width == 4 && codepoint < 0x10000) ||
+                codepoint > 0x10FFFF || (codepoint >= 0xD800 && codepoint <= 0xDFFF)) valid_utf8 = 0;
+        }
+        if (valid_utf8)
+            error_report(global_error_handler, SEVERITY_ERROR, line, column,
+                         ERROR_CATEGORY_LEXER, ERR_LEX_UNKNOWN_CHAR, filename,
+                         "Unknown character U+%04X; identifiers use ASCII letters, digits and '_'", codepoint);
+        else if (byte >= 0x80 || byte < 0x20 || byte == 0x7F) {
+            width = 1;
+            error_report(global_error_handler, SEVERITY_ERROR, line, column,
+                         ERROR_CATEGORY_LEXER, ERR_LEX_UNKNOWN_CHAR, filename,
+                         "Unknown character byte 0x%02X%s", byte, byte >= 0x80 ? " (invalid UTF-8)" : "");
+        } else {
+            width = 1;
+            error_report(global_error_handler, SEVERITY_ERROR, line, column,
+                         ERROR_CATEGORY_LEXER, ERR_LEX_UNKNOWN_CHAR, filename,
+                         "Unknown character '%c' (0x%02X)", c, byte);
+        }
         stream->has_error = 1;
-        i++;
+        i += width;
         column++;
     }
 

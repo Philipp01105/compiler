@@ -63,6 +63,41 @@ Useful options:
 
 `--deterministic` omits the generation timestamp. `--formatError` emits one JSON document containing an `errors` array and a `summary` object. The three dump options produce versioned deterministic AST, typed-IR, and instruction-level source-map artifacts; see [DUMP_FORMATS.md](DUMP_FORMATS.md).
 
+`--ide --dump-ast <path>` performs editor analysis without code generation or
+changing assembly output. It recovers from syntax errors where possible and dumps
+a validated partial AST with semantic information, even when it exits with errors.
+Malformed statements/declarations are omitted; lexer failures can prevent a dump.
+`--ide-buffer <path>` reads the root document from an editor snapshot while retaining
+the original source path for imports, AST identities, and diagnostic source context.
+Imported dependencies are still read from disk. This option requires `--ide`.
+This mode cannot be combined with assembly, IR, source-map or token output options.
+
+Source diagnostics include the file location, source line, and an underline.
+Missing semicolons point to the end of the preceding statement and include an
+insertion suggestion, even when the next token is on a later nonempty line.
+Parser and semantic diagnostics also provide `endLine`/`endColumn` in JSON;
+coordinates are one-based, the end is exclusive, and zero denotes an unavailable
+location. Columns count Unicode code points, with a tab counting as one column.
+`sourceLine` preserves UTF-8 text and tabs and excludes line terminators.
+If the source cannot be read, the diagnostic still reports its known location.
+
+Type errors use `T` codes; semantic errors use `S`, parser errors `P`, filesystem
+code-generation failures `G`, and driver/import failures `C`. Older versions emitted
+several unrelated semantic and type errors with the same `S` code. See
+[DIAGNOSTICS_AUDIT.md](DIAGNOSTICS_AUDIT.md) for the current inventory and audit results.
+Related locations are included in `children`. Human output displays up to ten
+errors and reports omissions; JSON keeps all errors and includes
+`summary.suppressedErrorCount` (zero in compiler JSON mode).
+
+Safe corrections are shown as `help:` text and, when available, a JSON `fix`
+object containing `filename`, `line`, `column`, `endLine`, `endColumn`, and
+`replacement`. An empty span means insert at that position; `fix: null` means
+there is no safe automatic edit. Edits are suggestions and are never applied
+by the compiler. Unsupported method references such as `node.Next` produce
+`S111`; an unambiguous zero-argument method with a valid receiver and a non-void
+return can suggest inserting `()` after the method name. Overloads, required
+arguments, void returns, or invalid receivers suppress the edit.
+
 ## Tests
 
 CTest includes:
