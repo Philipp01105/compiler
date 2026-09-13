@@ -40,7 +40,7 @@ copying through the existing internal ABI.
 - `src/common/string_interner.c` owns the module-wide canonical spelling table.
   Root files and imports share it, so equal source strings have pointer identity.
 - `src/ast` owns program lifetime, the shared string interner, spans, and AST storage.
-- `src/ast/ast_dump.c` serializes the resolved tree as versioned `dmm-ast-v2`.
+- `src/ast/ast_dump.c` serializes the resolved tree as versioned `dmm-ast-v3`.
 - `src/sema` collects global/member/local symbols, resolves expressions and
   named types, validates scopes, calls, conversions, lvalues, returns, bounds,
   and control-flow placement, and annotates AST nodes with stable IDs and types.
