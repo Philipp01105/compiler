@@ -10,6 +10,7 @@ source file
   -> arena-owned structured AST
   -> semantic model and typed AST annotations
   -> verified target-neutral IR
+  -> IR peephole/dataflow optimization and verification
   -> target-aware structured x86-64 instructions
   -> assembly printing/cleanup OR direct encoding
   -> ELF/COFF object serialization OR internal ELF/PE executable linking
@@ -36,7 +37,11 @@ is no alternate compatibility emitter.
 - `src/ir` lowers typed AST nodes to explicit values and control flow, interns
   types, describes aggregate/enum layouts and imports, and verifies every use,
   definition, label, type, and symbol reference.
-- `src/ir/ir_dump.c` serializes verified modules as versioned `dmm-ir-v2`.
+- `src/ir/ir_optimize.c` folds and propagates constants/copies, simplifies control
+  flow and addresses, and removes dead values/stores using CFG dataflow/liveness.
+  It preserves possible effects and traps, then verifies the resulting module.
+  See [IR_OPTIMIZATION.md](IR_OPTIMIZATION.md).
+- `src/ir/ir_dump.c` serializes verified modules as versioned `dmm-ir-v3`.
 - `src/backend/x86_64` consumes only verified IR. It owns stack layout, System V
   and Windows x64 calling conventions, scalar/SSE conversion, aggregate address
   calculation, runtime calls, and Intel/AT&T assembly formatting.
@@ -44,7 +49,7 @@ is no alternate compatibility emitter.
 - `src/backend/native/encoder.c` encodes structured instructions directly.
 - `src/backend/native/object.c` owns sections, symbols and relocations and writes
   ELF64/COFF relocatable objects. `linker.c` lays out executable images, resolves
-  relocations and emits dynamic ELF imports or PE import/base-relocation tables.
+  relocations and emits static ELF segments or PE OS import/base-relocation tables.
 - `src/runtime/native_runtime.c` supplies executable startup and native runtime
   shims; system imports have private names to prevent source-symbol collisions.
   See [NATIVE_BACKEND.md](NATIVE_BACKEND.md) for image layout and limits.

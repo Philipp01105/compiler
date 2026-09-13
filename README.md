@@ -73,6 +73,8 @@ Useful options:
 --emit=exe|obj|asm (default: exe)
 -c                  Native object output
 -S                  Assembly output
+-O0                 Disable IR optimization
+-O1                 Enable IR optimization (default)
 --syntax=intel|att
 --target=elf|coff
 --formatError
@@ -87,6 +89,10 @@ Useful options:
 ```
 
 `--deterministic` omits the generation timestamp. `--formatError` emits one JSON document containing an `errors` array and a `summary` object. The three dump options produce versioned deterministic AST, typed-IR, and instruction-level source-map artifacts; see [DUMP_FORMATS.md](DUMP_FORMATS.md).
+
+The compiler runs IR peephole and dataflow optimizations before code generation.
+Use `-O0` to disable them; `--dump-ir` shows the selected IR. See
+[IR_OPTIMIZATION.md](IR_OPTIMIZATION.md) for transformations and semantic limits.
 
 `--ide --dump-ast <path>` performs editor analysis without code generation or
 changing assembly output. It recovers from syntax errors where possible and dumps

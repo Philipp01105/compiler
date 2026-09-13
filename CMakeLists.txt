@@ -19,6 +19,7 @@ set(DMM_FUZZ_PIPELINE_SOURCES
         src/frontend/lexer.c
         src/frontend/syntax_parser.c
         src/sema/semantic.c
+        src/ir/ir_optimize.c
         src/ir/ir.c
         src/ir/ir_cfg.c
         src/diagnostics/errorHandler.c)
@@ -58,6 +59,8 @@ add_executable(compiler
         src/ir/ir_cfg.c
         src/ir/ir_cfg.h
         src/ir/ir_dump.c
+        src/ir/ir_optimize.c
+        src/ir/ir_optimize.h
         src/backend/backend.c
         src/backend/native/object.c
         src/backend/native/encoder.c
@@ -235,6 +238,18 @@ if(BUILD_TESTING)
             src/frontend/syntax_parser.c src/frontend/lexer.c src/sema/semantic.c
             src/ir/ir.c src/ir/ir_cfg.c src/common/string_interner.c src/diagnostics/errorHandler.c)
     target_include_directories(dmm_pipeline_test PRIVATE ${DMM_INCLUDE_DIRS})
+    add_executable(dmm_ir_optimizer_test tests/unit/ir_optimizer_test.c
+            src/ast/ast.c src/frontend/frontend.c src/frontend/syntax_parser.c
+            src/frontend/lexer.c src/sema/semantic.c src/ir/ir.c src/ir/ir_cfg.c
+            src/ir/ir_optimize.c src/common/string_interner.c src/diagnostics/errorHandler.c)
+    target_include_directories(dmm_ir_optimizer_test PRIVATE ${DMM_INCLUDE_DIRS})
+    add_test(NAME ir_optimizer_unit COMMAND dmm_ir_optimizer_test)
+    set_tests_properties(ir_optimizer_unit PROPERTIES LABELS "unit;ir;backend;safety")
+    add_test(NAME ir_optimization_execution COMMAND ${CMAKE_COMMAND}
+             -DCOMPILER=$<TARGET_FILE:compiler>
+             -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/ir_optimization_test
+             -P ${CMAKE_SOURCE_DIR}/tests/ir_optimization_test.cmake)
+    set_tests_properties(ir_optimization_execution PROPERTIES LABELS "integration;ir;backend;execution;safety")
     file(GLOB_RECURSE DMM_FRONTEND_CORPUS CONFIGURE_DEPENDS
             ${CMAKE_SOURCE_DIR}/tests/execution/*.dmm)
     file(GLOB DMM_EXAMPLE_CORPUS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/examples/*.dmm)
@@ -317,7 +332,7 @@ if(BUILD_TESTING)
     if(DMM_SANITIZERS)
         foreach(test_target dmm_optimizer_test dmm_syntax_converter_test dmm_x86_instruction_test
                             dmm_string_interner_test dmm_fuzz_pipeline_smoke_test dmm_lexer_test
-                            dmm_frontend_ast_test dmm_pipeline_test dmm_runtime_test dmm_native_test)
+                            dmm_frontend_ast_test dmm_pipeline_test dmm_runtime_test dmm_native_test dmm_ir_optimizer_test)
             target_compile_options(${test_target} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
             target_link_options(${test_target} PRIVATE -fsanitize=address,undefined)
         endforeach()

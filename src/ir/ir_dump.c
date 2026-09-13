@@ -132,6 +132,8 @@ static int dump_instruction(FILE *output, const IrFunction *function,
          instruction->opcode == IR_OP_STORE) &&
         (fputs(" operator=", output) == EOF ||
          !quoted(output, operator_name(instruction->operator_type)))) return 0;
+    if (instruction->has_immediate &&
+        fprintf(output, " immediate=0x%016llx", (unsigned long long)instruction->immediate) < 0) return 0;
     return fputc('\n', output) != EOF;
 }
 
@@ -191,7 +193,7 @@ static int dump_aggregates(FILE *output, const IrModule *module) {
 
 int ir_dump(FILE *output, const IrModule *module) {
     if (output == NULL || module == NULL || !ir_verify_module(module)) return 0;
-    if (fputs("dmm-ir-v2\nmodule path=", output) == EOF ||
+    if (fputs("dmm-ir-v3\nmodule path=", output) == EOF ||
         !quoted(output, module->program->source_path) ||
         fprintf(output, " verified=%d types=%zu functions=%zu structs=%zu enums=%zu imports=%zu\n",
                 module->verified, module->type_count, module->function_count,
