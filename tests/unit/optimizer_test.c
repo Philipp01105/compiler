@@ -10,6 +10,8 @@ int native_write_object(NativeObject *o,TargetFormat t,NativeBuffer *b){(void)o;
 int native_link_executable(NativeObject *o,TargetFormat t,NativeBuffer *b){(void)o;(void)t;(void)b;return 0;}
 void native_object_free(NativeObject *o){(void)o;}
 void native_error(NativeObject *o,const char *s){(void)o;(void)s;}
+int native_runtime_emit(NativeObject *o,TargetFormat t){(void)o;(void)t;return 0;}
+int native_runtime_object_imports(NativeObject *o,TargetFormat t){(void)o;(void)t;return 0;}
 
 #include <stdio.h>
 #include <stdlib.h>

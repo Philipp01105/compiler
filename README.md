@@ -24,7 +24,8 @@ The project is suitable for learning and experimentation. It is not yet intended
 - GCC or compatible GNU tools for assembly mode and object interoperability tests
 
 Native executable mode requires no external build tools at compilation time.
-It targets x86-64 glibc Linux or Windows with `msvcrt.dll`.
+Generated programs target x86-64 Linux or Windows without libc, CRT or a foreign
+language runtime. Linux uses direct syscalls; Windows imports only OS APIs.
 
 The automated suite is exercised with GCC on Linux and MinGW-w64 on Windows.
 
@@ -54,19 +55,17 @@ The default assembly mode remains available:
 
 ```sh
 ./build/compiler tests/execution/basics/hello.dmm
-gcc -no-pie tests/execution/basics/hello.dmm.s build/libdmm_runtime.a -o hello
+gcc -nostdlib -no-pie -Wl,-e,__dmm_entry tests/execution/basics/hello.dmm.s -o hello
 ./hello
 ```
 
 On a multi-configuration generator, the compiler executable may be inside `build/Debug` or `build/Release`.
 
-Assembly and object outputs use the separately built `dmm_runtime` static library for
-input, numeric conversion, string intrinsics, and low-level file I/O. Link the
-library after the assembly/object inputs. CMake installs it under `lib` and its
-C ABI header under `include/dmm`. Library filenames and configuration directories
-depend on the toolchain; MinGW builds `libdmm_runtime.a`. Build the runtime for
-the same platform as the generated program; `--target` does not cross-compile it.
-With `DMM_SANITIZERS=ON`, also link programs with `-fsanitize=address,undefined`.
+Assembly and native object outputs embed the same compiler-owned runtime as
+internally linked executables. No runtime archive is needed. On Windows, use
+`-nostdlib -Wl,--entry=__dmm_entry,--subsystem,console` and append `-lkernel32`
+after the assembly or object input. Sanitizers instrument the C compiler and
+test harnesses; emitted runtime instructions are not sanitizer-instrumented.
 
 Useful options:
 

@@ -168,7 +168,8 @@ static const X64OpcodeDescriptor opcode_descriptors[X64_OP_COUNT] = {
     OP("setb", X64_SUFFIX_NONE), OP("setbe", X64_SUFFIX_NONE),
     OP("setp", X64_SUFFIX_NONE), OP("setnp", X64_SUFFIX_NONE),
     OP("ret", X64_SUFFIX_NONE), OP("cqo", X64_SUFFIX_NONE),
-    OP("syscall", X64_SUFFIX_NONE), OP("ud2", X64_SUFFIX_NONE)
+    OP("syscall", X64_SUFFIX_NONE), OP("ud2", X64_SUFFIX_NONE),
+    OP("shl", X64_SUFFIX_WIDTH), OP("shr", X64_SUFFIX_WIDTH), OP("div", X64_SUFFIX_WIDTH)
 };
 #undef OP_NAMES
 #undef OP

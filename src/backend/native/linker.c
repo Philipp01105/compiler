@@ -33,6 +33,7 @@ static int add_imports(NativeObject *object,TargetFormat target,Import **result,
         Import *import=&imports[(*count)++];import->symbol=n;import->export_name=name;import->iat=object->sections[NATIVE_DATA].size;
         char slot[64];snprintf(slot,sizeof(slot),".Lnative_iat_%zu",n);
         object->section=NATIVE_DATA;if(!native_define(object,slot,0,0)||!native_uint(object,0,8))goto failure;
+        if(target==TARGET_COFF && !native_uint(object,0,8))goto failure;
         char symbol[512];snprintf(symbol,sizeof(symbol),"%s",object->symbols[n].name);
         object->section=NATIVE_TEXT;if(!native_define(object,symbol,1,1))goto failure;
         X64Operand memory=x64_rip_memory(X64_WIDTH_QWORD,slot,0);memory.has_symbol_suffix=0;
@@ -56,14 +57,16 @@ static int write_pe(NativeObject *object,const Import *imports,size_t count,Nati
     sizes[0]=object->sections[0].size;sizes[1]=object->sections[1].size;sizes[2]=object->sections[2].size;
     rva[0]=4096;raw[0]=1024;
     for(size_t n=1;n<4;++n){rva[n]=align(rva[n-1]+sizes[n-1],4096);raw[n]=raw[n-1]+align(sizes[n-1],512);}
-    BYTES(&idata,NULL,40);size_t lookup=idata.size;BYTES(&idata,NULL,(count+1)*8);
-    size_t dll=idata.size;BYTES(&idata,"msvcrt.dll",11);
+    BYTES(&idata,NULL,(count+1)*20);
+    size_t kernel=idata.size;BYTES(&idata,"kernel32.dll",13);
     for(size_t n=0;n<count;++n) {
+        PAD(&idata,8);size_t lookup=idata.size;BYTES(&idata,NULL,16);
         PAD(&idata,2);size_t hint=idata.size;UINT(&idata,0,2);BYTES(&idata,imports[n].export_name,strlen(imports[n].export_name)+1);
-        patch(&idata,lookup+n*8,rva[3]+hint,8);patch(&object->sections[NATIVE_DATA],imports[n].iat,rva[3]+hint,8);
+        patch(&idata,lookup,rva[3]+hint,8);patch(&object->sections[NATIVE_DATA],imports[n].iat,rva[3]+hint,8);
+        patch(&idata,n*20,rva[3]+lookup,4);
+        patch(&idata,n*20+12,rva[3]+kernel,4);
+        patch(&idata,n*20+16,rva[2]+imports[n].iat,4);
     }
-    patch(&idata,0,rva[3]+lookup,4);patch(&idata,12,rva[3]+dll,4);
-    patch(&idata,16,rva[2]+(count?imports[0].iat:0),4);
     sizes[3]=idata.size;rva[4]=align(rva[3]+sizes[3],4096);raw[4]=raw[3]+align(sizes[3],512);
     /* DIR64 blocks retain relocations for enum payload pointers under ASLR. */
     for(size_t section=0;section<3;++section) {
@@ -92,9 +95,9 @@ static int write_pe(NativeObject *object,const Import *imports,size_t count,Nati
     patch(out,opt+40,6,2);patch(out,opt+48,6,2);patch(out,opt+56,align(rva[4]+sizes[4],4096),4);patch(out,opt+60,1024,4);
     patch(out,opt+68,3,2);patch(out,opt+70,0x160,2);patch(out,opt+72,8*1024*1024,8);patch(out,opt+80,4096,8);
     patch(out,opt+88,1024*1024,8);patch(out,opt+96,4096,8);patch(out,opt+108,16,4);
-    patch(out,opt+112+8,rva[3],4);patch(out,opt+112+12,40,4);
+    patch(out,opt+112+8,rva[3],4);patch(out,opt+112+12,(count+1)*20,4);
     patch(out,opt+112+5*8,rva[4],4);patch(out,opt+116+5*8,sizes[4],4);
-    patch(out,opt+112+12*8,rva[2]+(count?imports[0].iat:0),4);patch(out,opt+116+12*8,(count+1)*8,4);
+    patch(out,opt+112+12*8,rva[2]+(count?imports[0].iat:0),4);patch(out,opt+116+12*8,count*16,4);
     const char *const names[]={".text",".rdata",".data",".idata",".reloc"};
     const size_t flags[]={0x60000020,0x40000040,0xc0000040,0x40000040,0x42000040};
     for(size_t n=0;n<5;++n)pe_section(out,opt+240+n*40,names[n],sizes[n],rva[n],raw[n],flags[n]);
@@ -109,47 +112,24 @@ static void phdr(NativeBuffer *out,size_t index,uint64_t type,uint64_t flags,uin
     patch(out,p+32,size,8);patch(out,p+40,size,8);patch(out,p+48,alignment,8);
 }
 static int write_elf(NativeObject *object,const Import *imports,size_t count,NativeBuffer *out) {
-    NativeBuffer strings={0},symbols={0},hash={0},relas={0},dynamic={0};
-    const uint64_t base=0x400000;size_t offsets[3]={4096,0,0};
+    (void)imports;
+    if(count){native_error(object,"Standalone ELF cannot contain imports");return 0;}
+    size_t offsets[3]={4096,0,0};
     offsets[1]=align(offsets[0]+object->sections[0].size,4096);
-    size_t metadata=align(offsets[1]+object->sections[1].size,8);
-    UINT(&strings,0,1);size_t library=strings.size;BYTES(&strings,"libc.so.6",10);
-    BYTES(&symbols,NULL,24);
-    for(size_t n=0;n<count;++n) {
-        size_t name=strings.size;BYTES(&strings,imports[n].export_name,strlen(imports[n].export_name)+1);
-        UINT(&symbols,name,4);UINT(&symbols,0x12,1);UINT(&symbols,0,1);UINT(&symbols,0,2);UINT(&symbols,0,8);UINT(&symbols,0,8);
-    }
-    UINT(&hash,1,4);UINT(&hash,count+1,4);UINT(&hash,0,4);BYTES(&hash,NULL,(count+1)*4);
-    size_t str_offset=metadata,sym_offset=align(str_offset+strings.size,8),hash_offset=sym_offset+symbols.size;
-    size_t rela_offset=align(hash_offset+hash.size,8);
-    offsets[2]=align(rela_offset+count*24,4096);
-    uint64_t addresses[3]={base+offsets[0],base+offsets[1],base+offsets[2]};
-    for(size_t n=0;n<count;++n) {
-        UINT(&relas,addresses[2]+imports[n].iat,8);UINT(&relas,((uint64_t)(n+1)<<32)|6u,8);UINT(&relas,0,8);
-    }
-    size_t dyn_offset=align(offsets[2]+object->sections[2].size,8);
-#define DYNAMIC(tag,value) do {UINT(&dynamic,(tag),8);UINT(&dynamic,(value),8);}while(0)
-    DYNAMIC(1,library);DYNAMIC(5,base+str_offset);DYNAMIC(6,base+sym_offset);DYNAMIC(10,strings.size);DYNAMIC(11,24);
-    DYNAMIC(4,base+hash_offset);DYNAMIC(7,base+rela_offset);DYNAMIC(8,relas.size);DYNAMIC(9,24);DYNAMIC(0,0);
-#undef DYNAMIC
-    if(!relocate(object,addresses))goto failure;
+    offsets[2]=align(offsets[1]+object->sections[1].size,4096);
+    uint64_t addresses[3]={UINT64_C(0x400000)+offsets[0],UINT64_C(0x400000)+offsets[1],UINT64_C(0x400000)+offsets[2]};
+    if(!relocate(object,addresses))return 0;
     BYTES(out,NULL,4096);memcpy(out->data,"\177ELF\2\1\1",7);
     patch(out,16,2,2);patch(out,18,62,2);patch(out,20,1,4);
     size_t entry=native_symbol(object,"__dmm_entry");patch(out,24,addresses[0]+object->symbols[entry].offset,8);
-    patch(out,32,64,8);patch(out,52,64,2);patch(out,54,56,2);patch(out,56,7,2);
-    const char interpreter[]="/lib64/ld-linux-x86-64.so.2";size_t interp=64+7*56;
-    memcpy(out->data+interp,interpreter,sizeof(interpreter));
-    phdr(out,0,6,4,64,7*56,8);phdr(out,1,3,4,interp,sizeof(interpreter),1);
-    phdr(out,2,1,5,0,offsets[0]+object->sections[0].size,4096);
-    phdr(out,3,1,4,offsets[1],rela_offset+relas.size-offsets[1],4096);
-    phdr(out,4,1,6,offsets[2],dyn_offset+dynamic.size-offsets[2],4096);
-    phdr(out,5,2,6,dyn_offset,dynamic.size,8);phdr(out,6,0x6474e551,6,0,0,16);
+    patch(out,32,64,8);patch(out,52,64,2);patch(out,54,56,2);patch(out,56,5,2);
+    phdr(out,0,6,4,64,5*56,8);phdr(out,1,1,5,0,offsets[0]+object->sections[0].size,4096);
+    phdr(out,2,1,4,offsets[1],object->sections[1].size,4096);
+    phdr(out,3,1,6,offsets[2],object->sections[2].size,4096);phdr(out,4,0x6474e551,6,0,0,16);
     BYTES(out,object->sections[0].data,object->sections[0].size);PAD(out,4096);
-    BYTES(out,object->sections[1].data,object->sections[1].size);PAD(out,8);
-    BYTES(out,strings.data,strings.size);PAD(out,8);BYTES(out,symbols.data,symbols.size);BYTES(out,hash.data,hash.size);PAD(out,8);
-    BYTES(out,relas.data,relas.size);PAD(out,4096);BYTES(out,object->sections[2].data,object->sections[2].size);PAD(out,8);BYTES(out,dynamic.data,dynamic.size);
-    free(strings.data);free(symbols.data);free(hash.data);free(relas.data);free(dynamic.data);return 1;
-failure:free(strings.data);free(symbols.data);free(hash.data);free(relas.data);free(dynamic.data);return 0;
+    BYTES(out,object->sections[1].data,object->sections[1].size);PAD(out,4096);
+    BYTES(out,object->sections[2].data,object->sections[2].size);return 1;
+failure:return 0;
 }
 int native_link_executable(NativeObject *object,TargetFormat target,NativeBuffer *output) {
     if (!native_validate(object)) return 0;

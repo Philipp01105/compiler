@@ -7,6 +7,8 @@ func open(value:int) -> int { return value + 4; }
 func close(value:int) -> int { return value + 5; }
 func __errno_location() -> int { return 123; }
 func exit(value:int) -> int { return value + 6; }
+func WriteFile(value:int) -> int { return value + 7; }
+func VirtualAlloc(value:int) -> int { return value + 8; }
 
 func main() -> void {
     println(printf(4));
@@ -16,6 +18,8 @@ func main() -> void {
     println(close(5));
     println(__errno_location());
     println(exit(5));
+    println(WriteFile(5));
+    println(VirtualAlloc(5));
     var fd:int = sys_open("runtime_collision.tmp", 577, 384);
     println(fd >= 0);
     println(sys_write(fd, "x", 1));

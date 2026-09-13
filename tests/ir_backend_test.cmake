@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
+include("${CMAKE_CURRENT_LIST_DIR}/standalone_link.cmake")
 get_filename_component(ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 
 if(NOT DEFINED COMPILER OR NOT EXISTS "${COMPILER}")
@@ -85,7 +86,7 @@ foreach(target elf coff)
     endif()
     if(target STREQUAL "${HOST_TARGET}")
     execute_process(
-            COMMAND "${ASSEMBLER}" -no-pie "${output}" ${SANITIZER_FLAGS} ${RUNTIME_LIBRARY} -o "${executable}"
+            COMMAND "${ASSEMBLER}" ${STANDALONE_FLAGS} "${output}" ${SYSTEM_LIBRARIES} -o "${executable}"
             RESULT_VARIABLE result OUTPUT_VARIABLE output_text ERROR_VARIABLE errors)
     if(NOT result STREQUAL "0")
         message(FATAL_ERROR "IR-native integer call assembly failed: ${errors}")
@@ -148,7 +149,7 @@ foreach(target elf coff)
     endif()
     if(target STREQUAL "${HOST_TARGET}")
       execute_process(
-              COMMAND "${ASSEMBLER}" -no-pie "${output}" ${SANITIZER_FLAGS} ${RUNTIME_LIBRARY} -o "${executable}"
+              COMMAND "${ASSEMBLER}" ${STANDALONE_FLAGS} "${output}" ${SYSTEM_LIBRARIES} -o "${executable}"
               RESULT_VARIABLE result ERROR_VARIABLE errors)
       if(NOT result STREQUAL "0")
           message(FATAL_ERROR "IR-native scalar assembly failed: ${errors}")

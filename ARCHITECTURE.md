@@ -103,23 +103,22 @@ actual element width.
 
 System V classifies integer and SSE arguments independently and spills overflow
 arguments in source order. Windows x64 uses positional registers and shadow space.
-Platform I/O shims live in the runtime library. Both targets
+Platform I/O shims live in the standalone runtime generator. Both targets
 preserve stack alignment and the RBX
 callee-saved register used by address lowering. User functions that overlap the
 runtime are mangled into a private DMM namespace; method symbols also encode their
 owning type. Other top-level symbols remain available for C ABI interoperability.
 
-`src/runtime/runtime.c` implements string intrinsics, numeric conversion and
-scalar/formatted input. `src/runtime/platform_io.c` owns POSIX calls and Windows
-CRT flag translation. CMake builds and installs a separate `dmm_runtime` static
-library; generated programs link it after their object/assembly inputs. Its v1 C
-ABI uses signed 64-bit integral slots and native pointers. Windows file failures
-retain CRT negative results; POSIX failures retain negative errno results.
+`src/runtime/native_runtime.c` and `standalone.inc` generate machine instructions
+for strings, allocation, conversions, fixed-format output, input and platform
+I/O. They are embedded in assembly, objects and internal executable images.
+Linux uses syscalls and static ELF startup; Windows uses kernel32 APIs and its
+own file-descriptor table. The old C runtime archive has been removed.
 `src/backend/runtime_calls.c` maps typed builtin calls to reserved runtime link
 symbols. The emitter performs ordinary ABI argument/result lowering and contains
 no syscall-number selection, Windows file-flag mapping or input implementations.
 Runtime calls remain typed `IR_OP_CALL` instructions. Allocation/release and string
-concatenation still lower to libc calls; bounds checks remain backend operations.
+concatenation call compiler-owned routines; bounds checks remain backend operations.
 `stdlib/io.dmm` builds higher-level I/O from typed runtime calls, while
 `print`/`println` are ordinary DMM overloads. There is no automatic cleanup.
 

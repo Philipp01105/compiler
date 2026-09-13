@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
+include("${CMAKE_CURRENT_LIST_DIR}/standalone_link.cmake")
 if(NOT DEFINED COMPILER OR NOT DEFINED ASSEMBLER OR NOT DEFINED OUTPUT_DIR)
     message(FATAL_ERROR "COMPILER, ASSEMBLER, and OUTPUT_DIR are required")
 endif()
@@ -22,7 +23,7 @@ foreach(syntax intel att)
     if(NOT result EQUAL 0)
         message(FATAL_ERROR "Import compile failed (${syntax}): ${errors}")
     endif()
-    execute_process(COMMAND "${ASSEMBLER}" ${SANITIZER_FLAGS} -no-pie "${assembly}" ${RUNTIME_LIBRARY} -o "${program}"
+    execute_process(COMMAND "${ASSEMBLER}" ${STANDALONE_FLAGS} "${assembly}" ${SYSTEM_LIBRARIES} -o "${program}"
         RESULT_VARIABLE result ERROR_VARIABLE errors)
     if(NOT result EQUAL 0)
         message(FATAL_ERROR "Import assembly failed (${syntax}): ${errors}")
@@ -53,7 +54,7 @@ foreach(syntax intel att)
     if(NOT assembly_text MATCHES "# Lowering: typed IR")
         message(FATAL_ERROR "Cyclic scalar imports did not use typed IR (${syntax})")
     endif()
-    execute_process(COMMAND "${ASSEMBLER}" ${SANITIZER_FLAGS} -no-pie "${assembly}" ${RUNTIME_LIBRARY} -o "${program}"
+    execute_process(COMMAND "${ASSEMBLER}" ${STANDALONE_FLAGS} "${assembly}" ${SYSTEM_LIBRARIES} -o "${program}"
         RESULT_VARIABLE result ERROR_VARIABLE errors TIMEOUT 30)
     execute_process(COMMAND "${program}" RESULT_VARIABLE run_result OUTPUT_VARIABLE output ERROR_VARIABLE run_errors TIMEOUT 10)
     string(REPLACE "\r\n" "\n" output "${output}")
@@ -94,7 +95,7 @@ foreach(syntax intel att)
     if(NOT result EQUAL 0)
         message(FATAL_ERROR "Package import failed (${syntax}): ${errors}")
     endif()
-    execute_process(COMMAND "${ASSEMBLER}" ${SANITIZER_FLAGS} -no-pie "${assembly}" ${RUNTIME_LIBRARY} -o "${program}"
+    execute_process(COMMAND "${ASSEMBLER}" ${STANDALONE_FLAGS} "${assembly}" ${SYSTEM_LIBRARIES} -o "${program}"
         RESULT_VARIABLE result ERROR_VARIABLE errors)
     if(NOT result EQUAL 0)
         message(FATAL_ERROR "Package assembly failed (${syntax}): ${errors}")
@@ -129,7 +130,7 @@ foreach(syntax intel att)
     if(NOT result EQUAL 0)
         message(FATAL_ERROR "Imported constants failed (${syntax}): ${errors}")
     endif()
-    execute_process(COMMAND "${ASSEMBLER}" ${SANITIZER_FLAGS} -no-pie "${assembly}" ${RUNTIME_LIBRARY} -o "${program}"
+    execute_process(COMMAND "${ASSEMBLER}" ${STANDALONE_FLAGS} "${assembly}" ${SYSTEM_LIBRARIES} -o "${program}"
         RESULT_VARIABLE result ERROR_VARIABLE errors)
     if(NOT result EQUAL 0)
         message(FATAL_ERROR "Imported constants assembly failed (${syntax}): ${errors}")

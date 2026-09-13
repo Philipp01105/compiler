@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
+include("${CMAKE_CURRENT_LIST_DIR}/standalone_link.cmake")
 get_filename_component(ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 if(WIN32)
@@ -36,8 +37,8 @@ foreach(source IN LISTS sources)
         set(program "${work}/program.exe")
         if(mode STREQUAL "obj")
             # The compiler emits this object directly; external linking tests interoperability.
-            execute_process(COMMAND "${ASSEMBLER}" ${SANITIZER_FLAGS} -no-pie "${work}/intel.native"
-                ${RUNTIME_LIBRARY} -o "${program}" RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE errors TIMEOUT 30)
+            execute_process(COMMAND "${ASSEMBLER}" ${STANDALONE_FLAGS} "${work}/intel.native"
+                ${SYSTEM_LIBRARIES} -o "${program}" RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE errors TIMEOUT 30)
             if(NOT result STREQUAL "0")
                 message(FATAL_ERROR "Object link failed ${name}: ${output}${errors}")
             endif()
@@ -46,6 +47,9 @@ foreach(source IN LISTS sources)
             if(NOT WIN32)
                 file(CHMOD "${program}" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
             endif()
+        endif()
+        if(name STREQUAL "hello")
+            check_standalone_dependencies("${program}")
         endif()
         execute_process(COMMAND "${program}" WORKING_DIRECTORY "${work}" RESULT_VARIABLE result
             OUTPUT_VARIABLE actual ERROR_VARIABLE errors TIMEOUT 10)
@@ -68,6 +72,25 @@ foreach(source IN LISTS sources)
     endforeach()
 endforeach()
 
+# Unbounded decimal input consumes every digit and saturates on overflow.
+file(WRITE "${OUTPUT_DIR}/integers.dmm" "import <stdlib>\nfunc main() -> void {
+    println(scanfInt()); println(scanfInt()); println(scanfInt()); println(scanfChar());
+}")
+string(REPEAT "0" 100 zeros)
+file(WRITE "${OUTPUT_DIR}/integers.txt" "${zeros}42 922337203685477580800 -922337203685477580900Z")
+execute_process(COMMAND "${COMPILER}" --emit=exe "${OUTPUT_DIR}/integers.dmm" -o "${OUTPUT_DIR}/integers.exe"
+    RESULT_VARIABLE result ERROR_VARIABLE errors)
+if(NOT result STREQUAL "0")
+    message(FATAL_ERROR "Integer input compilation failed: ${errors}")
+endif()
+execute_process(COMMAND "${OUTPUT_DIR}/integers.exe" INPUT_FILE "${OUTPUT_DIR}/integers.txt"
+    RESULT_VARIABLE result OUTPUT_VARIABLE actual ERROR_VARIABLE errors TIMEOUT 10)
+string(REPLACE "\r\n" "\n" actual "${actual}")
+# The runtime's saturated int64 result is narrowed to the language's int32.
+if(NOT result STREQUAL "0" OR NOT actual STREQUAL "42\n-1\n0\nZ\n")
+    message(FATAL_ERROR "Standalone integer input failed: ${actual} ${errors}")
+endif()
+
 # Independent C callers validate native object ABI boundaries.
 file(READ "${ROOT}/tests/abi/systemv/core_abi.dmm" abi_source)
 file(WRITE "${OUTPUT_DIR}/abi.dmm" "${abi_source}")
@@ -83,7 +106,7 @@ if(NOT result STREQUAL "0")
     message(FATAL_ERROR "Native ABI symbol rename failed: ${errors}")
 endif()
 execute_process(COMMAND "${ASSEMBLER}" ${SANITIZER_FLAGS} -no-pie "${OUTPUT_DIR}/abi.obj"
-    "${ROOT}/tests/abi/c_interop/abi_driver.c" ${RUNTIME_LIBRARY} -o "${OUTPUT_DIR}/abi.exe"
+    "${ROOT}/tests/abi/c_interop/abi_driver.c" ${SYSTEM_LIBRARIES} -o "${OUTPUT_DIR}/abi.exe"
     RESULT_VARIABLE result ERROR_VARIABLE errors)
 if(NOT result STREQUAL "0")
     message(FATAL_ERROR "Native ABI link failed: ${errors}")

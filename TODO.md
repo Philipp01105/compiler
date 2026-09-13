@@ -48,9 +48,43 @@ parser/type-checker/emitter have been removed from the build and source tree.
 | Priority | Addition                                | Why                                                                                                       |
 |----------|-----------------------------------------|-----------------------------------------------------------------------------------------------------------|
 | P1 (complete) | Artifact safety and verifier hardening | Loaded-source inventory, canonical paths/file identity, CFG dominance and PHI edge verification are implemented and covered by regressions. |
-| P2 (complete) | Runtime library split               | Separate installed C runtime library owns platform I/O, input and conversions; IR retains typed calls and the emitter lowers their ABI. |
+| P1 (implemented) | Standalone generated programs | Every output embeds the own machine-code runtime. Static ELF uses Linux syscalls; PE imports only kernel32. Windows 26/26 and strict GCC pass; Linux/sanitizer CI validation remains. |
+| P2 (complete) | Runtime library split               | Runtime generation lives outside the emitter; IR retains typed calls. The standalone runtime supersedes the initial installed C archive. |
 | P2 (implemented) | Direct object emission and internal linking | Direct x86-64 encoding, ELF/COFF objects and ELF/PE executable images are implemented; Windows execution and cross-format binary checks pass. Linux execution awaits CI. |
 | P3       | New language features                   | Add globals, richer arrays, interfaces, and generics after the middle-end remains stable. |
+| P3       | Selfhosting | Broaden the language until its lexer, parser, semantic analysis, IR and backend can be implemented in DMM; keep the C compiler as bootstrap until staged builds agree. |
+
+## Standalone runtime migration and selfhosting
+
+The immediate goal is independence of generated programs from libc, Windows CRT,
+third-party libraries and foreign language runtimes. The compiler remains in C
+for now. OS interaction is unavoidable and explicit: Linux syscalls and Windows
+system APIs. This requirement applies to assembly, native objects and internally
+linked executables. Implementation is complete; Linux and sanitizer execution
+remain explicit CI acceptance checks.
+
+- [x] All output modes: string length, comparison, copy and append emit their own
+  integer instructions; duplication uses the new allocator.
+- [x] All output modes: allocation/free use Linux mmap/munmap or Windows
+  VirtualAlloc/VirtualFree, with a 16-byte allocation header/alignment and fresh
+  zeroed mappings for calloc. This initial allocator maps each allocation separately; a reusable
+  arena/pool allocator is a later performance improvement.
+- [x] Replace runtime I/O and descriptors, input parsing, integer/float formatting
+  and exit/startup. Eliminate msvcrt.dll, libc.so.6 and the ELF interpreter.
+- [x] Embed the same own runtime in assembly and object output and remove the
+  generated-program requirement for the C dmm_runtime archive.
+- [x] Assert that ELF executables have no dynamic dependencies and PE executables
+  import only OS DLLs. Reject unresolved libc/CRT symbols rather than falling back.
+- [x] Windows: 26/26 CTest suites, including assembly/object links with -nostdlib,
+  kernel32-only dependency checks, native runtime execution and 2,000 binary64
+  formatting comparisons; strict GCC compiler build passes.
+- [ ] Confirm Linux, sanitizer and Clang fuzz CI through the standalone paths.
+  Structural ELF tests forbid PT_INTERP/PT_DYNAMIC; local Linux execution is unavailable.
+- [ ] Add selfhosting building blocks: fixed-width and pointer-size integers,
+  byte buffers/slices, dynamic collections, module/library compilation without
+  a mandatory main, explicit file errors and deterministic artifact writing.
+- [ ] Port compiler stages to DMM incrementally; bootstrap stage 1 with C, compile
+  stage 2 with DMM, and compare deterministic compiler outputs and regressions.
 
 ## Reanalysis checkpoint (2026-09-13)
 
@@ -102,25 +136,18 @@ creation rights. Linux and sanitizers were not rerun.
   labels, missing edges, missing returns, post-terminator instructions and PHI
   placement. Nested short-circuit expressions execute in Intel/AT&T; existing
   loop, fuzz and malformed-IR tests pass.
-- [x] **P2 — Split the platform runtime into a separate library.**
-  `src/runtime/runtime.c` implements input, conversions and string intrinsics;
-  `platform_io.c` owns POSIX calls and Windows CRT file-flag translation.
-  CMake builds/installs `dmm_runtime` plus its C ABI header. The emitter maps
-  typed `IR_OP_CALL` builtins through `runtime_calls.c` and lowers ordinary ABI
-  arguments/results; it no longer embeds syscalls or platform I/O/input shims.
-  Generated programs must link the target-compatible runtime library after their
-  assembly/object inputs; README and architecture docs describe that requirement.
-  Allocation/free, concatenation libc lowering and bounds checks stay in the backend.
-  Validation: new `runtime_unit` covers strings, conversion/truncation, scalar
-  input/EOF, read/write/open/append/close and negative errors. All execution,
-  native backend, import and C ABI suites link the separate library, and architecture
-  checks prevent platform shims or compiler dependencies returning across the boundary.
+- [x] **P2 — Separate runtime generation from the emitter.**
+  Typed calls pass through `runtime_calls.c`; ordinary ABI lowering remains in the
+  emitter. The standalone machine-code runtime in `src/runtime` supersedes the
+  initial C runtime archive and embeds in all outputs. Architecture checks reject
+  the removed libc-backed files. Runtime tests execute the emitted instructions
+  directly, including strings, allocation, parsing, numeric formatting and file I/O.
 - [x] **P2 — Direct native objects and internal ELF/PE executable linking.**
   `--emit=asm|obj|exe` shares verified IR and structured instruction lowering.
   Native encoding supports the compiler's integer/SSE instructions and indexed/
   RIP-relative addressing. ELF64/COFF writers own symbols and relocations;
-  the internal image linker adds startup, native runtime shims, libc/CRT imports,
-  ELF load/dynamic tables and PE import/ASLR relocation tables. It invokes no
+  the internal image linker adds standalone startup/runtime, static ELF load
+  segments and PE OS import/ASLR relocation tables. It invokes no
   assembler, C compiler or platform linker. Native runtime definitions remain
   outside the emitter and private import names prevent source-name collisions.
   Native source maps record text-section byte offsets. All modes retain loaded
@@ -140,9 +167,9 @@ creation rights. Linux and sanitizers were not rerun.
   Also fixed Clang's misleading-indentation error in native import lookup that
   blocked the fuzz build. Windows 26/26 and strict GCC build pass after the fix;
   Linux, sanitizer and Clang fuzz CI need rerunning to confirm the changes.
-  Run the new native corpus, C ABI and runtime/EOF suites on x86-64 glibc Linux.
+  Run the new native corpus, C ABI and runtime/EOF suites on x86-64 Linux.
   Local cross-emission and structural ELF checks pass; they do not establish
-  dynamic-loader/runtime execution. Keep this verification explicit until CI passes.
+  Linux syscall/runtime execution. Keep this verification explicit until CI passes.
 - [x] **P2 — Always close cleanup output and preserve the actual I/O failure.**
   `cleanup_assembly_file_detailed` always attempts flush and close separately,
   records the first failure before cleanup, and reports its operation, path and
