@@ -126,17 +126,20 @@ const char *native_runtime_import(const char *name,TargetFormat target) {
     if (!strncmp(name,"__dmm_libc_",11)) name+=11;
     static const char *const imports[]={"printf","putchar","puts","strcmp","strcpy","strcat","malloc","calloc","free","strlen","snprintf","scanf","strdup","strtoll","fflush","read","write","open","close","exit","__libc_start_main","__errno_location"};
     if(!strcmp(name,"snprintf"))return target==TARGET_COFF?"_snprintf":"snprintf";
-    for(size_t n=0;n<sizeof(imports)/sizeof(imports[0]);++n)if(!strcmp(name,imports[n])) {
-        if(target==TARGET_COFF) {
-            if(!strcmp(name,"strdup"))return "_strdup";
-            if(!strcmp(name,"strtoll"))return "_strtoi64";
-            if(!strcmp(name,"read"))return "_read";
-            if(!strcmp(name,"write"))return "_write";
-            if(!strcmp(name,"open"))return "_open";
-            if(!strcmp(name,"close"))return "_close";
-            if(!strcmp(name,"__errno_location")||!strcmp(name,"__libc_start_main"))return NULL;
-        }return imports[n];
-    }return NULL;
+    for (size_t n = 0; n < sizeof(imports) / sizeof(imports[0]); ++n) {
+        if (strcmp(name, imports[n]) != 0) continue;
+        if (target == TARGET_COFF) {
+            if (!strcmp(name, "strdup")) return "_strdup";
+            if (!strcmp(name, "strtoll")) return "_strtoi64";
+            if (!strcmp(name, "read")) return "_read";
+            if (!strcmp(name, "write")) return "_write";
+            if (!strcmp(name, "open")) return "_open";
+            if (!strcmp(name, "close")) return "_close";
+            if (!strcmp(name, "__errno_location") || !strcmp(name, "__libc_start_main")) return NULL;
+        }
+        return imports[n];
+    }
+    return NULL;
 }
 int native_runtime_emit(NativeObject *object,TargetFormat target) {
     Runtime r={object,target,NULL};object->section=NATIVE_RODATA;
