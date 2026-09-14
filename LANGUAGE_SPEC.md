@@ -6,7 +6,11 @@ Status: experimental. This document defines the tested source-language contract;
 
 A source file is UTF-8 text beginning with `package name;`, followed by imports, structs, enums, traits, implementations, constants, package variables and functions. Statements and imports end with `;`. `//` introduces a line comment. Execution begins in a parameterless `main` returning `void` or `int` in `package main`; library packages need no entry point.
 
-Each project has one `dmm.mod` defining its module path and required language edition. One directory is one package; all `.dmm` files directly in it are discovered and share a declaration scope. Package identity is the module path plus relative directory. All files agree on their package name. `package.dmm` has no special meaning.
+Each project has one `dmm.manifest` defining its module path and required language edition. One directory is one package; all `.dmm` files directly in it are discovered and share a declaration scope. Package identity is the module path plus relative directory. All files agree on their package name. `package.dmm` has no special meaning.
+
+`dmm manifest sync` reconciles requirements across the whole module, marks dependencies
+used only transitively with `// indirect`, and removes unused entries. It uses exact
+versions from local manifests; ordinary builds never rewrite the project manifest.
 
 Imports use quoted canonical package paths, for example `import "github.com/example/project/lexer";` or `import lex "github.com/example/project/lexer";`. Imported declarations are accessed as `lexer.Token` or `lex.tokenize(...)`. Bindings are local to the importing source file; imports never expose unqualified declarations. Grouped imports remain supported. File imports, angle imports and dot imports are removed. Cycles and invalid `internal` imports are rejected.
 
@@ -23,7 +27,9 @@ Existing `int`, `char` and `byte` retain their 32-bit signed, 8-bit signed and
 primitive types for overload resolution and generic specialization.
 `void` is valid only as a function return type. Fixed arrays use `var name:type[length];`. Repeated prefix stars form pointers, such as `**int`; grouped types distinguish `*(int[4])` from `*int[4]`. Whole-array assignment is not supported.
 
-Parameters may use `T[]` slices. A matching fixed array supplies a data pointer and element count without copying; forwarding a slice preserves both. `slice.length` is read-only and indexing checks the passed count. The native ABI expands each slice to pointer then length in source-parameter order. Slices cannot be returned or stored in local bindings or fields.
+`T[]` slices are borrowed views containing a data pointer and an element count. They may be parameters, local bindings, fields, enum payloads, package variables and return values. A matching fixed array converts to a slice without copying its elements. Assignment and return copy the view; they do not transfer ownership or extend the underlying storage lifetime. Package variables may be zero-initialized slices; runtime package initializers remain unsupported. `.length:usize` and `.data:*T` are read-only properties. Indexing checks the current count, including negative indices. Slice equality is not defined.
+
+`slice(pointer, count)` constructs a view from a typed non-void raw pointer and an integral count. Zero permits a null pointer; negative counts, nonzero counts with null pointers and byte-size overflow trap. The caller ensures the region is valid, aligned and alive. Slice parameters use pointer and length ABI lanes in source-parameter order; stored and returned slices use a two-word descriptor.
 
 Integral types may convert among themselves or to floating point, and `float`
 may widen to `double`. Conversions to fixed-width integers keep the low bits and
@@ -122,7 +128,13 @@ names encode canonical package identity, overload signatures and owner types,
 so source-level function names remain usable without breaking platform calls. Names beginning with
 `__dmm_` are reserved.
 
-`reserve(type)` zero-initializes one complete sized non-void object and returns a pointer to that type. It accepts a type rather than a runtime count. `free(value)` releases a pointer or owned string. Allocations require explicit releases; `@gc` and automatic function-exit cleanup have been removed.
+`sizeof(T)` and `alignof(T)` are compile-time `usize` expressions for complete sized non-void types, including specialized generic types. Pointers are 8 bytes and slice descriptors are 16 bytes with alignment 8. Primitive sizes follow their widths. The current backend reserves 8-byte storage slots for aggregate fields and fixed-array storage; these queries reflect that ABI, including padding, rather than a packed C layout.
+
+Generic functions accept explicit type arguments: `identity<i32>(value)` or `core.alloc<Node>()`. Arguments must satisfy the function's arity, parameter types and trait bounds. Existing inference remains available when value parameters determine every type argument; a return type alone does not infer one.
+
+`reserve(type)` zero-initializes one complete sized non-void object and returns a pointer to that type. It accepts a type rather than a runtime count. `free(value)` releases a raw pointer or owned string, never a slice descriptor or fixed array directly. Explicit pointer-to-pointer casts such as `data.(*Node)` reinterpret the address; validity and alignment remain caller responsibilities. Allocations require explicit releases; `@gc` and automatic function-exit cleanup have been removed.
+
+`stdlib/core` implements `alloc<T>() -> *T`, `alloc_array<T>(count:usize) -> T[]`, `null<T>() -> *T`, `release<T>(pointer:*T)` and `release_array<T>(view:T[])` in DMM over byte-region primitives. Successful allocations are zero-initialized; failure returns null or an empty null slice. Release an allocation base exactly once, and never release a borrowed view into local, global or interior storage. See `CORE_RUNTIME.md`.
 
 Types support one array or slice constructor, with pointer levels inside and outside it. Nested arrays and slices are not supported.
 

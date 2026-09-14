@@ -1,0 +1,3 @@
+package main;
+import "stdlib/core";
+func main() -> int { var values:i32[]=core.alloc_array<u8>(4); return 0; }

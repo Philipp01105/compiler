@@ -1,0 +1,25 @@
+package core;
+
+// Typed ownership is library policy over the compiler's byte-region primitives.
+// Every successful allocation is zero-initialized and must be released once.
+pub func alloc<T>() -> *T {
+    var data:*u8=core_alloc(sizeof(T));
+    if (data != core_null()) { core_fill(data,0,sizeof(T)); }
+    return data.(*T);
+}
+
+pub func null<T>() -> *T { return core_null().(*T); }
+
+pub func alloc<T>(count:usize) -> T[] {
+    if (count == 0 || count > 9223372036854775807.(usize)/sizeof(T)) {
+        return slice(core_null().(*T),0);
+    }
+    var bytes:usize=count*sizeof(T);
+    var data:*u8=core_alloc(bytes);
+    if (data == core_null()) { return slice(data.(*T),0); }
+    core_fill(data,0,bytes);
+    return slice(data.(*T),count);
+}
+
+pub func release<T>(data:*T) -> void { core_release(data.(*u8)); }
+pub func release<T>(data:T[]) -> void { core_release(data.data.(*u8)); }

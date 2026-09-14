@@ -16,7 +16,7 @@ if(NOT DEFINED OUTPUT_DIR)
 endif()
 
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
-dmm_test_write( "${OUTPUT_DIR}/dmm.mod" "module dmm.test/regression\ndmm 0.3\n")
+dmm_test_write( "${OUTPUT_DIR}/dmm.manifest" "module dmm.test/regression\ndmm 0.3\n")
 get_filename_component(OUTPUT_DIR "${OUTPUT_DIR}" ABSOLUTE)
 get_filename_component(COMPILER "${COMPILER}" ABSOLUTE)
 

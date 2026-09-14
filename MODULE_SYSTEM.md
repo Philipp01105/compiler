@@ -5,7 +5,7 @@ DMM 0.3 uses one module per project, one package per directory, and one or more
 
 ```text
 project/
-├── dmm.mod
+├── dmm.manifest
 ├── cmd/compiler/main.dmm       package main;
 ├── cmd/formatter/main.dmm      package main;
 ├── lexer/lexer.dmm             package lexer;
@@ -14,7 +14,7 @@ project/
 ```
 
 The compiler searches upward from the selected source file or package directory
-for `dmm.mod`. A manifest is not DMM source code. Its module path is the project's
+for `dmm.manifest`. A manifest is not DMM source code. Its module path is the project's
 global identity; the directory relative to its root completes a package's identity.
 Nested module roots are excluded from the enclosing module's packages.
 
@@ -38,12 +38,43 @@ are rejected. `//` comments and single-line `require path version` are supported
 External dependencies are local for now. `require github.com/example/collections
 v1.2.0` authorizes loading that module from
 `vendor/github.com/example/collections/`, which must contain its own matching
-`dmm.mod`. Missing requirements, missing vendored sources and conflicting module
+`dmm.manifest`. Missing requirements, missing vendored sources and conflicting module
 identities are errors. Transitive requirements are read from each dependency's
 manifest and use the same project-root `vendor/` directory. The version records
 the requested dependency; there is no network fetch, version selection, checksum
 validation or lockfile yet. The bundled
 `stdlib` module is available independently of project requirements.
+
+Use one command to reconcile dependencies:
+
+```sh
+dmm manifest sync
+dmm manifest sync path/to/package
+```
+
+The command finds the enclosing module and scans all of its packages, including
+libraries and every executable under `cmd/`. Nested modules, hidden directories
+and unimported vendor packages are excluded. It adds used transitive modules,
+marks them with `// indirect`, promotes directly imported modules to ordinary
+requirements and removes unused requirements. Direct means imported by any source
+package in the project; indirect means imported only by its dependencies.
+
+Versions come from existing project and dependency requirements. Missing explicit
+versions, unavailable vendor sources, invalid packages, import cycles and conflicting
+exact versions abort synchronization without changing the project manifest. This
+command does not fetch packages or select versions. Build commands read manifests
+and do not rewrite them. `--formatError` provides structured failure diagnostics.
+
+Synchronization writes a sorted, normalized manifest and replaces the original
+only after successful graph analysis and writing. Formatting and comments other
+than `// indirect` are not preserved. Repeated synchronization is deterministic.
+
+```text
+require (
+    example.com/direct v1.0.0
+    example.com/transitive v2.0.0 // indirect
+)
+```
 
 Every source file begins with `package name;` before imports or other declarations.
 Comments and whitespace may precede it. All source files directly in a package's
@@ -91,7 +122,8 @@ Package variables have shared writable storage. Initializers currently require
 constant primitive or string expressions; explicitly typed variables may instead
 be zero-initialized, including arrays, pointers and aggregate values. Runtime
 initialization functions and arbitrary package initializer expressions are future
-work. Existing parameter-only slice rules remain in force.
+work. Slice variables store a pointer/count descriptor; they may be zero-initialized
+and assigned at runtime. Views do not own or extend the lifetime of their storage.
 
 Only `package main` is executable. It requires exactly one non-generic,
 parameterless `main` returning `int` or `void`. Other packages are libraries and
@@ -121,7 +153,7 @@ The backend uses those identities for mangling and emits executable startup/runt
 only for executable packages. AST/IR dumps include canonical package identities;
 diagnostics use the existing human-readable and JSON formats.
 
-Migration: replace angle or file imports with quoted package paths, add `dmm.mod`
+Migration: replace angle or file imports with quoted package paths, add `dmm.manifest`
 and `package name;`, qualify imported declarations, and mark exported APIs and
 members with `pub`. Remove `package.dmm` import lists; discovery supplies the
 package's files automatically. See the standalone modules under `examples/` and

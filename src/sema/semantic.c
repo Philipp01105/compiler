@@ -44,6 +44,7 @@ typedef struct {
 } Analyzer;
 
 static int known_declared_type(const Analyzer *analyzer, const AstType *type);
+static void analyze_constant_declaration(Analyzer *analyzer,AstDeclarationNode *declaration);
 
 static void semantic_error_at(Analyzer *analyzer, size_t token, size_t last_token, char category, int code,
                            const char *message) {
@@ -733,7 +734,7 @@ static int expression_to_declared_type_allowed(const Analyzer *analyzer,
                             expression->resolved_outer_pointer_depth;
     size_t target_name = named_type_token(type_program, type);
     int matching_shape = target_depth == source_depth;
-    if (type->is_slice)
+    if (type->is_slice && !type->outer_pointer_depth)
         matching_shape = type->outer_pointer_depth == 0 &&
             expression->resolved_outer_pointer_depth == 0 &&
             type->pointer_depth == expression->resolved_pointer_depth &&
@@ -840,6 +841,8 @@ static int enum_constant_expression(const Analyzer *analyzer,
                                     const AstExpression *expression) {
     if (expression == NULL) return 0;
     if (expression->kind == AST_EXPR_LITERAL) return 1;
+    if (expression->kind == AST_EXPR_SIZEOF || expression->kind == AST_EXPR_ALIGNOF)
+        return expression->folded_constant.lexeme != NULL;
     if (expression->kind == AST_EXPR_NAME)
         return same_name(analyzer->program, expression->value_token, "true") ||
                same_name(analyzer->program, expression->value_token, "false");
@@ -900,6 +903,12 @@ static int contains_type_parameter(const AstProgram *unit,const AstType *type,co
         if (contains_type_parameter(unit,&a->type,origin)) return 1;
     return 0;
 }
+static int type_mentions(const AstProgram *unit,const AstType *type,const char *name) {
+    if (!strcmp(ast_program_lexeme(unit,type->name_token),name)) return 1;
+    for (const AstTypeArgument *a=type->arguments;a;a=a->next)
+        if (type_mentions(unit,&a->type,name)) return 1;
+    return 0;
+}
 static int viable_function(const Analyzer *analyzer, const SemanticSymbol *function,
                            const AstExpression *arguments) {
     size_t actual = 0;
@@ -910,6 +919,12 @@ static int viable_function(const Analyzer *analyzer, const SemanticSymbol *funct
     const AstExpression *argument = arguments;
     const AstParameter *parameter = function->declaration->as.function.parameters;
     const AstDeclarationNode *origin=function->declaration->generic_origin;
+    if (origin && origin->kind == AST_DECL_FUNCTION) for (const AstGenericParameter *g=origin->generic_parameters;g;g=g->next) {
+        int found=0;
+        for (const AstParameter *p=origin->as.function.parameters;p;p=p->next)
+            if (type_mentions(function->source_program,&p->type,ast_program_lexeme(function->source_program,g->name_token))) found=1;
+        if (!found) return 0;
+    }
     const AstParameter *pattern=origin && origin->kind == AST_DECL_FUNCTION ? origin->as.function.parameters : NULL;
     for (; argument != NULL && parameter != NULL;
          argument = argument->next, parameter = parameter->next) {
@@ -1174,6 +1189,8 @@ static int constant_expression_allowed(const Analyzer *analyzer,
                                        const AstExpression *expression) {
     if (expression == NULL) return 0;
     if (expression->kind == AST_EXPR_LITERAL) return 1;
+    if (expression->kind == AST_EXPR_SIZEOF || expression->kind == AST_EXPR_ALIGNOF)
+        return expression->folded_constant.lexeme != NULL;
     if (expression->kind == AST_EXPR_NAME)
         return same_name(analyzer->program, expression->value_token, "true") ||
                same_name(analyzer->program, expression->value_token, "false") ||
@@ -1225,7 +1242,9 @@ static const char *folded_string(const AstExpression *expression, char buffer[64
 static int fold_constant(Analyzer *analyzer, AstExpression *expression, DataType target);
 static int fold_integer_bits(Analyzer *analyzer, const AstExpression *expression, uint64_t *bits) {
     if (expression == NULL || !data_type_integral(expression->resolved_type)) return 0;
-    if (expression->kind == AST_EXPR_LITERAL) {
+    if ((expression->kind == AST_EXPR_SIZEOF || expression->kind == AST_EXPR_ALIGNOF) && expression->folded_constant.lexeme) {
+        *bits=strtoull(expression->folded_constant.lexeme,NULL,10);
+    } else if (expression->kind == AST_EXPR_LITERAL) {
         const AstToken *token = ast_program_token(analyzer->program,expression->value_token);
         if (token->type == TOKEN_CHAR_LITERAL) *bits=(unsigned char)token->lexeme[0];
         else *bits=strtoull(token->lexeme,NULL,10);
@@ -1808,6 +1827,7 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
                           expression->right->resolved_type == TYPE_STRING &&
                           left_depth == 0 && right_depth == 0;
             int pointers = left_depth != 0 && left_depth == right_depth &&
+                !(expression->left->resolved_is_slice && !expression->left->resolved_outer_pointer_depth) &&
                 expression->left->resolved_pointer_depth == expression->right->resolved_pointer_depth &&
                 expression->left->resolved_outer_pointer_depth == expression->right->resolved_outer_pointer_depth &&
                 expression->left->resolved_array_length == expression->right->resolved_array_length &&
@@ -1836,27 +1856,41 @@ static void validate_expression(Analyzer *analyzer, AstExpression *expression,
         if (!integral_expression(expression->right))
             operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                            "Array index must be integral");
+        if (expression->resolved_type == TYPE_VOID && !expression->resolved_pointer_depth && !expression->resolved_outer_pointer_depth)
+            operand_error(analyzer,expression,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,"Indexing requires a complete non-void element type");
     } else if (expression->kind == AST_EXPR_CAST) {
         const AstExpression *argument = expression->arguments;
-        if (argument == NULL || argument->next != NULL ||
+        int pointer_cast=argument && argument->next == NULL &&
+            (argument->resolved_pointer_depth || argument->resolved_outer_pointer_depth) &&
+            ((!argument->resolved_is_array && !argument->resolved_is_slice) || argument->resolved_outer_pointer_depth) &&
+            (expression->allocated_type.pointer_depth || expression->allocated_type.outer_pointer_depth) &&
+            ((!expression->allocated_type.is_array && !expression->allocated_type.is_slice) || expression->allocated_type.outer_pointer_depth) &&
+            known_declared_type(analyzer,&expression->allocated_type);
+        if (!pointer_cast && (argument == NULL || argument->next != NULL ||
             !plain_numeric_expression(argument) ||
             expression->resolved_type == TYPE_VOID ||
             expression->resolved_type == TYPE_STRING ||
             expression->resolved_type == TYPE_UNKNOWN ||
             expression->allocated_type.pointer_depth != 0 ||
             expression->allocated_type.outer_pointer_depth != 0 ||
-            expression->allocated_type.is_array || expression->allocated_type.is_slice)
+            expression->allocated_type.is_array || expression->allocated_type.is_slice))
             operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                           "Cast requires one numeric value and a numeric target type");
+                           "Cast requires one numeric value and a numeric target type, or two pointer types");
+    } else if (expression->kind == AST_EXPR_SLICE) {
+        const AstExpression *data=expression->left,*length=expression->right;
+        if (!data || !data->resolved_pointer_depth || data->resolved_outer_pointer_depth || data->resolved_is_array || data->resolved_is_slice ||
+            (data->resolved_type == TYPE_VOID && data->resolved_pointer_depth == 1) || !integral_expression(length))
+            operand_error(analyzer,expression,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,"slice requires a typed element pointer and an integral length");
     } else if (expression->kind == AST_EXPR_FREE) {
         const AstExpression *argument = expression->arguments;
         if (argument == NULL || argument->next != NULL ||
-            (!pointer_expression(argument) && argument->resolved_type != TYPE_STRING))
+            ((!pointer_expression(argument) && argument->resolved_type != TYPE_STRING) ||
+                ((argument->resolved_is_array || argument->resolved_is_slice) && !argument->resolved_outer_pointer_depth)))
             operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                            "free requires one pointer or owned string");
     } else if (expression->kind == AST_EXPR_RESERVE) {
         const AstType *allocated = &expression->allocated_type;
-        if (!known_declared_type(analyzer, allocated) || allocated->is_slice ||
+        if (!known_declared_type(analyzer, allocated) ||
             (primitive_type(analyzer->program, allocated) == TYPE_VOID &&
              allocated->pointer_depth == 0 && allocated->outer_pointer_depth == 0))
             operand_error(analyzer, expression, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
@@ -1973,8 +2007,8 @@ static size_t semantic_symbol_slots(const Analyzer *analyzer, size_t symbol_id,
         for (const AstEnumValue *v=symbol->declaration->as.enum_decl.values; v; v=v->next) {
             size_t payload=0;
             for (const AstTypeArgument *p=v->payload_types; p; p=p->next) {
-                size_t slots=1;
-                if (!p->type.pointer_depth && !p->type.outer_pointer_depth) {
+                size_t slots=p->type.is_slice && !p->type.outer_pointer_depth ? 2 : 1;
+                if (!p->type.pointer_depth && !p->type.outer_pointer_depth && !p->type.is_slice) {
                     size_t child=resolve_named_symbol_id(analyzer,symbol->source_program,named_type_token(symbol->source_program,&p->type));
                     if (child != AST_SYMBOL_NONE) slots=semantic_symbol_slots(analyzer,child,depth+1);
                     if (p->type.is_array) {
@@ -1995,7 +2029,7 @@ static size_t semantic_symbol_slots(const Analyzer *analyzer, size_t symbol_id,
     size_t slots = 0;
     for (const AstField *field = symbol->declaration->as.struct_decl.fields;
          field != NULL; field = field->next) {
-        size_t field_slots = 1;
+        size_t field_slots = field->type.is_slice && !field->type.outer_pointer_depth ? 2 : 1;
         if (field->type.pointer_depth == 0 && field->type.outer_pointer_depth == 0 &&
             !field->type.is_slice) {
             size_t named = named_type_token(symbol->source_program, &field->type);
@@ -2020,11 +2054,12 @@ static size_t semantic_symbol_slots(const Analyzer *analyzer, size_t symbol_id,
 static size_t semantic_type_slots(const Analyzer *analyzer, const AstProgram *program,
                                   const AstType *type,
                                   const AstExpression *inferred) {
+    if (type->kind == AST_TYPE_INFERRED && inferred && inferred->resolved_is_slice && !inferred->resolved_outer_pointer_depth) return 2;
     if (type->outer_pointer_depth != 0 ||
         (type->pointer_depth != 0 && !type->is_array && !type->is_slice) || type->is_slice ||
         (type->kind == AST_TYPE_INFERRED && inferred != NULL &&
          (inferred->resolved_pointer_depth != 0 ||
-          inferred->resolved_outer_pointer_depth != 0))) return type->is_slice ? 2U : 1U;
+          inferred->resolved_outer_pointer_depth != 0))) return type->is_slice && !type->outer_pointer_depth ? 2U : 1U;
     size_t slots = 1;
     size_t named_symbol = type->kind == AST_TYPE_INFERRED && inferred != NULL
         ? inferred->resolved_named_symbol_id
@@ -2066,11 +2101,17 @@ static void validate_array_shape(Analyzer *analyzer, AstType *type) {
         const LocalSymbol *local = find_local(analyzer, type->array_length_token);
         const SemanticSymbol *symbol = local != NULL ? &analyzer->model->symbols[local->symbol_id] :
             scoped_find_global(analyzer->model, analyzer->program, text, SEMANTIC_SYMBOL_CONSTANT);
+        if (symbol && symbol->kind == SEMANTIC_SYMBOL_CONSTANT && symbol->declaration && !symbol->declaration->semantic_body_checked) {
+            size_t id=symbol->id; AstProgram *saved=analyzer->program;
+            analyzer->program=(AstProgram *)symbol->source_program;
+            analyze_constant_declaration(analyzer,(AstDeclarationNode *)symbol->declaration);
+            analyzer->program=saved; symbol=&analyzer->model->symbols[id];
+        }
         const AstExpression *value = symbol != NULL && symbol->kind == SEMANTIC_SYMBOL_CONSTANT ?
             constant_initializer(symbol) : NULL;
-        if (value == NULL || value->resolved_type != TYPE_INT || value->folded_constant.lexeme == NULL) {
+        if (value == NULL || !data_type_integral(value->resolved_type) || value->folded_constant.lexeme == NULL) {
             semantic_error(analyzer, type->array_length_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                           "Array length must be a visible evaluated int constant");
+                           "Array length must be a visible evaluated integral constant");
             return;
         }
         text = value->folded_constant.lexeme;
@@ -2209,7 +2250,10 @@ static void normalize_generic_type(Analyzer *analyzer,AstType *type,unsigned dep
 }
 static void normalize_expression_types(Analyzer *analyzer,AstExpression *e) {
     for (; e; e=e->next) {
-        if (e->kind == AST_EXPR_NAME && e->allocated_type.arguments != NULL) {
+        if (e->explicit_type_arguments) {
+            for (AstTypeArgument *argument=e->allocated_type.arguments;argument;argument=argument->next)
+                normalize_generic_type(analyzer,&argument->type,0);
+        } else if (e->kind == AST_EXPR_NAME && e->allocated_type.arguments != NULL) {
             normalize_generic_type(analyzer,&e->allocated_type,0);
             e->value_token=e->allocated_type.name_token;
         } else normalize_generic_type(analyzer,&e->allocated_type,0);
@@ -2459,10 +2503,14 @@ static int unify_generic_pattern(Analyzer *analyzer,const AstProgram *pattern_un
     for (; g; g=g->next,index++)
         if (!strcmp(ast_program_lexeme(pattern_unit,g->name_token),
             ast_program_lexeme(pattern_unit,pattern->name_token))) break;
-    if (actual.pointer_depth < pattern->pointer_depth ||
-        actual.outer_pointer_depth < pattern->outer_pointer_depth) return 0;
-    actual.pointer_depth-=pattern->pointer_depth;
-    actual.outer_pointer_depth-=pattern->outer_pointer_depth;
+    if (g && (actual.is_array || actual.is_slice) && !pattern->is_array && !pattern->is_slice) {
+        if (actual.outer_pointer_depth<pattern->pointer_depth+pattern->outer_pointer_depth) return 0;
+        actual.outer_pointer_depth-=pattern->pointer_depth+pattern->outer_pointer_depth;
+    } else {
+        if (actual.pointer_depth < pattern->pointer_depth || actual.outer_pointer_depth < pattern->outer_pointer_depth) return 0;
+        actual.pointer_depth-=pattern->pointer_depth;
+        actual.outer_pointer_depth-=pattern->outer_pointer_depth;
+    }
     if (pattern->is_array || pattern->is_slice) {
         if (!(actual.is_array || actual.is_slice) ||
             (pattern->is_array && (!actual.is_array ||
@@ -2543,7 +2591,116 @@ static void instantiate_generic_candidates(Analyzer *analyzer,const char *name,
     }
 }
 
-static void analyze_constant_declaration(Analyzer *analyzer,AstDeclarationNode *declaration);
+static const SemanticSymbol *explicit_generic_function(Analyzer *analyzer,const char *name,AstExpression *call) {
+    AstProgram *root=(AstProgram *)analyzer->model->program;
+    AstExpression *callee=call->left;
+    AstType types[DMM_MAX_TYPE_PARAMETERS]; size_t count=0;
+    for (AstTypeArgument *argument=callee->allocated_type.arguments;argument;argument=argument->next) {
+        if (count == DMM_MAX_TYPE_PARAMETERS) {
+            semantic_error(analyzer,call->first_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_COMPLEXITY_LIMIT,"Too many explicit type arguments"); return NULL;
+        }
+        normalize_generic_type(analyzer,&argument->type,0);
+        if (!known_declared_type(analyzer,&argument->type) || argument->type.kind == AST_TYPE_INFERRED ||
+            (primitive_type(analyzer->program,&argument->type) == TYPE_VOID && !argument->type.pointer_depth && !argument->type.outer_pointer_depth)) {
+            semantic_error(analyzer,argument->type.name_token,ERROR_CATEGORY_TYPE,ERR_TYPE_UNKNOWN,"Explicit type argument requires a complete non-void type"); return NULL;
+        }
+        types[count++]=argument->type;
+    }
+    size_t candidates[1024],candidate_count=0;
+    const DmmPackage *target=lookup_package(analyzer->program,&name);
+    for (size_t i=0;i<=root->owned_import_count;i++) {
+        AstProgram *unit=i == 0 ? root : root->owned_imports[i-1];
+        if (target ? unit->package != target : !same_package(analyzer->program,unit)) continue;
+        for (AstDeclarationNode *d=unit->root;d;d=d->next) {
+            if (d->kind != AST_DECL_FUNCTION || !d->generic_parameters || strcmp(ast_program_lexeme(unit,d->name_token),name)) continue;
+            if (!same_package(analyzer->program,unit) && !d->is_public) {
+                semantic_error(analyzer,call->first_token,ERROR_CATEGORY_SEMANTIC,ERR_PACKAGE_PRIVATE,"Generic function is private to its defining package"); continue;
+            }
+            size_t expected=0;
+            for (AstGenericParameter *g=d->generic_parameters;g;g=g->next) expected++;
+            if (count != expected || !generic_bounds_satisfied(analyzer,unit,d,types)) continue;
+            AstDeclarationNode *instance=ast_specialize_function(unit,d,types,count,analyzer->program);
+            if (!instance) { semantic_error(analyzer,call->first_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_COMPLEXITY_LIMIT,"Generic specialization exceeds resource limits"); continue; }
+            if (instance->resolved_symbol_id == AST_SYMBOL_NONE) {
+                AstProgram *saved=analyzer->program; analyzer->program=unit;
+                normalize_function_types(analyzer,instance);
+                add_global(analyzer,instance,SEMANTIC_SYMBOL_FUNCTION,AST_TOKEN_NONE);
+                analyzer->program=saved;
+            }
+            const AstParameter *parameter=instance->as.function.parameters;
+            const AstExpression *argument=call->arguments; int viable=1;
+            for (;parameter && argument;parameter=parameter->next,argument=argument->next)
+                if (!expression_to_declared_type_allowed(analyzer,argument,unit,&parameter->type)) viable=0;
+            if (!viable || parameter || argument) continue;
+            if (candidate_count == 1024) { semantic_error(analyzer,call->first_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_COMPLEXITY_LIMIT,"Too many generic overload candidates"); return NULL; }
+            candidates[candidate_count++]=instance->resolved_symbol_id;
+        }
+    }
+    size_t selected=AST_SYMBOL_NONE;
+    for (size_t i=0;i<candidate_count;i++) {
+        const SemanticSymbol *candidate=&analyzer->model->symbols[candidates[i]]; int dominated=0;
+        for (size_t j=0;j<candidate_count;j++)
+            if (i != j && function_dominates(analyzer,&analyzer->model->symbols[candidates[j]],candidate,call->arguments)) dominated=1;
+        if (!dominated) {
+            if (selected != AST_SYMBOL_NONE) { semantic_error(analyzer,call->first_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,"Ambiguous explicit generic function call"); return NULL; }
+            selected=candidates[i];
+        }
+    }
+    if (selected == AST_SYMBOL_NONE) {
+        semantic_error(analyzer,call->first_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INCOMPATIBLE_TYPES,"No generic function matches the explicit type arguments, trait bounds and value arguments"); return NULL;
+    }
+    return &analyzer->model->symbols[selected];
+}
+
+static size_t layout_size(Analyzer *analyzer,AstType *type,size_t depth) {
+    if (depth>analyzer->model->symbol_count+64 || type->kind == AST_TYPE_INFERRED) return 0;
+    if (type->outer_pointer_depth) return 8;
+    if (type->is_slice) return 16;
+    if (type->is_array) {
+        validate_array_shape(analyzer,type);
+        if (!type->resolved_array_length) return 0;
+        AstType element=*type; element.is_array=0;
+        size_t size=layout_size(analyzer,&element,depth+1);
+        if (!size || size>SIZE_MAX-7) return 0;
+        size=(size+7)&~(size_t)7;
+        return type->resolved_array_length>SIZE_MAX/size ? 0 : size*type->resolved_array_length;
+    }
+    if (type->pointer_depth) return 8;
+    DataType primitive=primitive_type(analyzer->program,type);
+    if (primitive != TYPE_UNKNOWN) return primitive == TYPE_VOID ? 0 : data_type_bytes(primitive);
+    size_t id=resolve_named_symbol_id(analyzer,analyzer->program,type->name_token);
+    if (id == AST_SYMBOL_NONE) return 0;
+    const SemanticSymbol *symbol=&analyzer->model->symbols[id];
+    AstProgram *unit=(AstProgram *)symbol->source_program;
+    AstDeclarationNode *declaration=(AstDeclarationNode *)symbol->declaration;
+    if (!declaration) return 0;
+    AstProgram *saved=analyzer->program; analyzer->program=unit;
+    size_t size=0; int valid=1;
+    if (declaration->kind == AST_DECL_STRUCT) {
+        for (AstField *field=declaration->as.struct_decl.fields;field;field=field->next) {
+            size_t bytes=layout_size(analyzer,&field->type,depth+1);
+            if (!bytes || bytes>SIZE_MAX-7) { valid=0; break; }
+            bytes=(bytes+7)&~(size_t)7;
+            if (bytes>SIZE_MAX-size) { valid=0; break; } size+=bytes;
+        }
+        if (!size) size=8;
+    } else if (declaration->kind == AST_DECL_ENUM) {
+        size_t largest=0;
+        for (AstEnumValue *variant=declaration->as.enum_decl.values;variant;variant=variant->next) {
+            size_t payload=0;
+            for (AstTypeArgument *argument=variant->payload_types;argument;argument=argument->next) {
+                size_t bytes=layout_size(analyzer,&argument->type,depth+1);
+                if (!bytes || bytes>SIZE_MAX-7) { valid=0; break; }
+                bytes=(bytes+7)&~(size_t)7;
+                if (bytes>SIZE_MAX-payload) { valid=0; break; } payload+=bytes;
+            }
+            if (payload>largest) largest=payload;
+        }
+        if (largest>SIZE_MAX-8) valid=0; else size=largest+8;
+    } else valid=0;
+    analyzer->program=saved; return valid ? size : 0;
+}
+
 static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
     if (expression == NULL) return;
     if (expression->kind == AST_EXPR_MEMBER && expression->left && expression->left->kind == AST_EXPR_NAME &&
@@ -2587,7 +2744,29 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
     expression->resolved_is_array = 0;
     expression->resolved_is_slice = 0;
     expression->resolved_symbol_id = AST_SYMBOL_NONE;
-    if (expression->kind == AST_EXPR_LITERAL) {
+    if (expression->kind == AST_EXPR_SIZEOF || expression->kind == AST_EXPR_ALIGNOF) {
+        normalize_generic_type(analyzer,&expression->allocated_type,0);
+        size_t size=layout_size(analyzer,&expression->allocated_type,0);
+        expression->resolved_type=TYPE_USIZE;
+        if (!size || size>(size_t)INT64_MAX) {
+            semantic_error(analyzer,expression->first_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,"Layout query requires a complete, non-recursive, sized non-void type"); return;
+        }
+        const AstType *type=&expression->allocated_type;
+        DataType primitive=primitive_type(analyzer->program,type);
+        size_t alignment=(!type->pointer_depth && !type->outer_pointer_depth && !type->is_array && !type->is_slice && primitive != TYPE_UNKNOWN)
+            ? data_type_bytes(primitive) : 8;
+        char text[32]; snprintf(text,sizeof(text),"%zu",expression->kind == AST_EXPR_SIZEOF ? size : alignment);
+        expression->folded_constant=(AstToken){.type=TOKEN_NUMBER,.lexeme=string_interner_intern(analyzer->program->strings,text),.span=expression->span};
+    } else if (expression->kind == AST_EXPR_SLICE) {
+        const AstExpression *data=expression->left;
+        if (data) {
+            expression->resolved_type=data->resolved_type;
+            expression->resolved_named_type_token=data->resolved_named_type_token;
+            expression->resolved_named_symbol_id=data->resolved_named_symbol_id;
+            expression->resolved_pointer_depth=data->resolved_pointer_depth ? data->resolved_pointer_depth-1 : 0;
+            expression->resolved_is_slice=1;
+        }
+    } else if (expression->kind == AST_EXPR_LITERAL) {
         TokenType token = expression->value_token < analyzer->program->token_count
             ? analyzer->program->tokens[expression->value_token].type : TOKEN_ERROR;
         if (token == TOKEN_NUMBER) {
@@ -2731,12 +2910,14 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
                                                                 expression->right->resolved_type);
         }
     } else if (expression->kind == AST_EXPR_CAST) {
-        AstType cast_type = {
-            .kind = AST_TYPE_NAMED,
-            .name_token = expression->value_token,
-            .array_length_token = AST_TOKEN_NONE
-        };
-        expression->resolved_type = primitive_type(analyzer->program, &cast_type);
+        const AstType *cast_type=&expression->allocated_type;
+        expression->resolved_type=primitive_type(analyzer->program,cast_type);
+        expression->resolved_pointer_depth=cast_type->pointer_depth;
+        expression->resolved_outer_pointer_depth=cast_type->outer_pointer_depth;
+        expression->resolved_named_type_token=named_type_token(analyzer->program,cast_type);
+        expression->resolved_named_symbol_id=resolve_named_symbol_id(analyzer,analyzer->program,expression->resolved_named_type_token);
+        expression->resolved_is_array=cast_type->is_array;
+        expression->resolved_is_slice=cast_type->is_slice;
     } else if (expression->kind == AST_EXPR_FREE) {
         expression->resolved_type = TYPE_VOID;
     } else if (expression->kind == AST_EXPR_CALL) {
@@ -2752,10 +2933,13 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
             if (callee_type >= TOKEN_TYPE_INT && callee_type <= TOKEN_TYPE_VOID) {
                 expression->resolved_type = primitive_type(analyzer->program, &cast_type);
             } else {
-                instantiate_generic_candidates(analyzer, name, expression->arguments);
                 int ambiguous = 0;
-                const SemanticSymbol *function = resolve_overload(analyzer, name,
-                    AST_SYMBOL_NONE, 0, expression->arguments, &ambiguous);
+                const SemanticSymbol *function;
+                if (expression->left->explicit_type_arguments) function=explicit_generic_function(analyzer,name,expression);
+                else {
+                    instantiate_generic_candidates(analyzer,name,expression->arguments);
+                    function=resolve_overload(analyzer,name,AST_SYMBOL_NONE,0,expression->arguments,&ambiguous);
+                }
                 (void) ambiguous;
                 if (function != NULL) {
                     expression->resolved_symbol_id = function->id;
@@ -2867,10 +3051,19 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
         } else if (expression->resolved_pointer_depth > 0)
             expression->resolved_pointer_depth--;
     } else if (expression->kind == AST_EXPR_MEMBER && expression->left != NULL) {
-        if (expression->left->resolved_is_slice &&
+        if (expression->left->resolved_is_slice && !expression->left->resolved_outer_pointer_depth &&
             same_name(analyzer->program, expression->value_token, "length")) {
             expression->kind = AST_EXPR_SLICE_LENGTH;
-            expression->resolved_type = TYPE_INT;
+            expression->resolved_type = TYPE_USIZE;
+            return;
+        }
+        if (expression->left->resolved_is_slice && !expression->left->resolved_outer_pointer_depth &&
+            same_name(analyzer->program,expression->value_token,"data")) {
+            expression->kind=AST_EXPR_SLICE_DATA;
+            expression->resolved_type=expression->left->resolved_type;
+            expression->resolved_pointer_depth=expression->left->resolved_pointer_depth+1;
+            expression->resolved_named_type_token=expression->left->resolved_named_type_token;
+            expression->resolved_named_symbol_id=expression->left->resolved_named_symbol_id;
             return;
         }
         const AstEnumValue *value = NULL;
@@ -2941,7 +3134,7 @@ static void analyze_expression(Analyzer *analyzer, AstExpression *expression) {
     if (expression->kind == AST_EXPR_UNARY && expression->right != NULL)
         expression->resolved_array_length=expression->right->resolved_array_length;
     else if (expression->kind == AST_EXPR_INDEX && expression->left != NULL)
-        expression->resolved_array_length=expression->left->resolved_array_length;
+        expression->resolved_array_length=expression->resolved_is_array ? expression->left->resolved_array_length : 0;
     else if (expression->kind == AST_EXPR_RESERVE)
         expression->resolved_array_length=expression->allocated_type.resolved_array_length;
     else if (expression->resolved_symbol_id < analyzer->model->symbol_count)
@@ -3024,10 +3217,6 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
             if (statement->type.kind == AST_TYPE_INFERRED && statement->value == NULL)
                 semantic_error(analyzer, statement->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN,
                                "Inferred variable requires an initializer");
-            if (statement->type.is_slice)
-                semantic_error(analyzer, statement->type.name_token,
-                               ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                               "Slice types are only valid for function parameters");
             if (statement->is_const && statement->value == NULL)
                 semantic_error(analyzer, statement->name_token,
                                ERROR_CATEGORY_SEMANTIC, ERR_SEM_INVALID_DECLARATION,
@@ -3237,12 +3426,11 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
         semantic_error(analyzer, function->as.function.return_type.name_token,
                        ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN, "Unknown function return type");
     validate_array_shape(analyzer, &function->as.function.return_type);
-    if ((function->as.function.return_type.is_array &&
-         function->as.function.return_type.outer_pointer_depth == 0) ||
-        function->as.function.return_type.is_slice)
+    if (function->as.function.return_type.is_array &&
+         function->as.function.return_type.outer_pointer_depth == 0)
         semantic_error(analyzer, function->as.function.return_type.name_token,
                        ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                       "Array and slice return types are not supported");
+                       "Array return types are not supported; return a slice instead");
     analyzer->scope_depth++;
     for (AstParameter *parameter = function->as.function.parameters;
          parameter != NULL; parameter = parameter->next) {
@@ -3301,7 +3489,7 @@ static void analyze_constant_declaration(Analyzer *analyzer,
     AstExpression *value = declaration->as.constant.value;
     AstType *type = &declaration->as.constant.type;
     if (declaration->kind == AST_DECL_VARIABLE && !value) {
-        if (type->kind == AST_TYPE_INFERRED || type->is_slice || !known_declared_type(analyzer,type) ||
+        if (type->kind == AST_TYPE_INFERRED || !known_declared_type(analyzer,type) ||
             (primitive_type(analyzer->program,type) == TYPE_VOID && !type->pointer_depth && !type->outer_pointer_depth))
             semantic_error(analyzer,declaration->name_token,ERROR_CATEGORY_TYPE,ERR_TYPE_UNKNOWN,"Package variable needs a concrete non-void type or a constant initializer");
         declaration->semantic_body_checked=1; return;
@@ -3456,10 +3644,6 @@ SemanticModel *semantic_analyze(AstProgram *program) {
                     if (!known_declared_type(&analyzer, &field->type))
                         semantic_error(&analyzer, field->type.name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN,
                                        "Unknown field type");
-                    if (field->type.is_slice)
-                        semantic_error(&analyzer, field->type.name_token,
-                                       ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                                       "Slice fields are not supported");
                     if (primitive_type(unit, &field->type) == TYPE_VOID &&
                         field->type.pointer_depth == 0)
                         semantic_error(&analyzer, field->type.name_token,
@@ -3498,7 +3682,7 @@ SemanticModel *semantic_analyze(AstProgram *program) {
                 for (AstEnumValue *value = declaration->as.enum_decl.values;
                      value != NULL; value = value->next) {
                     for (AstTypeArgument *p=value->payload_types; p; p=p->next) {
-                        if (!known_declared_type(&analyzer,&p->type) || p->type.is_slice ||
+                        if (!known_declared_type(&analyzer,&p->type) ||
                             (primitive_type(unit,&p->type) == TYPE_VOID && !p->type.pointer_depth))
                             semantic_error(&analyzer,p->type.name_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,
                                 "Enum payload requires a complete non-void concrete type");
@@ -3565,7 +3749,7 @@ SemanticModel *semantic_analyze(AstProgram *program) {
             for (AstEnumValue *v=declaration->as.enum_decl.values; v; v=v->next)
                 for (AstTypeArgument *p=v->payload_types; p; p=p->next) {
                     validate_array_shape(&analyzer,&p->type);
-                    if (!known_declared_type(&analyzer,&p->type) || p->type.is_slice ||
+                if (!known_declared_type(&analyzer,&p->type) ||
                         (primitive_type(analyzer.program,&p->type) == TYPE_VOID && !p->type.pointer_depth))
                         semantic_error(&analyzer,p->type.name_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,
                                        "Enum payload requires a complete non-void concrete type");

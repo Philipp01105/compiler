@@ -21,7 +21,7 @@ typedef enum {
     AST_EXPR_ERROR, AST_EXPR_LITERAL, AST_EXPR_NAME, AST_EXPR_UNARY,
     AST_EXPR_BINARY, AST_EXPR_CALL, AST_EXPR_INDEX, AST_EXPR_MEMBER,
     AST_EXPR_SLICE_LENGTH, AST_EXPR_RESERVE, AST_EXPR_CAST, AST_EXPR_FREE, AST_EXPR_ENUM_CONSTRUCT,
-    AST_EXPR_ENUM_ACCESS
+    AST_EXPR_ENUM_ACCESS, AST_EXPR_SIZEOF, AST_EXPR_ALIGNOF, AST_EXPR_SLICE, AST_EXPR_SLICE_DATA
 } AstExpressionKind;
 typedef enum {
     AST_STMT_ERROR, AST_STMT_BLOCK, AST_STMT_VARIABLE, AST_STMT_EXPRESSION,
@@ -89,6 +89,7 @@ struct AstExpression {
     AstExpression *arguments;
     AstExpression *next;
     AstType allocated_type;
+    int explicit_type_arguments;
     /* Sema-owned folded constant spelling, separate from the source tree. */
     AstToken folded_constant;
     DataType resolved_type;
@@ -205,6 +206,7 @@ typedef struct {
 typedef struct DmmPackage DmmPackage;
 typedef struct DmmModule DmmModule;
 typedef struct DmmDependency {
+    int is_indirect;
     const char *path;
     const char *version;
     struct DmmDependency *next;

@@ -18,6 +18,11 @@ source file
   -> ELF/COFF object serialization OR internal ELF/PE executable linking
 ```
 
+`dmm manifest sync` reuses package graph loading across all source packages of the
+selected module. It reconciles direct and indirect requirements, checks exact
+versions, and atomically replaces `dmm.manifest` after a successful analysis.
+It does not require executable entry points, lower IR, or invoke the backend.
+
 Frontend or semantic errors stop compilation before IR creation. IR verification
 failures are compiler errors. The backend never reparses source tokens and there
 is no alternate compatibility emitter.
@@ -90,14 +95,19 @@ legal.
 
 IR types are primitive, named, pointer, fixed-array, or slice types. Instructions cover
 constants, loads/declarations/stores, unary and binary operations, calls,
-indexes, members, slice lengths, casts, allocation/free, returns, branches, jumps,
+indexes, members, slice construction/data/length, casts, allocation/free, returns, branches, jumps,
 labels, and PHI values. Calls store a contiguous ordered argument slice, so
 nested calls cannot corrupt argument ordering.
 
 Boolean `&&` and `||` lower to branch/jump/label/PHI control flow and therefore
 preserve short-circuit side effects. Instance methods receive an explicit hidden
 aggregate pointer; implicit field names lower against that receiver. Slices expand
-to data pointer and length at calls. Allocation uses a complete type and releases
+to data pointer and length at calls. Stored and returned slices use two-word
+aggregate descriptors; fixed-array conversion lowers to explicit slice construction.
+Layout queries are folded during semantic analysis. `ir_type_layout` supplies the
+backend's sizes, alignments and storage-slot counts, matching those query values.
+Typed allocation helpers specialize ordinary DMM generic functions with explicit
+type arguments over byte primitives. Allocation uses a complete type and releases
 are explicit. Stdlib output uses ordinary resolved overload calls.
 
 The verifier rejects malformed type graphs, duplicate or missing value

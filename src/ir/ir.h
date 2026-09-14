@@ -29,6 +29,8 @@ typedef struct {
     size_t array_length;
 } IrType;
 
+typedef struct { size_t size; size_t alignment; size_t storage_slots; } IrTypeLayout;
+
 typedef enum {
     IR_OP_CONSTANT,
     IR_OP_LOAD,
@@ -47,7 +49,8 @@ typedef enum {
     IR_OP_BRANCH,
     IR_OP_JUMP,
     IR_OP_LABEL,
-    IR_OP_PHI, IR_OP_ENUM_CONSTRUCT, IR_OP_ENUM_IS, IR_OP_ENUM_PAYLOAD, IR_OP_TRAP
+    IR_OP_PHI, IR_OP_ENUM_CONSTRUCT, IR_OP_ENUM_IS, IR_OP_ENUM_PAYLOAD, IR_OP_TRAP,
+    IR_OP_SLICE, IR_OP_SLICE_DATA
 } IrOpcode;
 
 typedef struct {
@@ -195,6 +198,7 @@ IrModule *ir_lower_program(const AstProgram *program, const SemanticModel *seman
 void ir_module_free(IrModule *module);
 int ir_verify_module(const IrModule *module);
 int ir_dump(FILE *output, const IrModule *module);
+int ir_type_layout(const IrModule *module, IrTypeId type, IrTypeLayout *layout);
 /* Internal failures retain the concrete instruction and its original source unit. */
 void ir_report_failure(const IrFunction *function, size_t instruction_index,
                        const char *stage, const char *reason);

@@ -62,7 +62,9 @@ static AstType substitute_type(Substitution *s, AstType type) {
                 ast_program_lexeme(s->program,parameter->name_token)) == 0) {
             AstType result=concrete_copy(s,s->arguments[i]);
             result.span=type.span;
-            result.pointer_depth+=type.pointer_depth;
+            if ((result.is_array || result.is_slice) && !type.is_array && !type.is_slice)
+                result.outer_pointer_depth+=type.pointer_depth;
+            else result.pointer_depth+=type.pointer_depth;
             result.outer_pointer_depth+=type.outer_pointer_depth;
             if (type.is_array || type.is_slice) {
                 if (result.is_array || result.is_slice) s->failed=1;

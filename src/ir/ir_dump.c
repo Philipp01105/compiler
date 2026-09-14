@@ -28,8 +28,8 @@ static const char *primitive_name(DataType type) {
 static const char *opcode_name(IrOpcode opcode) {
     static const char *names[] = {"constant", "load", "declare", "store", "unary",
         "binary", "call", "index", "member", "slice-length", "cast", "alloc", "free",
-        "return", "branch", "jump", "label", "phi", "enum-construct", "enum-is", "enum-payload", "trap"};
-    return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_TRAP ? names[opcode] : "invalid";
+        "return", "branch", "jump", "label", "phi", "enum-construct", "enum-is", "enum-payload", "trap", "slice", "slice-data"};
+    return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_SLICE_DATA ? names[opcode] : "invalid";
 }
 
 static const char *operator_name(TokenType type) {

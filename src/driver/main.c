@@ -26,6 +26,7 @@
  */
 void print_usage(const char *program_name) {
     printf("Usage: %s [OPTIONS] <source_file>\n", program_name);
+    printf("       %s manifest sync [package_directory] [--formatError]\n", program_name);
     printf("\n");
     printf("Options:\n");
     printf("  --tokens       Show generated token stream\n");
@@ -163,6 +164,31 @@ int main(int argc, char *argv[]) {
             format_error = 1;
             if (error_handler) error_handler_set_json_output(error_handler, 1);
         }
+    }
+
+    int command_index=1;
+    while (command_index<argc && !strcmp(argv[command_index],"--formatError")) command_index++;
+    if (command_index<argc && !strcmp(argv[command_index],"manifest")) {
+        const char *action=NULL,*directory=NULL;
+        int invalid=0;
+        for (int i=command_index+1;i<argc;i++) {
+            if (!strcmp(argv[i],"--formatError")) continue;
+            if (!action) action=argv[i];
+            else if (!directory && argv[i][0] != '-') directory=argv[i];
+            else invalid=1;
+        }
+        if (invalid || !action || strcmp(action,"sync")) {
+            error_report(error_handler,SEVERITY_ERROR,0,0,ERROR_CATEGORY_COMPILER,
+                ERR_COMP_INVALID_OPTION,NULL,"Expected 'manifest sync [package_directory] [--formatError]'");
+            error_handler_flush(error_handler); error_handler_free(error_handler); return 1;
+        }
+        int ok=frontend_sync_manifest(directory ? directory : ".");
+        if (!ok && !error_handler_get_error_count(error_handler))
+            error_report(error_handler,SEVERITY_ERROR,0,0,ERROR_CATEGORY_COMPILER,
+                ERR_COMP_INTERNAL_FAILURE,directory,"Manifest command failed");
+        error_handler_flush(error_handler); error_handler_free(error_handler);
+        if (ok) printf("Manifest %s complete\n",action);
+        return ok ? 0 : 1;
     }
 
     for (int i = 1; i < argc; i++) {

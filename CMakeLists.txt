@@ -83,6 +83,10 @@ add_executable(compiler
 )
 
 target_include_directories(compiler PRIVATE ${DMM_INCLUDE_DIRS})
+add_custom_command(TARGET compiler POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "$<TARGET_FILE:compiler>" "$<TARGET_FILE_DIR:compiler>/dmm$<TARGET_FILE_SUFFIX:compiler>"
+    COMMENT "Creating the dmm command")
 
 target_compile_definitions(compiler PRIVATE
         DMM_VERSION="${PROJECT_VERSION}")
@@ -343,6 +347,11 @@ if(BUILD_TESTING)
              -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/imports_test
              -P ${CMAKE_SOURCE_DIR}/tests/imports_test.cmake)
     set_tests_properties(imports_integration PROPERTIES LABELS "integration;imports")
+    add_test(NAME manifest_commands COMMAND ${CMAKE_COMMAND}
+        -DCOMPILER=$<TARGET_FILE:compiler>
+        -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/manifest_test
+        -P ${CMAKE_SOURCE_DIR}/tests/manifest_test.cmake)
+    set_tests_properties(manifest_commands PROPERTIES LABELS "integration;imports;cli")
     if(DMM_SANITIZERS)
         set_property(TEST imports_integration APPEND PROPERTY LABELS safety)
     endif()
