@@ -1,0 +1,10 @@
+package main;
+import "stdlib";
+func main() -> void {
+    var value:int = 2;
+    value += 3;
+    value *= 4;
+    stdlib.println(value);
+    stdlib.println(-value);
+    stdlib.println(!false);
+}

@@ -4,7 +4,7 @@ Each `.dmm` file is a standalone program. From the compiler repository root,
 compile and run an example with:
 
 ```sh
-./build/compiler examples/calculator.dmm -o calculator
+./build/compiler examples/calculator/calculator.dmm -o calculator
 ./calculator
 ```
 

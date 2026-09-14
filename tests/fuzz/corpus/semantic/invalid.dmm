@@ -1,3 +1,4 @@
+package main;
 func main() -> int {
     var value:MissingType;
     value.unknown = undefined(value);

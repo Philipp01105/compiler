@@ -1,5 +1,5 @@
 #include "errorHandler.h"
-#include "frontend.h"
+#include "test_source.h"
 #include "ir.h"
 #include "semantic.h"
 
@@ -13,7 +13,7 @@ static int control_flow_regressions(void) {
         "var condition = true && (false || true);"
         "if (condition) { return 1; } return 0; }";
     const FrontendOptions options = {0};
-    AstProgram *program = frontend_parse_source(source, strlen(source), "cfg-test.dmm", &options);
+    AstProgram *program = test_parse_source(source, strlen(source), "cfg-test.dmm", &options);
     SemanticModel *semantics = program == NULL ? NULL : semantic_analyze(program);
     IrModule *module = semantics == NULL || semantics->error_count != 0 ? NULL : ir_lower_program(program, semantics);
     int failed = module == NULL || !ir_verify_module(module);
@@ -150,10 +150,8 @@ int main(int argc, char **argv) {
             const AstImportPath *paths=program != NULL && program->root != NULL ?
                 program->root->as.import_decl.paths : NULL;
             if (program == NULL || program->structured_declaration_count != 2 ||
-                program->owned_import_count != 2 || paths == NULL || paths->next == NULL ||
-                paths->next->next == NULL || paths->next->next->next != NULL ||
-                paths->resolved_program != paths->next->resolved_program ||
-                module == NULL || module->import_count != 4 || module->function_count != 2) {
+                program->owned_import_count != 2 || paths == NULL || paths->next != NULL ||
+                module == NULL || module->import_count != 1 || module->function_count != 3) {
                 fprintf(stderr, "grouped package import AST/IR contract failed\n");
                 failed=1;
             }

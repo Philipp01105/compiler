@@ -4,21 +4,47 @@ Status: experimental. This document defines the tested source-language contract;
 
 ## Source and declarations
 
-A source file is UTF-8 text containing imports, structs, enums, traits, implementations, constants, and functions. Execution begins in a parameterless `main`, whose return type is `void` or `int`. Statements end with `;`. `//` introduces a line comment.
+A source file is UTF-8 text beginning with `package name;`, followed by imports, structs, enums, traits, implementations, constants, package variables and functions. Statements and imports end with `;`. `//` introduces a line comment. Execution begins in a parameterless `main` returning `void` or `int` in `package main`; library packages need no entry point.
 
-Imports use `import "relative/path.dmm"` or `import <relative/path.dmm>`, individually or grouped as `import ( path ... )`. Directory imports load only `package.dmm` and its explicit imports. Canonical files are loaded once; unlisted files are never scanned.
+Each project has one `dmm.mod` defining its module path and required language edition. One directory is one package; all `.dmm` files directly in it are discovered and share a declaration scope. Package identity is the module path plus relative directory. All files agree on their package name. `package.dmm` has no special meaning.
+
+Imports use quoted canonical package paths, for example `import "github.com/example/project/lexer";` or `import lex "github.com/example/project/lexer";`. Imported declarations are accessed as `lexer.Token` or `lex.tokenize(...)`. Bindings are local to the importing source file; imports never expose unqualified declarations. Grouped imports remain supported. File imports, angle imports and dot imports are removed. Cycles and invalid `internal` imports are rejected.
+
+Declarations and members are package-private by default. `pub` exports functions, structs, enums, traits, constants, variables, fields, methods and enum variants. Private declarations are visible to all files of their package. Types remain nominal across package and module boundaries. See [MODULE_SYSTEM.md](MODULE_SYSTEM.md) for manifest syntax, vendor dependencies, visibility, identities and diagnostics.
 
 ## Types
 
-The primitive types are `int`, `char`, `byte`, `bit`, `float`, `double`, `string`, and `void`. `void` is valid only as a function return type. Fixed arrays use `var name:type[length];`. Repeated prefix stars form pointers, such as `**int`; grouped types distinguish `*(int[4])` from `*int[4]`. Whole-array assignment is not supported.
+The primitive types are `int`, `char`, `byte`, `bit`, `float`, `double`, `string`,
+`i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `isize`, `usize`, and `void`.
+Fixed-width integer names denote their signedness and width; `isize`/`usize` are
+signed/unsigned pointer-width integers (64 bits on both supported targets).
+Existing `int`, `char` and `byte` retain their 32-bit signed, 8-bit signed and
+8-bit unsigned memory/ABI representations. The new spellings are distinct
+primitive types for overload resolution and generic specialization.
+`void` is valid only as a function return type. Fixed arrays use `var name:type[length];`. Repeated prefix stars form pointers, such as `**int`; grouped types distinguish `*(int[4])` from `*int[4]`. Whole-array assignment is not supported.
 
 Parameters may use `T[]` slices. A matching fixed array supplies a data pointer and element count without copying; forwarding a slice preserves both. `slice.length` is read-only and indexing checks the passed count. The native ABI expands each slice to pointer then length in source-parameter order. Slices cannot be returned or stored in local bindings or fields.
 
-Implicit conversions preserve their source domain: integral types may convert among themselves or widen to floating point, and `float` may widen to `double`. Narrowing floating conversions require an explicit cast.
+Integral types may convert among themselves or to floating point, and `float`
+may widen to `double`. Conversions to fixed-width integers keep the low bits and
+sign- or zero-extend according to the target. Conversion from a fixed-width
+integer to `int` applies its 32-bit representation. Narrowing floating conversions
+require an explicit cast. Float-to-integer conversions truncate toward zero;
+their input must be finite and within the signed or unsigned 64-bit conversion
+domain before narrowing to smaller fixed widths.
+
+Decimal integer literals cover `0` through `UINT64_MAX`. They infer `int` through
+`INT32_MAX`, `i64` through `INT64_MAX`, and `u64` above that. Explicit postfix casts
+select another width. With fixed-width operands, integer operations select the
+larger width; an unsigned operand wins when its width is at least the signed
+operand's width. Identical operand types retain their type. Results wrap to that
+width, including constant arithmetic. Legacy-only integral arithmetic retains
+its existing virtual-slot behavior. Division by zero traps; signed 64-bit minimum
+divided by -1 also traps. Comparisons and division use the selected signedness.
 
 Casts use `value.(target)`, for example `(amount / 2.0).(int)` or `value.(byte).(int)`. The target must be a numeric primitive type. The old `int(value)` form is rejected. Casts bind as postfix expressions; parentheses group compound source expressions.
 
-`const name[:type] = expression;` declares a top-level or block constant. Primitive and string initializer expressions are evaluated during semantic analysis. Earlier evaluated constants may be referenced, including positive `int` constants used as fixed-array lengths. Constants have no mutable storage and cannot be assigned, incremented, or addressed. Integer overflow and integer division by zero are compilation errors.
+`const name[:type] = expression;` declares a top-level or block constant. Primitive and string initializer expressions are evaluated during semantic analysis. Earlier evaluated constants may be referenced, including positive `int` constants used as fixed-array lengths. Constants have no mutable storage and cannot be assigned, incremented, or addressed. Legacy integer constant overflow and invalid constant division are compilation errors; fixed-width constant arithmetic uses the wrapping rules above and is evaluated with exact integer bits.
 
 ## Control flow and expressions
 
@@ -73,6 +99,12 @@ A sum enum gives each variant its own payload types. Construct values with
 by storage for the largest variant. Assignment, arguments and returns copy the complete
 aggregate; copying pointers or strings retains explicit ownership without destruction.
 Sum values do not support implicit equality or direct payload member access.
+For a variant with exactly one payload, `value.Variant()` returns that payload:
+`result.Ok()`, `result.Err()`, and `option.Some()` are instance accessors with no
+arguments. The result has the specialized payload type. The receiver is evaluated
+once, and accessing a variant that is not active traps before reading its payload.
+Variants with zero or multiple payloads require `match`. Constructors remain
+type-qualified, for example `Result<int,string>.Ok(42)`.
 
 `match (value) { Some(v) => return v; None => return fallback; }` is a statement.
 Variant names are relative to the scrutinee enum. Bindings have the exact payload
@@ -81,13 +113,13 @@ a wildcard arm. Duplicate variants, wrong binding counts and unreachable arms ar
 errors. Payload extraction is emitted only in a branch guarded by the corresponding
 tag test; typed IR verifies that guard. An invalid runtime tag traps.
 
-`<stdlib>` exports `Option<T>`, `Result<T,E>`, `Cell<T>` with `get`/`set` methods,
+`import "stdlib";` exports `stdlib.Option<T>`, `stdlib.Result<T,E>`, `stdlib.Cell<T>` with `get`/`set` methods,
 `unwrapOr`, `Printable`, `Equal`, and `printValue`. See `tests/execution/generics` for executable examples.
 
 Functions declared inside a struct are invoked as instance methods, while
 `static func` members are invoked on the struct type. Top-level and method link
-names that overlap the runtime are mangled internally, so source-level function
-names remain usable without breaking platform calls. Names beginning with
+names encode canonical package identity, overload signatures and owner types,
+so source-level function names remain usable without breaking platform calls. Names beginning with
 `__dmm_` are reserved.
 
 `reserve(type)` zero-initializes one complete sized non-void object and returns a pointer to that type. It accepts a type rather than a runtime count. `free(value)` releases a pointer or owned string. Allocations require explicit releases; `@gc` and automatic function-exit cleanup have been removed.
@@ -95,6 +127,10 @@ names remain usable without breaking platform calls. Names beginning with
 Types support one array or slice constructor, with pointer levels inside and outside it. Nested arrays and slices are not supported.
 
 `print(value)` and `println(value)` are ordinary overloaded stdlib functions. Import `<stdlib>` to use them; an empty line is `println("")`. Calls evaluate their arguments before entering the output function.
+
+`<stdlib/core>` exposes low-level byte-region allocation, explicit release, raw
+I/O and process primitives without importing higher-level library functions.
+See [CORE_RUNTIME.md](CORE_RUNTIME.md) for signatures and ownership contracts.
 
 Function overloads differ by ordered parameter types, never return type. Exact matches beat promotions and other allowed numeric conversions. A candidate must be no worse in every argument and better in at least one; ties are ambiguous. `main` cannot be overloaded. Overloaded functions and methods use type-derived link names.
 

@@ -1,3 +1,4 @@
+package main;
 const base:int = 2 + 3;
 
 func select(value:int) -> int { return value + 1; }

@@ -1,0 +1,6 @@
+package main;
+enum Option<T> { Some(T), None, }
+func main() -> void {
+    var p:Option<int> = Option<int>.None;
+    p.None();
+}

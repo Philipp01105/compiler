@@ -1,4 +1,4 @@
-import <stdlib>
-
+package main;
+import "stdlib";
 enum State(code:int) { Ready(1), Done(2) }
-func main() -> void { print(State.Missing.code); }
+func main() -> void { stdlib.print(State.Missing.code); }

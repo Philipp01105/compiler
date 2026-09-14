@@ -1,0 +1,6 @@
+package main;
+enum Pair<T> { Values(T,T), }
+func main() -> void {
+    var p:Pair<int> = Pair<int>.Values(1,2);
+    p.Values();
+}

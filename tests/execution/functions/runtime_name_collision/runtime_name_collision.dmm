@@ -1,0 +1,28 @@
+package main;
+import "stdlib";
+func printf(value:int) -> int { return value + 1; }
+func strlen(value:int) -> int { return value * 2; }
+func write(value:int) -> int { return value + 3; }
+func open(value:int) -> int { return value + 4; }
+func close(value:int) -> int { return value + 5; }
+func __errno_location() -> int { return 123; }
+func exit(value:int) -> int { return value + 6; }
+func WriteFile(value:int) -> int { return value + 7; }
+func VirtualAlloc(value:int) -> int { return value + 8; }
+
+func main() -> void {
+    stdlib.println(printf(4));
+    stdlib.println(strlen(5));
+    stdlib.println(write(5));
+    stdlib.println(open(5));
+    stdlib.println(close(5));
+    stdlib.println(__errno_location());
+    stdlib.println(exit(5));
+    stdlib.println(WriteFile(5));
+    stdlib.println(VirtualAlloc(5));
+    var fd:int = sys_open("runtime_collision.tmp", 577, 384);
+    stdlib.println(fd >= 0);
+    stdlib.println(sys_write(fd, "x", 1));
+    stdlib.println(sys_close(fd));
+    stdlib.println(sys_close(-1) < 0);
+}

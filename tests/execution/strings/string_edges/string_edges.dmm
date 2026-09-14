@@ -1,0 +1,15 @@
+package main;
+import "stdlib";
+func echo(value:string) -> string { return value; }
+
+func main() -> void {
+    stdlib.println("" == "");
+    stdlib.println(echo("hello"));
+    stdlib.println(('\n').(int));
+    stdlib.println(('\t').(int));
+    stdlib.println(('\r').(int));
+    stdlib.println(('\0').(int));
+    stdlib.println(('\\').(int));
+    stdlib.println(('\"').(int));
+    stdlib.println(('\'').(int));
+}

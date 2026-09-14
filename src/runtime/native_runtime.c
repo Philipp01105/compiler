@@ -119,6 +119,55 @@ static void own_free(Runtime *r) {
     else {op2(r,X64_OP_MOV,X64_WIDTH_QWORD,x64_register("rsi"),x64_memory(X64_WIDTH_QWORD,"rdi",0));imm(r,"rax",11);op0(r,X64_OP_SYSCALL);}
     label(r,"done");end(r);
 }
+
+/* Raw byte-region operations. No strings, formatting or allocation policy. */
+static void own_core_memory(Runtime *r) {
+    r->function="__dmm_core_null";
+    (void)native_define(r->object,r->function,1,1);imm(r,"rax",0);op0(r,X64_OP_RET);
+    r->function="__dmm_core_offset";
+    (void)native_define(r->object,r->function,1,1);
+    mov(r,"rax",arg(r,0));op2(r,X64_OP_ADD,X64_WIDTH_QWORD,x64_register("rax"),x64_register(arg(r,1)));op0(r,X64_OP_RET);
+    r->function="__dmm_core_string_data";
+    (void)native_define(r->object,r->function,1,1);mov(r,"rax",arg(r,0));op0(r,X64_OP_RET);
+
+    r->function="__dmm_core_fill";
+    (void)native_define(r->object,r->function,1,1);
+    mov(r,"r10",arg(r,0));mov(r,"rax",arg(r,1));mov(r,"r11",arg(r,2));
+    test(r,"r11");branch(r,X64_OP_JL,"trap");branch(r,X64_OP_JE,"done");
+    test(r,"r10");branch(r,X64_OP_JE,"trap");
+    label(r,"loop");op2(r,X64_OP_MOV,X64_WIDTH_BYTE,x64_memory(X64_WIDTH_BYTE,"r10",0),x64_register("al"));
+    op1(r,X64_OP_INC,x64_register("r10"));op1(r,X64_OP_DEC,x64_register("r11"));branch(r,X64_OP_JNE,"loop");
+    label(r,"done");op0(r,X64_OP_RET);label(r,"trap");op0(r,X64_OP_UD2);
+
+    r->function="__dmm_core_copy";
+    (void)native_define(r->object,r->function,1,1);
+    mov(r,"r10",arg(r,0));mov(r,"r11",arg(r,1));mov(r,"r9",arg(r,2));
+    test(r,"r9");branch(r,X64_OP_JL,"trap");branch(r,X64_OP_JE,"done");
+    test(r,"r10");branch(r,X64_OP_JE,"trap");test(r,"r11");branch(r,X64_OP_JE,"trap");
+    op2(r,X64_OP_CMP,X64_WIDTH_QWORD,x64_register("r10"),x64_register("r11"));
+    op1(r,X64_OP_SETBE,x64_register("al"));
+    op2(r,X64_OP_TEST,X64_WIDTH_BYTE,x64_register("al"),x64_register("al"));branch(r,X64_OP_JNE,"forward");
+    op2(r,X64_OP_ADD,X64_WIDTH_QWORD,x64_register("r10"),x64_register("r9"));
+    op2(r,X64_OP_ADD,X64_WIDTH_QWORD,x64_register("r11"),x64_register("r9"));
+    label(r,"backward");op1(r,X64_OP_DEC,x64_register("r10"));op1(r,X64_OP_DEC,x64_register("r11"));
+    op2(r,X64_OP_MOVZX,X64_WIDTH_QWORD,x64_register("rax"),x64_memory(X64_WIDTH_BYTE,"r11",0));
+    op2(r,X64_OP_MOV,X64_WIDTH_BYTE,x64_memory(X64_WIDTH_BYTE,"r10",0),x64_register("al"));
+    op1(r,X64_OP_DEC,x64_register("r9"));branch(r,X64_OP_JNE,"backward");branch(r,X64_OP_JMP,"done");
+    label(r,"forward");op2(r,X64_OP_MOVZX,X64_WIDTH_QWORD,x64_register("rax"),x64_memory(X64_WIDTH_BYTE,"r11",0));
+    op2(r,X64_OP_MOV,X64_WIDTH_BYTE,x64_memory(X64_WIDTH_BYTE,"r10",0),x64_register("al"));
+    op1(r,X64_OP_INC,x64_register("r10"));op1(r,X64_OP_INC,x64_register("r11"));
+    op1(r,X64_OP_DEC,x64_register("r9"));branch(r,X64_OP_JNE,"forward");
+    label(r,"done");op0(r,X64_OP_RET);label(r,"trap");op0(r,X64_OP_UD2);
+}
+
+static void own_core_process(Runtime *r) {
+    begin(r,"__dmm_core_exit",0);
+    if(r->target==TARGET_COFF) call(r,"__dmm_os_ExitProcess");
+    else {imm(r,"rax",60);op0(r,X64_OP_SYSCALL);}
+    op0(r,X64_OP_UD2);
+    r->function="__dmm_core_trap";
+    (void)native_define(r->object,r->function,1,1);op0(r,X64_OP_UD2);
+}
 static void own_calloc(Runtime *r) {
     begin(r,"__dmm_core_calloc",0);
     mov(r,"rax",arg(r,0));mov(r,"r10",arg(r,1));test(r,"r10");branch(r,X64_OP_JE,"allocate");
@@ -174,10 +223,11 @@ int native_runtime_emit(NativeObject *object,TargetFormat target) {
     object->section=NATIVE_TEXT;
     own_strlen(&r);own_strcmp(&r);own_copy(&r,0);own_copy(&r,1);
     own_malloc(&r);own_free(&r);own_calloc(&r);own_strdup(&r);
+    own_core_memory(&r);own_core_process(&r);
     emit_alias(&r,"__dmm_rt_strlen","strlen",1);emit_alias(&r,"__dmm_rt_strcmp","strcmp",3);
     emit_alias(&r,"__dmm_rt_strcpy","strcpy",2);emit_alias(&r,"__dmm_rt_strcat","strcat",2);
     emit_alias(&r,"__dmm_rt_strdup","strdup",1);emit_alias(&r,"__dmm_rt_malloc","malloc",0);
-    own_parse_integer(&r);own_format_integer(&r);own_format_float(&r);own_snprintf(&r);
+    own_parse_integer(&r);own_format_integer(&r,0);own_format_integer(&r,1);own_format_float(&r);own_snprintf(&r);
     integer_string(&r);string_integer(&r);
     if(target==TARGET_COFF){own_handle(&r);own_windows_io(&r,0);own_windows_io(&r,1);own_windows_open(&r);own_windows_close(&r);}
     else {own_linux_io(&r,"__dmm_rt_sys_read",0,3);own_linux_io(&r,"__dmm_rt_sys_write",1,3);

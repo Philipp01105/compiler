@@ -1,0 +1,7 @@
+package main;
+import "stdlib";
+func main() -> void {
+    stdlib.print("");
+    stdlib.println("");
+    stdlib.println("done");
+}

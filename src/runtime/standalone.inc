@@ -36,12 +36,17 @@ static void own_parse_integer(Runtime *r) {
     label(r,"done");mov(r,"rax","r11");test(r,"r9");branch(r,X64_OP_JNE,"return");op1(r,X64_OP_NEG,x64_register("rax"));
     label(r,"return");end(r);
 }
-static void own_format_integer(Runtime *r) {
-    begin(r,"__dmm_format_integer",64);mov(r,"r10",arg(r,0));mov(r,"rax",arg(r,1));zero(r,"r11");zero(r,"r9");
-    test(r,"rax");branch(r,X64_OP_JL,"negative");op1(r,X64_OP_NEG,x64_register("rax"));branch(r,X64_OP_JMP,"digits");
-    label(r,"negative");imm(r,"r9",1);
+static void own_format_integer(Runtime *r,int unsign) {
+    begin(r,unsign?"__dmm_format_unsigned":"__dmm_format_integer",64);mov(r,"r10",arg(r,0));mov(r,"rax",arg(r,1));zero(r,"r11");zero(r,"r9");
+    if(!unsign) {
+        test(r,"rax");branch(r,X64_OP_JL,"negative");op1(r,X64_OP_NEG,x64_register("rax"));branch(r,X64_OP_JMP,"digits");
+        label(r,"negative");imm(r,"r9",1);
+    }
     label(r,"digits");address(r,"r8",64);imm(r,"rcx",10);
-    label(r,"divide");op0(r,X64_OP_CQO);op1(r,X64_OP_IDIV,x64_register("rcx"));op1(r,X64_OP_NEG,x64_register("rdx"));constant(r,X64_OP_ADD,"rdx",48);
+    label(r,"divide");
+    if(unsign) {zero(r,"rdx");op1(r,X64_OP_DIV,x64_register("rcx"));}
+    else {op0(r,X64_OP_CQO);op1(r,X64_OP_IDIV,x64_register("rcx"));op1(r,X64_OP_NEG,x64_register("rdx"));}
+    constant(r,X64_OP_ADD,"rdx",48);
     byte_store(r,"r8","r11",0,"dl");op1(r,X64_OP_INC,x64_register("r11"));test(r,"rax");branch(r,X64_OP_JNE,"divide");
     zero(r,"rax");test(r,"r9");branch(r,X64_OP_JE,"copy");memory_constant(r,"r10",NULL,0,45);op1(r,X64_OP_INC,x64_register("rax"));
     label(r,"copy");op1(r,X64_OP_DEC,x64_register("r11"));byte_load(r,"rdx","r8","r11",0);byte_store(r,"r10","rax",0,"dl");op1(r,X64_OP_INC,x64_register("rax"));test(r,"r11");branch(r,X64_OP_JNE,"copy");
@@ -99,7 +104,9 @@ static void own_snprintf(Runtime *r) {
     begin(r,"__dmm_core_snprintf",576);store(r,arg(r,0),8);store(r,arg(r,1),16);store(r,arg(r,2),24);store(r,arg(r,3),32);
     if(r->target==TARGET_ELF)op2(r,X64_OP_MOVQ,X64_WIDTH_NONE,x64_register("rax"),x64_register("xmm0"));else mov(r,"rax","r9");store(r,"rax",40);
     mov(r,"r10",arg(r,2));byte_load(r,"rax","r10",NULL,1);compare(r,"rax",115);branch(r,X64_OP_JE,"string");compare(r,"rax",99);branch(r,X64_OP_JE,"character");compare(r,"rax",102);branch(r,X64_OP_JE,"float");
+    compare(r,"rax",117);branch(r,X64_OP_JE,"unsigned");
     address(r,arg(r,0),576);load(r,arg(r,1),32);call(r,"__dmm_format_integer");branch(r,X64_OP_JMP,"temporary");
+    label(r,"unsigned");address(r,arg(r,0),576);load(r,arg(r,1),32);call(r,"__dmm_format_unsigned");branch(r,X64_OP_JMP,"temporary");
     label(r,"float");address(r,arg(r,0),576);load(r,arg(r,1),40);call(r,"__dmm_format_float");branch(r,X64_OP_JMP,"temporary");
     label(r,"character");load(r,"rax",32);address(r,"r10",576);byte_store(r,"r10",NULL,0,"al");memory_constant(r,"r10",NULL,1,0);imm(r,"rax",1);
     label(r,"temporary");store(r,"rax",48);address(r,"r10",576);branch(r,X64_OP_JMP,"copy");

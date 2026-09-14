@@ -1,4 +1,4 @@
-#include "frontend.h"
+#include "test_source.h"
 #include "ir_optimize.h"
 #include "errorHandler.h"
 #include <stdio.h>
@@ -41,7 +41,7 @@ int main(void) {
         "func wrap() -> int { return 10+1; }"
         "func main() -> int { return folded(); }";
     FrontendOptions options={0};
-    AstProgram *program=frontend_parse_source(source,strlen(source),"ir-optimizer-test.dmm",&options); CHECK(program);
+    AstProgram *program=test_parse_source(source,strlen(source),"ir-optimizer-test.dmm",&options); CHECK(program);
     if (!program->structured_ast_complete) error_handler_flush(errors);
     CHECK(program->structured_ast_complete);
     SemanticModel *semantics=semantic_analyze(program);

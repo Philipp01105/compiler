@@ -1,5 +1,5 @@
-import <stdlib>
-
+package main;
+import "stdlib";
 enum PacketKind(id:int, name:string, reliable:bit, weight:double) {
     data(10, "data", true, 1.25),
     retry(20, "retry", false, 2.5),
@@ -87,7 +87,7 @@ func main() -> void {
         + ",reliable=" + kind.reliable + ",checksum=" + buffer.checksum
         + ",allocated=" + allocated_value(buffer.used)
         + ",weight=" + *manual;
-    println(label);
+    stdlib.println(label);
     free(label);
     free(manual);
 }

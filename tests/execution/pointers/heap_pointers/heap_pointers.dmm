@@ -1,0 +1,11 @@
+package main;
+import "stdlib";
+// Test pointer type declarations
+func main() -> void {
+    var p:*int;
+    var q:*char;
+    var r:*string;
+    
+    stdlib.println("Pointer types declared successfully");
+}
+// Category: execution/pointers

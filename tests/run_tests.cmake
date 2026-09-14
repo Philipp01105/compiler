@@ -1,3 +1,4 @@
+include("${CMAKE_CURRENT_LIST_DIR}/source_fixture.cmake")
 cmake_minimum_required(VERSION 3.21)
 include("${CMAKE_CURRENT_LIST_DIR}/standalone_link.cmake")
 get_filename_component(ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
@@ -15,6 +16,7 @@ if(NOT DEFINED OUTPUT_DIR)
 endif()
 
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
+dmm_test_write( "${OUTPUT_DIR}/dmm.mod" "module dmm.test/regression\ndmm 0.3\n")
 get_filename_component(OUTPUT_DIR "${OUTPUT_DIR}" ABSOLUTE)
 get_filename_component(COMPILER "${COMPILER}" ABSOLUTE)
 
@@ -75,7 +77,7 @@ function(run_case source expected syntax)
     )
 
     # Store the original output for debugging.
-    file(WRITE "${work}/actual.out" "${output}")
+    dmm_test_write( "${work}/actual.out" "${output}")
 
     # Normalize platform-specific line endings.
     #
@@ -170,7 +172,7 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "abi")
 
         file(
                 COPY_FILE
-                "${ROOT}/tests/abi/systemv/core_abi.dmm"
+                "${ROOT}/tests/abi/systemv/core_abi/core_abi.dmm"
                 "${work}/input.dmm"
         )
 
@@ -187,12 +189,14 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "abi")
 
         file(READ "${work}/input.dmm.s" assembly)
         string(REPLACE "main" "dmm_test_entry" assembly "${assembly}")
-        file(WRITE "${work}/interop.s" "${assembly}")
+        dmm_test_write( "${work}/interop.s" "${assembly}")
+        dmm_test_abi_definitions("${work}/interop.s" abi_definitions)
 
         execute_process(
                 COMMAND "${ASSEMBLER}"
                 ${SANITIZER_FLAGS}
                 -no-pie
+                ${abi_definitions}
                 "${work}/interop.s"
                 "${ROOT}/tests/abi/c_interop/abi_driver.c"
                 ${SYSTEM_LIBRARIES} -o "${work}/interop.exe"
@@ -237,8 +241,8 @@ function(reject_case name source diagnostic)
     set(work "${OUTPUT_DIR}/reject_${name}")
     file(MAKE_DIRECTORY "${work}")
 
-    file(WRITE "${work}/input.dmm" "${source}")
-    file(WRITE "${work}/input.dmm.s" "stale output")
+    dmm_test_write( "${work}/input.dmm" "${source}")
+    dmm_test_write( "${work}/input.dmm.s" "stale output")
 
     execute_process(
             COMMAND "${COMPILER}" --emit=asm "${work}/input.dmm"
@@ -248,8 +252,7 @@ function(reject_case name source diagnostic)
             TIMEOUT 30
     )
 
-    file(
-            WRITE
+    dmm_test_write(
             "${work}/diagnostics.log"
             "${output}${errors}"
     )
@@ -450,8 +453,8 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "rejection")
 
     reject_case(
             integer_range
-            "import <stdlib>\nfunc main() -> void { var x:int=2147483648; }"
-            "outside signed 32-bit range"
+            "import <stdlib>\nfunc main() -> void { var x:u64=18446744073709551616; }"
+            "outside unsigned 64-bit range"
     )
 
     reject_case(
@@ -496,14 +499,13 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
     string(REPEAT "println(1);\n" 1700 body)
     string(REPEAT "1\n" 1700 expected)
 
-    file(
-            WRITE
-            "${OUTPUT_DIR}/many_lines.dmm"
+    dmm_test_write(
+            "${OUTPUT_DIR}/many_lines/many_lines.dmm"
             "import <stdlib>\nfunc main() -> void {\n${body}}"
     )
 
     run_case(
-            "${OUTPUT_DIR}/many_lines.dmm"
+            "${OUTPUT_DIR}/many_lines/many_lines.dmm"
             "${expected}"
             intel
     )
@@ -512,9 +514,8 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
     # argument registers.
     foreach(target elf coff)
 
-        file(
-                WRITE
-                "${OUTPUT_DIR}/target.dmm"
+        dmm_test_write(
+                "${OUTPUT_DIR}/target/target.dmm"
                 "import <stdlib>\nfunc main() -> void { println(7); }"
         )
 
@@ -522,7 +523,7 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
                 COMMAND "${COMPILER}" --emit=asm
                 "--target=${target}"
                 --syntax=att
-                "${OUTPUT_DIR}/target.dmm"
+                "${OUTPUT_DIR}/target/target.dmm"
                 RESULT_VARIABLE result
                 ERROR_VARIABLE errors
                 TIMEOUT 30
@@ -530,7 +531,7 @@ if(TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
 
         file(
                 READ
-                "${OUTPUT_DIR}/target.dmm.s"
+                "${OUTPUT_DIR}/target/target.dmm.s"
                 assembly
         )
 

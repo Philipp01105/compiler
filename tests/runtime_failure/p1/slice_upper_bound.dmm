@@ -1,3 +1,4 @@
+package main;
 func outside(values:int[]) -> int {
     return values[values.length];
 }

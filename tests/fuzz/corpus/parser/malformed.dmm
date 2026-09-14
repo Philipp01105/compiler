@@ -1,1 +1,2 @@
+package main;
 struct Broken { var field:[4]int func missing( -> void { if (true {

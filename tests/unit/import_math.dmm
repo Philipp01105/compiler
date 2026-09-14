@@ -1,7 +1,0 @@
-struct ImportedPoint {
-    var x:int;
-}
-
-func imported_square(value:int) -> int {
-    return value * value;
-}

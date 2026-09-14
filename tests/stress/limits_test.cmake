@@ -1,3 +1,4 @@
+include("${CMAKE_CURRENT_LIST_DIR}/../source_fixture.cmake")
 cmake_minimum_required(VERSION 3.21)
 if(NOT DEFINED COMPILER OR NOT DEFINED OUTPUT_DIR)
     message(FATAL_ERROR "COMPILER and OUTPUT_DIR are required")
@@ -5,9 +6,9 @@ endif()
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 
 function(expect_compile name source)
-    set(input "${OUTPUT_DIR}/${name}.dmm")
+    set(input "${OUTPUT_DIR}/${name}/${name}.dmm")
     set(assembly "${OUTPUT_DIR}/${name}.s")
-    file(WRITE "${input}" "${source}")
+    dmm_test_write( "${input}" "${source}")
     execute_process(COMMAND "${COMPILER}" --emit=asm --deterministic -o "${assembly}" "${input}"
         RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE errors TIMEOUT 30)
     if(NOT result EQUAL 0 OR NOT EXISTS "${assembly}")
@@ -16,9 +17,9 @@ function(expect_compile name source)
 endfunction()
 
 function(expect_reject name source diagnostic)
-    set(input "${OUTPUT_DIR}/${name}.dmm")
+    set(input "${OUTPUT_DIR}/${name}/${name}.dmm")
     set(assembly "${OUTPUT_DIR}/${name}.s")
-    file(WRITE "${input}" "${source}")
+    dmm_test_write( "${input}" "${source}")
     execute_process(COMMAND "${COMPILER}" --emit=asm --deterministic -o "${assembly}" "${input}"
         RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE errors TIMEOUT 30)
     string(FIND "${errors}" "${diagnostic}" diagnostic_position)

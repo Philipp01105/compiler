@@ -33,10 +33,12 @@ string          = '"', { escape | string-byte }, '"' ;
 keyword         = "func" | "var" | "return" | "for" | "if" | "else"
                 | "while" | "const" | "break" | "continue"
                 | "struct" | "enum" | "import" | "static" | "reserve"
-                | "free" | "trait" | "impl" | "match" ;
+                | "free" | "trait" | "impl" | "match" | "package" | "pub" ;
 
 primitive-type  = "int" | "char" | "byte" | "bit"
-                | "float" | "double" | "string" | "void" ;
+                | "float" | "double" | "string" | "void"
+                | "i8" | "u8" | "i16" | "u16" | "i32" | "u32"
+                | "i64" | "u64" | "isize" | "usize" ;
 ```
 
 `character-byte` excludes quote, backslash, and line terminators. `string-byte` excludes double quote, backslash, and line terminators. A leading sign is parsed as a unary operator rather than as part of a numeric token.
@@ -44,20 +46,19 @@ primitive-type  = "int" | "char" | "byte" | "bit"
 ## Program grammar
 
 ```ebnf
-program         = { top-level-declaration }, end-of-file ;
+program         = "package", identifier, ";", { top-level-declaration }, end-of-file ;
 
 top-level-declaration
                 = import-declaration
-                | function-declaration
-                | struct-declaration
-                | enum-declaration
-                | constant-declaration | trait-declaration | impl-declaration ;
+                | ["pub"], (function-declaration | struct-declaration
+                | enum-declaration | constant-declaration | package-variable
+                | trait-declaration) | impl-declaration ;
+package-variable = "var", identifier, [":", type], ["=", expression], ";" ;
 
 import-declaration
-                = "import", (import-entry | "(", {import-entry}, ")") ;
-import-entry    = string | "<", import-path, ">" ;
-import-path     = import-part, { import-part } ;
-import-part     = identifier | integer | "." | "/" | "-" ;
+                = "import", (import-entry | "(", import-entry, {import-entry}, ")"), ";" ;
+import-entry    = [identifier], string ;
+qualified-name  = identifier, [".", identifier] ;
 
 function-declaration
                 = "func", identifier, [generic-parameters], "(", [parameter-list], ")",
@@ -65,11 +66,11 @@ function-declaration
 parameter-list  = parameter, { ",", parameter } ;
 parameter       = identifier, ":", type ;
 return-type     = type ;
-type            = {"*"}, (primitive-type | identifier, [type-arguments] | "(", type, ")"),
+type            = {"*"}, (primitive-type | qualified-name, [type-arguments] | "(", type, ")"),
                   ["[", [integer | identifier], "]"] ;
 type-arguments  = "<", type, {",", type}, ">" ;
 generic-parameters = "<", generic-parameter, {",", generic-parameter}, ">" ;
-generic-parameter = identifier, [":", identifier, {"+", identifier}] ;
+generic-parameter = identifier, [":", qualified-name, {"+", qualified-name}] ;
 constant-declaration
                 = "const", identifier, [":", type], "=", expression, ";" ;
 ```
@@ -79,7 +80,7 @@ Struct and enum members use the same function and variable declaration forms acc
 ```ebnf
 struct-declaration
                 = "struct", identifier, [generic-parameters], "{", { struct-member }, "}" ;
-struct-member   = field-declaration | ["static"], function-declaration ;
+struct-member   = ["pub"], (field-declaration | ["static"], function-declaration) ;
 field-declaration
                 = "var", identifier, ":", type, ";" ;
 
@@ -87,12 +88,12 @@ enum-declaration
                 = "enum", identifier, [generic-parameters], ["(", enum-field-list, ")"],
                   "{", enum-value, { ",", enum-value }, [","], "}" ;
 enum-field-list = enum-field, { ",", enum-field } ;
-enum-field      = identifier, ":", type ;
-enum-value      = identifier, ["(", [enum-argument-list | type-list], ")"] ;
+enum-field      = ["pub"], identifier, ":", type ;
+enum-value      = ["pub"], identifier, ["(", [enum-argument-list | type-list], ")"] ;
 type-list       = type, {",", type} ;
 trait-declaration = "trait", identifier, "{", {trait-method}, "}" ;
-trait-method    = "func", identifier, "(", [parameter-list], ")", "->", type, ";" ;
-impl-declaration = "impl", identifier, "for", type, "{", {function-declaration}, "}" ;
+trait-method    = ["pub"], "func", identifier, "(", [parameter-list], ")", "->", type, ";" ;
+impl-declaration = "impl", qualified-name, "for", type, "{", {["pub"],function-declaration}, "}" ;
 enum-argument-list
                 = enum-argument, { ",", enum-argument } ;
 enum-argument   = integer | floating | character | string

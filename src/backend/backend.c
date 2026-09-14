@@ -47,7 +47,8 @@ static int emit_native(const IrModule *module, const BackendOptions *options, co
             operation = "close source-map"; success = 0;
         }
     }
-    if (success && options->emission == BACKEND_OBJECT)
+    if (success && options->emission == BACKEND_OBJECT &&
+        (!module->program->package_name || !strcmp(module->program->package_name,"main")))
         success = native_runtime_emit(&object, options->target_format);
     if (success && options->emission == BACKEND_OBJECT)
         success = native_runtime_object_imports(&object, options->target_format);

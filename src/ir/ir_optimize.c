@@ -38,17 +38,18 @@ static Fact meet(Fact a, Fact b) {
 }
 static int floating(DataType type) { return type == TYPE_FLOAT || type == TYPE_DOUBLE; }
 static int numeric(const IrModule *m, IrTypeId type) {
-    return m->types[type].kind == IR_TYPE_PRIMITIVE && m->types[type].primitive <= TYPE_DOUBLE;
+    DataType primitive = m->types[type].primitive;
+    return m->types[type].kind == IR_TYPE_PRIMITIVE && (data_type_integral(primitive) || floating(primitive));
 }
 static int scalar(const IrModule *m, IrTypeId type) {
     return m->types[type].kind == IR_TYPE_POINTER ||
-        (m->types[type].kind == IR_TYPE_PRIMITIVE && m->types[type].primitive <= TYPE_STRING);
+        (m->types[type].kind == IR_TYPE_PRIMITIVE && m->types[type].primitive < TYPE_VOID);
 }
 static int64_t signed_bits(uint64_t bits) { int64_t result; memcpy(&result,&bits,8); return result; }
 static double number(Fact fact, DataType type) {
     if (type == TYPE_FLOAT) { uint32_t bits=(uint32_t)fact.bits; float value; memcpy(&value,&bits,4); return value; }
     if (type == TYPE_DOUBLE) { double value; memcpy(&value,&fact.bits,8); return value; }
-    return (double)signed_bits(fact.bits);
+    return data_type_unsigned(type) ? (double)fact.bits : (double)signed_bits(fact.bits);
 }
 static Fact real(double value, DataType type) {
     if (type == TYPE_FLOAT) { float single=(float)value; uint32_t bits; memcpy(&bits,&single,4); return literal(bits); }
@@ -66,11 +67,18 @@ static Fact convert(Fact fact, DataType from, DataType to, int cast) {
     } else if (floating(from)) {
         double value=number(fact,from);
         if (to == TYPE_BIT && cast) return literal(value != 0);
-        if (!finite_number(value) || value < -0x1p63 || value >= 0x1p63) return unknown();
-        fact=literal((uint64_t)(int64_t)value);
+        if (data_type_unsigned(to) && data_type_bytes(to) == 8) {
+            if (!finite_number(value) || value < 0 || value >= 0x1p64) return unknown();
+            fact=literal((uint64_t)value);
+        } else {
+            if (!finite_number(value) || value < -0x1p63 || value >= 0x1p63) return unknown();
+            fact=literal((uint64_t)(int64_t)value);
+        }
     }
     if (cast && to == TYPE_BIT) fact=literal(fact.bits != 0);
     if (cast && (to == TYPE_CHAR || to == TYPE_BYTE)) fact=literal(fact.bits & 255);
+    if (data_type_fixed_integer(to)) fact=literal(data_type_normalize_integer(fact.bits,to));
+    else if (data_type_fixed_integer(from) && to == TYPE_INT) fact=literal(data_type_normalize_integer(fact.bits,to));
     return fact;
 }
 static Fact fold_binary(TokenType op, Fact a, Fact b, DataType at, DataType bt, DataType result) {
@@ -107,14 +115,30 @@ static Fact fold_binary(TokenType op, Fact a, Fact b, DataType at, DataType bt, 
         }
         return finite_number(value) ? real(value,result) : unknown();
     }
+    DataType operation=data_type_promoted_integer(at,bt);
+    if (data_type_fixed_integer(operation)) {
+        a=convert(a,at,operation,0); b=convert(b,bt,operation,0);
+        if (data_type_unsigned(operation)) {
+            switch (op) {
+                case TOKEN_SLASH: case TOKEN_PERCENT:
+                    if (!b.bits) return unknown();
+                    return literal(op == TOKEN_SLASH ? a.bits/b.bits : a.bits%b.bits);
+                case TOKEN_LESS: return literal(a.bits < b.bits);
+                case TOKEN_LESS_EQUAL: return literal(a.bits <= b.bits);
+                case TOKEN_GREATER: return literal(a.bits > b.bits);
+                case TOKEN_GREATER_EQUAL: return literal(a.bits >= b.bits);
+                default: break;
+            }
+        }
+    }
     int64_t x=signed_bits(a.bits), y=signed_bits(b.bits);
     switch (op) {
-        case TOKEN_PLUS: return literal(a.bits+b.bits);
-        case TOKEN_MINUS: return literal(a.bits-b.bits);
-        case TOKEN_STAR: return literal(a.bits*b.bits);
+        case TOKEN_PLUS: return convert(literal(a.bits+b.bits),result,result,0);
+        case TOKEN_MINUS: return convert(literal(a.bits-b.bits),result,result,0);
+        case TOKEN_STAR: return convert(literal(a.bits*b.bits),result,result,0);
         case TOKEN_SLASH: case TOKEN_PERCENT:
             if (!y || (x == INT64_MIN && y == -1)) return unknown();
-            return literal((uint64_t)(op == TOKEN_SLASH ? x/y : x%y));
+            return convert(literal((uint64_t)(op == TOKEN_SLASH ? x/y : x%y)),result,result,0);
         case TOKEN_EQUAL_EQUAL: return literal(x == y);
         case TOKEN_BANG_EQUAL: return literal(x != y);
         case TOKEN_LESS: return literal(x < y);
@@ -251,7 +275,7 @@ static Fact constant(Pass *p,const IrInstruction *in) {
     if (token->type == TOKEN_CHAR_LITERAL) return literal((unsigned char)token->lexeme[0]);
     if (!strcmp(token->lexeme,"true")) return literal(1);
     if (!strcmp(token->lexeme,"false")) return literal(0);
-    return literal((uint64_t)strtoll(token->lexeme,NULL,10));
+    return literal((uint64_t)strtoull(token->lexeme,NULL,10));
 }
 static Fact operand(Pass *p,size_t v) { return v == IR_VALUE_NONE ? unknown() : p->values[v]; }
 static Fact expression(Pass *p,const IrInstruction *in) {
@@ -269,7 +293,7 @@ static Fact expression(Pass *p,const IrInstruction *in) {
     if (in->opcode == IR_OP_UNARY && b.kind == CONSTANT && bd) {
         if (in->operator_type == TOKEN_BANG && numeric(p->module,bd->type_id)) return literal(!truth(b,bd->type));
         if (in->operator_type == TOKEN_MINUS && numeric(p->module,in->type_id))
-            return literal(floating(in->type) ? b.bits ^ (in->type == TYPE_FLOAT ? UINT64_C(0x80000000) : UINT64_C(0x8000000000000000)) : 0-b.bits);
+            return convert(literal(floating(in->type) ? b.bits ^ (in->type == TYPE_FLOAT ? UINT64_C(0x80000000) : UINT64_C(0x8000000000000000)) : 0-b.bits),in->type,in->type,0);
     }
     if (in->opcode == IR_OP_CAST && ad) return a.kind == BOTTOM ? bottom() : convert(a,ad->type,in->type,1);
     if (in->opcode == IR_OP_PHI) return meet(a,b);
@@ -280,11 +304,12 @@ static Fact expression(Pass *p,const IrInstruction *in) {
 static Fact stored(Pass *p,const IrInstruction *in,size_t l,Fact old) {
     const IrInstruction *rhs=definition(p,in->operand_b);
     Fact value=operand(p,in->operand_b);
-    int full=p->module->types[in->type_id].kind == IR_TYPE_POINTER || in->type == TYPE_STRING || in->type == TYPE_DOUBLE;
+    int full=p->module->types[in->type_id].kind == IR_TYPE_POINTER || data_type_bytes(in->type) == 8;
     if (in->operator_type != TOKEN_EQUAL) {
         if (old.kind != CONSTANT) return unknown();
         Fact previous=old;
-        if (in->type == TYPE_INT) previous=literal((uint64_t)(int64_t)(int32_t)old.bits);
+        if (data_type_fixed_integer(in->type)) previous=literal(data_type_normalize_integer(old.bits,in->type));
+        else if (in->type == TYPE_INT) previous=literal((uint64_t)(int64_t)(int32_t)old.bits);
         else if (in->type == TYPE_CHAR) previous=literal((uint64_t)(int64_t)(int8_t)old.bits);
         else if (in->type == TYPE_BYTE || in->type == TYPE_BIT) previous=literal(old.bits&255);
         else if (in->type == TYPE_FLOAT) previous=literal(old.bits&UINT32_MAX);
@@ -302,7 +327,7 @@ static Fact stored(Pass *p,const IrInstruction *in,size_t l,Fact old) {
     }
     if (full) return value;
     if (old.kind != CONSTANT || value.kind != CONSTANT) return unknown();
-    uint64_t mask=in->type == TYPE_INT || in->type == TYPE_FLOAT ? UINT32_MAX : 255;
+    uint64_t mask=(UINT64_C(1) << (data_type_bytes(in->type)*8))-1;
     return literal((old.bits & ~mask) | (value.bits & mask));
 }
 static int analyze(Pass *p) {
@@ -344,6 +369,8 @@ static int analyze(Pass *p) {
                         for (size_t q=0;q<locals;++q) p->scratch[q]=unknown();
                 }
                 if (in->result != IR_VALUE_NONE) {
+                    if (data_type_fixed_integer(in->type) && numeric(p->module,in->type_id) && fact.kind == CONSTANT)
+                        fact=convert(fact,in->type,in->type,0);
                     if (fact.kind == UNKNOWN) fact=reference(in->result);
                     if (!equal(fact,p->values[in->result])) { p->values[in->result]=fact; changed=1; }
                 }

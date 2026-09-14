@@ -1,7 +1,0 @@
-import <stdlib>
-
-func main() -> void {
-    var x:float = 1.5;
-    println(x);
-}
-// Category: execution/expressions

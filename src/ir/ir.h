@@ -179,8 +179,17 @@ typedef struct {
     IrImport *imports;
     size_t import_count;
     size_t import_capacity;
+    struct IrGlobal *globals;
+    size_t global_count;
     int verified;
 } IrModule;
+typedef struct IrGlobal {
+    const AstProgram *source_program;
+    size_t symbol_id;
+    IrTypeId type_id;
+    uint64_t bits;
+    const char *string;
+} IrGlobal;
 
 IrModule *ir_lower_program(const AstProgram *program, const SemanticModel *semantics);
 void ir_module_free(IrModule *module);

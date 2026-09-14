@@ -1,0 +1,5 @@
+package main;
+func main() -> void {
+    var value:i64 = 0;
+    __dmm_intrinsic_release(&value);
+}

@@ -7,6 +7,11 @@
  * Slots are eight bytes; sums begin with a variant tag. DMM wrappers exercise
  * generic aggregate returns internally and expose scalar results to C. */
 extern int abi_generic_cell(const uint64_t *);
+extern unsigned char abi_fixed(int8_t,uint8_t,int16_t,uint16_t,int32_t,uint32_t,int64_t,uint64_t,intptr_t,uintptr_t);
+extern uint64_t abi_u64(uint64_t);
+extern int64_t abi_i64(int64_t);
+extern uint16_t abi_u16(uint16_t);
+extern int8_t abi_i8(int8_t);
 extern int abi_generic_option(const uint64_t *);
 extern int abi_generic_sum_value(const uint64_t *);
 
@@ -25,6 +30,10 @@ extern double abi_double_eight(double,double,double,double,double,double,double,
 extern double abi_double_nine(double,double,double,double,double,double,double,double,double);
 
 int main(void) {
+    if (!abi_fixed(-1,255,INT16_MIN,UINT16_MAX,-123,UINT32_MAX,-INT64_C(5000000000),UINT64_MAX,-9,UINT64_C(5000000000))) return 30;
+    if (abi_u64(UINT64_MAX) != UINT64_C(6148914691236517205)) return 31;
+    if (abi_i64(-INT64_C(5000000000)) != -INT64_C(5000000001)) return 32;
+    if (abi_u16(UINT16_MAX) != 0 || abi_i8(-127) != INT8_MIN) return 33;
     uint64_t cell[1]={42};
     uint64_t option[2]={0,42};
     if (abi_generic_cell(cell) != 43 || cell[0] != 42) return 20;

@@ -1,0 +1,25 @@
+package main;
+import "stdlib";
+// else if chain test
+func main() -> void {
+    var score:int = 85;
+    
+    {
+        var _output0:string = "Score: " + score;
+        stdlib.println(_output0);
+        free(_output0);
+    }
+    
+    if (score >= 90) {
+        stdlib.println("Grade: A");
+    } else if (score >= 80) {
+        stdlib.println("Grade: B");
+    } else if (score >= 70) {
+        stdlib.println("Grade: C");
+    } else if (score >= 60) {
+        stdlib.println("Grade: D");
+    } else {
+        stdlib.println("Grade: F");
+    }
+}
+// Category: execution/control_flow

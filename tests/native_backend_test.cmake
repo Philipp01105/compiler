@@ -1,3 +1,4 @@
+include("${CMAKE_CURRENT_LIST_DIR}/source_fixture.cmake")
 cmake_minimum_required(VERSION 3.21)
 include("${CMAKE_CURRENT_LIST_DIR}/standalone_link.cmake")
 get_filename_component(ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
@@ -53,7 +54,7 @@ foreach(source IN LISTS sources)
         endif()
         execute_process(COMMAND "${program}" WORKING_DIRECTORY "${work}" RESULT_VARIABLE result
             OUTPUT_VARIABLE actual ERROR_VARIABLE errors TIMEOUT 10)
-        file(WRITE "${work}/actual.out" "${actual}")
+        dmm_test_write( "${work}/actual.out" "${actual}")
         string(REPLACE "\r\n" "\n" actual "${actual}")
         string(REGEX REPLACE "\n+$" "" actual "${actual}")
         if(NOT result STREQUAL "0" OR NOT actual STREQUAL expected OR NOT errors STREQUAL "")
@@ -73,12 +74,12 @@ foreach(source IN LISTS sources)
 endforeach()
 
 # Unbounded decimal input consumes every digit and saturates on overflow.
-file(WRITE "${OUTPUT_DIR}/integers.dmm" "import <stdlib>\nfunc main() -> void {
+dmm_test_write( "${OUTPUT_DIR}/integers/integers.dmm" "import <stdlib>\nfunc main() -> void {
     println(scanfInt()); println(scanfInt()); println(scanfInt()); println(scanfChar());
 }")
 string(REPEAT "0" 100 zeros)
-file(WRITE "${OUTPUT_DIR}/integers.txt" "${zeros}42 922337203685477580800 -922337203685477580900Z")
-execute_process(COMMAND "${COMPILER}" --emit=exe "${OUTPUT_DIR}/integers.dmm" -o "${OUTPUT_DIR}/integers.exe"
+dmm_test_write( "${OUTPUT_DIR}/integers.txt" "${zeros}42 922337203685477580800 -922337203685477580900Z")
+execute_process(COMMAND "${COMPILER}" --emit=exe "${OUTPUT_DIR}/integers/integers.dmm" -o "${OUTPUT_DIR}/integers.exe"
     RESULT_VARIABLE result ERROR_VARIABLE errors)
 if(NOT result STREQUAL "0")
     message(FATAL_ERROR "Integer input compilation failed: ${errors}")
@@ -92,20 +93,22 @@ if(NOT result STREQUAL "0" OR NOT actual STREQUAL "42\n-1\n0\nZ\n")
 endif()
 
 # Independent C callers validate native object ABI boundaries.
-file(READ "${ROOT}/tests/abi/systemv/core_abi.dmm" abi_source)
-file(WRITE "${OUTPUT_DIR}/abi.dmm" "${abi_source}")
-execute_process(COMMAND "${COMPILER}" --emit=obj "${OUTPUT_DIR}/abi.dmm" -o "${OUTPUT_DIR}/abi.obj"
+file(READ "${ROOT}/tests/abi/systemv/core_abi/core_abi.dmm" abi_source)
+dmm_test_write( "${OUTPUT_DIR}/abi/abi.dmm" "${abi_source}")
+execute_process(COMMAND "${COMPILER}" --emit=obj "${OUTPUT_DIR}/abi/abi.dmm" -o "${OUTPUT_DIR}/abi.obj"
     RESULT_VARIABLE result ERROR_VARIABLE errors)
 if(NOT result STREQUAL "0")
     message(FATAL_ERROR "Native ABI compilation failed: ${errors}")
 endif()
-find_program(OBJCOPY NAMES objcopy REQUIRED)
+get_filename_component(tool_directory "${ASSEMBLER}" DIRECTORY)
+find_program(OBJCOPY NAMES objcopy HINTS "${tool_directory}" REQUIRED)
 execute_process(COMMAND "${OBJCOPY}" --redefine-sym main=dmm_test_entry "${OUTPUT_DIR}/abi.obj"
     RESULT_VARIABLE result ERROR_VARIABLE errors)
 if(NOT result STREQUAL "0")
     message(FATAL_ERROR "Native ABI symbol rename failed: ${errors}")
 endif()
-execute_process(COMMAND "${ASSEMBLER}" ${SANITIZER_FLAGS} -no-pie "${OUTPUT_DIR}/abi.obj"
+dmm_test_abi_definitions("${OUTPUT_DIR}/abi.obj" abi_definitions)
+execute_process(COMMAND "${ASSEMBLER}" ${SANITIZER_FLAGS} ${abi_definitions} -no-pie "${OUTPUT_DIR}/abi.obj"
     "${ROOT}/tests/abi/c_interop/abi_driver.c" ${SYSTEM_LIBRARIES} -o "${OUTPUT_DIR}/abi.exe"
     RESULT_VARIABLE result ERROR_VARIABLE errors)
 if(NOT result STREQUAL "0")
@@ -117,16 +120,16 @@ if(NOT result STREQUAL "0")
 endif()
 
 # Scalar input, EOF defaults and bounded integer formatting in the embedded runtime.
-file(WRITE "${OUTPUT_DIR}/runtime.dmm" "import <stdlib>\nfunc main() -> void {
+dmm_test_write( "${OUTPUT_DIR}/runtime/runtime.dmm" "import <stdlib>\nfunc main() -> void {
     println(scanfInt()); println(scanfChar()); println(scanfString());
     var buffer:char[3]; println(io_int_to_str(1234, buffer, 3));
     println(buffer[0]); println(buffer[1]); println(buffer[2] == 0);
     println(io_str_to_int(\"-42\")); println(sys_close(-1) < 0);
     println(sys_open(\"missing_directory/file\", 0, 0) < 0);
 }")
-file(WRITE "${OUTPUT_DIR}/stdin.txt" "42Zhello")
-file(WRITE "${OUTPUT_DIR}/empty.txt" "")
-execute_process(COMMAND "${COMPILER}" --emit=exe "${OUTPUT_DIR}/runtime.dmm" -o "${OUTPUT_DIR}/runtime.exe"
+dmm_test_write( "${OUTPUT_DIR}/stdin.txt" "42Zhello")
+dmm_test_write( "${OUTPUT_DIR}/empty.txt" "")
+execute_process(COMMAND "${COMPILER}" --emit=exe "${OUTPUT_DIR}/runtime/runtime.dmm" -o "${OUTPUT_DIR}/runtime.exe"
     RESULT_VARIABLE result ERROR_VARIABLE errors)
 if(NOT result STREQUAL "0")
     message(FATAL_ERROR "Native runtime compilation failed: ${errors}")

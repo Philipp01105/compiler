@@ -1,1 +1,2 @@
+package main;
 struct Box<T> { var value:T; } func main() -> void { var a:Box<int>; var b:Box<char>; a=b; }

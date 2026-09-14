@@ -1,6 +1,0 @@
-// Public standard-library package entry. Only modules listed here are exported.
-import (
-    "io.dmm"
-    "print.dmm"
-    "foundation.dmm"
-)

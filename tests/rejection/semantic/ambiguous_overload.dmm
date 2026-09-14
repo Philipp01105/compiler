@@ -1,3 +1,4 @@
+package main;
 func choose(a:int, b:double) -> int { return 1; }
 func choose(a:double, b:int) -> int { return 2; }
 func main() -> int { return choose(1, 1); }

@@ -1,3 +1,4 @@
+package main;
 func value() -> int { return 1; }
 enum State(code:int) { Broken(value()) }
 func main() -> void {}

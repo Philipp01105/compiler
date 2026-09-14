@@ -1,7 +1,0 @@
-import <stdlib>
-
-// Simple hello world test
-func main() -> void {
-    println("Hello, World!");
-}
-// Category: execution/basics

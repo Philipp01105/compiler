@@ -1,6 +1,0 @@
-import "import_math.dmm"
-
-func main() -> void {
-    var point:ImportedPoint;
-    point.x = imported_square(6);
-}

@@ -123,7 +123,18 @@ static int identity_text(char *key,size_t *used,const char *text) {
 }
 static int identity_type(char *key,size_t *used,const AstProgram *program,const AstType *type) {
     char number[64];
-    if (!identity_text(key,used,ast_program_lexeme(program,type->name_token))) return 0;
+    const char *name=ast_program_lexeme(program,type->name_token);
+    char canonical[2048];
+    if (program->package && type->name_token < program->token_count && program->tokens[type->name_token].type == TOKEN_IDENTIFIER && !strstr(name,"::")) {
+        const char *package=program->package->path, *plain=name, *dot=strchr(name,'.');
+        if (dot) for (AstDeclarationNode *d=program->root;d;d=d->next) if (d->kind == AST_DECL_IMPORT)
+            for (AstImportPath *p=d->as.import_decl.paths;p;p=p->next)
+                if (p->alias && p->resolved_program && strlen(p->alias) == (size_t)(dot-name) && !strncmp(p->alias,name,(size_t)(dot-name))) {
+                    package=p->resolved_program->package->path; plain=dot+1;
+                }
+        snprintf(canonical,sizeof(canonical),"%s::%s",package,plain); name=canonical;
+    }
+    if (!identity_text(key,used,name)) return 0;
     snprintf(number,sizeof(number),"%u_%u_%d_%d_%zu",type->pointer_depth,
         type->outer_pointer_depth,type->is_array,type->is_slice,type->resolved_array_length);
     if (!identity_text(key,used,number)) return 0;
@@ -134,8 +145,13 @@ static int identity_type(char *key,size_t *used,const AstProgram *program,const 
 static const char *specialization_identity(Substitution *s) {
     char key[4096]="__dmm_generic_"; size_t used=strlen(key);
     if (!identity_text(key,&used,s->program->module_identity ? s->program->module_identity : ".")) return NULL;
-    char number[64]; snprintf(number,sizeof(number),"%zu",s->origin->first_token);
-    if (!identity_text(key,&used,number)) return NULL;
+    if (!identity_text(key,&used,ast_declaration_kind_name(s->origin->kind)) ||
+        !identity_text(key,&used,ast_program_lexeme(s->program,s->origin->name_token))) return NULL;
+    if (s->origin->kind == AST_DECL_FUNCTION) {
+        for (const AstParameter *p=s->origin->as.function.parameters;p;p=p->next)
+            if (!identity_type(key,&used,s->program,&p->type)) return NULL;
+        if (!identity_text(key,&used,"arguments")) return NULL;
+    }
     for (size_t i=0; i<s->count; i++)
         if (!identity_type(key,&used,s->argument_program,&s->arguments[i])) return NULL;
     return string_interner_intern(s->program->strings,key);

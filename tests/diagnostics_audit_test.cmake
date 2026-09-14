@@ -1,9 +1,16 @@
+include("${CMAKE_CURRENT_LIST_DIR}/source_fixture.cmake")
 cmake_minimum_required(VERSION 3.21)
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 file(GLOB_RECURSE fixtures "${SOURCE_DIR}/tests/rejection/*.dmm")
 set(checked 0)
 foreach(source IN LISTS fixtures)
-    execute_process(COMMAND "${COMPILER}" --formatError -o "${OUTPUT_DIR}/reject.s" "${source}"
+    get_filename_component(name "${source}" NAME_WE)
+    get_filename_component(parent "${source}" DIRECTORY)
+    get_filename_component(group "${parent}" NAME)
+    set(input "${OUTPUT_DIR}/${group}_${name}/input.dmm")
+    file(READ "${source}" text)
+    dmm_test_write("${input}" "${text}")
+    execute_process(COMMAND "${COMPILER}" --formatError -o "${OUTPUT_DIR}/reject.s" "${input}"
         RESULT_VARIABLE result ERROR_VARIABLE json ENCODING UTF-8 TIMEOUT 5)
     if(NOT result EQUAL 1)
         message(FATAL_ERROR "Rejection returned ${result}: ${source}\n${json}")
@@ -15,7 +22,7 @@ foreach(source IN LISTS fixtures)
     if(count LESS 1 OR NOT count EQUAL displayed)
         message(FATAL_ERROR "Inconsistent diagnostic summary: ${source}\n${json}")
     endif()
-    execute_process(COMMAND "${COMPILER}" -o "${OUTPUT_DIR}/reject.s" "${source}"
+    execute_process(COMMAND "${COMPILER}" -o "${OUTPUT_DIR}/reject.s" "${input}"
         RESULT_VARIABLE human_result ERROR_VARIABLE human ENCODING UTF-8 TIMEOUT 5)
     math(EXPR last "${count}-1")
     foreach(i RANGE 0 ${last})

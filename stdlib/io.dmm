@@ -1,34 +1,35 @@
+package stdlib;
 // Standard I/O surface implemented in DMM over the typed runtime intrinsics.
-struct Input {
-    func init() -> void {}
-    func readInt() -> int { return scanfInt(); }
-    func readChar() -> char { return scanfChar(); }
-    func readString() -> string { return scanfString(); }
+pub struct Input {
+    pub func init() -> void {}
+    pub func readInt() -> int { return scanfInt(); }
+    pub func readChar() -> char { return scanfChar(); }
+    pub func readString() -> string { return scanfString(); }
 }
 
-enum System(fd:int) {
-    in(0),
-    out(1),
-    err(2)
+pub enum System(pub fd:int) {
+    pub in(0),
+    pub out(1),
+    pub err(2)
 }
 
-func open_read(path:string) -> int {
+pub func open_read(path:string) -> int {
     return sys_open(path, 0, 0);
 }
 
-func open_write(path:string) -> int {
+pub func open_write(path:string) -> int {
     return sys_open(path, 577, 384);
 }
 
-func close_file(fd:int) -> int {
+pub func close_file(fd:int) -> int {
     return sys_close(fd);
 }
 
-func write_str_to(fd:int, text:string) -> int {
+pub func write_str_to(fd:int, text:string) -> int {
     return sys_write(fd, text, io_strlen(text));
 }
 
-func write_file(path:string, text:string) -> int {
+pub func write_file(path:string, text:string) -> int {
     var fd:int = open_write(path);
     if (fd < 0) { return fd; }
     var result:int = write_str_to(fd, text);
@@ -37,7 +38,7 @@ func write_file(path:string, text:string) -> int {
     return 0;
 }
 
-func read_file(path:string, buffer:char[], capacity:int) -> int {
+pub func read_file(path:string, buffer:char[], capacity:int) -> int {
     var fd:int = open_read(path);
     if (fd < 0) { return fd; }
     var result:int = sys_read(fd, buffer, capacity);

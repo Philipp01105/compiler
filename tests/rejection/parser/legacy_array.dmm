@@ -1,3 +1,4 @@
+package main;
 func main() -> void {
     var [4] values:int;
 }

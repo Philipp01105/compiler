@@ -1,3 +1,4 @@
+package main;
 func main() -> void {
     var values:int[3];
     var index:int = -1;

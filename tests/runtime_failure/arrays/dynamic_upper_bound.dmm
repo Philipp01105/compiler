@@ -1,7 +1,7 @@
-import <stdlib>
-
+package main;
+import "stdlib";
 func main() -> void {
     var values:int[3];
     var index:int = 3;
-    println(values[index]);
+    stdlib.println(values[index]);
 }

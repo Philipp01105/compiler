@@ -197,6 +197,10 @@ if(BUILD_TESTING)
          "-DSANITIZER_FLAGS=${DMM_TEST_LINK_FLAGS}"
         -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/direct_native_test -P ${CMAKE_SOURCE_DIR}/tests/native_backend_test.cmake)
     set_tests_properties(direct_native_backend PROPERTIES LABELS "integration;backend;native;safety")
+    add_test(NAME core_runtime_contract COMMAND ${CMAKE_COMMAND}
+        -DCOMPILER=$<TARGET_FILE:compiler> -DASSEMBLER=${DMM_ASSEMBLER}
+        -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/core_runtime_test -P ${CMAKE_SOURCE_DIR}/tests/core_runtime_test.cmake)
+    set_tests_properties(core_runtime_contract PROPERTIES LABELS "integration;core;runtime;execution;abi;safety")
     add_test(NAME native_cli_contract COMMAND ${CMAKE_COMMAND} -DCOMPILER=$<TARGET_FILE:compiler>
         -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/native_cli_test -P ${CMAKE_SOURCE_DIR}/tests/native_cli_test.cmake)
     set_tests_properties(native_cli_contract PROPERTIES LABELS "integration;cli;native;safety")
@@ -250,7 +254,7 @@ if(BUILD_TESTING)
             src/frontend/lexer.c src/common/string_interner.c src/diagnostics/errorHandler.c)
     target_include_directories(dmm_frontend_ast_test PRIVATE ${DMM_INCLUDE_DIRS})
     add_test(NAME frontend_ast_unit COMMAND dmm_frontend_ast_test
-             ${CMAKE_SOURCE_DIR}/tests/unit/frontend_ast_fixture.dmm)
+             ${CMAKE_SOURCE_DIR}/tests/unit/frontend_ast_fixture/frontend_ast_fixture.dmm)
     set_tests_properties(frontend_ast_unit PROPERTIES LABELS "unit;frontend;ast;safety")
 
     add_executable(dmm_pipeline_test
@@ -272,10 +276,10 @@ if(BUILD_TESTING)
     set_tests_properties(ir_optimization_execution PROPERTIES LABELS "integration;ir;backend;execution;safety")
     file(GLOB_RECURSE DMM_FRONTEND_CORPUS CONFIGURE_DEPENDS
             ${CMAKE_SOURCE_DIR}/tests/execution/*.dmm)
-    file(GLOB DMM_EXAMPLE_CORPUS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/examples/*.dmm)
+    file(GLOB_RECURSE DMM_EXAMPLE_CORPUS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/examples/*.dmm)
     add_test(NAME frontend_pipeline_unit COMMAND dmm_pipeline_test
-             ${CMAKE_SOURCE_DIR}/tests/unit/frontend_ast_fixture.dmm
-             ${CMAKE_SOURCE_DIR}/tests/unit/import_root.dmm
+             ${CMAKE_SOURCE_DIR}/tests/unit/frontend_ast_fixture/frontend_ast_fixture.dmm
+             ${CMAKE_SOURCE_DIR}/tests/unit/import_fixture/main.dmm
              ${CMAKE_SOURCE_DIR}/tests/unit/package_import_fixture/main.dmm
              ${DMM_FRONTEND_CORPUS} ${DMM_EXAMPLE_CORPUS})
     set_tests_properties(frontend_pipeline_unit PROPERTIES LABELS "unit;frontend;ast;sema;ir;safety")

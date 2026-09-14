@@ -1,5 +1,5 @@
-import <stdlib>
-
+package main;
+import "stdlib";
 enum JobState(code:int, label:string, progress:float, terminal:bit) {
     queued(1, "queued", 0.0, false),
     running(2, "running", 0.5, false),
@@ -81,7 +81,7 @@ func main() -> void {
     var message:string = "state=" + state.label + ",code=" + state.code
         + ",sum=" + *automatic + ",half=" + *manual
         + ",done=" + state.terminal;
-    println(message);
+    stdlib.println(message);
     free(message);
     free(manual);
 }

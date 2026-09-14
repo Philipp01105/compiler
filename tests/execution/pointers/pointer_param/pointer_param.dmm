@@ -1,0 +1,51 @@
+package main;
+import "stdlib";
+// Test pointer parameters in functions
+func modify_value(p:*int) -> void {
+    *p = 42;
+}
+
+func swap_values(a:*int, b:*int) -> void {
+    var temp:int = *a;
+    *a = *b;
+    *b = temp;
+}
+
+func main() -> void {
+    stdlib.println("=== Pointer Parameter Test ===");
+    
+    // Test 1: Modify value through pointer parameter
+    stdlib.println("");
+    stdlib.println("Test 1: Modify value through pointer");
+    var x:*int = reserve(int);
+    *x = 10;
+    stdlib.print("Before: ");
+    stdlib.println(*x);
+    modify_value(x);
+    stdlib.print("After:  ");
+    stdlib.println(*x);
+    free(x);
+    
+    // Test 2: Swap two values using pointer parameters
+    stdlib.println("");
+    stdlib.println("Test 2: Swap two values");
+    var a:*int = reserve(int);
+    var b:*int = reserve(int);
+    *a = 100;
+    *b = 200;
+    stdlib.print("Before swap: a=");
+    stdlib.print(*a);
+    stdlib.print(", b=");
+    stdlib.println(*b);
+    swap_values(a, b);
+    stdlib.print("After swap:  a=");
+    stdlib.print(*a);
+    stdlib.print(", b=");
+    stdlib.println(*b);
+    free(a);
+    free(b);
+    
+    stdlib.println("");
+    stdlib.println("=== All Tests Passed ===");
+}
+// Category: execution/pointers

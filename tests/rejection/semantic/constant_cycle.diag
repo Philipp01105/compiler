@@ -1,1 +1,1 @@
-Constant cycle or forward reference
+Constant initializer contains a dependency cycle

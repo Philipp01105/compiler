@@ -340,6 +340,7 @@ int main(int argc, char *argv[]) {
         error_handler->source_override_path = ide_buffer;
     }
     AstProgram *program = frontend_parse_file(source_file, &frontend_options);
+    if (program) program->executable_build=!ide_mode && emission == BACKEND_EXECUTABLE;
     if (program == NULL) {
         error_handler_flush(error_handler);
         error_handler_free(error_handler);

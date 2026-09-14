@@ -1,0 +1,12 @@
+package main;
+import "stdlib";
+// Test pointer assignment bug fix
+// This test ensures that pointer-to-pointer assignments work correctly
+func main() -> void {
+    var a:int = 8;
+    var x:*int;
+    var y:*int = &a;
+    x = y;
+    stdlib.println(*x);
+}
+// Regression: pointer-to-pointer assignment must preserve the address.

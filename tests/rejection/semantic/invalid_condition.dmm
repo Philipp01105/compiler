@@ -1,3 +1,3 @@
-import <stdlib>
-
-func main() -> void { if ("yes") { println(1); } }
+package main;
+import "stdlib";
+func main() -> void { if ("yes") { stdlib.println(1); } }

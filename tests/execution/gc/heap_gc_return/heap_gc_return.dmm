@@ -1,0 +1,19 @@
+package main;
+import "stdlib";
+// Manual allocation with an explicit return statement.
+func test() -> void {
+    var t:*int = reserve(int);
+    *t = 10;
+    stdlib.println("Inside test function");
+    free(t);
+    return;
+}
+
+func main() -> int {
+    var x = 10;
+    var y:int = 10;
+    test();
+    stdlib.println("Back in main");
+    return 0;
+}
+// Category: execution/gc

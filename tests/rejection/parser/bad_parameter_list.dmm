@@ -1,2 +1,3 @@
+package main;
 func test(a:int b:int) -> void {}
 func main() -> void {}

@@ -1,4 +1,4 @@
-#include "frontend.h"
+#include "test_source.h"
 #include "backend.h"
 #include "errorHandler.h"
 #include "resource_fault.h"
@@ -31,7 +31,7 @@ static int emit_case(const IrModule *module, BackendOptions *options, const char
 }
 static int pipeline_fault_case(const char *source,size_t nth,size_t *count) {
     dmm_fault_reset(nth,0);
-    AstProgram *program=frontend_parse_source(source,strlen(source),"pipeline-fault.dmm",NULL);
+    AstProgram *program=test_parse_source(source,strlen(source),"pipeline-fault.dmm",NULL);
     SemanticModel *model=program ? semantic_analyze(program) : NULL;
     IrModule *module=model && model->error_count == 0 ? ir_lower_program(program,model) : NULL;
     int success=module != NULL, triggered=dmm_fault_triggered();
@@ -53,7 +53,7 @@ int main(int argc, char **argv) {
     handler->output_stream = capture;
     error_handler_set_global(handler);
     const char *source = "func add(a:int, b:int) -> int { return a+b; } func main() -> int { return add(2,3); }";
-    AstProgram *program = frontend_parse_source(source, strlen(source), "fault.dmm", NULL);
+    AstProgram *program = test_parse_source(source, strlen(source), "fault.dmm", NULL);
     SemanticModel *model = semantic_analyze(program);
     IrModule *module = ir_lower_program(program, model);
     int valid = module != NULL;

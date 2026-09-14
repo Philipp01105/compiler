@@ -1,2 +1,3 @@
+package main;
 struct Item { func use() -> void {} }
 func main() -> void { Item.use(); }

@@ -1,8 +1,0 @@
-import <stdlib>
-
-func main() -> void {
-    print("100% %s %n %%");
-    println(" done");
-    println("%d %f %p");
-}
-// Category: execution/strings

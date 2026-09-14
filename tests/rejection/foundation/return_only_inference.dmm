@@ -1,1 +1,2 @@
+package main;
 func make<T>() -> T { var x:T; return x; } func main() -> int { return make(); }

@@ -1,7 +1,0 @@
-import <stdlib>
-
-func main() -> void {
-    print("");
-    println("");
-    println("done");
-}
