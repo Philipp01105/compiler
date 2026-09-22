@@ -28,8 +28,9 @@ typedef enum {
 typedef enum { AST_TYPE_INFERRED, AST_TYPE_NAMED, AST_TYPE_FUNCTION, AST_TYPE_FUTURE,
                AST_TYPE_JOIN, AST_TYPE_EXECUTOR } AstTypeKind;
 typedef enum { ASYNC_NONE, ASYNC_CREATE, ASYNC_SPAWN, ASYNC_BLOCK_ON,
-               ASYNC_SHUTDOWN, ASYNC_CANCEL, ASYNC_NET_WAIT } AstAsyncOperation;
-typedef enum { LIFETIME_NONE, LIFETIME_INITIALIZE, LIFETIME_DESTROY } AstLifetimeOperation;
+               ASYNC_SHUTDOWN, ASYNC_CANCEL, ASYNC_NATIVE_FUTURE } AstAsyncOperation;
+typedef enum { LIFETIME_NONE, LIFETIME_INITIALIZE, LIFETIME_DESTROY,
+               LIFETIME_TAKE, LIFETIME_REPLACE } AstLifetimeOperation;
 typedef enum { AST_BORROW_NONE, AST_BORROW_IMMUTABLE, AST_BORROW_MUTABLE } AstBorrowKind;
 
 typedef enum {
@@ -56,12 +57,20 @@ typedef struct {
 
 typedef struct AstTypeArgument AstTypeArgument;
 typedef struct AstGenericParameter AstGenericParameter;
+typedef struct AstLifetimeParameter {
+    size_t name_token;
+    struct AstLifetimeParameter *next;
+} AstLifetimeParameter;
 
 typedef struct AstType {
     AstTypeKind kind;
     AstSourceSpan span;
     size_t name_token;
     AstBorrowKind borrow_kind;
+    /* Erased lifetime information; neither layout nor specialization identity. */
+    size_t lifetime_token;
+    AstLifetimeParameter *lifetime_arguments;
+    AstLifetimeParameter *function_lifetime_parameters;
     unsigned pointer_depth;
     unsigned outer_pointer_depth;
     int is_array;
@@ -79,6 +88,7 @@ typedef struct AstType {
        Generic parameters make the value compile-time-only until specialized. */
     AstGenericParameter *function_generic_parameters;
     int is_native_function;
+    unsigned callable_mode; /* 0 shared, 1 mutable, 2 consuming */
     AstTypeArgument *function_parameters;
     struct AstType *function_return_type;
     int invalid_substitution;
@@ -154,6 +164,10 @@ struct AstExpression {
     /* Expression-valued block, if, or match. */
     AstStatement *control;
     AstType allocated_type;
+    /* Explicit capture environment, materialized as an ordinary concrete struct. */
+    AstDeclarationNode *closure_environment;
+    int closure_capture_binding;
+    int closure_consuming_call;
     int explicit_type_arguments;
     int explicit_generic_reference;
     int direct_call_target;
@@ -201,6 +215,9 @@ struct AstStatement {
     size_t name_token;
     TokenType assignment_operator;
     AstType type;
+    /* Retain a closure's source callable constraint when storage is lowered
+       to its concrete environment, so specializations can recheck it. */
+    AstType *closure_callable_annotation;
     int is_const;
     AstExpression *expression;
     AstExpression *value;
@@ -263,6 +280,10 @@ struct AstEnumValue {
 struct AstDeclarationNode {
     int is_public;
     int no_default;
+    int is_closure_environment;
+    unsigned closure_mode;
+    AstField *closure_captures;
+    AstDeclarationNode *closure_consuming_invoke;
     int is_auto_interface;
     AstAutoRule *auto_rules;
     AstType rule_target;
@@ -286,6 +307,9 @@ struct AstDeclarationNode {
     size_t resolved_symbol_id;
     AstDeclarationNode *next;
     AstGenericParameter *generic_parameters;
+    AstLifetimeParameter *lifetime_parameters;
+    AstAutoCondition *where_conditions;
+    int constraints_disabled;
     const AstDeclarationNode *generic_origin;
     AstTypeArgument *specialization_arguments;
     const char *specialization_identity;
@@ -371,6 +395,7 @@ struct DmmPackage {
     AstProgram **files;
     size_t file_count;
     int loading;
+    int has_public_imports;
     DmmPackage *next;
 };
 
@@ -380,6 +405,7 @@ struct AstProgram {
     DmmPackage *package;
     DmmModule *module;
     int executable_build;
+    DmmPackage *system_package; /* Source provider selected by the build. */
     int runtime_component; /* Explicit bootstrap build; no application runtime. */
     char *source_path;
     char *module_identity;
@@ -418,6 +444,9 @@ AstType ast_type_element(const AstType *type);
 int ast_type_contains_polymorphic_callable(const AstType *type);
 
 int ast_validate_program(const AstProgram *program);
+int ast_package_reexports(const DmmPackage *package, const DmmPackage *target);
+AstDeclarationNode *ast_package_declaration(const DmmPackage *package, const char *name,
+                                            AstProgram **source);
 
 int ast_dump(FILE *output, const AstProgram *program);
 

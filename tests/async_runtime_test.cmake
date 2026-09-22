@@ -56,7 +56,7 @@ foreach(level 0 1)
         endif()
         dmm_test_abi_definitions("${renamed}" definitions)
         execute_process(COMMAND "${ASSEMBLER}" -std=c11 -DDRIVER_NATIVE ${definitions}
-            "${CMAKE_CURRENT_LIST_DIR}/async/poll_driver.c" "${renamed}" -o "${work}/native_driver_O${level}.exe"
+            "${CMAKE_CURRENT_LIST_DIR}/async/poll_driver.c" "${renamed}" -pthread -o "${work}/native_driver_O${level}.exe"
             RESULT_VARIABLE result ERROR_VARIABLE errors TIMEOUT 30)
         if(NOT result EQUAL 0)
             message(FATAL_ERROR "Native poll driver failed to link: ${errors}")

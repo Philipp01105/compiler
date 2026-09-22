@@ -1,46 +1,67 @@
 package main;
 import "stdlib";
 
-var drops:int = 0;
-interface Value { func get() -> int; }
-struct Resource {
-    var value:int;
-    func get() -> int { return value; }
-    destructor { drops = drops * 10 + value; }
-}
-struct Box { var item:Value; }
-struct Wrapped {
-    var child:Value;
-    func get() -> int { return child.get(); }
-}
-enum Selection { Empty, Chosen(Value) }
+var drops: int = 0;
 
-func make(value:int) -> Value {
-    var resource:Resource;
+interface Value {
+    func get() -> int;
+}
+
+struct Resource {
+    var value: int;
+    func get() -> int {
+        return value;
+    }
+
+    destructor {
+        drops = drops * 10 + value;
+    }
+}
+
+struct Box {
+    var item: Value;
+}
+
+struct Wrapped {
+    var child: Value;
+    func get() -> int {
+        return child.get();
+    }
+}
+
+enum Selection {
+    Empty,
+    Chosen(Value)
+}
+
+func make(value: int) -> Value {
+    var resource: Resource;
     resource.value = value;
     return resource;
 }
 
-func take(value:Value) -> int { return value.get(); }
+func take(value: Value) -> int {
+    return value.get();
+}
 
 func run() -> void {
-    var first:Resource;
+    var first: Resource;
     first.value = 1;
-    var current:Value = first;
+    var current: Value = first;
     current = make(2);
 
-    var third:Resource;
+    var third: Resource;
     third.value = 3;
-    var box:Box;
+    var box: Box;
     box.item = third;
 
-    var fourth:Resource;
+    var fourth: Resource;
     fourth.value = 4;
     var selection = Selection.Chosen(fourth);
 
-    var fifth:Resource;
+    var fifth: Resource;
     fifth.value = 5;
-    var values:Value[1];
+    var values: Value[1];
     values[0] = fifth;
     values[0] = make(6);
 
@@ -49,21 +70,21 @@ func run() -> void {
 }
 
 func runSlice() -> void {
-    var seventh:Resource;
+    var seventh: Resource;
     seventh.value = 7;
-    var eighth:Resource;
+    var eighth: Resource;
     eighth.value = 8;
-    var items:Value[] = [seventh];
+    var items: Value[] = [seventh];
     items = [eighth];
     stdlib.println(items[0].get());
 }
 
 func runWrapped() -> void {
-    var ninth:Resource;
+    var ninth: Resource;
     ninth.value = 9;
-    var wrapper:Wrapped;
+    var wrapper: Wrapped;
     wrapper.child = ninth;
-    var erased:Value = wrapper;
+    var erased: Value = wrapper;
     stdlib.println(erased.get());
 }
 

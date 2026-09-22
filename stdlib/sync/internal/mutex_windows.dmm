@@ -1,0 +1,23 @@
+package internal;
+import (
+    "stdlib/core"
+);
+
+// An SRW lock is non-recursive: two simultaneous guards never authorize
+// independent mutable references merely because they share a thread.
+extern "system" from "kernel32" {
+    func initializeLock(address: *usize) -> void = "InitializeSRWLock";
+    func acquireLock(address: *usize) -> void = "AcquireSRWLockExclusive";
+    func releaseLock(address: *usize) -> void = "ReleaseSRWLockExclusive";
+}
+
+pub func create() -> *void {
+    var address: *usize = core.core_alloc(sizeof(usize)).(*usize);
+    if (address == core.null<usize>()) { return address.(*void); }
+    initializeLock(address);
+    return address.(*void);
+}
+
+pub func lock(address: *void) -> void { acquireLock(address.(*usize)); }
+pub func unlock(address: *void) -> void { releaseLock(address.(*usize)); }
+pub func release(address: *void) -> void { core.core_release(address.(*u8)); }

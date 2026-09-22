@@ -1,3 +1,6 @@
 package main;
 import "stdlib";
-func main() -> void { if (true { stdlib.println(1); } }
+
+func main() -> void {
+    if (true{ stdlib.println(1);
+    }}

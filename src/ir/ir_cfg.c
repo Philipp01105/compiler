@@ -209,9 +209,9 @@ static const char *cfg_opcode_name(IrOpcode opcode) {
         "constant", "function-address", "load", "declare", "store", "interface-pack", "unary", "binary", "call", "index", "subslice", "member",
         "slice-length", "cast", "alloc", "free", "return", "branch", "jump", "label", "phi",
         "enum-construct", "enum-is", "enum-payload", "trap", "slice", "slice-data", "array-literal",
-        "drop", "move", "reinit", "free-slice-backing", "await", "executor", "cancel-check", "cancel-await", "cancel-drop", "cancel-return", "native-copy", "struct-literal", "init", "destroy"
+        "drop", "move", "reinit", "free-slice-backing", "await", "executor", "cancel-check", "cancel-await", "cancel-drop", "cancel-return", "native-copy", "struct-literal", "init", "destroy", "value-snapshot"
     };
-    return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_DESTROY ? names[opcode] : "invalid";
+    return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_VALUE_SNAPSHOT ? names[opcode] : "invalid";
 }
 
 static int cfg_quoted(FILE *output, const char *text) {

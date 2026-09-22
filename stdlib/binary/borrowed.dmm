@@ -1,0 +1,44 @@
+package binary;
+import (
+    "stdlib"
+);
+
+// Stored checked borrows keep their descriptors and backing storage live.
+pub struct BorrowedReader<'a> {
+    var source: &'a u8[];
+    var cursor: Reader;
+
+    pub func offset() -> usize { return cursor.offset(); }
+    pub func remaining() -> usize { return cursor.remaining(source); }
+    pub func skip(count: usize) -> stdlib.Result<void, BinaryError> {
+        return cursor.skip(source, count);
+    }
+    pub func readUint(width: usize, endian: Endian) -> stdlib.Result<u64, BinaryError> {
+        return cursor.readUint(source, width, endian);
+    }
+    pub func readBytes(destination: &mut u8[]) -> stdlib.Result<void, BinaryError> {
+        return cursor.readBytes(source, destination);
+    }
+}
+
+pub func borrowedReader<'a>(source: &'a u8[]) -> BorrowedReader<'a> {
+    return BorrowedReader<'a>{ source: source, cursor: reader() };
+}
+
+pub struct BorrowedWriter<'a> {
+    var destination: &'a mut u8[];
+    var cursor: Writer;
+
+    pub func offset() -> usize { return cursor.offset(); }
+    pub func remaining() -> usize { return cursor.remaining(destination); }
+    pub func writeUint(value: u64, width: usize, endian: Endian) -> stdlib.Result<void, BinaryError> {
+        return cursor.writeUint(destination, value, width, endian);
+    }
+    pub func writeBytes(source: &u8[]) -> stdlib.Result<void, BinaryError> {
+        return cursor.writeBytes(destination, source);
+    }
+}
+
+pub func borrowedWriter<'a>(destination: &'a mut u8[]) -> BorrowedWriter<'a> {
+    return BorrowedWriter<'a>{ destination: destination, cursor: writer() };
+}

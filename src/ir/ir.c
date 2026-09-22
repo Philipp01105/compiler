@@ -577,7 +577,6 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         IrInstruction *in=emit(builder,IR_OP_EXECUTOR,expression->span);
         if (!in) return IR_VALUE_NONE;
         in->async_operation=expression->async_operation;
-        if (in->async_operation==ASYNC_NET_WAIT) in->runtime_requirements=RUNTIME_REQUIRE_NETWORK;
         in->operand_a=value; in->operand_b=receiver;
         set_expression_type(builder,in,expression);
         if (data_type_has_value(expression->resolved_type)) in->result=new_value(builder);
@@ -586,8 +585,58 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
     if (expression == NULL) return IR_VALUE_NONE;
     if (expression->lifetime_operation) {
         const AstExpression *ptr = expression->arguments;
+        size_t replacement = IR_VALUE_NONE;
+        if (expression->lifetime_operation == LIFETIME_REPLACE) {
+            replacement = lower_expression(builder, ptr ? ptr->next : NULL);
+            emit_move_if_owned(builder, ptr ? ptr->next : NULL);
+        }
         size_t address = lower_expression(builder, ptr);
         IrTypeId type = type_from_ast(builder->module, builder->program, &expression->allocated_type);
+        if (expression->lifetime_operation == LIFETIME_TAKE ||
+            expression->lifetime_operation == LIFETIME_REPLACE) {
+            IrInstruction *load = emit(builder, IR_OP_UNARY, expression->span);
+            if (!load) return IR_VALUE_NONE;
+            load->result = new_value(builder);
+            load->operand_b = address;
+            load->operator_type = TOKEN_STAR;
+            set_expression_type(builder, load, expression);
+            size_t previous = load->result;
+            const IrType *value_type = &builder->module->types[type];
+            int inline_named = value_type->kind == IR_TYPE_NAMED &&
+                value_type->symbol_id < builder->module->semantics->symbol_count &&
+                (builder->module->semantics->symbols[value_type->symbol_id].kind == SEMANTIC_SYMBOL_STRUCT ||
+                 builder->module->semantics->symbols[value_type->symbol_id].kind == SEMANTIC_SYMBOL_INTERFACE ||
+                 builder->module->semantics->symbols[value_type->symbol_id].declaration->as.enum_decl.is_sum);
+            if (inline_named || value_type->kind == IR_TYPE_ARRAY || value_type->kind == IR_TYPE_SLICE) {
+                IrInstruction *copy = emit(builder, IR_OP_VALUE_SNAPSHOT, expression->span);
+                if (!copy) return IR_VALUE_NONE;
+                copy->result = new_value(builder);
+                copy->operand_a = previous;
+                set_expression_type(builder, copy, expression);
+                previous = copy->result;
+            }
+            if (expression->lifetime_operation == LIFETIME_TAKE &&
+                expression->lifetime_origin != AST_SYMBOL_NONE &&
+                (ir_type_properties(builder->module, type) & SEMANTIC_TYPE_NEEDS_DROP)) {
+                IrInstruction *move = emit(builder, IR_OP_MOVE, expression->span);
+                if (!move) return IR_VALUE_NONE;
+                move->type = TYPE_VOID;
+                move->type_id = type;
+                move->symbol_id = expression->lifetime_origin;
+            }
+            if (expression->lifetime_operation == LIFETIME_REPLACE) {
+                replacement = coerce_value(builder, replacement, type, expression->span);
+                IrInstruction *init = emit(builder, IR_OP_INIT, expression->span);
+                if (!init) return IR_VALUE_NONE;
+                init->type_id = type;
+                init->type = ir_ast_type_data_type(builder->program, &expression->allocated_type);
+                init->operand_a = address;
+                init->operand_b = replacement;
+                init->lifetime_pointer = 1;
+                init->operator_type = TOKEN_EQUAL;
+            }
+            return previous;
+        }
         if (expression->lifetime_operation == LIFETIME_DESTROY) {
             IrInstruction *drop = emit(builder, IR_OP_DESTROY, expression->span);
             if (!drop) return IR_VALUE_NONE;
@@ -1204,9 +1253,6 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
     }
     IrInstruction *instruction = emit(builder, opcode, expression->span);
     if (instruction == NULL) return IR_VALUE_NONE;
-    if (opcode==IR_OP_CALL && expression->left && expression->left->kind==AST_EXPR_NAME &&
-        !strncmp(ast_program_lexeme(builder->program,expression->left->value_token),"__dmm_net_",10))
-        instruction->runtime_requirements=RUNTIME_REQUIRE_NETWORK;
     if (!((opcode == IR_OP_CALL || opcode == IR_OP_FREE || opcode == IR_OP_AWAIT) &&
           !data_type_has_value(expression->resolved_type) &&
           !expression->resolved_pointer_depth && !expression->resolved_outer_pointer_depth))
@@ -1257,6 +1303,20 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         instruction->argument_count = argument_count;
     }
     size_t result = instruction->result;
+    if (has_receiver && expression->left->left &&
+        (expression->left->left->kind == AST_EXPR_STRUCT_LITERAL ||
+         expression->left->left->kind == AST_EXPR_CALL ||
+         expression->left->left->kind == AST_EXPR_CONTROL)) {
+        const AstExpression *temporary = expression->left->left;
+        IrTypeId type = type_from_expression(builder->module, builder->program, temporary);
+        if (ir_type_properties(builder->module, type) & SEMANTIC_TYPE_NEEDS_DROP) {
+            IrInstruction *drop = emit(builder, IR_OP_DROP, temporary->span);
+            if (!drop) return IR_VALUE_NONE;
+            drop->type = TYPE_VOID;
+            drop->type_id = type;
+            drop->operand_a = receiver;
+        }
+    }
     if (expression->kind == AST_EXPR_CALL) {
         size_t argument_index = has_receiver ? 1 : 0;
         const AstParameter *parameter = NULL;
@@ -1401,8 +1461,12 @@ void ir_select_runtime_functions(IrModule *module) {
         IrFunction *fn=&module->functions[f];
         int user_unit=!fn->source_program->module_identity ||
             strncmp(fn->source_program->module_identity,"stdlib",6)!=0;
+        int provider = fn->source_program->package &&
+            (!strcmp(fn->source_program->package->path,"stdlib/native/threading") ||
+             !strcmp(fn->source_program->package->path,"stdlib/core/executor") ||
+             !strcmp(fn->source_program->package->path,"stdlib/core/net/internal"));
         fn->emission_reachable=fn->is_package_init||fn->is_package_cleanup||
-            fn->is_native_export||
+            (fn->is_native_export && !provider)||
             user_unit||
             fn->interface_thunk_symbol_id!=AST_SYMBOL_NONE||
             (!fn->is_drop_glue && fn->source_program==module->program &&
@@ -1423,6 +1487,32 @@ void ir_select_runtime_functions(IrModule *module) {
     int changed=1;
     while(changed) {
         changed=0;
+        RuntimeRequirements required = ir_runtime_requirements(module);
+        for(size_t f=0;f<module->function_count;f++) if(module->functions[f].emission_reachable) {
+            IrFunction *fn=&module->functions[f];
+            if(fn->is_native_export) required|=RUNTIME_REQUIRE_PLATFORM;
+            if(fn->source_program->package &&
+               !strcmp(fn->source_program->package->path,"stdlib/core/net/internal"))
+                required|=RUNTIME_REQUIRE_NETWORK;
+        }
+        for(size_t n=0;n<module->native_import_count;n++)
+            if(strcmp(module->native_imports[n].library,"dmm_runtime") &&
+               ir_native_import_used(module,module->native_imports[n].symbol_id))
+                required|=RUNTIME_REQUIRE_PLATFORM;
+        required=runtime_requirements_normalize(required);
+        module->runtime_requirements |= required;
+        /* Lowered async operations and startup have native ABI references, not
+           source AST calls. Retain their implementations from the same package
+           graph as the application, then walk their normal DMM dependencies. */
+        for(size_t f=0;f<module->function_count;f++) {
+            IrFunction *fn=&module->functions[f];
+            if(!fn->is_native_export || !fn->source_program->package) continue;
+            const char *path=fn->source_program->package->path;
+            int needed=(!strcmp(path,"stdlib/native/threading") && (required&RUNTIME_REQUIRE_PLATFORM)) ||
+                (!strcmp(path,"stdlib/core/executor") && (required&RUNTIME_REQUIRE_EXECUTOR)) ||
+                (!strcmp(path,"stdlib/core/net/internal") && (required&RUNTIME_REQUIRE_NETWORK));
+            if(needed && !fn->emission_reachable) { fn->emission_reachable=1; changed=1; }
+        }
         for(size_t f=0;f<module->function_count;f++) if(module->functions[f].emission_reachable) {
             IrFunction *fn=&module->functions[f];
             changed|=select_owned_type(module,fn->return_type_id,0);
@@ -1533,6 +1623,18 @@ static void register_deferred_action(IrBuilder *builder,
     if (statement->expression != NULL) {
         size_t before = builder->function->instruction_count;
         (void) lower_expression(builder, statement->expression);
+        /* Keep post-call cleanup behind the captured call when deferring it. */
+        while (!builder->failed && builder->function->instruction_count > before) {
+            IrInstruction *last = &builder->function->instructions[builder->function->instruction_count - 1];
+            if (last->opcode != IR_OP_DROP && last->opcode != IR_OP_FREE_SLICE_BACKING) break;
+            DeferredAction *cleanup = calloc(1, sizeof(*cleanup));
+            if (!cleanup) { builder->failed = 1; break; }
+            cleanup->captured_call = 1;
+            cleanup->call = *last;
+            cleanup->next = builder->cleanup_scope->actions;
+            builder->cleanup_scope->actions = cleanup;
+            builder->function->instruction_count--;
+        }
         if (builder->failed ||
             builder->function->instruction_count <= before ||
             builder->function->instructions[
@@ -1632,8 +1734,58 @@ static size_t emit_value_phi(IrBuilder *builder,
     return phi->result;
 }
 
+static size_t lower_match_scrutinee(IrBuilder *builder, const AstStatement *statement) {
+    const AstExpression *expression = statement->value;
+    if (expression && expression->resolved_borrow_kind != AST_BORROW_NONE &&
+        expression->resolved_named_symbol_id < builder->module->semantics->symbol_count) {
+        const SemanticSymbol *owner = &builder->module->semantics->symbols[expression->resolved_named_symbol_id];
+        if (owner->declaration && !owner->declaration->as.enum_decl.is_sum) {
+            AstExpression dereference = *expression;
+            dereference.kind = AST_EXPR_UNARY;
+            dereference.operator_type = TOKEN_STAR;
+            dereference.right = (AstExpression *)expression;
+            dereference.left = NULL;
+            dereference.arguments = NULL;
+            dereference.next = NULL;
+            dereference.resolved_borrow_kind = AST_BORROW_NONE;
+            dereference.resolved_pointer_depth--;
+            if (dereference.has_resolved_ast_type) dereference.resolved_ast_type.borrow_kind = AST_BORROW_NONE;
+            return lower_expression(builder, &dereference);
+        }
+    }
+    return lower_expression(builder, expression);
+}
+
+static void drop_consumed_match_fields(IrBuilder *builder, size_t value,
+                                       const AstStatement *statement) {
+    if (!statement->is_consuming_match || !statement->value ||
+        statement->value->resolved_named_symbol_id >= builder->module->semantics->symbol_count) return;
+    const SemanticSymbol *owner = &builder->module->semantics->symbols[
+        statement->value->resolved_named_symbol_id];
+    for (const AstField *field = owner->declaration->as.enum_decl.fields; field; field = field->next) {
+        IrTypeId type = type_from_ast(builder->module, owner->source_program, &field->type);
+        if (!type_needs_drop(builder, type)) continue;
+        IrInstruction *address = emit(builder, IR_OP_MEMBER, statement->span);
+        if (!address) return;
+        address->result = new_value(builder);
+        address->operand_a = value;
+        address->symbol_id = field->resolved_symbol_id;
+        set_field_type(builder, address, &builder->module->semantics->symbols[field->resolved_symbol_id]);
+        IrInstruction metadata = *address;
+        IrInstruction *drop = emit(builder, IR_OP_DROP, statement->span);
+        if (!drop) return;
+        *drop = metadata;
+        drop->opcode = IR_OP_DROP;
+        drop->result = IR_VALUE_NONE;
+        drop->operand_a = metadata.result;
+        drop->symbol_id = AST_SYMBOL_NONE;
+        drop->type = TYPE_VOID;
+        drop->pointer_depth = 0;
+    }
+}
+
 static void lower_match_bindings(IrBuilder *builder, size_t value,
-                                const AstMatchArm *arm, size_t body_label) {
+                                const AstMatchArm *arm, size_t body_label, int borrowed) {
     size_t payload_index = 0;
     for (const AstParameter *binding = arm->bindings; binding;
          binding = binding->next, payload_index++) {
@@ -1642,6 +1794,7 @@ static void lower_match_bindings(IrBuilder *builder, size_t value,
         payload->operand_a = value;
         payload->symbol_id = arm->resolved_variant_symbol;
         payload->enum_payload_index = payload_index;
+        payload->lifetime_pointer = borrowed;
         payload->target_a = body_label;
         payload->result = new_value(builder);
         payload->type_id = type_from_ast(builder->module, builder->program,
@@ -1697,7 +1850,8 @@ static size_t lower_match_value_arms(IrBuilder *builder,
     emit_label(builder, body_label, arm->span);
     CleanupScope binding_scope={.previous=builder->cleanup_scope};
     builder->cleanup_scope=&binding_scope;
-    lower_match_bindings(builder, value, arm, body_label);
+    lower_match_bindings(builder, value, arm, body_label, expression->control->value &&
+        expression->control->value->resolved_borrow_kind != AST_BORROW_NONE);
     size_t body_value = lower_value_block(builder, arm->body, target_type);
     if(!block_terminated(builder->function)) emit_deferred_scope(builder,&binding_scope);
     builder->cleanup_scope=binding_scope.previous;
@@ -1741,8 +1895,9 @@ static size_t lower_control_expression(IrBuilder *builder,
                 : lower_value_block(builder,
                                     control->selected_type_arm->body,
                                     target_type);
-        size_t value = lower_expression(builder, control->value);
+        size_t value = lower_match_scrutinee(builder, control);
         if(control->is_consuming_match) emit_move_if_owned(builder,control->value);
+        drop_consumed_match_fields(builder, value, control);
         if (block_terminated(builder->function)) return IR_VALUE_NONE;
         return lower_match_value_arms(builder, expression,
                                       control->match_arms, value, target_type);
@@ -1795,8 +1950,9 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
                                            statement->selected_type_arm->body);
                 continue;
             }
-            size_t value = lower_expression(builder, statement->value);
+            size_t value = lower_match_scrutinee(builder, statement);
             if(statement->is_consuming_match) emit_move_if_owned(builder,statement->value);
+            drop_consumed_match_fields(builder, value, statement);
             size_t join = new_label(builder);
             int wildcard = 0;
             for (const AstMatchArm *arm = statement->match_arms; arm; arm = arm->next) {
@@ -1830,6 +1986,7 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
                     payload->operand_a = value;
                     payload->symbol_id = arm->resolved_variant_symbol;
                     payload->enum_payload_index = payload_index;
+                    payload->lifetime_pointer = statement->value && statement->value->resolved_borrow_kind != AST_BORROW_NONE;
                     payload->target_a = body_label;
                     payload->result = new_value(builder);
                     payload->type_id = type_from_ast(builder->module, builder->program, &binding->type);
@@ -2047,7 +2204,9 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
         } else if (statement->kind == AST_STMT_EXPRESSION) {
             size_t value = lower_expression(builder, statement->expression);
             if (value != IR_VALUE_NONE && statement->expression != NULL &&
-                statement->expression->kind == AST_EXPR_STRUCT_LITERAL) {
+                (statement->expression->kind == AST_EXPR_STRUCT_LITERAL ||
+                 statement->expression->lifetime_operation == LIFETIME_TAKE ||
+                 statement->expression->lifetime_operation == LIFETIME_REPLACE)) {
                 IrTypeId type = type_from_expression(builder->module, builder->program, statement->expression);
                 if (ir_type_properties(builder->module, type) & SEMANTIC_TYPE_NEEDS_DROP) {
                     IrInstruction *drop = emit(builder, IR_OP_DROP, statement->span);
@@ -2993,7 +3152,8 @@ static int build_package_order(const AstProgram *program,
     for (const DmmPackage *package = program->module->packages;
          package != NULL; package = package->next)
         order->packages[index++] = package;
-    return visit_package(order, program->package);
+    return (!program->system_package || visit_package(order, program->system_package)) &&
+        visit_package(order, program->package);
 }
 
 static void free_package_order(PackageOrder *order) {
@@ -3066,11 +3226,10 @@ static int lower_unit(IrModule *module, const AstProgram *program) {
             const SemanticSymbol *symbol = &module->semantics->symbols[declaration->resolved_symbol_id];
             IrGlobal global = {.source_program = program, .symbol_id = symbol->id,
                                .function_symbol_id = AST_SYMBOL_NONE};
-            global.type_id = declaration->as.constant.type.kind == AST_TYPE_INFERRED
-                                 ? type_from_parts(module, symbol->resolved_type, 0, AST_TOKEN_NONE, 0, 0, 0, 0,
-                                                   program, AST_SYMBOL_NONE)
-                                 : type_from_ast(module, program, &declaration->as.constant.type);
             const AstExpression *value = declaration->as.constant.value;
+            global.type_id = declaration->as.constant.type.kind == AST_TYPE_INFERRED
+                                 ? type_from_expression(module, program, value)
+                                 : type_from_ast(module, program, &declaration->as.constant.type);
             if (value) {
                 if (value->has_resolved_ast_type && value->resolved_ast_type.kind == AST_TYPE_FUNCTION &&
                     value->resolved_symbol_id < module->semantics->symbol_count &&
@@ -3131,12 +3290,12 @@ static int lower_unit(IrModule *module, const AstProgram *program) {
         if (declaration->kind == AST_DECL_STRUCT) {
             for (const AstDeclarationNode *method = declaration->as.struct_decl.methods;
                  method != NULL; method = method->next)
-                if (!append_function(module, program, method)) return 0;
+                if (!method->constraints_disabled && !append_function(module, program, method)) return 0;
         }
         if (declaration->kind == AST_DECL_ENUM) {
             for (const AstDeclarationNode *method = declaration->as.enum_decl.methods;
                  method != NULL; method = method->next)
-                if (!append_function(module, program, method)) return 0;
+                if (!method->constraints_disabled && !append_function(module, program, method)) return 0;
         }
     }
     return 1;

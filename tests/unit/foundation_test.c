@@ -84,22 +84,22 @@ int main(void) {
     semantic_model_free(model);
     ast_program_free(program);
     const char *core_source = "func main() -> int { var p:*u8=__dmm_intrinsic_alloc(8); "
-            "__dmm_intrinsic_fill(p,7,8); __dmm_intrinsic_release(p); return 0; }";
+            "__dmm_intrinsic_release(p); return 0; }";
     program = test_parse_source(core_source, strlen(core_source), "core.dmm", NULL);
     CHECK(program);
     model = semantic_analyze(program);
     CHECK(model && !model->error_count);
     module = ir_lower_program(program, model);
     CHECK(module && ir_verify_module(module));
-    IrInstruction *allocation = NULL, *fill = NULL;
+    IrInstruction *allocation = NULL, *release = NULL;
     for (size_t i = 0; i < module->functions[0].instruction_count; ++i) {
         IrInstruction *in = &module->functions[0].instructions[i];
         if (in->opcode != IR_OP_CALL) continue;
         const char *name = ast_program_lexeme(program, in->auxiliary_token);
         if (!strcmp(name, "__dmm_intrinsic_alloc")) allocation = in;
-        if (!strcmp(name, "__dmm_intrinsic_fill")) fill = in;
+        if (!strcmp(name, "__dmm_intrinsic_release")) release = in;
     }
-    CHECK(allocation && fill);
+    CHECK(allocation && release);
     saved = *allocation;
     allocation->argument_count = 0;
     CHECK(!ir_verify_module(module));
@@ -116,7 +116,7 @@ int main(void) {
         }
     CHECK(!ir_verify_module(module));
     *allocation = saved;
-    size_t first = fill->first_argument;
+    size_t first = release->first_argument;
     size_t pointer_argument = module->functions[0].arguments[first];
     module->functions[0].arguments[first] = module->functions[0].arguments[allocation->first_argument];
     CHECK(!ir_verify_module(module));

@@ -1,10 +1,20 @@
 package main;
-struct Resource { var value:int; destructor {} }
-enum Holder { Empty, Value(Resource) }
-func consume(value:Holder) -> void {}
+
+struct Resource {
+    var value: int;
+    destructor {}
+}
+
+enum Holder {
+    Empty,
+    Value(Resource)
+}
+
+func consume(value: Holder) -> void {}
+
 func main() -> void {
-    var resource:Resource;
-    var holder:Holder=Holder.Value(resource);
+    var resource: Resource;
+    var holder: Holder = Holder.Value(resource);
     consume(holder);
     consume(holder);
 }

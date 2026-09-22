@@ -1,4 +1,6 @@
 package main;
+
 func main() -> void {
-    var values:int[]=[1,2;0];
+    var values: int[] = [1, 2;
+    0];
 }

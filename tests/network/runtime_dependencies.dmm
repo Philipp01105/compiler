@@ -1,0 +1,11 @@
+package network;
+// Test-only boundary to independently controlled completion/cancellation probes.
+extern "system" from "dmm_runtime" {
+    func testAsync_io_create(data: *void, drop: extern "system" func(*void) -> void) -> *void = "__dmm_async_io_create";
+    func testAsync_io_poll(io: *void, context: *void) -> i32 = "__dmm_async_io_poll";
+    func testAsync_io_confirm(io: *void) -> void = "__dmm_async_io_confirm";
+    func testAsync_io_destroy(io: *void) -> void = "__dmm_async_io_destroy";
+    func testAsync_cancel_requested(context: *void) -> i32 = "__dmm_async_cancel_requested";
+    func testAsync_thread_create(callback: extern "system" func(*void) -> void, argument: *void) -> *void = "__dmm_async_thread_create";
+    func testAsync_thread_join(thread: *void) -> void = "__dmm_async_thread_join";
+}

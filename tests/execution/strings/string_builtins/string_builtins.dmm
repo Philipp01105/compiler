@@ -1,34 +1,35 @@
 package main;
 import "stdlib";
+
 func main() -> void {
-    var buffer:char[32];
+    var buffer: char[32];
     strcpy(buffer, "typed");
     strcat(buffer, " IR");
     {
-        var _output0:string = "" + buffer;
+        var _output0: string = "" + buffer;
         stdlib.println(_output0);
         free(_output0);
     }
     stdlib.println(strlen(buffer));
     stdlib.println(strcmp(buffer, "typed IR"));
-    var copy:string = strdup(buffer);
+    var copy: string = strdup(buffer);
     stdlib.println(copy == "typed IR");
     free(copy);
 
-    var number:char[16];
+    var number: char[16];
     stdlib.println(io_int_to_str(-123, number, 16));
     {
-        var _output1:string = "" + number;
+        var _output1: string = "" + number;
         stdlib.println(_output1);
         free(_output1);
     }
     stdlib.println(io_str_to_int(number));
 
-    var joined:string = "native" + " backend";
+    var joined: string = "native" + " backend";
     stdlib.println(joined);
     free(joined);
 
-    var allocation:*int = reserve(int);
+    var allocation: *int = reserve(int);
     *allocation = 77;
     stdlib.println(*allocation);
     free(allocation);

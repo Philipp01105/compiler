@@ -1,6 +1,12 @@
 package main;
+
 struct Invalid {
-    var value:int;
-    destructor { return; }
+    var value: int;
+    destructor {
+        return;
+    }
 }
-func main() -> int { return 0; }
+
+func main() -> int {
+    return 0;
+}

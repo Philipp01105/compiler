@@ -1,0 +1,122 @@
+package main;
+import ("stdlib/core" "stdlib/async");
+var destroyed: i32 = 0;
+struct Payload { var value: i32; destructor { destroyed += 1; } }
+struct Immediate {
+    var result: i32;
+    pub func poll(context: &mut asynchronous.Context) -> core.Poll<i32> {
+        return core.Poll<i32>.Ready(result);
+    }
+    pub func cancelPoll(context: &mut asynchronous.Context) -> core.Poll<asynchronous.CancelAck> {
+        return core.Poll<asynchronous.CancelAck>.Ready(asynchronous.CancelAck.Confirmed);
+    }
+}
+enum Tasks { Task(Future<i32>), Empty }
+enum TaskPair { Both(Future<i32>,Future<i32>), Empty }
+async func work(value: &i32) -> i32 { return *value; }
+func acceptSend<T: core.Send>(value: T) -> void {}
+func drive<P: asynchronous.Poller<i32>>(poller: &mut P, context: &mut asynchronous.Context) -> i32 {
+    match (poller.poll(context)) {
+        Ready(value) => return value;
+        Pending => return -1;
+    }
+}
+func main() -> int {
+    {
+        var idle = asynchronous.noopWaker();
+        var polling = asynchronous.context(idle);
+        var clone = polling.retainWaker();
+        clone.wake();
+        acceptSend(polling.retainWaker());
+        var immediate = Immediate{result: 31};
+        if (drive(&mut immediate, &mut polling) != 31) { return 9; }
+        match (immediate.cancelPoll(&mut polling)) {
+            Ready(ack) => { match (ack) { Confirmed => {} } }
+            Pending => return 10;
+        }
+    }
+    var polled = core.Poll<i32>.Ready(23);
+    match (polled) {
+        Ready(value) => { if (value != 23) { return 4; } }
+        Pending => return 5;
+    }
+    {
+        var owner = core.Poll<Payload>.Ready(Payload{value:29});
+        match (owner) {
+            Ready(value) => { if (value.value != 29) { return 6; } }
+            Pending => return 7;
+        }
+    }
+    if (destroyed != 1) { return 8; }
+    var source: i32 = 7;
+    var pending = Tasks.Task(work(&source));
+    match (pending) {
+        Task(child) => {
+            var moved = take(child);
+            if (block_on(moved) != 7) { return 1; }
+            source = 8;
+        }
+        Empty => { source = 9; }
+    }
+    source = 10;
+    var cancelled = Tasks.Task(work(&source));
+    match (cancelled) {
+        Task(child) => { block_on(cancel(child)); source = 11; }
+        Empty => { source = 12; }
+    }
+    source = 13;
+    var other: i32 = 14;
+    var first = work(&source);
+    var prior = replace(first, work(&other));
+    var previous = block_on(prior);
+    var current = block_on(first);
+    if (previous != 13 || current != 14) { return 2; }
+    source = 15;
+    other = 16;
+    var inline = work(&source);
+    previous = block_on(replace(inline, work(&other)));
+    current = block_on(inline);
+    if (previous != 15 || current != 16) { return 3; }
+    source = 17;
+    other = 18;
+    var child=work(&source);
+    var resume=func [move child]()->Future<i32> { return child; };
+    var transferred=resume();
+    if(block_on(transferred)!=17) { return 11; }
+    source=19;
+    var cancelledChild=work(&source);
+    var cancelCaptured=func [move cancelledChild]()->void { block_on(cancel(cancelledChild)); };
+    cancelCaptured();
+    source=20;
+    {
+        var deferredChild=work(&source);
+        var finishDeferred=func [move deferredChild]()->void { block_on(cancel(deferredChild)); };
+        defer finishDeferred();
+    }
+    source=21;
+    var firstChild=work(&source);
+    var secondChild=work(&other);
+    var pair=TaskPair.Both(firstChild,secondChild);
+    var movedPair=take(pair);
+    match(movedPair) {
+        Both(left,right)=>{
+            block_on(cancel(left));
+            source=22;
+            if(block_on(right)!=18) { return 12; }
+            other=23;
+        }
+        Empty=>return 13;
+    }
+    match(TaskPair.Both(work(&source),work(&other))) {
+        Both(left,right)=>{
+            var firstResult=block_on(left);
+            source=24;
+            var secondResult=block_on(right);
+            other=25;
+            if(firstResult!=22) { return 14; }
+            if(secondResult!=23) { return 15; }
+        }
+        Empty=>return 16;
+    }
+    return 0;
+}

@@ -4,121 +4,142 @@ import "stdlib";
 // A telemetry batch owns temporary device leases while it collects samples.
 // Lease destruction models releasing an operating-system or device resource.
 struct DeviceLease {
-    var deviceId:u32;
+    var deviceId: u32;
 
     destructor {
         stdlib.println("release device");
         stdlib.println(deviceId);
-        deviceId=0;
+        deviceId = 0;
     }
 }
 
 struct Lease<T> {
-    var resource:T;
+    var resource: T;
 }
 
 struct WorkerLeases {
-    var primary:DeviceLease;
-    var backup:DeviceLease;
+    var primary: DeviceLease;
+    var backup: DeviceLease;
 }
 
 struct PacketHeader {
-    var marker:char;
-    var version:u8;
-    var sampleCount:usize;
-    var active:bit;
+    var marker: char;
+    var version: u8;
+    var sampleCount: usize;
+    var active: bit;
 }
 
 struct SampleStats {
-    var minimum:i32;
-    var maximum:i32;
-    var total:i64;
+    var minimum: i32;
+    var maximum: i32;
+    var total: i64;
 }
 
 struct Cell<T> {
-    var value:T;
+    var value: T;
 }
 
-func appendAudit(target:&mut u16, digit:u16) -> void {
-    *target=*target*10.(u16)+digit;
+func appendAudit(target: &mut u16, digit: u16) -> void {
+    *target = *target * 10.(u16) + digit;
 }
 
-func analyze(values:i32[]) -> SampleStats {
-    var result:SampleStats;
-    if (values.length == 0) { return result; }
-    result.minimum=values[0];
-    result.maximum=values[0];
-    for (var index:usize=0; index < values.length; index+=1) {
-        var sample:i32=values[index];
-        if (sample < result.minimum) { result.minimum=sample; }
-        if (sample > result.maximum) { result.maximum=sample; }
-        result.total+=sample.(i64);
+func analyze(values: i32[]) -> SampleStats {
+    var result: SampleStats;
+    if (values.length == 0) {
+        return result;
+    }
+    result.minimum = values[0];
+    result.maximum = values[0];
+    for (var index: usize = 0; index < values.length; index += 1) {
+        var sample: i32 = values[index];
+        if (sample < result.minimum) {
+            result.minimum = sample;
+        }
+        if (sample > result.maximum) {
+            result.maximum = sample;
+        }
+        result.total += sample.(i64);
     }
     return result;
 }
 
-func checksum(values:u8[]) -> u32 {
-    var total:u32=0;
-    for (var index:usize=0; index < values.length; index+=1) {
-        total+=values[index].(u32);
+func checksum(values: u8[]) -> u32 {
+    var total: u32 = 0;
+    for (var index: usize = 0; index < values.length; index += 1) {
+        total += values[index].(u32);
     }
     return total;
 }
 
-func finishLease<T>(value:T) -> void {
+func finishLease<T>(value: T) -> void {
     stdlib.println(T.name);
 }
 
 func main() -> int {
-    var audit:u16=0;
+    var audit: u16 = 0;
     {
-        defer appendAudit(&mut audit,7);
+        defer appendAudit(&mut audit, 7);
 
-        var leases:WorkerLeases;
+        var leases: WorkerLeases;
         // Field-sensitive borrowing permits configuring both leases together.
-        var primaryId=&mut leases.primary.deviceId;
-        var backupId=&mut leases.backup.deviceId;
-        *primaryId=1001;
-        *backupId=1002;
+        var primaryId = &mut leases.primary.deviceId;
+        var backupId = &mut leases.backup.deviceId;
+        *primaryId = 1001;
+        *backupId = 1002;
 
-        var temporary:Lease<DeviceLease>;
-        temporary.resource.deviceId=2001;
+        var temporary: Lease<DeviceLease>;
+        temporary.resource.deviceId = 2001;
         finishLease(temporary);
 
-        var samples=stdlib.list<i32>(4);
-        if (!samples.ok()) { return 1; }
-        if (samples.push(-4) != stdlib.AllocationError.None) { return 2; }
-        if (samples.push(12) != stdlib.AllocationError.None) { return 3; }
-        if (samples.push(7) != stdlib.AllocationError.None) { return 4; }
+        var samples = stdlib.list<i32>(4);
+        if (!samples.ok()) {
+            return 1;
+        }
+        if (samples.push(-4) != stdlib.AllocationError.None) {
+            return 2;
+        }
+        if (samples.push(12) != stdlib.AllocationError.None) {
+            return 3;
+        }
+        if (samples.push(7) != stdlib.AllocationError.None) {
+            return 4;
+        }
 
-        var sampleView:i32[]=samples.view();
-        var stats:SampleStats=analyze(sampleView);
-        if (stats.minimum != -4 || stats.maximum != 12 || stats.total != 15) {
+        var sampleView: i32[] = samples.view();
+        var stats: SampleStats = analyze(sampleView);
+        if (stats.minimum != - 4 || stats.maximum != 12 || stats.total != 15) {
             return 5;
         }
 
         // A custom aggregate can also live in explicitly managed raw storage.
-        var stored:*Cell<SampleStats>=reserve(Cell<SampleStats>);
-        stored.value=stats;
-        if (stored.value.total != 15) { free(stored); return 6; }
+        var stored: *Cell < SampleStats >= reserve(Cell<SampleStats>);
+        stored.value = stats;
+        if (stored.value.total != 15) {
+            free(stored);
+            return 6;
+        }
         free(stored);
 
-        var signature:u8[3]=[84,76,77]; // ASCII "TLM"
-        var signatureView:u8[]=signature;
-        var header:PacketHeader;
-        header.marker='T';
-        header.version=1;
-        header.sampleCount=sampleView.length;
-        header.active=checksum(signatureView) == 237;
+        var signature: u8[3] = [84, 76, 77]; // ASCII "TLM"
+        var signatureView: u8[] = signature;
+        var header: PacketHeader;
+        header.marker = 'T';
+        header.version = 1;
+        header.sampleCount = sampleView.length;
+        header.active = checksum(signatureView) == 237;
         if (!header.active || header.marker != 'T' || header.sampleCount != 3) {
             return 7;
         }
 
-        var title=stdlib.cloneString("telemetry batch");
-        if (!title.ok()) { return 8; }
+        var title = stdlib.cloneString("telemetry batch");
+        if (!title.ok()) {
+            return 8;
+        }
         stdlib.println(title.view());
     }
 
-    if (audit != 7) { return 9; }
+    if (audit != 7) {
+        return 9;
+    }
     return 0;
 }

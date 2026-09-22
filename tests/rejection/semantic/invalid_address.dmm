@@ -1,2 +1,5 @@
 package main;
-func main() -> void { var pointer:*int = &(1 + 2); }
+
+func main() -> void {
+    var pointer: *int = &(1 + 2);
+}

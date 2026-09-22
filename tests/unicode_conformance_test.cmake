@@ -1,0 +1,23 @@
+cmake_minimum_required(VERSION 3.21)
+file(MAKE_DIRECTORY "${OUTPUT_DIR}/tests/unicode")
+foreach(name normalization casing)
+file(COPY_FILE "${SOURCE_DIR}/tests/unicode/${name}.bin" "${OUTPUT_DIR}/tests/unicode/${name}.bin")
+foreach(level 0 1)
+    set(program "${OUTPUT_DIR}/${name}_${level}.exe")
+    set(source "${SOURCE_DIR}/tests/unicode/${name}.dmm")
+    if(name STREQUAL casing)
+        set(source "${SOURCE_DIR}/tests/unicode/casing/casing.dmm")
+    endif()
+    execute_process(COMMAND "${COMPILER}" --emit=exe "-O${level}"
+        "${source}" -o "${program}"
+        RESULT_VARIABLE status ERROR_VARIABLE errors TIMEOUT 60)
+    if(NOT status EQUAL 0)
+        message(FATAL_ERROR "Unicode conformance compilation O${level}: ${errors}")
+    endif()
+    execute_process(COMMAND "${program}" WORKING_DIRECTORY "${OUTPUT_DIR}"
+        RESULT_VARIABLE status OUTPUT_VARIABLE output ERROR_VARIABLE errors TIMEOUT 600)
+    if(NOT status EQUAL 0)
+        message(FATAL_ERROR "Unicode conformance O${level}: ${status} row=${output} ${errors}")
+    endif()
+endforeach()
+endforeach()

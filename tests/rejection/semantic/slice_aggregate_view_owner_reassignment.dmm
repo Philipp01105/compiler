@@ -1,10 +1,14 @@
 package main;
-struct Holder { var view:int[]; }
+
+struct Holder {
+    var view: int[];
+}
+
 func main() -> void {
-    var owner:int[] = [1, 2, 3];
-    var holder:Holder;
+    var owner: int[] = [1, 2, 3];
+    var holder: Holder;
     holder.view = owner;
-    var copied:Holder = holder;
+    var copied: Holder = holder;
     owner = [4, 5, 6];
-    var value:int = copied.view[0];
+    var value: int = copied.view[0];
 }

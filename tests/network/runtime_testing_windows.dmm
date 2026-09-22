@@ -1,0 +1,15 @@
+package network;
+import "stdlib/native/winsock";
+export "system" func __dmm_net_test_submitted(op: *Operation) -> i32 {
+    lockNet();
+    var submitted: i32 = op.submitted;
+    unlockNet();
+    return submitted;
+}
+
+export "system" func __dmm_net_test_send(s: *Socket, bytes: *u8, length: i32) -> i32 {
+    lockNet();
+    var count: i32 = winsock.send(s.fd, bytes, length, 0);
+    unlockNet();
+    return count;
+}

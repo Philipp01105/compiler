@@ -1,2 +1,15 @@
 package main;
-enum E { A(int), B, } func main() -> void { var e:E=E.A(1); match(e) { A(x) => { } A(y) => { } B => { } } }
+
+enum E {
+    A(int),
+    B,
+}
+
+func main() -> void {
+    var e: E = E.A(1);
+    match (e) {
+        A(x) => {}
+        A(y) => {}
+        B => {}
+    }
+}

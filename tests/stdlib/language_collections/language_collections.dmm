@@ -1,0 +1,104 @@
+package main;
+import (
+ "stdlib"
+ "stdlib/core"
+ "stdlib/collections"
+ "stdlib/memory"
+);
+var created:i32=0;
+var drops:i32=0;
+struct Resource {
+ var value:i32;
+ destructor { drops+=1; }
+}
+func resource(value:i32)->Resource { created+=1; return Resource{value:value}; }
+func hashKey(key:&Resource)->u64 { return (*key).value.(u64)%3; }
+func sameKey(left:&Resource,right:&Resource)->bit { return (*left).value==(*right).value; }
+func hashInt(key:i32)->u64 { return key.(u64)%3; }
+func sameInt(left:i32,right:i32)->bit { return left==right; }
+func main()->int {
+ {
+  var values=stdlib.list<Resource>(1);
+  for(var i:i32=0;i<20;i+=1) {
+   if(values.push(resource(i))!=stdlib.AllocationError.None) { return 1; }
+  }
+  if(created!=20 || drops!=0 || values.length()!=20) { return 2; }
+  values.insert(3,resource(30));
+  if((*values.getRef(3)).value!=30) { return 3; }
+  (*values.getMut(4)).value=40;
+  var removed=values.remove(3);
+  match(removed) { Some(value)=>{ if(value.value!=30) { return 4; } } None=>return 5; }
+  if(drops!=1 || (*values.getRef(3)).value!=40) { return 6; }
+  values.set(3,resource(50));
+  if(drops!=2) { return 7; }
+  var popped=values.pop();
+  match(popped) { Some(value)=>{ if(value.value!=19) { return 8; } } None=>return 9; }
+  if(drops!=3) { return 10; }
+  values.truncate(2);
+  if(drops!=20 || values.length()!=2) { return 11; }
+  values.clear();
+  if(drops!=created) { return 12; }
+  var prior=created;
+  if(values.insert(100,resource(60))!=stdlib.AllocationError.InvalidIndex) { return 33; }
+  if(drops!=created || created!=prior+1 || values.length()!=0) { return 34; }
+  values.push(resource(60));
+  if(values.ensureCapacity(9223372036854775807.(usize))!=stdlib.AllocationError.CapacityOverflow) { return 35; }
+  if(values.length()!=1 || (*values.getRef(0)).value!=60) { return 36; }
+ }
+ if(drops!=created) { return 13; }
+ var allocated=collections.deque<Resource>(2);
+ match(allocated) {
+  Ok(values)=>{
+   for(var i:i32=0;i<20;i+=1) { values.pushBack(resource(i)); }
+   for(var i:i32=0;i<10;i+=1) {
+    var popped=values.popFront();
+    match(popped) { Some(value)=>{ if(value.value!=i) { return 14; } } None=>return 15; }
+   }
+   for(var i:i32=0;i<20;i+=1) { values.pushFront(resource(i)); }
+   if(values.length()!=30 || (*values.getRef(0)).value!=19) { return 16; }
+   var popped=values.popBack();
+   match(popped) { Some(value)=>{ if(value.value!=19) { return 17; } } None=>return 18; }
+   values.clear(); values.pushBack(resource(100));
+  }
+  Err(error)=>return 19;
+ }
+ if(drops!=created) { return 20; }
+ {
+  var values=collections.hashMapBorrowed<Resource,Resource>(hashKey,sameKey);
+  for(var i:i32=0;i<40;i+=1) { if(values.insert(resource(i),resource(i+100))!=stdlib.AllocationError.None) { return 21; } }
+  var key=resource(3);
+  var found=values.getRef(&key);
+  match(found) { Some(value)=>{ if((*value).value!=103) { return 22; } } None=>return 23; }
+  var changed=values.getMut(&key);
+  match(changed) { Some(value)=>{ (*value).value=203; } None=>return 24; }
+  var removed=values.removeBorrowed(&key);
+  match(removed) { Some(value)=>{ if(value.value!=203) { return 25; } } None=>return 26; }
+  values.insert(resource(4),resource(304));
+  if(values.length()!=39) { return 27; }
+  values.clear();
+  if(drops!=created-1) { return 28; }
+  values.insert(resource(50),resource(150));
+ }
+ if(drops!=created) { return 29; }
+ {
+  var values=collections.hashMap<i32,Resource>(hashInt,sameInt);
+  values.insert(1,resource(10)); values.insert(1,resource(20));
+  var removed=values.remove(1);
+  match(removed) { Some(value)=>{ if(value.value!=20) { return 30; } } None=>return 31; }
+ }
+ if(drops!=created) { return 32; }
+ var boxed=collections.deque<memory.Box<Resource>>(1);
+ match(boxed) {
+  Ok(values)=>{
+   for(var i:i32=0;i<12;i+=1) {
+    var allocation=memory.box(resource(i));
+    match(allocation) { Ok(owner)=>values.pushBack(owner); Err(error)=>return 37; }
+   }
+   var popped=values.popFront();
+   match(popped) { Some(owner)=>{ var inner=owner.intoInner(); if(inner.value!=0) { return 38; } } None=>return 39; }
+  }
+  Err(error)=>return 40;
+ }
+ if(drops!=created) { return 41; }
+ return 0;
+}

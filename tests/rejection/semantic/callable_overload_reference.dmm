@@ -1,9 +1,14 @@
 package main;
 
-func convert(value:int) -> int { return value; }
-func convert(value:double) -> double { return value; }
+func convert(value: int) -> int {
+    return value;
+}
+
+func convert(value: double) -> double {
+    return value;
+}
 
 func main() -> int {
-    var callable=convert;
+    var callable = convert;
     return 0;
 }

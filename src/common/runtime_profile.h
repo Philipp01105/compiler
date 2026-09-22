@@ -3,13 +3,14 @@
 
 typedef enum { LINK_AUTO, LINK_INTERNAL, LINK_EXTERNAL } LinkMode;
 typedef unsigned RuntimeRequirements;
-enum { RUNTIME_REQUIRE_PLATFORM = 1u, RUNTIME_REQUIRE_NETWORK = 2u };
+enum { RUNTIME_REQUIRE_PLATFORM = 1u, RUNTIME_REQUIRE_NETWORK = 2u, RUNTIME_REQUIRE_EXECUTOR = 4u };
 typedef enum { RUNTIME_STANDALONE, RUNTIME_PLATFORM } RuntimeProfile;
 
 /* Requirements describe emitted operations, never the chosen linker.
-   Async alone has no platform requirement. */
+   Enabling the async manifest feature alone has no platform requirement. */
 static inline RuntimeRequirements runtime_requirements_normalize(RuntimeRequirements requirements) {
-    return requirements & RUNTIME_REQUIRE_NETWORK
+    if (requirements & RUNTIME_REQUIRE_NETWORK) requirements |= RUNTIME_REQUIRE_EXECUTOR;
+    return requirements & RUNTIME_REQUIRE_EXECUTOR
         ? requirements | RUNTIME_REQUIRE_PLATFORM : requirements;
 }
 static inline RuntimeProfile runtime_profile_for(RuntimeRequirements requirements) {

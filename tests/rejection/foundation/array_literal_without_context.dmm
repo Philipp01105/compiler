@@ -1,4 +1,5 @@
 package main;
+
 func main() -> void {
-    var values=[1,2,3];
+    var values = [1, 2, 3];
 }

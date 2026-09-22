@@ -2,72 +2,172 @@ package main;
 import "stdlib";
 import "stdlib/core";
 
-struct Node { var value:int; var next:*Node; }
-struct Box<T> { var value:T; }
-enum State { Ready, Done }
-const INT_NAME=int.name;
-const LENGTH=int.size;
-var side_effects:int;
-func touch() -> Node { side_effects+=1; var node:Node; return node; }
+struct Node {
+    var value: int;
+    var next: *Node;
+}
 
-func type_name<T>() -> string { return T.name; }
-func describe<T>(value:T) -> int {
+struct Box<T> {
+    var value: T;
+}
+
+enum State {
+    Ready,
+    Done
+}
+
+const INT_NAME = int.name;
+const LENGTH = int.size;
+var side_effects: int;
+
+func touch() -> Node {
+    side_effects += 1;
+    var node: Node;
+    return node;
+}
+
+func type_name<T>() -> string {
+    return T.name;
+}
+
+func describe<T>(value: T) -> int {
     match (T) {
-        case int -> return value+1;
+        case int -> return value + 1;
         case string -> return strlen(value);
         case Node -> return value.value;
-        case *Node -> return value.value;
+        case * Node -> return value.value;
         case i32[] -> return value.length.(int);
         case _ -> return -1;
     }
 }
+
 func selected_return<T>() -> int {
     match (T) {
         case int -> return 42;
-        case string -> { var unused:UnknownType; no_such_function(); }
+        case string -> {
+            var unused: UnknownType;
+            no_such_function();
+        }
     }
 }
-func describe_value<T>(value:T) -> int {
+
+func describe_value<T>(value: T) -> int {
     match (value.type) {
-        case int -> return value+2;
+        case int -> return value + 2;
         case string -> return strlen(value);
         case _ -> return -1;
     }
 }
-func buffer_case<T>(value:T) -> usize {
+
+func buffer_case<T>(value: T) -> usize {
     match (value.type) {
-        case int -> { var other:T[2]; return other.type.size; }
+        case int -> {
+            var other: T[2];
+            return other.type.size;
+        }
         case i32[] -> return value.length;
         case _ -> return 0;
     }
 }
+
 func main() -> int {
-    if (INT_NAME != "int" || int.size != sizeof(int) || int.align != alignof(int)) { return 1; }
-    if (usize.name != "usize" || usize.size != 8 || u8.align != 1) { return 2; }
-    if (void.name != "void" || void.size != 0 || void.align != 1) { return 3; }
-    if (*Node.name != "*dmm.test/type_metadata.Node" || (*Node).size != 8) { return 4; }
-    if (Node.name != "dmm.test/type_metadata.Node" || Node.size != sizeof(Node) || Node.align != 8) { return 5; }
-    if (Box<int>.name != "dmm.test/type_metadata.Box<int>" || Box<int>.size != 8) { return 6; }
-    if (Box<Node[]>.name != "dmm.test/type_metadata.Box<dmm.test/type_metadata.Node[]>" || Box<Node[]>.size != 16) { return 7; }
-    if (i32[].name != "i32[]" || i32[].size != 16 || i32[].align != 8) { return 8; }
-    if (u8[LENGTH].name != "u8[4]" || u8[LENGTH].size != sizeof(u8[LENGTH])) { return 9; }
-    if (*(i32[]).name != "*(i32[])" || *(i32[]).size != 8) { return 10; }
-    if (State.size != sizeof(State) || type_name<State>() != "dmm.test/type_metadata.State") { return 11; }
-    if (describe(4) != 5 || describe("hello") != 5 || describe(1.25) != -1 || selected_return<int>() != 42) { return 12; }
-    var node:Node; node.value=7;
-    if (describe(node) != 7 || describe((&node).(*Node)) != 7) { return 13; }
-    var backing:i32[3]; var view:i32[]=backing;
-    if (describe(view) != 3 || type_name<*(i32[])>() != "*(i32[])") { return 14; }
-    match (Box<int>) { case Box<string> -> return 15; case Box<int> -> { } }
-    match (i32[3]) { case i32[2] -> return 16; case i32[3] -> { } }
-    match (int) { case i32 -> return 17; case int -> { } }
-    match (State.Ready) { Ready => { } Done => return 18; }
-    if (node.type.name != Node.name || node.type.size != Node.size || node.type.align != Node.align) { return 19; }
-    if (backing.type.name != "i32[3]" || backing.type.size != sizeof(i32[3]) || view.type.name != "i32[]") { return 20; }
-    if (touch().type.name != Node.name || side_effects != 0) { return 21; }
-    if (describe_value(5) != 7 || describe_value("hello") != 5 || describe_value(node) != -1) { return 22; }
-    match (node.type) { case int -> return 23; case Node -> { } }
-    if (buffer_case(view) != 3 || buffer_case(1) != sizeof(int[2])) { return 24; }
+    if (INT_NAME != "int" || int.size != sizeof(int) || int.align != alignof(int)) {
+        return 1;
+    }
+    if (usize.name != "usize" || usize.size != 8 || u8.align != 1) {
+        return 2;
+    }
+    if (void.name != "void" || void.size != 0 || void.align != 1) {
+        return 3;
+    }
+    if (*Node.name != "*dmm.test/type_metadata.Node" || (*Node).size != 8) {
+        return 4;
+    }
+    if (Node.name != "dmm.test/type_metadata.Node" || Node.size != sizeof(Node) || Node.align != 8) {
+        return 5;
+    }
+    if (Box<int>.name != "dmm.test/type_metadata.Box<int>" || Box<int>.size != 8) {
+        return 6;
+    }
+    if (
+        Box<Node[]>.name != "dmm.test/type_metadata.Box<dmm.test/type_metadata.Node[]>" ||
+        Box<Node[]>.size != 16
+    ) {
+        return 7;
+    }
+    if (i32[].name != "i32[]" || i32[].size != 16 || i32[].align != 8) {
+        return 8;
+    }
+    if (u8[LENGTH].name != "u8[4]" || u8[LENGTH].size != sizeof(u8[LENGTH])) {
+        return 9;
+    }
+    if (*(i32[]).name != "*(i32[])" || *(i32[]).size != 8) {
+        return 10;
+    }
+    if (State.size != sizeof(State) || type_name<State>() != "dmm.test/type_metadata.State") {
+        return 11;
+    }
+    if (
+        describe(4) != 5 ||
+        describe("hello") != 5 ||
+        describe(1.25) != - 1 ||
+        selected_return<int>() != 42
+    ) {
+        return 12;
+    }
+    var node: Node;
+    node.value = 7;
+    if (describe(node) != 7 || describe((&node).(*Node)) != 7) {
+        return 13;
+    }
+    var backing: i32[3];
+    var view: i32[] = backing;
+    if (describe(view) != 3 || type_name< * (i32[])>() != "*(i32[])") {
+        return 14;
+    }
+    match (Box<int>) {
+        case Box<string> -> return 15;
+        case Box<int> -> {}
+    }
+    match (i32[3]) {
+        case i32[2] -> return 16;
+        case i32[3] -> {}
+    }
+    match (int) {
+        case i32 -> return 17;
+        case int -> {}
+    }
+    match (State.Ready) {
+        Ready => {}
+        Done => return 18;
+    }
+    if (
+        node.type.name != Node.name ||
+        node.type.size != Node.size ||
+        node.type.align != Node.align
+    ) {
+        return 19;
+    }
+    if (
+        backing.type.name != "i32[3]" ||
+        backing.type.size != sizeof(i32[3]) ||
+        view.type.name != "i32[]"
+    ) {
+        return 20;
+    }
+    if (touch().type.name != Node.name || side_effects != 0) {
+        return 21;
+    }
+    if (describe_value(5) != 7 || describe_value("hello") != 5 || describe_value(node) != - 1) {
+        return 22;
+    }
+    match (node.type) {
+        case int -> return 23;
+        case Node -> {}
+    }
+    if (buffer_case(view) != 3 || buffer_case(1) != sizeof(int[2])) {
+        return 24;
+    }
     stdlib.println("type metadata");
     return 0;
 }

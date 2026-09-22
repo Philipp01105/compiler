@@ -1,7 +1,12 @@
 package main;
-enum Plain { Value(int), }
-func unwrap(value:Plain) -> Plain {
-    var output:int=value?;
+
+enum Plain {
+    Value(int),
+}
+
+func unwrap(value: Plain) -> Plain {
+    var output: int = value?;
     return Plain.Value(output);
 }
+
 func main() -> void {}

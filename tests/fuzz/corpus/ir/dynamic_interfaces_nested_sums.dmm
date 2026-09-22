@@ -1,33 +1,78 @@
 package main;
 
-interface Reading { func value()->int; }
-struct Gauge { var base:int; func value()->int{return base;} }
-struct Adjusted { var source:Reading; var offset:int; func value()->int{return source.value()+offset;} }
-enum Sample<T> { Missing, Present(T), Retry(int,T) }
-struct Batch<T> { var samples:T[3]; var fallback:T; }
-func measure<T:Reading>(item:T)->int{return item.value();}
-func choose(flag:bit,a:Gauge,b:Adjusted)->Reading {if(flag){return a;} return b;}
-func reduce(items:Reading[])->int {
-    var sum:int;
-    for(var i=0;i<items.length;i+=1){sum+=items[i].value();}
+interface Reading {
+    func value() -> int;
+}
+
+struct Gauge {
+    var base: int;
+    func value() -> int {
+        return base;
+    }
+}
+
+struct Adjusted {
+    var source: Reading;
+    var offset: int;
+    func value() -> int {
+        return source.value() + offset;
+    }
+}
+
+enum Sample<T> {
+    Missing,
+    Present(T),
+    Retry(int, T)
+}
+
+struct Batch<T> {
+    var samples: T[3];
+    var fallback: T;
+}
+
+func measure<T: Reading>(item: T) -> int {
+    return item.value();
+}
+
+func choose(flag: bit, a: Gauge, b: Adjusted) -> Reading {
+    if (flag) {
+        return a;
+    }
+    return b;
+}
+
+func reduce(items: Reading[]) -> int {
+    var sum: int;
+    for (var i = 0; i < items.length; i += 1) {
+        sum += items[i].value();
+    }
     return sum;
 }
-func main()->int {
-    var gauge=Gauge{base:11};
-    var adjusted=Adjusted{source:gauge,offset:4};
-    var readings:Reading[3]=[gauge,adjusted,choose(false,gauge,Adjusted{source:gauge,offset:7})];
-    var batch=Batch<Sample<Gauge>>{
-        samples:[Sample<Gauge>.Present(gauge),Sample<Gauge>.Missing,Sample<Gauge>.Retry(2,gauge)],
-        fallback:Sample<Gauge>.Present(gauge)
+
+func main() -> int {
+    var gauge = Gauge{ base: 11 };
+    var adjusted = Adjusted{ source: gauge, offset: 4 };
+    var readings: Reading[3] = [gauge, adjusted, choose(
+        false,
+        gauge,
+        Adjusted{ source: gauge, offset: 7 }
+    )];
+    var batch = Batch<Sample<Gauge>>{
+        samples:[Sample<Gauge>.Present(gauge), Sample<Gauge>.Missing, Sample<Gauge>.Retry(2, gauge)],
+        fallback: Sample<Gauge>.Present(gauge)
     };
-    var total=reduce(readings)+measure(gauge)+measure(Adjusted{source:gauge,offset:9});
-    for(var i=0;i<3;i+=1){
-        match(batch.samples[i]){
-            Missing=>total+=1;
-            Present(item)=>total+=item.value();
-            Retry(count,item)=>total+=count*item.value();
+    var total = reduce(readings) + measure(gauge) + measure(Adjusted{ source: gauge, offset: 9 });
+    for (var i = 0; i < 3; i += 1) {
+        match (batch.samples[i]) {
+            Missing => total += 1;
+            Present(item) => total += item.value();
+            Retry(count, item) => total += count * item.value();
         }
     }
-    match(batch.fallback){Missing=>{} Present(item)=>total+=item.value(); Retry(count,item)=>total+=count;}
+    match (batch.fallback) {
+        Missing => {}
+        Present(item) => total += item.value();
+        Retry(count, item) => total += count;
+    }
     return total;
 }

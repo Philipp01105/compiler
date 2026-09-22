@@ -1,0 +1,88 @@
+package main;
+import (
+    "stdlib"
+    "stdlib/core/raw"
+    "stdlib/collections"
+);
+var created:i32=0;
+var destroyed:i32=0;
+struct Resource { var value:i32; destructor { destroyed+=1; } }
+func resource(value:i32)->Resource { created+=1; return Resource{value:value}; }
+func hash(key:i32)->u64 { return key.(u64)%3; }
+func same(left:i32,right:i32)->bit { return left==right; }
+func hashOwner(key:&Resource)->u64 { return (*key).value.(u64); }
+func sameOwner(left:&Resource,right:&Resource)->bit { return (*left).value==(*right).value; }
+func main()->int {
+    {
+        var values=stdlib.list<Resource>(2);
+        values.push(resource(1)); values.push(resource(2));
+        raw.testFailNextAllocation();
+        if(values.push(resource(3))!=stdlib.AllocationError.OutOfMemory) { return 1; }
+        if(destroyed!=1 || values.length()!=2 || values.capacity()!=2) { return 2; }
+        raw.testFailNextAllocation();
+        if(values.insert(1,resource(5))!=stdlib.AllocationError.OutOfMemory) { return 25; }
+        raw.testFailNextAllocation();
+        if(values.ensureCapacity(8)!=stdlib.AllocationError.OutOfMemory) { return 3; }
+        if(destroyed!=2 || (*values.getRef(0)).value!=1 || (*values.getRef(1)).value!=2) { return 4; }
+        if(values.push(resource(4))!=stdlib.AllocationError.None || values.length()!=3) { return 5; }
+    }
+    if(destroyed!=created) { return 6; }
+    var allocated=collections.deque<Resource>(2);
+    match(allocated) {
+        Ok(values)=>{
+            values.pushBack(resource(1)); values.pushBack(resource(2));
+            match(values.popFront()) { Some(value)=>{} None=>return 7; }
+            values.pushBack(resource(3));
+            var prior=destroyed;
+            raw.testFailNextAllocation();
+            if(values.pushFront(resource(4))!=stdlib.AllocationError.OutOfMemory) { return 8; }
+            raw.testFailNextAllocation();
+            if(values.pushBack(resource(5))!=stdlib.AllocationError.OutOfMemory) { return 9; }
+            raw.testFailNextAllocation();
+            if(values.ensureCapacity(8)!=stdlib.AllocationError.OutOfMemory) { return 10; }
+            if(destroyed!=prior+2 || values.length()!=2 || values.capacity()!=2) { return 11; }
+            if((*values.getRef(0)).value!=2 || (*values.getRef(1)).value!=3) { return 12; }
+            if(values.pushBack(resource(6))!=stdlib.AllocationError.None) { return 13; }
+        }
+        Err(error)=>return 14;
+    }
+    if(destroyed!=created) { return 15; }
+    {
+        var values=collections.hashMapBorrowed<Resource,Resource>(hashOwner,sameOwner);
+        var prior=destroyed;
+        raw.testFailNextAllocation();
+        if(values.insert(resource(1),resource(2))!=stdlib.AllocationError.OutOfMemory) { return 16; }
+        if(values.length()!=0 || destroyed!=prior+2) { return 17; }
+        for(var i:i32=0;i<4;i+=1) { values.insert(resource(i),resource(i+10)); }
+        prior=destroyed;
+        raw.testFailNextAllocation();
+        if(values.insert(resource(4),resource(14))!=stdlib.AllocationError.OutOfMemory) { return 26; }
+        if(values.length()!=4 || destroyed!=prior+2) { return 27; }
+        for(var i:i32=0;i<4;i+=1) {
+            var key=resource(i);
+            match(values.getRef(&key)) {
+                Some(value)=>{ if((*value).value!=i+10) { return 28; } }
+                None=>return 29;
+            }
+        }
+    }
+    if(destroyed!=created) { return 18; }
+    {
+        var values=collections.hashMap<i32,Resource>(hash,same);
+        for(var i:i32=0;i<4;i+=1) { values.insert(i,resource(i+10)); }
+        var prior=destroyed;
+        raw.testFailNextAllocation();
+        if(values.insert(4,resource(14))!=stdlib.AllocationError.OutOfMemory) { return 19; }
+        if(values.length()!=4 || destroyed!=prior+1) { return 20; }
+        for(var i:i32=0;i<4;i+=1) {
+            match(values.getRef(&i)) {
+                Some(value)=>{ if((*value).value!=i+10) { return 21; } }
+                None=>return 22;
+            }
+        }
+        if(values.insert(4,resource(14))!=stdlib.AllocationError.None || values.length()!=5) { return 23; }
+    }
+    if(destroyed!=created) { return 24; }
+    if(raw.testOutstandingAllocations()!=0) { return 30; }
+    return 0;
+}

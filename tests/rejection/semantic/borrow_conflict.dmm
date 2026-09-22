@@ -1,10 +1,14 @@
 package main;
-struct Pair { var value:int; }
+
+struct Pair {
+    var value: int;
+}
+
 func main() -> int {
-    var pair:Pair;
-    var first=&mut pair.value;
-    var second=&mut pair.value;
-    *first=1;
-    *second=2;
+    var pair: Pair;
+    var first = &mut pair.value;
+    var second = &mut pair.value;
+    *first = 1;
+    *second = 2;
     return 0;
 }

@@ -1,2 +1,6 @@
 package main;
-func main() -> int { var size=sizeof(void); return 0; }
+
+func main() -> int {
+    var size = sizeof(void);
+    return 0;
+}

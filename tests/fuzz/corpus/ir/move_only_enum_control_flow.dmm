@@ -1,33 +1,71 @@
 package main;
 
-var audit:int;
-@[no_default]
-struct Ticket {var code:int; destructor{audit+=code;}}
-enum Message<T> {Idle, Ready(T), Failed(int)}
-struct Pair<T> {var left:T; var right:T;}
-func ticket(code:int)->Ticket{return Ticket{code:code};}
-func append(digit:int)->void{audit=audit*10+digit;}
-func produce(flag:bit)->Pair<Ticket> {
-    defer append(1);
-    var first=ticket(2);
-    var second=ticket(3);
-    if(!flag){return Pair<Ticket>{left:first,right:second};}
-    var selected=if(flag){first}else{second};
-    var extra=ticket(5);
-    return Pair<Ticket>{left:selected,right:extra};
+var audit: int;
+@[no_default] struct Ticket {
+    var code: int;
+    destructor {
+        audit += code;
+    }
 }
-func run(flag:bit)->int {
+
+enum Message<T> {
+    Idle,
+    Ready(T),
+    Failed(int)
+}
+
+struct Pair<T> {
+    var left: T;
+    var right: T;
+}
+
+func ticket(code: int) -> Ticket {
+    return Ticket{ code: code };
+}
+
+func append(digit: int) -> void {
+    audit = audit * 10 + digit;
+}
+
+func produce(flag: bit) -> Pair<Ticket> {
+    defer append(1);
+    var first = ticket(2);
+    var second = ticket(3);
+    if (!flag) {
+        return Pair<Ticket>{ left: first, right: second };
+    }
+    var selected = if (flag) {
+        first
+    } else {
+        second
+    };
+    var extra = ticket(5);
+    return Pair<Ticket>{ left: selected, right: extra };
+}
+
+func run(flag: bit) -> int {
     defer append(6);
-    var message=if(flag){Message<int>.Ready(8)}else{Message<int>.Failed(4)};
-    match(message){
-        Idle=>return 0;
-        Failed(code)=>return code;
-        Ready(value)=>{
-            var pair=produce(flag);
-            var code=pair.left.code+pair.right.code+value;
-            if(code>0){return code;}
+    var message = if (flag) {
+        Message<int>.Ready(8)
+    } else {
+        Message<int>.Failed(4)
+    };
+    match (message) {
+        Idle => return 0;
+        Failed(code) => return code;
+        Ready(value) => {
+            var pair = produce(flag);
+            var code = pair.left.code + pair.right.code + value;
+            if (code > 0) {
+                return code;
+            }
             return -1;
         }
     }
 }
-func main()->int {var first=run(true); var second=run(false); return first+second+audit;}
+
+func main() -> int {
+    var first = run(true);
+    var second = run(false);
+    return first + second + audit;
+}

@@ -1,17 +1,33 @@
 package main;
 auto interface Stable {}
+
 auto interface Transfer {}
+
 @[Stable] type int;
-@[Transfer where T:Stable]
-struct PointerOwner<T> {var pointer:*T; destructor{free(pointer);}}
-@[Stable where T:Transfer]
-struct Container<T> {var value:T;}
-@[Stable where Cycle:Stable]
-struct Cycle {var scalar:int;}
-func require<T:Stable>(value:T)->int{return 1;}
-func main()->int {
-    var valid=Container<PointerOwner<int>>{value:PointerOwner<int>{pointer:reserve(int)}};
-    var invalid=Container<PointerOwner<*int>>{value:PointerOwner<*int>{pointer:reserve(*int)}};
-    var cycle:Cycle;
-    return require(valid)+require(invalid)+require(cycle);
+@[Transfer where T: Stable] struct PointerOwner<T> {
+    var pointer: *T;
+    destructor {
+        free(pointer);
+    }
+}
+
+@[Stable where T: Transfer] struct Container<T> {
+    var value: T;
+}
+
+@[Stable where Cycle: Stable] struct Cycle {
+    var scalar: int;
+}
+
+func require<T: Stable>(value: T) -> int {
+    return 1;
+}
+
+func main() -> int {
+    var valid = Container<PointerOwner<int>>{ value: PointerOwner<int>{ pointer: reserve(int) } };
+    var invalid = Container<PointerOwner< * int>>{
+        value: PointerOwner< * int>{ pointer: reserve(*int) }
+    };
+    var cycle: Cycle;
+    return require(valid) + require(invalid) + require(cycle);
 }

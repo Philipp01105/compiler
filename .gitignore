@@ -1,8 +1,5 @@
 # CMake and build directories
 /build/
-/build-stage2-*/
-/build-stage4-*/
-/build-shared-*/
 /cmake-build-*/
 /*-build/
 /_codeql_build_dir/
@@ -22,12 +19,6 @@ Makefile
 *.obj
 *.out
 *.s
-
-# Generated test and example output
-/test_output/
-demo.txt
-stream_demo.txt
-test_output.txt
 
 # Editors and operating systems
 /.idea/

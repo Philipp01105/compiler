@@ -1,7 +1,9 @@
 package main;
 import "stdlib";
-func convert(value:stdlib.Result<int,int>) -> stdlib.Option<int> {
-    var output:int=value?;
+
+func convert(value: stdlib.Result<int, int>) -> stdlib.Option<int> {
+    var output: int = value?;
     return stdlib.Option<int>.Some(output);
 }
+
 func main() -> void {}

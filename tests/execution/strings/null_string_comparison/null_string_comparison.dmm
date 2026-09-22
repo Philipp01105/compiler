@@ -1,8 +1,9 @@
 package main;
 import "stdlib";
+
 func main() -> void {
-    var unset:string;
-    var values:string[2];
+    var unset: string;
+    var values: string[2];
 
     stdlib.println(unset == values[1]);
     stdlib.println(unset == "");

@@ -1,0 +1,415 @@
+package network;
+import (
+    "stdlib/native/threading"
+    "stdlib/core/executor"
+);
+
+func admit(op: *Operation) -> void {
+    var request: *Request = (&op.request).(*Request);
+    var error: Error = netError(0);
+    if (!initialize((&error).(*Error))) {
+        completeLocked(op, error);
+        return;
+    }
+    if (!heapInsert(op)) {
+        completeLocked(op, netError(10));
+        return;
+    }
+    if (request.command == 7) {
+        if (request.deadline != NEVER && request.deadline <= __dmm_net_now()) {
+            completeLocked(op, netError(2));
+            return;
+        }
+        if (
+            request.hostname == nullPointer().(*u8) ||
+            (request.address.family != 0 && request.address.family != 4 && request.address.family != 6) ||
+            request.address.port > 65535 ||
+            (request.transport != 1 && request.transport != 2)
+        ) {
+            completeLocked(op, netError(5));
+            return;
+        }
+        if (dnsCount == 64) {
+            completeLocked(op, netError(1));
+            return;
+        }
+        var length: usize = stringLength(request.hostname);
+        op.hostname = allocate(length + 1).(*u8);
+        if (op.hostname == nullPointer().(*u8)) {
+            completeLocked(op, netError(10));
+            return;
+        }
+        copy(op.hostname.(*void), request.hostname.(*void), length + 1);
+        request.hostname = nullPointer().(*u8);
+        op.dnsQueued = 1;
+        op.refs = op.refs + 1;
+        if (dnsTail != nullPointer().(*Operation)) {
+            dnsTail.dnsNext = op;
+        } else {
+            dnsHead = op;
+        }
+        dnsTail = op;
+        dnsCount = dnsCount + 1;
+        if (dnsThread0 == nullPointer()) {
+            dnsThread0 = threading.__dmm_async_thread_create(__dmm_net_dns_entry, nullPointer());
+            dnsThread1 = threading.__dmm_async_thread_create(__dmm_net_dns_entry, nullPointer());
+        }
+        wakeDns();
+        return;
+    }
+    var s: *Socket = request.socket;
+    if (!usable(s, (&error).(*Error), true)) {
+        completeLocked(op, error);
+        return;
+    }
+    var command: u64 = request.command;
+    var reads: bit = command == 1 || command == 2 || command == 3 || command == 5;
+    var writes: bit = command == 1 || command == 4 || command == 6;
+    if (
+        command < 1 ||
+        command > 6 ||
+        (command == 1 && (s.transport != 1 || s.state > 1)) ||
+        (command == 2 && (s.transport != 1 || s.state != 2)) ||
+        ((command == 3 || command == 4) && (s.transport != 1 || s.state != 3)) ||
+        ((command == 5 || command == 6) && s.transport != 2)
+    ) {
+        completeLocked(op, netError(4));
+        return;
+    }
+    if (
+        (reads && s.read != nullPointer().(*Operation)) ||
+        (writes && s.write != nullPointer().(*Operation))
+    ) {
+        completeLocked(op, netError(1));
+        return;
+    }
+    if (reads) {
+        s.read = op;
+    }
+    if (writes) {
+        s.write = op;
+    }
+    if (request.length > 2147483647 || (request.length != 0 && request.buffer == nullPointer())) {
+        completeLocked(op, netError(5));
+        return;
+    }
+    if (command == 1 || command == 6) {
+        var address: NativeAddress;
+        var length: i32;
+        if (
+            !toNative(
+                (&request.address).(*Address),
+                (&address).(*NativeAddress),
+                (&length).(*i32)
+            ) ||
+            request.address.family != s.family
+        ) {
+            completeLocked(op, netError(5));
+            return;
+        }
+    }
+    if (request.deadline != NEVER && request.deadline <= __dmm_net_now()) {
+        completeLocked(op, netError(2));
+        return;
+    }
+    if ((command == 3 || command == 4) && request.length == 0) {
+        completeLocked(op, netError(0));
+    }
+}
+
+pub export "system" func __dmm_net_start(request: *Request) -> *Operation {
+    var op: *Operation = allocate(Operation.size).(*Operation);
+    require(op != nullPointer().(*Operation));
+    op.request = *request;
+    op.refs = 1;
+    op.heapIndex = INVALID;
+    op.io = executor.__dmm_async_io_create(nullPointer(), nullDrop());
+    prepareOperation(op);
+    lockNet();
+    op.next = operations;
+    operations = op;
+    admit(op);
+    wakeReactor();
+    unlockNet();
+    deliver();
+    return op;
+}
+
+pub export "system" func __dmm_net_cancel(op: *Operation) -> void {
+    lockNet();
+    if (op.done == 0) {
+        op.cancel = 1;
+    }
+    wakeReactor();
+    unlockNet();
+}
+
+pub export "system" func __dmm_net_poll(op: *Operation, context: *void) -> i32 {
+    return executor.__dmm_async_io_poll(op.io, context);
+}
+
+pub export "system" func __dmm_net_release(op: *Operation) -> void {
+    if (op == nullPointer().(*Operation)) {
+        return;
+    }
+    lockNet();
+    require(op.done != 0);
+    var previous: *Operation = nullPointer().(*Operation);
+    var current: *Operation = operations;
+    while (current != nullPointer().(*Operation) && current != op) {
+        previous = current;
+        current = current.next;
+    }
+    require(current == op);
+    if (previous == nullPointer().(*Operation)) {
+        operations = op.next;
+    } else {
+        previous.next = op.next;
+    }
+    releaseLocked(op);
+    unlockNet();
+}
+
+pub export "system" func __dmm_net_result(op: *Operation, field: u64) -> u64 {
+    lockNet();
+    require(op.done != 0);
+    var result: u64 = 0;
+    if (field == 0) {
+        result = op.error.kind;
+    }
+    if (field == 1) {
+        result = op.error.domain;
+    }
+    if (field == 2) {
+        result = op.error.code.(u64);
+    }
+    if (field == 3) {
+        result = op.count;
+    }
+    if (field == 4) {
+        result = op.eof.(u64);
+    }
+    if (field == 5) {
+        result = op.truncated.(u64);
+    }
+    if (field == 6) {
+        result = bits(op.accepted.(*void)).(u64);
+        op.accepted = nullPointer().(*Socket);
+    }
+    if (field == 7) {
+        result = bits(op.addresses.(*void)).(u64);
+        op.addresses = nullPointer().(*Addresses);
+    }
+    unlockNet();
+    return result;
+}
+
+pub export "system" func __dmm_net_result_address(op: *Operation, out: *Address) -> void {
+    lockNet();
+    require(op.done != 0);
+    *out = op.peer;
+    unlockNet();
+}
+
+func listValues(list: *Addresses) -> *Address {
+    return pointer(bits(list.(*void)) + Addresses.size).(*Address);
+}
+
+pub export "system" func __dmm_net_addresses_count(list: *Addresses) -> u64 {
+    if (list == nullPointer().(*Addresses)) {
+        return 0;
+    }
+    return list.count.(u64);
+}
+
+pub export "system" func __dmm_net_addresses_get(list: *Addresses, index: u64, out: *Address) -> i32 {
+    if (list == nullPointer().(*Addresses) || index >= list.count.(u64)) {
+        return 0;
+    }
+    var values: *Address = listValues(list);
+    *out = values[index];
+    return 1;
+}
+
+pub export "system" func __dmm_net_addresses_release(list: *Addresses) -> void {
+    release(list.(*void));
+}
+
+func removeQueued(op: *Operation) -> void {
+    var previous: *Operation = nullPointer().(*Operation);
+    var current: *Operation = dnsHead;
+    while (current != nullPointer().(*Operation) && current != op) {
+        previous = current;
+        current = current.dnsNext;
+    }
+    if (current != nullPointer().(*Operation)) {
+        if (previous == nullPointer().(*Operation)) {
+            dnsHead = op.dnsNext;
+        } else {
+            previous.dnsNext = op.dnsNext;
+        }
+        if (dnsTail == op) {
+            dnsTail = previous;
+        }
+        dnsCount = dnsCount - 1;
+        op.dnsQueued = 0;
+        releaseLocked(op);
+    }
+}
+
+pub export "system" func __dmm_net_dns_entry(unused: *void) -> void {
+    while (true) {
+        lockNet();
+        while (dnsHead == nullPointer().(*Operation) && stopDns == 0) {
+            waitDns();
+        }
+        if (dnsHead == nullPointer().(*Operation) && stopDns != 0) {
+            unlockNet();
+            return;
+        }
+        var op: *Operation = dnsHead;
+        dnsHead = op.dnsNext;
+        if (dnsHead == nullPointer().(*Operation)) {
+            dnsTail = nullPointer().(*Operation);
+        }
+        dnsCount = dnsCount - 1;
+        op.dnsQueued = 0;
+        op.dnsActive = 1;
+        unlockNet();
+        var error: Error = netError(0);
+        var list: *Addresses = resolveJob(op, (&error).(*Error));
+        lockNet();
+        op.dnsActive = 0;
+        if (op.done == 0) {
+            op.addresses = list;
+            list = nullPointer().(*Addresses);
+            completeLocked(op, error);
+        }
+        release(list.(*void));
+        releaseLocked(op);
+        unlockNet();
+        deliver();
+    }
+}
+
+pub export "system" func __dmm_net_reactor_entry(unused: *void) -> void {
+    while (true) {
+        lockNet();
+        var now: u64 = __dmm_net_now();
+        while (heapCount != 0 && deadlineHeap[0].request.deadline <= now) {
+            var expired: *Operation = deadlineHeap[0];
+            heapRemove(expired);
+            expired.timeout = 1;
+        }
+        var wait: i32 = -1;
+        if (heapCount != 0) {
+            wait = milliseconds(now, deadlineHeap[0].request.deadline);
+        }
+        var op: *Operation = operations;
+        while (op != nullPointer().(*Operation)) {
+            if (op.done == 0) {
+                if (op.cancel != 0 || op.timeout != 0) {
+                    if (!cancelOs(op)) {
+                        var kind: u64 = 3;
+                        if (op.timeout != 0) {
+                            kind = 2;
+                        }
+                        completeLocked(op, netError(kind));
+                        if (op.dnsQueued != 0) {
+                            removeQueued(op);
+                        }
+                    }
+                } else if (op.request.command != 7) {
+                    step(op);
+                }
+            }
+            op = op.next;
+        }
+        var stop: i32 = stopReactor;
+        unlockNet();
+        deliver();
+        if (stop != 0) {
+            return;
+        }
+        runReactorHook();
+        waitReactor(wait);
+    }
+}
+
+pub export "system" func __dmm_net_future_cancel(frame: *void, context: *void) -> i32 {
+    var f: *NetFuture = frame.(*NetFuture);
+    __dmm_net_cancel(f.operation);
+    var ready: i32 = __dmm_net_poll(f.operation, context);
+    if (ready != 0) {
+        f.state = -1;
+    }
+    return ready;
+}
+
+pub export "system" func __dmm_net_future_poll(frame: *void, context: *void) -> i32 {
+    var f: *NetFuture = frame.(*NetFuture);
+    if (executor.__dmm_async_cancel_requested(context) != 0) {
+        return __dmm_net_future_cancel(frame, context);
+    }
+    var ready: i32 = __dmm_net_poll(f.operation, context);
+    if (ready != 0) {
+        f.state = -1;
+        f.resultPresent = 1;
+    }
+    return ready;
+}
+
+pub export "system" func __dmm_net_future_destroy(frame: *void, dispose: i32) -> void {
+    release(frame);
+}
+
+pub export "system" func __dmm_net_wait(operation: u64) -> *void {
+    var f: *NetFuture = allocate(NetFuture.size).(*NetFuture);
+    require(f != nullPointer().(*NetFuture));
+    f.poll = __dmm_net_future_poll;
+    f.cancelPoll = __dmm_net_future_cancel;
+    f.destroy = __dmm_net_future_destroy;
+    f.operation = pointer(operation.(usize)).(*Operation);
+    return f.(*void);
+}
+
+pub export "system" func __dmm_net_begin_draining() -> void {
+    lockNet();
+    if (runtimeState == 0) {
+        runtimeState = 1;
+    }
+    unlockNet();
+}
+
+pub export "system" func __dmm_net_finish() -> void {
+    __dmm_net_begin_draining();
+    lockNet();
+    stopDns = 1;
+    wakeDns();
+    unlockNet();
+    if (dnsThread0 != nullPointer()) {
+        threading.__dmm_async_thread_join(dnsThread0);
+        dnsThread0 = nullPointer();
+    }
+    if (dnsThread1 != nullPointer()) {
+        threading.__dmm_async_thread_join(dnsThread1);
+        dnsThread1 = nullPointer();
+    }
+    lockNet();
+    require(operations == nullPointer().(*Operation));
+    stopReactor = 1;
+    wakeReactor();
+    unlockNet();
+    if (reactorThread != nullPointer()) {
+        threading.__dmm_async_thread_join(reactorThread);
+        reactorThread = nullPointer();
+    }
+    finishOs();
+    lockNet();
+    release(deadlineHeap.(*void));
+    deadlineHeap = nullPointer().(**Operation);
+    heapCount = 0;
+    heapCapacity = 0;
+    runtimeState = 2;
+    unlockNet();
+}

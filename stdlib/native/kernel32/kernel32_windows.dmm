@@ -1,47 +1,123 @@
 package kernel32;
 extern "system" from "kernel32" {
-    pub union HandleBits { pub var integer:usize; pub var pointer:*void; }
-    pub struct OffsetPair { pub var low:u32; pub var high:u32; }
-    pub union OverlappedOffset { pub var offset:OffsetPair; pub var pointer:*void; }
-    pub struct Overlapped { pub var internal:usize; pub var internalHigh:usize; pub var position:OverlappedOffset; pub var event:*void; }
-    pub struct OverlappedEntry { pub var key:usize; pub var overlapped:*Overlapped; pub var internal:usize; pub var transferred:u32; }
-    pub struct SecurityAttributes { pub var length:u32; pub var descriptor:*void; pub var inherit:i32; }
+    pub union HandleBits {
+        pub var integer: usize;
+        pub var pointer: *void;
+    }
+
+    pub struct OffsetPair {
+        pub var low: u32;
+        pub var high: u32;
+    }
+
+    pub union OverlappedOffset {
+        pub var offset: OffsetPair;
+        pub var pointer: *void;
+    }
+
+    pub struct Overlapped {
+        pub var internal: usize;
+        pub var internalHigh: usize;
+        pub var position: OverlappedOffset;
+        pub var event: *void;
+    }
+
+    pub struct OverlappedEntry {
+        pub var key: usize;
+        pub var overlapped: *Overlapped;
+        pub var internal: usize;
+        pub var transferred: u32;
+    }
+
+    pub struct SecurityAttributes {
+        pub var length: u32;
+        pub var descriptor: *void;
+        pub var inherit: i32;
+    }
+
     pub func GetLastError() -> u32;
-    pub func SetLastError(error:u32) -> void;
+    pub func SetLastError(error: u32) -> void;
     pub func GetCurrentProcessId() -> u32;
-    pub func CloseHandle(handle:*void) -> i32;
-    pub func CreateEventW(attributes:*SecurityAttributes, manualReset:i32, initialState:i32, name:*u16) -> *void;
-    pub func SetEvent(event:*void) -> i32;
-    pub func ResetEvent(event:*void) -> i32;
-    pub func WaitForSingleObject(handle:*void, timeout:u32) -> u32;
-    pub func WaitForMultipleObjects(count:u32, handles:**void, all:i32, timeout:u32) -> u32;
-    pub func GetExitCodeThread(thread:*void, code:*u32) -> i32;
-    pub func ExitProcess(code:u32) -> void;
-    pub func CreateIoCompletionPort(file:*void, existing:*void, key:usize, concurrency:u32) -> *void;
-    pub func GetQueuedCompletionStatus(port:*void, transferred:*u32, key:*usize, overlapped:**Overlapped, timeout:u32) -> i32;
-    pub func GetQueuedCompletionStatusEx(port:*void, entries:*OverlappedEntry, count:u32, removed:*u32, timeout:u32, alertable:i32) -> i32;
-    pub func PostQueuedCompletionStatus(port:*void, transferred:u32, key:usize, overlapped:*Overlapped) -> i32;
-    pub func CancelIoEx(file:*void, overlapped:*Overlapped) -> i32;
-    pub func QueryPerformanceCounter(counter:*i64) -> i32;
-    pub func QueryPerformanceFrequency(frequency:*i64) -> i32;
+    pub func CloseHandle(handle: *void) -> i32;
+    pub func CreateEventW(
+        attributes: *SecurityAttributes,
+        manualReset: i32,
+        initialState: i32,
+        name: *u16
+    ) -> *void;
+    pub func SetEvent(event: *void) -> i32;
+    pub func ResetEvent(event: *void) -> i32;
+    pub func WaitForSingleObject(handle: *void, timeout: u32) -> u32;
+    pub func WaitForMultipleObjects(count: u32, handles: **void, all: i32, timeout: u32) -> u32;
+    pub func GetExitCodeThread(thread: *void, code: *u32) -> i32;
+    pub func ExitProcess(code: u32) -> void;
+    pub func CreateIoCompletionPort(file: *void, existing: *void, key: usize, concurrency: u32) -> *void;
+    pub func GetQueuedCompletionStatus(
+        port: *void,
+        transferred: *u32,
+        key: *usize,
+        overlapped: **Overlapped,
+        timeout: u32
+    ) -> i32;
+    pub func GetQueuedCompletionStatusEx(
+        port: *void,
+        entries: *OverlappedEntry,
+        count: u32,
+        removed: *u32,
+        timeout: u32,
+        alertable: i32
+    ) -> i32;
+    pub func PostQueuedCompletionStatus(
+        port: *void,
+        transferred: u32,
+        key: usize,
+        overlapped: *Overlapped
+    ) -> i32;
+    pub func CancelIoEx(file: *void, overlapped: *Overlapped) -> i32;
+    pub func QueryPerformanceCounter(counter: *i64) -> i32;
+    pub func QueryPerformanceFrequency(frequency: *i64) -> i32;
     pub func GetTickCount64() -> u64;
 }
+
 // Explicit representation conversion for uintptr_t handles and Win32 sentinels.
-pub func handleFromBits(bits:usize) -> *void { var value:HandleBits; value.integer=bits; return value.pointer; }
-pub func invalidHandle() -> *void { return handleFromBits(18446744073709551615.(usize)); }
-pub const INFINITE:u32=4294967295;
-pub const WAIT_OBJECT_0:u32=0;
-pub const WAIT_TIMEOUT:u32=258;
-pub const WAIT_FAILED:u32=4294967295;
-pub const ERROR_IO_PENDING:u32=997;
-pub const ERROR_OPERATION_ABORTED:u32=995;
-pub const ERROR_NOT_FOUND:u32=1168;
-pub const ERROR_CONNECTION_REFUSED:u32=1225;
-pub const ERROR_NETNAME_DELETED:u32=64;
-pub const ERROR_CONNECTION_ABORTED:u32=1236;
-pub const ERROR_NETWORK_UNREACHABLE:u32=1231;
-pub const ERROR_HOST_UNREACHABLE:u32=1232;
-pub const ERROR_NOT_ENOUGH_MEMORY:u32=8;
-pub const ERROR_OUTOFMEMORY:u32=14;
-pub const ERROR_INVALID_PARAMETER:u32=87;
-pub const ERROR_SEM_TIMEOUT:u32=121;
+pub func handleFromBits(bits: usize) -> *void {
+    var value: HandleBits;
+    value.integer = bits;
+    return value.pointer;
+}
+
+pub func invalidHandle() -> *void {
+    return handleFromBits(18446744073709551615.(usize));
+}
+
+pub const INFINITE: u32 = 4294967295;
+
+pub const WAIT_OBJECT_0: u32 = 0;
+
+pub const WAIT_TIMEOUT: u32 = 258;
+
+pub const WAIT_FAILED: u32 = 4294967295;
+
+pub const ERROR_IO_PENDING: u32 = 997;
+
+pub const ERROR_OPERATION_ABORTED: u32 = 995;
+
+pub const ERROR_NOT_FOUND: u32 = 1168;
+
+pub const ERROR_CONNECTION_REFUSED: u32 = 1225;
+
+pub const ERROR_NETNAME_DELETED: u32 = 64;
+
+pub const ERROR_CONNECTION_ABORTED: u32 = 1236;
+
+pub const ERROR_NETWORK_UNREACHABLE: u32 = 1231;
+
+pub const ERROR_HOST_UNREACHABLE: u32 = 1232;
+
+pub const ERROR_NOT_ENOUGH_MEMORY: u32 = 8;
+
+pub const ERROR_OUTOFMEMORY: u32 = 14;
+
+pub const ERROR_INVALID_PARAMETER: u32 = 87;
+
+pub const ERROR_SEM_TIMEOUT: u32 = 121;

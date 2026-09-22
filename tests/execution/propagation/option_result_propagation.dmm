@@ -1,66 +1,94 @@
 package main;
 import "stdlib";
 
-enum IOError { Read, }
+enum IOError {
+    Read,
+}
+
 enum AppError {
     Io,
     ;
-    static func fromResidual(error:IOError) -> Self { return AppError.Io; }
+    static func fromResidual(error: IOError) -> Self {
+        return AppError.Io;
+    }
 }
 
 enum Validation {
     Valid(int),
     Invalid(int),
     ;
-    static func branch(value:Self) -> stdlib.Propagation<int,int> {
+    static func branch(value: Self) -> stdlib.Propagation<int, int> {
         match (value) {
-            Valid(output) => return stdlib.Propagation<int,int>.Continue(output);
-            Invalid(residual) => return stdlib.Propagation<int,int>.Break(residual);
+            Valid(output) => return stdlib.Propagation<int, int>.Continue(output);
+            Invalid(residual) => return stdlib.Propagation<int, int>.Break(residual);
         }
     }
-    static func fromResidual(residual:int) -> Self {
+
+    static func fromResidual(residual: int) -> Self {
         return Validation.Invalid(residual);
     }
 }
 
-func optionStep(value:stdlib.Option<int>) -> stdlib.Option<int> {
-    return stdlib.Option<int>.Some(value?+1);
+func optionStep(value: stdlib.Option<int>) -> stdlib.Option<int> {
+    return stdlib.Option<int>.Some(value? + 1);
 }
 
-func resultStep(value:stdlib.Result<int,int>) -> stdlib.Result<int,int> {
-    return stdlib.Result<int,int>.Ok(value?*2);
+func resultStep(value: stdlib.Result<int, int>) -> stdlib.Result<int, int> {
+    return stdlib.Result<int, int>.Ok(value? * 2);
 }
 
-func convertedResult(value:stdlib.Result<int,IOError>) -> stdlib.Result<int,AppError> {
-    var number:int = value?;
-    return stdlib.Result<int,AppError>.Ok(number);
+func convertedResult(value: stdlib.Result<int, IOError>) -> stdlib.Result<int, AppError> {
+    var number: int = value?;
+    return stdlib.Result<int, AppError>.Ok(number);
 }
 
-func validationStep(value:Validation) -> Validation {
-    return Validation.Valid(value?+3);
+func validationStep(value: Validation) -> Validation {
+    return Validation.Valid(value? + 3);
 }
 
-func contractScore<P:stdlib.Propagate<int,int>>(value:P) -> int {
+func contractScore<P: stdlib.Propagate<int, int>>(value: P) -> int {
     return 31;
 }
 
 func main() -> void {
-    var optionOk:stdlib.Option<int> = optionStep(stdlib.Option<int>.Some(20));
-    match (optionOk) { Some(value) => stdlib.println(value); None => stdlib.println(0); }
-    var optionNone:stdlib.Option<int> = optionStep(stdlib.Option<int>.None);
-    match (optionNone) { Some(value) => stdlib.println(value); None => stdlib.println(7); }
-    var resultOk:stdlib.Result<int,int> = resultStep(stdlib.Result<int,int>.Ok(6));
-    match (resultOk) { Ok(value) => stdlib.println(value); Err(error) => stdlib.println(error); }
-    var resultError:stdlib.Result<int,int> = resultStep(stdlib.Result<int,int>.Err(9));
-    match (resultError) { Ok(value) => stdlib.println(value); Err(error) => stdlib.println(error); }
-    var converted:stdlib.Result<int,AppError> = convertedResult(stdlib.Result<int,IOError>.Err(IOError.Read));
+    var optionOk: stdlib.Option<int> = optionStep(stdlib.Option<int>.Some(20));
+    match (optionOk) {
+        Some(value) => stdlib.println(value);
+        None => stdlib.println(0);
+    }
+    var optionNone: stdlib.Option<int> = optionStep(stdlib.Option<int>.None);
+    match (optionNone) {
+        Some(value) => stdlib.println(value);
+        None => stdlib.println(7);
+    }
+    var resultOk: stdlib.Result<int, int> = resultStep(stdlib.Result<int, int>.Ok(6));
+    match (resultOk) {
+        Ok(value) => stdlib.println(value);
+        Err(error) => stdlib.println(error);
+    }
+    var resultError: stdlib.Result<int, int> = resultStep(stdlib.Result<int, int>.Err(9));
+    match (resultError) {
+        Ok(value) => stdlib.println(value);
+        Err(error) => stdlib.println(error);
+    }
+    var converted: stdlib.Result<int, AppError> = convertedResult(
+        stdlib.Result<int, IOError>.Err(IOError.Read)
+    );
     match (converted) {
         Ok(value) => stdlib.println(value);
-        Err(error) => match (error) { Io => stdlib.println(17); }
+        Err(error) => match (error) {
+            Io => stdlib.println(17);
+        }
     }
-    var custom:Validation = validationStep(Validation.Valid(4));
-    match (custom) { Valid(value) => stdlib.println(value); Invalid(error) => stdlib.println(error); }
-    custom=validationStep(Validation.Invalid(23));
-    match (custom) { Valid(value) => stdlib.println(value); Invalid(error) => stdlib.println(error); }
+    var custom: Validation = validationStep(Validation.Valid(4));
+    match (custom) {
+        Valid(value) => stdlib.println(value);
+        Invalid(error) => stdlib.println(error);
+    }
+    custom = validationStep(Validation.Invalid(23));
+    match (custom) {
+        Valid(value) => stdlib.println(value);
+        Invalid(error) => stdlib.println(error);
+    }
     stdlib.println(contractScore<Validation>(Validation.Valid(1)));
 }

@@ -1,11 +1,40 @@
 package core;
-import "stdlib/core/raw";
-pub func core_alloc(bytes:usize) -> *u8 { return raw.core_alloc(bytes); }
-pub func core_release(data:*u8) -> void { raw.core_release(data); }
-pub func core_null() -> *u8 { return raw.core_null(); }
-pub func core_offset(data:*u8,offset:isize) -> *u8 { return raw.core_offset(data,offset); }
-pub func core_copy(destination:*u8,source:*u8,bytes:usize) -> void { raw.core_copy(destination,source,bytes); }
-pub func core_fill(destination:*u8,value:u8,bytes:usize) -> void { raw.core_fill(destination,value,bytes); }
-pub func core_load(data:*u8,offset:usize) -> u8 { return raw.core_load(data,offset); }
-pub func core_store(data:*u8,offset:usize,value:u8) -> void { raw.core_store(data,offset,value); }
-pub func core_string_data(text:string) -> *u8 { return raw.core_string_data(text); }
+import (
+    "stdlib/core/raw"
+);
+
+pub func core_alloc(bytes: usize) -> *u8 {
+    return raw.core_alloc(bytes);
+}
+
+pub func core_release(data: *u8) -> void {
+    raw.core_release(data);
+}
+
+pub func core_null() -> *u8 {
+    return raw.core_null();
+}
+
+pub func core_offset(data: *u8, offset: isize) -> *u8 {
+    return raw.core_offset(data, offset);
+}
+
+pub func core_copy(destination: *u8, source: *u8, bytes: usize) -> void {
+    raw.core_copy(destination, source, bytes);
+}
+
+pub func core_fill(destination: *u8, value: u8, bytes: usize) -> void {
+    raw.core_fill(destination, value, bytes);
+}
+
+pub func core_load(data: *u8, offset: usize) -> u8 {
+    return raw.core_load(data, offset);
+}
+
+pub func core_store(data: *u8, offset: usize, value: u8) -> void {
+    raw.core_store(data, offset, value);
+}
+
+pub func core_string_data(text: string) -> *u8 {
+    return raw.core_string_data(text);
+}

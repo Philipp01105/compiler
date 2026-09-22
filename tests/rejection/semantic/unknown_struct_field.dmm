@@ -1,4 +1,11 @@
 package main;
 import "stdlib";
-struct Point { var x:int; }
-func main() -> void { var p:Point; stdlib.println(p.y); }
+
+struct Point {
+    var x: int;
+}
+
+func main() -> void {
+    var p: Point;
+    stdlib.println(p.y);
+}

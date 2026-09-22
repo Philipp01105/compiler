@@ -98,11 +98,11 @@ in [LANGUAGE_SPEC.md](LANGUAGE_SPEC.md).
   import/base-relocation tables.
 - `src/runtime/native_runtime.c` supplies executable startup and native runtime shims; system imports have private names
   to prevent source-symbol collisions. See [ARCHITECTURE.md](ARCHITECTURE.md#native-x86-64-backend) for image layout and limits.
-- `src/runtime/native_executor.inc` emits scheduling and Future adapters; `native_threads.inc` emits standalone
-  threads/events. `executor.c` is the independently tested C contract implementation. `src/runtime/platform/*.dmm`
-  supplies pthread/UCRT64 threads, events and exit through native exports; `network_shim.c` adds epoll/IOCP and bounded DNS.
-  The compiler emits the platform `main` bridge. Runtime objects are built by the completed compiler in the
-  `--runtime-component` bootstrap mode and then installed beside it.
+- `stdlib/core/executor/*.dmm` implements scheduling and Future adapters. `stdlib/native/threading/*.dmm`
+  supplies pthread/UCRT64 threads, events and exit through native exports. `stdlib/core/net/internal`
+  provides epoll/IOCP and bounded DNS. These normal stdlib packages are compiled with the application.
+  The compiler emits the platform `main` bridge. C schedulers and native thread/event generators under
+  `tests/fixtures` remain independent references for native ABI tests; they are excluded from production.
 - `src/diagnostics` buffers and renders text or JSON diagnostics from every phase.
 - `src/driver` owns CLI validation and phase lifetime. `external_link.c` selects a matching GCC-compatible driver,
   the required private runtime shim and OS link dependencies, then checks external-link success.
@@ -266,7 +266,7 @@ declaration names and signatures.
 fixed-format output, input and platform I/O. Executable packages embed these routines in assembly, objects and internal
 executable images. Library objects have no executable startup requirement. Linux uses syscalls and static ELF startup;
 Windows uses kernel32 APIs and its own file-descriptor table. The old C runtime archive has been removed.
-Runtime requirements, runtime profile and link strategy are separate decisions. Used network intrinsics set `NETWORK`
+Runtime requirements, runtime profile and link strategy are separate decisions. Used `dmm_network` FFI imports set `NETWORK`
 and imply `PLATFORM_RUNTIME`; executable output then uses an external driver and the combined network shim. An unused
 network import does not select that profile. `--link=external` can also select the smaller platform shim without
 networking. Object/assembly output selects the same ABI without starting a linker. See
@@ -341,7 +341,7 @@ support OS stack inspection; foreign exception propagation remains unsupported.
 Raw bindings in `stdlib/native` describe libc/pthreads, Kernel32, UCRT and Winsock,
 including epoll's packed event, OVERLAPPED unions and resolver structures. Target
 source suffixes are selected before package parsing using the output target.
-The platform runtime is implemented in DMM; the network implementation remains in C until migration stage 5.
+Platform, executor and network runtimes are DMM source packages compiled with the application.
 
 Used native imports select the platform profile and external linking in `auto` mode.
 The driver collects imports from the selected emitted functions, deduplicates logical
@@ -355,7 +355,7 @@ For example:
 ```sh
 compiler program.dmm --native-library sample=/path/libsample.a -o program
 compiler -c program.dmm --dump-native-link program.link -o program.o
-gcc -no-pie -pthread program.o /path/dmm-runtime/elf/platform-shim.o -lsample -o program
+gcc -no-pie -pthread program.o -lsample -o program
 ```
 
 The compiler emits machine code directly from verified IR and structured x86-64 instructions. Native compilation invokes
@@ -366,8 +366,9 @@ require no libc, Windows CRT or foreign language runtime. The compiler itself re
 
 `--link=auto|internal|external` selects the link strategy (default `auto`). Runtime requirements are separate from
 link strategy: required IR operations determine a `standalone` or `platform` profile, and the driver resolves a
-supported linker for that profile. Used network IR requires `NETWORK`, which implies `PLATFORM_RUNTIME`; neither an
-unused import nor the `async` manifest feature requires a platform runtime. The networking ABI, combined shim and
+supported linker for that profile. Emitted async bodies and executor operations require `EXECUTOR`; used network
+FFI imports require `NETWORK`, which implies `EXECUTOR` and `PLATFORM_RUNTIME`; neither an
+unused import nor the `async` manifest feature requires a platform runtime. The networking ABI, source provider and
 typed Core API are specified in [stdlib/core/net/README.md](stdlib/core/net/README.md).
 
 Explicit `--link=external` requests `PLATFORM_RUNTIME`. `auto` selects the
@@ -383,8 +384,9 @@ compiler --link=external --emit=asm --syntax=att program.dmm -o program.s
 ```
 
 Platform executables use the platform's C startup and documented platform libraries. Standalone startup, native
-runtime and internal linking are unchanged. Platform output still embeds the generated DMM memory/I/O runtime and
-scheduler, but leaves private thread/event operations to a separately compiled DMM component. It defines
+runtime and internal linking remain available for programs without async or FFI. Platform output still embeds the
+generated DMM memory/I/O and atomic primitives; scheduling, Future adapters and private thread/event operations
+come from separately compiled DMM stdlib components. It defines
 `int __dmm_runtime_main(void)` instead of `__dmm_entry`; DMM `main` is privately named `__dmm_program_main`.
 The compiler also emits the native `main` bridge to `__dmm_runtime_main()`; no custom C entry is linked.
 
@@ -397,43 +399,40 @@ The DMM platform component has no package-cleanup or scheduler-lifecycle knowled
 `src/runtime/platform_shim.h` and `ARCHITECTURE.md`.
 
 The external executable path defaults to `gcc` from PATH. `--linker-driver PATH` selects a GCC-compatible driver;
-`--runtime-shim PATH` selects a matching private runtime object or archive. CMake first builds the compiler, then
-uses it to build `src/runtime/platform/*.dmm` and installs the object next to the
-compiler as `dmm-runtime/elf/platform-shim.o` or `dmm-runtime/coff/platform-shim.o`. Discovery uses the running
-compiler's directory, including when the compiler was found through PATH. Linux GCC/Clang and Windows MinGW-w64
-UCRT64 GCC/Clang are supported; MSVC and MSVCRT shims are not supported. Cross-linking requires both overrides and
-a matching target toolchain. The override is a private ABI implementation, not a public arbitrary-object or FFI API.
-Network requirements instead select the complete `network-shim.a` in the same directory, add Windows `ws2_32`,
-and insert DRAINING before package cleanup and network shutdown afterward. Pure platform programs retain the smaller
-component and no networking dependency. The network archive contains the DMM platform object and the remaining
-network C object; GCC and Clang can link it without a relocatable COFF linker. Archive overrides are checked for
-the correct machine and object format in every object member.
+The compiler loads `stdlib/system` as a source provider for applications. It imports the executor and platform
+packages; network API calls import their DMM implementation directly. Package calls share the same runtime globals.
+Generated frame/startup ABI entries are retained according to emitted requirements and compiled into the program's
+object. There is no installed runtime bundle lookup or required bootstrap build. Installed compilers use
+`share/dmm/stdlib`; development executables fall back to their configured checkout. OS libraries remain native FFI.
+`--runtime-shim PATH` is an optional additional native object/archive, validated for target format and machine.
+Cross-linking requires a matching explicit GCC-compatible driver. Linux GCC/Clang and Windows MinGW-w64 UCRT64
+GCC/Clang are supported. Network startup inserts DRAINING before package cleanup and shuts down afterward.
 
 `--runtime-component` defaults to object emission and also accepts `-S`. It requires a library package and
 rejects executable emission, link-mode/driver/runtime overrides, runtime global initializers, owned global cleanup,
 reachable async/drop bodies and implicit runtime-helper dependencies. Its only exported symbols are the fixed
-private platform entries plus `__dmm_platform_thread_entry`; ordinary helpers and imported DMM functions remain
+private platform, executor and networking entries and native callback entries; ordinary helpers and imported DMM functions remain
 local. Native imports (including explicitly declared base helpers, if needed) remain unresolved and are recorded
 by `--dump-native-link`. The compiler never attaches application startup, scheduler or platform/network objects
 to a component. Windows compiler stack probes remain a driver-provided dependency.
 
-Build the default CMake target (or `dmm_platform_runtime` / `dmm_network_runtime`) before installation. Runtime
-objects depend on the compiler and DMM binding sources, preventing a bootstrap cycle and rebuilding after changes.
+Production installation contains the compiler and stdlib source packages. Optional CMake component targets exist
+for independent native ABI tests; they are neither required by applications nor installed.
 
 Manual linking of platform output uses regular C startup, **without** standalone entry flags or `-nostdlib`:
 
 ```sh
 # Linux; substitute program.s for program.o to link assembly output.
-gcc -no-pie -pthread program.o /path/to/dmm-runtime/elf/platform-shim.o -o program
+gcc -no-pie -pthread program.o -o program
 # Windows UCRT64; substitute program.s for program.obj for assembly output.
-gcc program.obj C:/path/to/dmm-runtime/coff/platform-shim.o -lkernel32 -Wl,--subsystem,console -o program.exe
+gcc program.obj -lkernel32 -Wl,--subsystem,console -o program.exe
 ```
 
 Linux platform output is non-PIE, consistent with the native object's absolute data relocations. The driver invokes
 the external tool with individual arguments and no shell, captures stdout/stderr and status in text/JSON diagnostics,
 and publishes a temporary linked image only after success. A failed link preserves an existing requested output.
 Only platform programs gain libc/UCRT and the required OS dependencies; network libraries are deferred until network
-operations exist. Reproducible external linking is scoped to a fixed toolchain, shim and linker configuration.
+operations exist. Reproducible external linking is scoped to a fixed toolchain and linker configuration.
 
 ```sh
 compiler --emit=exe --target=elf program.dmm -o program
@@ -527,8 +526,8 @@ and [Intel instruction manuals](https://www.intel.com/content/www/us/en/develope
 
 ### Private platform ABI v1
 
-The optional platform profile keeps the emitted scheduler but implements thread/event primitives in
-`platform/*.dmm`. The compatibility declarations in `platform_shim.h` use the x86-64 System V or Microsoft x64 C ABI. Thread
+The platform profile compiles the scheduler from `stdlib/core/executor` and thread/event functions from
+`stdlib/native/threading`. The compatibility declarations in `platform_shim.h` use the x86-64 System V or Microsoft x64 C ABI. Thread
 creation takes `void (*callback)(void *)` and its argument and returns a non-null opaque handle. The callback returns
 normally. Join waits for confirmed thread termination, then consumes the handle. Allocations never cross runtime
 ownership boundaries. Resource/API failures are fatal, with no recoverable partial startup contract.
@@ -547,16 +546,15 @@ Regular platform C startup calls the compiler-generated `main`, which forwards t
 The generated object owns package init, DMM main, default-executor drain, package cleanup and the preserved return status.
 Immediate process exit and traps do not run this normal cleanup path. `__dmm_platform_exit` terminates the whole
 process from any thread. This private ABI is not a source-language foreign-function interface.
-With NETWORK, `network-shim.a` combines the remaining network C implementation and the DMM platform object,
-and supplies reactor/DNS operations through the generated I/O acknowledgement ABI.
+With NETWORK, source packages provide reactor/DNS operations and call the DMM executor acknowledgement functions directly.
 Networking remains RUNNING throughout executor Drain; it enters DRAINING immediately before package cleanup and
 shuts down after cleanup. The core ownership contract and platform implementations are in
 [stdlib/core/net/README.md](stdlib/core/net/README.md).
 
-`executor.h` defines the internal C scheduler contract used by
-`executor_runtime_unit`. The standalone backends emit the equivalent scheduler
-in `native_executor.inc` and platform primitives in `native_threads.inc`.
-The C contract implementation is not linked into standalone DMM executables.
+`executor.h` defines the independent C scheduler test contract used by
+`executor_runtime_unit`. Production scheduling is implemented in `stdlib/core/executor`;
+compiler-generated frames retain their private native ABI. The former emitted scheduler and C scheduler
+live under `tests/fixtures` and are excluded from production builds and the installed stdlib.
 The frontend enforces the public API and ownership; IR and native callbacks
 implement cancellation and active-scope cleanup. See [LANGUAGE_SPEC.md](LANGUAGE_SPEC.md) for
 the source contract.
@@ -654,7 +652,7 @@ cancellation and shutdown with delayed confirmation and open joins.
 `async_runtime_contract` exercises generated cancellation before first poll,
 Pending cancellation, awaitable defer cleanup, result disposal and asynchronous
 child-result disposal. `async_executor_contract` compiles the public API to
-standalone ELF and COFF at O0/O1 and executes the host format.
+ELF and COFF at O0/O1 and executes the host format through platform linking.
 `async_semantic_unit` checks ownership, concrete Send eligibility, loans and
 negative cancellation verifier transitions. `native_binary_unit` verifies
 both ELF and COFF encoding/linking.
@@ -684,8 +682,7 @@ function selection, then lists native imports with logical library IDs and nativ
 symbol names. Explicit overrides add their file path; requested search directories
 are listed separately. Unused imports are absent. Quoted values escape quotes,
 backslashes and newlines. This inventory accompanies object/assembly output without
-starting a linker. Platform output still requires the matching installed runtime
-component and regular C startup, as described in [ARCHITECTURE.md](ARCHITECTURE.md#native-x86-64-backend).
+starting a linker. Platform output includes its selected DMM runtime functions and requires regular C startup plus its native OS libraries, as described in [ARCHITECTURE.md](ARCHITECTURE.md#native-x86-64-backend).
 Version 2 adds `runtime-profile=component` for `--runtime-component`: these objects
 have no application startup or automatic runtime dependencies. Other profile values
 remain `standalone` and `platform`. Global native function-pointer initializers also

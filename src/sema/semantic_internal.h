@@ -45,7 +45,10 @@ typedef struct {
     int async_graph_analysis;
     int in_defer_closure;
     const AstExpression *assignment_target;
+    AstDeclarationNode *closure_probe;
 } Analyzer;
+
+void semantic_reindex_symbols(SemanticModel *model);
 
 typedef struct {
     char *text;
@@ -94,13 +97,17 @@ int contains_type_parameter(const AstProgram *unit, const AstType *type,
 int function_dominates(const Analyzer *analyzer, const SemanticSymbol *left,
                        const SemanticSymbol *right, const AstExpression *arguments);
 int known_declared_type(const Analyzer *analyzer, const AstType *type);
+int valid_lifetime_type(const Analyzer *analyzer, const AstType *type,
+                         const AstDeclarationNode *scope);
 void validate_array_shape(Analyzer *analyzer, AstType *type);
 const SemanticSymbol *explicit_generic_function(Analyzer *analyzer, const char *name,
                                                  AstExpression *call);
 size_t concrete_token(Analyzer *analyzer, TokenType kind, const char *text);
 AstType inferred_argument_type(Analyzer *analyzer, const AstExpression *value);
+AstType callable_type(Analyzer *analyzer, const SemanticSymbol *function, int include_receiver);
 void normalize_generic_type(Analyzer *analyzer, AstType *type, unsigned depth);
 void normalize_statement_types(Analyzer *analyzer, AstStatement *statement);
+void normalize_expression_types(Analyzer *analyzer, AstExpression *expression);
 void analyze_control_expression(Analyzer *analyzer, AstExpression *expression);
 void set_expression_declared_type(Analyzer *analyzer, AstExpression *expression,
                                   const AstProgram *program, const AstType *type);
@@ -146,6 +153,7 @@ DataType promoted_numeric(DataType left, DataType right);
 DataType builtin_result_type(const char *name);
 int is_builtin_name(const char *name);
 void validate_overload_sets(Analyzer *analyzer);
+void validate_package_reexports(Analyzer *analyzer);
 int expression_assignment_allowed(const Analyzer *analyzer, const AstExpression *source,
                                   const AstExpression *target);
 int plain_numeric_expression(const AstExpression *expression);
@@ -153,6 +161,9 @@ int pointer_expression(const AstExpression *expression);
 int semantic_type_is_move_only(const Analyzer *analyzer, size_t type_symbol_id);
 int semantic_type_needs_drop(const Analyzer *analyzer, size_t type_symbol_id);
 void derive_type_properties(Analyzer *analyzer);
+int semantic_method_constraints_satisfied(const Analyzer *analyzer,
+                                           const AstProgram *unit,
+                                           const AstDeclarationNode *method);
 int semantic_async_enabled(const Analyzer *analyzer);
 int semantic_expression_is_future(const AstExpression *expression);
 unsigned semantic_declared_type_properties(const Analyzer *analyzer,
@@ -162,6 +173,7 @@ int semantic_expression_is_move_only(const Analyzer *analyzer,
                                      const AstExpression *expression);
 void validate_function_borrows(Analyzer *analyzer,
                                const AstDeclarationNode *function);
+void validate_package_borrows(Analyzer *analyzer);
 void validate_function_ownership(Analyzer *analyzer,
                                  const AstDeclarationNode *function);
 int enum_constant_expression(const Analyzer *analyzer, const AstExpression *expression);
@@ -179,5 +191,10 @@ const DmmPackage *lookup_package(const AstProgram *file, const char **name);
 const SemanticSymbol *scoped_find_global(const SemanticModel *model, const AstProgram *file,
                                          const char *name, SemanticSymbolKind kind);
 int semantic_append_symbol(SemanticModel *model, SemanticSymbol symbol);
+
+const SemanticSymbol *semantic_closure_method(const Analyzer *analyzer, const AstExpression *expression);
+AstType semantic_closure_signature(Analyzer *analyzer, const AstExpression *expression);
+void analyze_closure_function(Analyzer *analyzer, AstDeclarationNode *function);
+int semantic_function_mutates_receiver(const Analyzer *analyzer, size_t function_id);
 
 #endif

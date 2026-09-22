@@ -1,73 +1,119 @@
 package stdio;
-import core "stdlib/core/raw";
+import (
+    core "stdlib/core/raw"
+);
 
 // Owned byte collection. view() is borrowed; release() also releases partial results.
 // Do not copy this owner or release a view returned by view().
 pub struct Bytes {
-    var storage:u8[];
-    pub var length:usize;
-    pub var status:Status;
-    pub var error:isize;
-    pub func view() -> u8[] { return slice(storage.data,length); }
+    var storage: u8[];
+    pub var length: usize;
+    pub var status: Status;
+    pub var error: isize;
+    pub func view() -> u8[] {
+        return slice(storage.data, length);
+    }
+
     pub func release() -> void {
         core.release(storage);
-        storage=slice(core.null<u8>(),0);
-        length=0;
+        storage = slice(core.null<u8>(), 0);
+        length = 0;
     }
 }
-func append(bytes:&mut Bytes, value:u8) -> bit {
+
+func append(bytes: &mut Bytes, value: u8) -> bit {
     if (bytes.length == bytes.storage.length) {
-        var capacity:usize=64;
+        var capacity: usize = 64;
         if (bytes.storage.length > 0) {
-            if (bytes.storage.length > 4611686018427387903.(usize)) { bytes.status=Status.OutOfMemory; return false; }
-            capacity=bytes.storage.length*2;
+            if (bytes.storage.length > 4611686018427387903.(usize)) {
+                bytes.status = Status.OutOfMemory;
+                return false;
+            }
+            capacity = bytes.storage.length * 2;
         }
-        var grown:u8[]=core.alloc<u8>(capacity);
-        if (grown.length == 0) { bytes.status=Status.OutOfMemory; return false; }
-        core.core_copy(grown.data,bytes.storage.data,bytes.length);
-        core.release(bytes.storage); bytes.storage=grown;
+        var grown: u8[] = core.alloc<u8>(capacity);
+        if (grown.length == 0) {
+            bytes.status = Status.OutOfMemory;
+            return false;
+        }
+        core.core_copy(grown.data, bytes.storage.data, bytes.length);
+        core.release(bytes.storage);
+        bytes.storage = grown;
     }
-    bytes.storage[bytes.length]=value; bytes.length+=1; return true;
+    bytes.storage[bytes.length] = value;
+    bytes.length += 1;
+    return true;
 }
 
 // Returns at most maximum bytes. LimitReached preserves partial data and consumes
 // no bytes beyond that limit. EndOfStream is only reported after an actual EOF read.
-pub func readToEnd(source:*Stream, maximum:usize) -> Bytes {
-    var bytes:Bytes;
-    if (source == core.null<Stream>()) { bytes.status=Status.InvalidInput; return bytes; }
+pub func readToEnd(source: *Stream, maximum: usize) -> Bytes {
+    var bytes: Bytes;
+    if (source == core.null<Stream>()) {
+        bytes.status = Status.InvalidInput;
+        return bytes;
+    }
     while (bytes.length < maximum) {
         if (bytes.length == bytes.storage.length) {
-            var capacity:usize=4096;
+            var capacity: usize = 4096;
             if (bytes.storage.length > 0) {
-                if (bytes.storage.length > 4611686018427387903.(usize)) { bytes.status=Status.OutOfMemory; return bytes; }
-                capacity=bytes.storage.length*2;
+                if (bytes.storage.length > 4611686018427387903.(usize)) {
+                    bytes.status = Status.OutOfMemory;
+                    return bytes;
+                }
+                capacity = bytes.storage.length * 2;
             }
-            if (capacity > maximum) { capacity=maximum; }
-            var grown:u8[]=core.alloc<u8>(capacity);
-            if (grown.length == 0) { bytes.status=Status.OutOfMemory; return bytes; }
-            core.core_copy(grown.data,bytes.storage.data,bytes.length);
-            core.release(bytes.storage); bytes.storage=grown;
+            if (capacity > maximum) {
+                capacity = maximum;
+            }
+            var grown: u8[] = core.alloc<u8>(capacity);
+            if (grown.length == 0) {
+                bytes.status = Status.OutOfMemory;
+                return bytes;
+            }
+            core.core_copy(grown.data, bytes.storage.data, bytes.length);
+            core.release(bytes.storage);
+            bytes.storage = grown;
         }
-        var result:Transfer=source.read(subview(bytes.storage,bytes.length,bytes.storage.length-bytes.length));
-        bytes.length+=result.count;
-        if (!result.ok()) { bytes.status=result.status; bytes.error=result.error; return bytes; }
+        var result: Transfer = source.read(
+            subview(bytes.storage, bytes.length, bytes.storage.length - bytes.length)
+        );
+        bytes.length += result.count;
+        if (!result.ok()) {
+            bytes.status = result.status;
+            bytes.error = result.error;
+            return bytes;
+        }
     }
-    bytes.status=Status.LimitReached; return bytes;
+    bytes.status = Status.LimitReached;
+    return bytes;
 }
 
 // Unbuffered line reader. LF is consumed and omitted; CR immediately before LF
 // is omitted too. An EOF-terminated final line retains EndOfStream and its bytes.
-pub func readLine(source:*Stream, maximum:usize) -> Bytes {
-    var bytes:Bytes;
-    if (source == core.null<Stream>()) { bytes.status=Status.InvalidInput; return bytes; }
+pub func readLine(source: *Stream, maximum: usize) -> Bytes {
+    var bytes: Bytes;
+    if (source == core.null<Stream>()) {
+        bytes.status = Status.InvalidInput;
+        return bytes;
+    }
     while (bytes.length < maximum) {
-        var result:ByteResult=source.readByte();
-        if (result.status != Status.Ok) { bytes.status=result.status; bytes.error=result.error; return bytes; }
-        if (result.value == 10) {
-            if (bytes.length > 0 && bytes.storage[bytes.length-1] == 13) { bytes.length-=1; }
+        var result: ByteResult = source.readByte();
+        if (result.status != Status.Ok) {
+            bytes.status = result.status;
+            bytes.error = result.error;
             return bytes;
         }
-        if (!append(&mut bytes,result.value)) { return bytes; }
+        if (result.value == 10) {
+            if (bytes.length > 0 && bytes.storage[bytes.length - 1] == 13) {
+                bytes.length -= 1;
+            }
+            return bytes;
+        }
+        if (!append(&mut bytes, result.value)) {
+            return bytes;
+        }
     }
-    bytes.status=Status.LimitReached; return bytes;
+    bytes.status = Status.LimitReached;
+    return bytes;
 }

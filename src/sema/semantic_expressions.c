@@ -110,7 +110,7 @@ static AstType future_of_type(Analyzer *analyzer, const AstProgram *program, con
     return future;
 }
 
-static AstType callable_type(Analyzer *analyzer, const SemanticSymbol *function,
+AstType callable_type(Analyzer *analyzer, const SemanticSymbol *function,
                              int include_receiver) {
     AstType type = {0};
     type.kind = AST_TYPE_FUNCTION;
@@ -316,9 +316,10 @@ static size_t specialize_callable_consumer(Analyzer *analyzer,
     for (; parameter != NULL && argument != NULL;
          parameter = parameter->next, argument = argument->next) {
         if (parameter->type.kind != AST_TYPE_FUNCTION ||
-            parameter->type.function_generic_parameters == NULL)
-            continue;
+            (parameter->type.function_generic_parameters == NULL &&
+             !semantic_closure_method(analyzer,argument))) continue;
         needs_specialization = 1;
+        if(semantic_closure_method(analyzer,argument)) continue;
         if (argument->resolved_callable == NULL ||
             argument->resolved_callable_program == NULL) {
             semantic_error(analyzer, diagnostic_token, ERROR_CATEGORY_TYPE,
@@ -734,12 +735,241 @@ static void analyze_propagation(Analyzer *analyzer, AstExpression *expression) {
 }
 
 static void analyze_expression_context(Analyzer *, AstExpression *, int);
+const SemanticSymbol *semantic_closure_method(const Analyzer *analyzer, const AstExpression *expression) {
+    if (!expression || expression->resolved_named_symbol_id >= analyzer->model->symbol_count) return NULL;
+    const SemanticSymbol *owner = &analyzer->model->symbols[expression->resolved_named_symbol_id];
+    const AstDeclarationNode *declaration = owner->declaration;
+    if (!declaration || !declaration->is_closure_environment) return NULL;
+    const AstDeclarationNode *invoke = declaration->closure_consuming_invoke ?
+        declaration->closure_consuming_invoke : declaration->as.struct_decl.methods;
+    if (!invoke) return NULL;
+    size_t id = invoke->resolved_symbol_id;
+    return id < analyzer->model->symbol_count ? &analyzer->model->symbols[id] : NULL;
+}
+
+AstType semantic_closure_signature(Analyzer *analyzer, const AstExpression *expression) {
+    AstType type = {.kind = AST_TYPE_INFERRED, .name_token = AST_TOKEN_NONE,
+                    .array_length_token = AST_TOKEN_NONE};
+    const SemanticSymbol *method = semantic_closure_method(analyzer, expression);
+    if (!method || !method->declaration) return type;
+    type.kind = AST_TYPE_FUNCTION;
+    type.name_token = method->declaration->name_token;
+    type.callable_mode = semantic_function_mutates_receiver(analyzer, method->id) ? 1U : 0U;
+    const AstDeclarationNode *environment = analyzer->model->symbols[
+        expression->resolved_named_symbol_id].declaration;
+    if (environment->closure_mode == 2) type.callable_mode = 2;
+    if (expression->has_resolved_ast_type &&
+        expression->resolved_ast_type.callable_mode > type.callable_mode)
+        type.callable_mode = expression->resolved_ast_type.callable_mode;
+    AstTypeArgument **tail = &type.function_parameters;
+    for (const AstParameter *parameter = environment->closure_consuming_invoke ?
+         method->declaration->as.function.parameters->next : method->declaration->as.function.parameters;
+         parameter; parameter = parameter->next) {
+        AstTypeArgument *argument = ast_program_alloc(analyzer->program, sizeof(*argument));
+        if (!argument) {
+            analyzer->allocation_failed = 1;
+            break;
+        }
+        argument->type = parameter->type;
+        *tail = argument;
+        tail = &argument->next;
+    }
+    type.function_return_type = ast_program_alloc(analyzer->program, sizeof(*type.function_return_type));
+    if (type.function_return_type)
+        *type.function_return_type = method->declaration->as.function.return_type;
+    else analyzer->allocation_failed = 1;
+    return type;
+}
+
+static void consume_closure_environment(Analyzer *analyzer, AstDeclarationNode *environment) {
+    AstField *captures=environment->as.struct_decl.fields;
+    AstDeclarationNode *invoke=environment->as.struct_decl.methods;
+    AstEnumValue *variant=ast_program_alloc(analyzer->program,sizeof(*variant));
+    AstParameter *receiver=ast_program_alloc(analyzer->program,sizeof(*receiver));
+    AstStatement *match=ast_program_alloc(analyzer->program,sizeof(*match));
+    AstMatchArm *arm=ast_program_alloc(analyzer->program,sizeof(*arm));
+    AstExpression *value=ast_program_alloc(analyzer->program,sizeof(*value));
+    if(!variant || !receiver || !match || !arm || !value) {
+        analyzer->allocation_failed=1; return;
+    }
+    variant->is_public=1;
+    variant->name_token=concrete_token(analyzer,TOKEN_IDENTIFIER,"__Captured");
+    variant->resolved_symbol_id=AST_SYMBOL_NONE;
+    AstTypeArgument **payload=&variant->payload_types;
+    AstParameter **binding=&arm->bindings;
+    for(AstField *field=captures;field;field=field->next) {
+        AstTypeArgument *type=ast_program_alloc(analyzer->program,sizeof(*type));
+        AstParameter *local=ast_program_alloc(analyzer->program,sizeof(*local));
+        if(!type || !local) { analyzer->allocation_failed=1; return; }
+        type->type=field->type;
+        local->name_token=field->name_token;
+        local->type=field->type;
+        local->resolved_symbol_id=AST_SYMBOL_NONE;
+        local->span=field->span;
+        *payload=type; payload=&type->next;
+        *binding=local; binding=&local->next;
+    }
+    environment->closure_captures=captures;
+    environment->closure_consuming_invoke=invoke;
+    environment->kind=AST_DECL_ENUM;
+    environment->as.enum_decl.fields=NULL;
+    environment->as.enum_decl.values=variant;
+    environment->as.enum_decl.methods=NULL;
+    environment->as.enum_decl.is_sum=1;
+    analyzer->model->symbols[environment->resolved_symbol_id].kind=SEMANTIC_SYMBOL_ENUM;
+    semantic_reindex_symbols(analyzer->model);
+    AstType environment_type={.kind=AST_TYPE_NAMED,.name_token=environment->name_token,
+        .array_length_token=AST_TOKEN_NONE,.callable_mode=2};
+    add_member(analyzer,variant->name_token,environment->name_token,environment_type,
+        SEMANTIC_SYMBOL_ENUM_VALUE,variant,&variant->resolved_symbol_id);
+    char name[160];
+    snprintf(name,sizeof(name),"%s_invoke_once",ast_program_lexeme(analyzer->program,environment->name_token));
+    invoke->name_token=concrete_token(analyzer,TOKEN_IDENTIFIER,name);
+    invoke->as.function.owner_token=AST_TOKEN_NONE;
+    invoke->semantic_body_checked=0;
+    receiver->name_token=concrete_token(analyzer,TOKEN_IDENTIFIER,"__environment");
+    receiver->type=environment_type;
+    receiver->resolved_symbol_id=AST_SYMBOL_NONE;
+    receiver->next=invoke->as.function.parameters;
+    invoke->as.function.parameters=receiver;
+    value->kind=AST_EXPR_NAME;
+    value->first_token=invoke->first_token;
+    value->value_token=receiver->name_token;
+    value->resolved_symbol_id=AST_SYMBOL_NONE;
+    value->resolved_named_symbol_id=AST_SYMBOL_NONE;
+    value->resolved_named_type_token=AST_TOKEN_NONE;
+    arm->variant_token=variant->name_token;
+    arm->resolved_variant_symbol=AST_SYMBOL_NONE;
+    arm->body=invoke->as.function.body;
+    match->kind=AST_STMT_MATCH;
+    match->first_token=invoke->first_token;
+    match->span=invoke->span;
+    match->value=value;
+    match->match_arms=arm;
+    invoke->as.function.body=match;
+    SemanticSymbol *function=&analyzer->model->symbols[invoke->resolved_symbol_id];
+    function->name_token=invoke->name_token;
+    function->owner_token=AST_TOKEN_NONE;
+    function->owner_symbol_id=AST_SYMBOL_NONE;
+    semantic_reindex_symbols(analyzer->model);
+    AstDeclarationNode **tail=&analyzer->program->root;
+    while(*tail) tail=&(*tail)->next;
+    *tail=invoke;
+    analyzer->program->structured_declaration_count++;
+    derive_type_properties(analyzer);
+    analyze_closure_function(analyzer,invoke);
+}
+
+static void materialize_closure(Analyzer *analyzer, AstExpression *expression) {
+    AstDeclarationNode *environment = expression->closure_environment;
+    if (!environment) return;
+    if (environment->name_token == AST_TOKEN_NONE) {
+        char name[96];
+        unsigned long long hash = 1469598103934665603ULL;
+        const unsigned char *path = (const unsigned char *)
+            (analyzer->program->source_path ? analyzer->program->source_path : "");
+        for (; *path; path++) {
+            hash ^= *path;
+            hash *= 1099511628211ULL;
+        }
+        snprintf(name, sizeof(name), "__dmm_closure_%llx_%zu_%zu", hash,
+                 expression->first_token, analyzer->program->structured_declaration_count);
+        environment->name_token = concrete_token(analyzer, TOKEN_IDENTIFIER, name);
+        environment->span = expression->span;
+        AstDeclarationNode *method = environment->as.struct_decl.methods;
+        method->name_token = concrete_token(analyzer, TOKEN_IDENTIFIER, "__invoke");
+        method->as.function.owner_token = environment->name_token;
+        method->span = expression->span;
+        AstDeclarationNode **tail = &analyzer->program->root;
+        while (*tail) tail = &(*tail)->next;
+        *tail = environment;
+        analyzer->program->structured_declaration_count++;
+    }
+    AstField *field = environment->as.struct_decl.fields;
+    for (AstExpression *capture = expression->arguments; capture && field;
+         capture = capture->next, field = field->next) {
+        analyze_expression_context(analyzer, capture, 0);
+        if (capture->kind == AST_EXPR_UNARY && capture->operator_type == TOKEN_AMPERSAND &&
+            capture->right && capture->right->resolved_borrow_kind != AST_BORROW_NONE)
+            semantic_error(analyzer, capture->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                           "Nested checked reference captures are not supported");
+        field->type = inferred_argument_type(analyzer, capture);
+        if (field->type.borrow_kind != AST_BORROW_NONE) {
+            field->type.lifetime_token = concrete_token(analyzer, TOKEN_LIFETIME, "'capture");
+            if (!environment->lifetime_parameters) {
+                AstLifetimeParameter *lifetime = ast_program_alloc(analyzer->program, sizeof(*lifetime));
+                if (lifetime) {
+                    lifetime->name_token = field->type.lifetime_token;
+                    environment->lifetime_parameters = lifetime;
+                } else analyzer->allocation_failed = 1;
+            }
+        }
+    }
+    if (!environment->as.struct_decl.fields) {
+        field = ast_program_alloc(analyzer->program, sizeof(*field));
+        AstExpression *dummy = ast_program_alloc(analyzer->program, sizeof(*dummy));
+        if (!field || !dummy) {
+            analyzer->allocation_failed = 1;
+            return;
+        }
+        field->name_token = concrete_token(analyzer, TOKEN_IDENTIFIER, "__unit");
+        field->type = (AstType){.kind = AST_TYPE_NAMED,
+                                .name_token = concrete_token(analyzer, TOKEN_TYPE_BYTE, "byte"),
+                                .array_length_token = AST_TOKEN_NONE};
+        field->resolved_symbol_id = AST_SYMBOL_NONE;
+        dummy->kind = AST_EXPR_LITERAL;
+        dummy->first_token = expression->first_token;
+        dummy->value_token = concrete_token(analyzer, TOKEN_NUMBER, "0");
+        dummy->initializer_name_token = field->name_token;
+        environment->as.struct_decl.fields = field;
+        expression->arguments = dummy;
+    }
+    environment->is_public = 1;
+    expression->allocated_type = (AstType){.kind = AST_TYPE_NAMED,
+                                           .name_token = environment->name_token,
+                                           .array_length_token = AST_TOKEN_NONE};
+    if (environment->resolved_symbol_id == AST_SYMBOL_NONE) {
+        add_global(analyzer, environment, SEMANTIC_SYMBOL_STRUCT, AST_TOKEN_NONE);
+        for (AstField *member = environment->as.struct_decl.fields; member; member = member->next)
+            add_member(analyzer, member->name_token, environment->name_token, member->type,
+                       SEMANTIC_SYMBOL_FIELD, member, &member->resolved_symbol_id);
+        AstDeclarationNode *invoke = environment->as.struct_decl.methods;
+        add_global(analyzer, invoke, SEMANTIC_SYMBOL_FUNCTION, environment->name_token);
+        derive_type_properties(analyzer);
+        analyze_closure_function(analyzer, invoke);
+        if (environment->closure_mode == 2)
+            consume_closure_environment(analyzer,environment);
+    }
+    if(environment->closure_consuming_invoke) {
+        AstEnumValue *variant=environment->as.enum_decl.values;
+        AstExpression *left=ast_program_alloc(analyzer->program,sizeof(*left));
+        if(!left) { analyzer->allocation_failed=1; return; }
+        left->kind=AST_EXPR_NAME;
+        left->value_token=variant->name_token;
+        left->resolved_symbol_id=variant->resolved_symbol_id;
+        left->resolved_named_symbol_id=environment->resolved_symbol_id;
+        left->resolved_named_type_token=environment->name_token;
+        expression->kind=AST_EXPR_ENUM_CONSTRUCT;
+        expression->left=left;
+        expression->value_token=variant->name_token;
+        expression->resolved_symbol_id=variant->resolved_symbol_id;
+        expression->allocated_type.callable_mode=2;
+        normalize_generic_type(analyzer,&expression->allocated_type,0);
+        set_expression_declared_type(analyzer,expression,analyzer->program,&expression->allocated_type);
+        expression->resolved_callable=environment->closure_consuming_invoke;
+        expression->resolved_callable_program=analyzer->program;
+    }
+}
+
+
 #include "semantic_executor.inc"
 
 static void analyze_expression_context(Analyzer *analyzer, AstExpression *expression,
                                        int direct_call_callee) {
     if (expression == NULL) return;
     if (expression->kind == AST_EXPR_STRUCT_LITERAL) {
+        if(expression->closure_environment) materialize_closure(analyzer,expression);
+        if(expression->kind != AST_EXPR_STRUCT_LITERAL) return;
         normalize_generic_type(analyzer, &expression->allocated_type, 0);
         AstType *type = &expression->allocated_type;
         size_t owner_id = resolve_named_symbol_id(analyzer, analyzer->program,
@@ -758,6 +988,10 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
         }
         const AstProgram *owner_program = owner->source_program;
         set_expression_declared_type(analyzer, expression, analyzer->program, type);
+        if(expression->closure_environment) {
+            expression->resolved_callable=expression->closure_environment->as.struct_decl.methods;
+            expression->resolved_callable_program=analyzer->program;
+        }
         size_t initialized = 0;
         for (AstExpression *value = expression->arguments; value != NULL; value = value->next) {
             const AstField *field = find_field_by_symbol(analyzer, owner_id, value->initializer_name_token);
@@ -850,6 +1084,28 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
                                expression->kind == AST_EXPR_CALL);
     analyze_expression_context(analyzer, expression->right, 0);
     contextualize_direct_call_literals(analyzer, expression);
+    AstLifetimeOperation lifetime = semantic_lifetime_operation(analyzer, expression);
+    if ((lifetime == LIFETIME_TAKE || lifetime == LIFETIME_REPLACE) &&
+        expression->lifetime_operation == LIFETIME_NONE && expression->arguments) {
+        if (analyzer->program->module && strcmp(analyzer->program->module->edition, "2026-10-04-dev"))
+            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_SEMANTIC,
+                           ERR_SEM_INVALID_DECLARATION, "take/replace require DMM 2026-10-04-dev");
+        AstExpression *place = expression->arguments;
+        AstExpression *address = ast_program_alloc(analyzer->program, sizeof(*address));
+        if (!address) analyzer->allocation_failed = 1;
+        else {
+            *address = *place;
+            address->kind = AST_EXPR_UNARY;
+            address->operator_type = TOKEN_AMPERSAND;
+            address->mutable_borrow = 1;
+            address->right = place;
+            address->left = NULL;
+            address->arguments = NULL;
+            place->next = NULL;
+            expression->arguments = address;
+            expression->lifetime_operation = lifetime;
+        }
+    }
     if (expression->kind == AST_EXPR_ARRAY_LITERAL &&
         expression->allocated_type.kind != AST_TYPE_INFERRED &&
         (expression->allocated_type.is_array || expression->allocated_type.is_slice)) {
@@ -1139,7 +1395,9 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
                 .array_length_token = AST_TOKEN_NONE
             };
             expression->resolved_type = primitive_type(analyzer->program, &type);
-        } else if (is_builtin_name(name) && find_local(analyzer,expression->value_token)==NULL) {
+        } else if (is_builtin_name(name) && find_local(analyzer,expression->value_token)==NULL &&
+                   (analyzer->current_owner_token==AST_TOKEN_NONE ||
+                    find_field(analyzer,analyzer->current_owner_token,expression->value_token)==NULL)) {
             expression->resolved_type = builtin_result_type(name);
             if (strcmp(name, "malloc") == 0) expression->resolved_pointer_depth = 1;
             const CoreIntrinsic *core = core_intrinsic_find(name);
@@ -1385,6 +1643,34 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
                 }
             }
         }
+        if(!expression->closure_capture_binding && analyzer->current_function &&
+           analyzer->current_function->as.function.owner_token!=AST_TOKEN_NONE &&
+           expression->resolved_symbol_id<analyzer->model->symbol_count) {
+            const SemanticSymbol *field=&analyzer->model->symbols[expression->resolved_symbol_id];
+            if(field->kind==SEMANTIC_SYMBOL_FIELD && field->declared_type.borrow_kind!=AST_BORROW_NONE &&
+               field->owner_token==analyzer->current_function->as.function.owner_token &&
+               field->owner_symbol_id<analyzer->model->symbol_count &&
+               analyzer->model->symbols[field->owner_symbol_id].declaration &&
+               analyzer->model->symbols[field->owner_symbol_id].declaration->is_closure_environment) {
+                AstExpression *inner=ast_program_alloc(analyzer->program,sizeof(*inner));
+                if(inner) {
+                    *inner=*expression; inner->next=NULL; inner->closure_capture_binding=1;
+                    expression->kind=AST_EXPR_UNARY;
+                    expression->operator_type=TOKEN_STAR;
+                    expression->right=inner;
+                    expression->left=NULL;
+                    expression->arguments=NULL;
+                    analyze_expression_context(analyzer,expression,0);
+                    return;
+                }
+                analyzer->allocation_failed=1;
+            }
+        }
+        if(semantic_closure_method(analyzer,expression)) {
+            const SemanticSymbol *method=semantic_closure_method(analyzer,expression);
+            expression->resolved_callable=method->declaration;
+            expression->resolved_callable_program=method->source_program;
+        }
     } else if (expression->kind == AST_EXPR_UNARY) {
         if (expression->operator_type == TOKEN_BANG) expression->resolved_type = TYPE_BIT;
         else if (expression->right != NULL) {
@@ -1459,6 +1745,42 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
     } else if (expression->kind == AST_EXPR_FREE) {
         expression->resolved_type = TYPE_VOID;
     } else if (expression->kind == AST_EXPR_CALL) {
+        if (expression->left &&
+            semantic_closure_method(analyzer,expression->left)) {
+            const SemanticSymbol *invoke=semantic_closure_method(analyzer,expression->left);
+            const AstDeclarationNode *environment=analyzer->model->symbols[
+                expression->left->resolved_named_symbol_id].declaration;
+            if(environment->closure_consuming_invoke) {
+                AstExpression *callee=ast_program_alloc(analyzer->program,sizeof(*callee));
+                if(!callee) { analyzer->allocation_failed=1; return; }
+                char name[1024];
+                snprintf(name,sizeof(name),"%s::%s",invoke->source_program->module_identity ?
+                    invoke->source_program->module_identity : "",
+                    ast_program_lexeme(invoke->source_program,invoke->name_token));
+                callee->kind=AST_EXPR_NAME;
+                callee->first_token=expression->first_token;
+                callee->value_token=concrete_token(analyzer,TOKEN_IDENTIFIER,name);
+                callee->resolved_symbol_id=AST_SYMBOL_NONE;
+                callee->resolved_named_symbol_id=AST_SYMBOL_NONE;
+                expression->left->next=expression->arguments;
+                expression->arguments=expression->left;
+                expression->left=callee;
+                expression->closure_consuming_call=1;
+                analyze_expression_context(analyzer,callee,1);
+            } else {
+            AstExpression *member=ast_program_alloc(analyzer->program,sizeof(*member));
+            if(member) {
+                member->kind=AST_EXPR_MEMBER;
+                member->first_token=expression->left->first_token;
+                member->value_token=concrete_token(analyzer,TOKEN_IDENTIFIER,"__invoke");
+                member->left=expression->left;
+                member->resolved_symbol_id=AST_SYMBOL_NONE;
+                member->resolved_named_symbol_id=AST_SYMBOL_NONE;
+                expression->left=member;
+                analyze_expression_context(analyzer,member,1);
+            } else analyzer->allocation_failed=1;
+            }
+        }
         if (expression->left != NULL && expression->left->has_resolved_ast_type &&
             expression->left->resolved_ast_type.kind == AST_TYPE_FUNCTION &&
             expression->left->kind != AST_EXPR_NAME) {
@@ -1518,6 +1840,15 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
                 }
                 (void) ambiguous;
                 if (function != NULL) {
+                    AstExpression *argument = expression->arguments;
+                    for (const AstParameter *p = function->declaration->as.function.parameters;
+                         p && argument; p = p->next, argument = argument->next)
+                        if (p->type.kind == AST_TYPE_FUNCTION && argument->kind == AST_EXPR_NAME &&
+                            !semantic_closure_method(analyzer,argument) &&
+                            !(argument->has_resolved_ast_type && argument->resolved_ast_type.kind == AST_TYPE_FUNCTION)) {
+                            argument->allocated_type = argument_type_copy(analyzer, function->source_program, p->type);
+                            analyze_expression(analyzer, argument);
+                        }
                     size_t function_id = specialize_callable_consumer(
                         analyzer, function->id, expression->arguments,
                         expression->first_token);
@@ -1799,6 +2130,9 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
         if (pointee.outer_pointer_depth) pointee.outer_pointer_depth--;
         else if (pointee.pointer_depth) pointee.pointer_depth--;
         expression->allocated_type = pointee;
+        if (expression->lifetime_operation == LIFETIME_TAKE ||
+            expression->lifetime_operation == LIFETIME_REPLACE)
+            set_expression_declared_type(analyzer, expression, analyzer->program, &pointee);
     }
     /* Overload and generic callees acquire their type from the enclosing call. */
     if (expression->resolved_type == TYPE_UNKNOWN &&

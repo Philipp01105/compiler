@@ -1,0 +1,142 @@
+package main;
+import (
+    "stdlib"
+    "stdlib/core"
+    "stdlib/algorithms"
+    "stdlib/memory"
+    "stdlib.language.gaps/reexport"
+    "stdlib.language.gaps/reexport_leaf"
+);
+
+var drops: i32 = 0;
+struct Resource {
+    var value: i32;
+    destructor { drops += 1; }
+}
+enum Owner {
+    Item(Resource),
+    Empty,
+}
+enum Tag { A, B }
+@[core.Send where i32: core.Copy] struct CopySend { var value: i32; }
+struct Conditional<T> {
+    var value: T;
+    func copyValue() -> T where T: core.Copy { return value; }
+    func size() -> usize { return sizeof(T); }
+}
+func less(a: i32, b: i32) -> bit { return a < b; }
+func overloaded(a: i32, b: i32) -> bit { return a < b; }
+func overloaded(a: i64, b: i64) -> bit { return a < b; }
+func mapped(a: i32) -> i64 { return a.(i64) + 1; }
+func borrowedMapper(a: &i32) -> i64 { return (*a).(i64) + 1; }
+func mapBorrow<T, U>(value: &T, mapper: func(&T) -> U) -> U { return mapper(value); }
+func readResource(resource: Resource) -> i32 { return resource.value; }
+func copied<T: core.Copy>(value: T) -> T { return value; }
+func optional() -> stdlib.Option<Resource> {
+    var resource = stdlib.Option<Resource>.Some(Resource{value: 70})?;
+    return stdlib.Option<Resource>.Some(resource);
+}
+func unpack(value: Owner) -> i32 {
+    match (value) {
+        Item(resource) => return resource.value;
+        Empty => return 0;
+    }
+}
+func main() -> int {
+    var values: i32[3] = [3, 1, 2];
+    var view: i32[] = values;
+    algorithms.sort(view, less);
+    algorithms.sort(view, overloaded);
+    if (values[0] != 1 || values[2] != 3) { return 1; }
+    var outputs: i64[3];
+    var outputView: i64[] = outputs;
+    var transformed = algorithms.transform(&view, &mut outputView, mapped);
+    if (outputs[0] != 2 || outputs[2] != 4) { return 30; }
+    var input: i32 = 41;
+    if (mapBorrow(&input, borrowedMapper) != 42) { return 31; }
+    var result = stdlib.mapOption(stdlib.Option<i32>.Some(41), mapped);
+    match (result) {
+        Some(value) => { if (value != 42) { return 2; } }
+        None => return 3;
+    }
+    var resourceResult = stdlib.mapOption(
+        stdlib.Option<Resource>.Some(Resource{value: 42}), readResource);
+    match (resourceResult) {
+        Some(value) => { if (value != 42) { return 4; } }
+        None => return 5;
+    }
+    if (drops != 1) { return 6; }
+    if (unpack(Owner.Item(Resource{value: 7})) != 7 || drops != 2) { return 7; }
+    if (copied(42) != 42) { return 8; }
+    var scalar = Conditional<i32>{value: 12};
+    if (scalar.copyValue() != 12) { return 9; }
+    {
+        var owner = Conditional<Resource>{value: Resource{value: 4}};
+        if (owner.size() == 0) { return 10; }
+    }
+    if (drops != 3) { return 11; }
+    {
+        var original = Resource{value: 20};
+        var moved = take(original);
+        var prior = replace(moved, Resource{value: 21});
+        if (prior.value != 20 || moved.value != 21 || drops != 3) { return 12; }
+    }
+    if (drops != 5) { return 13; }
+    {
+        var owner = Owner.Item(Resource{value: 30});
+        match (&owner) {
+            Item(resource) => { if ((*resource).value != 30) { return 14; } }
+            Empty => return 15;
+        }
+        match (&mut owner) {
+            Item(resource) => { (*resource).value = 31; }
+            Empty => return 16;
+        }
+        if (unpack(owner) != 31) { return 17; }
+    }
+    if (drops != 6) { return 18; }
+    {
+        var result = memory.box(Resource{value: 50});
+        match (result) {
+            Ok(box) => {
+                var resource = box.intoInner();
+                if (resource.value != 50) { return 19; }
+            }
+            Err(error) => return 20;
+        }
+    }
+    if (drops != 7) { return 21; }
+    {
+        var resource = Resource{value: 60};
+        take(resource);
+        var other = Resource{value: 61};
+        replace(other, Resource{value: 62});
+    }
+    if (drops != 10) { return 22; }
+    var propagated = stdlib.mapOption(optional(), readResource);
+    match (propagated) {
+        Some(value) => { if (value != 70) { return 23; } }
+        None => return 24;
+    }
+    if (drops != 11) { return 25; }
+    var tag = Tag.B;
+    match (&tag) {
+        A => return 26;
+        B => {}
+    }
+    var duplicate: i32[3] = copied(values);
+    if (duplicate[0] != 1 || duplicate[2] != 3) { return 27; }
+    var comparator = copied(less);
+    if (!comparator(1, 2)) { return 28; }
+    {
+        var take: func(i32) -> i64 = mapped;
+        if (take(41) != 42) { return 29; }
+    }
+    var forwarded: exported.Choice<i32> = exported.Choice<i32>.Item(exported.identity(42));
+    var original: leaf.Choice<i32> = forwarded;
+    match(original) {
+        Item(value)=>{ if(value!=exported.answer()) { return 30; } }
+        Empty=>return 31;
+    }
+    return 0;
+}

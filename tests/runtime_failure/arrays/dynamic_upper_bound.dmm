@@ -1,7 +1,8 @@
 package main;
 import "stdlib";
+
 func main() -> void {
-    var values:int[3];
-    var index:int = 3;
+    var values: int[3];
+    var index: int = 3;
     stdlib.println(values[index]);
 }

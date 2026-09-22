@@ -1,3 +1,6 @@
 package main;
 import "stdlib";
-func main() -> void { stdlib.println(strlen(42)); }
+
+func main() -> void {
+    stdlib.println(strlen(42));
+}

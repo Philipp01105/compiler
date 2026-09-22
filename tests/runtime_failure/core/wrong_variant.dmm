@@ -1,6 +1,7 @@
 package main;
 import "stdlib";
+
 func main() -> void {
-    var p:stdlib.Result<int,string> = stdlib.Result<int,string>.Err("failure");
+    var p: stdlib.Result<int, string> = stdlib.Result<int, string>.Err("failure");
     p.Ok();
 }

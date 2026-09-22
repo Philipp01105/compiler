@@ -11,7 +11,11 @@ endif()
 foreach(level 0 1)
     foreach(target elf coff)
         set(executable "${work}/executor_${target}_O${level}.exe")
-        execute_process(COMMAND "${COMPILER}" "-O${level}" "--target=${target}" --emit=exe
+        set(emission obj)
+        if(target STREQUAL host)
+            set(emission exe)
+        endif()
+        execute_process(COMMAND "${COMPILER}" "-O${level}" "--target=${target}" "--emit=${emission}"
             "${work}/executor.dmm" -o "${executable}" RESULT_VARIABLE result ERROR_VARIABLE errors TIMEOUT 30)
         if(NOT result EQUAL 0)
             message(FATAL_ERROR "Executor ${target}/O${level} failed to compile: ${errors}")

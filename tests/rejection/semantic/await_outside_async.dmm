@@ -1,3 +1,9 @@
 package main;
-func ready() -> int { return 7; }
-func main() -> int { return ready().await(); }
+
+func ready() -> int {
+    return 7;
+}
+
+func main() -> int {
+    return ready().await();
+}

@@ -99,7 +99,8 @@ static AstType expression_shape_copy(Analyzer *analyzer,
 }
 
 AstType inferred_argument_type(Analyzer *analyzer, const AstExpression *value) {
-    if (value->has_resolved_ast_type && (value->resolved_ast_type.kind == AST_TYPE_FUTURE ||
+    if (value->has_resolved_ast_type && (value->resolved_ast_type.kind == AST_TYPE_FUNCTION ||
+        value->resolved_ast_type.kind == AST_TYPE_FUTURE ||
         value->resolved_ast_type.kind == AST_TYPE_JOIN || value->resolved_ast_type.kind == AST_TYPE_EXECUTOR))
         return argument_type_copy(analyzer,
             value->resolved_type_program != NULL ? value->resolved_type_program : analyzer->program,
@@ -185,21 +186,19 @@ void normalize_generic_type(Analyzer *analyzer, AstType *type, unsigned depth) {
             analyzer->program->tokens[type->name_token].type == TOKEN_IDENTIFIER && analyzer->program->package) {
             const char *name = ast_program_lexeme(analyzer->program, type->name_token);
             const DmmPackage *target = lookup_package(analyzer->program, &name);
-            if (target)
-                for (size_t f = 0; f < target->file_count; f++)
-                    for (AstDeclarationNode *d = target->files[f]->root; d; d = d->next)
-                        if ((d->kind == AST_DECL_STRUCT || d->kind == AST_DECL_ENUM) && !strcmp(
-                                name, ast_program_lexeme(target->files[f], d->name_token))) {
-                            if (target != analyzer->program->package && !d->is_public) {
-                                semantic_error(analyzer, type->name_token, ERROR_CATEGORY_SEMANTIC, ERR_PACKAGE_PRIVATE,
-                                               "Type is private to its defining package");
-                                return;
-                            }
-                            char canonical[4096];
-                            snprintf(canonical, sizeof(canonical), "%s::%s", target->path, name);
-                            type->name_token = concrete_token(analyzer, TOKEN_IDENTIFIER, canonical);
-                            return;
-                        }
+            AstProgram *unit = NULL;
+            AstDeclarationNode *declaration = ast_package_declaration(target, name, &unit);
+            if (declaration && (declaration->kind == AST_DECL_STRUCT || declaration->kind == AST_DECL_ENUM || declaration->kind == AST_DECL_INTERFACE)) {
+                if (!same_package(analyzer->program, unit) && !declaration->is_public) {
+                    semantic_error(analyzer, type->name_token, ERROR_CATEGORY_SEMANTIC, ERR_PACKAGE_PRIVATE,
+                                   "Type is private to its defining package");
+                    return;
+                }
+                char canonical[4096];
+                snprintf(canonical, sizeof(canonical), "%s::%s", unit->package->path, name);
+                type->name_token = concrete_token(analyzer, TOKEN_IDENTIFIER, canonical);
+                return;
+            }
         }
         return;
     }
@@ -223,9 +222,10 @@ void normalize_generic_type(Analyzer *analyzer, AstType *type, unsigned depth) {
     for (size_t i = 0; i <= root->owned_import_count; i++) {
         AstProgram *unit = i == 0 ? root : root->owned_imports[i - 1];
         for (AstDeclarationNode *d = unit->root; d; d = d->next) {
-            int local = target ? unit->package == target : same_package(analyzer->program, unit);
+            int local = target ? (unit->package == target ||
+                (d->is_public && ast_package_reexports(target, unit->package))) : same_package(analyzer->program, unit);
             if (fallback == 0 ? !local : (qualified || local || !d->is_async_builtin)) continue;
-            if ((d->kind != AST_DECL_STRUCT && d->kind != AST_DECL_ENUM) || !d->generic_parameters ||
+            if ((d->kind != AST_DECL_STRUCT && d->kind != AST_DECL_ENUM && d->kind != AST_DECL_INTERFACE) || !d->generic_parameters ||
                 strcmp(name, ast_program_lexeme(unit, d->name_token)))
                 continue;
             if (!same_package(analyzer->program, unit) && !d->is_public) {
@@ -281,6 +281,9 @@ void normalize_generic_type(Analyzer *analyzer, AstType *type, unsigned depth) {
                     replace_self_statement(analyzer, m->as.function.body, &self_type);
                     normalize_function_types(analyzer, m);
                 }
+            } else if (instance->kind == AST_DECL_INTERFACE) {
+                for (AstDeclarationNode *m = instance->as.interface_decl.methods; m; m = m->next)
+                    normalize_function_types(analyzer, m);
             } else {
                 for (AstEnumValue *v = instance->as.enum_decl.values; v; v = v->next)
                     for (AstTypeArgument *p = v->payload_types; p; p = p->next)
@@ -305,7 +308,8 @@ void normalize_generic_type(Analyzer *analyzer, AstType *type, unsigned depth) {
             }
             if (instance->resolved_symbol_id == AST_SYMBOL_NONE && analyzer->model->symbol_count != 0) {
                 add_global(analyzer, instance,
-                           instance->kind == AST_DECL_STRUCT ? SEMANTIC_SYMBOL_STRUCT : SEMANTIC_SYMBOL_ENUM,
+                           instance->kind == AST_DECL_STRUCT ? SEMANTIC_SYMBOL_STRUCT :
+                           instance->kind == AST_DECL_INTERFACE ? SEMANTIC_SYMBOL_INTERFACE : SEMANTIC_SYMBOL_ENUM,
                            AST_TOKEN_NONE);
                 if (instance->kind == AST_DECL_STRUCT) {
                     for (AstField *f = instance->as.struct_decl.fields; f; f = f->next)
@@ -313,7 +317,10 @@ void normalize_generic_type(Analyzer *analyzer, AstType *type, unsigned depth) {
                                    &f->resolved_symbol_id);
                     for (AstDeclarationNode *m = instance->as.struct_decl.methods; m; m = m->next)
                         add_global(analyzer, m, SEMANTIC_SYMBOL_FUNCTION, instance->name_token);
-                } else {
+                } else if (instance->kind == AST_DECL_INTERFACE) {
+                    for (AstDeclarationNode *m = instance->as.interface_decl.methods; m; m = m->next)
+                        add_global(analyzer, m, SEMANTIC_SYMBOL_FUNCTION, instance->name_token);
+                } else if (instance->kind == AST_DECL_ENUM) {
                     AstType enum_type = {
                         .kind = AST_TYPE_NAMED, .name_token = instance->name_token, .array_length_token = AST_TOKEN_NONE
                     };
@@ -333,7 +340,7 @@ void normalize_generic_type(Analyzer *analyzer, AstType *type, unsigned depth) {
     semantic_error(analyzer, type->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN, "Unknown generic type");
 }
 
-static void normalize_expression_types(Analyzer *analyzer, AstExpression *e) {
+void normalize_expression_types(Analyzer *analyzer, AstExpression *e) {
     for (; e; e = e->next) {
         if (e->explicit_type_arguments || e->explicit_generic_reference) {
             for (AstTypeArgument *argument = e->allocated_type.arguments; argument; argument = argument->next)
@@ -368,6 +375,13 @@ void normalize_statement_types(Analyzer *analyzer, AstStatement *s) {
 }
 
 void normalize_function_types(Analyzer *analyzer, AstDeclarationNode *d) {
+    for (AstAutoCondition *c = d->where_conditions; c; c = c->next) {
+        normalize_generic_type(analyzer, &c->type, 0);
+        for (AstInterfaceBound *b = c->bounds; b; b = b->next)
+            if (b->type.arguments)
+                semantic_error(analyzer, b->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                               "Method where constraints currently require non-generic interfaces");
+    }
     normalize_generic_type(analyzer, &d->as.function.return_type, 0);
     for (AstParameter *p = d->as.function.parameters; p; p = p->next)
         normalize_generic_type(analyzer, &p->type, 0);
@@ -378,6 +392,20 @@ AstDeclarationNode *find_language_declaration(const AstProgram *root, const AstP
                                                      const char *name, AstDeclarationKind kind, AstProgram **source) {
     int canonical = strstr(name, "::") != NULL;
     const DmmPackage *target = lookup_package(file, &name);
+    if (target) {
+        AstProgram *unit = NULL;
+        AstDeclarationNode *declaration = ast_package_declaration(target, name, &unit);
+        if (declaration && declaration->kind == kind) {
+            if (!canonical && !same_package(file, unit) && !declaration->is_public) {
+                error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_SEMANTIC,
+                             ERR_PACKAGE_PRIVATE, file->source_path,
+                             "Declaration '%s' is private to package '%s'", name, unit->module_identity);
+                return NULL;
+            }
+            if (source) *source = unit;
+            return declaration;
+        }
+    }
     for (size_t i = 0; i <= root->owned_import_count; i++) {
         AstProgram *unit = i == 0 ? (AstProgram *) root : root->owned_imports[i - 1];
         if (target ? unit->package != target : !same_package(file, unit)) continue;
@@ -592,6 +620,23 @@ int generic_bounds_satisfied(Analyzer *a, const AstProgram *declaration_unit,
 AstType argument_type_copy(Analyzer *analyzer, const AstProgram *unit, AstType type) {
     const AstToken *token = ast_program_token(unit, type.name_token);
     if (token) type.name_token = concrete_token(analyzer, token->type, token->lexeme);
+    if (type.kind == AST_TYPE_FUNCTION) {
+        AstTypeArgument **tail = &type.function_parameters;
+        for (const AstTypeArgument *p = type.function_parameters; p; p = p->next) {
+            AstTypeArgument *copy = ast_program_alloc(analyzer->program, sizeof(*copy));
+            if (!copy) { analyzer->allocation_failed = 1; type.invalid_substitution = 1; break; }
+            copy->type = argument_type_copy(analyzer, unit, p->type);
+            *tail = copy;
+            tail = &copy->next;
+        }
+        if (type.function_return_type) {
+            AstType *result = ast_program_alloc(analyzer->program, sizeof(*result));
+            if (result) {
+                *result = argument_type_copy(analyzer, unit, *type.function_return_type);
+                type.function_return_type = result;
+            } else { analyzer->allocation_failed = 1; type.invalid_substitution = 1; }
+        }
+    }
     if (type.is_array) {
         char length[32];
         snprintf(length, sizeof(length), "%zu", type.resolved_array_length);
@@ -614,13 +659,36 @@ static int unify_generic_pattern(Analyzer *analyzer, const AstProgram *pattern_u
                                  const AstType *pattern, const AstProgram *actual_unit, AstType actual,
                                  const AstDeclarationNode *declaration, AstType *substitutions, unsigned char *inferred,
                                  unsigned depth) {
-    if (depth > 64 || actual.name_token == AST_TOKEN_NONE) return 0;
+    if (depth > 64) return 0;
+    if (pattern->kind == AST_TYPE_FUNCTION) {
+        if (actual.kind != AST_TYPE_FUNCTION || actual.function_generic_parameters ||
+            actual.callable_mode>pattern->callable_mode ||
+            pattern->is_native_function != actual.is_native_function ||
+            pattern->pointer_depth != actual.pointer_depth ||
+            pattern->outer_pointer_depth != actual.outer_pointer_depth ||
+            pattern->borrow_kind != actual.borrow_kind ||
+            pattern->is_array != actual.is_array || pattern->is_slice != actual.is_slice) return 0;
+        const AstTypeArgument *p = pattern->function_parameters, *q = actual.function_parameters;
+        for (; p && q; p = p->next, q = q->next)
+            if (!unify_generic_pattern(analyzer, pattern_unit, &p->type, actual_unit, q->type,
+                                       declaration, substitutions, inferred, depth + 1)) return 0;
+        return !p && !q && pattern->function_return_type && actual.function_return_type &&
+            unify_generic_pattern(analyzer, pattern_unit, pattern->function_return_type,
+                                   actual_unit, *actual.function_return_type, declaration,
+                                   substitutions, inferred, depth + 1);
+    }
+    if (actual.name_token == AST_TOKEN_NONE) return 0;
     size_t index = 0;
     const AstGenericParameter *g = declaration->generic_parameters;
     for (; g; g = g->next, index++)
         if (!strcmp(ast_program_lexeme(pattern_unit, g->name_token),
                     ast_program_lexeme(pattern_unit, pattern->name_token)))
             break;
+    if (pattern->borrow_kind != AST_BORROW_NONE) {
+        if (actual.borrow_kind == AST_BORROW_NONE ||
+            (pattern->borrow_kind == AST_BORROW_MUTABLE && actual.borrow_kind != AST_BORROW_MUTABLE)) return 0;
+        actual.borrow_kind = AST_BORROW_NONE;
+    } else if (!g && actual.borrow_kind != AST_BORROW_NONE) return 0;
     if (g && (actual.is_array || actual.is_slice) && !pattern->is_array && !pattern->is_slice) {
         if (actual.outer_pointer_depth < pattern->pointer_depth + pattern->outer_pointer_depth) return 0;
         actual.outer_pointer_depth -= pattern->pointer_depth + pattern->outer_pointer_depth;
@@ -687,13 +755,26 @@ static int unify_generic_pattern(Analyzer *analyzer, const AstProgram *pattern_u
                    ast_program_lexeme(actual_unit, actual.name_token));
 }
 
+static int fails_copy_bound(Analyzer *analyzer, const AstProgram *unit,
+                            const AstDeclarationNode *declaration, const AstType *arguments) {
+    size_t index = 0;
+    size_t copy = semantic_auto_role(analyzer->model, SEMANTIC_TYPE_COPYABLE);
+    if (copy == AST_SYMBOL_NONE) return 0;
+    for (const AstGenericParameter *g = declaration->generic_parameters; g; g = g->next, index++)
+        for (const AstInterfaceBound *bound = g->bounds; bound; bound = bound->next)
+            if (resolve_named_symbol_id(analyzer, unit, bound->name_token) == copy &&
+                !semantic_satisfies(analyzer->model, analyzer->program, &arguments[index], copy)) return 1;
+    return 0;
+}
+
 void instantiate_generic_candidates(Analyzer *analyzer, const char *name,
                                            const AstExpression *arguments) {
     AstProgram *root = (AstProgram *) analyzer->model->program;
     const DmmPackage *target = lookup_package(analyzer->program, &name);
+    int rejected_copy = 0, instantiated = 0, ambiguous_callback = 0, conflicting_callback = 0;
     for (size_t unit_index = 0; unit_index <= root->owned_import_count; unit_index++) {
         AstProgram *unit = unit_index == 0 ? root : root->owned_imports[unit_index - 1];
-        if (target ? unit->package != target : !same_package(analyzer->program, unit)) continue;
+        if (target ? !ast_package_reexports(target, unit->package) : !same_package(analyzer->program, unit)) continue;
         for (AstDeclarationNode *d = unit->root; d; d = d->next) {
             if (d->kind != AST_DECL_FUNCTION || !d->generic_parameters ||
                 strcmp(ast_program_lexeme(unit, d->name_token), name))
@@ -706,16 +787,66 @@ void instantiate_generic_candidates(Analyzer *analyzer, const char *name,
             const AstParameter *parameter = d->as.function.parameters;
             const AstExpression *argument = arguments;
             for (; viable && parameter && argument; parameter = parameter->next, argument = argument->next) {
-                AstType t = inferred_argument_type(analyzer, argument);
+                if (parameter->type.kind == AST_TYPE_FUNCTION && argument->kind == AST_EXPR_NAME &&
+                    !semantic_closure_method(analyzer,argument) &&
+                    !(argument->has_resolved_ast_type && argument->resolved_ast_type.kind == AST_TYPE_FUNCTION))
+                    continue; /* Infer ordinary arguments before resolving callback overloads. */
+                AstType t = parameter->type.kind==AST_TYPE_FUNCTION && semantic_closure_method(analyzer,argument)
+                    ? semantic_closure_signature(analyzer,argument) : inferred_argument_type(analyzer, argument);
                 if (!contains_type_parameter(unit, &parameter->type, d)) {
                     if (!expression_to_declared_type_allowed(analyzer, argument, unit, &parameter->type)) viable = 0;
                 } else if (!unify_generic_pattern(analyzer, unit, &parameter->type, analyzer->program, t,
-                                                  d, substitutions, inferred, 0))
+                                                  d, substitutions, inferred, 0)) {
+                    conflicting_callback |= parameter->type.kind == AST_TYPE_FUNCTION;
                     viable = 0;
+                }
             }
             if (parameter || argument) viable = 0;
+            parameter = d->as.function.parameters;
+            argument = arguments;
+            for (; viable && parameter && argument; parameter = parameter->next, argument = argument->next) {
+                if (parameter->type.kind != AST_TYPE_FUNCTION || argument->kind != AST_EXPR_NAME ||
+                    semantic_closure_method(analyzer,argument) ||
+                    (argument->has_resolved_ast_type && argument->resolved_ast_type.kind == AST_TYPE_FUNCTION)) continue;
+                AstType chosen[DMM_MAX_TYPE_PARAMETERS];
+                unsigned char chosen_inferred[DMM_MAX_TYPE_PARAMETERS];
+                size_t matches = 0;
+                for (size_t i = 0; i < analyzer->model->symbol_count; i++) {
+                    const SemanticSymbol *callback = &analyzer->model->symbols[i];
+                    if (callback->kind != SEMANTIC_SYMBOL_FUNCTION || !callback->declaration ||
+                        callback->owner_symbol_id != AST_SYMBOL_NONE ||
+                        callback->declaration->generic_parameters ||
+                        !symbol_matches_scope(analyzer->program, callback,
+                            ast_program_lexeme(analyzer->program, argument->value_token))) continue;
+                    AstType trial[DMM_MAX_TYPE_PARAMETERS];
+                    unsigned char trial_inferred[DMM_MAX_TYPE_PARAMETERS];
+                    memcpy(trial, substitutions, sizeof(trial));
+                    memcpy(trial_inferred, inferred, sizeof(trial_inferred));
+                    AstType signature = callable_type(analyzer, callback, 0);
+                    if (unify_generic_pattern(analyzer, unit, &parameter->type, callback->source_program,
+                                               signature, d, trial, trial_inferred, 0)) {
+                        memcpy(chosen, trial, sizeof(chosen));
+                        memcpy(chosen_inferred, trial_inferred, sizeof(chosen_inferred));
+                        matches++;
+                    }
+                }
+                if (matches != 1) {
+                    ambiguous_callback |= matches > 1;
+                    conflicting_callback |= matches == 0;
+                    viable = 0;
+                }
+                else {
+                    memcpy(substitutions, chosen, sizeof(chosen));
+                    memcpy(inferred, chosen_inferred, sizeof(chosen_inferred));
+                }
+            }
             for (size_t i = 0; i < count; i++) if (!inferred[i]) viable = 0;
-            if (!viable || !generic_bounds_satisfied(analyzer, unit, d, substitutions)) continue;
+            if (!viable) continue;
+            if (!generic_bounds_satisfied(analyzer, unit, d, substitutions)) {
+                rejected_copy |= fails_copy_bound(analyzer, unit, d, substitutions);
+                continue;
+            }
+            instantiated = 1;
             AstDeclarationNode *instance = ast_specialize_function(unit, d, substitutions, count, analyzer->program);
             if (!instance) {
                 semantic_error(analyzer, analyzer->current_function_token, ERROR_CATEGORY_SEMANTIC,
@@ -732,6 +863,21 @@ void instantiate_generic_candidates(Analyzer *analyzer, const char *name,
             }
         }
     }
+    int overload_ambiguous = 0;
+    int otherwise_viable = instantiated || resolve_overload(analyzer, name, AST_SYMBOL_NONE, 0,
+                                                             arguments, &overload_ambiguous) != NULL;
+    if (ambiguous_callback && !otherwise_viable)
+        semantic_error(analyzer, arguments ? arguments->first_token : analyzer->current_function_token,
+                       ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                       "Ambiguous callback inference; provide explicit type arguments to select a signature");
+    else if (conflicting_callback && !otherwise_viable)
+        semantic_error(analyzer, arguments ? arguments->first_token : analyzer->current_function_token,
+                       ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
+                       "Callback signature conflicts with inferred type arguments");
+    if (rejected_copy && !otherwise_viable)
+        semantic_error(analyzer, arguments ? arguments->first_token : analyzer->current_function_token,
+                       ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                       "core.Copy requires a copyable type; destructors and move-only payloads exclude Copy");
 }
 
 const SemanticSymbol *explicit_generic_function(Analyzer *analyzer, const char *name, AstExpression *call) {
@@ -757,12 +903,13 @@ const SemanticSymbol *explicit_generic_function(Analyzer *analyzer, const char *
         types[count++] = argument->type;
     }
     size_t candidates[1024], candidate_count = 0;
+    int rejected_copy = 0;
     size_t value_count = 0;
     for (const AstExpression *argument = call->arguments; argument; argument = argument->next) value_count++;
     const DmmPackage *target = lookup_package(analyzer->program, &name);
     for (size_t i = 0; i <= root->owned_import_count; i++) {
         AstProgram *unit = i == 0 ? root : root->owned_imports[i - 1];
-        if (target ? unit->package != target : !same_package(analyzer->program, unit)) continue;
+        if (target ? !ast_package_reexports(target, unit->package) : !same_package(analyzer->program, unit)) continue;
         for (AstDeclarationNode *d = unit->root; d; d = d->next) {
             if (d->kind != AST_DECL_FUNCTION || !d->generic_parameters || strcmp(
                     ast_program_lexeme(unit, d->name_token), name)) continue;
@@ -773,8 +920,11 @@ const SemanticSymbol *explicit_generic_function(Analyzer *analyzer, const char *
             }
             size_t expected = 0;
             for (AstGenericParameter *g = d->generic_parameters; g; g = g->next) expected++;
-            if (count != expected || (!reference && parameter_count(d) != value_count) || !generic_bounds_satisfied(
-                    analyzer, unit, d, types)) continue;
+            if (count != expected || (!reference && parameter_count(d) != value_count)) continue;
+            if (!generic_bounds_satisfied(analyzer, unit, d, types)) {
+                rejected_copy |= fails_copy_bound(analyzer, unit, d, types);
+                continue;
+            }
             AstDeclarationNode *instance = ast_specialize_function(unit, d, types, count, analyzer->program);
             if (!instance) {
                 semantic_error(analyzer, call->first_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_COMPLEXITY_LIMIT,
@@ -826,6 +976,9 @@ const SemanticSymbol *explicit_generic_function(Analyzer *analyzer, const char *
         }
     }
     if (selected == AST_SYMBOL_NONE) {
+        if (rejected_copy)
+            semantic_error(analyzer, call->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                           "core.Copy requires a copyable type; destructors and move-only payloads exclude Copy");
         semantic_error(analyzer, call->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
                        "No generic function matches the explicit type arguments, interface bounds and value arguments");
         return NULL;

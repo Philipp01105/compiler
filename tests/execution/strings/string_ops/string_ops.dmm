@@ -2,16 +2,14 @@ package main;
 import "stdlib";
 // String operations test
 func main() -> void {
-    var name:string = "Alice";
-    
+    var name: string = "Alice";
     if (name == "Alice") {
         stdlib.println("Name is Alice");
     }
-    
     if (name != "Bob") {
         stdlib.println("Name is not Bob");
     }
-    
     stdlib.println("Test complete");
 }
+
 // Category: execution/strings

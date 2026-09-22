@@ -1,4 +1,5 @@
 package pkg;
+
 pub func package_answer() -> int {
     return private_answer();
 }

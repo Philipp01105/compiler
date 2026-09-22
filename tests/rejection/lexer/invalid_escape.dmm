@@ -1,3 +1,6 @@
 package main;
 import "stdlib";
-func main() -> void { stdlib.println("bad\q"); }
+
+func main() -> void {
+    stdlib.println("bad\q");
+}

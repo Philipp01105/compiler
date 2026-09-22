@@ -1,18 +1,39 @@
 package main;
 import "stdlib";
-struct Pair<A,B> {
-    var first:A;
-    var second:B;
-    func getFirst() -> A { return first; }
+
+struct Pair<A, B> {
+    var first: A;
+    var second: B;
+    func getFirst() -> A {
+        return first;
+    }
 }
-struct Wrap<T> { var pair:Pair<T,int>; }
-func identity<T>(value:T) -> T { return value; }
-func get<A,B>(value:Pair<A,B>) -> A { return value.first; }
-func copy(value:Pair<int,string>) -> Pair<int,string> { return value; }
+
+struct Wrap<T> {
+    var pair: Pair<T, int>;
+}
+
+func identity<T>(value: T) -> T {
+    return value;
+}
+
+func get<A, B>(value: Pair<A, B>) -> A {
+    return value.first;
+}
+
+func copy(value: Pair<int, string>) -> Pair<int, string> {
+    return value;
+}
+
 func main() -> void {
-    var p:Pair<int,string>; p.first=42; p.second="hello";
-    var q:Pair<int,string> =copy(identity(p));
+    var p: Pair<int, string>;
+    p.first = 42;
+    p.second = "hello";
+    var q: Pair<int, string> = copy(identity(p));
     stdlib.println(get(q));
-    stdlib.println(q.getFirst()); stdlib.println(q.second);
-    var nested:Wrap<double>; nested.pair.first=2.5; stdlib.println(nested.pair.first);
+    stdlib.println(q.getFirst());
+    stdlib.println(q.second);
+    var nested: Wrap<double>;
+    nested.pair.first = 2.5;
+    stdlib.println(nested.pair.first);
 }

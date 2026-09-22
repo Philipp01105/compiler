@@ -1,0 +1,278 @@
+package path;
+import (
+    "stdlib"
+    "stdlib/text"
+);
+
+pub enum Style {
+    pub Posix,
+    pub Windows,
+}
+
+pub func nativeStyle() -> Style {
+    return targetStyle();
+}
+
+pub enum PathError {
+    pub InvalidPath,
+    pub OutOfMemory,
+    pub CapacityOverflow,
+}
+
+func allocation(error: stdlib.AllocationError) -> PathError {
+    if (error == stdlib.AllocationError.CapacityOverflow) {
+        return PathError.CapacityOverflow;
+    }
+    return PathError.OutOfMemory;
+}
+
+pub func valid(value: u8[]) -> bit {
+    for (var i: usize = 0; i < value.length; i += 1) {
+        if (value[i] == 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+func separator(value: u8, style: Style) -> bit {
+    return value == 47 || (style == Style.Windows && value == 92);
+}
+
+pub func isAbsolute(value: u8[], style: Style) -> bit {
+    if (value.length == 0) {
+        return false;
+    }
+    if (style == Style.Posix) {
+        return value[0] == 47;
+    }
+    return (value.length >= 3 && value[1] == 58 && separator(value[2], style)) || (
+        value.length >= 2 &&
+        separator(value[0], style) &&
+        separator(value[1], style)
+    );
+}
+
+pub func basename(value: u8[], style: Style) -> u8[] {
+    var end: usize = value.length;
+    while (end > 0 && separator(value[end - 1], style)) {
+        end -= 1;
+    }
+    var start: usize = end;
+    while (start > 0 && !separator(value[start - 1], style)) {
+        start -= 1;
+    }
+    return value[start: end];
+}
+
+pub func dirname(value: u8[], style: Style) -> u8[] {
+    var floor: usize = 0;
+    if (value.length > 0 && separator(value[0], style)) {
+        floor = 1;
+    }
+    if (
+        style == Style.Windows &&
+        value.length >= 3 &&
+        value[1] == 58 &&
+        separator(value[2], style)
+    ) {
+        floor = 3;
+    }
+    if (
+        style == Style.Windows &&
+        value.length > 1 &&
+        separator(value[0], style) &&
+        separator(value[1], style)
+    ) {
+        var offset: usize = 2;
+        for (var component: usize = 0; component < 2; component += 1) {
+            while (offset < value.length && separator(value[offset], style)) {
+                offset += 1;
+            }
+            while (offset < value.length && !separator(value[offset], style)) {
+                offset += 1;
+            }
+        }
+        floor = offset;
+    }
+    var end: usize = value.length;
+    while (end > floor && separator(value[end - 1], style)) {
+        end -= 1;
+    }
+    while (end > floor && !separator(value[end - 1], style)) {
+        end -= 1;
+    }
+    while (end > floor && separator(value[end - 1], style)) {
+        end -= 1;
+    }
+    return value[: end];
+}
+
+pub func extension(value: u8[], style: Style) -> u8[] {
+    var name: u8[] = basename(value, style);
+    var i: usize = name.length;
+    while (i > 1) {
+        i -= 1;
+        if (name[i] == 46) {
+            return name[i:];
+        }
+    }
+    return name[name.length:];
+}
+
+pub func join(left: u8[], right: u8[], style: Style) -> stdlib.Result<stdlib.Bytes, PathError> {
+    if (!valid(left) || !valid(right)) {
+        return stdlib.Result<stdlib.Bytes, PathError>.Err(PathError.InvalidPath);
+    }
+    var result = stdlib.bytes(0);
+    var error: stdlib.AllocationError;
+    if (
+        isAbsolute(right, style) ||
+        (style == Style.Windows && right.length >= 2 && right[1] == 58)
+    ) {
+        error = result.append(right);
+    } else {
+        if (style == Style.Windows && right.length > 0 && separator(right[0], style)) {
+            if (left.length >= 2 && left[1] == 58) {
+                error = result.append(left[: 2]);
+            }
+            if (error == stdlib.AllocationError.None) {
+                error = result.append(right);
+            }
+        } else {
+            error = result.append(left);
+            if (
+                error == stdlib.AllocationError.None &&
+                left.length > 0 &&
+                right.length > 0 &&
+                !separator(left[left.length - 1], style)
+            ) {
+                var code: u8 = 47;
+                if (style == Style.Windows) {
+                    code = 92;
+                }
+                error = result.push(code);
+            }
+            if (error == stdlib.AllocationError.None) {
+                error = result.append(right);
+            }
+        }
+    }
+    if (error != stdlib.AllocationError.None) {
+        return stdlib.Result<stdlib.Bytes, PathError>.Err(allocation(error));
+    }
+    return stdlib.Result<stdlib.Bytes, PathError>.Ok(result);
+}
+
+// Lexical normalization only: no filesystem access or symlink resolution.
+pub func normalize(value: u8[], style: Style) -> stdlib.Result<stdlib.Bytes, PathError> {
+    if (!valid(value)) {
+        return stdlib.Result<stdlib.Bytes, PathError>.Err(PathError.InvalidPath);
+    }
+    if (value.length >= 9223372036854775806.(usize)) {
+        return stdlib.Result<stdlib.Bytes, PathError>.Err(PathError.CapacityOverflow);
+    }
+    var result = stdlib.bytes(value.length + 2);
+    if (!result.ok()) {
+        return stdlib.Result<stdlib.Bytes, PathError>.Err(allocation(result.error));
+    }
+    var positions = stdlib.list<usize>(0);
+    var parents = stdlib.list<bit>(0);
+    var offset: usize = 0;
+    var root: usize = 0;
+    var anchored: bit = false;
+    var sep: u8 = 47;
+    if (style == Style.Windows) {
+        sep = 92;
+    }
+    if (style == Style.Windows && value.length >= 2 && value[1] == 58) {
+        result.push(value[0]);
+        result.push(58);
+        offset = 2;
+        if (offset < value.length && separator(value[offset], style)) {
+            result.push(sep);
+            offset += 1;
+            anchored = true;
+        }
+        root = result.length();
+    } else {
+        if (value.length > 0 && separator(value[0], style)) {
+            result.push(sep);
+            offset = 1;
+            anchored = true;
+            root = 1;
+            if (style == Style.Windows && value.length > 1 && separator(value[1], style)) {
+                result.push(sep);
+                offset = 2;
+                // UNC server/share are the immutable lexical root.
+                for (var component: usize = 0; component < 2; component += 1) {
+                    while (offset < value.length && separator(value[offset], style)) {
+                        offset += 1;
+                    }
+                    var start: usize = offset;
+                    while (offset < value.length && !separator(value[offset], style)) {
+                        offset += 1;
+                    }
+                    if (start == offset) {
+                        return stdlib.Result<stdlib.Bytes, PathError>.Err(PathError.InvalidPath);
+                    }
+                    var error = result.append(value[start: offset]);
+                    if (error != stdlib.AllocationError.None) {
+                        return stdlib.Result<stdlib.Bytes, PathError>.Err(allocation(error));
+                    }
+                    result.push(sep);
+                }
+                root = result.length();
+            }
+        }
+    }
+    while (offset < value.length) {
+        while (offset < value.length && separator(value[offset], style)) {
+            offset += 1;
+        }
+        var start: usize = offset;
+        while (offset < value.length && !separator(value[offset], style)) {
+            offset += 1;
+        }
+        var length: usize = offset - start;
+        if (length == 0 || (length == 1 && value[start] == 46)) {
+            continue;
+        }
+        var parent: bit = length == 2 && value[start] == 46 && value[start + 1] == 46;
+        if (parent && positions.length() > 0 && !parents.get(parents.length() - 1)) {
+            var index: usize = positions.get(positions.length() - 1);
+            result.truncate(index);
+            positions.truncate(positions.length() - 1);
+            parents.truncate(parents.length() - 1);
+            continue;
+        }
+        if (parent && anchored) {
+            continue;
+        }
+        var before: usize = result.length();
+        if (before > root && before > 0) {
+            result.push(sep);
+        }
+        var error = result.append(value[start: offset]);
+        if (error != stdlib.AllocationError.None) {
+            return stdlib.Result<stdlib.Bytes, PathError>.Err(allocation(error));
+        }
+        error = positions.push(before);
+        if (error == stdlib.AllocationError.None) {
+            error = parents.push(parent);
+        }
+        if (error != stdlib.AllocationError.None) {
+            return stdlib.Result<stdlib.Bytes, PathError>.Err(allocation(error));
+        }
+    }
+    if (!result.ok()) {
+        return stdlib.Result<stdlib.Bytes, PathError>.Err(allocation(result.error));
+    }
+    if (result.length() == 0) {
+        var error = result.push(46);
+        if (error != stdlib.AllocationError.None) {
+            return stdlib.Result<stdlib.Bytes, PathError>.Err(allocation(error));
+        }
+    }
+    return stdlib.Result<stdlib.Bytes, PathError>.Ok(result);
+}

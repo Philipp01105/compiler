@@ -1,14 +1,16 @@
 package main;
 import "stdlib/core/net";
-func main()->void {
-    var result=net.socket(net.AddressFamily.IPv4,net.Transport.UDP);
-    match(result) {
-        Ok(socket)=>{
-            var buffer:u8[4]; var view:u8[]=buffer[:];
-            var pending=net.recvFrom(&socket,&mut view,net.Deadline.noTimeout());
-            buffer[0]=9;
+
+func main() -> void {
+    var result = net.socket(net.AddressFamily.IPv4, net.Transport.UDP);
+    match (result) {
+        Ok(socket) => {
+            var buffer: u8[4];
+            var view: u8[] = buffer[:];
+            var pending = net.recvFrom(&socket, &mut view, net.Deadline.noTimeout());
+            buffer[0] = 9;
             block_on(cancel(pending));
         }
-        Err(error)=>{}
+        Err(error) => {}
     }
 }

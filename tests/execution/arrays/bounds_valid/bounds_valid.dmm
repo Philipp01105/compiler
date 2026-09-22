@@ -1,13 +1,16 @@
 package main;
 import "stdlib";
-func sum(a:int[]) -> int {
-    var total:int = 0;
-    for (var i:int = 0; i < 5; i++) { total += a[i]; }
+
+func sum(a: int[]) -> int {
+    var total: int = 0;
+    for (var i: int = 0; i < 5; i++) {
+        total += a[i];
+    }
     return total;
 }
 
 func main() -> void {
-    var values:int[5];
+    var values: int[5];
     values[0] = 1;
     values[1] = 2;
     values[2] = 3;

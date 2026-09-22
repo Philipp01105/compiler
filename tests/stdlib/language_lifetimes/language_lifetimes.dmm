@@ -1,0 +1,161 @@
+package main;
+import (
+    "stdlib"
+    "stdlib/binary"
+    "stdlib/sync"
+);
+struct Reader<'a> {
+ var source: &'a i32;
+ func read()->i32 { return *source; }
+ func getRef()->&'a i32 { return source; }
+}
+struct Writer<'a> { var source: &'a mut i32; func write(value:i32)->void { *source=value; } }
+struct SharedPair<'a> { var left:&'a i32; var right:&'a i32; }
+struct MutablePair<'a> { var left:&'a mut i32; var right:&'a mut i32; }
+struct WriterPair<'a> { var left:Writer<'a>; var right:Writer<'a>; }
+struct SeparatePair<'a,'b> { var left:&'a mut i32; var right:&'b mut i32; }
+struct SeparateReaders<'a,'b> { var left:&'a i32; var right:&'b i32; }
+struct NestedReaders<'a,'b> { var left:Reader<'a>; var right:Reader<'b>; }
+enum ReaderChoice<'a,'b> { Both(&'a i32,&'b i32), Empty }
+func readerChoice<'a,'b>(left:&'a i32,right:&'b i32)->ReaderChoice<'a,'b> {
+ return ReaderChoice<'a,'b>.Both(left,right);
+}
+func choiceLeft<'a,'b>(value:ReaderChoice<'a,'b>,fallback:&'a i32)->&'a i32 {
+ match(value) { Both(left,right)=>return left; Empty=>return fallback; }
+}
+func nestedLeft<'a,'b>(value:&NestedReaders<'a,'b>)->&'a i32 { return value.left.source; }
+func leftReader<'a,'b>(value:&SeparateReaders<'a,'b>)->&'a i32 { return value.left; }
+func projectReader<'a,'b>(value:&SeparateReaders<'a,'b>)->Reader<'a> {
+ return Reader<'a>{source:value.left};
+}
+func copyReader<'a,'b>(value:SeparateReaders<'a,'b>)->Reader<'a> {
+ return Reader<'a>{source:value.left};
+}
+func separate<'a,'b>(left:&'a mut i32,right:&'b mut i32)->SeparatePair<'a,'b> {
+ return SeparatePair<'a,'b>{left:left,right:right};
+}
+struct GenericPair<'a,'b,T> { var left:&'a mut T; var right:&'b mut T; }
+func genericSeparate<'a,'b,T>(left:&'a mut T,right:&'b mut T)->GenericPair<'a,'b,T> {
+ return GenericPair<'a,'b,T>{left:left,right:right};
+}
+func reader<'a>(source: &'a i32)->Reader<'a> { return Reader<'a>{ source:source }; }
+func writer<'a>(source: &'a mut i32)->Writer<'a> { return Writer<'a>{ source:source }; }
+func choose<'a>(left:&'a i32,right:&'a i32,first:bit)->&'a i32 {
+ if(first) { return left; } return right;
+}
+var permanent:i32=61;
+var permanentRef:&'static i32=&permanent;
+var permanentReader:Reader<'static>=Reader<'static>{source:&permanent};
+var permanentCopy:Reader<'static>=permanentReader;
+var inferredReader=Reader<'static>{source:&permanent};
+var absent:stdlib.Option<&'static i32>=stdlib.Option<&'static i32>.None;
+var absentCopy:stdlib.Option<&'static i32>=absent;
+func readPermanent()->i32 { return permanentCopy.read()+*permanentRef; }
+var drops:i32=0;
+struct Resource { var value:i32; destructor { drops+=1; } }
+func main()->int {
+ match(absent) { Some(value)=>return 18; None=>{} }
+ match(absentCopy) { Some(value)=>return 19; None=>{} }
+ if(readPermanent()!=122 || permanentReader.read()!=61 || inferredReader.read()!=61) { return 13; }
+ match(ReaderChoice<'static,'static>.Both(&permanent,&permanent)) {
+  Both(left,right)=>{ if(*left+*right!=122) { return 26; } }
+  Empty=>return 27;
+ }
+ var source:i32=42;
+ match(stdlib.Option<&i32>.branch(stdlib.Option<&i32>.Some(&source))) {
+  Continue(reference)=>{ if(*reference!=42) { return 29; } }
+  Break(residual)=>return 30;
+ }
+ match(stdlib.Option<&i32>.branch(stdlib.Option<&i32>.None)) {
+  Continue(reference)=>return 31;
+  Break(residual)=>{}
+ }
+ { var left:i32=3; var right:i32=2;
+ var pair=readerChoice(&left,&right);
+ var reference=choiceLeft(pair,&left);
+ if(*reference!=3) { return 25; } }
+ { var left:i32=3; var right:i32=2;
+ var pair=NestedReaders{left:Reader{source:&left},right:Reader{source:&right}};
+ var reference=nestedLeft(&pair);
+ if(*reference!=3) { return 24; } }
+ { var left:i32=3; var right:i32=2;
+ var pair=SeparateReaders{left:&left,right:&right};
+ var reference=leftReader(&pair);
+ right=4;
+ if(*reference+right!=7) { return 21; } }
+ { var left:i32=3; var right:i32=2;
+ var pair=SeparateReaders{left:&left,right:&right};
+ var projected=projectReader(&pair);
+ right=4;
+ if(projected.read()+right!=7) { return 22; } }
+ { var left:i32=3; var right:i32=2;
+ var pair=SeparateReaders{left:&left,right:&right};
+ var projected=copyReader(pair);
+ right=4;
+ if(projected.read()+right!=7) { return 23; } }
+ { var left:i32=1; var right:i32=2;
+ var pair=WriterPair{left:writer(&mut left),right:writer(&mut right)};
+ pair.left.write(3); pair.right.write(4);
+ if(*pair.left.source+*pair.right.source!=7) { return 20; } }
+ { var pair=SharedPair{left:&source,right:&source};
+ if(*pair.left+*pair.right!=84) { return 14; } }
+ { var left:i32=1; var right:i32=2;
+ var pair=MutablePair{left:&mut left,right:&mut right};
+ *pair.left=3; *pair.right=4;
+ if(*pair.left+*pair.right!=7) { return 15; } }
+ { var left:i32=3; var right:i32=2;
+ var pair=separate(&mut left,&mut right);
+ var reference=&*pair.left;
+ *pair.right=4;
+ if(*reference+*pair.right!=7) { return 16; } }
+ { var left:i32=3; var right:i32=2;
+ var pair=genericSeparate<i32>(&mut left,&mut right);
+ var reference=&*pair.left;
+ *pair.right=4;
+ if(*reference+*pair.right!=7) { return 17; } }
+ { var r=reader(&source); var copy=r; if(copy.read()!=42 || r.read()!=42) { return 1; } }
+ { var w=writer(&mut source); var moved=w; moved.write(43); }
+ if(source!=43) { return 2; }
+ var other:i32=44;
+ var selected=choose(&source,&other,false);
+ if(*selected!=44) { return 3; }
+ { var left:i32=3; var right:i32=2; var unrelated:i32=1;
+ var selected=choose(&left,&right,false);
+ var copied=selected; var child=&*copied;
+ unrelated=4;
+ if(*child+unrelated!=6) { return 28; } }
+ var storage:u8[4];
+ var bytes:u8[]=storage;
+ {
+  var output=binary.borrowedWriter(&mut bytes);
+  var result=output.writeUint(16909060,4,binary.Endian.Big);
+  match(result) { Ok=>{} Err(error)=>return 4; }
+  if(output.offset()!=4 || output.remaining()!=0) { return 5; }
+ }
+ {
+  var input=binary.borrowedReader(&bytes);
+  var copy=input;
+  var result=copy.readUint(4,binary.Endian.Big);
+  match(result) { Ok(value)=>{ if(value!=16909060) { return 6; } } Err(error)=>return 7; }
+  if(input.offset()!=0 || input.remaining()!=4) { return 8; }
+ }
+ var allocated=sync.mutex(Resource{value:51});
+ match(allocated) {
+  Ok(mutex)=>{
+   {
+    var guard=sync.lock(&mutex);
+    var moved=guard;
+    var value=moved.getMut();
+    (*value).value=52;
+    if((*moved.getRef()).value!=52) { return 9; }
+   }
+   {
+    var guard=sync.lock(&mutex);
+    if((*guard.getRef()).value!=52) { return 10; }
+   }
+  }
+  Err(error)=>return 11;
+ }
+ if(drops!=1) { return 12; }
+ return 0;
+}

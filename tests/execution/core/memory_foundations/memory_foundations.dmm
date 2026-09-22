@@ -2,100 +2,236 @@ package main;
 import "stdlib";
 import "stdlib/core";
 
-struct Node { var value:i32; var next:*Node; var children:Node[]; }
-struct Holder { var items:i32[]; var suffix:i64; }
-struct Box<T> { var value:T; }
-enum Payload<T> { Data(T), Empty }
-var shared:i32[];
-var global_backing:i32[3];
-const NODE_SIZE=sizeof(Node);
-const CAPACITY=sizeof(i64);
+struct Node {
+    var value: i32;
+    var next: *Node;
+    var children: Node[];
+}
 
-func identity<T>(value:T) -> T { return value; }
-func allocate_values(count:usize) -> i32[] { return core.alloc<i32>(count); }
-func forward(values:i32[]) -> i32[] { return values; }
-func tail(values:i32[]) -> i32[] { return slice((&values[1]).(*i32),values.length-1); }
-func global_view() -> i32[] { return global_backing; }
-func floating_pointers(p:*float, value:float, q:*double, other:double) -> double {
-    *p=value; *q=other;
-    return *p+*q;
+struct Holder {
+    var items: i32[];
+    var suffix: i64;
 }
-func floating_array(values:float[2], value:float) -> float {
-    values[1]=value;
-    return values[0]+values[1];
+
+struct Box<T> {
+    var value: T;
 }
-func many(a:int,b:int,c:int,d:int,e:int,values:i32[],other:i32[],last:int) -> int {
-    return a+b+c+d+e+last+values[1]+other[0];
+
+enum Payload<T> {
+    Data(T),
+    Empty
+}
+
+var shared: i32[];
+var global_backing: i32[3];
+const NODE_SIZE = sizeof(Node);
+const CAPACITY = sizeof(i64);
+
+func identity<T>(value: T) -> T {
+    return value;
+}
+
+func allocate_values(count: usize) -> i32[] {
+    return core.alloc<i32>(count);
+}
+
+func forward(values: i32[]) -> i32[] {
+    return values;
+}
+
+func tail(values: i32[]) -> i32[] {
+    return slice((&values[1]).(*i32), values.length - 1);
+}
+
+func global_view() -> i32[] {
+    return global_backing;
+}
+
+func floating_pointers(p: *float, value: float, q: *double, other: double) -> double {
+    *p = value;
+    *q = other;
+    return *p + * q;
+}
+
+func floating_array(values: float[2], value: float) -> float {
+    values[1] = value;
+    return values[0] + values[1];
+}
+
+func many(
+    a: int,
+    b: int,
+    c: int,
+    d: int,
+    e: int,
+    values: i32[],
+    other: i32[],
+    last: int
+) -> int {
+    return a + b + c + d + e + last + values[1] + other[0];
 }
 
 func main() -> int {
-    if (sizeof(u8) != 1 || alignof(u8) != 1 || sizeof(i16) != 2 || sizeof(i32) != 4 || sizeof(i64) != 8) { return 1; }
-    if (sizeof(*void) != 8 || alignof(*void) != 8 || sizeof(i32[]) != 16 || alignof(i32[]) != 8) { return 2; }
-    if (NODE_SIZE != 32 || sizeof(Holder) != 24 || sizeof(Box<i32[]>) != 16 || sizeof(Payload<i32[]>) != 24) { return 3; }
-    if (sizeof(u8[CAPACITY]) != 64 || sizeof(*i32[2]) != 16) { return 4; }
-    var backing:i32[3]; backing[0]=2; backing[1]=3; backing[2]=4;
-    var borrowed:i32[]=backing;
-    if (borrowed.length != 3 || borrowed.data != (&backing[0]).(*i32)) { return 5; }
-    borrowed[1]=9;
-    if (backing[1] != 9 || many(1,2,3,4,5,borrowed,borrowed,6) != 32) { return 6; }
-    var copy=identity<i32[]>(borrowed);
-    copy=tail(copy);
-    if (copy.length != 2 || copy[0] != 9 || borrowed.length != 3) { return 7; }
-    var holder:Holder; holder.items=borrowed; holder.suffix=42;
-    if (holder.items[2] != 4 || holder.suffix != 42 || holder.items.length != 3) { return 8; }
-    shared=forward(holder.items); shared[2]=11;
-    if (borrowed[2] != 11 || shared.data != borrowed.data) { return 9; }
-    var payload=Payload<i32[]>.Data(borrowed);
-    var extracted=payload.Data();
-    if (extracted.length != 3 || extracted[2] != 11) { return 10; }
-    var node=core.alloc<Node>();
-    if (node == core.null<Node>()) { return 11; }
-    if (node.value != 0 || node.next != core.null<Node>() || node.children.length != 0) { return 12; }
-    node.value=123; node.children=core.alloc<Node>(2);
-    if (node.children.length != 2 || node.children[1].value != 0) { return 13; }
-    node.children[1].value=456;
-    if (node.children[0].value != 0 || node.children[1].value != 456) { return 14; }
-    core.release(node.children); core.release(node);
-    var values=allocate_values(4);
-    if (values.length != 4 || values[0] != 0 || values[3] != 0) { return 15; }
-    values[3]=17;
-    if (forward(values)[3] != 17) { return 16; }
+    if (
+        sizeof(u8) != 1 ||
+        alignof(u8) != 1 ||
+        sizeof(i16) != 2 ||
+        sizeof(i32) != 4 ||
+        sizeof(i64) != 8
+    ) {
+        return 1;
+    }
+    if (
+        sizeof(*void) != 8 ||
+        alignof(*void) != 8 ||
+        sizeof(i32[]) != 16 ||
+        alignof(i32[]) != 8
+    ) {
+        return 2;
+    }
+    if (
+        NODE_SIZE != 32 ||
+        sizeof(Holder) != 24 ||
+        sizeof(Box<i32[]>) != 16 ||
+        sizeof(Payload<i32[]>) != 24
+    ) {
+        return 3;
+    }
+    if (sizeof(u8[CAPACITY]) != 64 || sizeof(*i32[2]) != 16) {
+        return 4;
+    }
+    var backing: i32[3];
+    backing[0] = 2;
+    backing[1] = 3;
+    backing[2] = 4;
+    var borrowed: i32[] = backing;
+    if (borrowed.length != 3 || borrowed.data != (&backing[0]).(*i32)) {
+        return 5;
+    }
+    borrowed[1] = 9;
+    if (backing[1] != 9 || many(1, 2, 3, 4, 5, borrowed, borrowed, 6) != 32) {
+        return 6;
+    }
+    var copy = identity<i32[]>(borrowed);
+    copy = tail(copy);
+    if (copy.length != 2 || copy[0] != 9 || borrowed.length != 3) {
+        return 7;
+    }
+    var holder: Holder;
+    holder.items = borrowed;
+    holder.suffix = 42;
+    if (holder.items[2] != 4 || holder.suffix != 42 || holder.items.length != 3) {
+        return 8;
+    }
+    shared = forward(holder.items);
+    shared[2] = 11;
+    if (borrowed[2] != 11 || shared.data != borrowed.data) {
+        return 9;
+    }
+    var payload = Payload<i32[]>.Data(borrowed);
+    var extracted = payload.Data();
+    if (extracted.length != 3 || extracted[2] != 11) {
+        return 10;
+    }
+    var node = core.alloc<Node>();
+    if (node == core.null<Node>()) {
+        return 11;
+    }
+    if (node.value != 0 || node.next != core.null<Node>() || node.children.length != 0) {
+        return 12;
+    }
+    node.value = 123;
+    node.children = core.alloc<Node>(2);
+    if (node.children.length != 2 || node.children[1].value != 0) {
+        return 13;
+    }
+    node.children[1].value = 456;
+    if (node.children[0].value != 0 || node.children[1].value != 456) {
+        return 14;
+    }
+    core.release(node.children);
+    core.release(node);
+    var values = allocate_values(4);
+    if (values.length != 4 || values[0] != 0 || values[3] != 0) {
+        return 15;
+    }
+    values[3] = 17;
+    if (forward(values)[3] != 17) {
+        return 16;
+    }
     core.release(values);
-    var empty=core.alloc<u8>(0);
-    if (empty.length != 0 || empty.data != core.null<u8>()) { return 17; }
+    var empty = core.alloc<u8>(0);
+    if (empty.length != 0 || empty.data != core.null<u8>()) {
+        return 17;
+    }
     core.release(empty);
-    var failed=core.alloc<i64>(18446744073709551615.(usize));
-    if (failed.length != 0 || failed.data != core.null<i64>()) { return 18; }
+    var failed = core.alloc<i64>(18446744073709551615.(usize));
+    if (failed.length != 0 || failed.data != core.null<i64>()) {
+        return 18;
+    }
     core.release(failed);
-    var byte_value=core.alloc<u8>();
-    if (byte_value == core.null<u8>()) { return 19; }
-    *byte_value=255;
-    if (*byte_value != 255 || identity<u8>(255) != 255) { return 20; }
+    var byte_value = core.alloc<u8>();
+    if (byte_value == core.null<u8>()) {
+        return 19;
+    }
+    *byte_value = 255;
+    if (*byte_value != 255 || identity<u8>(255) != 255) {
+        return 20;
+    }
     core.release(byte_value);
-    var descriptor=core.alloc<i32[]>();
-    if (descriptor == core.null<i32[]>()) { return 21; }
-    *descriptor=borrowed;
-    if ((*descriptor).length != 3 || (*descriptor)[0] != 2) { return 22; }
+    var descriptor = core.alloc<i32[]>();
+    if (descriptor == core.null<i32[]>()) {
+        return 21;
+    }
+    *descriptor = borrowed;
+    if ((*descriptor).length != 3 || (*descriptor)[0] != 2) {
+        return 22;
+    }
     core.release(descriptor);
-    var real=core.alloc<float>();
-    if (real == core.null<float>()) { return 23; }
-    *real=1.25;
-    if (*real != 1.25) { return 24; }
-    var wide=core.alloc<double>();
-    if (wide == core.null<double>()) { core.release(real); return 29; }
-    if (floating_pointers(real,2.5,wide,4.25) != 6.75 || *real != 2.5 || *wide != 4.25) { return 30; }
+    var real = core.alloc<float>();
+    if (real == core.null<float>()) {
+        return 23;
+    }
+    *real = 1.25;
+    if (*real != 1.25) {
+        return 24;
+    }
+    var wide = core.alloc<double>();
+    if (wide == core.null<double>()) {
+        core.release(real);
+        return 29;
+    }
+    if (floating_pointers(real, 2.5, wide, 4.25) != 6.75 || *real != 2.5 || *wide != 4.25) {
+        return 30;
+    }
     core.release(wide);
     core.release(real);
-    var floating_values:float[2]; floating_values[0]=1.25;
-    if (floating_array(floating_values,2.5) != 3.75 || floating_values[1] != 2.5) { return 31; }
-    global_backing[2]=41;
-    var view=global_view();
-    if (view.length != 3 || view[2] != 41) { return 25; }
-    var array_payload=Payload<i32[]>.Data(backing);
-    match (array_payload) { Data(items) => { if (items.length != 3 || items[2] != 11) { return 26; } } Empty => { return 27; } }
-    var descriptor2=reserve(i32[]);
-    *descriptor2=borrowed;
-    if ((*descriptor2)[1] != 9) { return 28; }
+    var floating_values: float[2];
+    floating_values[0] = 1.25;
+    if (floating_array(floating_values, 2.5) != 3.75 || floating_values[1] != 2.5) {
+        return 31;
+    }
+    global_backing[2] = 41;
+    var view = global_view();
+    if (view.length != 3 || view[2] != 41) {
+        return 25;
+    }
+    var array_payload = Payload<i32[]>.Data(backing);
+    match (array_payload) {
+        Data(items) => {
+            if (items.length != 3 || items[2] != 11) {
+                return 26;
+            }
+        }
+        Empty => {
+            return 27;
+        }
+    }
+    var descriptor2 = reserve(i32[]);
+    *descriptor2 = borrowed;
+    if ((*descriptor2)[1] != 9) {
+        return 28;
+    }
     free(descriptor2);
     stdlib.println("memory foundations");
     return 0;

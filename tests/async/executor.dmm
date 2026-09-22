@@ -1,54 +1,93 @@
 package main;
 
-async func answer(value:int) -> int { return value + 1; }
-async func nested() -> Future<int> { return answer(12); }
-async func borrowed(value:&int) -> int { return *value; }
-async func nothing() -> void { return; }
-async func executorOwner(executor:Executor) -> void {
+async func answer(value: int) -> int {
+    return value + 1;
+}
+
+async func nested() -> Future<int> {
+    return answer(12);
+}
+
+async func borrowed(value: &int) -> int {
+    return *value;
+}
+
+async func nothing() -> void {
+    return;
+}
+
+async func executorOwner(executor: Executor) -> void {
     executor.shutdown(ShutdownMode.Drain).await();
 }
-async func joinVoid(handle:JoinHandle<void>) -> int {
-    var result:Result<void,TaskError>=handle.await();
-    match(result) { Ok => return 1; Err(error) => return 0; }
-}
-async func joinNested(handle:JoinHandle<Future<int>>) -> int {
-    var result=handle.await();
-    match(result) {
-        Ok(future) => { return future.await(); }
-        Err(error) => { return -1; }
+
+async func joinVoid(handle: JoinHandle<void>) -> int {
+    var result: Result < void,
+    TaskError >= handle.await();
+    match (result) {
+        Ok => return 1;
+        Err(error) => return 0;
     }
 }
-async func join(handle:JoinHandle<int>) -> int {
-    var result=handle.await();
-    match(result) {
-        Ok(value) => { return value; }
-        Err(error) => { return -1; }
+
+async func joinNested(handle: JoinHandle<Future<int>>) -> int {
+    var result = handle.await();
+    match (result) {
+        Ok(future) => {
+            return future.await();
+        }
+        Err(error) => {
+            return -1;
+        }
     }
 }
+
+async func join(handle: JoinHandle<int>) -> int {
+    var result = handle.await();
+    match (result) {
+        Ok(value) => {
+            return value;
+        }
+        Err(error) => {
+            return -1;
+        }
+    }
+}
+
 func main() -> int {
     block_on(cancel(executorOwner(Executor.create(2))));
-    var executor=Executor.create(2);
-    var first=executor.spawn(answer(41));
-    var second=executor.spawn(answer(6));
-    var a=executor.block_on(join(first));
+    var executor = Executor.create(2);
+    var first = executor.spawn(answer(41));
+    var second = executor.spawn(answer(6));
+    var a = executor.block_on(join(first));
     block_on(executor.shutdown(ShutdownMode.Drain));
-    var b=block_on(join(second));
+    var b = block_on(join(second));
     block_on(cancel(answer(99)));
-    var defaultHandle=spawn(answer(8));
-    var c=block_on(join(defaultHandle));
-    var nestedHandle=spawn(nested());
-    var d=block_on(joinNested(nestedHandle));
-    var discarded=spawn(nested());
+    var defaultHandle = spawn(answer(8));
+    var c = block_on(join(defaultHandle));
+    var nestedHandle = spawn(nested());
+    var d = block_on(joinNested(nestedHandle));
+    var discarded = spawn(nested());
     block_on(cancel(discarded));
-    var local=17;
-    var e=block_on(borrowed(&local));
+    var local = 17;
+    var e = block_on(borrowed(&local));
     block_on(cancel(borrowed(&local)));
-    local=18;
-    var f=block_on(joinVoid(spawn(nothing())));
-    var secondExecutor=Executor.create(1);
-    var openHandle=secondExecutor.spawn(answer(10));
+    local = 18;
+    var f = block_on(joinVoid(spawn(nothing())));
+    var secondExecutor = Executor.create(1);
+    var openHandle = secondExecutor.spawn(answer(10));
     block_on(secondExecutor.shutdown(ShutdownMode.Cancel));
-    var g=block_on(join(openHandle));
-    if(a == 42 && b == 7 && c == 9 && d == 13 && e == 17 && local == 18 && f == 1 && (g == -1 || g == 11)) { return 0; }
+    var g = block_on(join(openHandle));
+    if (
+        a == 42 &&
+        b == 7 &&
+        c == 9 &&
+        d == 13 &&
+        e == 17 &&
+        local == 18 &&
+        f == 1 &&
+        (g == - 1 || g == 11)
+    ) {
+        return 0;
+    }
     return 1;
 }

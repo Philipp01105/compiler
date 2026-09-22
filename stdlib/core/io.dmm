@@ -1,16 +1,42 @@
 package core;
-import "stdlib/core/raw";
-pub const CORE_STDIN:int=0;
-pub const CORE_STDOUT:int=1;
-pub const CORE_STDERR:int=2;
-pub const CORE_READ_ONLY:int=0;
-pub const CORE_WRITE_ONLY:int=1;
-pub const CORE_READ_WRITE:int=2;
-pub const CORE_CREATE:int=64;
-pub const CORE_TRUNCATE:int=512;
-pub const CORE_APPEND:int=1024;
-pub func core_read(fd:int,destination:*u8,bytes:usize) -> isize { return raw.core_read(fd,destination,bytes); }
-pub func core_write(fd:int,source:*u8,bytes:usize) -> isize { return raw.core_write(fd,source,bytes); }
-pub func core_open(path:string,flags:int,permissions:int) -> int { return raw.core_open(path,flags,permissions); }
-pub func core_close(fd:int) -> int { return raw.core_close(fd); }
-pub func core_string_length(text:string) -> usize { return raw.core_string_length(text); }
+import (
+    "stdlib/core/raw"
+);
+
+pub const CORE_STDIN: int = 0;
+
+pub const CORE_STDOUT: int = 1;
+
+pub const CORE_STDERR: int = 2;
+
+pub const CORE_READ_ONLY: int = 0;
+
+pub const CORE_WRITE_ONLY: int = 1;
+
+pub const CORE_READ_WRITE: int = 2;
+
+pub const CORE_CREATE: int = 64;
+
+pub const CORE_TRUNCATE: int = 512;
+
+pub const CORE_APPEND: int = 1024;
+
+pub func core_read(fd: int, destination: *u8, bytes: usize) -> isize {
+    return raw.core_read(fd, destination, bytes);
+}
+
+pub func core_write(fd: int, source: *u8, bytes: usize) -> isize {
+    return raw.core_write(fd, source, bytes);
+}
+
+pub func core_open(path: string, flags: int, permissions: int) -> int {
+    return raw.core_open(path, flags, permissions);
+}
+
+pub func core_close(fd: int) -> int {
+    return raw.core_close(fd);
+}
+
+pub func core_string_length(text: string) -> usize {
+    return raw.core_string_length(text);
+}

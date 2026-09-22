@@ -1,2 +1,5 @@
 package main;
-func main() -> void { free(7); }
+
+func main() -> void {
+    free(7);
+}

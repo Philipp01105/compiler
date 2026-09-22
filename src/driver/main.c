@@ -477,7 +477,8 @@ int main(int argc, char *argv[]) {
         .show_tokens = show_tokens,
         .recover_syntax = ide_mode,
         .has_target = 1,
-        .target_format = target_format
+        .target_format = target_format,
+        .system_packages = !runtime_component
     };
     char *override_name = NULL;
     if (ide_buffer != NULL) {
@@ -834,14 +835,20 @@ int main(int argc, char *argv[]) {
     }
     /* CLI compatibility is translated to a requirement once. Runtime and backend
        only receive the resolved profile, never the requested link strategy. */
+    if (link_mode == LINK_EXTERNAL) module->runtime_requirements |= RUNTIME_REQUIRE_PLATFORM;
     ir_select_runtime_functions(module);
     RuntimeRequirements requirements = ir_runtime_requirements(module);
     int uses_native = 0;
     for (size_t n = 0; n < module->native_import_count; ++n)
-        uses_native |= ir_native_import_used(module, module->native_imports[n].symbol_id);
+        /* The private primitive ABI is defined in the emitted runtime itself.
+           Ordinary FFI declarations for it do not introduce an OS library. */
+        if (strcmp(module->native_imports[n].library, "dmm_runtime"))
+            uses_native |= ir_native_import_used(module, module->native_imports[n].symbol_id);
     if (uses_native) requirements |= RUNTIME_REQUIRE_PLATFORM;
     for (size_t f = 0; f < module->function_count; ++f)
-        if (module->functions[f].is_native_export) requirements |= RUNTIME_REQUIRE_PLATFORM;
+        if (module->functions[f].is_native_export &&
+            (!module->emission_selected || module->functions[f].emission_reachable))
+            requirements |= RUNTIME_REQUIRE_PLATFORM;
     if (link_mode == LINK_EXTERNAL) requirements |= RUNTIME_REQUIRE_PLATFORM;
     backend_options.runtime_profile = runtime_profile_for(requirements);
     LinkMode resolved_link = LINK_INTERNAL;

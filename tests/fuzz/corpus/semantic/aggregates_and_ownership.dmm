@@ -1,25 +1,26 @@
 package main;
 import "stdlib";
-enum PacketKind(id:int, name:string, reliable:bit, weight:double) {
+
+enum PacketKind(id: int, name: string, reliable: bit, weight: double) {
     data(10, "data", true, 1.25),
     retry(20, "retry", false, 2.5),
     done(30, "done", true, 0.5)
 }
 
 struct PacketBuffer {
-    var used:int;
-    var checksum:int;
-    var bytes:byte[12];
+    var used: int;
+    var checksum: int;
+    var bytes: byte[12];
 
-    func initialize(seed:int) -> void {
+    func initialize(seed: int) -> void {
         used = 0;
         checksum = seed;
-        for (var i:int = 0; i < 12; i++) {
+        for (var i: int = 0; i < 12; i++) {
             bytes[i] = (0).(byte);
         }
     }
 
-    func push(value:int) -> bit {
+    func push(value: int) -> bit {
         if (used >= 12) {
             return false;
         }
@@ -29,16 +30,16 @@ struct PacketBuffer {
         return true;
     }
 
-    func at(index:int) -> int {
+    func at(index: int) -> int {
         return (bytes[index]).(int);
     }
 
-    static func normalize(value:double) -> float {
+    static func normalize(value: double) -> float {
         return (value / 10.0).(float);
     }
 }
 
-func rotate_kind(kind:PacketKind, attempts:int) -> PacketKind {
+func rotate_kind(kind: PacketKind, attempts: int) -> PacketKind {
     if (kind == PacketKind.done) {
         return kind;
     }
@@ -48,11 +49,11 @@ func rotate_kind(kind:PacketKind, attempts:int) -> PacketKind {
     return PacketKind.data;
 }
 
-func fill(buffer:PacketBuffer, base:int) -> PacketBuffer {
-    var row:int = 0;
+func fill(buffer: PacketBuffer, base: int) -> PacketBuffer {
+    var row: int = 0;
     while (row < 3) {
-        for (var column:int = 0; column < 4; column++) {
-            var value:int = base + row * 4 + column;
+        for (var column: int = 0; column < 4; column++) {
+            var value: int = base + row * 4 + column;
             if (value % 2 == 0) {
                 buffer.push(value);
             } else {
@@ -64,29 +65,28 @@ func fill(buffer:PacketBuffer, base:int) -> PacketBuffer {
     return buffer;
 }
 
-func allocated_value(value:int) -> int {
-    var storage:*int = reserve(int);
+func allocated_value(value: int) -> int {
+    var storage: *int = reserve(int);
     *storage = value;
     return *storage;
 }
 
 func main() -> void {
-    var buffer:PacketBuffer;
+    var buffer: PacketBuffer;
     buffer.initialize(17);
     buffer = fill(buffer, 4);
 
-    var kind:PacketKind = rotate_kind(PacketKind.data, buffer.at(3));
-    var samples:double[4];
-    for (var i:int = 0; i < 4; i++) {
+    var kind: PacketKind = rotate_kind(PacketKind.data, buffer.at(3));
+    var samples: double[4];
+    for (var i: int = 0; i < 4; i++) {
         samples[i] = (buffer.at(i)).(double) / 3.0;
     }
 
-    var manual:*double = reserve(double);
+    var manual: *double = reserve(double);
     *manual = (PacketBuffer.normalize(samples[2])).(double);
-    var label:string = "packet=" + kind.name + ",id=" + kind.id
-        + ",reliable=" + kind.reliable + ",checksum=" + buffer.checksum
-        + ",allocated=" + allocated_value(buffer.used)
-        + ",weight=" + *manual;
+    var label: string = "packet=" + kind.name + ",id=" + kind.id + ",reliable=" + kind.reliable + ",checksum=" + buffer.checksum + ",allocated=" + allocated_value(
+        buffer.used
+    ) + ",weight=" + * manual;
     stdlib.println(label);
     free(label);
     free(manual);

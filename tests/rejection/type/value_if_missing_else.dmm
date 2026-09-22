@@ -1,6 +1,8 @@
 package main;
 
 func main() -> int {
-    var result:int = if (true) { 1 };
+    var result: int = if (true) {
+        1
+    };
     return result;
 }

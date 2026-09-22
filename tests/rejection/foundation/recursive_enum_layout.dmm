@@ -1,2 +1,10 @@
 package main;
-enum E { Again(E), End, } func main() -> void { var e:E=E.End; }
+
+enum E {
+    Again(E),
+    End,
+}
+
+func main() -> void {
+    var e: E = E.End;
+}

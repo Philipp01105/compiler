@@ -1,3 +1,8 @@
 package main;
-enum State(code:int) { Ready(1), Ready(2) }
+
+enum State(code: int) {
+    Ready(1),
+    Ready(2)
+}
+
 func main() -> void {}

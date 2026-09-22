@@ -1,3 +1,9 @@
 package main;
-struct Invalid { var value:&int; }
-func main() -> int { return 0; }
+
+struct Invalid {
+    var value: &int;
+}
+
+func main() -> int {
+    return 0;
+}

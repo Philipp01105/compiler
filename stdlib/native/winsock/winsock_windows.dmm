@@ -1,90 +1,255 @@
 package winsock;
-import "stdlib/native/kernel32";
+import (
+    "stdlib/native/kernel32"
+);
 extern "system" from "ws2_32" {
-    pub struct Guid { pub var first:u32; pub var second:u16; pub var third:u16; pub var bytes:u8[8]; }
+    pub struct Guid {
+        pub var first: u32;
+        pub var second: u16;
+        pub var third: u16;
+        pub var bytes: u8[8];
+    }
+
     pub struct WsaData {
-        pub var version:u16; pub var highVersion:u16; pub var maximumSockets:u16; pub var maximumDatagram:u16;
-        pub var vendor:*u8; pub var description:u8[257]; pub var status:u8[129];
+        pub var version: u16;
+        pub var highVersion: u16;
+        pub var maximumSockets: u16;
+        pub var maximumDatagram: u16;
+        pub var vendor: *u8;
+        pub var description: u8[257];
+        pub var status: u8[129];
     }
-    pub struct Sockaddr { pub var family:u16; pub var data:u8[14]; }
-    pub struct SockaddrIn { pub var family:u16; pub var port:u16; pub var address:u32; pub var padding:u8[8]; }
-    pub struct SockaddrIn6 { pub var family:u16; pub var port:u16; pub var flow:u32; pub var address:u8[16]; pub var scope:u32; }
-    pub align(8) struct SockaddrStorage { pub var family:u16; pub var padding:u8[126]; }
-    pub struct WsaBuffer { pub var length:u32; pub var data:*u8; }
+
+    pub struct Sockaddr {
+        pub var family: u16;
+        pub var data: u8[14];
+    }
+
+    pub struct SockaddrIn {
+        pub var family: u16;
+        pub var port: u16;
+        pub var address: u32;
+        pub var padding: u8[8];
+    }
+
+    pub struct SockaddrIn6 {
+        pub var family: u16;
+        pub var port: u16;
+        pub var flow: u32;
+        pub var address: u8[16];
+        pub var scope: u32;
+    }
+
+    pub align(8) struct SockaddrStorage {
+        pub var family: u16;
+        pub var padding: u8[126];
+    }
+
+    pub struct WsaBuffer {
+        pub var length: u32;
+        pub var data: *u8;
+    }
+
     pub struct Addrinfo {
-        pub var flags:i32; pub var family:i32; pub var socketType:i32; pub var protocol:i32;
-        pub var addressLength:usize; pub var canonicalName:*u8; pub var address:*Sockaddr; pub var next:*Addrinfo;
+        pub var flags: i32;
+        pub var family: i32;
+        pub var socketType: i32;
+        pub var protocol: i32;
+        pub var addressLength: usize;
+        pub var canonicalName: *u8;
+        pub var address: *Sockaddr;
+        pub var next: *Addrinfo;
     }
-    pub func WSAStartup(version:u16, data:*WsaData) -> i32;
+
+    pub func WSAStartup(version: u16, data: *WsaData) -> i32;
     pub func WSACleanup() -> i32;
     pub func WSAGetLastError() -> i32;
-    pub func WSASetLastError(error:i32) -> void;
-    pub func socket(family:i32, kind:i32, protocol:i32) -> usize;
-    pub func WSASocketW(family:i32, kind:i32, protocol:i32, protocolInfo:*void, group:u32, flags:u32) -> usize;
-    pub func closesocket(socket:usize) -> i32;
-    pub func bind(socket:usize, address:*Sockaddr, length:i32) -> i32;
-    pub func connect(socket:usize, address:*Sockaddr, length:i32) -> i32;
-    pub func listen(socket:usize, backlog:i32) -> i32;
-    pub func accept(socket:usize, address:*Sockaddr, length:*i32) -> usize;
-    pub func shutdown(socket:usize, how:i32) -> i32;
-    pub func ioctlsocket(socket:usize, command:i32, argument:*u32) -> i32;
-    pub func WSAIoctl(socket:usize, command:u32, input:*void, inputSize:u32, output:*void, outputSize:u32, transferred:*u32,
-        overlapped:*kernel32.Overlapped, completion:extern "system" func(u32,u32,*kernel32.Overlapped,u32) -> void) -> i32;
-    pub func getsockname(socket:usize, address:*Sockaddr, length:*i32) -> i32;
-    pub func getpeername(socket:usize, address:*Sockaddr, length:*i32) -> i32;
-    pub func getsockopt(socket:usize, level:i32, option:i32, value:*void, length:*i32) -> i32;
-    pub func setsockopt(socket:usize, level:i32, option:i32, value:*void, length:i32) -> i32;
-    pub func recv(socket:usize, buffer:*u8, length:i32, flags:i32) -> i32;
-    pub func send(socket:usize, buffer:*u8, length:i32, flags:i32) -> i32;
-    pub func recvfrom(socket:usize, buffer:*u8, length:i32, flags:i32, address:*Sockaddr, addressLength:*i32) -> i32;
-    pub func sendto(socket:usize, buffer:*u8, length:i32, flags:i32, address:*Sockaddr, addressLength:i32) -> i32;
-    pub func WSARecv(socket:usize, buffers:*WsaBuffer, count:u32, transferred:*u32, flags:*u32, overlapped:*kernel32.Overlapped, completion:extern "system" func(u32,u32,*kernel32.Overlapped,u32) -> void) -> i32;
-    pub func WSASend(socket:usize, buffers:*WsaBuffer, count:u32, transferred:*u32, flags:u32, overlapped:*kernel32.Overlapped, completion:extern "system" func(u32,u32,*kernel32.Overlapped,u32) -> void) -> i32;
-    pub func WSARecvFrom(socket:usize, buffers:*WsaBuffer, count:u32, transferred:*u32, flags:*u32, address:*Sockaddr, addressLength:*i32, overlapped:*kernel32.Overlapped, completion:extern "system" func(u32,u32,*kernel32.Overlapped,u32) -> void) -> i32;
-    pub func WSASendTo(socket:usize, buffers:*WsaBuffer, count:u32, transferred:*u32, flags:u32, address:*Sockaddr, addressLength:i32, overlapped:*kernel32.Overlapped, completion:extern "system" func(u32,u32,*kernel32.Overlapped,u32) -> void) -> i32;
-    pub func getaddrinfo(node:*u8, service:*u8, hints:*Addrinfo, result:**Addrinfo) -> i32;
-    pub func freeaddrinfo(result:*Addrinfo) -> void;
+    pub func WSASetLastError(error: i32) -> void;
+    pub func socket(family: i32, kind: i32, protocol: i32) -> usize;
+    pub func WSASocketW(
+        family: i32,
+        kind: i32,
+        protocol: i32,
+        protocolInfo: *void,
+        group: u32,
+        flags: u32
+    ) -> usize;
+    pub func closesocket(socket: usize) -> i32;
+    pub func bind(socket: usize, address: *Sockaddr, length: i32) -> i32;
+    pub func connect(socket: usize, address: *Sockaddr, length: i32) -> i32;
+    pub func listen(socket: usize, backlog: i32) -> i32;
+    pub func accept(socket: usize, address: *Sockaddr, length: *i32) -> usize;
+    pub func shutdown(socket: usize, how: i32) -> i32;
+    pub func ioctlsocket(socket: usize, command: i32, argument: *u32) -> i32;
+    pub func WSAIoctl(
+        socket: usize,
+        command: u32,
+        input: *void,
+        inputSize: u32,
+        output: *void,
+        outputSize: u32,
+        transferred: *u32,
+        overlapped: *kernel32.Overlapped,
+        completion: extern "system" func(u32, u32, *kernel32.Overlapped, u32) -> void
+    ) -> i32;
+    pub func getsockname(socket: usize, address: *Sockaddr, length: *i32) -> i32;
+    pub func getpeername(socket: usize, address: *Sockaddr, length: *i32) -> i32;
+    pub func getsockopt(socket: usize, level: i32, option: i32, value: *void, length: *i32) -> i32;
+    pub func setsockopt(socket: usize, level: i32, option: i32, value: *void, length: i32) -> i32;
+    pub func recv(socket: usize, buffer: *u8, length: i32, flags: i32) -> i32;
+    pub func send(socket: usize, buffer: *u8, length: i32, flags: i32) -> i32;
+    pub func recvfrom(
+        socket: usize,
+        buffer: *u8,
+        length: i32,
+        flags: i32,
+        address: *Sockaddr,
+        addressLength: *i32
+    ) -> i32;
+    pub func sendto(
+        socket: usize,
+        buffer: *u8,
+        length: i32,
+        flags: i32,
+        address: *Sockaddr,
+        addressLength: i32
+    ) -> i32;
+    pub func WSARecv(
+        socket: usize,
+        buffers: *WsaBuffer,
+        count: u32,
+        transferred: *u32,
+        flags: *u32,
+        overlapped: *kernel32.Overlapped,
+        completion: extern "system" func(u32, u32, *kernel32.Overlapped, u32) -> void
+    ) -> i32;
+    pub func WSASend(
+        socket: usize,
+        buffers: *WsaBuffer,
+        count: u32,
+        transferred: *u32,
+        flags: u32,
+        overlapped: *kernel32.Overlapped,
+        completion: extern "system" func(u32, u32, *kernel32.Overlapped, u32) -> void
+    ) -> i32;
+    pub func WSARecvFrom(
+        socket: usize,
+        buffers: *WsaBuffer,
+        count: u32,
+        transferred: *u32,
+        flags: *u32,
+        address: *Sockaddr,
+        addressLength: *i32,
+        overlapped: *kernel32.Overlapped,
+        completion: extern "system" func(u32, u32, *kernel32.Overlapped, u32) -> void
+    ) -> i32;
+    pub func WSASendTo(
+        socket: usize,
+        buffers: *WsaBuffer,
+        count: u32,
+        transferred: *u32,
+        flags: u32,
+        address: *Sockaddr,
+        addressLength: i32,
+        overlapped: *kernel32.Overlapped,
+        completion: extern "system" func(u32, u32, *kernel32.Overlapped, u32) -> void
+    ) -> i32;
+    pub func getaddrinfo(node: *u8, service: *u8, hints: *Addrinfo, result: **Addrinfo) -> i32;
+    pub func freeaddrinfo(result: *Addrinfo) -> void;
 }
-pub const AF_INET:i32=2;
-pub const AF_INET6:i32=23;
-pub const SOCK_STREAM:i32=1;
-pub const SOCK_DGRAM:i32=2;
-pub const WSA_FLAG_OVERLAPPED:u32=1;
-pub const SOL_SOCKET:i32=65535;
-pub const SO_ERROR:i32=4103;
-pub const SO_REUSEADDR:i32=4;
-pub const WSAEWOULDBLOCK:i32=10035;
-pub const WSAEINPROGRESS:i32=10036;
-pub const WSAECONNRESET:i32=10054;
-pub const WSA_OPERATION_ABORTED:i32=995;
-pub const WSA_IO_PENDING:i32=997;
-pub const AI_PASSIVE:i32=1;
-pub const AI_NUMERICHOST:i32=4;
-pub const AI_NUMERICSERV:i32=8;
-pub const AF_UNSPEC:i32=0;
-pub const IPPROTO_IPV6:i32=41;
-pub const IPV6_V6ONLY:i32=27;
-pub const SO_UPDATE_ACCEPT_CONTEXT:i32=28683;
-pub const SO_UPDATE_CONNECT_CONTEXT:i32=28688;
-pub const SIO_GET_EXTENSION_FUNCTION_POINTER:u32=3355443206;
-pub const WSAECONNREFUSED:i32=10061;
-pub const WSAECONNABORTED:i32=10053;
-pub const WSAENETUNREACH:i32=10051;
-pub const WSAEHOSTUNREACH:i32=10065;
-pub const WSAEADDRINUSE:i32=10048;
-pub const WSAENOBUFS:i32=10055;
-pub const WSAEINVAL:i32=10022;
-pub const WSAEAFNOSUPPORT:i32=10047;
-pub const WSAETIMEDOUT:i32=10060;
-pub const EAI_MEMORY:i32=8;
+
+pub const AF_INET: i32 = 2;
+
+pub const AF_INET6: i32 = 23;
+
+pub const SOCK_STREAM: i32 = 1;
+
+pub const SOCK_DGRAM: i32 = 2;
+
+pub const WSA_FLAG_OVERLAPPED: u32 = 1;
+
+pub const SOL_SOCKET: i32 = 65535;
+
+pub const SO_ERROR: i32 = 4103;
+
+pub const SO_REUSEADDR: i32 = 4;
+
+pub const WSAEWOULDBLOCK: i32 = 10035;
+
+pub const WSAEINPROGRESS: i32 = 10036;
+
+pub const WSAECONNRESET: i32 = 10054;
+
+pub const WSA_OPERATION_ABORTED: i32 = 995;
+
+pub const WSA_IO_PENDING: i32 = 997;
+
+pub const AI_PASSIVE: i32 = 1;
+
+pub const AI_NUMERICHOST: i32 = 4;
+
+pub const AI_NUMERICSERV: i32 = 8;
+
+pub const AF_UNSPEC: i32 = 0;
+
+pub const IPPROTO_IPV6: i32 = 41;
+
+pub const IPV6_V6ONLY: i32 = 27;
+
+pub const SO_UPDATE_ACCEPT_CONTEXT: i32 = 28683;
+
+pub const SO_UPDATE_CONNECT_CONTEXT: i32 = 28688;
+
+pub const SIO_GET_EXTENSION_FUNCTION_POINTER: u32 = 3355443206;
+
+pub const WSAECONNREFUSED: i32 = 10061;
+
+pub const WSAECONNABORTED: i32 = 10053;
+
+pub const WSAENETUNREACH: i32 = 10051;
+
+pub const WSAEHOSTUNREACH: i32 = 10065;
+
+pub const WSAEADDRINUSE: i32 = 10048;
+
+pub const WSAENOBUFS: i32 = 10055;
+
+pub const WSAEINVAL: i32 = 10022;
+
+pub const WSAEAFNOSUPPORT: i32 = 10047;
+
+pub const WSAETIMEDOUT: i32 = 10060;
+
+pub const EAI_MEMORY: i32 = 8;
 
 pub func acceptExId() -> Guid {
-    var value:Guid; value.first=3040247281; value.second=52140; value.third=4559;
-    value.bytes[0]=149; value.bytes[1]=202; value.bytes[2]=0; value.bytes[3]=128;
-    value.bytes[4]=95; value.bytes[5]=72; value.bytes[6]=161; value.bytes[7]=146; return value;
+    var value: Guid;
+    value.first = 3040247281;
+    value.second = 52140;
+    value.third = 4559;
+    value.bytes[0] = 149;
+    value.bytes[1] = 202;
+    value.bytes[2] = 0;
+    value.bytes[3] = 128;
+    value.bytes[4] = 95;
+    value.bytes[5] = 72;
+    value.bytes[6] = 161;
+    value.bytes[7] = 146;
+    return value;
 }
+
 pub func connectExId() -> Guid {
-    var value:Guid; value.first=631375801; value.second=56819; value.third=18016;
-    value.bytes[0]=142; value.bytes[1]=233; value.bytes[2]=118; value.bytes[3]=229;
-    value.bytes[4]=140; value.bytes[5]=116; value.bytes[6]=6; value.bytes[7]=62; return value;
+    var value: Guid;
+    value.first = 631375801;
+    value.second = 56819;
+    value.third = 18016;
+    value.bytes[0] = 142;
+    value.bytes[1] = 233;
+    value.bytes[2] = 118;
+    value.bytes[3] = 229;
+    value.bytes[4] = 140;
+    value.bytes[5] = 116;
+    value.bytes[6] = 6;
+    value.bytes[7] = 62;
+    return value;
 }

@@ -1,0 +1,105 @@
+package memory;
+import (
+    "stdlib"
+    "stdlib/core"
+);
+
+struct BoxStorage<T> {
+    var value: T;
+}
+
+@[no_default] pub struct Box<T> {
+    var storage: *BoxStorage<T>;
+    pub func get() -> &T {
+        if (storage == core.null<BoxStorage<T>>()) { core.core_trap(); }
+        return &storage.value;
+    }
+
+    pub func getMut() -> &mut T {
+        if (storage == core.null<BoxStorage<T>>()) { core.core_trap(); }
+        return &mut storage.value;
+    }
+
+    // Transfer the payload and release its allocation. This box becomes empty.
+    pub func intoInner() -> T {
+        if (storage == core.null<BoxStorage<T>>()) { core.core_trap(); }
+        var value: T = take(storage.value);
+        core.core_release(storage.(*u8));
+        storage = core.null<BoxStorage<T>>();
+        return value;
+    }
+
+    destructor {
+        if (storage != core.null<BoxStorage<T>>()) {
+            core.destroy<BoxStorage<T>>(storage);
+            core.core_release(storage.(*u8));
+        }
+    }
+}
+
+pub func box<T>(value: T) -> stdlib.Result<Box<T>, stdlib.AllocationError> {
+    var storage: *BoxStorage < T >= core.core_alloc(sizeof(BoxStorage<T>)).(*BoxStorage<T>);
+    if (storage == core.null<BoxStorage<T>>()) {
+        return stdlib.Result<Box<T>, stdlib.AllocationError>.Err(stdlib.AllocationError.OutOfMemory);
+    }
+    core.initialize<BoxStorage<T>>(storage, BoxStorage<T>{ value: value });
+    return stdlib.Result<Box<T>, stdlib.AllocationError>.Ok(Box<T>{ storage: storage });
+}
+
+pub struct Arena {
+    var storage: u8[];
+    var used: usize;
+    pub func capacity() -> usize {
+        return storage.length;
+    }
+
+    pub func length() -> usize {
+        return used;
+    }
+
+    pub func view() -> u8[] {
+        return storage[: used];
+    }
+
+    pub func allocate(bytes: usize) -> stdlib.Result<usize, stdlib.AllocationError> {
+        if (bytes > storage.length - used) {
+            return stdlib.Result<usize, stdlib.AllocationError>.Err(
+                stdlib.AllocationError.CapacityOverflow
+            );
+        }
+        var start: usize = used;
+        used += bytes;
+        return stdlib.Result<usize, stdlib.AllocationError>.Ok(start);
+    }
+
+    pub func region(offset: usize, length: usize) -> u8[] {
+        if (offset > used || length > used - offset) {
+            core.core_trap();
+        }
+        return storage[offset: offset + length];
+    }
+
+    pub func reset() -> void {
+        used = 0;
+    }
+
+    destructor {
+        core.release(storage);
+    }
+}
+
+pub func arena(capacity: usize) -> stdlib.Result<Arena, stdlib.AllocationError> {
+    if (capacity > 9223372036854775807.(usize)) {
+        return stdlib.Result<Arena, stdlib.AllocationError>.Err(
+            stdlib.AllocationError.CapacityOverflow
+        );
+    }
+    var value: Arena;
+    if (capacity > 0) {
+        value.storage = core.alloc<u8>(capacity);
+        if (value.storage.length == 0) {
+            return stdlib.Result<Arena, stdlib.AllocationError>.Err(stdlib.AllocationError.OutOfMemory);
+        }
+    }
+    return stdlib.Result<Arena, stdlib.AllocationError>.Ok(value);
+}

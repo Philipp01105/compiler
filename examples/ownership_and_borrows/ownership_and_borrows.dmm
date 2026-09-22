@@ -3,55 +3,61 @@ import "stdlib";
 
 // A destructor makes an otherwise ordinary value move-only and drop-aware.
 struct OwnedHandle {
-    var id:int;
+    var id: int;
 
     destructor {
         stdlib.println("releasing handle");
         stdlib.println(id);
-        id=0;
+        id = 0;
     }
 }
 
 // Ownership is derived separately for every concrete specialization:
 // Box<int> is copyable, while Box<OwnedHandle> is move-only and needs drop.
 struct Box<T> {
-    var value:T;
+    var value: T;
 }
 
 // Generated drop glue destroys fields in reverse declaration order.
 struct HandlePair {
-    var first:OwnedHandle;
-    var second:OwnedHandle;
+    var first: OwnedHandle;
+    var second: OwnedHandle;
 }
 
-func consumeValue<T>(value:T) -> void {
+func consumeValue<T>(value: T) -> void {
     stdlib.println("consuming");
     stdlib.println(T.name);
-} // A concrete move-only value is destroyed here.
+}
+
+// A concrete move-only value is destroyed here.
 
 func main() -> int {
-    var number:Box<int>;
-    number.value=41;
-    var copy=number;
-    copy.value+=1;
-    if (number.value != 41 || copy.value != 42) { return 1; }
+    var number: Box<int>;
+    number.value = 41;
+    var copy = number;
+    copy.value += 1;
+    if (number.value != 41 || copy.value != 42) {
+        return 1;
+    }
 
-    var owned:Box<OwnedHandle>;
-    owned.value.id=7;
+    var owned: Box<OwnedHandle>;
+    owned.value.id = 7;
     consumeValue(owned);
     // `owned` has moved. Whole-variable assignment makes it live again.
-    var replacement:Box<OwnedHandle>;
-    replacement.value.id=8;
-    owned=replacement;
+    var replacement: Box<OwnedHandle>;
+    replacement.value.id = 8;
+    owned = replacement;
 
     // Mutable borrows of disjoint fields may overlap. Their lifetimes end after
     // the last dereference, before the containing value is destroyed.
-    var pair:HandlePair;
-    var firstId=&mut pair.first.id;
-    var secondId=&mut pair.second.id;
-    *firstId=1;
-    *secondId=2;
+    var pair: HandlePair;
+    var firstId = &mut pair.first.id;
+    var secondId = &mut pair.second.id;
+    *firstId = 1;
+    *secondId = 2;
 
     stdlib.println("leaving main");
     return 0;
-} // pair releases 2 then 1; the reinitialized owner releases 8.
+}
+
+// pair releases 2 then 1; the reinitialized owner releases 8.

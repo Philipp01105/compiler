@@ -2,34 +2,109 @@ package main;
 import "stdlib/core";
 import "stdlib/native/glibc";
 import "stdlib/native/pthreads";
-extern "system" from "bindings" { pub func size(index:u32) -> usize = "binding_size"; }
-export "system" func worker(address:*void) -> *void {
-    var value:*i32=address.(*i32); *value=17; return address;
+extern "system" from "bindings" {
+    pub func size(index: u32) -> usize = "binding_size";
 }
+
+export "system" func worker(address: *void) -> *void {
+    var value: *i32 = address.(*i32);
+    *value = 17;
+    return address;
+}
+
 func main() -> int {
-    if (size(0)!=pthreads.Mutex.size || size(1)!=pthreads.Mutex.align || size(2)!=pthreads.Condition.size ||
-        size(3)!=pthreads.Condition.align || size(4)!=pthreads.Attributes.size || size(5)!=glibc.Timespec.size ||
-        size(6)!=glibc.EpollEvent.size || size(7)!=glibc.EpollEvent.align || size(8)!=glibc.Addrinfo.size ||
-        size(9)!=glibc.SockaddrIn.size || size(10)!=glibc.SockaddrIn6.size || size(11)!=glibc.SockaddrStorage.size) { return 1; }
-    var value:i32=0; var thread:usize; var result:*void;
-    if (pthreads.create((&thread).(*usize),core.null<pthreads.Attributes>(),worker,(&value).(*void))!=0) { return 2; }
-    if (pthreads.join(thread,(&result).(**void))!=0 || value!=17 || result!=(&value).(*void)) { return 3; }
-    var mutex:pthreads.Mutex;
-    if (pthreads.mutexInit((&mutex).(*pthreads.Mutex),core.null<pthreads.MutexAttributes>())!=0) { return 4; }
-    if (pthreads.mutexLock((&mutex).(*pthreads.Mutex))!=0 || pthreads.mutexUnlock((&mutex).(*pthreads.Mutex))!=0 ||
-        pthreads.mutexDestroy((&mutex).(*pthreads.Mutex))!=0) { return 5; }
-    var reactor:i32=glibc.epollCreate(glibc.EPOLL_CLOEXEC);
-    var wake:i32=glibc.eventfd(0,glibc.EFD_NONBLOCK);
-    if (reactor<0 || wake<0) { return 6; }
-    var event:glibc.EpollEvent; event.events=glibc.EPOLLIN; event.data.wide=123;
-    if (glibc.epollControl(reactor,glibc.EPOLL_CTL_ADD,wake,(&event).(*glibc.EpollEvent))!=0) { return 7; }
-    var one:u64=1;
-    if (glibc.write(wake,(&one).(*void),8)!=8 || glibc.epollWait(reactor,(&event).(*glibc.EpollEvent),1,1000)!=1 || event.data.wide!=123) { return 8; }
-    glibc.close(wake); glibc.close(reactor);
-    var hints:glibc.Addrinfo; hints.family=glibc.AF_INET; hints.socketType=glibc.SOCK_STREAM;
-    var addresses:*glibc.Addrinfo;
-    if (glibc.getaddrinfo(core.null<u8>(),core.core_string_data("0"),(&hints).(*glibc.Addrinfo),(&addresses).(**glibc.Addrinfo))!=0) { return 9; }
+    if (
+        size(0) != pthreads.Mutex.size ||
+        size(1) != pthreads.Mutex.align ||
+        size(2) != pthreads.Condition.size ||
+        size(3) != pthreads.Condition.align ||
+        size(4) != pthreads.Attributes.size ||
+        size(5) != glibc.Timespec.size ||
+        size(6) != glibc.EpollEvent.size ||
+        size(7) != glibc.EpollEvent.align ||
+        size(8) != glibc.Addrinfo.size ||
+        size(9) != glibc.SockaddrIn.size ||
+        size(10) != glibc.SockaddrIn6.size ||
+        size(11) != glibc.SockaddrStorage.size
+    ) {
+        return 1;
+    }
+    var value: i32 = 0;
+    var thread: usize;
+    var result: *void;
+    if (
+        pthreads.create(
+            (&thread).(*usize),
+            core.null<pthreads.Attributes>(),
+            worker,
+            (&value).(*void)
+        ) != 0
+    ) {
+        return 2;
+    }
+    if (
+        pthreads.join(thread, (&result).(**void)) != 0 ||
+        value != 17 ||
+        result != (&value).(*void)
+    ) {
+        return 3;
+    }
+    var mutex: pthreads.Mutex;
+    if (
+        pthreads.mutexInit(
+            (&mutex).(*pthreads.Mutex),
+            core.null<pthreads.MutexAttributes>()
+        ) != 0
+    ) {
+        return 4;
+    }
+    if (
+        pthreads.mutexLock((&mutex).(*pthreads.Mutex)) != 0 ||
+        pthreads.mutexUnlock((&mutex).(*pthreads.Mutex)) != 0 ||
+        pthreads.mutexDestroy((&mutex).(*pthreads.Mutex)) != 0
+    ) {
+        return 5;
+    }
+    var reactor: i32 = glibc.epollCreate(glibc.EPOLL_CLOEXEC);
+    var wake: i32 = glibc.eventfd(0, glibc.EFD_NONBLOCK);
+    if (reactor < 0 || wake < 0) {
+        return 6;
+    }
+    var event: glibc.EpollEvent;
+    event.events = glibc.EPOLLIN;
+    event.data.wide = 123;
+    if (
+        glibc.epollControl(reactor, glibc.EPOLL_CTL_ADD, wake, (&event).(*glibc.EpollEvent)) != 0
+    ) {
+        return 7;
+    }
+    var one: u64 = 1;
+    if (
+        glibc.write(wake, (&one).(*void), 8) != 8 ||
+        glibc.epollWait(reactor, (&event).(*glibc.EpollEvent), 1, 1000) != 1 ||
+        event.data.wide != 123
+    ) {
+        return 8;
+    }
+    glibc.close(wake);
+    glibc.close(reactor);
+    var hints: glibc.Addrinfo;
+    hints.family = glibc.AF_INET;
+    hints.socketType = glibc.SOCK_STREAM;
+    var addresses: *glibc.Addrinfo;
+    if (
+        glibc.getaddrinfo(
+            core.null<u8>(),
+            core.core_string_data("0"),
+            (&hints).(*glibc.Addrinfo),
+            (&addresses).(**glibc.Addrinfo)
+        ) != 0
+    ) {
+        return 9;
+    }
     glibc.freeaddrinfo(addresses);
-    if (glibc.close(-1)!=-1 || *glibc.errnoAddress()!=glibc.EBADF) { return 10; }
+    if (glibc.close(-1) != - 1 || *glibc.errnoAddress() != glibc.EBADF) {
+        return 10;
+    }
     return 0;
 }

@@ -1,12 +1,20 @@
 package main;
 
-enum Status { Ready, Busy, Failed }
+enum Status {
+    Ready,
+    Busy,
+    Failed
+}
 
 func main() -> int {
-    var current:Status = Status.Ready;
-    var code:int = match (current) {
-        Ready => { 0 }
-        Busy => { 1 }
+    var current: Status = Status.Ready;
+    var code: int = match (current) {
+        Ready => {
+            0
+        }
+        Busy => {
+            1
+        }
     };
     return code;
 }

@@ -1,0 +1,17 @@
+package main;
+import (
+    "stdlib"
+);
+
+func main() -> int {
+    var owner = stdlib.bytes(4);
+    owner.push(7);
+    var wrapped = stdlib.Option<u8[]>.Some(owner.view());
+    match (wrapped) {
+        None => return 0;
+        Some(value) => {
+            owner.clear();
+            return value[0].(int);
+        }
+    }
+}

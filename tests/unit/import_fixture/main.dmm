@@ -2,6 +2,6 @@ package main;
 import "dmm.test/imports/math";
 
 func main() -> void {
-    var point:math.ImportedPoint;
+    var point: math.ImportedPoint;
     point.x = math.imported_square(6);
 }

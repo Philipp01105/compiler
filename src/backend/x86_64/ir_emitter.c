@@ -746,7 +746,7 @@ size_t aggregate_result_offset(const Emitter *emitter,
         if ((candidate->opcode != IR_OP_EXECUTOR && candidate->opcode != IR_OP_AWAIT && candidate->opcode != IR_OP_CALL && candidate->opcode != IR_OP_ENUM_CONSTRUCT && candidate->opcode !=
              IR_OP_SLICE && candidate->opcode != IR_OP_SUBSLICE &&
              candidate->opcode != IR_OP_ARRAY_LITERAL &&
-             candidate->opcode != IR_OP_INTERFACE_PACK && candidate->opcode != IR_OP_NATIVE_COPY &&
+             candidate->opcode != IR_OP_INTERFACE_PACK && candidate->opcode != IR_OP_NATIVE_COPY && candidate->opcode != IR_OP_VALUE_SNAPSHOT &&
              candidate->opcode != IR_OP_STRUCT_LITERAL) ||
             (!is_inline_structure(emitter->module, candidate) &&
              !candidate->is_array))
@@ -769,7 +769,7 @@ static size_t aggregate_result_slots(const Emitter *emitter) {
         if ((instruction->opcode == IR_OP_EXECUTOR || instruction->opcode == IR_OP_AWAIT || instruction->opcode == IR_OP_CALL || instruction->opcode == IR_OP_ENUM_CONSTRUCT || instruction->opcode ==
              IR_OP_SLICE || instruction->opcode == IR_OP_SUBSLICE ||
              instruction->opcode == IR_OP_ARRAY_LITERAL ||
-             instruction->opcode == IR_OP_INTERFACE_PACK || instruction->opcode == IR_OP_NATIVE_COPY ||
+             instruction->opcode == IR_OP_INTERFACE_PACK || instruction->opcode == IR_OP_NATIVE_COPY || instruction->opcode == IR_OP_VALUE_SNAPSHOT ||
              instruction->opcode == IR_OP_STRUCT_LITERAL) &&
             (is_inline_structure(emitter->module, instruction) ||
              instruction->is_array))
@@ -1637,7 +1637,7 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
                                        variant->payload_types[p]);
                 }
                 write_value_load(emitter, "rax", instruction->operand_a);
-                if (type_is_structure(emitter->module, instruction->type_id) || instruction->is_array)
+                if (instruction->lifetime_pointer || type_is_structure(emitter->module, instruction->type_id) || instruction->is_array)
                     write_x64_2(emitter, X64_OP_LEA, X64_WIDTH_QWORD, x64_register("rax"),
                                 x64_memory(X64_WIDTH_NONE, "rax", (long long) (slot * 8)));
                 else
@@ -1844,6 +1844,7 @@ static int emit_instruction(Emitter *emitter, const IrInstruction *instruction,
             write_value_store(emitter, "rax", instruction->result);
             return 1;
         }
+        case IR_OP_VALUE_SNAPSHOT:
         case IR_OP_NATIVE_COPY: {
             size_t offset = aggregate_result_offset(emitter, instruction);
             if (!offset) return 0;

@@ -1,3 +1,6 @@
 package main;
 import "stdlib/core";
-func main() -> void { core.core_trap(); }
+
+func main() -> void {
+    core.core_trap();
+}

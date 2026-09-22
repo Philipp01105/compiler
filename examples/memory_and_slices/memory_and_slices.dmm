@@ -2,59 +2,60 @@ package main;
 import "stdlib";
 
 struct Cell<T> {
-    var value:T;
+    var value: T;
 }
 
 struct FiveValues {
-    var items:i32[5];
+    var items: i32[5];
 }
 
-func allocateCell<T>(value:T) -> *Cell<T> {
-    var cell:*Cell<T>=reserve(Cell<T>);
-    cell.value=value;
+func allocateCell<T>(value: T) -> *Cell<T> {
+    var cell: *Cell < T >= reserve(Cell<T>);
+    cell.value = value;
     return cell;
 }
 
-func sum(values:i32[]) -> i32 {
-    var total:i32=0;
-    for (var index:int=0; index < values.length; index+=1) {
-        total+=values[index];
+func sum(values: i32[]) -> i32 {
+    var total: i32 = 0;
+    for (var index: int = 0; index < values.length; index += 1) {
+        total += values[index];
     }
     return total;
 }
 
 func generatedValues() -> i32[] {
     // Returning a slice literal transfers its hidden backing storage safely.
-    return [5,6,7,8];
+    return [5, 6, 7, 8];
 }
 
-func first(values:&FiveValues) -> &i32 {
+func first(values: &FiveValues) -> &i32 {
     return &values.items[0];
 }
 
-func bumpFirst(values:&mut FiveValues) -> void {
-    values.items[0]+=1;
+func bumpFirst(values: &mut FiveValues) -> void {
+    values.items[0] += 1;
 }
 
 func main() -> int {
-    var matrix:i32[2][3]=[[1,2],[3,4],[5,6]];
-    var rows:i32[2][]=matrix;
-    var middleRow:i32[]=matrix[1];
-    middleRow[0]=30;
+    var matrix: i32[2][3] = [[1, 2],[3, 4],[5, 6]];
+    var rows: i32[2][] = matrix;
+    var middleRow: i32[] = matrix[1];
+    middleRow[0] = 30;
 
-    var storage:FiveValues;
-    storage.items=[10,20,30,40,50];
-    var firstValue=first(&storage);
+    var storage: FiveValues;
+    storage.items = [10, 20, 30, 40, 50];
+    var firstValue = first(&storage);
     stdlib.println(*firstValue);
     bumpFirst(&mut storage);
-    var middle:i32[]=storage.items[1:4];
-    var rawTail:i32[]=slice((&storage.items[3]).(*i32),2);
-    rawTail[0]=400;
+    var middle: i32[] = storage.items[1: 4];
+    var rawTail: i32[] = slice((&storage.items[3]).(*i32), 2);
+    rawTail[0] = 400;
 
-    var generated:i32[]=generatedValues();
-    var expected:i32[]=[5,6,7,8];
-    var repeated:i32[]=[3;4];
-    var cell:*Cell<i32>=allocateCell(sum(generated));
+    var generated: i32[] = generatedValues();
+    var expected: i32[] = [5, 6, 7, 8];
+    var repeated: i32[] = [3;
+    4];
+    var cell: *Cell < i32 >= allocateCell(sum(generated));
 
     stdlib.println(rows[1][0]);
     stdlib.println(sum(middle));

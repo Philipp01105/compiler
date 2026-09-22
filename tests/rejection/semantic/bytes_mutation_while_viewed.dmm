@@ -1,9 +1,10 @@
 package main;
 import "stdlib";
+
 func main() -> void {
-    var bytes:stdlib.Bytes=stdlib.bytes(1);
+    var bytes: stdlib.Bytes = stdlib.bytes(1);
     bytes.push(1);
-    var view:u8[]=bytes.view();
+    var view: u8[] = bytes.view();
     bytes.push(2);
-    var value:u8=view[0];
+    var value: u8 = view[0];
 }

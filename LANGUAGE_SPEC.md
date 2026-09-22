@@ -1,4 +1,4 @@
-# DMM Language Specification 2026-09-22-dev
+# DMM Language Specification 2026-10-04-dev
 
 - [Source and declarations](#source-and-declarations), [modules and packages](#modules-and-packages)
 - [Types](#types), [expressions and control flow](#control-flow-and-expressions), [ownership](#derived-ownership-and-destruction)
@@ -9,14 +9,15 @@ Status: experimental. This document defines the tested source-language contract;
 
 ## Edition and compatibility
 
-The current language edition is `2026-09-22-dev`. Edition identifiers use a real Gregorian date in the form
+The current language edition is `2026-10-04-dev`. Edition identifiers use a real Gregorian date in the form
 `YYYY-MM-DD`, optionally followed by `-dev`, `-pr`, `-prerelease`, `-rc`, or `-releasecandidate`. The paired short and
 long prerelease and release-candidate suffixes have the same meaning. Years use four digits; months and days use two.
 Malformed dates are rejected.
 
-Every module declares its edition with `dmm 2026-09-22-dev`. The compiler accepts only its exact current edition,
-including the suffix. DMM is in rapid development and currently provides no backwards-compatibility, migration, or
-compatibility-mode guarantee. A stable compatibility policy is deferred until the first stable release.
+Every module declares its edition in its manifest. This compiler also accepts `2026-09-22-dev` for existing source.
+Method `where` constraints, the built-in `take`/`replace` operations, explicit capturing closures,
+and `mut func` types require `2026-10-04-dev`.
+This limited compatibility does not establish a stable compatibility policy.
 
 Experimental features are project-wide and are enabled only by the root module's `dmm.manifest`. An omitted
 `features` directive and `features = []` are equivalent. Feature names use lowercase ASCII letters, digits, and
@@ -64,6 +65,11 @@ resume states, polling a completed frame, and cleanup of an incomplete frame tra
 Both ELF and COFF native backends support this at O0 and O1. A private deterministic test driver exercises polling.
 `main` remains synchronous. Typed asynchronous TCP/UDP/DNS is available through `stdlib/core/net`; public `stdlib/net`
 and asynchronous file APIs remain future work. See [stdlib/core/net/README.md](stdlib/core/net/README.md).
+
+`core.Poll<T>` is an ordinary `Pending`/`Ready(T)` sum type. `stdlib/async` supplies
+the `asynchronous` package with retained `Waker`, owned `Context`, and a structural
+`Poller<T>` interface whose `cancelPoll` returns `Poll<CancelAck>`. The pinned
+`fromPoller` adapter and public Future composition operations are not available yet.
 
 `core.Send` and `core.Sync` are canonical auto interfaces, derived through aggregate fields and enum payloads unless
 an explicit property rule overrides that derivation. Shared checked
@@ -128,8 +134,9 @@ until completion, including an action already suspended when cancellation arrive
 a cancellation or shutdown Future still completes its operation. IR validation checks pinned storage,
 unique suspend states, cancellation edges, cleanup effects and consuming transitions.
 
-Native scheduling, threads, events and the private I/O handshake are emitted for ELF and COFF by
-the standalone runtime, without an external linker handoff. `src/runtime/executor.c` also implements
+Scheduling and the private I/O handshake live in `stdlib/core/executor` as DMM libraries.
+Threads and events use DMM platform libraries with OS FFI. Emitted async bodies and executor operations
+select external platform linking for ELF and COFF. Independent C test references implement
 the private contract for deterministic concurrency tests. I/O request and confirmed termination are
 separate events; frame and adapter references keep the operation alive through confirmation delivery.
 Free spawn and block_on lazily initialize a default executor with two workers. Normal process exit
@@ -137,9 +144,12 @@ drains it before package cleanup. Explicit executors are independent. Resource f
 existing fatal runtime path. There are no detached tasks, forced thread aborts or cancellation deadline:
 non-cooperative synchronous code or missing I/O confirmation may delay cancellation/shutdown indefinitely.
 
-The optional platform profile replaces thread/event primitives with pthreads on Linux or UCRT64 `_beginthreadex`
-on Windows while retaining the generated scheduler. Used network operations select this profile and its combined
-shim automatically; `--link=external` also selects the platform profile without requiring networking. See
+The platform profile uses pthreads on Linux or UCRT64 `_beginthreadex` on Windows. Used network package functions
+select their source runtime implementations automatically; `--link=external` also selects the platform profile
+without requiring networking. `nativeFuture(frame)` adopts a native `Future<void>` frame from `*void`;
+the binding promises valid stable Send-safe storage and native callbacks, destruction and confirmed cancellation.
+This general FFI bridge requires async and performs no runtime call or by-value Future marshaling. See
+[stdlib/core/executor/README.md](stdlib/core/executor/README.md),
 [ARCHITECTURE.md](ARCHITECTURE.md#native-x86-64-backend) and [ARCHITECTURE.md](ARCHITECTURE.md#executor-runtime-and-native-abi).
 
 The `core.AtomicBit` and `core.AtomicUsize` types are available independently of `async`. Construct them with
@@ -285,6 +295,12 @@ declared local name. Access is qualified:
 bindings in another file of the same package. The existing grouped form remains available:
 `import ("path/a" b "path/b");`. Dot imports, blank aliases, duplicate aliases and file imports are unsupported.
 
+In edition `2026-10-04-dev`, `pub import (...)` forwards the imported packages' public declarations.
+Forwarded declarations retain their defining package and nominal type identity, including generic instantiations.
+Private declarations remain inaccessible. Diamonds forwarding the same declaration are allowed; distinct
+public declarations with the same exported name are rejected. Imports remain grouped in stdlib sources.
+
+
 Declarations and members are private by default. `pub` applies to functions, structs, enums, interfaces, constants and
 package variables. Fields and methods require their own `pub`; exporting a struct does not export its private members.
 Enum variants also require `pub`, for example:
@@ -363,7 +379,8 @@ arrays, while `int[2][]` is a slice of length-2 arrays. Repeated prefix stars fo
 types distinguish `*(int[4])` from `*int[4]`. Whole-array assignment is supported when both sides have the same complete
 fixed-array type.
 
-Function types describe non-capturing callable values. A monomorphic type such as
+Function types describe non-capturing callable values and serve as callback bounds for
+explicit capturing closures. A monomorphic non-capturing value such as
 `func(int,string) -> bit` is one machine-word function address. A polymorphic type such as
 `func<T:Printable,U>(T,U) -> T` is a compile-time template identity whose type-parameter names are alpha-renamed when
 types are compared. A source template is compatible with a target when their parameter and return shapes match and
@@ -384,6 +401,45 @@ compile-time callable parameters, and callable returns, but not in runtime aggre
 returning a polymorphic callable must return one template identity on every path. Passing such an identity specializes
 the receiving function and erases that compile-time parameter from the emitted ABI.
 
+The `2026-10-04-dev` edition also supports explicit capturing closures:
+
+```dmm
+var offset:i32 = 3;
+var add = func [move offset](value:i32) -> i32 { return value + offset; };
+var count:i32 = 0;
+var compare = func [&mut count](left:i32, right:i32) -> bit {
+    count += 1;
+    return left < right;
+};
+```
+
+Each closure has a distinct inferred environment type. `move`, `&`, and `&mut` captures
+transfer or borrow their named source explicitly; names not captured are unavailable in
+the body. The environment owns moved fields and retains checked loans for borrowed
+fields. It is destroyed once when its lifetime ends. Borrowed captures cannot outlive
+their sources, and mutable captures forbid conflicting aliases. A closure can be passed
+to a matching callback parameter; the compiler specializes the receiving DMM function
+for its concrete environment. Ordinary function values remain valid callback arguments.
+`func(...) -> T` accepts shared-call closures, while `mut func(...) -> T` also accepts
+closures that mutate their environment. Repeatedly invoking algorithms use the latter.
+`once func(...) -> T` accepts shared and mutable callables and permits at most one
+invocation of its owned binding. Assignment and argument passing transfer a once binding;
+it does not satisfy `core.Copy`. Calling it consumes the binding, including across branches
+and loop iterations. Invocation and extraction through checked references are forbidden.
+Concrete closure callback specialization retains this invocation contract. A
+local closure can also carry a callable annotation: the annotation constrains its
+signature and invocation mode, while storage keeps the concrete environment type.
+Generic specialization rechecks the original annotation for the new environment. An unused
+callback is dropped normally, so a lazy fallback destroys its owned captures even when
+the fallback branch is not taken. Moving an owned capture in the body infers a consuming
+closure. Its environment is lowered to an internal sum enum; invocation transfers the
+whole environment to an ordinary function and a consuming pattern binds every capture.
+Unmoved captures are cleaned up once on every return path. Capture loans and consumption
+obligations use the same checks as other enum payloads. Such a closure only satisfies
+`once func` bounds, and another invocation is rejected. Partial moves inside an owned
+capture remain unsupported. A capturing closure
+cannot convert to a native function pointer.
+
 `&T` and `&mut T` are checked non-owning references created by `&value` and `&mut value`. Immutable references permit
 reads; mutable references are exclusive and permit reads and writes through `*reference`. While a conflicting borrow is
 live, the owner cannot be moved, replaced or accessed incompatibly. Lifetimes end conservatively after the last proven
@@ -391,9 +447,54 @@ use. Struct fields and constant array indices are treated as disjoint when that 
 whole aggregates overlap. A postfix cast such as `reference.(*T)` explicitly crosses from a checked reference to an
 unchecked raw pointer.
 
-Checked references cannot be stored in aggregate fields, enum payloads or package variables because those locations do
-not express a lifetime. A borrowed return must have one statically provable origin in a borrowed parameter or package
-storage. Returning a local borrow or merging incompatible return origins is rejected.
+A returned borrow cannot point to a by-value scalar parameter. Value-pattern bindings of stored reference
+payloads preserve their referents, and `Option<&T>.branch` can transfer those payloads. Returning an
+`Option<&T>` rebuilt from a local binding produced by `?` is still conservatively rejected.
+Nested checked-reference representation, borrowing a reference binding's slot, complete provenance for
+nested aggregate storage and interprocedural reassignment of stored borrows remain unfinished.
+
+Edition `2026-10-04-dev` admits lifetime parameters before type parameters (`Reader<'a,T>`) and annotated references
+(`&'a T`, `&'a mut T`). Lifetimes have no runtime layout or specialization identity. Stored struct references must
+name a declared lifetime; aggregates with checked references require explicit initialization. The existing cursor
+APIs remain compatible. `stdlib/binary.borrowedReader` and `borrowedWriter` retain checked descriptor borrows and
+delegate to the cursors, including their backing-storage and bounds checks.
+
+Construction, copies, moves, returns, patterns and async captures retain source loans. Mutable reference fields and
+payloads make their containing aggregate move-only. Reference extraction creates a reborrow and suspends conflicting
+access through its parent until the reborrow ends. Borrows owned by an aggregate with a destructor remain live through
+cleanup. Branches and loops conservatively retain every possible source. Sources must outlive their borrowers;
+self-referential aggregate assignments and escaping local sources are rejected.
+
+A borrowed return with omitted lifetimes requires one statically provable origin in a borrowed parameter, an owning
+receiver, or package storage. An explicit result lifetime may relate several input origins; all corresponding loans
+remain live in the caller. A mismatched declared result lifetime is rejected. `'static` denotes permanently live
+storage and cannot be redeclared. Static reference parameters and fields require a proven permanent source.
+Immutable checked borrows in package variables require proven permanent origins and keep their storage fixed.
+Mutable package borrows remain unsupported. Some returned aggregate loans are conservatively
+tied to the whole result; these restrictions can reject disjoint operations until more precise provenance is available.
+
+Direct reference fields in a struct return preserve independent origins when explicit result lifetimes relate
+each field to checked reference parameters or direct reference fields of aggregate parameters.
+Checked reference returns follow the matching fields' origins as well. If a lifetime also describes the
+aggregate's storage, both storage and referent loans remain live. The function body must satisfy each field's declared lifetime;
+swapping sources with distinct lifetimes is rejected. Reborrowing one such field does not suspend a disjoint field.
+Nested aggregates and owning payloads still use conservative origin unions. Nested fields with a single lifetime
+retain that relationship for return-lifetime validation.
+Explicit enum payload lifetimes are also checked independently at return boundaries and preserved on value-pattern
+bindings from aggregate parameters. Constructing an explicitly static enum payload requires permanent storage.
+Function calls, struct and enum constructors check
+simultaneous reference arguments for conflicting aliases, including references returned from functions.
+Earlier argument loans remain active during later argument evaluation, including loans in returned aggregates
+and references with several possible origins. Copying an ordinary borrowed slice descriptor remains permitted.
+Copies and reborrows preserve the full union of possible referents after the source binding's last use.
+Unknown nested constructor origins remain tied conservatively to the containing aggregate and survive inner-field copies.
+Shared checked references permit reading; writes, mutable reborrows, copying mutable reference fields and mutating
+method calls through them are rejected. Mutable-result getters require exclusive receiver access as well.
+
+Borrowing method results and async method frames require a named receiver whose lifetime can be retained.
+Whole owning temporaries used as receivers are destroyed once after an ordinary call. A deferred call retains
+its receiver and argument backing until invocation and then runs their cleanup. A temporary receiver cannot
+hide an unfulfilled Future consumption obligation.
 
 Fixed-size array parameters such as `values:float[2]` accept arrays with exactly the declared lengths and element types
 at every nesting level. They borrow the caller's storage, so element mutations are visible to the caller. Their ABI
@@ -607,6 +708,18 @@ Raw pointers, unbound slices, function values, and dynamic interfaces have no au
 unrelated interface named Send or Sync has no language role. Async frame, output, loan, and cancellation checks remain
 independent of an aggregate's property guarantee.
 
+`core.Copy` is the canonical auto interface for the compiler's existing COPYABLE value property. A destructor or
+move-only payload excludes Copy. Arrays follow their elements; references, raw pointers, slice descriptors and
+non-capturing function values follow their existing copy semantics. Copy cannot be overridden by a declaration or
+external type rule. Unrelated interfaces named Copy have no language role. Use `func duplicate<T: core.Copy>(x:T)`
+to state a copying requirement; a violating call reports the failed Copy requirement.
+
+Aggregate methods can add `where T: core.Copy` after their return type. Conditions are comma-separated, with `+`
+between required non-generic interfaces. Conditions are specialized with the aggregate's type arguments. An
+unsatisfied method is unavailable and its body is not instantiated; the aggregate and its other methods remain usable.
+For example, `struct Cell<T> { var value:T; func copyValue()->T where T:core.Copy { return value; } }` may own T even
+when copying T is forbidden. Free functions continue to place their bounds on generic parameters.
+
 ### Explicit initialization and object lifetimes
 
 `@[no_default]` on a struct or enum requires explicit initialization. This property is monotone: a struct follows all
@@ -629,6 +742,15 @@ When the argument directly names tracked whole storage, state and loan checks ap
 Tracked subobject lifetime operations are unsupported in V1. Untracked pointers are permitted: the caller guarantees
 alignment, storage validity, ownership, lifetime state, and conflict-free access. In particular, destroying a payload
 through `&storage.value` where storage is a raw heap pointer is permitted under this contract.
+
+`take(place)` transfers a live value and ends the source lifetime without destruction. `replace(place,value)`
+evaluates the new value first, transfers the previous value to the result, and starts the new lifetime in the place.
+Aggregate results use detached storage before the place can be reused. Discarding an owning result destroys it;
+MUST_CONSUME results must still be transferred or consumed. Tracked whole places receive lifetime, loan and cleanup
+flag checks. Tracked partial places, checked reference values, and dereferences through checked references are rejected. Dereferenced raw
+pointers and raw heap fields carry the same explicit validity, alignment and lifetime responsibilities as initialize
+and destroy. Replacement conservatively retains the union of old and new loans on both values until their borrowers
+end. Normal functions and callable locals named take or replace continue to shadow the built-in operations.
 
 Owning instance methods may return a checked borrow of heap storage reachable through their receiver. The returned
 borrow is tied to that receiver. This does not establish general safe raw-pointer lifetime management.
@@ -668,6 +790,14 @@ declaration order while preserving `main`'s exit status. Reassignment drops the 
 value initialized. Moving ownership out of package storage is rejected because a single function's move analysis cannot
 soundly represent package-wide moved state. The immediate `exit` intrinsic and abnormal process termination bypass
 normal package cleanup.
+
+Package variables may store immutable checked references and aggregates containing them when their
+initializer proves an origin in permanently initialized package storage. The loans remain active in every
+function, even when that function does not read the holder. Such holders cannot be rebound, moved, or modified;
+their sources cannot be mutated, moved, or destroyed while the program is running. Copies retain the same origins.
+An absent initializer or unprovable origin is rejected. An explicitly constructed empty enum variant needs no
+origin, but its package holder is still fixed. Mutable package borrows remain unsupported until exclusive access
+across function calls can be proved.
 
 Current implementation status: semantic ownership classification, control-flow ownership-state merging,
 move/reinitialization checks, checked borrows, generic-specialization propagation, typed-IR ownership effects,
@@ -740,6 +870,16 @@ scrutinee enum. Bindings have the exact payload types and are scoped to their ar
 extraction is emitted only in a branch guarded by the corresponding tag test; typed IR verifies that guard. An invalid
 runtime tag traps.
 
+A value match consumes any move-only sum enum, independent of its package or name. Every variant and every payload
+must be explicitly bound; a wildcard cannot discard an owned active payload. Bindings receive ownership and any
+consumption obligations. Known constructor payload origins follow their respective bindings across whole enum moves
+and `take`, so completing one Future payload releases its own loans while other payloads retain theirs. Unknown
+origins from function returns or nested payloads remain conservatively united; callees may reorder payloads.
+Cleanup transfers from the scrutinee to the active
+bindings. Copyable enums keep copying semantics. `match (&value)` and `match (&mut value)` preserve the enum and
+produce checked shared or mutable payload references scoped to the arm. Borrowed payloads cannot escape local
+storage or permit moving the enum while they remain in use.
+
 The standard propagation types and interfaces are documented in [stdlib](stdlib/README.md#value-types-and-interfaces).
 
 Functions declared inside a struct are invoked as instance methods, while
@@ -768,7 +908,9 @@ generic specializations. Enum value matches retain their existing syntax and beh
 
 Generic functions accept explicit type arguments: `identity<i32>(value)` or `core.alloc<Node>()`. Arguments must satisfy
 the function's arity, parameter types and interface bounds. Existing inference remains available when value parameters
-determine every type argument; a return type alone does not infer one.
+determine every type argument; monomorphic function-value parameter and return signatures also participate.
+Overloaded callbacks are checked against the inferred signature; unresolved ambiguity requires explicit type
+arguments. An enclosing call's return type alone does not infer a type argument.
 
 `reserve(type)` zero-initializes one complete sized non-void object and returns a pointer to that type. It accepts a
 type rather than a runtime count. `free(value)` releases a raw pointer or owned string, never a slice descriptor or
@@ -858,7 +1000,8 @@ such values; ordinary DMM functions require a matching explicit native export an
 cannot be implicitly converted. Function-pointer types include the ABI in their
 identity. A zero-initialized function pointer represents a null callback; calling it
 traps. Native function values can be stored, passed to native functions and returned
-by native functions. There are no captured closures or generated closure trampolines.
+by native functions. Capturing DMM closures cannot convert to native function pointers;
+the compiler generates no closure trampolines for native callbacks.
 
 ```dmm
 package callbacks;
@@ -1004,7 +1147,7 @@ return-type     = type ;
 type            = ["&", ["mut"]], {"*"},
                   (native-function-type | function-type | async-type | primitive-type | qualified-name, [type-arguments] | "(", type, ")"),
                   {"[", [integer | identifier], "]"} ;
-function-type   = "func", [generic-parameters], "(", [type-list], ")", "->", type ;
+function-type   = ["mut" | "once"], "func", [generic-parameters], "(", [type-list], ")", "->", type ;
 native-function-type = "extern", "\"system\"", "func", "(", [type-list], ")", "->", type ;
 async-type      = ("Future" | "JoinHandle"), "<", type, ">" | "Executor" ;
 type-arguments  = "<", type, {",", type}, ">" ;
@@ -1121,7 +1264,7 @@ multiplicative  = unary, { ("*" | "/" | "%"), unary } ;
 unary           = ("!" | "-" | "*"), unary | "&", ["mut"], unary | postfix-expression ;
 postfix-expression = primary, {postfix} ;
 
-primary         = struct-literal | integer | floating | character | string
+primary         = closure-expression | struct-literal | integer | floating | character | string
                 | "true" | "false"
                 | identifier
                 | type-metadata
@@ -1131,6 +1274,10 @@ primary         = struct-literal | integer | floating | character | string
                 | value-block | if-expression | match-expression
                 | "free"
                 | "(", expression, ")" ;
+
+closure-expression = "func", "[", [capture, {",", capture}], "]",
+                     "(", [parameter-list], ")", "->", type, block ;
+capture        = "move", identifier | "&", ["mut"], identifier ;
 
 struct-literal  = qualified-name, [type-arguments], "{",
                   [initializer-field, {",", initializer-field}, [","]], "}" ;

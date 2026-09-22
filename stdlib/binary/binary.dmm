@@ -1,0 +1,136 @@
+package binary;
+import (
+    "stdlib"
+);
+
+pub enum Endian {
+    pub Little,
+    pub Big,
+}
+
+pub enum BinaryError {
+    pub UnexpectedEnd,
+    pub BufferTooSmall,
+    pub InvalidWidth,
+    pub ValueOverflow,
+}
+
+// Cursors own only their position. Each operation borrows its buffer explicitly.
+pub struct Reader {
+    var position: usize;
+    pub func offset() -> usize {
+        return position;
+    }
+
+    pub func remaining(source: &u8[]) -> usize {
+        if (position > (*source).length) {
+            return 0;
+        }
+        return (*source).length - position;
+    }
+
+    pub func skip(source: &u8[], count: usize) -> stdlib.Result<void, BinaryError> {
+        if (position > (*source).length || count > (*source).length - position) {
+            return stdlib.Result<void, BinaryError>.Err(BinaryError.UnexpectedEnd);
+        }
+        position += count;
+        return stdlib.Result<void, BinaryError>.Ok;
+    }
+
+    pub func readUint(source: &u8[], width: usize, endian: Endian) -> stdlib.Result<u64, BinaryError> {
+        if (width != 1 && width != 2 && width != 4 && width != 8) {
+            return stdlib.Result<u64, BinaryError>.Err(BinaryError.InvalidWidth);
+        }
+        if (position > (*source).length || width > (*source).length - position) {
+            return stdlib.Result<u64, BinaryError>.Err(BinaryError.UnexpectedEnd);
+        }
+        var value: u64 = 0;
+        for (var i: usize = 0; i < width; i += 1) {
+            var index: usize = position + i;
+            if (endian == Endian.Little) {
+                index = position + width - i - 1;
+            }
+            value = value * 256 + (*source)[index].(u64);
+        }
+        position += width;
+        return stdlib.Result<u64, BinaryError>.Ok(value);
+    }
+
+    pub func readBytes(source: &u8[], destination: &mut u8[]) -> stdlib.Result<void, BinaryError> {
+        if (
+            position > (*source).length ||
+            (*destination).length > (*source).length - position
+        ) {
+            return stdlib.Result<void, BinaryError>.Err(BinaryError.UnexpectedEnd);
+        }
+        for (var i: usize = 0; i < (*destination).length; i += 1) {
+            (*destination)[i] = (*source)[position + i];
+        }
+        position += (*destination).length;
+        return stdlib.Result<void, BinaryError>.Ok;
+    }
+}
+
+pub func reader() -> Reader {
+    return Reader{ position: 0 };
+}
+
+pub struct Writer {
+    var position: usize;
+    pub func offset() -> usize {
+        return position;
+    }
+
+    pub func remaining(destination: &u8[]) -> usize {
+        if (position > (*destination).length) {
+            return 0;
+        }
+        return (*destination).length - position;
+    }
+
+    pub func writeUint(destination: &mut u8[], value: u64, width: usize, endian: Endian) -> stdlib.Result<void, BinaryError> {
+        if (width != 1 && width != 2 && width != 4 && width != 8) {
+            return stdlib.Result<void, BinaryError>.Err(BinaryError.InvalidWidth);
+        }
+        var limit: u64 = 1;
+        if (width < 8) {
+            for (var i: usize = 0; i < width; i += 1) {
+                limit *= 256;
+            }
+            if (value >= limit) {
+                return stdlib.Result<void, BinaryError>.Err(BinaryError.ValueOverflow);
+            }
+        }
+        if (position > (*destination).length || width > (*destination).length - position) {
+            return stdlib.Result<void, BinaryError>.Err(BinaryError.BufferTooSmall);
+        }
+        for (var i: usize = 0; i < width; i += 1) {
+            var index: usize = position + i;
+            if (endian == Endian.Big) {
+                index = position + width - i - 1;
+            }(*destination)[index] = (value % 256).(u8);
+            value /= 256;
+        }
+        position += width;
+        return stdlib.Result<void, BinaryError>.Ok;
+    }
+
+    pub func writeBytes(destination: &mut u8[], source: &u8[]) -> stdlib.Result<void, BinaryError> {
+        if (
+            position > (*destination).length ||
+            (*source).length > (*destination).length - position
+        ) {
+            return stdlib.Result<void, BinaryError>.Err(BinaryError.BufferTooSmall);
+        }
+        // The destination is exclusively borrowed; input must not alias it.
+        for (var i: usize = 0; i < (*source).length; i += 1) {
+            (*destination)[position + i] = (*source)[i];
+        }
+        position += (*source).length;
+        return stdlib.Result<void, BinaryError>.Ok;
+    }
+}
+
+pub func writer() -> Writer {
+    return Writer{ position: 0 };
+}

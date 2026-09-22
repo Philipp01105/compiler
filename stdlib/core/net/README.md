@@ -5,29 +5,29 @@
 
 ## Selection and linking
 
-Network intrinsics in emitted IR require `NETWORK`, which implies `PLATFORM_RUNTIME`. Merely importing this package,
-enabling async or passing `--link=external` does not require networking. Whole-program emission retains user-unit
+Used DMM functions from the network implementation require `NETWORK`, which implies `EXECUTOR` and
+`PLATFORM_RUNTIME`. Merely importing this package, enabling async or passing `--link=external` does not require
+networking. `bindings.dmm` now contains ordinary DMM adapter functions calling the imported runtime package.
+There are no `dmm_network` FFI imports or network intrinsics.
+Whole-program emission retains user-unit
 functions and necessary package lifecycle, vtable and destructor functions; unused standard-library functions are
 excluded. Library-object emission retains its functions. Requirements describe emitted operations, including retained
 function bodies, rather than predicting which branches execute.
 
 `--link=auto` uses external linking for network programs. `--link=internal` rejects their platform profile. Object and
-assembly emission use the same private ABI but start no external process. CMake builds and installs the combined
-`dmm-runtime/elf/network-shim.a` or `dmm-runtime/coff/network-shim.a` beside the compiler. This archive includes the DMM
-platform primitives and the remaining network C object; do not link both runtime bundles.
-`--runtime-shim PATH` replaces the complete required archive. Regular C startup calls compiler-generated `main`.
-Cross-linking requires an explicit matching GCC-compatible driver and shim. Only network programs add Windows
-`ws2_32`; pure platform output uses the smaller `platform-shim.o`. Standalone startup and dependencies remain unchanged.
+assembly emission includes the selected DMM runtime functions and starts no external process. No separately
+compiled bundle is required. Regular C startup calls compiler-generated `main`. Cross-linking requires an explicit
+matching GCC-compatible driver. Only network programs add Windows `ws2_32`; standalone dependencies stay unchanged.
 
 ```sh
 compiler program.dmm --linker-driver gcc -o program
 compiler program.dmm --emit=obj -o program.o
 # Linux regular C startup
-gcc -no-pie program.o /path/to/dmm-runtime/elf/network-shim.a -pthread -o program
+gcc -no-pie program.o -pthread -o program
 # Windows MinGW-w64 UCRT64, GCC or Clang
-gcc program.obj C:/path/dmm-runtime/coff/network-shim.a -lws2_32 -o program.exe
+gcc program.obj -lws2_32 -o program.exe
 # Assembly also uses ordinary startup; for an arbitrary suffix:
-gcc -x assembler program.asm -x none /path/to/network-shim.a -pthread -no-pie -o program
+gcc -x assembler program.asm -x none -pthread -no-pie -o program
 ```
 
 ## Typed operations and ownership
@@ -78,8 +78,10 @@ use CLOCK_MONOTONIC or QueryPerformanceCounter with checked conversion/addition.
 
 ```dmm
 package main;
-import "stdlib";
-import "stdlib/core/net";
+import (
+    "stdlib"
+    "stdlib/core/net"
+);
 async func probe()->stdlib.Result<usize,net.NetError> {
     var socket:net.Socket=net.socket(net.AddressFamily.IPv4,net.Transport.UDP)?;
     net.bind(&mut socket,net.ipv4(2130706433,0))?;
@@ -99,11 +101,11 @@ IPv4/IPv6 TCP/UDP and DNS example, and `tests/network/lifecycle.dmm` for package
 
 `src/runtime/network_shim.h` defines x86-64 private C ABI v1. POD layouts have static assertions: address is 40 bytes
 (family, port, scope as host-order u64 followed by 16 network-order bytes); error is 24 bytes; request is 96 bytes.
-Typed intrinsic descriptors validate argument/result shapes and NETWORK requirements in IR. DMM wrappers explicitly
+Ordinary DMM signatures validate argument/result shapes; emitted runtime bodies select NETWORK requirements. DMM adapters explicitly
 encode requests and translate POD results to DMM enums/structs. No DMM enum layout or native sockaddr crosses this
-boundary. Handles and C allocations stay shim-owned; DMM-generated frames use their own allocator.
+boundary. Handles and native allocations stay runtime-owned; DMM-generated frames use their own allocator.
 
-Each stable operation allocation owns the **generated** runtime's `__dmm_async_io_create(NULL,NULL)` acknowledgement.
+Each stable operation allocation owns the DMM executor package's `__dmm_async_io_create(NULL,NULL)` acknowledgement.
 The private 80-byte Future<void> header polls that acknowledgement and requests cancellation through its operation;
 the enclosing DMM Operation guard retains ownership until acknowledgement. This does not use `executor.c`.
 Completion, timeout and cancellation publish once under the reactor lock. Notification and wakers run outside that
@@ -120,7 +122,7 @@ and their datagram counterparts. Connect binds when needed and updates its conte
 context. OVERLAPPED, buffers, flags, lengths and address outputs remain in stable operation storage until the packet
 is consumed. Neither successful CancelIoEx nor ERROR_NOT_FOUND permits early reclamation, as required by the
 [Microsoft cancellation contract](https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-cancelioex).
-System thread creation remains `_beginthreadex` through the DMM platform runtime.
+System thread creation remains `_beginthreadex` through the DMM threading package.
 
 ## DNS and lifecycle
 
@@ -151,8 +153,12 @@ process termination, with no guaranteed drain or cleanup.
 submitted cancellation with a delayed completion consumer, immutable published results, deadlines, close-error
 injection, TLS, bounded DNS, detached late results and shutdown. It checks no live acknowledgement/socket owners,
 Linux descriptor balance and constant Windows handle counts across repeated socket passes. Windows Winsock's
-process-wide caches are not mistaken for shim-owned resources. Linux ASan/UBSan with leak detection checks C ownership.
+process-wide caches are not mistaken for runtime-owned resources. `network_dmm_unit` runs the same independent
+harness against DMM with test-only instrumentation. The production object contains no test hooks. The C reference
+is retained only under `tests/fixtures`; Linux ASan/UBSan with leak detection checks that independent reference.
 
 `network_runtime_contract` uses actual emitted runtime acknowledgements and spawnable owned frames, checked-loan
 negative tests, package lifecycle, both emission paths, O0/O1 and Intel/AT&T. Host execution passes on Linux GCC and
-Windows UCRT64 GCC/Clang. The existing platform/linker failure and standalone dependency suites remain enabled.
+Windows UCRT64 GCC/Clang. `stdlib_runtime_component_contract` additionally checks both target formats, O0/O1,
+object/Intel/AT&T emission, private exports and the DMM ownership/race harness in all host emission variants.
+The existing platform/linker failure and standalone dependency suites remain enabled.

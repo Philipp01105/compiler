@@ -1,13 +1,21 @@
 package main;
-interface Value { func get() -> int; }
+
+interface Value {
+    func get() -> int;
+}
+
 struct Resource {
-    var value:int;
-    func get() -> int { return value; }
+    var value: int;
+    func get() -> int {
+        return value;
+    }
+
     destructor {}
 }
+
 func main() -> void {
-    var resource:Resource;
-    var value:Value;
+    var resource: Resource;
+    var value: Value;
     value = resource;
     resource.get();
 }

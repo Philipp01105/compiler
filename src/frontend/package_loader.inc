@@ -7,7 +7,8 @@ typedef struct {
     size_t depth;
 } PackageLoader;
 
-#define DMM_LANGUAGE_EDITION "2026-09-22-dev"
+#define DMM_LANGUAGE_EDITION "2026-10-04-dev"
+#define DMM_LEGACY_LANGUAGE_EDITION "2026-09-22-dev"
 
 static int source_matches_target(const char *name, const FrontendOptions *options) {
     if (options && options->include_all_targets) return 1;
@@ -222,10 +223,10 @@ static DmmModule *read_module(PackageLoader *loader, const char *directory) {
                 failed = reported = 1;
                 break;
             }
-            if (strcmp(two, DMM_LANGUAGE_EDITION)) {
+            if (strcmp(two, DMM_LANGUAGE_EDITION) && strcmp(two, DMM_LEGACY_LANGUAGE_EDITION)) {
                 package_error(loader->root, AST_TOKEN_NONE, ERR_MODULE_VERSION,
-                              "Manifest '%s' requires DMM %s; this compiler supports only DMM %s",
-                              manifest, two, DMM_LANGUAGE_EDITION);
+                              "Manifest '%s' requires DMM %s; this compiler supports DMM %s and %s",
+                              manifest, two, DMM_LANGUAGE_EDITION, DMM_LEGACY_LANGUAGE_EDITION);
                 failed = reported = 1;
                 break;
             }
@@ -313,6 +314,43 @@ static int string_order(const void *a, const void *b) {
 
 static int attach_package_file(PackageLoader *loader, DmmPackage *package, AstProgram *file) {
     if (!file->structured_ast_complete || !file->package_name) return 0;
+    /* Parsing happens before a file is attached to its manifest. Check edition
+       requirements here as well, for both root and imported source files. */
+    if (strcmp(package->module->edition, "2026-10-04-dev")) {
+        for (size_t i = 0; i + 1 < file->token_count; i++) {
+            TokenType current = file->tokens[i].type;
+            TokenType next = file->tokens[i + 1].type;
+            if ((current == TOKEN_KEYWORD_FUNC && next == TOKEN_LBRACKET) ||
+                ((current == TOKEN_KEYWORD_MUT ||
+                  (current == TOKEN_IDENTIFIER && !strcmp(file->tokens[i].lexeme, "once"))) &&
+                 next == TOKEN_KEYWORD_FUNC)) {
+                package_error(file, i, ERR_PARSE_INVALID_DECLARATION,
+                              "Capturing closures and callable modes require DMM 2026-10-04-dev");
+                return 0;
+            }
+        }
+        for (size_t i = 0; i < file->token_count; i++)
+            if (file->tokens[i].type == TOKEN_LIFETIME) {
+                package_error(file, i, ERR_PARSE_INVALID_DECLARATION,
+                              "Explicit lifetimes require DMM 2026-10-04-dev");
+                return 0;
+            }
+        for (AstDeclarationNode *d = file->root; d; d = d->next) {
+            if (d->kind == AST_DECL_IMPORT && d->is_public) {
+                package_error(file, d->name_token, ERR_PARSE_INVALID_DECLARATION,
+                              "Public package reexports require DMM 2026-10-04-dev");
+                return 0;
+            }
+            AstDeclarationNode *methods = d->kind == AST_DECL_STRUCT ? d->as.struct_decl.methods :
+                d->kind == AST_DECL_ENUM ? d->as.enum_decl.methods : NULL;
+            for (AstDeclarationNode *m = methods; m; m = m->next)
+                if (m->where_conditions) {
+                    package_error(file, m->name_token, ERR_PARSE_INVALID_DECLARATION,
+                                  "Method where constraints require DMM 2026-10-04-dev");
+                    return 0;
+                }
+        }
+    }
     if (package->name && strcmp(package->name, file->package_name)) {
         package_error(file, file->package_token, ERR_PACKAGE_NAME,
                       "Package directory '%s' mixes package '%s' with '%s'", package->directory, package->name,
@@ -333,6 +371,34 @@ static int attach_package_file(PackageLoader *loader, DmmPackage *package, AstPr
 
 static DmmPackage *load_package(PackageLoader *loader, DmmModule *module, const char *path, const char *directory);
 
+/* Installed compilers consume the distributed source packages. Development
+   executables fall back to their configured checkout when no installation is
+   adjacent to the binary. No runtime object/archive lookup occurs here. */
+static char *standard_library_root(void) {
+    char executable[4096];
+#ifdef _WIN32
+    DWORD length=GetModuleFileNameA(NULL,executable,sizeof(executable));
+    if(!length || length>=sizeof(executable)) return NULL;
+#else
+    ssize_t length=readlink("/proc/self/exe",executable,sizeof(executable)-1);
+    if(length<0) return NULL;
+    executable[length]='\0';
+#endif
+    char *slash=strrchr(executable,'/'), *backslash=strrchr(executable,'\\');
+    if(backslash && (!slash || backslash>slash)) slash=backslash;
+    if(slash) {
+        *slash='\0';
+        char *installed=joined_path(executable,"../share/dmm/stdlib");
+        if(installed && path_is_directory(installed)) {
+            char *canonical=canonical_existing_path(installed);
+            free(installed);
+            return canonical;
+        }
+        free(installed);
+    }
+    return joined_path(DMM_SOURCE_ROOT,"stdlib");
+}
+
 static DmmPackage *resolve_package(PackageLoader *loader, AstProgram *file, const char *path, size_t token) {
     DmmModule *module = file->module;
     if (!valid_module_path(path) || strstr(path, ".dmm")) {
@@ -342,7 +408,7 @@ static DmmPackage *resolve_package(PackageLoader *loader, AstProgram *file, cons
     }
     if (!package_path_prefix(path, module->path)) {
         if (package_path_prefix(path, "stdlib")) {
-            char *bundled = joined_path(DMM_SOURCE_ROOT, "stdlib");
+            char *bundled = standard_library_root();
             module = bundled ? read_module(loader, bundled) : NULL;
             free(bundled);
         } else {
@@ -448,6 +514,7 @@ static int load_package_imports(PackageLoader *loader, DmmPackage *package) {
                     DmmPackage *target = resolve_package(loader, file, path, entry->path_token);
                     if (!target || !target->file_count) return 0;
                     entry->resolved_program = target->files[0];
+                    if (d->is_public) package->has_public_imports = 1;
                     if (!entry->alias) entry->alias = target->name;
                     if (!strcmp(entry->alias, "_")) {
                         package_error(file, entry->path_token, ERR_PACKAGE_ALIAS, "Invalid import alias '%s'",
@@ -600,5 +667,11 @@ static int load_module_packages(AstProgram *root, const FrontendOptions *options
     DmmPackage *package = path ? load_package(&loader, root->module, path, current) : NULL;
     free(path);
     free(current);
-    return package != NULL;
+    if (!package) return 0;
+    if (options && options->system_packages && root->package_name &&
+        !strcmp(root->package_name,"main")) {
+        root->system_package = resolve_package(&loader, root, "stdlib/system", AST_TOKEN_NONE);
+        if (!root->system_package) return 0;
+    }
+    return 1;
 }

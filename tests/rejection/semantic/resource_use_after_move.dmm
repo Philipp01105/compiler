@@ -1,7 +1,12 @@
 package main;
-struct Resource { var value:int; destructor {} }
+
+struct Resource {
+    var value: int;
+    destructor {}
+}
+
 func main() -> int {
-    var first:Resource;
-    var second=first;
+    var first: Resource;
+    var second = first;
     return first.value;
 }

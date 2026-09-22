@@ -2,4 +2,8 @@ package core;
 
 // Trusted type properties used by task transfer and shared borrows.
 pub auto interface Send {}
+
 pub auto interface Sync {}
+
+// Copy follows the compiler's value semantics and cannot be overridden.
+pub auto interface Copy {}

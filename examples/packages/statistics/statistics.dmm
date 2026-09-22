@@ -2,9 +2,9 @@ package statistics;
 import "stdlib";
 
 pub struct Summary {
-    pub var minimum:int;
-    pub var maximum:int;
-    pub var total:int;
+    pub var minimum: int;
+    pub var maximum: int;
+    pub var total: int;
 }
 
 struct PackageLifetime {
@@ -14,7 +14,7 @@ struct PackageLifetime {
 }
 
 // Package-stored values live until normal process termination.
-var lifetime:PackageLifetime;
+var lifetime: PackageLifetime;
 
 func firstBaselineSample() -> int {
     return 3;
@@ -22,27 +22,35 @@ func firstBaselineSample() -> int {
 
 // Runtime array elements allocate owned slice backing during package startup.
 // The package keeps that backing alive until normal process cleanup.
-var baselineSamples:int[]=[firstBaselineSample(),5,7];
+var baselineSamples: int[] = [firstBaselineSample(), 5, 7];
 
 // Initializers run in deterministic declaration order before main.
-pub var baseline:Summary=summarize(baselineSamples);
+pub var baseline: Summary = summarize(baselineSamples);
 
-pub func summarize(values:int[]) -> Summary {
-    var result:Summary;
-    if (values.length == 0) { return result; }
+pub func summarize(values: int[]) -> Summary {
+    var result: Summary;
+    if (values.length == 0) {
+        return result;
+    }
 
-    result.minimum=values[0];
-    result.maximum=values[0];
-    for (var index:int=0; index < values.length; index+=1) {
-        var value:int=values[index];
-        if (value < result.minimum) { result.minimum=value; }
-        if (value > result.maximum) { result.maximum=value; }
-        result.total+=value;
+    result.minimum = values[0];
+    result.maximum = values[0];
+    for (var index: int = 0; index < values.length; index += 1) {
+        var value: int = values[index];
+        if (value < result.minimum) {
+            result.minimum = value;
+        }
+        if (value > result.maximum) {
+            result.maximum = value;
+        }
+        result.total += value;
     }
     return result;
 }
 
-pub func average(summary:Summary, count:usize) -> double {
-    if (count == 0) { return 0.0; }
-    return summary.total.(double)/count.(double);
+pub func average(summary: Summary, count: usize) -> double {
+    if (count == 0) {
+        return 0.0;
+    }
+    return summary.total.(double) / count.(double);
 }

@@ -1,2 +1,5 @@
 package main;
-func main() -> void { var values:int[0]; }
+
+func main() -> void {
+    var values: int[0];
+}

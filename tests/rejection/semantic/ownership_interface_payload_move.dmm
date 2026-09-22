@@ -1,9 +1,24 @@
 package main;
-interface Value { func get() -> int; }
-struct Resource { func get() -> int { return 1; } destructor {} }
-enum Selection { Empty, Chosen(Value) }
+
+interface Value {
+    func get() -> int;
+}
+
+struct Resource {
+    func get() -> int {
+        return 1;
+    }
+
+    destructor {}
+}
+
+enum Selection {
+    Empty,
+    Chosen(Value)
+}
+
 func main() -> void {
-    var resource:Resource;
-    var selected:Selection = Selection.Chosen(resource);
-    var extracted:Value = selected.Chosen();
+    var resource: Resource;
+    var selected: Selection = Selection.Chosen(resource);
+    var extracted: Value = selected.Chosen();
 }

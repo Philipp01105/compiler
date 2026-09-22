@@ -16,4 +16,4 @@ Stream and buffer owners must be closed or released explicitly and must not be c
 
 module stdlib
 
-dmm 2026-09-22-dev
+dmm 2026-10-04-dev

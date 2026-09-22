@@ -1,2 +1,5 @@
 package main;
-func main() -> void { continue; }
+
+func main() -> void {
+    continue;
+}

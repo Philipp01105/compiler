@@ -1,0 +1,279 @@
+package collections;
+import (
+    "stdlib"
+    "stdlib/core"
+);
+
+func growDeque<T>(storage:&mut *T,slots:&mut usize,head:&mut usize,count:usize,capacity:usize)->stdlib.AllocationError {
+    if(capacity<=*slots) { return stdlib.AllocationError.None; }
+    if(capacity>9223372036854775807.(usize)/sizeof(T)) { return stdlib.AllocationError.CapacityOverflow; }
+    var grown:*T=core.core_alloc(capacity*sizeof(T)).(*T);
+    if(grown==core.null<T>()) { return stdlib.AllocationError.OutOfMemory; }
+    for(var i:usize=0;i<count;i+=1) { core.initialize<T>(&grown[i],take((*storage)[(*head+i)%*slots])); }
+    core.core_release((*storage).(*u8)); *storage=grown; *slots=capacity; *head=0;
+    return stdlib.AllocationError.None;
+}
+
+pub struct Deque<T> {
+    var storage:*T;
+    var slots:usize;
+    var count:usize;
+    var head:usize;
+    pub func length()->usize { return count; }
+    pub func capacity()->usize { return slots; }
+    pub func get(index:usize)->T where T:core.Copy {
+        if(index>=count) { core.core_trap(); }
+        return storage[(head+index)%slots];
+    }
+    pub func getRef(index:usize)->&T {
+        if(index>=count) { core.core_trap(); }
+        return &storage[(head+index)%slots];
+    }
+    pub func getMut(index:usize)->&mut T {
+        if(index>=count) { core.core_trap(); }
+        return &mut storage[(head+index)%slots];
+    }
+    pub func ensureCapacity(capacity:usize)->stdlib.AllocationError {
+        return growDeque<T>(&mut storage,&mut slots,&mut head,count,capacity);
+    }
+    pub func pushBack(value:T)->stdlib.AllocationError {
+        if(count==slots) {
+            var capacity:usize=8;
+            if(count>0) {
+                if(count>4611686018427387903.(usize)/sizeof(T)) { return stdlib.AllocationError.CapacityOverflow; }
+                capacity=count*2;
+            }
+            var status=growDeque<T>(&mut storage,&mut slots,&mut head,count,capacity);
+            if(status!=stdlib.AllocationError.None) { return status; }
+        }
+        core.initialize<T>(&storage[(head+count)%slots],value); count+=1;
+        return stdlib.AllocationError.None;
+    }
+    pub func pushFront(value:T)->stdlib.AllocationError {
+        if(count==slots) {
+            var capacity:usize=8;
+            if(count>0) {
+                if(count>4611686018427387903.(usize)/sizeof(T)) { return stdlib.AllocationError.CapacityOverflow; }
+                capacity=count*2;
+            }
+            var status=growDeque<T>(&mut storage,&mut slots,&mut head,count,capacity);
+            if(status!=stdlib.AllocationError.None) { return status; }
+        }
+        if(head==0) { head=slots; } head-=1;
+        core.initialize<T>(&storage[head],value); count+=1;
+        return stdlib.AllocationError.None;
+    }
+    pub func popFront()->stdlib.Option<T> {
+        if(count==0) { return stdlib.Option<T>.None; }
+        var value=take(storage[head]); head=(head+1)%slots; count-=1;
+        return stdlib.Option<T>.Some(value);
+    }
+    pub func popBack()->stdlib.Option<T> {
+        if(count==0) { return stdlib.Option<T>.None; }
+        count-=1; return stdlib.Option<T>.Some(take(storage[(head+count)%slots]));
+    }
+    pub func clear()->void {
+        while(count>0) { core.destroy<T>(&storage[head]); head=(head+1)%slots; count-=1; }
+        head=0;
+    }
+    destructor {
+        while(count>0) { core.destroy<T>(&storage[head]); head=(head+1)%slots; count-=1; }
+        core.core_release(storage.(*u8));
+    }
+}
+
+pub func deque<T>(capacity:usize)->stdlib.Result<Deque<T>,stdlib.AllocationError> {
+    var value:Deque<T>;
+    var status=value.ensureCapacity(capacity);
+    if(status!=stdlib.AllocationError.None) { return stdlib.Result<Deque<T>,stdlib.AllocationError>.Err(status); }
+    return stdlib.Result<Deque<T>,stdlib.AllocationError>.Ok(value);
+}
+
+struct Entry<K,V> { var state:u8; var key:K; var value:V; }
+
+interface KeyCallbacks<K> {
+    func hashKey(key:&K)->u64;
+    func sameKey(left:&K,right:&K)->bit;
+}
+struct CopyCallbacks<K:core.Copy> {
+    var hash:func(K)->u64;
+    var same:func(K,K)->bit;
+    func hashKey(key:&K)->u64 { return hash(*key); }
+    func sameKey(left:&K,right:&K)->bit { return same(*left,*right); }
+}
+struct BorrowedCallbacks<K> {
+    var hash:func(&K)->u64;
+    var same:func(&K,&K)->bit;
+    func hashKey(key:&K)->u64 { return hash(key); }
+    func sameKey(left:&K,right:&K)->bit { return same(left,right); }
+}
+
+@[no_default]
+pub struct HashMap<K,V> {
+    var entries:*Entry<K,V>;
+    var slots:usize;
+    var count:usize;
+    var callbacks:KeyCallbacks<K>;
+    pub func length()->usize { return count; }
+    pub func capacity()->usize { return slots; }
+    pub func get(key:K)->stdlib.Option<V> where K:core.Copy,V:core.Copy {
+        if(slots==0) { return stdlib.Option<V>.None; }
+        var index:usize=callbacks.hashKey(&key).(usize)%slots;
+        for(var scanned:usize=0;scanned<slots;scanned+=1) {
+            if(entries[index].state==0) { break; }
+            if(entries[index].state==1 && callbacks.sameKey(&entries[index].key,&key)) {
+                return stdlib.Option<V>.Some(entries[index].value);
+            }
+            index=(index+1)%slots;
+        }
+        return stdlib.Option<V>.None;
+    }
+    pub func getRef(key:&K)->stdlib.Option<&V> {
+        if(slots==0) { return stdlib.Option<&V>.None; }
+        var index:usize=callbacks.hashKey(key).(usize)%slots;
+        for(var scanned:usize=0;scanned<slots;scanned+=1) {
+            if(entries[index].state==0) { break; }
+            if(entries[index].state==1 && callbacks.sameKey(&entries[index].key,key)) {
+                return stdlib.Option<&V>.Some(&entries[index].value);
+            }
+            index=(index+1)%slots;
+        }
+        return stdlib.Option<&V>.None;
+    }
+    pub func getMut(key:&K)->stdlib.Option<&mut V> {
+        if(slots==0) { return stdlib.Option<&mut V>.None; }
+        var index:usize=callbacks.hashKey(key).(usize)%slots;
+        for(var scanned:usize=0;scanned<slots;scanned+=1) {
+            if(entries[index].state==0) { break; }
+            if(entries[index].state==1 && callbacks.sameKey(&entries[index].key,key)) {
+                return stdlib.Option<&mut V>.Some(&mut entries[index].value);
+            }
+            index=(index+1)%slots;
+        }
+        return stdlib.Option<&mut V>.None;
+    }
+    pub func remove(key:K)->stdlib.Option<V> where K:core.Copy {
+        if(slots==0) { return stdlib.Option<V>.None; }
+        var index:usize=callbacks.hashKey(&key).(usize)%slots;
+        for(var scanned:usize=0;scanned<slots;scanned+=1) {
+            if(entries[index].state==0) { break; }
+            if(entries[index].state==1 && callbacks.sameKey(&entries[index].key,&key)) {
+                var value=take(entries[index].value);
+                core.destroy<K>(&entries[index].key);
+                entries[index].state=2; count-=1;
+                return stdlib.Option<V>.Some(value);
+            }
+            index=(index+1)%slots;
+        }
+        return stdlib.Option<V>.None;
+    }
+    pub func removeBorrowed(key:&K)->stdlib.Option<V> {
+        if(slots==0) { return stdlib.Option<V>.None; }
+        var index:usize=callbacks.hashKey(key).(usize)%slots;
+        for(var scanned:usize=0;scanned<slots;scanned+=1) {
+            if(entries[index].state==0) { break; }
+            if(entries[index].state==1 && callbacks.sameKey(&entries[index].key,key)) {
+                var value=take(entries[index].value);
+                core.destroy<K>(&entries[index].key);
+                entries[index].state=2; count-=1;
+                return stdlib.Option<V>.Some(value);
+            }
+            index=(index+1)%slots;
+        }
+        return stdlib.Option<V>.None;
+    }
+    pub func insert(key:K,value:V)->stdlib.AllocationError {
+        if(slots>0) {
+            var index:usize=callbacks.hashKey(&key).(usize)%slots;
+            for(var scanned:usize=0;scanned<slots;scanned+=1) {
+                if(entries[index].state==0) { break; }
+                if(entries[index].state==1 && callbacks.sameKey(&entries[index].key,&key)) {
+                    core.destroy<V>(&entries[index].value);
+                    core.initialize<V>(&entries[index].value,value);
+                    return stdlib.AllocationError.None;
+                }
+                index=(index+1)%slots;
+            }
+        }
+        if(count>=slots/2) {
+            var capacity:usize=8;
+            if(slots>0) {
+                if(slots>4611686018427387903.(usize)/sizeof(Entry<K,V>)) { return stdlib.AllocationError.CapacityOverflow; }
+                capacity=slots*2;
+            }
+            if(capacity>9223372036854775807.(usize)/sizeof(Entry<K,V>)) { return stdlib.AllocationError.CapacityOverflow; }
+            var grown:*Entry<K,V>=core.core_alloc(capacity*sizeof(Entry<K,V>)).(*Entry<K,V>);
+            if(grown==core.null<Entry<K,V>>()) { return stdlib.AllocationError.OutOfMemory; }
+            for(var i:usize=0;i<capacity;i+=1) { grown[i].state=0; }
+            for(var i:usize=0;i<slots;i+=1) {
+                if(entries[i].state==1) {
+                    var index:usize=callbacks.hashKey(&entries[i].key).(usize)%capacity;
+                    while(grown[index].state==1) { index=(index+1)%capacity; }
+                    core.initialize<Entry<K,V>>(&grown[index],take(entries[i]));
+                }
+            }
+            core.core_release(entries.(*u8)); entries=grown; slots=capacity;
+        }
+        var index:usize=callbacks.hashKey(&key).(usize)%slots;
+        while(entries[index].state==1) { index=(index+1)%slots; }
+        core.initialize<Entry<K,V>>(&entries[index],Entry<K,V>{state:1,key:key,value:value});
+        count+=1; return stdlib.AllocationError.None;
+    }
+    pub func clear()->void {
+        for(var i:usize=0;i<slots;i+=1) {
+            if(entries[i].state==1) { core.destroy<Entry<K,V>>(&entries[i]); }
+            entries[i].state=0;
+        }
+        count=0;
+    }
+    destructor {
+        for(var i:usize=0;i<slots;i+=1) {
+            if(entries[i].state==1) { core.destroy<Entry<K,V>>(&entries[i]); }
+        }
+        core.core_release(entries.(*u8));
+    }
+}
+
+pub func hashMap<K:core.Copy,V>(hash:func(K)->u64,same:func(K,K)->bit)->HashMap<K,V> {
+    return HashMap<K,V>{entries:core.null<Entry<K,V>>(),slots:0,count:0,
+        callbacks:CopyCallbacks<K>{hash:hash,same:same}};
+}
+pub func hashMapBorrowed<K,V>(hash:func(&K)->u64,same:func(&K,&K)->bit)->HashMap<K,V> {
+    return HashMap<K,V>{entries:core.null<Entry<K,V>>(),slots:0,count:0,
+        callbacks:BorrowedCallbacks<K>{hash:hash,same:same}};
+}
+
+pub struct HashSet<T:core.Copy> {
+    var map: HashMap<T, bit>;
+    pub func length() -> usize {
+        return map.length();
+    }
+
+    pub func insert(value: T) -> stdlib.AllocationError {
+        return map.insert(value, true);
+    }
+
+    pub func contains(value: T) -> bit {
+        var result = map.get(value);
+        match (result) {
+            Some(found) => return true;
+            None => return false;
+        }
+    }
+
+    pub func remove(value: T) -> bit {
+        var result = map.remove(value);
+        match (result) {
+            Some(found) => return true;
+            None => return false;
+        }
+    }
+
+    pub func clear() -> void {
+        map.clear();
+    }
+}
+
+pub func hashSet<T:core.Copy>(hash: func(T) -> u64, same: func(T, T) -> bit) -> HashSet<T> {
+    return HashSet<T>{ map: hashMap<T, bit>(hash, same) };
+}

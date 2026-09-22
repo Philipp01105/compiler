@@ -46,7 +46,7 @@ static int analyze_async_call(Analyzer *a, AstExpression *e) {
         if (!strcmp(name,"spawn")) op=ASYNC_SPAWN;
         if (!strcmp(name,"block_on")) op=ASYNC_BLOCK_ON;
         if (!strcmp(name,"cancel")) op=ASYNC_CANCEL;
-        if (!strcmp(name,"__dmm_net_wait")) op=ASYNC_NET_WAIT;
+        if (!strcmp(name,"nativeFuture")) op=ASYNC_NATIVE_FUTURE;
     } else if (callee->kind == AST_EXPR_MEMBER && callee->left) {
         const char *name=ast_program_lexeme(a->program,callee->value_token);
         if (!strcmp(name,"create") && callee->left->kind == AST_EXPR_NAME &&
@@ -82,9 +82,11 @@ static int analyze_async_call(Analyzer *a, AstExpression *e) {
             semantic_error(a,arg->first_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,"Executor requires at least one worker");
         type=(AstType){.kind=AST_TYPE_EXECUTOR,.name_token=concrete_token(a,TOKEN_IDENTIFIER,"Executor"),
                        .array_length_token=AST_TOKEN_NONE};
-    } else if (op==ASYNC_NET_WAIT) {
-        if (!integral_expression(arg))
-            semantic_error(a,arg->first_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,"private I/O wait requires an operation handle");
+    } else if (op==ASYNC_NATIVE_FUTURE) {
+        if (arg->resolved_type != TYPE_VOID || arg->resolved_pointer_depth != 1 ||
+            arg->resolved_outer_pointer_depth || arg->resolved_borrow_kind != AST_BORROW_NONE ||
+            arg->resolved_is_array || arg->resolved_is_slice)
+            semantic_error(a,arg->first_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,"nativeFuture requires an owned native Future<void> frame pointer (*void)");
         type=async_handle_type(a,AST_TYPE_FUTURE,a->program,&output);
     } else if (op==ASYNC_SHUTDOWN) {
         const SemanticSymbol *mode=scoped_find_global(a->model,a->program,"ShutdownMode",SEMANTIC_SYMBOL_ENUM);

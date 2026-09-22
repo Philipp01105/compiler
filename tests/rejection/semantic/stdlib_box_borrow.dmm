@@ -1,0 +1,18 @@
+package main;
+import (
+    "stdlib"
+    "stdlib/memory"
+);
+
+func main() -> int {
+    var created = memory.box<i32>(1);
+    match (created) {
+        Err(error) => return 1;
+        Ok(owner) => {
+            var first = owner.get();
+            var second = owner.getMut();
+            *second = 2;
+            return *first;
+        }
+    }
+}

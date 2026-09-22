@@ -1,0 +1,17 @@
+package main;
+import (
+    "stdlib"
+    "stdlib/text"
+);
+
+func main() -> int {
+    var owner = stdlib.bytes(8);
+    owner.push(65);
+    var iterator = text.split(owner.view(), 44);
+    owner.clear();
+    var next = iterator.next();
+    match (next) {
+        None => return 0;
+        Some(value) => return value.length.(int);
+    }
+}

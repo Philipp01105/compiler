@@ -1,8 +1,8 @@
 package main;
 
 func main() -> int {
-    var values:int[4]=[1,2,3,4];
-    var end:int=5;
-    var invalid:int[]=values[:end];
+    var values: int[4] = [1, 2, 3, 4];
+    var end: int = 5;
+    var invalid: int[] = values[: end];
     return invalid.length;
 }

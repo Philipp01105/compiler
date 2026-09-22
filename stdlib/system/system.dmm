@@ -1,0 +1,7 @@
+package system;
+// Default stdlib system package. Imported as source into the application's package
+// graph; the compiler retains only the ABI entries required by emitted code.
+import (
+    "stdlib/native/threading"
+    "stdlib/core/executor"
+);

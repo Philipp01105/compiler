@@ -59,7 +59,7 @@ foreach(level 0 1)
                 message(FATAL_ERROR "Wrong platform assembly profile")
             endif()
             if(target STREQUAL host)
-                execute_process(COMMAND "${ASSEMBLER}" "${work}/program_${target}_${syntax}.s" "${SHIM}"
+                execute_process(COMMAND "${ASSEMBLER}" "${work}/program_${target}_${syntax}.s"
                     -no-pie -pthread -o "${work}/manual.exe" RESULT_VARIABLE result ERROR_VARIABLE errors TIMEOUT 30)
                 if(NOT result EQUAL 0)
                     message(FATAL_ERROR "Manual assembly handoff failed: ${result} ${errors}")
@@ -83,8 +83,8 @@ run_ok("${work}/override.exe" 0 "")
 file(WRITE "${work}/bad-shim.o" "not a native object")
 fail_match("Invalid link mode" --link=bad "${work}/void/main.dmm")
 fail_match("Missing value" --runtime-shim)
-fail_match("Missing or incompatible" --link=external --runtime-shim "${work}/bad-shim.o" "${work}/void/main.dmm" -o "${work}/failed.exe")
-fail_match("Missing or incompatible" --link=external --runtime-shim "${work}/missing.o" "${work}/void/main.dmm" -o "${work}/failed.exe")
+fail_match("Incompatible additional runtime object" --link=external --runtime-shim "${work}/bad-shim.o" "${work}/void/main.dmm" -o "${work}/failed.exe")
+fail_match("Incompatible additional runtime object" --link=external --runtime-shim "${work}/missing.o" "${work}/void/main.dmm" -o "${work}/failed.exe")
 fail_match("External linker" --link=external --linker-driver "${work}/missing-driver" "${work}/void/main.dmm" -o "${work}/failed.exe")
 file(COPY_FILE "${FAIL_DRIVER}" "${work}/failure driver.exe")
 fail_match("status 42.*private linker (stdout|stderr).*private linker (stdout|stderr)" --link=external
@@ -114,7 +114,7 @@ if(NOT shim_before STREQUAL shim_after)
     message(FATAL_ERROR "Dump overwrote linker input")
 endif()
 file(SHA256 "${SHIM}" default_before)
-fail_match("conflicts with linker input" --link=external --dump-tokens "${SHIM}"
+fail_match("conflicts with linker input" --link=external --runtime-shim "${SHIM}" --dump-tokens "${SHIM}"
     "${work}/void/main.dmm" -o "${work}/unused.exe")
 file(SHA256 "${SHIM}" default_after)
 if(NOT default_before STREQUAL default_after)

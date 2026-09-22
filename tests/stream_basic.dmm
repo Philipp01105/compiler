@@ -1,7 +1,8 @@
 package main;
 import "stdlib";
+
 func main() -> void {
     stdlib.println("Creating stream from sysin...");
-    var input:Stream = read(sysin);
+    var input: Stream = read(sysin);
     stdlib.println("Stream created successfully!");
 }

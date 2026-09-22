@@ -1,34 +1,61 @@
 package main;
 
 auto interface Stable {}
+
 auto interface Numeric {}
+
 @[Stable + Numeric] type int;
 @[Stable] type double;
-struct Pair<A,B> { var first:A; var second:B; }
-@[Stable where T:Stable]
-struct Indirect<T> { var pointer:*T; }
-struct Concrete<T> { var pointer:*T; var stamp:int; }
-@[Stable] type Concrete<int>;
-enum Envelope<T> { Empty, Single(T), Batch(T[3]) }
 
-func stable<T:Stable>(value:T, score:int)->int { return score+1; }
-func numeric<T:Stable+Numeric>(value:T)->int { return 7; }
-func nested<T:Stable>(item:T)->Pair<Envelope<T>,Indirect<T>> {
-    return Pair<Envelope<T>,Indirect<T>>{
-        first:Envelope<T>.Single(item), second:Indirect<T>{pointer:reserve(T)}
+struct Pair<A, B> {
+    var first: A;
+    var second: B;
+}
+
+@[Stable where T: Stable] struct Indirect<T> {
+    var pointer: *T;
+}
+
+struct Concrete<T> {
+    var pointer: *T;
+    var stamp: int;
+}
+
+@[Stable] type Concrete<int>;
+
+enum Envelope<T> {
+    Empty,
+    Single(T),
+    Batch(T[3])
+}
+
+func stable<T: Stable>(value: T, score: int) -> int {
+    return score + 1;
+}
+
+func numeric<T: Stable + Numeric>(value: T) -> int {
+    return 7;
+}
+
+func nested<T: Stable>(item: T) -> Pair<Envelope<T>, Indirect<T>> {
+    return Pair<Envelope<T>, Indirect<T>>{
+        first: Envelope<T>.Single(item),
+        second: Indirect<T>{ pointer: reserve(T) }
     };
 }
-func main()->int {
-    var pair:Pair<int,double>=Pair<int,double>{first:3,second:2.5};
-    var values:int[3]=[1,2,3];
-    var envelope=Envelope<int[3]>.Single(values);
-    var concrete:Concrete<int>;
-    var product=nested(5);
-    var score=stable(pair,0)+stable(envelope,2)+stable(concrete,4)+numeric(9);
-    match(product.first) {
-        Empty=>score+=1;
-        Single(value)=>score+=value;
-        Batch(items)=>score+=items[1];
+
+func main() -> int {
+    var pair: Pair < int,
+    double >= Pair<int, double>{ first: 3, second: 2.5 };
+    var values: int[3] = [1, 2, 3];
+    var envelope = Envelope<int[3]>.Single(values);
+    var concrete: Concrete<int>;
+    var product = nested(5);
+    var score = stable(pair, 0) + stable(envelope, 2) + stable(concrete, 4) + numeric(9);
+    match (product.first) {
+        Empty => score += 1;
+        Single(value) => score += value;
+        Batch(items) => score += items[1];
     }
     free(product.second.pointer);
     return score;

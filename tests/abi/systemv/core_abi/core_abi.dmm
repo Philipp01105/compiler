@@ -1,55 +1,192 @@
 package main;
 import "stdlib";
-pub func abi_identity<T>(value:T) -> T { return value; }
-pub func abi_fixed(a:i8,b:u8,c:i16,d:u16,e:i32,f:u32,g:i64,h:u64,i:isize,j:usize) -> bit {
-    return a == -1 && b == 255 && c == -32768 && d == 65535 && e == -123 &&
-           f == 4294967295.(u32) && g == -5000000000.(i64) && h == (-1).(u64) &&
-           i == -9 && j == 5000000000.(usize);
+
+pub func abi_identity<T>(value: T) -> T {
+    return value;
 }
-pub func abi_u64(value:u64) -> u64 { return value/3; }
-pub func abi_i64(value:i64) -> i64 { return value-1; }
-pub func abi_u16(value:u16) -> u16 { return value+1.(u16); }
-pub func abi_i8(value:i8) -> i8 { return value-1.(i8); }
-pub func abi_generic_cell(value:stdlib.Cell<int>) -> int {
-    var copy:stdlib.Cell<int> = abi_identity(value); copy.value=copy.value+1; return copy.value;
+
+pub func abi_fixed(
+    a: i8,
+    b: u8,
+    c: i16,
+    d: u16,
+    e: i32,
+    f: u32,
+    g: i64,
+    h: u64,
+    i: isize,
+    j: usize
+) -> bit {
+    return a == - 1 && b == 255 && c == - 32768 && d == 65535 && e == - 123 && f == 4294967295.(u32) && g == - 5000000000.(
+        i64
+    ) && h == (-1).(u64) && i == - 9 && j == 5000000000.(usize);
 }
-pub func abi_generic_option(value:stdlib.Option<stdlib.Cell<int>>) -> int {
-    var copy:stdlib.Option<stdlib.Cell<int>> = abi_identity(value);
-    match(copy) { Some(cell) => return cell.value; None => return -1; }
+
+pub func abi_u64(value: u64) -> u64 {
+    return value / 3;
 }
-pub func abi_generic_sum_value(value:stdlib.Option<stdlib.Cell<int>>) -> int {
-    match(value) { Some(cell) => return cell.value; None => return -1; }
+
+pub func abi_i64(value: i64) -> i64 {
+    return value - 1;
+}
+
+pub func abi_u16(value: u16) -> u16 {
+    return value + 1.(u16);
+}
+
+pub func abi_i8(value: i8) -> i8 {
+    return value - 1.(i8);
+}
+
+pub func abi_generic_cell(value: stdlib.Cell<int>) -> int {
+    var copy: stdlib.Cell<int> = abi_identity(value);
+    copy.value = copy.value + 1;
+    return copy.value;
+}
+
+pub func abi_generic_option(value: stdlib.Option<stdlib.Cell<int>>) -> int {
+    var copy: stdlib.Option<stdlib.Cell<int>> = abi_identity(value);
+    match (copy) {
+        Some(cell) => return cell.value;
+        None => return -1;
+    }
+}
+
+pub func abi_generic_sum_value(value: stdlib.Option<stdlib.Cell<int>>) -> int {
+    match (value) {
+        Some(cell) => return cell.value;
+        None => return -1;
+    }
 }
 
 func main() -> void {
-    stdlib.println(abi_ints(1,2,3,4,5,6,7,8));
-    stdlib.println(abi_floats(1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0));
-    stdlib.println(abi_mixed(1,2.0,3,4.0,5,6.0,7,8.0,9,10.0,11,12.0,13,14.0,15,16.0,17.0,18.0,19.0));
-    stdlib.println(abi_float(1.25,2.5,3.75,4.0,5.0));
+    stdlib.println(abi_ints(1, 2, 3, 4, 5, 6, 7, 8));
+    stdlib.println(abi_floats(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0));
+    stdlib.println(
+        abi_mixed(
+            1,
+            2.0,
+            3,
+            4.0,
+            5,
+            6.0,
+            7,
+            8.0,
+            9,
+            10.0,
+            11,
+            12.0,
+            13,
+            14.0,
+            15,
+            16.0,
+            17.0,
+            18.0,
+            19.0
+        )
+    );
+    stdlib.println(abi_float(1.25, 2.5, 3.75, 4.0, 5.0));
 }
-pub func abi_ints(a:int,b:int,c:int,d:int,e:int,f:int,g:int,h:int) -> int {
-    return a+2*b+3*c+4*d+5*e+6*f+7*g+8*h;
+
+pub func abi_ints(a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int) -> int {
+    return a + 2 * b + 3 * c + 4 * d + 5 * e + 6 * f + 7 * g + 8 * h;
 }
-pub func abi_zero() -> int { return 42; }
-pub func abi_one(a:int) -> int { return a+1; }
-pub func abi_six(a:int,b:int,c:int,d:int,e:int,f:int) -> int { return a+b+c+d+e+f; }
-pub func abi_seven(a:int,b:int,c:int,d:int,e:int,f:int,g:int) -> int { return a+b+c+d+e+f+g; }
-pub func abi_eight(a:int,b:int,c:int,d:int,e:int,f:int,g:int,h:int) -> int { return a+b+c+d+e+f+g+h; }
-pub func abi_double_one(a:double) -> double { return a; }
-pub func abi_double_eight(a:double,b:double,c:double,d:double,e:double,f:double,g:double,h:double) -> double {
-    return a+b+c+d+e+f+g+h;
+
+pub func abi_zero() -> int {
+    return 42;
 }
-pub func abi_double_nine(a:double,b:double,c:double,d:double,e:double,f:double,g:double,h:double,i:double) -> double {
-    return a+b+c+d+e+f+g+h+i;
+
+pub func abi_one(a: int) -> int {
+    return a + 1;
 }
-pub func abi_floats(a:double,b:double,c:double,d:double,e:double,f:double,g:double,h:double,i:double) -> double {
-    return a+2*b+3*c+4*d+5*e+6*f+7*g+8*h+9*i;
+
+pub func abi_six(a: int, b: int, c: int, d: int, e: int, f: int) -> int {
+    return a + b + c + d + e + f;
 }
-pub func abi_mixed(a:int,b:double,c:int,d:double,e:int,f:double,g:int,h:double,i:int,j:double,k:int,l:double,m:int,n:double,o:int,p:double,q:double,r:double,s:double) -> double {
-    return a+2*b+3*c+4*d+5*e+6*f+7*g+8*h+9*i+10*j+11*k+12*l+13*m+14*n+15*o+16*p+17*q+18*r+19*s;
+
+pub func abi_seven(a: int, b: int, c: int, d: int, e: int, f: int, g: int) -> int {
+    return a + b + c + d + e + f + g;
 }
-pub func abi_float(a:float,b:float,c:float,d:float,e:float) -> float {
-    return a+b+c+d+e;
+
+pub func abi_eight(a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int) -> int {
+    return a + b + c + d + e + f + g + h;
 }
-pub func abi_strings(a:string,b:string) -> bit { return a==b; }
+
+pub func abi_double_one(a: double) -> double {
+    return a;
+}
+
+pub func abi_double_eight(
+    a: double,
+    b: double,
+    c: double,
+    d: double,
+    e: double,
+    f: double,
+    g: double,
+    h: double
+) -> double {
+    return a + b + c + d + e + f + g + h;
+}
+
+pub func abi_double_nine(
+    a: double,
+    b: double,
+    c: double,
+    d: double,
+    e: double,
+    f: double,
+    g: double,
+    h: double,
+    i: double
+) -> double {
+    return a + b + c + d + e + f + g + h + i;
+}
+
+pub func abi_floats(
+    a: double,
+    b: double,
+    c: double,
+    d: double,
+    e: double,
+    f: double,
+    g: double,
+    h: double,
+    i: double
+) -> double {
+    return a + 2 * b + 3 * c + 4 * d + 5 * e + 6 * f + 7 * g + 8 * h + 9 * i;
+}
+
+pub func abi_mixed(
+    a: int,
+    b: double,
+    c: int,
+    d: double,
+    e: int,
+    f: double,
+    g: int,
+    h: double,
+    i: int,
+    j: double,
+    k: int,
+    l: double,
+    m: int,
+    n: double,
+    o: int,
+    p: double,
+    q: double,
+    r: double,
+    s: double
+) -> double {
+    return a + 2 * b + 3 * c + 4 * d + 5 * e + 6 * f + 7 * g + 8 * h + 9 * i + 10 * j + 11 * k + 12 * l + 13 * m + 14 * n + 15 * o + 16 * p + 17 * q + 18 * r + 19 * s;
+}
+
+pub func abi_float(a: float, b: float, c: float, d: float, e: float) -> float {
+    return a + b + c + d + e;
+}
+
+pub func abi_strings(a: string, b: string) -> bit {
+    return a == b;
+}
+
 // ABI: System V register and stack argument boundaries.

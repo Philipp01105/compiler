@@ -6,7 +6,10 @@
 #include <string.h>
 
 size_t semantic_auto_role(const SemanticModel *model, unsigned role) {
-    const char *name = role == SEMANTIC_TYPE_SEND ? "Send" : "Sync";
+    const char *name = role == SEMANTIC_TYPE_SEND ? "Send" :
+                       role == SEMANTIC_TYPE_SYNC ? "Sync" :
+                       role == SEMANTIC_TYPE_COPYABLE ? "Copy" : NULL;
+    if (!name) return AST_SYMBOL_NONE;
     for (size_t i = 0; i < model->symbol_count; i++) {
         const SemanticSymbol *s = &model->symbols[i];
         if (s->kind == SEMANTIC_SYMBOL_INTERFACE && s->declaration &&
@@ -20,7 +23,8 @@ size_t semantic_auto_role(const SemanticModel *model, unsigned role) {
 static int explicit_init_depth(const SemanticModel *model, const AstProgram *unit,
                                const AstType *type, size_t depth) {
     if (!type || depth > model->symbol_count + 64) return 0;
-    if (type->borrow_kind || type->outer_pointer_depth || type->is_slice ||
+    if (type->borrow_kind) return 1;
+    if (type->outer_pointer_depth || type->is_slice ||
         (!type->is_array && type->pointer_depth) || type->kind != AST_TYPE_NAMED) return 0;
     if (type->is_array) {
         if (!type->resolved_array_length) return 0;
@@ -135,6 +139,22 @@ static int satisfies_uncached(const SemanticModel *model, const AstProgram *unit
     const SemanticSymbol *interface = &model->symbols[interface_id];
     if (interface->kind != SEMANTIC_SYMBOL_INTERFACE || !interface->declaration) return 0;
     Analyzer lookup = {.model = (SemanticModel *)model, .program = (AstProgram *)unit};
+    if (interface_id == semantic_auto_role(model, SEMANTIC_TYPE_COPYABLE)) {
+        /* Copy never evaluates trusted Send/Sync rules. Those rules can themselves
+           depend on Copy, so calling the full property evaluator here would cycle. */
+        if (type->borrow_kind || type->outer_pointer_depth || type->is_slice ||
+            (!type->is_array && type->pointer_depth)) return 1;
+        if (type->is_array) {
+            AstType element = ast_type_element(type);
+            return satisfies_depth(model, unit, &element, interface_id, previous, depth + 1);
+        }
+        if (type->callable_mode == 2) return 0;
+        if (type->kind == AST_TYPE_FUNCTION) return 1;
+        if (type->kind != AST_TYPE_NAMED) return 0;
+        if (primitive_type(unit, type) != TYPE_UNKNOWN) return 1;
+        size_t id = resolve_named_symbol_id(&lookup, unit, type->name_token);
+        return (semantic_symbol_type_properties(model, id) & SEMANTIC_TYPE_COPYABLE) != 0;
+    }
     size_t owner = resolve_named_symbol_id(&lookup, unit, type->name_token);
     if (!interface->declaration->is_auto_interface)
         return !type->pointer_depth && !type->outer_pointer_depth && !type->is_array &&
@@ -223,6 +243,16 @@ int semantic_satisfies(const SemanticModel *model, const AstProgram *unit,
     return satisfies_depth(model, unit, type, interface_id, &root, 0);
 }
 
+int semantic_method_constraints_satisfied(const Analyzer *a, const AstProgram *unit,
+                                           const AstDeclarationNode *method) {
+    for (const AstAutoCondition *c = method->where_conditions; c; c = c->next)
+        for (const AstInterfaceBound *b = c->bounds; b; b = b->next) {
+            size_t id = resolve_named_symbol_id(a, unit, b->name_token);
+            if (!semantic_satisfies(a->model, unit, &c->type, id)) return 0;
+        }
+    return 1;
+}
+
 void validate_auto_rules(Analyzer *a) {
     AstProgram *saved = a->program;
     const AstProgram *root = a->model->program;
@@ -234,6 +264,11 @@ void validate_auto_rules(Analyzer *a) {
             for (AstAutoRule *r = d->auto_rules; r; r = r->next) {
                 for (AstInterfaceBound *b = r->interfaces; b; b = b->next) {
                     size_t id = resolve_named_symbol_id(a, a->program, b->name_token);
+                    if (id != AST_SYMBOL_NONE && id == semantic_auto_role(a->model, SEMANTIC_TYPE_COPYABLE)) {
+                        semantic_error(a, b->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                                       "core.Copy is derived from value semantics and cannot be overridden");
+                        continue;
+                    }
                     if (id >= a->model->symbol_count || a->model->symbols[id].kind != SEMANTIC_SYMBOL_INTERFACE ||
                         !a->model->symbols[id].declaration->is_auto_interface || b->type.arguments) {
                         semantic_error(a, b->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
@@ -332,10 +367,28 @@ static int interface_type_matches_depth(const SemanticModel *model,
                                      const InterfaceSubstitution *substitution,
                                      unsigned depth) {
     if (depth > 64 || expected->kind != actual->kind ||
+        expected->borrow_kind != actual->borrow_kind ||
         expected->pointer_depth != actual->pointer_depth ||
         expected->outer_pointer_depth != actual->outer_pointer_depth ||
         expected->is_array != actual->is_array || expected->is_slice != actual->is_slice ||
         expected->resolved_array_length != actual->resolved_array_length) return 0;
+    if (expected->kind == AST_TYPE_FUNCTION) {
+        if (expected->callable_mode != actual->callable_mode ||
+            expected->is_native_function != actual->is_native_function ||
+            !expected->function_return_type || !actual->function_return_type) return 0;
+        if (expected->function_generic_parameters || actual->function_generic_parameters)
+            return ast_polymorphic_callable_compatible(interface_unit, expected, actual_unit, actual) &&
+                   ast_polymorphic_callable_compatible(actual_unit, actual, interface_unit, expected);
+        const AstTypeArgument *left = expected->function_parameters;
+        const AstTypeArgument *right = actual->function_parameters;
+        for (; left && right; left = left->next, right = right->next)
+            if (!interface_type_matches_depth(model, interface_unit, &left->type,
+                                               actual_unit, &right->type, self_unit, self,
+                                               substitution, depth + 1)) return 0;
+        return !left && !right && interface_type_matches_depth(model, interface_unit,
+            expected->function_return_type, actual_unit, actual->function_return_type,
+            self_unit, self, substitution, depth + 1);
+    }
     if (!strcmp(ast_program_lexeme(interface_unit, expected->name_token), "Self")) {
         const char *owner_name = ast_program_lexeme(self_unit, self->name_token);
         const char *actual_name = ast_program_lexeme(actual_unit, actual->name_token);
@@ -366,7 +419,11 @@ static int interface_type_matches_depth(const SemanticModel *model,
         ast_program_lexeme(actual_unit, actual->name_token);
     const AstTypeArgument *actual_arguments = actual->arguments;
     const AstProgram *actual_argument_unit = actual_unit;
-    if (strcmp(expected_name, actual_name)) {
+    Analyzer lookup = {.model = (SemanticModel *)model};
+    size_t expected_symbol = resolve_named_symbol_id(&lookup, interface_unit, expected->name_token);
+    size_t actual_type_symbol = resolve_named_symbol_id(&lookup, actual_unit, actual->name_token);
+    if (strcmp(expected_name, actual_name) &&
+        (expected_symbol == AST_SYMBOL_NONE || expected_symbol != actual_type_symbol)) {
         const SemanticSymbol *actual_symbol = NULL;
         for (size_t i = 0; i < model->symbol_count; i++)
             if ((model->symbols[i].kind == SEMANTIC_SYMBOL_STRUCT ||
@@ -379,9 +436,10 @@ static int interface_type_matches_depth(const SemanticModel *model,
             actual_symbol != NULL && actual_symbol->declaration != NULL
                 ? actual_symbol->declaration->generic_origin : NULL;
         if (origin == NULL ||
-            strcmp(expected_name, ast_program_lexeme(
-                                      actual_symbol->source_program,
-                                      origin->name_token)))
+            (expected_symbol != origin->resolved_symbol_id &&
+             strcmp(expected_name, ast_program_lexeme(
+                                       actual_symbol->source_program,
+                                       origin->name_token))))
             return 0;
         actual_arguments =
             actual_symbol->declaration->specialization_arguments;
@@ -473,6 +531,8 @@ static size_t interface_method(const SemanticModel *model,
          method; method = method->next) {
         if (method->resolved_symbol_id >= model->symbol_count) continue;
         const SemanticSymbol *actual = &model->symbols[method->resolved_symbol_id];
+        Analyzer lookup = {.model = (SemanticModel *)model, .program = (AstProgram *)actual->source_program};
+        if (!semantic_method_constraints_satisfied(&lookup, actual->source_program, method)) continue;
         if (actual->kind != SEMANTIC_SYMBOL_FUNCTION || actual->owner_symbol_id != struct_id ||
             !actual->declaration ||
             actual->declaration->as.function.is_static !=

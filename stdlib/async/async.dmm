@@ -1,0 +1,56 @@
+package asynchronous;
+import (
+    "stdlib/core"
+    "stdlib/core/executor"
+);
+
+// Only this package may construct a waker from a scheduler context. Retaining
+// the task also retains its executor until every cloned waker is destroyed.
+@[no_default] @[core.Send + core.Sync] pub struct Waker {
+    var raw: *void;
+
+    pub func clone() -> Waker {
+        executor.__dmm_async_context_retain(raw);
+        return Waker{raw: raw};
+    }
+
+    pub func wake() -> void {
+        executor.__dmm_async_context_wake(raw);
+    }
+
+    destructor {
+        executor.__dmm_async_context_release(raw);
+    }
+}
+
+@[no_default] pub struct Context {
+    var waker: Waker;
+
+    pub func retainWaker() -> Waker { return waker.clone(); }
+}
+
+// Useful for a poller that completes synchronously or for deterministic tests.
+pub func noopWaker() -> Waker {
+    return Waker{raw: core.core_null().(*void)};
+}
+
+pub func context(waker: Waker) -> Context {
+    return Context{waker: waker};
+}
+
+// The future adapter will call this within the package's trusted boundary.
+func contextFromRaw(raw: *void) -> Context {
+    executor.__dmm_async_context_retain(raw);
+    return Context{waker: Waker{raw: raw}};
+}
+
+pub enum CancelAck {
+    pub Confirmed
+}
+
+// Ready from cancelPoll confirms that the poller has ended all child work and
+// released every wake registration. Pending leaves its pinned state intact.
+pub interface Poller<T> {
+    pub func poll(context: &mut Context) -> core.Poll<T>;
+    pub func cancelPoll(context: &mut Context) -> core.Poll<CancelAck>;
+}

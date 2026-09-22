@@ -69,7 +69,9 @@ int symbol_matches_scope(const AstProgram *file, const SemanticSymbol *symbol, c
     const char *plain = name;
     const DmmPackage *package = lookup_package(file, &plain);
     if ((package != NULL
-             ? symbol->source_program->package != package
+             ? (symbol->source_program->package != package &&
+                !(symbol->declaration && symbol->declaration->is_public &&
+                  ast_package_reexports(package, symbol->source_program->package)))
              : (strchr(name, '.') != NULL || strstr(name, "::") != NULL ||
                 !same_package(file, symbol->source_program))) ||
         symbol->owner_symbol_id != AST_SYMBOL_NONE)
@@ -107,6 +109,12 @@ static int grow_symbol_index(SemanticModel *model) {
     for (size_t i = 0; i < model->symbol_count; i++) (void) index_symbol(model, i);
     free(previous);
     return 1;
+}
+
+void semantic_reindex_symbols(SemanticModel *model) {
+    if (!model->symbol_index_capacity) return;
+    memset(model->symbol_index,0,model->symbol_index_capacity*sizeof(*model->symbol_index));
+    for(size_t i=0;i<model->symbol_count;i++) (void)index_symbol(model,i);
 }
 
 int semantic_append_symbol(SemanticModel *model, SemanticSymbol symbol) {
@@ -164,6 +172,11 @@ const SemanticSymbol *scoped_find_global(const SemanticModel *model, const AstPr
     const int qualified = strchr(name, '.') != NULL || strstr(name, "::") != NULL;
     if (qualified && package == NULL) return NULL;
     const SemanticSymbol *symbol = indexed_find(model, file, package, plain, kind);
+    if (!symbol && package && package->has_public_imports) {
+        AstProgram *source = NULL;
+        if (ast_package_declaration(package, plain, &source) && source)
+            symbol = indexed_find(model, source, source->package, plain, kind);
+    }
     if (!symbol && !qualified)
         for (size_t n = 0; n < model->symbol_count; n++) {
             const SemanticSymbol *candidate = &model->symbols[n];
@@ -186,6 +199,39 @@ const SemanticSymbol *scoped_find_global(const SemanticModel *model, const AstPr
 
 const SemanticSymbol *semantic_find_global(const SemanticModel *model, const char *name, SemanticSymbolKind kind) {
     return model ? scoped_find_global(model, model->program, name, kind) : NULL;
+}
+
+void validate_package_reexports(Analyzer *analyzer) {
+    const AstProgram *root = analyzer->model->program;
+    if (!root->module || !root->module->graph) return;
+    AstProgram *saved = analyzer->program;
+    for (const DmmPackage *package = root->module->graph->packages; package; package = package->next) {
+        if (!package->has_public_imports || !package->file_count) continue;
+        analyzer->program = package->files[0];
+        for (size_t i = 0; i < analyzer->model->symbol_count; i++) {
+            const SemanticSymbol *exported = &analyzer->model->symbols[i];
+            if (exported->owner_symbol_id != AST_SYMBOL_NONE || !exported->declaration ||
+                exported->declaration->generic_origin || !exported->declaration->is_public ||
+                exported->source_program->package == package ||
+                !ast_package_reexports(package, exported->source_program->package)) continue;
+            for (size_t j = 0; j < analyzer->model->symbol_count; j++) {
+                const SemanticSymbol *other = &analyzer->model->symbols[j];
+                if (other->owner_symbol_id != AST_SYMBOL_NONE || !other->declaration ||
+                    other->declaration->generic_origin ||
+                    other->source_program->package == exported->source_program->package ||
+                    strcmp(symbol_name(other), symbol_name(exported))) continue;
+                if (other->source_program->package != package &&
+                    (!other->declaration->is_public || !ast_package_reexports(package, other->source_program->package)))
+                    continue;
+                char message[640];
+                snprintf(message, sizeof(message), "Public reexport name '%s' conflicts with another declaration",
+                         symbol_name(exported));
+                semantic_error(analyzer, AST_TOKEN_NONE, ERROR_CATEGORY_SEMANTIC, ERR_SEM_DUPLICATE_DEFINITION, message);
+                break;
+            }
+        }
+    }
+    analyzer->program = saved;
 }
 
 const SemanticSymbol *semantic_find_in_package(const SemanticModel *model, const AstProgram *file, const char *name,

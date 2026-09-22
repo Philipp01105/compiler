@@ -1,0 +1,6 @@
+package executor;
+extern "system" from "c" {
+    func abort() -> void;
+    func calloc(count: usize, size: usize) -> *void;
+    func release(address: *void) -> void = "free";
+}

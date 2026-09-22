@@ -1,2 +1,5 @@
 package pkg;
-func private_answer() -> int { return 42; }
+
+func private_answer() -> int {
+    return 42;
+}

@@ -1,2 +1,6 @@
 package main;
-func main() -> int { var size=alignof(Absent); return 0; }
+
+func main() -> int {
+    var size = alignof(Absent);
+    return 0;
+}

@@ -2,7 +2,7 @@ package main;
 import "stdlib";
 import "stdlib/core";
 
-const SCORE_COUNT:int=5;
+const SCORE_COUNT: int = 5;
 
 enum Performance {
     Strong,
@@ -14,49 +14,62 @@ func invalidScore() -> never {
     core.core_trap();
 }
 
-func checkedScore(value:int) -> int {
-    if (value < 0 || value > 100) { invalidScore(); }
+func checkedScore(value: int) -> int {
+    if (value < 0 || value > 100) {
+        invalidScore();
+    }
     return value;
 }
 
 struct ScoreCard {
-    var scores:int[SCORE_COUNT];
+    var scores: int[SCORE_COUNT];
 
     func total() -> int {
-        var result:int=0;
-        for (var index:int=0; index < SCORE_COUNT; index+=1) {
-            result+=scores[index];
+        var result: int = 0;
+        for (var index: int = 0; index < SCORE_COUNT; index += 1) {
+            result += scores[index];
         }
         return result;
     }
 
     func average() -> double {
-        var result:int=0;
-        for (var index:int=0; index < SCORE_COUNT; index+=1) {
-            result+=scores[index];
+        var result: int = 0;
+        for (var index: int = 0; index < SCORE_COUNT; index += 1) {
+            result += scores[index];
         }
-        return result.(double)/SCORE_COUNT.(double);
+        return result.(double) / SCORE_COUNT.(double);
     }
 }
 
 // Overload resolution selects a function from the argument type.
-func category(value:int) -> string { return "whole-number score"; }
-func category(value:double) -> string { return "average score"; }
+func category(value: int) -> string {
+    return "whole-number score";
+}
 
-func passedEveryScore(scores:int[]) -> bit {
-    for (var index:int=0; index < scores.length; index+=1) {
-        if (scores[index] < 50) { return false; }
+func category(value: double) -> string {
+    return "average score";
+}
+
+func passedEveryScore(scores: int[]) -> bit {
+    for (var index: int = 0; index < scores.length; index += 1) {
+        if (scores[index] < 50) {
+            return false;
+        }
     }
     return true;
 }
 
-func performance(average:double) -> Performance {
-    if (average >= 80.0) { return Performance.Strong; }
-    if (average >= 50.0) { return Performance.Passing; }
+func performance(average: double) -> Performance {
+    if (average >= 80.0) {
+        return Performance.Strong;
+    }
+    if (average >= 50.0) {
+        return Performance.Passing;
+    }
     return Performance.Failing;
 }
 
-func performanceLabel(value:Performance) -> string {
+func performanceLabel(value: Performance) -> string {
     match (value) {
         Strong => return "strong";
         Passing => return "passing";
@@ -65,15 +78,15 @@ func performanceLabel(value:Performance) -> string {
 }
 
 func main() -> int {
-    var card:ScoreCard;
-    card.scores=[checkedScore(72),88,91,67,82];
+    var card: ScoreCard;
+    card.scores = [checkedScore(72), 88, 91, 67, 82];
 
     // Fixed arrays retain their length in the type and borrow as checked slices.
-    var view:int[]=card.scores;
-    var total:int=card.total();
-    var average:double=card.average();
-    var passed:bit=passedEveryScore(view);
-    var level:Performance=performance(average);
+    var view: int[] = card.scores;
+    var total: int = card.total();
+    var average: double = card.average();
+    var passed: bit = passedEveryScore(view);
+    var level: Performance = performance(average);
 
     stdlib.println(category(total));
     stdlib.println(total);
@@ -83,7 +96,7 @@ func main() -> int {
     stdlib.println(performanceLabel(level));
 
     // Concatenation accepts scalar values and returns an explicitly owned string.
-    var summary:string="passed every score: "+passed;
+    var summary: string = "passed every score: " + passed;
     stdlib.println(summary);
     free(summary);
 
@@ -92,6 +105,8 @@ func main() -> int {
     stdlib.println(ScoreCard.size);
     stdlib.println(ScoreCard.align);
 
-    if (total != 400 || average != 80.0 || !passed || level != Performance.Strong) { return 1; }
+    if (total != 400 || average != 80.0 || !passed || level != Performance.Strong) {
+        return 1;
+    }
     return 0;
 }

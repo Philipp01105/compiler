@@ -1,2 +1,4 @@
 package main;
-func main() -> void { var c:char = 'x; }
+
+func main() -> void {
+    var c: char = 'x; }

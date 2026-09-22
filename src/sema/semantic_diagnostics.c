@@ -350,6 +350,17 @@ void overload_error(Analyzer *analyzer, const AstExpression *call,
                                 type);
         }
         diagnostic_append(&message, ")");
+        for (const AstAutoCondition *c = symbol->declaration->where_conditions; c; c = c->next) {
+            diagnostic_append(&message, c == symbol->declaration->where_conditions ? " where " : ", ");
+            diagnostic_ast_type(&message, analyzer, symbol->source_program, &c->type);
+            diagnostic_append(&message, ": ");
+            for (const AstInterfaceBound *b = c->bounds; b; b = b->next) {
+                diagnostic_append(&message, "%s", ast_program_lexeme(symbol->source_program, b->name_token));
+                if (b->next) diagnostic_append(&message, " + ");
+            }
+            if (!semantic_method_constraints_satisfied(analyzer, symbol->source_program, symbol->declaration))
+                diagnostic_append(&message, " (not satisfied)");
+        }
     }
     if (index == 0) diagnostic_append(&message, "<none>");
     semantic_error(analyzer, call->left->value_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,

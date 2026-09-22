@@ -143,7 +143,7 @@ static int instruction_produces_value(const IrInstruction *instruction) {
            opcode == IR_OP_INDEX || opcode == IR_OP_SUBSLICE ||
            opcode == IR_OP_MEMBER || opcode == IR_OP_SLICE_LENGTH ||
            opcode == IR_OP_SLICE || opcode == IR_OP_SLICE_DATA ||
-           opcode == IR_OP_ARRAY_LITERAL || opcode == IR_OP_STRUCT_LITERAL || opcode == IR_OP_INTERFACE_PACK || opcode == IR_OP_NATIVE_COPY ||
+           opcode == IR_OP_ARRAY_LITERAL || opcode == IR_OP_STRUCT_LITERAL || opcode == IR_OP_INTERFACE_PACK || opcode == IR_OP_NATIVE_COPY || opcode == IR_OP_VALUE_SNAPSHOT ||
            opcode == IR_OP_CAST || opcode == IR_OP_ALLOC ||
            opcode == IR_OP_PHI || opcode == IR_OP_ENUM_CONSTRUCT || opcode == IR_OP_ENUM_IS || opcode ==
            IR_OP_ENUM_PAYLOAD;
@@ -322,14 +322,13 @@ static int verify_instruction_types(const IrModule *module,
             (ir_type_properties(module,instruction->type_id)&SEMANTIC_TYPE_NEEDS_DROP) &&
             instruction->target_a>0 && instruction->target_a<=function->async_state_count;
         case IR_OP_EXECUTOR:
-            if (!a || instruction->async_operation<ASYNC_CREATE || instruction->async_operation>ASYNC_NET_WAIT) return 0;
+            if (!a || instruction->async_operation<ASYNC_CREATE || instruction->async_operation>ASYNC_NATIVE_FUTURE) return 0;
             if (b && module->types[b->type_id].kind!=IR_TYPE_EXECUTOR) return 0;
             switch (instruction->async_operation) {
-                case ASYNC_NET_WAIT: return data_type_integral(a->type) &&
+                case ASYNC_NATIVE_FUTURE: return a->type==TYPE_VOID && a->pointer_depth==1 &&
                     module->types[instruction->type_id].kind==IR_TYPE_FUTURE &&
                     module->types[module->types[instruction->type_id].element_type].kind==IR_TYPE_PRIMITIVE &&
-                    module->types[module->types[instruction->type_id].element_type].primitive==TYPE_VOID &&
-                    (instruction->runtime_requirements&RUNTIME_REQUIRE_NETWORK)!=0;
+                    module->types[module->types[instruction->type_id].element_type].primitive==TYPE_VOID;
                 case ASYNC_CREATE: return !b && ir_integral_type(module,a->type_id) && module->types[instruction->type_id].kind==IR_TYPE_EXECUTOR;
                 case ASYNC_SPAWN: return module->types[a->type_id].kind==IR_TYPE_FUTURE && module->types[instruction->type_id].kind==IR_TYPE_JOIN &&
                                         module->types[a->type_id].element_type==module->types[instruction->type_id].element_type;
@@ -365,14 +364,21 @@ static int verify_instruction_types(const IrModule *module,
         case IR_OP_ENUM_PAYLOAD: {
             const IrEnum *owner = NULL;
             const IrEnumVariant *variant = ir_variant(module, instruction->symbol_id, &owner);
-            if (!variant || !a || module->types[a->type_id].kind != IR_TYPE_NAMED ||
-                module->types[a->type_id].symbol_id != owner->symbol_id)
+            IrTypeId scrutinee = a ? a->type_id : IR_TYPE_NONE;
+            if (scrutinee < module->type_count && module->types[scrutinee].kind == IR_TYPE_POINTER)
+                scrutinee = module->types[scrutinee].element_type;
+            if (!variant || !a || scrutinee >= module->type_count ||
+                module->types[scrutinee].kind != IR_TYPE_NAMED ||
+                module->types[scrutinee].symbol_id != owner->symbol_id)
                 return 0;
             if (instruction->opcode == IR_OP_ENUM_IS)
                 return instruction->type == TYPE_BIT && ir_integral_type(
                            module, instruction->type_id);
+            IrTypeId payload_type = instruction->type_id;
+            if (instruction->lifetime_pointer && module->types[payload_type].kind == IR_TYPE_POINTER)
+                payload_type = module->types[payload_type].element_type;
             return instruction->enum_payload_index < variant->payload_count &&
-                   instruction->type_id == variant->payload_types[instruction->enum_payload_index] &&
+                   payload_type == variant->payload_types[instruction->enum_payload_index] &&
                    verified_payload_guard(function, producers, instruction, index);
         }
         case IR_OP_TRAP: return ir_void_type(module, instruction->type_id);
@@ -404,6 +410,14 @@ static int verify_instruction_types(const IrModule *module,
                     return module->structures[s].is_native && !module->structures[s].is_opaque;
             return 0;
         }
+        case IR_OP_VALUE_SNAPSHOT:
+            return a && a->type_id == instruction->type_id &&
+                (module->types[instruction->type_id].kind == IR_TYPE_NAMED ||
+                 module->types[instruction->type_id].kind == IR_TYPE_ARRAY ||
+                 module->types[instruction->type_id].kind == IR_TYPE_SLICE ||
+                 module->types[instruction->type_id].kind == IR_TYPE_FUTURE ||
+                 module->types[instruction->type_id].kind == IR_TYPE_JOIN ||
+                 module->types[instruction->type_id].kind == IR_TYPE_EXECUTOR);
         case IR_OP_INTERFACE_PACK:
             return a != NULL && a->type_id < module->type_count &&
                    instruction->type_id < module->type_count &&
@@ -515,8 +529,6 @@ static int verify_instruction_types(const IrModule *module,
                 const CoreIntrinsic *core = core_intrinsic_find(ast_program_lexeme(
                     function->source_program, instruction->auxiliary_token));
                 if (core == NULL) return a != NULL;
-                if (!strncmp(core->source_name,"__dmm_net_",10) &&
-                    !(instruction->runtime_requirements & RUNTIME_REQUIRE_NETWORK)) return 0;
                 if (instruction->argument_count != core->argument_count ||
                     !core_ir_type_matches(module, instruction->type_id, core->result, 0) ||
                     instruction->type != core_value_type(core->result) ||
@@ -1122,6 +1134,7 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                         valid = 0;
                     break;
                 case IR_OP_CAST:
+                case IR_OP_VALUE_SNAPSHOT:
                 case IR_OP_NATIVE_COPY:
                 case IR_OP_INTERFACE_PACK:
                 case IR_OP_FREE:

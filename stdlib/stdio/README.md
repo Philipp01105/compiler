@@ -7,7 +7,9 @@ code.
 
 ```dmm
 package main;
-import "stdlib/stdio";
+import (
+    "stdlib/stdio"
+);
 
 func main() -> int {
     var file=stdio.openWrite("example.txt");

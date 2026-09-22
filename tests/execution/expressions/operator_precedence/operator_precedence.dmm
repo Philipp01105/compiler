@@ -1,7 +1,8 @@
 package main;
 import "stdlib";
+
 func main() -> void {
-    var grouped:int = (1 + 2) * 3;
+    var grouped: int = (1 + 2) * 3;
     stdlib.println(1 + 2 * 3);
     stdlib.println(grouped);
     stdlib.println(1 + 2 * 3 == 7);

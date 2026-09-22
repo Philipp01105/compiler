@@ -4,7 +4,6 @@
 #include "language_types.h"
 #include <stddef.h>
 #include <string.h>
-#include "network_intrinsics.h"
 
 /* Target-independent signatures shared by semantic analysis, IR and emission. */
 typedef enum { CORE_VOID, CORE_NEVER, CORE_INT, CORE_SIZE, CORE_OFFSET, CORE_BYTES, CORE_STRING } CoreValueKind;
@@ -20,14 +19,6 @@ typedef struct {
 #define DMM_CORE_INTRINSICS(X) \
     X("__dmm_intrinsic_alloc", "__dmm_core_malloc", 1, CORE_BYTES, CORE_SIZE, CORE_VOID, CORE_VOID) \
     X("__dmm_intrinsic_release", "__dmm_core_free", 1, CORE_VOID, CORE_BYTES, CORE_VOID, CORE_VOID) \
-    X("__dmm_intrinsic_null", "__dmm_core_null", 0, CORE_BYTES, CORE_VOID, CORE_VOID, CORE_VOID) \
-    X("__dmm_intrinsic_offset", "__dmm_core_offset", 2, CORE_BYTES, CORE_BYTES, CORE_OFFSET, CORE_VOID) \
-    X("__dmm_intrinsic_copy", "__dmm_core_copy", 3, CORE_VOID, CORE_BYTES, CORE_BYTES, CORE_SIZE) \
-    X("__dmm_intrinsic_fill", "__dmm_core_fill", 3, CORE_VOID, CORE_BYTES, CORE_INT, CORE_SIZE) \
-    X("__dmm_intrinsic_atomic_load", "__dmm_core_atomic_load", 1, CORE_SIZE, CORE_BYTES, CORE_VOID, CORE_VOID) \
-    X("__dmm_intrinsic_atomic_store", "__dmm_core_atomic_store", 2, CORE_VOID, CORE_BYTES, CORE_SIZE, CORE_VOID) \
-    X("__dmm_intrinsic_atomic_swap", "__dmm_core_atomic_swap", 2, CORE_SIZE, CORE_BYTES, CORE_SIZE, CORE_VOID) \
-    X("__dmm_intrinsic_atomic_compare_exchange", "__dmm_core_atomic_compare_exchange", 3, CORE_SIZE, CORE_BYTES, CORE_SIZE, CORE_SIZE) \
     X("__dmm_intrinsic_string_data", "__dmm_core_string_data", 1, CORE_BYTES, CORE_STRING, CORE_VOID, CORE_VOID) \
     X("__dmm_intrinsic_read", "__dmm_rt_sys_read", 3, CORE_OFFSET, CORE_INT, CORE_BYTES, CORE_SIZE) \
     X("__dmm_intrinsic_write", "__dmm_rt_sys_write", 3, CORE_OFFSET, CORE_INT, CORE_BYTES, CORE_SIZE) \
@@ -38,8 +29,7 @@ typedef struct {
 
 static inline const CoreIntrinsic *core_intrinsic_find(const char *name) {
 #define CORE_SIGNATURE(source, link, count, result, a, b, c) {source, link, count, result, {a, b, c}},
-    static const CoreIntrinsic signatures[] = {DMM_CORE_INTRINSICS(CORE_SIGNATURE)
-        DMM_NETWORK_INTRINSICS(CORE_SIGNATURE)};
+    static const CoreIntrinsic signatures[] = {DMM_CORE_INTRINSICS(CORE_SIGNATURE)};
 #undef CORE_SIGNATURE
     for (size_t i = 0; i < sizeof(signatures) / sizeof(signatures[0]); ++i)
         if (strcmp(name, signatures[i].source_name) == 0) return &signatures[i];

@@ -1,0 +1,615 @@
+package unicode;
+import (
+    "stdlib"
+    raw "stdlib/core/raw"
+);
+
+pub enum ErrorKind {
+    pub InvalidUtf8,
+    pub InvalidUtf16,
+    pub InvalidScalar,
+    pub BufferTooSmall,
+    pub OutOfMemory,
+    pub CapacityOverflow,
+}
+
+pub struct UnicodeError {
+    pub var kind: ErrorKind;
+    pub var offset: usize;
+}
+
+pub struct Decoded {
+    pub var scalar: u32;
+    pub var next: usize;
+}
+
+pub enum Normalization {
+    pub NFC,
+    pub NFD,
+    pub NFKC,
+    pub NFKD,
+}
+
+pub enum CaseMapping {
+    pub Lower,
+    pub Upper,
+    pub Title,
+    pub Fold,
+}
+
+func failure(kind: ErrorKind, offset: usize) -> UnicodeError {
+    return UnicodeError{ kind: kind, offset: offset };
+}
+
+func allocation(error: stdlib.AllocationError) -> UnicodeError {
+    if (error == stdlib.AllocationError.CapacityOverflow) {
+        return failure(ErrorKind.CapacityOverflow, 0);
+    }
+    return failure(ErrorKind.OutOfMemory, 0);
+}
+
+pub func isScalar(value: u32) -> bit {
+    return value <= 1114111 && !(value >= 55296 && value <= 57343);
+}
+
+pub func decodeUtf8(input: u8[], offset: usize) -> stdlib.Result<Decoded, UnicodeError> {
+    if (offset >= input.length) {
+        return stdlib.Result<Decoded, UnicodeError>.Err(failure(ErrorKind.InvalidUtf8, offset));
+    }
+    var first: u32 = input[offset].(u32);
+    var length: usize = 1;
+    var scalar: u32 = first;
+    var minimum: u32 = 0;
+    if (first >= 194 && first <= 223) {
+        length = 2;
+        scalar = first - 192;
+        minimum = 128;
+    } else {
+        if (first >= 224 && first <= 239) {
+            length = 3;
+            scalar = first - 224;
+            minimum = 2048;
+        } else {
+            if (first >= 240 && first <= 244) {
+                length = 4;
+                scalar = first - 240;
+                minimum = 65536;
+            } else {
+                if (first >= 128) {
+                    return stdlib.Result<Decoded, UnicodeError>.Err(
+                        failure(ErrorKind.InvalidUtf8, offset)
+                    );
+                }
+            }
+        }
+    }
+    if (length > input.length - offset) {
+        return stdlib.Result<Decoded, UnicodeError>.Err(failure(ErrorKind.InvalidUtf8, offset));
+    }
+    for (var i: usize = 1; i < length; i += 1) {
+        var next: u32 = input[offset + i].(u32);
+        if (next < 128 || next > 191) {
+            return stdlib.Result<Decoded, UnicodeError>.Err(
+                failure(ErrorKind.InvalidUtf8, offset + i)
+            );
+        }
+        scalar = scalar * 64 + next - 128;
+    }
+    if (scalar < minimum || !isScalar(scalar)) {
+        return stdlib.Result<Decoded, UnicodeError>.Err(failure(ErrorKind.InvalidUtf8, offset));
+    }
+    return stdlib.Result<Decoded, UnicodeError>.Ok(Decoded{ scalar: scalar, next: offset + length });
+}
+
+pub func validate(input: u8[]) -> stdlib.Result<void, UnicodeError> {
+    var offset: usize = 0;
+    while (offset < input.length) {
+        var decoded = decodeUtf8(input, offset);
+        match (decoded) {
+            Err(error) => return stdlib.Result<void, UnicodeError>.Err(error);
+            Ok(value) => offset = value.next;
+        }
+    }
+    return stdlib.Result<void, UnicodeError>.Ok;
+}
+
+pub func encodeUtf8(scalar: u32, output: &mut u8[], offset: usize) -> stdlib.Result<usize, UnicodeError> {
+    if (!isScalar(scalar)) {
+        return stdlib.Result<usize, UnicodeError>.Err(failure(ErrorKind.InvalidScalar, offset));
+    }
+    var length: usize = 1;
+    if (scalar >= 128) {
+        length = 2;
+    }
+    if (scalar >= 2048) {
+        length = 3;
+    }
+    if (scalar >= 65536) {
+        length = 4;
+    }
+    if (offset > (*output).length || length > (*output).length - offset) {
+        return stdlib.Result<usize, UnicodeError>.Err(failure(ErrorKind.BufferTooSmall, offset));
+    }
+    if (length == 1) {
+        (*output)[offset] = scalar.(u8);
+    } else {
+        var divisor: u32 = 64;
+        if (length == 3) {
+            divisor = 4096;
+        }
+        if (length == 4) {
+            divisor = 262144;
+        }
+        var prefix: u32 = 192;
+        if (length == 3) {
+            prefix = 224;
+        }
+        if (length == 4) {
+            prefix = 240;
+        }(*output)[offset] = (prefix + scalar / divisor).(u8);
+        for (var i: usize = 1; i < length; i += 1) {
+            divisor /= 64;
+            (*output)[offset + i] = (128 + (scalar / divisor) % 64).(u8);
+        }
+    }
+    return stdlib.Result<usize, UnicodeError>.Ok(offset + length);
+}
+
+func appendScalar(output: *stdlib.Bytes, scalar: u32) -> stdlib.AllocationError {
+    var bytes: u8[4];
+    var view: u8[] = bytes;
+    var encoded = encodeUtf8(scalar, &mut view, 0);
+    match (encoded) {
+        Err(error) => return stdlib.AllocationError.InvalidIndex;
+        Ok(end) => return output.append(bytes[: end]);
+    }
+}
+
+pub func codepoints(input: u8[]) -> stdlib.Result<stdlib.List<u32>, UnicodeError> {
+    var output = stdlib.list<u32>(0);
+    var offset: usize = 0;
+    while (offset < input.length) {
+        var decoded = decodeUtf8(input, offset);
+        match (decoded) {
+            Err(error) => return stdlib.Result<stdlib.List<u32>, UnicodeError>.Err(error);
+            Ok(value) => {
+                var error = output.push(value.scalar);
+                if (error != stdlib.AllocationError.None) {
+                    return stdlib.Result<stdlib.List<u32>, UnicodeError>.Err(allocation(error));
+                }
+                offset = value.next;
+            }
+        }
+    }
+    return stdlib.Result<stdlib.List<u32>, UnicodeError>.Ok(output);
+}
+
+pub func fromCodepoints(input: u32[]) -> stdlib.Result<stdlib.Bytes, UnicodeError> {
+    var output = stdlib.bytes(0);
+    for (var i: usize = 0; i < input.length; i += 1) {
+        if (!isScalar(input[i])) {
+            return stdlib.Result<stdlib.Bytes, UnicodeError>.Err(failure(ErrorKind.InvalidScalar, i));
+        }
+        var error = appendScalar((&output).(*stdlib.Bytes), input[i]);
+        if (error != stdlib.AllocationError.None) {
+            return stdlib.Result<stdlib.Bytes, UnicodeError>.Err(allocation(error));
+        }
+    }
+    return stdlib.Result<stdlib.Bytes, UnicodeError>.Ok(output);
+}
+
+pub func fromUtf16(input: u16[]) -> stdlib.Result<stdlib.Bytes, UnicodeError> {
+    var output = stdlib.bytes(0);
+    var index: usize = 0;
+    while (index < input.length) {
+        var scalar: u32 = input[index].(u32);
+        var start: usize = index;
+        index += 1;
+        if (scalar >= 55296 && scalar <= 56319) {
+            if (index == input.length || input[index] < 56320 || input[index] > 57343) {
+                return stdlib.Result<stdlib.Bytes, UnicodeError>.Err(
+                    failure(ErrorKind.InvalidUtf16, start)
+                );
+            }
+            scalar = 65536 + (scalar - 55296) * 1024 + input[index].(u32) - 56320;
+            index += 1;
+        } else {
+            if (scalar >= 56320 && scalar <= 57343) {
+                return stdlib.Result<stdlib.Bytes, UnicodeError>.Err(
+                    failure(ErrorKind.InvalidUtf16, start)
+                );
+            }
+        }
+        var error = appendScalar((&output).(*stdlib.Bytes), scalar);
+        if (error != stdlib.AllocationError.None) {
+            return stdlib.Result<stdlib.Bytes, UnicodeError>.Err(allocation(error));
+        }
+    }
+    return stdlib.Result<stdlib.Bytes, UnicodeError>.Ok(output);
+}
+
+pub func toUtf16(input: u8[]) -> stdlib.Result<stdlib.List<u16>, UnicodeError> {
+    var output = stdlib.list<u16>(0);
+    var offset: usize = 0;
+    while (offset < input.length) {
+        var decoded = decodeUtf8(input, offset);
+        match (decoded) {
+            Err(error) => return stdlib.Result<stdlib.List<u16>, UnicodeError>.Err(error);
+            Ok(value) => {
+                var error: stdlib.AllocationError;
+                if (value.scalar < 65536) {
+                    error = output.push(value.scalar.(u16));
+                } else {
+                    error = output.push((55296 + (value.scalar - 65536) / 1024).(u16));
+                    if (error == stdlib.AllocationError.None) {
+                        error = output.push((56320 + (value.scalar - 65536) % 1024).(u16));
+                    }
+                }
+                if (error != stdlib.AllocationError.None) {
+                    return stdlib.Result<stdlib.List<u16>, UnicodeError>.Err(allocation(error));
+                }
+                offset = value.next;
+            }
+        }
+    }
+    return stdlib.Result<stdlib.List<u16>, UnicodeError>.Ok(output);
+}
+
+func hex(table: func(usize) -> string, offset: usize, width: usize) -> u32 {
+    var value: u32 = 0;
+    for (var i: usize = 0; i < width; i += 1) {
+        var position: usize = offset + i;
+        var data: *u8 = raw.core_string_data(table(position / 480));
+        var code: u32 = data[position % 480].(u32);
+        var digit: u32 = code - 48;
+        if (code >= 97) {
+            digit = code - 97 + 10;
+        }
+        value = value * 16 + digit;
+    }
+    return value;
+}
+
+func propertyOffset(scalar: u32) -> usize {
+    var first: usize = 0;
+    var end: usize = PROPERTIES_COUNT;
+    while (first < end) {
+        var middle: usize = first + (end - first) / 2;
+        if (hex(PROPERTIES, middle * 18 + 6, 6) < scalar) {
+            first = middle + 1;
+        } else {
+            end = middle;
+        }
+    }
+    if (first < PROPERTIES_COUNT && hex(PROPERTIES, first * 18, 6) <= scalar) {
+        return first * 18;
+    }
+    return PROPERTIES_COUNT * 18;
+}
+
+pub func categoryCode(scalar: u32) -> u32 {
+    var offset: usize = propertyOffset(scalar);
+    if (offset == PROPERTIES_COUNT * 18) {
+        return 0;
+    }
+    return hex(PROPERTIES, offset + 12, 2);
+}
+
+pub func combiningClass(scalar: u32) -> u32 {
+    var offset: usize = propertyOffset(scalar);
+    if (offset == PROPERTIES_COUNT * 18) {
+        return 0;
+    }
+    return hex(PROPERTIES, offset + 14, 2);
+}
+
+func hasFlag(scalar: u32, flag: u32) -> bit {
+    var offset: usize = propertyOffset(scalar);
+    if (offset == PROPERTIES_COUNT * 18) {
+        return false;
+    }
+    return (hex(PROPERTIES, offset + 16, 2) / flag) % 2 == 1;
+}
+
+pub func isAlphabetic(scalar: u32) -> bit {
+    return hasFlag(scalar, 1);
+}
+
+pub func isWhitespace(scalar: u32) -> bit {
+    return hasFlag(scalar, 2);
+}
+
+pub func isDigit(scalar: u32) -> bit {
+    return categoryCode(scalar) == 9;
+}
+
+pub func isUpper(scalar: u32) -> bit {
+    return categoryCode(scalar) == 1;
+}
+
+pub func isLower(scalar: u32) -> bit {
+    return categoryCode(scalar) == 2;
+}
+
+pub func isLetter(scalar: u32) -> bit {
+    var category: u32 = categoryCode(scalar);
+    return category >= 1 && category <= 5;
+}
+
+pub func isMark(scalar: u32) -> bit {
+    var category: u32 = categoryCode(scalar);
+    return category >= 6 && category <= 8;
+}
+
+pub func isNumber(scalar: u32) -> bit {
+    var category: u32 = categoryCode(scalar);
+    return category >= 9 && category <= 11;
+}
+
+pub func isPunctuation(scalar: u32) -> bit {
+    var category: u32 = categoryCode(scalar);
+    return category >= 12 && category <= 18;
+}
+
+pub func isSymbol(scalar: u32) -> bit {
+    var category: u32 = categoryCode(scalar);
+    return category >= 19 && category <= 22;
+}
+
+pub func isControl(scalar: u32) -> bit {
+    return categoryCode(scalar) == 26;
+}
+
+pub struct Codepoints {
+    var source: u8[];
+    var offset: usize;
+    pub func next() -> stdlib.Result<stdlib.Option<u32>, UnicodeError> {
+        if (offset == source.length) {
+            return stdlib.Result<stdlib.Option<u32>, UnicodeError>.Ok(stdlib.Option<u32>.None);
+        }
+        var decoded = decodeUtf8(source, offset);
+        match (decoded) {
+            Err(error) => return stdlib.Result<stdlib.Option<u32>, UnicodeError>.Err(error);
+            Ok(value) => {
+                offset = value.next;
+                return stdlib.Result<stdlib.Option<u32>, UnicodeError>.Ok(
+                    stdlib.Option<u32>.Some(value.scalar)
+                );
+            }
+        }
+    }
+
+    // A move-only iterator carries the source loan until its lifetime ends.
+    destructor {}
+}
+
+pub func iterate(input: u8[]) -> Codepoints {
+    return Codepoints{ source: input, offset: 0 };
+}
+
+func mappingOffset(table: func(usize) -> string, count: usize, width: usize, scalar: u32) -> usize {
+    var first: usize = 0;
+    var end: usize = count;
+    while (first < end) {
+        var middle: usize = first + (end - first) / 2;
+        if (hex(table, middle * width, 6) < scalar) {
+            first = middle + 1;
+        } else {
+            end = middle;
+        }
+    }
+    if (first < count && hex(table, first * width, 6) == scalar) {
+        return first * width;
+    }
+    return count * width;
+}
+
+pub func mapCase(input: u8[], mapping: CaseMapping) -> stdlib.Result<stdlib.Bytes, UnicodeError> {
+    var decoded = codepoints(input);
+    match (decoded) {
+        Err(error) => return stdlib.Result<stdlib.Bytes, UnicodeError>.Err(error);
+        Ok(points) => {
+            var output = stdlib.bytes(0);
+            var table: func(usize) -> string = LOWER_MAP;
+            var values: func(usize) -> string = LOWER_VALUES;
+            var count: usize = LOWER_MAP_COUNT;
+            if (mapping == CaseMapping.Upper) {
+                table = UPPER_MAP;
+                values = UPPER_VALUES;
+                count = UPPER_MAP_COUNT;
+            }
+            if (mapping == CaseMapping.Title) {
+                table = TITLE_MAP;
+                values = TITLE_VALUES;
+                count = TITLE_MAP_COUNT;
+            }
+            if (mapping == CaseMapping.Fold) {
+                table = FOLD_MAP;
+                values = FOLD_VALUES;
+                count = FOLD_MAP_COUNT;
+            }
+            for (var i: usize = 0; i < points.length(); i += 1) {
+                var scalar: u32 = points.get(i);
+                var finalSigma: bit = false;
+                if (mapping == CaseMapping.Lower && scalar == 931) {
+                    var before: bit = false;
+                    var j: usize = i;
+                    while (j > 0) {
+                        j -= 1;
+                        var cp: u32 = points.get(j);
+                        if (hasFlag(cp, 8)) {
+                            continue;
+                        }
+                        before = hasFlag(cp, 4);
+                        break;
+                    }
+                    var after: bit = false;
+                    j = i + 1;
+                    while (j < points.length()) {
+                        var cp: u32 = points.get(j);
+                        j += 1;
+                        if (hasFlag(cp, 8)) {
+                            continue;
+                        }
+                        after = hasFlag(cp, 4);
+                        break;
+                    }
+                    finalSigma = before && !after;
+                }
+                var offset: usize = mappingOffset(table, count, 14, scalar);
+                var error: stdlib.AllocationError;
+                if (finalSigma) {
+                    error = appendScalar((&output).(*stdlib.Bytes), 962);
+                } else {
+                    if (offset == count * 14) {
+                        error = appendScalar((&output).(*stdlib.Bytes), scalar);
+                    } else {
+                        var start: usize = hex(table, offset + 6, 6).(usize);
+                        var length: usize = hex(table, offset + 12, 2).(usize);
+                        for (var j: usize = 0; j < length; j += 1) {
+                            error = appendScalar(
+                                (&output).(*stdlib.Bytes),
+                                hex(values, (start + j) * 6, 6)
+                            );
+                            if (error != stdlib.AllocationError.None) {
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (error != stdlib.AllocationError.None) {
+                    return stdlib.Result<stdlib.Bytes, UnicodeError>.Err(allocation(error));
+                }
+            }
+            return stdlib.Result<stdlib.Bytes, UnicodeError>.Ok(output);
+        }
+    }
+}
+
+func decompose(output: *stdlib.List<u32>, scalar: u32, compat: bit) -> stdlib.AllocationError {
+    if (scalar >= 44032 && scalar < 55204) {
+        var index: u32 = scalar - 44032;
+        var error = decompose(output, 4352 + index / 588, compat);
+        if (error != stdlib.AllocationError.None) {
+            return error;
+        }
+        error = decompose(output, 4449 + (index % 588) / 28, compat);
+        if (error != stdlib.AllocationError.None) {
+            return error;
+        }
+        if (index % 28 != 0) {
+            return decompose(output, 4519 + index % 28, compat);
+        }
+        return stdlib.AllocationError.None;
+    }
+    var offset: usize = mappingOffset(DECOMPOSITIONS, DECOMPOSITIONS_COUNT, 16, scalar);
+    if (offset < DECOMPOSITIONS_COUNT * 16 && (compat || hex(DECOMPOSITIONS, offset + 14, 2) == 0)) {
+        var start: usize = hex(DECOMPOSITIONS, offset + 6, 6).(usize);
+        var length: usize = hex(DECOMPOSITIONS, offset + 12, 2).(usize);
+        for (var i: usize = 0; i < length; i += 1) {
+            var error = decompose(output, hex(DECOMPOSITION_VALUES, (start + i) * 6, 6), compat);
+            if (error != stdlib.AllocationError.None) {
+                return error;
+            }
+        }
+        return stdlib.AllocationError.None;
+    }
+    var error = output.push(scalar);
+    if (error != stdlib.AllocationError.None) {
+        return error;
+    }
+    var ccc: u32 = combiningClass(scalar);
+    var index: usize = output.length() - 1;
+    if (ccc != 0) {
+        while (index > 0 && combiningClass(output.get(index - 1)) > ccc) {
+            output.set(index, output.get(index - 1));
+            index -= 1;
+        }
+        output.set(index, scalar);
+    }
+    return stdlib.AllocationError.None;
+}
+
+func compose(a: u32, b: u32) -> u32 {
+    if (a >= 4352 && a < 4371 && b >= 4449 && b < 4470) {
+        return 44032 + (a - 4352) * 588 + (b - 4449) * 28;
+    }
+    if (a >= 44032 && a < 55204 && (a - 44032) % 28 == 0 && b > 4519 && b < 4547) {
+        return a + b - 4519;
+    }
+    var first: usize = 0;
+    var end: usize = COMPOSITIONS_COUNT;
+    while (first < end) {
+        var middle: usize = first + (end - first) / 2;
+        var x: u32 = hex(COMPOSITIONS, middle * 18, 6);
+        var y: u32 = hex(COMPOSITIONS, middle * 18 + 6, 6);
+        if (x < a || (x == a && y < b)) {
+            first = middle + 1;
+        } else {
+            end = middle;
+        }
+    }
+    if (
+        first < COMPOSITIONS_COUNT &&
+        hex(COMPOSITIONS, first * 18, 6) == a &&
+        hex(COMPOSITIONS, first * 18 + 6, 6) == b
+    ) {
+        return hex(COMPOSITIONS, first * 18 + 12, 6);
+    }
+    return 0;
+}
+
+func renderPoints(points: *stdlib.List<u32>) -> stdlib.Result<stdlib.Bytes, UnicodeError> {
+    var output = stdlib.bytes(0);
+    for (var i: usize = 0; i < points.length(); i += 1) {
+        var error = appendScalar((&output).(*stdlib.Bytes), points.get(i));
+        if (error != stdlib.AllocationError.None) {
+            return stdlib.Result<stdlib.Bytes, UnicodeError>.Err(allocation(error));
+        }
+    }
+    return stdlib.Result<stdlib.Bytes, UnicodeError>.Ok(output);
+}
+
+pub func normalize(input: u8[], form: Normalization) -> stdlib.Result<stdlib.Bytes, UnicodeError> {
+    var points = stdlib.list<u32>(0);
+    var offset: usize = 0;
+    var compat: bit = form == Normalization.NFKC || form == Normalization.NFKD;
+    while (offset < input.length) {
+        var decoded = decodeUtf8(input, offset);
+        match (decoded) {
+            Err(error) => return stdlib.Result<stdlib.Bytes, UnicodeError>.Err(error);
+            Ok(value) => {
+                var error = decompose((&points).(*stdlib.List<u32>), value.scalar, compat);
+                if (error != stdlib.AllocationError.None) {
+                    return stdlib.Result<stdlib.Bytes, UnicodeError>.Err(allocation(error));
+                }
+                offset = value.next;
+            }
+        }
+    }
+    if ((form == Normalization.NFC || form == Normalization.NFKC) && points.length() > 0) {
+        var starter: usize = 0;
+        var starterScalar: u32 = points.get(0);
+        var written: usize = 1;
+        var lastClass: u32 = combiningClass(starterScalar);
+        for (var i: usize = 1; i < points.length(); i += 1) {
+            var cp: u32 = points.get(i);
+            var ccc: u32 = combiningClass(cp);
+            var combined: u32 = compose(starterScalar, cp);
+            if (combined != 0 && (lastClass == 0 || lastClass < ccc)) {
+                points.set(starter, combined);
+                starterScalar = combined;
+            } else {
+                if (ccc == 0) {
+                    starter = written;
+                    starterScalar = cp;
+                }
+                points.set(written, cp);
+                written += 1;
+                lastClass = ccc;
+            }
+        }
+        points.truncate(written);
+    }
+    return renderPoints((&points).(*stdlib.List<u32>));
+}

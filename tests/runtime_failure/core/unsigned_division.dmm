@@ -1,4 +1,11 @@
 package main;
 import "stdlib/core";
-func divide(value:u64, divisor:u64) -> u64 { var ignored:u64=value/divisor; return 0; }
-func main() -> int { return divide((-1).(u64), 0).(int); }
+
+func divide(value: u64, divisor: u64) -> u64 {
+    var ignored: u64 = value / divisor;
+    return 0;
+}
+
+func main() -> int {
+    return divide((-1).(u64), 0).(int);
+}

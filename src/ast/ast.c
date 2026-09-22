@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 typedef union { long double floating; void *pointer; int64_t integer; } AstArenaAlignment;
 
@@ -416,6 +417,50 @@ static int valid_declarations(const AstProgram *program) {
         }
     }
     return 1;
+}
+
+static int package_reexports_depth(const DmmPackage *package, const DmmPackage *target, unsigned depth) {
+    if (!package || !target || depth > 128) return 0;
+    if (package == target) return 1;
+    if (!package->has_public_imports) return 0;
+    for (size_t f = 0; f < package->file_count; f++)
+        for (const AstDeclarationNode *d = package->files[f]->root; d; d = d->next)
+            if (d->kind == AST_DECL_IMPORT && d->is_public)
+                for (const AstImportPath *p = d->as.import_decl.paths; p; p = p->next)
+                    if (p->resolved_program && package_reexports_depth(
+                        p->resolved_program->package, target, depth + 1)) return 1;
+    return 0;
+}
+
+int ast_package_reexports(const DmmPackage *package, const DmmPackage *target) {
+    return package_reexports_depth(package, target, 0);
+}
+
+static AstDeclarationNode *package_declaration_depth(const DmmPackage *package, const char *name,
+                                                       AstProgram **source, int public_only, unsigned depth) {
+    if (!package || depth > 128) return NULL;
+    for (size_t f = 0; f < package->file_count; f++)
+        for (AstDeclarationNode *d = package->files[f]->root; d; d = d->next)
+            if (d->kind != AST_DECL_IMPORT && d->kind != AST_DECL_TYPE_RULE &&
+                (!public_only || d->is_public) &&
+                !strcmp(ast_program_lexeme(package->files[f], d->name_token), name)) {
+                if (source) *source = package->files[f];
+                return d;
+            }
+    for (size_t f = 0; f < package->file_count; f++)
+        for (const AstDeclarationNode *d = package->files[f]->root; d; d = d->next)
+            if (d->kind == AST_DECL_IMPORT && d->is_public)
+                for (const AstImportPath *p = d->as.import_decl.paths; p; p = p->next)
+                    if (p->resolved_program) {
+                        AstDeclarationNode *found = package_declaration_depth(
+                            p->resolved_program->package, name, source, 1, depth + 1);
+                        if (found) return found;
+                    }
+    return NULL;
+}
+
+AstDeclarationNode *ast_package_declaration(const DmmPackage *package, const char *name, AstProgram **source) {
+    return package_declaration_depth(package, name, source, 0, 0);
 }
 
 int ast_validate_program(const AstProgram *program) {

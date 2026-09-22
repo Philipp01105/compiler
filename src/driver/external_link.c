@@ -96,28 +96,6 @@ static int failure(const IrModule *module, const char *message, const char *deta
     return 0;
 }
 
-static char *default_shim_profile(TargetFormat target, int network) {
-    char executable[4096];
-#ifdef _WIN32
-    DWORD length = GetModuleFileNameA(NULL, executable, sizeof(executable));
-    if (!length || length >= sizeof(executable)) return NULL;
-#else
-    ssize_t length = readlink("/proc/self/exe", executable, sizeof(executable) - 1);
-    if (length < 0) return NULL;
-    executable[length] = '\0';
-#endif
-    char *separator = strrchr(executable, '/');
-    char *backslash = strrchr(executable, '\\');
-    if (backslash && (!separator || backslash > separator)) separator = backslash;
-    if (!separator) return NULL;
-    *separator = '\0';
-    size_t capacity = strlen(executable) + 64;
-    char *path = malloc(capacity);
-    if (path) snprintf(path, capacity, "%s/dmm-runtime/%s/%s-shim.%s", executable,
-                       target == TARGET_ELF ? "elf" : "coff",network?"network":"platform", network?"a":"o");
-    return path;
-}
-
 static int object_magic_matches(const unsigned char *magic, TargetFormat target) {
     if (target == TARGET_COFF) return magic[0] == 0x64 && magic[1] == 0x86;
     return !memcmp(magic, "\177ELF", 4) && magic[4] == 2 && magic[5] == 1 &&
@@ -169,14 +147,9 @@ static int shim_matches(const char *path, TargetFormat target) {
 int driver_link_input_conflicts(TargetFormat target, const char *artifact,
                                 const char *linker_driver, const char *runtime_shim) {
     if (!artifact) return 0;
-    char *owned = runtime_shim ? NULL : default_shim_profile(target,0);
-    char *network = runtime_shim ? NULL : default_shim_profile(target,1);
-    const char *shim = runtime_shim ? runtime_shim : owned;
-    int conflict = (shim && path_identity_equal(artifact, shim) != 0) ||
-                   (network && path_identity_equal(artifact,network)!=0) ||
-                   (linker_driver && path_identity_equal(artifact, linker_driver) != 0);
-    free(owned); free(network);
-    return conflict;
+    (void)target;
+    return (runtime_shim && path_identity_equal(artifact, runtime_shim) != 0) ||
+           (linker_driver && path_identity_equal(artifact, linker_driver) != 0);
 }
 
 #ifdef _WIN32
@@ -266,28 +239,24 @@ int driver_external_link(const IrModule *module, const BackendOptions *options,
 #else
     TargetFormat host = TARGET_ELF;
 #endif
-    if (options->target_format != host && (!linker_driver || !runtime_shim))
-        return failure(module, "Cross-linking requires --linker-driver and --runtime-shim", output);
+    if (options->target_format != host && !linker_driver)
+        return failure(module, "Cross-linking requires --linker-driver", output);
     int network=(ir_runtime_requirements(module)&RUNTIME_REQUIRE_NETWORK)!=0;
-    char *owned_shim = runtime_shim ? NULL : default_shim_profile(options->target_format,network);
-    const char *shim = runtime_shim ? runtime_shim : owned_shim;
-    if (!shim || !shim_matches(shim, options->target_format)) {
-        int result = failure(module, "Missing or incompatible private runtime shim", shim ? shim : "unknown compiler location");
-        free(owned_shim);
-        return result;
-    }
-    if (path_identity_equal(output, shim) != 0 ||
-        (options->source_map_path && path_identity_equal(options->source_map_path, shim) != 0)) {
-        free(owned_shim);
+    // The DMM runtime is compiled into program.o. A supplied shim is an
+    // optional additional native object; there is no installed bundle fallback.
+    const char *shim = runtime_shim;
+    if (shim && !shim_matches(shim, options->target_format))
+        return failure(module, "Incompatible additional runtime object", shim);
+    if (shim && (path_identity_equal(output, shim) != 0 ||
+        (options->source_map_path && path_identity_equal(options->source_map_path, shim) != 0)))
         return failure(module, "Generated artifact conflicts with runtime shim", output);
-    }
     size_t capacity = strlen(output) + 128;
     char *directory = malloc(capacity);
     char *object = malloc(capacity);
     char *image = malloc(capacity);
     char *log = malloc(capacity);
     if (!directory || !object || !image || !log) {
-        free(directory); free(object); free(image); free(log); free(owned_shim);
+        free(directory); free(object); free(image); free(log);
         return failure(module, "External link allocation failed", output);
     }
     int made_directory = 0;
@@ -320,7 +289,7 @@ int driver_external_link(const IrModule *module, const BackendOptions *options,
     size_t argument_count = 0, owned_count = 0;
     arguments[argument_count++] = linker_driver ? linker_driver : "gcc";
     arguments[argument_count++] = object;
-    arguments[argument_count++] = shim;
+    if (shim) arguments[argument_count++] = shim;
     arguments[argument_count++] = "-o";
     arguments[argument_count++] = image;
     arguments[argument_count++] = options->target_format == TARGET_ELF ? "-no-pie" : "-Wl,--subsystem,console";
@@ -338,6 +307,7 @@ int driver_external_link(const IrModule *module, const BackendOptions *options,
     for (size_t i = 0; libraries_ok && i < module->native_import_count; ++i) {
         const IrNativeImport *import = &module->native_imports[i];
         if (!ir_native_import_used(module, import->symbol_id)) continue;
+        if (!strcmp(import->library,"dmm_runtime")) continue;
         int duplicate = 0;
         for (size_t j = 0; j < i; ++j)
             if (!strcmp(import->library, module->native_imports[j].library) &&
@@ -396,6 +366,6 @@ cleanup:
     (void)rmdir(directory);
 #endif
 done:
-    free(directory); free(object); free(image); free(log); free(owned_shim);
+    free(directory); free(object); free(image); free(log);
     return success;
 }

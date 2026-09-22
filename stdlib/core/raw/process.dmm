@@ -1,3 +1,9 @@
 package raw;
-pub func core_exit(status:int) -> never { __dmm_intrinsic_exit(status); }
-pub func core_trap() -> never { __dmm_intrinsic_trap(); }
+
+pub func core_exit(status: int) -> never {
+    __dmm_intrinsic_exit(status);
+}
+
+pub func core_trap() -> never {
+    __dmm_intrinsic_trap();
+}

@@ -5,7 +5,8 @@ ownership and deterministic cleanup. It emits x86-64 assembly, ELF/COFF objects 
 executables for Linux and Windows.
 
 DMM is suitable for language and compiler experimentation. It is not yet intended for production workloads, and the
-current `2026-09-22-dev` edition does not promise backwards compatibility.
+current `2026-10-04-dev` edition also accepts existing `2026-09-22-dev` modules;
+this limited compatibility does not establish a stable compatibility guarantee.
 
 ## Quick start
 
@@ -86,7 +87,7 @@ cleanup, raw memory and stream I/O in focused programs.
 ## Implemented language areas
 
 - primitive and fixed-width numeric types, pointers, fixed arrays, slices and contextual array/slice literals
-- functions, overloads, non-capturing callable values, structs with named value initializers, methods, enums and exhaustive `match`
+- functions, overloads, explicit capturing closures, shared/mutable/once callable bounds, non-capturing callable values, structs with named value initializers, methods, enums and exhaustive `match`
 - generic functions, structs and enums with interface bounds and specialization
 - structural interfaces with owned values, move-only implementers and dynamic dispatch
 - type-derived `COPYABLE`, `MOVE_ONLY` and `NEEDS_DROP` properties, implicit moves and deterministic destruction
@@ -122,7 +123,7 @@ The compiler accepts a source file or package directory. Executable output is th
 Run `compiler --help` for the current option list. Useful groups include:
 
 - `--emit=exe|obj|asm`, `-c`, `-S`, `-o FILE`
-- `--link=auto|internal|external`, `--linker-driver PATH`, `--runtime-shim PATH` (private platform runtime)
+- `--link=auto|internal|external`, `--linker-driver PATH`, `--runtime-shim PATH` (optional additional native runtime object)
 - `--native-library NAME=PATH`, repeatable `--native-library-dir DIR`, `--dump-native-link FILE`
 - `-O0`, `-O1`, `--target=elf|coff`, `--syntax=intel|att`
 - `--formatError`, `--ide`, `--ide-buffer FILE`
@@ -138,10 +139,12 @@ targets import OS APIs. Assembly output can be handed to external GNU-compatible
 and linking contracts are documented in [ARCHITECTURE.md](ARCHITECTURE.md#native-x86-64-backend).
 
 The optional `--link=external` profile uses regular platform startup and a DMM platform runtime, so those programs
-gain libc/UCRT and documented OS dependencies. Default standalone builds retain their existing runtime and internal
+gain libc/UCRT and documented OS dependencies. Emitted async bodies and executor operations select this profile.
+Programs without async or FFI retain the standalone runtime and internal
 linker. For object/assembly emission this option selects the future link ABI and starts no external process.
 Used operations from `stdlib/core/net` select that profile automatically and choose the network archive containing
-DMM platform code and the remaining network C implementation.
+DMM platform, executor and networking code. OS calls use ordinary FFI bindings; C runtime implementations are
+kept only as independent test references.
 TCP/UDP, IPv4/IPv6, deadlines, cancellation and bounded DNS are documented in
 [stdlib/core/net/README.md](stdlib/core/net/README.md); an unused import introduces no networking dependency.
 

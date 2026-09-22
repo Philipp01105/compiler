@@ -1,8 +1,18 @@
 package main;
-interface Equal { func equal(other:Self) -> bit; }
-struct Number { var value:int; func equal(other:Self) -> bit { return value == other.value; } }
+
+interface Equal {
+    func equal(other: Self) -> bit;
+}
+
+struct Number {
+    var value: int;
+    func equal(other: Self) -> bit {
+        return value == other.value;
+    }
+}
+
 func main() -> void {
-    var number:Number;
-    var erased:Equal = number;
+    var number: Number;
+    var erased: Equal = number;
     erased.equal(number);
 }

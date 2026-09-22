@@ -1,4 +1,10 @@
 package main;
 import "stdlib";
-func one(x:int) -> int { return x; }
-func main() -> void { stdlib.println(one("x")); }
+
+func one(x: int) -> int {
+    return x;
+}
+
+func main() -> void {
+    stdlib.println(one("x"));
+}

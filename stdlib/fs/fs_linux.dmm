@@ -1,0 +1,367 @@
+package fs;
+import (
+    "stdlib"
+    "stdlib/time"
+    raw "stdlib/core/raw"
+);
+extern "system" from "c" {
+    struct Stamp {
+        var seconds: i64;
+        var nanos: u32;
+        var padding: i32;
+    }
+
+    struct Statx {
+        var mask: u32;
+        var blockSize: u32;
+        var attributes: u64;
+        var links: u32;
+        var uid: u32;
+        var gid: u32;
+        var mode: u16;
+        var padding: u16;
+        var inode: u64;
+        var size: u64;
+        var blocks: u64;
+        var attributeMask: u64;
+        var accessed: Stamp;
+        var created: Stamp;
+        var changed: Stamp;
+        var modified: Stamp;
+        var deviceSpecialMajor: u32;
+        var deviceSpecialMinor: u32;
+        var deviceMajor: u32;
+        var deviceMinor: u32;
+        var tail: u64[14];
+    }
+
+    struct Dirent {
+        var inode: u64;
+        var offset: i64;
+        var recordLength: u16;
+        var kind: u8;
+        var fileName: u8[256];
+    }
+
+    func openNative(path: *u8, flags: i32, permissions: u32) -> i32 = "open";
+    func closeNative(descriptor: i32) -> i32 = "close";
+    func readNative(descriptor: i32, data: *void, length: usize) -> isize = "read";
+    func writeNative(descriptor: i32, data: *void, length: usize) -> isize = "write";
+    func seekNative(descriptor: i32, offset: i64, origin: i32) -> i64 = "lseek";
+    func errnoAddress() -> *i32 = "__errno_location";
+    func statx(directory: i32, path: *u8, flags: i32, mask: u32, data: *Statx) -> i32;
+    func unlink(path: *u8) -> i32;
+    func mkdir(path: *u8, mode: u32) -> i32;
+    func rmdir(path: *u8) -> i32;
+    func renameNative(oldPath: *u8, newPath: *u8) -> i32 = "rename";
+    func opendir(path: *u8) -> *void;
+    func readdir(directory: *void) -> *Dirent;
+    func closedir(directory: *void) -> i32;
+}
+
+func systemError() -> FsError {
+    return FsError{
+        kind: ErrorKind.System,
+        domain: ErrorDomain.Posix,
+        code:(*errnoAddress()).(isize)
+    };
+}
+
+func cPath(path: u8[]) -> stdlib.Result<stdlib.Bytes, FsError> {
+    if (path.length >= 9223372036854775807.(usize)) {
+        return stdlib.Result<stdlib.Bytes, FsError>.Err(failure(ErrorKind.InvalidPath));
+    }
+    for (var i: usize = 0; i < path.length; i += 1) {
+        if (path[i] == 0) {
+            return stdlib.Result<stdlib.Bytes, FsError>.Err(failure(ErrorKind.InvalidPath));
+        }
+    }
+    var value = stdlib.bytes(path.length + 1);
+    if (
+        value.append(path) != stdlib.AllocationError.None ||
+        value.push(0) != stdlib.AllocationError.None
+    ) {
+        return stdlib.Result<stdlib.Bytes, FsError>.Err(failure(ErrorKind.OutOfMemory));
+    }
+    return stdlib.Result<stdlib.Bytes, FsError>.Ok(value);
+}
+
+func nativeOpen(path: u8[], mode: OpenMode) -> stdlib.Result<File, FsError> {
+    var converted = cPath(path);
+    match (converted) {
+        Err(error) => return stdlib.Result<File, FsError>.Err(error);
+        Ok(value) => {
+            var flags: i32 = 524288;
+            if (mode == OpenMode.Write) {
+                flags += 1 + 64 + 512;
+            }
+            if (mode == OpenMode.ReadWrite) {
+                flags += 2 + 64;
+            }
+            if (mode == OpenMode.Append) {
+                flags += 1 + 64 + 1024;
+            }
+            var bytes: u8[] = value.view();
+            var descriptor: i32;
+            while (true) {
+                descriptor = openNative(bytes.data, flags, 438);
+                if (descriptor >= 0) {
+                    break;
+                }
+                if (*errnoAddress() != 4) {
+                    return stdlib.Result<File, FsError>.Err(systemError());
+                }
+            }
+            return stdlib.Result<File, FsError>.Ok(
+                File{
+                    handle: descriptor.(usize),
+                    active: true,
+                    readable: mode == OpenMode.Read || mode == OpenMode.ReadWrite,
+                    writable: mode != OpenMode.Read
+                }
+            );
+        }
+    }
+}
+
+func nativeClose(handle: usize) -> stdlib.Result<void, FsError> {
+    if (closeNative(handle.(i32)) != 0) {
+        return stdlib.Result<void, FsError>.Err(systemError());
+    }
+    return stdlib.Result<void, FsError>.Ok;
+}
+
+func nativeRead(handle: usize, destination: u8[]) -> stdlib.Result<usize, FsError> {
+    if (destination.length == 0) {
+        return stdlib.Result<usize, FsError>.Ok(0);
+    }
+    var length: usize = destination.length;
+    if (length > 1073741824) {
+        length = 1073741824;
+    }
+    while (true) {
+        var count: isize = readNative(handle.(i32), destination.data.(*void), length);
+        if (count >= 0) {
+            return stdlib.Result<usize, FsError>.Ok(count.(usize));
+        }
+        if (*errnoAddress() != 4) {
+            return stdlib.Result<usize, FsError>.Err(systemError());
+        }
+    }
+    return stdlib.Result<usize, FsError>.Err(failure(ErrorKind.System));
+}
+
+func nativeWrite(handle: usize, source: u8[]) -> stdlib.Result<usize, FsError> {
+    if (source.length == 0) {
+        return stdlib.Result<usize, FsError>.Ok(0);
+    }
+    var length: usize = source.length;
+    if (length > 1073741824) {
+        length = 1073741824;
+    }
+    while (true) {
+        var count: isize = writeNative(handle.(i32), source.data.(*void), length);
+        if (count >= 0) {
+            return stdlib.Result<usize, FsError>.Ok(count.(usize));
+        }
+        if (*errnoAddress() != 4) {
+            return stdlib.Result<usize, FsError>.Err(systemError());
+        }
+    }
+    return stdlib.Result<usize, FsError>.Err(failure(ErrorKind.System));
+}
+
+func nativeSeek(handle: usize, offset: i64, origin: SeekFrom) -> stdlib.Result<u64, FsError> {
+    var method: i32 = 0;
+    if (origin == SeekFrom.Current) {
+        method = 1;
+    }
+    if (origin == SeekFrom.End) {
+        method = 2;
+    }
+    var position: i64 = seekNative(handle.(i32), offset, method);
+    if (position < 0) {
+        return stdlib.Result<u64, FsError>.Err(systemError());
+    }
+    return stdlib.Result<u64, FsError>.Ok(position.(u64));
+}
+
+func nativeMetadata(path: u8[]) -> stdlib.Result<Metadata, FsError> {
+    var converted = cPath(path);
+    match (converted) {
+        Err(error) => return stdlib.Result<Metadata, FsError>.Err(error);
+        Ok(value) => {
+            var bytes: u8[] = value.view();
+            var data: Statx;
+            if (statx(-100, bytes.data, 256, 2047, (&data).(*Statx)) != 0) {
+                return stdlib.Result<Metadata, FsError>.Err(systemError());
+            }
+            var kind: EntryKind = EntryKind.Other;
+            var mode: u16 = data.mode / 4096;
+            if (mode == 4) {
+                kind = EntryKind.Directory;
+            }
+            if (mode == 8) {
+                kind = EntryKind.File;
+            }
+            if (mode == 10) {
+                kind = EntryKind.Symlink;
+            }
+            return stdlib.Result<Metadata, FsError>.Ok(
+                Metadata{
+                    kind: kind,
+                    size: data.size,
+                    modified: time.SystemTime{
+                        seconds: data.modified.seconds,
+                        nanoseconds: data.modified.nanos
+                    }
+                }
+            );
+        }
+    }
+}
+
+func nativeRemoveFile(path: u8[]) -> stdlib.Result<void, FsError> {
+    var converted = cPath(path);
+    match (converted) {
+        Err(error) => return stdlib.Result<void, FsError>.Err(error);
+        Ok(value) => {
+            var view: u8[] = value.view();
+            if (unlink(view.data) != 0) {
+                return stdlib.Result<void, FsError>.Err(systemError());
+            }
+            return stdlib.Result<void, FsError>.Ok;
+        }
+    }
+}
+
+func nativeCreateDirectory(path: u8[]) -> stdlib.Result<void, FsError> {
+    var converted = cPath(path);
+    match (converted) {
+        Err(error) => return stdlib.Result<void, FsError>.Err(error);
+        Ok(value) => {
+            var view: u8[] = value.view();
+            if (mkdir(view.data, 511) != 0) {
+                return stdlib.Result<void, FsError>.Err(systemError());
+            }
+            return stdlib.Result<void, FsError>.Ok;
+        }
+    }
+}
+
+func nativeRemoveDirectory(path: u8[]) -> stdlib.Result<void, FsError> {
+    var converted = cPath(path);
+    match (converted) {
+        Err(error) => return stdlib.Result<void, FsError>.Err(error);
+        Ok(value) => {
+            var view: u8[] = value.view();
+            if (rmdir(view.data) != 0) {
+                return stdlib.Result<void, FsError>.Err(systemError());
+            }
+            return stdlib.Result<void, FsError>.Ok;
+        }
+    }
+}
+
+func nativeRename(oldPath: u8[], newPath: u8[]) -> stdlib.Result<void, FsError> {
+    var first = cPath(oldPath);
+    match (first) {
+        Err(error) => return stdlib.Result<void, FsError>.Err(error);
+        Ok(a) => {
+            var second = cPath(newPath);
+            match (second) {
+                Err(error) => return stdlib.Result<void, FsError>.Err(error);
+                Ok(b) => {
+                    var av: u8[] = a.view();
+                    var bv: u8[] = b.view();
+                    if (renameNative(av.data, bv.data) != 0) {
+                        return stdlib.Result<void, FsError>.Err(systemError());
+                    }
+                    return stdlib.Result<void, FsError>.Ok;
+                }
+            }
+        }
+    }
+}
+
+struct DirectoryState {
+    var handle: *void;
+    var active: bit;
+    pub func close() -> stdlib.Result<void, FsError> {
+        if (!active) {
+            return stdlib.Result<void, FsError>.Ok;
+        }
+        active = false;
+        if (closedir(handle) != 0) {
+            return stdlib.Result<void, FsError>.Err(systemError());
+        }
+        return stdlib.Result<void, FsError>.Ok;
+    }
+
+    pub func next() -> stdlib.Result<DirectoryEntry, FsError> {
+        if (!active) {
+            return stdlib.Result<DirectoryEntry, FsError>.Err(failure(ErrorKind.EndOfDirectory));
+        }
+        while (true) {
+            *errnoAddress() = 0;
+            var entry: *Dirent = readdir(handle);
+            if (entry == raw.null<Dirent>()) {
+                if (*errnoAddress() != 0) {
+                    return stdlib.Result<DirectoryEntry, FsError>.Err(systemError());
+                }
+                return stdlib.Result<DirectoryEntry, FsError>.Err(failure(ErrorKind.EndOfDirectory));
+            }
+            var length: usize = 0;
+            while (length < 256 && entry.fileName[length] != 0) {
+                length += 1;
+            }
+            if (
+                (length == 1 && entry.fileName[0] == 46) ||
+                (length == 2 && entry.fileName[0] == 46 && entry.fileName[1] == 46)
+            ) {
+                continue;
+            }
+            var name = stdlib.bytes(length);
+            if (
+                name.append(slice(&entry.fileName[0], length)) != stdlib.AllocationError.None
+            ) {
+                return stdlib.Result<DirectoryEntry, FsError>.Err(failure(ErrorKind.OutOfMemory));
+            }
+            var kind: EntryKind = EntryKind.Unknown;
+            if (entry.kind == 4) {
+                kind = EntryKind.Directory;
+            }
+            if (entry.kind == 8) {
+                kind = EntryKind.File;
+            }
+            if (entry.kind == 10) {
+                kind = EntryKind.Symlink;
+            }
+            return stdlib.Result<DirectoryEntry, FsError>.Ok(DirectoryEntry{ name: name, kind: kind });
+        }
+        return stdlib.Result<DirectoryEntry, FsError>.Err(failure(ErrorKind.EndOfDirectory));
+    }
+
+    destructor {
+        if (active) {
+            closedir(handle);
+        }
+    }
+}
+
+func nativeReadDirectory(path: u8[]) -> stdlib.Result<DirectoryState, FsError> {
+    var converted = cPath(path);
+    match (converted) {
+        Err(error) => return stdlib.Result<DirectoryState, FsError>.Err(error);
+        Ok(value) => {
+            var view: u8[] = value.view();
+            var directory: *void = opendir(view.data);
+            if (directory == raw.core_null().(*void)) {
+                return stdlib.Result<DirectoryState, FsError>.Err(systemError());
+            }
+            return stdlib.Result<DirectoryState, FsError>.Ok(
+                DirectoryState{ handle: directory, active: true }
+            );
+        }
+    }
+}

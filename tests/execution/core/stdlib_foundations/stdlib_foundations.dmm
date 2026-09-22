@@ -1,0 +1,437 @@
+package main;
+import "stdlib";
+import "stdlib/algorithms";
+import "stdlib/numeric";
+import "stdlib/binary";
+
+func less(a: i32, b: i32) -> bit {
+    return a < b;
+}
+
+func same(a: i32, b: i32) -> bit {
+    return a == b;
+}
+
+func positive(a: i32) -> bit {
+    return a > 0;
+}
+
+func twice(a: i32) -> i32 {
+    return a * 2;
+}
+
+func sum(a: i32, b: i32) -> i32 {
+    return a + b;
+}
+
+func someTwice(a: i32) -> stdlib.Option<i32> {
+    return stdlib.Option<i32>.Some(a * 2);
+}
+
+func resultTwice(a: i32) -> stdlib.Result<i32, i32> {
+    return stdlib.Result<i32, i32>.Ok(a * 2);
+}
+
+var fallbackCalls: int;
+
+func fallback() -> i32 {
+    fallbackCalls += 1;
+    return 9;
+}
+
+func unsignedOk(result: stdlib.Result<u64, numeric.NumberError>, expected: u64) -> bit {
+    match (result) {
+        Ok(value) => return value == expected;
+        Err(error) => return false;
+    }
+}
+
+func signedOk(result: stdlib.Result<i64, numeric.NumberError>, expected: i64) -> bit {
+    match (result) {
+        Ok(value) => return value == expected;
+        Err(error) => return false;
+    }
+}
+
+func unsignedError(
+    result: stdlib.Result<u64, numeric.NumberError>,
+    expected: numeric.NumberError
+) -> bit {
+    match (result) {
+        Ok(value) => return false;
+        Err(error) => return error == expected;
+    }
+}
+
+func signedError(
+    result: stdlib.Result<i64, numeric.NumberError>,
+    expected: numeric.NumberError
+) -> bit {
+    match (result) {
+        Ok(value) => return false;
+        Err(error) => return error == expected;
+    }
+}
+
+func binaryOk(result: stdlib.Result<void, binary.BinaryError>) -> bit {
+    match (result) {
+        Ok => return true;
+        Err(error) => return false;
+    }
+}
+
+func main() -> int {
+    if (
+        stdlib.optionOr<i32>(stdlib.Option<i32>.Some(4), fallback) != 4 ||
+        fallbackCalls != 0
+    ) {
+        return 1;
+    }
+    if (stdlib.optionOr<i32>(stdlib.Option<i32>.None, fallback) != 9 || fallbackCalls != 1) {
+        return 2;
+    }
+    var mapped = stdlib.mapOption<i32, i32>(stdlib.Option<i32>.Some(3), twice);
+    match (mapped) {
+        Some(value) => {
+            if (value != 6) {
+                return 3;
+            }
+        }
+        None => return 4;
+    }
+    var values: i32[7] = [5, -2, 5, 0, 99, -9, 3];
+    algorithms.sort<i32>(values, less);
+    var expected: i32[7] = [-9, -2, 0, 3, 5, 5, 99];
+    if (!algorithms.equal<i32>(values, expected, same)) {
+        return 5;
+    }
+    if (
+        algorithms.lowerBound<i32>(values, 5, less) != 4 ||
+        algorithms.lowerBound<i32>(values, 100, less) != 7
+    ) {
+        return 6;
+    }
+    if (
+        algorithms.count<i32>(values, positive) != 4 ||
+        algorithms.all<i32>(values, positive) ||
+        !algorithms.any<i32>(values, positive)
+    ) {
+        return 7;
+    }
+    algorithms.reverse<i32>(values);
+    if (values[0] != 99 || values[6] != - 9) {
+        return 8;
+    }
+    var one: i32[1] = [1];
+    algorithms.sort<i32>(one, less);
+    algorithms.reverse<i32>(one);
+    var empty: i32[] = one[: 0];
+    algorithms.sort<i32>(empty, less);
+    algorithms.reverse<i32>(empty);
+    if (!algorithms.all<i32>(empty, positive) || algorithms.any<i32>(empty, positive)) {
+        return 9;
+    }
+    if (
+        !unsignedError(
+            numeric.checkedAdd(numeric.U64_MAX, 1.(u64)),
+            numeric.NumberError.Overflow
+        )
+    ) {
+        return 10;
+    }
+    if (!unsignedOk(numeric.checkedMul(numeric.U64_MAX, 1.(u64)), numeric.U64_MAX)) {
+        return 11;
+    }
+    if (
+        !unsignedError(
+            numeric.checkedMul(numeric.U64_MAX, 2.(u64)),
+            numeric.NumberError.Overflow
+        )
+    ) {
+        return 12;
+    }
+    if (
+        !signedError(
+            numeric.checkedAdd(numeric.I64_MAX, 1.(i64)),
+            numeric.NumberError.Overflow
+        )
+    ) {
+        return 13;
+    }
+    if (!signedOk(numeric.checkedMul(numeric.I64_MIN, 1.(i64)), numeric.I64_MIN)) {
+        return 14;
+    }
+    if (
+        !signedError(
+            numeric.checkedMul(numeric.I64_MIN, -1.(i64)),
+            numeric.NumberError.Overflow
+        )
+    ) {
+        return 15;
+    }
+    if (
+        !signedError(
+            numeric.checkedDiv(numeric.I64_MIN, -1.(i64)),
+            numeric.NumberError.Overflow
+        )
+    ) {
+        return 16;
+    }
+    if (
+        !signedError(
+            numeric.checkedDiv(1.(i64), 0.(i64)),
+            numeric.NumberError.DivisionByZero
+        )
+    ) {
+        return 17;
+    }
+    var digits: u8[65];
+    var formatted = numeric.formatInt(numeric.I64_MIN, 10, digits);
+    match (formatted) {
+        Err(error) => return 18;
+        Ok(count) => {
+            if (
+                count != 20 ||
+                !signedOk(numeric.parseInt(digits[: count], 10), numeric.I64_MIN)
+            ) {
+                return 19;
+            }
+        }
+    }
+    var formattedUnsigned = numeric.formatUint(numeric.U64_MAX, 16, digits);
+    match (formattedUnsigned) {
+        Err(error) => return 20;
+        Ok(count) => {
+            if (
+                count != 16 ||
+                !unsignedOk(numeric.parseUint(digits[: count], 16), numeric.U64_MAX)
+            ) {
+                return 21;
+            }
+        }
+    }
+    var invalid: u8[1] = [33];
+    if (!unsignedError(numeric.parseUint(invalid, 10), numeric.NumberError.InvalidDigit)) {
+        return 22;
+    }
+    var small: u8[1] = [77];
+    var failed = numeric.formatUint(100, 10, small);
+    match (failed) {
+        Ok(count) => return 23;
+        Err(error) => {
+            if (error != numeric.NumberError.BufferTooSmall || small[0] != 77) {
+                return 24;
+            }
+        }
+    }
+    var bytes: u8[12];
+    var view: u8[] = bytes;
+    {
+        var writer = binary.writer();
+        if (!binaryOk(writer.writeUint(&mut view, 16909060, 4, binary.Endian.Big))) {
+            return 25;
+        }
+        if (
+            !binaryOk(writer.writeUint(&mut view, numeric.U64_MAX, 8, binary.Endian.Little))
+        ) {
+            return 26;
+        }
+        if (writer.remaining(&view) != 0 || writer.offset() != 12) {
+            return 27;
+        }
+        var failedWrite = writer.writeUint(&mut view, 1, 1, binary.Endian.Big);
+        match (failedWrite) {
+            Ok => return 28;
+            Err(error) => {
+                if (error != binary.BinaryError.BufferTooSmall || writer.offset() != 12) {
+                    return 29;
+                }
+            }
+        }
+    }
+    if (bytes[0] != 1 || bytes[1] != 2 || bytes[2] != 3 || bytes[3] != 4 || bytes[4] != 255) {
+        return 30;
+    }
+    {
+        var reader = binary.reader();
+        var first = reader.readUint(&view, 4, binary.Endian.Big);
+        match (first) {
+            Ok(value) => {
+                if (value != 16909060) {
+                    return 31;
+                }
+            }
+            Err(error) => return 32;
+        }
+        var last = reader.readUint(&view, 8, binary.Endian.Little);
+        match (last) {
+            Ok(value) => {
+                if (value != numeric.U64_MAX) {
+                    return 33;
+                }
+            }
+            Err(error) => return 34;
+        }
+        var failedRead = reader.readUint(&view, 1, binary.Endian.Big);
+        match (failedRead) {
+            Ok(value) => return 35;
+            Err(error) => {
+                if (error != binary.BinaryError.UnexpectedEnd || reader.offset() != 12) {
+                    return 36;
+                }
+            }
+        }
+    }
+    var mappedResult = stdlib.mapResult<i32, i32, i32>(stdlib.Result<i32, i32>.Ok(4), twice);
+    match (mappedResult) {
+        Ok(value) => {
+            if (value != 8) {
+                return 37;
+            }
+        }
+        Err(error) => return 38;
+    }
+    var mappedError = stdlib.mapError<i32, i32, i32>(stdlib.Result<i32, i32>.Err(4), twice);
+    match (mappedError) {
+        Ok(value) => return 39;
+        Err(error) => {
+            if (error != 8) {
+                return 40;
+            }
+        }
+    }
+    var chained = stdlib.andThenOption<i32, i32>(stdlib.Option<i32>.Some(4), someTwice);
+    match (chained) {
+        Some(value) => {
+            if (value != 8) {
+                return 41;
+            }
+        }
+        None => return 42;
+    }
+    var chainedResult = stdlib.andThenResult<i32, i32, i32>(
+        stdlib.Result<i32, i32>.Ok(4),
+        resultTwice
+    );
+    match (chainedResult) {
+        Ok(value) => {
+            if (value != 8) {
+                return 43;
+            }
+        }
+        Err(error) => return 44;
+    }
+    var input: i32[] = expected;
+    var target: i32[7];
+    var to: i32[] = target;
+    var copied = algorithms.copy<i32>(&input, &mut to);
+    match (copied) {
+        Ok => {}
+        Err(error) => return 45;
+    }
+    if (!algorithms.equal<i32>(input, to, same)) {
+        return 46;
+    }
+    var transformed = algorithms.transform<i32, i32>(&input, &mut to, twice);
+    match (transformed) {
+        Ok => {}
+        Err(error) => return 47;
+    }
+    if (target[6] != 198 || algorithms.fold<i32, i32>(one, 0, sum) != 1) {
+        return 48;
+    }
+    algorithms.fill<i32>(&mut to, 7);
+    if (target[0] != 7 || target[6] != 7) {
+        return 49;
+    }
+    for (var base: u32 = 2; base <= 36; base += 1) {
+        var roundtrip = numeric.formatUint(numeric.U64_MAX, base, digits);
+        match (roundtrip) {
+            Err(error) => return 50;
+            Ok(count) => {
+                if (!unsignedOk(numeric.parseUint(digits[: count], base), numeric.U64_MAX)) {
+                    return 51;
+                }
+            }
+        }
+    }
+    var sign: u8[1] = [45];
+    if (!signedError(numeric.parseInt(sign, 10), numeric.NumberError.Empty)) {
+        return 52;
+    }
+    if (!unsignedError(numeric.parseUint(invalid, 1), numeric.NumberError.InvalidBase)) {
+        return 53;
+    }
+    if (
+        !unsignedError(
+            numeric.checkedSub(0.(u64), 1.(u64)),
+            numeric.NumberError.Overflow
+        )
+    ) {
+        return 54;
+    }
+    if (
+        !signedError(
+            numeric.checkedSub(numeric.I64_MIN, 1.(i64)),
+            numeric.NumberError.Overflow
+        )
+    ) {
+        return 55;
+    }
+    var scratch: i32[64];
+    for (var length: usize = 0; length <= 64; length += 1) {
+        for (var i: usize = 0; i < length; i += 1) {
+            scratch[i] = ((i * 17 + length * 13) % 23).(i32);
+        }
+        var prefix: i32[] = scratch[: length];
+        algorithms.sort<i32>(prefix, less);
+        for (var i: usize = 1; i < length; i += 1) {
+            if (scratch[i - 1] > scratch[i]) {
+                return 56;
+            }
+        }
+    }
+    var cursor = binary.writer();
+    var overflowWrite = cursor.writeUint(&mut view, 256, 1, binary.Endian.Big);
+    match (overflowWrite) {
+        Ok => return 61;
+        Err(error) => {
+            if (
+                error != binary.BinaryError.ValueOverflow ||
+                cursor.offset() != 0 ||
+                bytes[0] != 1
+            ) {
+                return 62;
+            }
+        }
+    }
+    var invalidWidth = cursor.writeUint(&mut view, 0, 3, binary.Endian.Big);
+    match (invalidWidth) {
+        Ok => return 63;
+        Err(error) => {
+            if (error != binary.BinaryError.InvalidWidth || cursor.offset() != 0) {
+                return 64;
+            }
+        }
+    }
+    var payload: u8[2] = [8, 9];
+    var payloadView: u8[] = payload;
+    if (!binaryOk(cursor.writeBytes(&mut view, &payloadView))) {
+        return 65;
+    }
+    var readCursor = binary.reader();
+    if (!binaryOk(readCursor.skip(&view, 1))) {
+        return 66;
+    }
+    var output: u8[2];
+    var outputView: u8[] = output;
+    if (
+        !binaryOk(readCursor.readBytes(&view, &mut outputView)) ||
+        output[0] != 9 ||
+        output[1] != 3 ||
+        readCursor.offset() != 3
+    ) {
+        return 67;
+    }
+    return 0;
+}

@@ -2,25 +2,39 @@ package main;
 import "stdlib";
 
 struct Owner {
-    var label:string;
-    destructor { stdlib.println(label); }
+    var label: string;
+    destructor {
+        stdlib.println(label);
+    }
 }
+
 func initialize() -> Owner {
     stdlib.println("init");
-    var value:Owner;
+    var value: Owner;
     value.label = "package";
     return value;
 }
-var owner:Owner = initialize();
-async func worker() -> int { stdlib.println("worker"); return 7; }
-async func join(handle:JoinHandle<int>) -> int {
-    var result = handle.await();
-    match (result) { Ok(value) => return value; Err(error) => return -1; }
+
+var owner: Owner = initialize();
+async func worker() -> int {
+    stdlib.println("worker");
+    return 7;
 }
+
+async func join(handle: JoinHandle<int>) -> int {
+    var result = handle.await();
+    match (result) {
+        Ok(value) => return value;
+        Err(error) => return -1;
+    }
+}
+
 func main() -> int {
     stdlib.println("main");
-    var local:Owner;
+    var local: Owner;
     local.label = "local";
-    if (block_on(join(spawn(worker()))) != 7) { return 1; }
+    if (block_on(join(spawn(worker()))) != 7) {
+        return 1;
+    }
     return 37;
 }

@@ -1,56 +1,76 @@
 package main;
 import "stdlib";
 
-interface Reading { func value() -> i32; }
+interface Reading {
+    func value() -> i32;
+}
 
 struct Temperature {
-    var degrees:i32;
-    func value() -> i32 { return degrees; }
+    var degrees: i32;
+    func value() -> i32 {
+        return degrees;
+    }
 }
 
 struct Pressure {
-    var kilopascals:i32;
-    var correction:i32;
-    func value() -> i32 { return kilopascals + correction; }
+    var kilopascals: i32;
+    var correction: i32;
+    func value() -> i32 {
+        return kilopascals + correction;
+    }
 }
 
 struct Adjusted {
-    var base:Reading;
-    var correction:i32;
-    func value() -> i32 { return base.value() + correction; }
+    var base: Reading;
+    var correction: i32;
+    func value() -> i32 {
+        return base.value() + correction;
+    }
 }
 
-struct Sensor { var latest:Reading; }
-enum Sample { Missing, Present(Reading) }
-var last:Reading;
+struct Sensor {
+    var latest: Reading;
+}
 
-func read(item:Reading) -> i32 { return item.value(); }
+enum Sample {
+    Missing,
+    Present(Reading)
+}
 
-func select(usePressure:bit, temperature:Temperature, pressure:Pressure) -> Reading {
-    if (usePressure) { return pressure; }
+var last: Reading;
+
+func read(item: Reading) -> i32 {
+    return item.value();
+}
+
+func select(usePressure: bit, temperature: Temperature, pressure: Pressure) -> Reading {
+    if (usePressure) {
+        return pressure;
+    }
     return temperature;
 }
 
 func main() -> void {
-    var temperature:Temperature;
+    var temperature: Temperature;
     temperature.degrees = 21;
-    var pressure:Pressure;
+    var pressure: Pressure;
     pressure.kilopascals = 98;
     pressure.correction = 3;
 
-    var current:Reading = temperature;
-    var sensor:Sensor;
+    var current: Reading = temperature;
+    var sensor: Sensor;
     sensor.latest = pressure;
     var sample = Sample.Present(temperature);
-    var selected:Reading = select(true, temperature, pressure);
-    var batch:Reading[2] = [temperature, pressure];
-    var adjusted:Adjusted;
+    var selected: Reading = select(true, temperature, pressure);
+    var batch: Reading[2] = [temperature, pressure];
+    var adjusted: Adjusted;
     adjusted.base = temperature;
     adjusted.correction = 5;
-    var nested:Reading = adjusted;
+    var nested: Reading = adjusted;
     last = pressure;
-    stdlib.println(read(current) + sensor.latest.value() +
-                   sample.Present().value() + selected.value());
+    stdlib.println(
+        read(current) + sensor.latest.value() + sample.Present().value() + selected.value()
+    );
     stdlib.println(batch[0].value() + batch[1].value());
     stdlib.println(last.value());
     stdlib.println(nested.value());

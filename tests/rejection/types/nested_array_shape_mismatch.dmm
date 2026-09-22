@@ -1,6 +1,7 @@
 package main;
+
 func main() -> void {
-    var left:int[2][3];
-    var right:int[3][2];
-    left=right;
+    var left: int[2][3];
+    var right: int[3][2];
+    left = right;
 }

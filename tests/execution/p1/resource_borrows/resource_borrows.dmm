@@ -1,57 +1,59 @@
 package main;
 
 struct Pair {
-    var first:int;
-    var second:int;
+    var first: int;
+    var second: int;
     destructor {}
 }
 
-func branchRoundTrip(condition:int) -> int {
-    var pair:Pair;
-    pair.first=3;
-    pair.second=4;
+func branchRoundTrip(condition: int) -> int {
+    var pair: Pair;
+    pair.first = 3;
+    pair.second = 4;
     if (condition) {
-        var moved=pair;
-        pair=moved;
+        var moved = pair;
+        pair = moved;
     } else {
-        var moved=pair;
-        pair=moved;
+        var moved = pair;
+        pair = moved;
     }
-    return pair.first+pair.second;
+    return pair.first + pair.second;
 }
 
 func loopRoundTrip() -> int {
-    var pair:Pair;
-    pair.first=5;
-    pair.second=6;
-    for (var index:int=0; index<2; index++) {
-        var moved=pair;
-        pair=moved;
+    var pair: Pair;
+    pair.first = 5;
+    pair.second = 6;
+    for (var index: int = 0; index < 2; index++) {
+        var moved = pair;
+        pair = moved;
     }
-    return pair.first+pair.second;
+    return pair.first + pair.second;
 }
 
 func main() -> int {
-    var pair:Pair;
-    pair.first=1;
-    pair.second=2;
+    var pair: Pair;
+    pair.first = 1;
+    pair.second = 2;
 
-    var left=&mut pair.first;
-    var right=&mut pair.second;
-    *left=10;
-    *right=20;
+    var left = &mut pair.first;
+    var right = &mut pair.second;
+    *left = 10;
+    *right = 20;
 
     // Both borrows end at their last use.
-    pair.first+=1;
-    pair.second+=2;
+    pair.first += 1;
+    pair.second += 2;
 
-    var moved=pair;
-    pair=moved;
-    var values:int[2];
-    var first=&mut values[0];
-    var second=&mut values[1];
-    *first=1;
-    *second=2;
-    if (values[0]+values[1]!=3) { return 1; }
-    return pair.first+pair.second+branchRoundTrip(0)+branchRoundTrip(1)+loopRoundTrip()-58;
+    var moved = pair;
+    pair = moved;
+    var values: int[2];
+    var first = &mut values[0];
+    var second = &mut values[1];
+    *first = 1;
+    *second = 2;
+    if (values[0] + values[1] != 3) {
+        return 1;
+    }
+    return pair.first + pair.second + branchRoundTrip(0) + branchRoundTrip(1) + loopRoundTrip() - 58;
 }

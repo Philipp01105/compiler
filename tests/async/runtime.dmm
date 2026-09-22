@@ -1,105 +1,193 @@
 package async_fixture;
-enum Propagation<Output,Residual> { Continue(Output), Break(Residual), }
-enum LegacyResult {
-    Ok(int), Err(int), ;
-    static func branch(value:Self) -> Propagation<int,int> {
-        match(value) {
-            Ok(output) => return Propagation<int,int>.Continue(output);
-            Err(error) => return Propagation<int,int>.Break(error);
-        }
-    }
-    static func fromResidual(error:int) -> Self { return LegacyResult.Err(error); }
+
+enum Propagation<Output, Residual> {
+    Continue(Output),
+    Break(Residual),
 }
 
-var cleanupCount:int=0;
-struct Guard {
-    var value:int;
-    destructor { cleanupCount+=1; }
+enum LegacyResult {
+    Ok(int),
+    Err(int),
+    ;
+    static func branch(value: Self) -> Propagation<int, int> {
+        match (value) {
+            Ok(output) => return Propagation<int, int>.Continue(output);
+            Err(error) => return Propagation<int, int>.Break(error);
+        }
+    }
+
+    static func fromResidual(error: int) -> Self {
+        return LegacyResult.Err(error);
+    }
 }
-pub func cleanups() -> int { return cleanupCount; }
-pub async func immediate(x:int) -> int { return x+1; }
-pub async func cleanupAwait(f:Future<int>, cleanup:Future<int>) -> int {
-    var guard:Guard;
-    defer func() { cleanup.await(); cleanupCount+=10; }
+
+var cleanupCount: int = 0;
+
+struct Guard {
+    var value: int;
+    destructor {
+        cleanupCount += 1;
+    }
+}
+
+pub func cleanups() -> int {
+    return cleanupCount;
+}
+
+pub async func immediate(x: int) -> int {
+    return x + 1;
+}
+
+pub async func cleanupAwait(f: Future<int>, cleanup: Future<int>) -> int {
+    var guard: Guard;
+    defer func() {
+        cleanup.await();
+        cleanupCount += 10;
+    }
+
     return f.await();
 }
+
 pub async func ownedResult() -> Guard {
-    var guard:Guard;
-    guard.value=19;
+    var guard: Guard;
+    guard.value = 19;
     return guard;
 }
-pub async func pendingResult(f:Future<int>) -> Future<int> { return f; }
-pub async func enumCleanup(f:Future<int>, gate:Future<int>) -> int {
-    var result:Result<Future<int>,TaskError>=Result<Future<int>,TaskError>.Ok(f);
-    var x=gate.await();
-    match(result) { Ok(future) => return future.await()+x; Err(error) => return -1; }
+
+pub async func pendingResult(f: Future<int>) -> Future<int> {
+    return f;
 }
-pub async func floats(x:double) -> double { return x+0.5; }
-pub async func array() -> int[2] { return [7,8]; }
-pub async func arrayUse() -> int { var a=array().await(); return a[0]+a[1]; }
-pub async func nested(f:Future<int>,g:Future<int>) -> int {
-    var guard:Guard;
-    guard.value=9;
-    defer func() { cleanupCount+=10; }
-    var x=17;
-    var r=&x;
-    var a=f.await();
-    var b=g.await();
-    return a+b+*r+guard.value;
+
+pub async func enumCleanup(f: Future<int>, gate: Future<int>) -> int {
+    var result: Result < Future<int>,
+    TaskError >= Result<Future<int>, TaskError>.Ok(f);
+    var x = gate.await();
+    match (result) {
+        Ok(future) => return future.await() + x;
+        Err(error) => return -1;
+    }
 }
-pub async func loop(f:Future<int>) -> int {
-    var n=f.await();
-    var sum=0;
-    var i=0;
-    while(i<n) { sum+=immediate(i).await(); i+=1; }
+
+pub async func floats(x: double) -> double {
+    return x + 0.5;
+}
+
+pub async func array() -> int[2] {
+    return [7, 8];
+}
+
+pub async func arrayUse() -> int {
+    var a = array().await();
+    return a[0] + a[1];
+}
+
+pub async func nested(f: Future<int>, g: Future<int>) -> int {
+    var guard: Guard;
+    guard.value = 9;
+    defer func() {
+        cleanupCount += 10;
+    }
+
+    var x = 17;
+    var r = &x;
+    var a = f.await();
+    var b = g.await();
+    return a + b + * r + guard.value;
+}
+
+pub async func loop(f: Future<int>) -> int {
+    var n = f.await();
+    var sum = 0;
+    var i = 0;
+    while (i < n) {
+        sum += immediate(i).await();
+        i += 1;
+    }
     return sum;
 }
-pub async func relay(f:Future<int>,g:Future<int>) -> int { return nested(f,g).await(); }
-pub async func branch(f:Future<int>,b:bit) -> int {
-    var guard:Guard;
-    if(b) { return f.await(); }
-    var x=f.await();
-    return x+1;
+
+pub async func relay(f: Future<int>, g: Future<int>) -> int {
+    return nested(f, g).await();
 }
-pub async func arrayParam(a:int[2]) -> int { return a[0]+a[1]; }
-pub async func fallible(f:Future<int>,fail:bit) -> LegacyResult {
-    var guard:Guard;
-    defer func() { cleanupCount+=100; }
-    var x=f.await();
-    var step:LegacyResult;
-    if(fail) { step=LegacyResult.Err(23); }
-    else { step=LegacyResult.Ok(x); }
-    var y=step?;
-    return LegacyResult.Ok(y+1);
+
+pub async func branch(f: Future<int>, b: bit) -> int {
+    var guard: Guard;
+    if (b) {
+        return f.await();
+    }
+    var x = f.await();
+    return x + 1;
 }
-pub async func errorUse(f:Future<int>,fail:bit) -> int {
-    var result=fallible(f,fail).await();
-    match(result) { Ok(value) => return value; Err(error) => return error; }
+
+pub async func arrayParam(a: int[2]) -> int {
+    return a[0] + a[1];
 }
-pub async func loopCleanup(f:Future<int>) -> int {
-    var n=f.await();
-    var i=0;
-    while(i<n) {
-        var guard:Guard;
-        i+=1;
-        if(i==1) { continue; }
-        if(i==3) { break; }
+
+pub async func fallible(f: Future<int>, fail: bit) -> LegacyResult {
+    var guard: Guard;
+    defer func() {
+        cleanupCount += 100;
+    }
+
+    var x = f.await();
+    var step: LegacyResult;
+    if (fail) {
+        step = LegacyResult.Err(23);
+    } else {
+        step = LegacyResult.Ok(x);
+    }
+    var y = step?;
+    return LegacyResult.Ok(y + 1);
+}
+
+pub async func errorUse(f: Future<int>, fail: bit) -> int {
+    var result = fallible(f, fail).await();
+    match (result) {
+        Ok(value) => return value;
+        Err(error) => return error;
+    }
+}
+
+pub async func loopCleanup(f: Future<int>) -> int {
+    var n = f.await();
+    var i = 0;
+    while (i < n) {
+        var guard: Guard;
+        i += 1;
+        if (i == 1) {
+            continue;
+        }
+        if (i == 3) {
+            break;
+        }
     }
     return i;
 }
-pub async func structParam(g:Guard,f:Future<int>) -> int {
-    var a=array().await();
-    var x=f.await();
-    return g.value+a[0]+x;
+
+pub async func structParam(g: Guard, f: Future<int>) -> int {
+    var a = array().await();
+    var x = f.await();
+    return g.value + a[0] + x;
 }
-pub async func many(a:int,b:double,c:int,d:double,e:int,f:double,g:int,h:int) -> double {
-    return a+b+c+d+e+f+g+h;
+
+pub async func many(a: int, b: double, c: int, d: double, e: int, f: double, g: int, h: int) -> double {
+    return a + b + c + d + e + f + g + h;
 }
-pub func forward(f:Future<int>) -> Future<int> { return f; }
+
+pub func forward(f: Future<int>) -> Future<int> {
+    return f;
+}
+
 pub async func indirect() -> int {
-    var call=immediate;
-    var x=call(20).await();
-    return x+forward(immediate(30)).await();
+    var call = immediate;
+    var x = call(20).await();
+    return x + forward(immediate(30)).await();
 }
-pub async func futureResult() -> Future<int> { return immediate(4); }
-pub async func futureChain() -> int { return futureResult().await().await(); }
+
+pub async func futureResult() -> Future<int> {
+    return immediate(4);
+}
+
+pub async func futureChain() -> int {
+    return futureResult().await().await();
+}

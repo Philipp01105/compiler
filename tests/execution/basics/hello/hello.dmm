@@ -4,4 +4,5 @@ import "stdlib";
 func main() -> void {
     stdlib.println("Hello, World!");
 }
+
 // Category: execution/basics

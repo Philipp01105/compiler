@@ -1,0 +1,64 @@
+package time;
+import (
+    "stdlib"
+);
+extern "system" from "kernel32" {
+    struct FileTime {
+        var low: u32;
+        var high: u32;
+    }
+
+    func QueryPerformanceCounter(value: *i64) -> i32;
+    func QueryPerformanceFrequency(value: *i64) -> i32;
+    func GetSystemTimePreciseAsFileTime(value: *FileTime) -> void;
+    func Sleep(milliseconds: u32) -> void;
+}
+
+func nativeNow() -> stdlib.Result<Instant, TimeError> {
+    var counter: i64;
+    var frequency: i64;
+    if (
+        QueryPerformanceCounter((&counter).(*i64)) == 0 ||
+        QueryPerformanceFrequency((&frequency).(*i64)) == 0 ||
+        counter < 0 ||
+        frequency <= 0
+    ) {
+        return stdlib.Result<Instant, TimeError>.Err(TimeError.ClockFailure);
+    }
+    var whole: u64 = counter.(u64) / frequency.(u64);
+    var fraction: u64 = counter.(u64) % frequency.(u64);
+    if (whole > 18446744073.(u64) || fraction > 18446744073709551615.(u64) / 1000000000) {
+        return stdlib.Result<Instant, TimeError>.Err(TimeError.Overflow);
+    }
+    var nanos: u64 = whole * 1000000000;
+    var partial: u64 = fraction * 1000000000 / frequency.(u64);
+    if (partial > 18446744073709551615.(u64) - nanos) {
+        return stdlib.Result<Instant, TimeError>.Err(TimeError.Overflow);
+    }
+    return stdlib.Result<Instant, TimeError>.Ok(Instant{ nanoseconds: nanos + partial });
+}
+
+func nativeSystemNow() -> stdlib.Result<SystemTime, TimeError> {
+    var value: FileTime;
+    GetSystemTimePreciseAsFileTime((&value).(*FileTime));
+    var ticks: u64 = value.high.(u64) * 4294967296 + value.low.(u64);
+    return stdlib.Result<SystemTime, TimeError>.Ok(
+        SystemTime{
+            seconds:(ticks / 10000000).(i64) - 11644473600,
+            nanoseconds:((ticks % 10000000) * 100).(u32)
+        }
+    );
+}
+
+func nativeSleep(duration: Duration) -> stdlib.Result<void, TimeError> {
+    var milliseconds: u64 = duration.nanoseconds / 1000000;
+    if (duration.nanoseconds % 1000000 != 0) {
+        milliseconds += 1;
+    }
+    while (milliseconds > 4294967294.(u64)) {
+        Sleep(4294967294);
+        milliseconds -= 4294967294.(u64);
+    }
+    Sleep(milliseconds.(u32));
+    return stdlib.Result<void, TimeError>.Ok;
+}

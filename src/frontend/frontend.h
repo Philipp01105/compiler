@@ -12,6 +12,7 @@ typedef struct {
     int has_target;
     TargetFormat target_format;
     int include_all_targets; /* Manifest dependency discovery only. */
+    int system_packages; /* Load the default stdlib system package as source. */
 } FrontendOptions;
 
 /* Parse a source file into an owned recursive AST with no backend side effects. */

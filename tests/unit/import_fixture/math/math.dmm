@@ -1,8 +1,9 @@
 package math;
+
 pub struct ImportedPoint {
-    pub var x:int;
+    pub var x: int;
 }
 
-pub func imported_square(value:int) -> int {
+pub func imported_square(value: int) -> int {
     return value * value;
 }

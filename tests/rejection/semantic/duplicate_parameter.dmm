@@ -1,3 +1,7 @@
 package main;
-func bad(value:int, value:int) -> int { return value; }
+
+func bad(value: int, value: int) -> int {
+    return value;
+}
+
 func main() -> void {}

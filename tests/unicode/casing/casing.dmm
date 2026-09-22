@@ -1,0 +1,84 @@
+package main;
+import (
+    "stdlib"
+    "stdlib/stdio"
+    "stdlib/unicode"
+);
+
+func checked(input: u8[], form: unicode.CaseMapping, expected: u8[]) -> bit {
+    var result = unicode.mapCase(input, form);
+    match (result) {
+        Err(error) => return false;
+        Ok(output) => return output.view() == expected;
+    }
+}
+
+func main() -> int {
+    var source = stdio.openRead("tests/unicode/casing.bin");
+    if (!source.isOpen()) {
+        return 1;
+    }
+    var data = stdio.readToEnd((&source).(*stdio.Stream), 8000000);
+    source.close();
+    if (data.status != stdio.Status.EndOfStream || data.length < 4) {
+        data.release();
+        return 2;
+    }
+    var view: u8[] = data.view();
+    var rows: usize = view[0].(usize) + view[1].(usize) * 256 + view[2].(usize) * 65536 + view[3].(usize) * 16777216;
+    var offset: usize = 4;
+    for (var row: usize = 0; row < rows; row += 1) {
+        var columns: u8[][5];
+        for (var column: usize = 0; column < 5; column += 1) {
+            if (offset + 2 > view.length) {
+                return 3;
+            }
+            var length: usize = view[offset].(usize) + view[offset + 1].(usize) * 256;
+            offset += 2;
+            if (length > view.length - offset) {
+                return 4;
+            }
+            columns[column] = view[offset: offset + length];
+            offset += length;
+        }
+        if (
+            !checked(columns[0], unicode.CaseMapping.Lower, columns[1]) ||
+            !checked(columns[0], unicode.CaseMapping.Upper, columns[2]) ||
+            !checked(columns[0], unicode.CaseMapping.Title, columns[3]) ||
+            !checked(columns[0], unicode.CaseMapping.Fold, columns[4])
+        ) {
+            stdlib.println(row);
+            data.release();
+            return 5;
+        }
+    }
+    if (offset != view.length || rows < 2500) {
+        data.release();
+        return 6;
+    }
+    data.release();
+    // Exercise every scalar and strict UTF-8 encoding boundary without allocation.
+    var buffer: u8[4];
+    var output: u8[] = buffer;
+    for (var scalar: u32 = 0; scalar <= 1114111; scalar += 1) {
+        if (!unicode.isScalar(scalar)) {
+            continue;
+        }
+        var encoded = unicode.encodeUtf8(scalar, &mut output, 0);
+        match (encoded) {
+            Err(error) => return 7;
+            Ok(end) => {
+                var decoded = unicode.decodeUtf8(buffer[: end], 0);
+                match (decoded) {
+                    Err(error) => return 8;
+                    Ok(value) => {
+                        if (value.scalar != scalar || value.next != end) {
+                            return 9;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return 0;
+}

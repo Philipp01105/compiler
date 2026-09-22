@@ -2,12 +2,10 @@ package main;
 import "stdlib";
 // Test free keyword for manual deallocation
 func main() -> void {
-    var p:*int = reserve(int);
-    
+    var p: *int = reserve(int);
     stdlib.println("Memory allocated");
-    
     free(p);
-    
     stdlib.println("Memory freed");
 }
+
 // Category: execution/heap

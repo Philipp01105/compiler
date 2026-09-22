@@ -1,7 +1,9 @@
 package main;
 
 struct Invalid {
-    var callable:func<T>(T) -> T;
+    var callable: func<T>(T) -> T;
 }
 
-func main() -> int { return 0; }
+func main() -> int {
+    return 0;
+}

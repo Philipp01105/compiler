@@ -1,0 +1,170 @@
+package main;
+import (
+    "stdlib"
+    "stdlib/text"
+    "stdlib/unicode"
+);
+
+func equal(result: stdlib.Result<stdlib.Bytes, unicode.UnicodeError>, expected: u8[]) -> bit {
+    match (result) {
+        Err(error) => return false;
+        Ok(value) => {
+            return value.view() == expected;
+        }
+    }
+}
+
+func main() -> int {
+    if (
+        !unicode.isAlphabetic(945) ||
+        !unicode.isWhitespace(8195) ||
+        !unicode.isDigit(1633) ||
+        unicode.combiningClass(769) != 230
+    ) {
+        return 1;
+    }
+    if (
+        !equal(
+            unicode.mapCase(text.bytes("Straße"), unicode.CaseMapping.Fold),
+            text.bytes("strasse")
+        )
+    ) {
+        return 2;
+    }
+    if (
+        !equal(
+            unicode.mapCase(text.bytes("ΟΣ"), unicode.CaseMapping.Lower),
+            text.bytes("ος")
+        )
+    ) {
+        return 3;
+    }
+    if (
+        !equal(
+            unicode.normalize(text.bytes("é"), unicode.Normalization.NFC),
+            text.bytes("é")
+        )
+    ) {
+        return 4;
+    }
+    if (
+        !equal(
+            unicode.normalize(text.bytes("é"), unicode.Normalization.NFD),
+            text.bytes("é")
+        )
+    ) {
+        return 5;
+    }
+    if (
+        !equal(
+            unicode.normalize(text.bytes("ﬃ"), unicode.Normalization.NFKC),
+            text.bytes("ffi")
+        )
+    ) {
+        return 6;
+    }
+    if (
+        !equal(
+            unicode.normalize(text.bytes("각"), unicode.Normalization.NFD),
+            text.bytes("각")
+        )
+    ) {
+        return 7;
+    }
+    var utf16 = unicode.toUtf16(text.bytes("A😀"));
+    match (utf16) {
+        Err(error) => return 8;
+        Ok(value) => {
+            if (
+                value.length() != 3 ||
+                !equal(unicode.fromUtf16(value.view()), text.bytes("A😀"))
+            ) {
+                return 9;
+            }
+        }
+    }
+    var invalid: u8[2] = [192, 128];
+    var checked = unicode.validate(invalid);
+    match (checked) {
+        Ok => return 10;
+        Err(error) => {
+            if (error.kind != unicode.ErrorKind.InvalidUtf8) {
+                return 11;
+            }
+        }
+    }
+    var replaced = text.replace(text.bytes("abcabc"), text.bytes("ab"), text.bytes("X"));
+    match (replaced) {
+        Err(error) => return 12;
+        Ok(value) => {
+            if (value.view() != text.bytes("XcXc")) {
+                return 13;
+            }
+        }
+    }
+    var builder = text.builder(0);
+    match (builder) {
+        Err(error) => return 14;
+        Ok(value) => {
+            value.appendString("abc");
+            if (value.view() != text.bytes("abc")) {
+                return 15;
+            }
+        }
+    }
+    var surrogate: u16[1] = [55296];
+    var rejected = unicode.fromUtf16(surrogate);
+    match (rejected) {
+        Ok(value) => return 16;
+        Err(error) => {
+            if (error.kind != unicode.ErrorKind.InvalidUtf16) {
+                return 17;
+            }
+        }
+    }
+    var storage: u8[2] = [7, 8];
+    var output: u8[] = storage;
+    var encoded = unicode.encodeUtf8(128512, &mut output, 0);
+    match (encoded) {
+        Ok(value) => return 18;
+        Err(error) => {
+            if (
+                error.kind != unicode.ErrorKind.BufferTooSmall ||
+                storage[0] != 7 ||
+                storage[1] != 8
+            ) {
+                return 19;
+            }
+        }
+    }
+    if (text.trimAscii(text.bytes(" \tword\r\n")) != text.bytes("word")) {
+        return 20;
+    }
+    var pieces = text.split(text.bytes("a,,"), 44);
+    var first = pieces.next();
+    match (first) {
+        None => return 21;
+        Some(value) => {
+            if (value != text.bytes("a")) {
+                return 22;
+            }
+        }
+    }
+    for (var i: int = 0; i < 2; i += 1) {
+        var part = pieces.next();
+        match (part) {
+            None => return 23;
+            Some(value) => {
+                if (value.length != 0) {
+                    return 24;
+                }
+            }
+        }
+    }
+    var end = pieces.next();
+    match (end) {
+        Some(value) => return 25;
+        None => {}
+    }
+    return 0;
+}

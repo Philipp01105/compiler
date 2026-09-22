@@ -1,5 +1,6 @@
 package main;
 import "stdlib";
+
 func main() -> int {
     stdlib.print("value=");
     stdlib.println(42);

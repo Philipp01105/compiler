@@ -1,2 +1,10 @@
 package main;
-enum E { A(int), B, } func main() -> void { var e:E=E.A("x"); }
+
+enum E {
+    A(int),
+    B,
+}
+
+func main() -> void {
+    var e: E = E.A("x");
+}

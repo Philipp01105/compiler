@@ -1,3 +1,8 @@
 package main;
-func use(pointer:*(int[3])) -> void {}
-func main() -> void { var values:int[2]; use(&values); }
+
+func use(pointer: *(int[3])) -> void {}
+
+func main() -> void {
+    var values: int[2];
+    use(&values);
+}

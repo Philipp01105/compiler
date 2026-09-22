@@ -289,39 +289,10 @@ static void own_free(Runtime *r) {
 
 /* Raw byte-region operations. No strings, formatting or allocation policy. */
 static void own_core_memory(Runtime *r) {
-    r->function = "__dmm_core_null";
-    (void) native_define(r->object, r->function, 1, 1);
-    imm(r, "rax", 0);
-    op0(r, X64_OP_RET);
-    r->function = "__dmm_core_offset";
-    (void) native_define(r->object, r->function, 1, 1);
-    mov(r, "rax", arg(r, 0));
-    op2(r, X64_OP_ADD, X64_WIDTH_QWORD, x64_register("rax"), x64_register(arg(r, 1)));
-    op0(r, X64_OP_RET);
     r->function = "__dmm_core_string_data";
     (void) native_define(r->object, r->function, 1, 1);
     mov(r, "rax", arg(r, 0));
     op0(r, X64_OP_RET);
-
-    r->function = "__dmm_core_fill";
-    (void) native_define(r->object, r->function, 1, 1);
-    mov(r, "r10", arg(r, 0));
-    mov(r, "rax", arg(r, 1));
-    mov(r, "r11", arg(r, 2));
-    test(r, "r11");
-    branch(r, X64_OP_JL, "trap");
-    branch(r, X64_OP_JE, "done");
-    test(r, "r10");
-    branch(r, X64_OP_JE, "trap");
-    label(r, "loop");
-    op2(r, X64_OP_MOV, X64_WIDTH_BYTE, x64_memory(X64_WIDTH_BYTE, "r10", 0), x64_register("al"));
-    op1(r, X64_OP_INC, x64_register("r10"));
-    op1(r, X64_OP_DEC, x64_register("r11"));
-    branch(r, X64_OP_JNE, "loop");
-    label(r, "done");
-    op0(r, X64_OP_RET);
-    label(r, "trap");
-    op0(r, X64_OP_UD2);
 
     r->function = "__dmm_core_copy";
     (void) native_define(r->object, r->function, 1, 1);
@@ -482,8 +453,10 @@ static void read_value(Runtime *r) {
     end(r);
 }
 
-#include "native_threads.inc"
-#include "native_executor.inc"
+#ifdef DMM_RUNTIME_REFERENCE_EXECUTOR
+#include "../../tests/fixtures/native_threads_reference.inc"
+#include "../../tests/fixtures/native_executor_reference.inc"
+#endif
 
 const char *native_runtime_import(const char *name, TargetFormat target) {
     static const char *const imports[] = {
@@ -536,8 +509,10 @@ int native_runtime_emit_requirements(NativeObject *object, TargetFormat target,
     own_strdup(&r);
     own_core_memory(&r);
     own_atomics(&r);
+#ifdef DMM_RUNTIME_REFERENCE_EXECUTOR
     if (profile == RUNTIME_STANDALONE) own_async_threads(&r);
-    own_async_executor(&r);
+    if (profile == RUNTIME_STANDALONE) own_async_executor(&r);
+#endif
     own_core_process(&r);
     emit_alias(&r, "__dmm_rt_strlen", "strlen", 1);
     emit_alias(&r, "__dmm_rt_strcmp", "strcmp", 3);
@@ -577,7 +552,7 @@ int native_runtime_emit_requirements(NativeObject *object, TargetFormat target,
         call(&r, "__dmm_program_main");
         if (main_returns_void) imm(&r, "rax", 0);
         store(&r, "rax", 8);
-        call(&r, "__dmm_async_default_drain");
+        if (requirements & RUNTIME_REQUIRE_EXECUTOR) call(&r, "__dmm_async_default_drain");
         if (requirements&RUNTIME_REQUIRE_NETWORK) call(&r,"__dmm_net_begin_draining");
         call(&r, "__dmm_package_cleanup");
         if (requirements&RUNTIME_REQUIRE_NETWORK) call(&r,"__dmm_net_finish");
@@ -596,7 +571,8 @@ int native_runtime_emit_requirements(NativeObject *object, TargetFormat target,
         op1(&r, X64_OP_CALL, x64_label("main"));
         op2(&r, X64_OP_MOV, X64_WIDTH_QWORD,
             x64_memory(X64_WIDTH_QWORD, "rsp", 32), x64_register("rax"));
-        op1(&r, X64_OP_CALL, x64_label("__dmm_async_default_drain"));
+        if (requirements & RUNTIME_REQUIRE_EXECUTOR)
+            op1(&r, X64_OP_CALL, x64_label("__dmm_async_default_drain"));
         op1(&r, X64_OP_CALL, x64_label("__dmm_package_cleanup"));
         op2(&r, X64_OP_MOV, X64_WIDTH_DWORD, x64_register("ecx"),
             x64_memory(X64_WIDTH_DWORD, "rsp", 32));
@@ -609,7 +585,8 @@ int native_runtime_emit_requirements(NativeObject *object, TargetFormat target,
         stack(&r, X64_OP_SUB, 16);
         op2(&r, X64_OP_MOV, X64_WIDTH_QWORD,
             x64_memory(X64_WIDTH_QWORD, "rsp", 0), x64_register("rax"));
-        op1(&r, X64_OP_CALL, x64_label("__dmm_async_default_drain"));
+        if (requirements & RUNTIME_REQUIRE_EXECUTOR)
+            op1(&r, X64_OP_CALL, x64_label("__dmm_async_default_drain"));
         op1(&r, X64_OP_CALL, x64_label("__dmm_package_cleanup"));
         op2(&r, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rdi"),
             x64_memory(X64_WIDTH_QWORD, "rsp", 0));
@@ -623,6 +600,7 @@ int native_runtime_emit_requirements(NativeObject *object, TargetFormat target,
 
 static int platform_symbol(const char *name) {
     if (!strncmp(name,"__dmm_net_",10)) return 1;
+    if (!strncmp(name,"__dmm_async_",12)) return 1;
     static const char *const symbols[] = {
         "__dmm_async_thread_create", "__dmm_async_thread_join",
         "__dmm_async_wait_create", "__dmm_async_wait", "__dmm_async_wake",

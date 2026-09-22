@@ -1,33 +1,34 @@
 package main;
 import "stdlib";
-enum Phase(index:int, text:string, multiplier:int, enabled:bit) {
+
+enum Phase(index: int, text: string, multiplier: int, enabled: bit) {
     warmup(0, "warmup", 1, true),
     active(1, "active", 3, true),
     stopped(2, "stopped", 0, false)
 }
 
 struct Matrix {
-    var cells:int[16];
-    var writes:int;
+    var cells: int[16];
+    var writes: int;
 
     func reset() -> void {
         writes = 0;
-        for (var i:int = 0; i < 16; i++) {
+        for (var i: int = 0; i < 16; i++) {
             cells[i] = 0;
         }
     }
 
-    func set(row:int, column:int, value:int) -> void {
-        var offset:int = row * 4 + column;
+    func set(row: int, column: int, value: int) -> void {
+        var offset: int = row * 4 + column;
         cells[offset] = value;
         writes++;
     }
 
-    func get(row:int, column:int) -> int {
+    func get(row: int, column: int) -> int {
         return cells[row * 4 + column];
     }
 
-    static func clamp(value:int, low:int, high:int) -> int {
+    static func clamp(value: int, low: int, high: int) -> int {
         if (value < low) {
             return low;
         }
@@ -38,7 +39,7 @@ struct Matrix {
     }
 }
 
-func phase_for(step:int) -> Phase {
+func phase_for(step: int) -> Phase {
     if (step == 0) {
         return Phase.warmup;
     } else {
@@ -49,24 +50,24 @@ func phase_for(step:int) -> Phase {
     return Phase.stopped;
 }
 
-func evaluate(matrix:Matrix, row:int) -> int {
-    var total:int = 0;
-    for (var column:int = 0; column < 4; column++) {
+func evaluate(matrix: Matrix, row: int) -> int {
+    var total: int = 0;
+    for (var column: int = 0; column < 4; column++) {
         total += matrix.get(row, column);
     }
     return total;
 }
 
 func main() -> void {
-    var matrix:Matrix;
+    var matrix: Matrix;
     matrix.reset();
-    var row_totals:int[5];
-    var row:int = 0;
+    var row_totals: int[5];
+    var row: int = 0;
 
     while (row < 4) {
-        var phase:Phase = phase_for(row);
-        for (var column:int = 0; column < 4; column++) {
-            var raw:int = (row + 1) * (column + 2) * phase.multiplier;
+        var phase: Phase = phase_for(row);
+        for (var column: int = 0; column < 4; column++) {
+            var raw: int = (row + 1) * (column + 2) * phase.multiplier;
             if (phase.enabled) {
                 if (raw % 2 == 0) {
                     matrix.set(row, column, Matrix.clamp(raw, 0, 50));
@@ -81,19 +82,17 @@ func main() -> void {
         row++;
     }
 
-    var aggregate:*int = reserve(int);
+    var aggregate: *int = reserve(int);
     *aggregate = 0;
-    for (var i:int = 0; i < 4; i++) {
+    for (var i: int = 0; i < 4; i++) {
         *aggregate += row_totals[i];
     }
 
-    var converted:float = ((*aggregate).(double) / 7.0).(float);
-    var manual:*int = reserve(int);
+    var converted: float = ((*aggregate).(double) / 7.0).(float);
+    var manual: *int = reserve(int);
     *manual = (converted).(int);
-    var final_phase:Phase = phase_for(4);
-    var output:string = "phase=" + final_phase.text + ",index=" + final_phase.index
-        + ",writes=" + matrix.writes + ",total=" + *aggregate
-        + ",cast=" + *manual + ",enabled=" + final_phase.enabled;
+    var final_phase: Phase = phase_for(4);
+    var output: string = "phase=" + final_phase.text + ",index=" + final_phase.index + ",writes=" + matrix.writes + ",total=" + * aggregate + ",cast=" + * manual + ",enabled=" + final_phase.enabled;
     stdlib.println(output);
     free(output);
     free(manual);

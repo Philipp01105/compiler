@@ -1,0 +1,18 @@
+package main;
+import (
+    "stdlib"
+    "stdlib/memory"
+);
+
+func main() -> int {
+    var created = memory.arena(4);
+    match (created) {
+        Err(error) => return 1;
+        Ok(owner) => {
+            owner.allocate(4);
+            var view = owner.view();
+            owner.reset();
+            return view[0].(int);
+        }
+    }
+}

@@ -100,6 +100,11 @@ static int emit_async_await(Emitter *emitter, const IrInstruction *instruction) 
 }
 
 static int emit_executor_operation(Emitter *e, const IrInstruction *in) {
+    if (in->async_operation==ASYNC_NATIVE_FUTURE) {
+        write_value_load(e,"rax",in->operand_a);
+        write_value_store(e,"rax",in->result);
+        return 1;
+    }
     const char *name=NULL;
     if(in->async_operation==ASYNC_BLOCK_ON && in->operand_b==IR_VALUE_NONE) write_call(e,"__dmm_async_default");
     if (in->async_operation==ASYNC_SPAWN || in->async_operation==ASYNC_SHUTDOWN) {
@@ -114,7 +119,6 @@ static int emit_executor_operation(Emitter *e, const IrInstruction *in) {
     } else {
         write_value_load(e,"rax",in->operand_a); write_register_move(e,argument_register(e->target,0),"rax");
         name=in->async_operation==ASYNC_CREATE ? "__dmm_async_executor_create" :
-             in->async_operation==ASYNC_NET_WAIT ? "__dmm_net_wait" :
              in->async_operation==ASYNC_CANCEL ? "__dmm_async_cancel" : "__dmm_async_block_on";
     }
     write_call(e,name);

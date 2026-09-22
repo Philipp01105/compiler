@@ -123,6 +123,7 @@ static int move_only_symbol(const OwnershipChecker *checker, size_t symbol) {
         value->resolved_pointer_depth != 0 ||
         value->resolved_outer_pointer_depth != 0 || value->resolved_is_slice)
         return 0;
+    if (value->declared_type.callable_mode == 2) return 1;
     if (value->resolved_named_symbol_id < checker->count)
         return (semantic_symbol_type_properties(
                     checker->analyzer->model,
@@ -289,7 +290,28 @@ static void consume_expression(OwnershipChecker *checker,
         read_expression(checker, flow, expression);
         return;
     }
+    if (expression->kind == AST_EXPR_UNARY && expression->operator_type == TOKEN_STAR &&
+        expression->right && expression->right->resolved_borrow_kind != AST_BORROW_NONE) {
+        read_expression(checker, flow, expression);
+        ownership_error(checker, expression->first_token,
+                        "Cannot consume a move-only value through a checked reference");
+        return;
+    }
     if (expression->kind == AST_EXPR_NAME) {
+        if (expression->resolved_symbol_id < checker->count &&
+            checker->analyzer->model->symbols[expression->resolved_symbol_id].kind ==
+                SEMANTIC_SYMBOL_FIELD) {
+            if (checker->analyzer->closure_probe &&
+                checker->analyzer->model->symbols[expression->resolved_symbol_id].owner_symbol_id ==
+                    checker->analyzer->closure_probe->resolved_symbol_id) {
+                checker->analyzer->closure_probe->closure_mode = 2;
+                return;
+            }
+            read_expression(checker, flow, expression);
+            ownership_error(checker, expression->first_token,
+                            "Partial moves from move-only aggregate fields are not supported");
+            return;
+        }
         if (expression_available(checker, flow, expression) &&
             expression->resolved_symbol_id < checker->count) {
             flow->values[expression->resolved_symbol_id] = OWNERSHIP_MOVED;
@@ -316,6 +338,14 @@ static void read_call(OwnershipChecker *checker, OwnershipFlow *flow,
         const AstExpression *place = ptr && ptr->kind == AST_EXPR_UNARY &&
             ptr->operator_type == TOKEN_AMPERSAND ? ptr->right : NULL;
         size_t id = place && place->kind == AST_EXPR_NAME ? place->resolved_symbol_id : AST_SYMBOL_NONE;
+        if (id<checker->count && checker->analyzer->model->symbols[id].kind==SEMANTIC_SYMBOL_FIELD) {
+            if(checker->analyzer->closure_probe &&
+               checker->analyzer->model->symbols[id].owner_symbol_id==
+                   checker->analyzer->closure_probe->resolved_symbol_id)
+                checker->analyzer->closure_probe->closure_mode=2;
+            else ownership_error(checker,expression->first_token,
+                "Lifetime operations on tracked subobjects require a whole value; partial lifetimes are unsupported");
+        }
         if (place && (place->kind == AST_EXPR_MEMBER || place->kind == AST_EXPR_INDEX)) {
             const AstExpression *root = place;
             int indirect = 0;
@@ -330,6 +360,8 @@ static void read_call(OwnershipChecker *checker, OwnershipFlow *flow,
         }
         if (tracked_symbol(checker, id)) {
             ((AstExpression *)expression)->lifetime_origin = id;
+            if (expression->lifetime_operation == LIFETIME_REPLACE)
+                consume_expression(checker, flow, ptr->next);
             if (expression->lifetime_operation == LIFETIME_INITIALIZE) {
                 if (flow->values[id] & OWNERSHIP_LIVE)
                     ownership_error(checker, expression->first_token,
@@ -338,9 +370,12 @@ static void read_call(OwnershipChecker *checker, OwnershipFlow *flow,
                 flow->values[id] = OWNERSHIP_LIVE;
             } else {
                 (void)expression_available(checker, flow, place);
-                flow->values[id] = OWNERSHIP_DESTROYED;
+                flow->values[id] = expression->lifetime_operation == LIFETIME_REPLACE
+                                      ? OWNERSHIP_LIVE : OWNERSHIP_DESTROYED;
             }
         } else {
+            if (expression->lifetime_operation == LIFETIME_REPLACE)
+                consume_expression(checker, flow, ptr ? ptr->next : NULL);
             AstExpression pointer = ptr ? *ptr : (AstExpression){0};
             pointer.next = NULL;
             if (ptr) read_expression(checker, flow, &pointer);
@@ -362,7 +397,19 @@ static void read_call(OwnershipChecker *checker, OwnershipFlow *flow,
             else read_expression(checker, flow, arg);
         return;
     }
-    read_expression(checker, flow, expression->left);
+    const AstExpression *callee = expression->left;
+    const AstExpression *callable = callee && callee->kind == AST_EXPR_MEMBER &&
+        semantic_closure_method(checker->analyzer, callee->left) ? callee->left : callee;
+    if (callable && callable->has_resolved_ast_type &&
+        callable->resolved_ast_type.callable_mode == 2) {
+        if (callable->resolved_borrow_kind != AST_BORROW_NONE) {
+            read_expression(checker, flow, callable);
+            ownership_error(checker, expression->first_token,
+                            "A once callable requires an owned value; invocation through a checked reference is forbidden");
+        } else consume_expression(checker, flow, callable);
+    }
+    else
+        read_expression(checker, flow, callee);
     const AstParameter *parameter = NULL;
     const AstTypeArgument *callable_parameter = NULL;
     if (expression->resolved_symbol_id < checker->count) {

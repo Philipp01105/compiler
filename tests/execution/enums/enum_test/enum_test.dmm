@@ -1,6 +1,7 @@
 package main;
 import "stdlib";
-enum test(id:int, name:string) {
+
+enum test(id: int, name: string) {
     In(1, "test"),
     Out(2, "test2")
 }
@@ -9,17 +10,15 @@ func main() -> void {
     stdlib.print("In id: ");
     stdlib.print(test.In.id);
     stdlib.println("");
-    
     stdlib.print("Out id: ");
     stdlib.print(test.Out.id);
     stdlib.println("");
-    
     stdlib.print("In name: ");
     stdlib.print(test.In.name);
     stdlib.println("");
-    
     stdlib.print("Out name: ");
     stdlib.print(test.Out.name);
     stdlib.println("");
 }
+
 // Category: execution/enums

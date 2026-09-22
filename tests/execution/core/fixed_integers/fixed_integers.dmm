@@ -1,42 +1,79 @@
 package main;
 import "stdlib";
-const PRECISE:u64 = 18446744073709551615;
-const PRECISE_DIV:u64 = PRECISE / 3;
-const WRAPPED:u8 = 255.(u8) + 1.(u8);
-const NEGATIVE:i64 = (-9223372036854775807).(i64) - 1.(i64);
-const PRECISE_TEXT:string = "max=" + PRECISE;
-const FLOAT_CONSTANT:u64 = (9223372036854775808.0 + 4611686018427387904.0).(u64);
+const PRECISE: u64 = 18446744073709551615;
+const PRECISE_DIV: u64 = PRECISE / 3;
+const WRAPPED: u8 = 255.(u8) + 1.(u8);
+const NEGATIVE: i64 = (-9223372036854775807).(i64) - 1.(i64);
+const PRECISE_TEXT: string = "max=" + PRECISE;
+const FLOAT_CONSTANT: u64 = (9223372036854775808.0 + 4611686018427387904.0).(u64);
 
-func identity<T>(value:T) -> T { return value; }
-func divide(a:u64, b:u64) -> u64 { return a / b; }
-func compare(a:u64, b:u64) -> bit { return a > b; }
-func small(a:i8, b:u8, c:i16, d:u16, e:i32, f:u32, g:i64, h:u64, i:isize, j:usize) -> bit {
-    return a == -1 && b == 255 && c == -32768 && d == 65535 && e == -123 &&
-           f == 4294967295.(u32) && g == -5000000000.(i64) && h > 9223372036854775807.(u64) &&
-           i == -9 && j == 5000000000.(usize);
+func identity<T>(value: T) -> T {
+    return value;
 }
+
+func divide(a: u64, b: u64) -> u64 {
+    return a / b;
+}
+
+func compare(a: u64, b: u64) -> bit {
+    return a > b;
+}
+
+func small(
+    a: i8,
+    b: u8,
+    c: i16,
+    d: u16,
+    e: i32,
+    f: u32,
+    g: i64,
+    h: u64,
+    i: isize,
+    j: usize
+) -> bit {
+    return a == - 1 && b == 255 && c == - 32768 && d == 65535 && e == - 123 && f == 4294967295.(u32) && g == - 5000000000.(
+        i64
+    ) && h > 9223372036854775807.(u64) && i == - 9 && j == 5000000000.(usize);
+}
+
 func main() -> void {
-    var maximum:u64 = (-1).(u64);
+    var maximum: u64 = (-1).(u64);
     stdlib.println(compare(maximum, 9223372036854775807.(u64)));
     stdlib.println(divide(maximum, 3) == 6148914691236517205.(u64));
     stdlib.println(maximum % 3 == 0);
     maximum /= 3;
     stdlib.println(maximum == 6148914691236517205.(u64));
-    var narrow:i8 = 127;
+    var narrow: i8 = 127;
     narrow += 1;
-    stdlib.println(narrow == -128);
+    stdlib.println(narrow == - 128);
     stdlib.println((255.(u8) + 1.(u8)) == 0);
     stdlib.println(identity(5000000000.(i64)) == 5000000000.(i64));
-    stdlib.println(small(-1,255,-32768,65535,-123,4294967295.(u32),-5000000000.(i64),(-1).(u64),-9,5000000000.(usize)));
-    var words:u16[3]; words[0]=65535; words[1]=32768; words[2]=42;
-    var pointer:*u16 = (&words[0]).(*u16);
+    stdlib.println(
+        small(
+            -1,
+            255,
+            -32768,
+            65535,
+            -123,
+            4294967295.(u32),
+            -5000000000.(i64),
+            (-1).(u64),
+            -9,
+            5000000000.(usize)
+        )
+    );
+    var words: u16[3];
+    words[0] = 65535;
+    words[1] = 32768;
+    words[2] = 42;
+    var pointer: *u16 = (&words[0]).(*u16);
     pointer[1] = 65534;
     stdlib.println(words[0] == 65535 && words[1] == 65534 && words[2] == 42);
-    var large:u64 = 13835058055282163712;
+    var large: u64 = 13835058055282163712;
     stdlib.println(large.(double).(u64) == large);
     stdlib.println(large.(float).(u64) == large);
-    var signed:i16 = (-1).(i16);
-    stdlib.println(signed.(i64) == -1);
+    var signed: i16 = (-1).(i16);
+    stdlib.println(signed.(i64) == - 1);
     stdlib.println(PRECISE_DIV);
     stdlib.println(NEGATIVE);
     stdlib.println(WRAPPED);

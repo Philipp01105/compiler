@@ -1,4 +1,12 @@
 package core;
-import "stdlib/core/raw";
-pub func core_exit(status:int) -> never { raw.core_exit(status); }
-pub func core_trap() -> never { raw.core_trap(); }
+import (
+    "stdlib/core/raw"
+);
+
+pub func core_exit(status: int) -> never {
+    raw.core_exit(status);
+}
+
+pub func core_trap() -> never {
+    raw.core_trap();
+}

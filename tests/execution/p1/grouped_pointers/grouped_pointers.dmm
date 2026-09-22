@@ -1,44 +1,61 @@
 package main;
-const count:int = 3;
-struct Row { var values:int[count]; }
+const count: int = 3;
 
-func update(pointer:*(int[count])) -> int {
+struct Row {
+    var values: int[count];
+}
+
+func update(pointer: *(int[count])) -> int {
     (*pointer)[2] = 17;
     return (*pointer)[2];
 }
 
-func identity(pointer:*(int[count])) -> *(int[count]) { return pointer; }
+func identity(pointer: *(int[count])) -> *(int[count]) {
+    return pointer;
+}
 
 func main() -> int {
-    var values:int[count];
-    var pointer:*(int[count]) = (&values).(*(int[count]));
-    var reassigned:*(int[count]);
+    var values: int[count];
+    var pointer: *(int[count]) = (&values).(*(int[count]));
+    var reassigned: *(int[count]);
     reassigned = pointer;
     pointer = reassigned;
-    if (update(identity(pointer)) != 17) { return 1; }
-    if (values[2] != 17) { return 2; }
-    var scalar:int = 5;
-    var p:*int = (&scalar).(*int);
-    var pp:**int = (&p).(**int);
-    var links:**int[count];
+    if (update(identity(pointer)) != 17) {
+        return 1;
+    }
+    if (values[2] != 17) {
+        return 2;
+    }
+    var scalar: int = 5;
+    var p: *int = (&scalar).(*int);
+    var pp: **int = (&p).(**int);
+    var links: **int[count];
     links[1] = pp;
-    var grouped:*(**int[count]) = (&links).(*(**int[count]));
+    var grouped: *(**int[count]) = (&links).(*(**int[count]));
     **(*grouped)[1] = 23;
-    if (scalar != 23) { return 3; }
-    var row:Row;
+    if (scalar != 23) {
+        return 3;
+    }
+    var row: Row;
     row.values[2] = 31;
-    var member_pointer:*int = (&row.values[2]).(*int);
-    var field_pointer:*(int[count]) = (&row.values).(*(int[count]));
-    var scalar_pointer:*int = (&*p).(*int);
+    var member_pointer: *int = (&row.values[2]).(*int);
+    var field_pointer: *(int[count]) = (&row.values).(*(int[count]));
+    var scalar_pointer: *int = (&*p).(*int);
     *member_pointer = 31;
     (*field_pointer)[1] = 29;
     *scalar_pointer = 23;
-    if (row.values[1] != 29 || scalar != 23) { return 6; }
-    if (row.values[2] != 31) { return 4; }
-    var owned:*(int[count]) = reserve(int[count]);
+    if (row.values[1] != 29 || scalar != 23) {
+        return 6;
+    }
+    if (row.values[2] != 31) {
+        return 4;
+    }
+    var owned: *(int[count]) = reserve(int[count]);
     (*owned)[2] = 41;
-    var result:int = (*owned)[2];
+    var result: int = (*owned)[2];
     free(owned);
-    if (result != 41) { return 5; }
+    if (result != 41) {
+        return 5;
+    }
     return 0;
 }

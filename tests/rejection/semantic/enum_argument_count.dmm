@@ -1,3 +1,7 @@
 package main;
-enum Pair(left:int, right:int) { Broken(1) }
+
+enum Pair(left: int, right: int) {
+    Broken(1)
+}
+
 func main() -> void {}

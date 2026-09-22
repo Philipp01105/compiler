@@ -1,17 +1,28 @@
 # stdlib/core
 
 `import "stdlib/core";` loads low-level operations and shared ownership. It provides
-ordinary typed DMM functions over compiler intrinsics. It participates in the module/package visibility model.
-The dependency-free `stdlib/core/raw` package implements allocation, byte operations, raw I/O, and process operations.
-Core forwards that API and imports stdlib for Result and AllocationError. Stdlib and stdio use raw internally to keep
-the package graph acyclic.
+ordinary typed DMM functions. It participates in the module/package visibility model.
+Null pointers, pointer offsets, overlap-safe byte copying and filling are implemented in DMM. Atomic types use
+explicit native declarations for the four sequentially consistent machine primitives; their function names
+receive no special semantic treatment.
+The `stdlib/core/raw` package implements allocation, byte operations, raw I/O, and process operations.
+Core forwards that API and imports the independent `stdlib/types` package for Result and AllocationError.
+Root stdlib publicly re-exports those types, preserving their nominal identity and existing spellings.
+The package graph is acyclic, so root containers can use canonical `core.Copy` bounds.
+`core.Poll<T>` is an ordinary public sum type with `Pending` and `Ready(T)`;
+matching a move-only `Ready` payload transfers it under the normal consuming-pattern rules.
+It is a value-level foundation for the future polling API, which is not public yet.
+The separate [stdlib/async](../async/README.md) package provides retained Wakers,
+Contexts and a structural Poller contract; its Future adapter remains in progress.
 The separate `stdlib/core/net` package provides move-only sockets/address lists and typed asynchronous TCP/UDP/DNS
 over the private platform runtime. Its API and ownership/completion contract are in
 [stdlib/core/net/README.md](net/README.md).
 
 ```dmm
 package main;
-import "stdlib/core";
+import (
+    "stdlib/core"
+);
 
 func main() -> int {
     var bytes:*u8 = core.core_alloc(4);
@@ -36,7 +47,7 @@ the incoming value and returns OutOfMemory.
 Shared handles are move-only and require explicit initialization. Shared has Send and Sync exactly when its payload
 has both. Tasks receive their own clones; synchronized payloads such as AtomicUsize support shared mutation. Borrowed
 payload views retain their origins through construction, cloning, and aggregate transfer. Weak references, exclusive
-mutation, copy-on-write, mutexes, and channels are not provided.
+mutation, copy-on-write and channels are not provided. `stdlib/sync` supplies owning mutex guards.
 
 `core.initialize<T>(ptr,value)` starts a lifetime in valid, aligned storage without a live T, taking ownership without
 dropping previous contents. `core.destroy<T>(ptr)` invokes the same destructor and field/payload cleanup as ordinary
@@ -119,3 +130,17 @@ copyable non-owning values in the type system: `NEEDS_DROP` on a wrapper does no
 unless that wrapper's destructor does so. Native drop glue handles local, by-value, and package-stored owning wrappers,
 but the current allocation wrappers do not declare destructors; they must therefore continue to call `release`
 explicitly.
+
+## Compiler boundary
+
+The executor, network reactor, DNS queues, thread/event adapters, shared reference counting, typed allocation,
+byte-region algorithms and stream policies live in the stdlib. The private `dmm_runtime` native library identifies
+primitive symbols supplied in emitted objects; it introduces no external library by itself. Atomic operations
+still require actual atomic machine instructions. This is an explicit native ABI, not an intrinsic call syntax.
+
+The remaining source intrinsics are allocation/release, string representation access, raw descriptor I/O,
+exit/trap, and generic initialize/destroy. The current allocator is shared with generated async frames and
+uses OS-backed regions. Descriptor I/O still has a generated platform adapter, including the Windows descriptor
+table. Migrating these requires preserving allocator compatibility and descriptor ownership; declaring an OS
+function with an incompatible ABI is not a substitute. Type layout, ownership checking, async state-machine
+lowering and bounds traps remain compiler responsibilities.

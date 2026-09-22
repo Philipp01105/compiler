@@ -1,1 +1,1 @@
-Checked borrowed references cannot be stored in struct fields
+Checked borrowed struct fields require an explicit declared lifetime

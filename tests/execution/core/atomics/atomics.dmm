@@ -2,21 +2,43 @@ package main;
 import "stdlib/core";
 
 func main() -> int {
-    var count=core.atomicUsize(4.(usize));
-    if (count.load() != 4.(usize)) { return 1; }
+    var count = core.atomicUsize(4.(usize));
+    if (count.load() != 4.(usize)) {
+        return 1;
+    }
     count.store(8.(usize));
-    if (count.swap(12.(usize)) != 8.(usize)) { return 2; }
-    if (count.compareExchange(7.(usize),16.(usize)) != 12.(usize)) { return 3; }
-    if (count.load() != 12.(usize)) { return 4; }
-    if (count.compareExchange(12.(usize),16.(usize)) != 12.(usize)) { return 5; }
-    if (count.load() != 16.(usize)) { return 6; }
+    if (count.swap(12.(usize)) != 8.(usize)) {
+        return 2;
+    }
+    if (count.compareExchange(7.(usize), 16.(usize)) != 12.(usize)) {
+        return 3;
+    }
+    if (count.load() != 12.(usize)) {
+        return 4;
+    }
+    if (count.compareExchange(12.(usize), 16.(usize)) != 12.(usize)) {
+        return 5;
+    }
+    if (count.load() != 16.(usize)) {
+        return 6;
+    }
 
-    var flag=core.atomicBit(false);
-    if (flag.load()) { return 7; }
+    var flag = core.atomicBit(false);
+    if (flag.load()) {
+        return 7;
+    }
     flag.store(true);
-    if (!flag.swap(false)) { return 8; }
-    if (flag.compareExchange(true,true)) { return 9; }
-    if (flag.compareExchange(false,true)) { return 10; }
-    if (!flag.load()) { return 11; }
+    if (!flag.swap(false)) {
+        return 8;
+    }
+    if (flag.compareExchange(true, true)) {
+        return 9;
+    }
+    if (flag.compareExchange(false, true)) {
+        return 10;
+    }
+    if (!flag.load()) {
+        return 11;
+    }
     return 0;
 }

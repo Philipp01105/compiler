@@ -2,26 +2,38 @@ package main;
 import "stdlib";
 
 func folded() -> int {
-    var i=0;
-    var total=0;
-    while(i<1000) { total+=3; i+=1; }
-    return total+i;
+    var i = 0;
+    var total = 0;
+    while (i < 1000) {
+        total += 3;
+        i += 1;
+    }
+    return total + i;
 }
 
 func side_effects() -> int {
-    var i=0;
-    while(i<3) { stdlib.println(i); i+=1; }
+    var i = 0;
+    while (i < 3) {
+        stdlib.println(i);
+        i += 1;
+    }
     return i;
 }
 
 func inclusive() -> int {
-    var i=1;
-    var total=0;
-    while(i<=4) { total+=7; i+=2; }
-    return total+i;
+    var i = 1;
+    var total = 0;
+    while (i <= 4) {
+        total += 7;
+        i += 2;
+    }
+    return total + i;
 }
 
-func same_source(x:int) -> int { x+=x; return x; }
+func same_source(x: int) -> int {
+    x += x;
+    return x;
+}
 
 func main() -> void {
     stdlib.println(folded());

@@ -1,14 +1,27 @@
 package main;
 import "stdlib";
+
 func rhs() -> bit {
     stdlib.println("RIGHT OPERAND EXECUTED");
     return true;
 }
 
 func main() -> void {
-    if (true || rhs()) { stdlib.println("OR PASS"); }
-    if (false && rhs()) { stdlib.println("unreachable"); } else { stdlib.println("AND PASS"); }
-    if (true && (false || rhs())) { stdlib.println("NESTED AND PASS"); }
-    if (false || (true && rhs())) { stdlib.println("NESTED OR PASS"); }
-    if (true || (false && rhs())) { stdlib.println("NESTED SKIP PASS"); }
+    if (true || rhs()) {
+        stdlib.println("OR PASS");
+    }
+    if (false && rhs()) {
+        stdlib.println("unreachable");
+    } else {
+        stdlib.println("AND PASS");
+    }
+    if (true && (false || rhs())) {
+        stdlib.println("NESTED AND PASS");
+    }
+    if (false || (true && rhs())) {
+        stdlib.println("NESTED OR PASS");
+    }
+    if (true || (false && rhs())) {
+        stdlib.println("NESTED SKIP PASS");
+    }
 }

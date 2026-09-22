@@ -1,0 +1,44 @@
+package stdlib;
+
+// Value matches transfer ownership of move-only payloads to the mapper.
+pub func mapOption<T, U>(value: Option<T>, mapper: once func(T) -> U) -> Option<U> {
+    match (value) {
+        Some(item) => return Option<U>.Some(mapper(item));
+        None => return Option<U>.None;
+    }
+}
+
+pub func andThenOption<T, U>(value: Option<T>, mapper: once func(T) -> Option<U>) -> Option<U> {
+    match (value) {
+        Some(item) => return mapper(item);
+        None => return Option<U>.None;
+    }
+}
+
+pub func optionOr<T>(value: Option<T>, fallback: once func() -> T) -> T {
+    match (value) {
+        Some(item) => return item;
+        None => return fallback();
+    }
+}
+
+pub func mapResult<T, U, E>(value: Result<T, E>, mapper: once func(T) -> U) -> Result<U, E> {
+    match (value) {
+        Ok(item) => return Result<U, E>.Ok(mapper(item));
+        Err(error) => return Result<U, E>.Err(error);
+    }
+}
+
+pub func mapError<T, E, F>(value: Result<T, E>, mapper: once func(E) -> F) -> Result<T, F> {
+    match (value) {
+        Ok(item) => return Result<T, F>.Ok(item);
+        Err(error) => return Result<T, F>.Err(mapper(error));
+    }
+}
+
+pub func andThenResult<T, U, E>(value: Result<T, E>, mapper: once func(T) -> Result<U, E>) -> Result<U, E> {
+    match (value) {
+        Ok(item) => return mapper(item);
+        Err(error) => return Result<U, E>.Err(error);
+    }
+}

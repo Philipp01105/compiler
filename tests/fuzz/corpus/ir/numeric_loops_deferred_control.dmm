@@ -1,32 +1,60 @@
 package main;
-struct Vector<T>{var x:T; var y:T;}
-enum Mode(code:int,enabled:bit){Cold(1,false),Warm(2,true),Hot(3,true)}
-func record(target:&mut int,digit:int)->void{*target=*target*10+digit;}
-func compute(limit:int)->Vector<double>{
-    var audit:int;
-    defer record(&mut audit,7);
-    var samples:double[8];
-    var total:double;
-    for(var row=0;row<limit;row+=1){
-        defer record(&mut audit,1);
-        var mode=if(row%2==0){Mode.Warm}else{Mode.Hot};
-        for(var column=0;column<8;column+=1){
-            if(column==2){continue;}
-            var scaled=(row*8+column).(double)/3.5;
-            samples[column]=if(mode.enabled){scaled*mode.code.(double)}else{0.0};
-            if(samples[column]>100.0){break;}
-            total+=samples[column];
-        }
-        if(total>300.0){break;}
-    }
-    var count=limit.(i16).(i64);
-    var rounded=total.(float).(double);
-    return Vector<double>{x:rounded,y:count.(double)};
+
+struct Vector<T> {
+    var x: T;
+    var y: T;
 }
-func main()->int{
-    var result=compute(4);
-    var encoded:u64=17.(u64);
-    var narrow=encoded.(u8).(int);
-    var text:string="seed";
-    return (result.x+result.y).(int)+narrow+strlen(text);
+
+enum Mode(code: int, enabled: bit) {
+    Cold(1, false),
+    Warm(2, true),
+    Hot(3, true)
+}
+
+func record(target: &mut int, digit: int) -> void {
+    *target = *target * 10 + digit;
+}
+
+func compute(limit: int) -> Vector<double> {
+    var audit: int;
+    defer record(&mut audit, 7);
+    var samples: double[8];
+    var total: double;
+    for (var row = 0; row < limit; row += 1) {
+        defer record(&mut audit, 1);
+        var mode = if (row % 2 == 0) {
+            Mode.Warm
+        } else {
+            Mode.Hot
+        };
+        for (var column = 0; column < 8; column += 1) {
+            if (column == 2) {
+                continue;
+            }
+            var scaled = (row * 8 + column).(double) / 3.5;
+            samples[column] = if (mode.enabled) {
+                scaled * mode.code.(double)
+            } else {
+                0.0
+            };
+            if (samples[column] > 100.0) {
+                break;
+            }
+            total += samples[column];
+        }
+        if (total > 300.0) {
+            break;
+        }
+    }
+    var count = limit.(i16).(i64);
+    var rounded = total.(float).(double);
+    return Vector<double>{ x: rounded, y: count.(double) };
+}
+
+func main() -> int {
+    var result = compute(4);
+    var encoded: u64 = 17.(u64);
+    var narrow = encoded.(u8).(int);
+    var text: string = "seed";
+    return (result.x + result.y).(int) + narrow + strlen(text);
 }

@@ -1,0 +1,5 @@
+package path;
+
+func targetStyle() -> Style {
+    return Style.Posix;
+}

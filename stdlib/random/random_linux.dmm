@@ -1,0 +1,30 @@
+package random;
+import (
+    "stdlib"
+);
+extern "system" from "c" {
+    func getrandom(buffer: *u8, length: usize, flags: u32) -> isize;
+    func errnoAddress() -> *i32 = "__errno_location";
+}
+
+func nativeSystemFill(output: &mut u8[]) -> stdlib.Result<void, RandomError> {
+    var offset: usize = 0;
+    while (offset < (*output).length) {
+        var count: isize = getrandom(
+            (&(*output)[offset]).(*u8),
+            (*output).length - offset,
+            0
+        );
+        if (count < 0) {
+            if (*errnoAddress() == 4) {
+                continue;
+            }
+            return stdlib.Result<void, RandomError>.Err(RandomError.SystemFailure);
+        }
+        if (count == 0) {
+            return stdlib.Result<void, RandomError>.Err(RandomError.SystemFailure);
+        }
+        offset += count.(usize);
+    }
+    return stdlib.Result<void, RandomError>.Ok;
+}

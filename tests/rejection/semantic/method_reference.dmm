@@ -1,10 +1,14 @@
 package main;
+
 struct Node {
-    var next:*Node;
-    func Next() -> *Node { return next; }
+    var next: *Node;
+    func Next() -> *Node {
+        return next;
+    }
 }
+
 func main() -> int {
-    var node:Node;
+    var node: Node;
     var node3 = node.Next;
     return 0;
 }

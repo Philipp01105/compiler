@@ -1,4 +1,19 @@
 package main;
-interface Equal { func equal(other:Self) -> bit; }
-struct Number { var value:int; func equal(other:Self) -> bit { return value == other.value; } }
-func main() -> void { var values:Equal[1]; var number:Number; values[0] = number; values[0].equal(number); }
+
+interface Equal {
+    func equal(other: Self) -> bit;
+}
+
+struct Number {
+    var value: int;
+    func equal(other: Self) -> bit {
+        return value == other.value;
+    }
+}
+
+func main() -> void {
+    var values: Equal[1];
+    var number: Number;
+    values[0] = number;
+    values[0].equal(number);
+}

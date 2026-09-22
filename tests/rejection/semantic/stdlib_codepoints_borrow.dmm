@@ -1,0 +1,14 @@
+package main;
+import (
+    "stdlib"
+    "stdlib/unicode"
+);
+
+func main() -> int {
+    var owner = stdlib.bytes(8);
+    owner.push(65);
+    var iterator = unicode.iterate(owner.view());
+    owner.clear();
+    var next = iterator.next();
+    return 0;
+}

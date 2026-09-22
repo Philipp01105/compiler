@@ -1,3 +1,6 @@
 package main;
-const value:int = 3;
-func main() -> void { var pointer:*int = &value; }
+const value: int = 3;
+
+func main() -> void {
+    var pointer: *int = &value;
+}

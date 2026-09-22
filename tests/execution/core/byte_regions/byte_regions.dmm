@@ -1,37 +1,84 @@
 package main;
 import "stdlib/core";
-struct Buffer { var data:*u8; var length:usize; }
-func create_buffer(length:usize) -> Buffer {
-    var buffer:Buffer;
+
+struct Buffer {
+    var data: *u8;
+    var length: usize;
+}
+
+func create_buffer(length: usize) -> Buffer {
+    var buffer: Buffer;
     buffer.data = core.core_alloc(length);
     buffer.length = length;
-    if (buffer.data == core.core_null()) { core.core_trap(); }
+    if (buffer.data == core.core_null()) {
+        core.core_trap();
+    }
     core.core_fill(buffer.data, 0, length);
     return buffer;
 }
+
 func main() -> int {
-    var buffer:Buffer = create_buffer(8);
+    var buffer: Buffer = create_buffer(8);
     core.core_copy(buffer.data, core.core_string_data("abcdef"), 6);
     // Overlap in both directions, then typed byte loads/stores.
     core.core_copy(core.core_offset(buffer.data, 1), buffer.data, 5);
     core.core_copy(buffer.data, core.core_offset(buffer.data, 1), 5);
+    // Negative displacement, identity copy, and a disjoint copy use the same
+    // ordinary DMM implementation as overlap handling.
+    if (core.core_offset(core.core_offset(buffer.data, 5), -5) != buffer.data) {
+        return 10;
+    }
+    core.core_copy(buffer.data, buffer.data, 5);
+    core.core_copy(core.core_offset(buffer.data, 6), buffer.data, 2);
+    if (core.core_load(buffer.data, 6) != 97 || core.core_load(buffer.data, 7) != 98) {
+        return 11;
+    }
     core.core_store(buffer.data, 5, 10);
-    if (core.core_load(buffer.data, 0) != 97 || core.core_load(buffer.data, 4) != 101) { return 1; }
-    if (core.core_write(core.CORE_STDOUT, buffer.data, 6) != 6) { return 2; }
-    if (core.core_string_length("hello") != 5) { return 3; }
-    var fd:int = core.core_open("core_bytes.dat", core.CORE_WRITE_ONLY+core.CORE_CREATE+core.CORE_TRUNCATE, 384);
-    if (fd < 0 || core.core_write(fd, buffer.data, 6) != 6 || core.core_close(fd) != 0) { return 6; }
+    if (core.core_load(buffer.data, 0) != 97 || core.core_load(buffer.data, 4) != 101) {
+        return 1;
+    }
+    if (core.core_write(core.CORE_STDOUT, buffer.data, 6) != 6) {
+        return 2;
+    }
+    if (core.core_string_length("hello") != 5) {
+        return 3;
+    }
+    var fd: int = core.core_open(
+        "core_bytes.dat",
+        core.CORE_WRITE_ONLY + core.CORE_CREATE + core.CORE_TRUNCATE,
+        384
+    );
+    if (fd < 0 || core.core_write(fd, buffer.data, 6) != 6 || core.core_close(fd) != 0) {
+        return 6;
+    }
     fd = core.core_open("core_bytes.dat", core.CORE_READ_ONLY, 0);
-    if (fd < 0) { return 7; }
+    if (fd < 0) {
+        return 7;
+    }
     core.core_fill(buffer.data, 255, buffer.length);
-    if (core.core_read(fd, buffer.data, buffer.length) != 6 || core.core_read(fd, buffer.data, 1) != 0) { return 8; }
-    if (core.core_close(fd) != 0 || core.core_load(buffer.data, 5) != 10 || core.core_load(buffer.data, 6) != 255) { return 9; }
-    if (core.core_close(-1) >= 0) { return 4; }
-    var empty:*u8 = core.core_null();
+    if (
+        core.core_read(fd, buffer.data, buffer.length) != 6 ||
+        core.core_read(fd, buffer.data, 1) != 0
+    ) {
+        return 8;
+    }
+    if (
+        core.core_close(fd) != 0 ||
+        core.core_load(buffer.data, 5) != 10 ||
+        core.core_load(buffer.data, 6) != 255
+    ) {
+        return 9;
+    }
+    if (core.core_close(-1) >= 0) {
+        return 4;
+    }
+    var empty: *u8 = core.core_null();
     core.core_copy(empty, empty, 0);
     core.core_fill(empty, 255, 0);
     core.core_release(empty);
-    if (core.core_alloc((-1).(usize)) != empty) { return 5; }
+    if (core.core_alloc((-1).(usize)) != empty) {
+        return 5;
+    }
     core.core_release(buffer.data);
     return 0;
 }

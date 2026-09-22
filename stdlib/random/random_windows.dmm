@@ -1,0 +1,29 @@
+package random;
+import (
+    "stdlib"
+);
+extern "system" from "bcrypt" {
+    func BCryptGenRandom(provider: *void, buffer: *u8, length: u32, flags: u32) -> i32;
+    union Pointer {
+        var address: *void;
+        var bits: usize;
+    }
+}
+
+func nativeSystemFill(output: &mut u8[]) -> stdlib.Result<void, RandomError> {
+    var nil: Pointer;
+    var offset: usize = 0;
+    while (offset < (*output).length) {
+        var count: usize = (*output).length - offset;
+        if (count > 4294967295.(usize)) {
+            count = 4294967295.(usize);
+        }
+        if (
+            BCryptGenRandom(nil.address, (&(*output)[offset]).(*u8), count.(u32), 2) != 0
+        ) {
+            return stdlib.Result<void, RandomError>.Err(RandomError.SystemFailure);
+        }
+        offset += count;
+    }
+    return stdlib.Result<void, RandomError>.Ok;
+}

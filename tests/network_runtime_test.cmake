@@ -49,7 +49,7 @@ foreach(level 0 1)
             else()
                 set(language -x none)
             endif()
-            execute_process(COMMAND "${ASSEMBLER}" ${language} "${artifact}.${emit}" -x none "${SHIM}" ${link_flag} ${system_library} -o "${artifact}.exe"
+            execute_process(COMMAND "${ASSEMBLER}" ${language} "${artifact}.${emit}" -x none ${link_flag} ${system_library} -o "${artifact}.exe"
                 RESULT_VARIABLE status ERROR_VARIABLE errors TIMEOUT 30)
             if(NOT status EQUAL 0)
                 message(FATAL_ERROR "Network manual link: ${errors}")
@@ -84,7 +84,7 @@ execute_process(COMMAND "${work}/network space.exe" RESULT_VARIABLE status TIMEO
 if(NOT status EQUAL 0)
     message(FATAL_ERROR "Network override execution: ${status}")
 endif()
-foreach(bad_shim "${work}/missing.o" "${shim_directory}/platform-shim.o")
+foreach(bad_shim "${work}/missing.o")
     file(WRITE "${work}/preserved.exe" "existing output")
     execute_process(COMMAND "${COMPILER}" "${work}/loopback/main.dmm" --linker-driver "${ASSEMBLER}"
         --runtime-shim "${bad_shim}" -o "${work}/preserved.exe" RESULT_VARIABLE status ERROR_VARIABLE errors)
@@ -94,7 +94,7 @@ foreach(bad_shim "${work}/missing.o" "${shim_directory}/platform-shim.o")
     endif()
 endforeach()
 file(SHA256 "${SHIM}" shim_before)
-execute_process(COMMAND "${COMPILER}" "${work}/loopback/main.dmm" --dump-ast "${SHIM}"
+execute_process(COMMAND "${COMPILER}" "${work}/loopback/main.dmm" --runtime-shim "${SHIM}" --dump-ast "${SHIM}"
     --linker-driver "${ASSEMBLER}" -o "${work}/collision.exe" RESULT_VARIABLE status ERROR_VARIABLE errors)
 file(SHA256 "${SHIM}" shim_after)
 if(status EQUAL 0 OR NOT shim_before STREQUAL shim_after)

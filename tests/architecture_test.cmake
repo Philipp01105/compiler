@@ -75,3 +75,28 @@ foreach (native_file native/encoder.c native/object.c native/linker.c backend.c)
         message(FATAL_ERROR "native backend invokes an external build process")
     endif ()
 endforeach ()
+
+# Library algorithms must not regain compiler-recognized source names.
+file(READ "${ROOT}/src/common/core_intrinsics.h" core_intrinsics)
+file(READ "${ROOT}/stdlib/core/raw/memory.dmm" raw_memory)
+file(READ "${ROOT}/stdlib/core/atomic.dmm" atomic_library)
+if (core_intrinsics MATCHES "__dmm_intrinsic_(null|offset|copy|fill|atomic_)" OR
+    raw_memory MATCHES "__dmm_intrinsic_(null|offset|copy|fill)" OR
+    atomic_library MATCHES "__dmm_intrinsic_")
+    message(FATAL_ERROR "stdlib byte/atomic operations regained compiler call-name magic")
+endif ()
+if (EXISTS "${ROOT}/src/runtime/platform" OR
+    NOT EXISTS "${ROOT}/stdlib/native/threading/threading_linux.dmm" OR
+    NOT EXISTS "${ROOT}/stdlib/native/threading/threading_windows.dmm")
+    message(FATAL_ERROR "thread/event adapters must live in stdlib")
+endif ()
+
+file(READ "${ROOT}/src/driver/external_link.c" external_link)
+file(READ "${ROOT}/stdlib/core/net/bindings.dmm" net_calls)
+if (external_link MATCHES "default_shim_profile" OR net_calls MATCHES "from \"dmm_network\"")
+    message(FATAL_ERROR "precompiled runtime lookup or native network package boundary returned")
+endif ()
+if (EXISTS "${ROOT}/stdlib/runtime" OR EXISTS "${ROOT}/stdlib/core/executor/runtime" OR
+    EXISTS "${ROOT}/stdlib/core/net/runtime" OR EXISTS "${ROOT}/src/runtime/native_threads.inc")
+    message(FATAL_ERROR "stdlib package or production thread implementation retained an obsolete runtime location")
+endif ()

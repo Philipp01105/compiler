@@ -140,39 +140,59 @@ if (NOT MSVC)
     else ()
         set(DMM_SHIM_FORMAT elf)
     endif ()
+    # Optional native component artifacts exist for ABI tests; applications
+    # compile the stdlib runtime packages directly. They are never installed.
     file(GLOB_RECURSE DMM_PLATFORM_SOURCES CONFIGURE_DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/platform/*"
+        "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/native/threading/*"
         "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/native/*.dmm")
     set(DMM_PLATFORM_OBJECT "${CMAKE_CURRENT_BINARY_DIR}/dmm-runtime/${DMM_SHIM_FORMAT}/platform-shim.o")
+    set(DMM_PLATFORM_COMPONENT "${CMAKE_CURRENT_BINARY_DIR}/dmm-runtime/${DMM_SHIM_FORMAT}/platform.o")
+    set(DMM_EXECUTOR_COMPONENT "${CMAKE_CURRENT_BINARY_DIR}/dmm-runtime/${DMM_SHIM_FORMAT}/executor.o")
+    file(GLOB DMM_EXECUTOR_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/core/executor/*")
     set(DMM_NETWORK_OBJECT "${CMAKE_CURRENT_BINARY_DIR}/dmm-runtime/${DMM_SHIM_FORMAT}/network-shim.a")
     add_custom_command(OUTPUT "${DMM_PLATFORM_OBJECT}"
-        BYPRODUCTS "${DMM_PLATFORM_OBJECT}.link"
+        BYPRODUCTS "${DMM_PLATFORM_OBJECT}.link" "${DMM_PLATFORM_COMPONENT}" "${DMM_EXECUTOR_COMPONENT}" "${DMM_EXECUTOR_COMPONENT}.link"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/dmm-runtime/${DMM_SHIM_FORMAT}"
         COMMAND $<TARGET_FILE:compiler> --runtime-component -O1 --target=${DMM_SHIM_FORMAT}
             --dump-native-link "${DMM_PLATFORM_OBJECT}.link"
-            -o "${DMM_PLATFORM_OBJECT}" "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/platform/platform.dmm"
-        DEPENDS compiler ${DMM_PLATFORM_SOURCES}
+            -o "${DMM_PLATFORM_COMPONENT}" "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/native/threading/threading.dmm"
+        COMMAND $<TARGET_FILE:compiler> --runtime-component -O1 --target=${DMM_SHIM_FORMAT}
+            --dump-native-link "${DMM_EXECUTOR_COMPONENT}.link"
+            -o "${DMM_EXECUTOR_COMPONENT}" "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/core/executor/executor.dmm"
+        COMMAND ${CMAKE_COMMAND} -E rm -f "${DMM_PLATFORM_OBJECT}"
+        COMMAND ${CMAKE_AR} qc "${DMM_PLATFORM_OBJECT}" "${DMM_PLATFORM_COMPONENT}" "${DMM_EXECUTOR_COMPONENT}"
+        COMMAND ${CMAKE_RANLIB} "${DMM_PLATFORM_OBJECT}"
+        COMMAND ${CMAKE_COMMAND} "-DINPUT1=${DMM_PLATFORM_OBJECT}.link" "-DINPUT2=${DMM_EXECUTOR_COMPONENT}.link"
+            "-DOUTPUT=${DMM_PLATFORM_OBJECT}.link" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/runtime_bundle_inventory.cmake"
+        DEPENDS compiler ${DMM_PLATFORM_SOURCES} ${DMM_EXECUTOR_SOURCES} cmake/runtime_bundle_inventory.cmake
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
         VERBATIM)
-    add_custom_target(dmm_platform_runtime ALL DEPENDS "${DMM_PLATFORM_OBJECT}")
+    add_custom_target(dmm_platform_runtime DEPENDS "${DMM_PLATFORM_OBJECT}")
     set_source_files_properties("${DMM_PLATFORM_OBJECT}" PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
-    install(FILES "${DMM_PLATFORM_OBJECT}" "${DMM_PLATFORM_OBJECT}.link"
-        DESTINATION bin/dmm-runtime/${DMM_SHIM_FORMAT})
-    add_library(dmm_network_shim OBJECT src/runtime/network_shim.c)
-    target_compile_options(dmm_network_shim PRIVATE -Wall -Wextra -Wpedantic)
-    if (DMM_STRICT_WARNINGS)
-        target_compile_options(dmm_network_shim PRIVATE -Wconversion -Wshadow -Werror)
-    endif ()
-    target_compile_definitions(dmm_network_shim PRIVATE _GNU_SOURCE _XOPEN_SOURCE=700)
+    set_source_files_properties("${DMM_PLATFORM_COMPONENT}" PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
+    file(GLOB DMM_NETWORK_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/core/net/internal/*")
+    set(DMM_NETWORK_COMPONENT "${CMAKE_CURRENT_BINARY_DIR}/dmm-runtime/${DMM_SHIM_FORMAT}/network.o")
+    add_custom_command(OUTPUT "${DMM_NETWORK_COMPONENT}"
+        BYPRODUCTS "${DMM_NETWORK_COMPONENT}.link"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/dmm-runtime/${DMM_SHIM_FORMAT}"
+        COMMAND $<TARGET_FILE:compiler> --runtime-component -O1 --target=${DMM_SHIM_FORMAT}
+            --dump-native-link "${DMM_NETWORK_COMPONENT}.link"
+            -o "${DMM_NETWORK_COMPONENT}" "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/core/net/internal/network.dmm"
+        DEPENDS compiler ${DMM_NETWORK_SOURCES} ${DMM_PLATFORM_SOURCES}
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" VERBATIM)
+    add_custom_target(dmm_network_component DEPENDS "${DMM_NETWORK_COMPONENT}")
+    set_source_files_properties("${DMM_NETWORK_COMPONENT}" PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
     add_custom_command(OUTPUT "${DMM_NETWORK_OBJECT}"
+        BYPRODUCTS "${DMM_NETWORK_OBJECT}.link"
         COMMAND ${CMAKE_COMMAND} -E rm -f "${DMM_NETWORK_OBJECT}"
-        COMMAND ${CMAKE_AR} qc "${DMM_NETWORK_OBJECT}" $<TARGET_OBJECTS:dmm_network_shim> "${DMM_PLATFORM_OBJECT}"
+        COMMAND ${CMAKE_AR} qc "${DMM_NETWORK_OBJECT}" "${DMM_NETWORK_COMPONENT}" "${DMM_PLATFORM_COMPONENT}" "${DMM_EXECUTOR_COMPONENT}"
         COMMAND ${CMAKE_RANLIB} "${DMM_NETWORK_OBJECT}"
-        DEPENDS dmm_network_shim $<TARGET_OBJECTS:dmm_network_shim> "${DMM_PLATFORM_OBJECT}"
+        COMMAND ${CMAKE_COMMAND} "-DINPUT1=${DMM_PLATFORM_OBJECT}.link" "-DINPUT2=${DMM_NETWORK_COMPONENT}.link"
+            "-DOUTPUT=${DMM_NETWORK_OBJECT}.link" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/runtime_bundle_inventory.cmake"
+        DEPENDS "${DMM_NETWORK_COMPONENT}" "${DMM_PLATFORM_OBJECT}"
         COMMAND_EXPAND_LISTS VERBATIM)
-    add_custom_target(dmm_network_runtime ALL DEPENDS "${DMM_NETWORK_OBJECT}")
+    add_custom_target(dmm_network_runtime DEPENDS "${DMM_NETWORK_OBJECT}")
     add_dependencies(dmm_network_runtime dmm_platform_runtime)
-    install(FILES "${DMM_NETWORK_OBJECT}" DESTINATION bin/dmm-runtime/${DMM_SHIM_FORMAT})
 endif ()
 add_custom_command(TARGET compiler POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -238,9 +258,14 @@ endif ()
 
 include(CTest)
 if (BUILD_TESTING)
+    add_test(NAME stdlib_package_contract COMMAND ${CMAKE_COMMAND}
+        -DCOMPILER=$<TARGET_FILE:compiler> -DASSEMBLER=${CMAKE_C_COMPILER}
+        -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/stdlib_package_test
+        -P ${CMAKE_SOURCE_DIR}/tests/stdlib_package_test.cmake)
+    set_tests_properties(stdlib_package_contract PROPERTIES LABELS "integration;runtime;async;network;ffi;safety" TIMEOUT 240)
     if (TARGET dmm_platform_runtime)
         find_package(Threads REQUIRED)
-        add_executable(dmm_platform_shim_test tests/unit/platform_shim_test.c "${DMM_PLATFORM_OBJECT}")
+        add_executable(dmm_platform_shim_test tests/unit/platform_shim_test.c "${DMM_PLATFORM_COMPONENT}")
         add_dependencies(dmm_platform_shim_test dmm_platform_runtime)
         target_include_directories(dmm_platform_shim_test PRIVATE ${DMM_INCLUDE_DIRS})
         target_link_libraries(dmm_platform_shim_test PRIVATE Threads::Threads)
@@ -258,7 +283,7 @@ if (BUILD_TESTING)
         set_tests_properties(runtime_component_contract PROPERTIES
             LABELS "integration;runtime;platform;ffi;safety;abi" TIMEOUT 180)
         add_executable(dmm_network_shim_test tests/unit/network_shim_test.c
-            src/runtime/network_shim.c "${DMM_PLATFORM_OBJECT}")
+            tests/fixtures/network_runtime_reference.c "${DMM_PLATFORM_COMPONENT}")
         add_dependencies(dmm_network_shim_test dmm_platform_runtime)
         target_include_directories(dmm_network_shim_test PRIVATE ${DMM_INCLUDE_DIRS})
         target_compile_definitions(dmm_network_shim_test PRIVATE _GNU_SOURCE _XOPEN_SOURCE=700 DMM_NET_TESTING)
@@ -272,6 +297,47 @@ if (BUILD_TESTING)
         endif()
         add_test(NAME network_shim_unit COMMAND dmm_network_shim_test)
         set_tests_properties(network_shim_unit PROPERTIES LABELS "unit;runtime;network;safety" TIMEOUT 30)
+        set(DMM_NETWORK_TEST_DIR "${CMAKE_CURRENT_BINARY_DIR}/network_dmm_package")
+        file(MAKE_DIRECTORY "${DMM_NETWORK_TEST_DIR}")
+        file(REMOVE "${DMM_NETWORK_TEST_DIR}/runtime.dmm" "${DMM_NETWORK_TEST_DIR}/runtime_linux.dmm" "${DMM_NETWORK_TEST_DIR}/runtime_windows.dmm")
+        # The independent C race harness supplies its own executor/I/O probes.
+        # Isolate those test dependencies; production packages call DMM directly.
+        include(tests/network/runtime_test_dependencies.cmake)
+        foreach(source IN LISTS DMM_NETWORK_SOURCES)
+            get_filename_component(name "${source}" NAME)
+            dmm_network_test_source("${source}" "${DMM_NETWORK_TEST_DIR}/${name}")
+        endforeach()
+        file(WRITE "${DMM_NETWORK_TEST_DIR}/dmm.manifest" "module runtime.test/network\ndmm 2026-09-22-dev\n")
+        configure_file(tests/network/runtime_dependencies.dmm "${DMM_NETWORK_TEST_DIR}/dependencies.dmm" COPYONLY)
+        configure_file(tests/network/runtime_instrumentation.dmm "${DMM_NETWORK_TEST_DIR}/instrumentation.dmm" COPYONLY)
+        foreach(target linux windows)
+            configure_file("tests/network/runtime_testing_${target}.dmm" "${DMM_NETWORK_TEST_DIR}/testing_${target}.dmm" COPYONLY)
+        endforeach()
+        file(GLOB DMM_NETWORK_TEST_SOURCES "${DMM_NETWORK_TEST_DIR}/*")
+        set(DMM_NETWORK_TEST_OBJECT "${CMAKE_CURRENT_BINARY_DIR}/network-testing.o")
+        add_custom_command(OUTPUT "${DMM_NETWORK_TEST_OBJECT}"
+            COMMAND $<TARGET_FILE:compiler> --runtime-component -O1 --target=${DMM_SHIM_FORMAT}
+                -o "${DMM_NETWORK_TEST_OBJECT}" "${DMM_NETWORK_TEST_DIR}/network.dmm"
+            DEPENDS compiler ${DMM_NETWORK_TEST_SOURCES} ${DMM_PLATFORM_SOURCES}
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" VERBATIM)
+        set_source_files_properties("${DMM_NETWORK_TEST_OBJECT}" PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
+        add_executable(dmm_network_dmm_test tests/unit/network_shim_test.c "${DMM_NETWORK_TEST_OBJECT}" "${DMM_PLATFORM_COMPONENT}")
+        add_dependencies(dmm_network_dmm_test dmm_platform_runtime)
+        target_include_directories(dmm_network_dmm_test PRIVATE ${DMM_INCLUDE_DIRS})
+        target_compile_definitions(dmm_network_dmm_test PRIVATE _GNU_SOURCE _XOPEN_SOURCE=700)
+        target_link_libraries(dmm_network_dmm_test PRIVATE Threads::Threads)
+        if(WIN32)
+            target_link_libraries(dmm_network_dmm_test PRIVATE ws2_32)
+        endif()
+        add_test(NAME network_dmm_unit COMMAND dmm_network_dmm_test)
+        set_tests_properties(network_dmm_unit PROPERTIES LABELS "unit;runtime;network;ffi;safety" TIMEOUT 30)
+        add_test(NAME stdlib_component_contract COMMAND ${CMAKE_COMMAND}
+            -DCOMPILER=$<TARGET_FILE:compiler> -DC_DRIVER=${CMAKE_C_COMPILER} -DNM=${CMAKE_NM}
+            -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DTEST_PACKAGE=${DMM_NETWORK_TEST_DIR}
+            -DPLATFORM_COMPONENT=${DMM_PLATFORM_COMPONENT}
+            -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/stdlib_component_test
+            -P ${CMAKE_SOURCE_DIR}/tests/stdlib_component_test.cmake)
+        set_tests_properties(stdlib_component_contract PROPERTIES LABELS "integration;runtime;network;async;ffi;safety;abi" TIMEOUT 180)
         add_test(NAME network_runtime_contract COMMAND ${CMAKE_COMMAND}
             -DCOMPILER=$<TARGET_FILE:compiler> -DASSEMBLER=${CMAKE_C_COMPILER}
             -DSHIM=${DMM_NETWORK_OBJECT}
@@ -346,7 +412,7 @@ if (BUILD_TESTING)
     add_test(NAME async_semantic_unit COMMAND dmm_async_semantic_test)
     set_tests_properties(async_semantic_unit PROPERTIES LABELS "unit;frontend;sema;async;safety")
     find_package(Threads REQUIRED)
-    add_executable(dmm_executor_test tests/unit/executor_test.c src/runtime/executor.c)
+    add_executable(dmm_executor_test tests/unit/executor_test.c tests/fixtures/executor_reference.c)
     target_include_directories(dmm_executor_test PRIVATE ${DMM_INCLUDE_DIRS})
     target_link_libraries(dmm_executor_test PRIVATE Threads::Threads)
     add_test(NAME executor_runtime_unit COMMAND dmm_executor_test)
@@ -396,6 +462,7 @@ if (BUILD_TESTING)
             "C compiler used to assemble and link generated code")
     add_test(NAME async_runtime_contract COMMAND ${CMAKE_COMMAND}
             -DCOMPILER=$<TARGET_FILE:compiler> -DASSEMBLER=${DMM_ASSEMBLER}
+            -DSHIM=${DMM_PLATFORM_OBJECT}
             -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/async_runtime_test
             -P ${CMAKE_SOURCE_DIR}/tests/async_runtime_test.cmake)
     set_tests_properties(async_runtime_contract PROPERTIES LABELS "integration;async;ir;backend;execution;safety")
@@ -421,6 +488,7 @@ if (BUILD_TESTING)
             src/backend/native/object.c
             src/backend/x86_64/instruction.c)
     target_include_directories(dmm_runtime_test PRIVATE ${DMM_INCLUDE_DIRS})
+    target_compile_definitions(dmm_runtime_test PRIVATE DMM_RUNTIME_REFERENCE_EXECUTOR)
 
     add_executable(dmm_native_test
             tests/unit/native_test.c
@@ -476,6 +544,21 @@ if (BUILD_TESTING)
             -P ${CMAKE_SOURCE_DIR}/tests/core_runtime_test.cmake)
     set_tests_properties(core_runtime_contract PROPERTIES
             LABELS "integration;core;runtime;execution;abi;safety")
+    add_test(NAME stdlib_expansion_contract COMMAND ${CMAKE_COMMAND}
+        -DCOMPILER=$<TARGET_FILE:compiler> -DASSEMBLER=${DMM_ASSEMBLER}
+        -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/stdlib_expansion_test
+        -P ${CMAKE_SOURCE_DIR}/tests/stdlib_expansion_test.cmake)
+    set_tests_properties(stdlib_expansion_contract PROPERTIES LABELS "integration;stdlib;ffi;execution;safety" TIMEOUT 300)
+    add_test(NAME stdlib_language_gaps_contract COMMAND ${CMAKE_COMMAND}
+        -DCOMPILER=$<TARGET_FILE:compiler> -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/stdlib_language_gaps_test
+        -P ${CMAKE_SOURCE_DIR}/tests/stdlib_language_gaps_test.cmake)
+    set_tests_properties(stdlib_language_gaps_contract PROPERTIES LABELS "integration;stdlib;execution;safety" TIMEOUT 180)
+    add_test(NAME unicode_conformance_contract COMMAND ${CMAKE_COMMAND}
+        -DCOMPILER=$<TARGET_FILE:compiler> -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/unicode_conformance_test
+        -P ${CMAKE_SOURCE_DIR}/tests/unicode_conformance_test.cmake)
+    set_tests_properties(unicode_conformance_contract PROPERTIES LABELS "integration;stdlib;unicode;execution" TIMEOUT 1300)
     add_test(NAME shared_language_contract
             COMMAND ${CMAKE_COMMAND}
             -DCOMPILER=$<TARGET_FILE:compiler>

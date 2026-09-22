@@ -1,0 +1,70 @@
+package time;
+import (
+    "stdlib"
+);
+
+pub enum TimeError {
+    pub Overflow,
+    pub ClockFailure,
+    pub NegativeDuration,
+}
+
+pub struct Duration {
+    pub var nanoseconds: u64;
+    pub func wholeSeconds() -> u64 {
+        return nanoseconds / 1000000000;
+    }
+
+    pub func subsecondNanos() -> u32 {
+        return (nanoseconds % 1000000000).(u32);
+    }
+}
+
+pub struct Instant {
+    var nanoseconds: u64;
+    pub func since(earlier: Instant) -> stdlib.Result<Duration, TimeError> {
+        if (nanoseconds < earlier.nanoseconds) {
+            return stdlib.Result<Duration, TimeError>.Err(TimeError.NegativeDuration);
+        }
+        return stdlib.Result<Duration, TimeError>.Ok(
+            Duration{ nanoseconds: nanoseconds - earlier.nanoseconds }
+        );
+    }
+}
+
+pub struct SystemTime {
+    pub var seconds: i64;
+    pub var nanoseconds: u32;
+}
+
+pub func now() -> stdlib.Result<Instant, TimeError> {
+    return nativeNow();
+}
+
+pub func systemNow() -> stdlib.Result<SystemTime, TimeError> {
+    return nativeSystemNow();
+}
+
+pub func sleep(duration: Duration) -> stdlib.Result<void, TimeError> {
+    return nativeSleep(duration);
+}
+
+pub func nanoseconds(value: u64) -> Duration {
+    return Duration{ nanoseconds: value };
+}
+
+pub func seconds(value: u64) -> stdlib.Result<Duration, TimeError> {
+    if (value > 18446744073.(u64)) {
+        return stdlib.Result<Duration, TimeError>.Err(TimeError.Overflow);
+    }
+    return stdlib.Result<Duration, TimeError>.Ok(Duration{ nanoseconds: value * 1000000000 });
+}
+
+pub func add(left: Duration, right: Duration) -> stdlib.Result<Duration, TimeError> {
+    if (right.nanoseconds > 18446744073709551615.(u64) - left.nanoseconds) {
+        return stdlib.Result<Duration, TimeError>.Err(TimeError.Overflow);
+    }
+    return stdlib.Result<Duration, TimeError>.Ok(
+        Duration{ nanoseconds: left.nanoseconds + right.nanoseconds }
+    );
+}

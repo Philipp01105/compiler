@@ -1,0 +1,183 @@
+package algorithms;
+import (
+    "stdlib"
+    "stdlib/core"
+);
+
+pub enum RangeError {
+    pub DestinationTooSmall,
+}
+
+pub func copy<T: core.Copy>(source: &T[], destination: &mut T[]) -> stdlib.Result<void, RangeError> {
+    if ((*source).length > (*destination).length) {
+        return stdlib.Result<void, RangeError>.Err(RangeError.DestinationTooSmall);
+    }
+    for (var i: usize = 0; i < (*source).length; i += 1) {
+        (*destination)[i] = (*source)[i];
+    }
+    return stdlib.Result<void, RangeError>.Ok;
+}
+
+pub func fill<T: core.Copy>(destination: &mut T[], value: T) -> void {
+    for (var i: usize = 0; i < (*destination).length; i += 1) {
+        (*destination)[i] = value;
+    }
+}
+
+pub func transform<T: core.Copy, U>(source: &T[], destination: &mut U[], mapper: mut func(T) -> U) -> stdlib.Result<void, RangeError> {
+    if ((*source).length > (*destination).length) {
+        return stdlib.Result<void, RangeError>.Err(RangeError.DestinationTooSmall);
+    }
+    for (var i: usize = 0; i < (*source).length; i += 1) {
+        (*destination)[i] = mapper((*source)[i]);
+    }
+    return stdlib.Result<void, RangeError>.Ok;
+}
+
+pub func fold<T: core.Copy, U>(values: T[], initial: U, combine: mut func(U, T) -> U) -> U {
+    var result: U = initial;
+    for (var i: usize = 0; i < values.length; i += 1) {
+        result = combine(result, values[i]);
+    }
+    return result;
+}
+
+// Element-valued callbacks and swaps require copyable T.
+pub func find<T: core.Copy>(values: T[], predicate: mut func(T) -> bit) -> stdlib.Option<usize> {
+    for (var i: usize = 0; i < values.length; i += 1) {
+        if (predicate(values[i])) {
+            return stdlib.Option<usize>.Some(i);
+        }
+    }
+    return stdlib.Option<usize>.None;
+}
+
+pub func count<T: core.Copy>(values: T[], predicate: mut func(T) -> bit) -> usize {
+    var result: usize = 0;
+    for (var i: usize = 0; i < values.length; i += 1) {
+        if (predicate(values[i])) {
+            result += 1;
+        }
+    }
+    return result;
+}
+
+pub func all<T: core.Copy>(values: T[], predicate: mut func(T) -> bit) -> bit {
+    for (var i: usize = 0; i < values.length; i += 1) {
+        if (!predicate(values[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+pub func any<T: core.Copy>(values: T[], predicate: mut func(T) -> bit) -> bit {
+    for (var i: usize = 0; i < values.length; i += 1) {
+        if (predicate(values[i])) {
+            return true;
+        }
+    }
+    return false;
+}
+
+pub func reverse<T: core.Copy>(values: T[]) -> void {
+    var left: usize = 0;
+    var right: usize = values.length;
+    while (left < right) {
+        right -= 1;
+        if (left >= right) {
+            break;
+        }
+        var temporary: T = values[left];
+        values[left] = values[right];
+        values[right] = temporary;
+        left += 1;
+    }
+}
+
+pub func equal<T: core.Copy>(left: T[], right: T[], same: mut func(T, T) -> bit) -> bit {
+    if (left.length != right.length) {
+        return false;
+    }
+    for (var i: usize = 0; i < left.length; i += 1) {
+        if (!same(left[i], right[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// First position at which less(element, key) is false. Input must be sorted.
+pub func lowerBound<T: core.Copy>(values: T[], key: T, less: mut func(T, T) -> bit) -> usize {
+    var first: usize = 0;
+    var last: usize = values.length;
+    while (first < last) {
+        var middle: usize = first + (last - first) / 2;
+        if (less(values[middle], key)) {
+            first = middle + 1;
+        } else {
+            last = middle;
+        }
+    }
+    return first;
+}
+
+pub func binarySearch<T: core.Copy>(values: T[], key: T, less: mut func(T, T) -> bit) -> stdlib.Option<usize> {
+    var position: usize = 0;
+    var last: usize = values.length;
+    while (position < last) {
+        var middle: usize = position + (last - position) / 2;
+        if (less(values[middle], key)) {
+            position = middle + 1;
+        } else {
+            last = middle;
+        }
+    }
+    if (position < values.length && !less(key, values[position])) {
+        return stdlib.Option<usize>.Some(position);
+    }
+    return stdlib.Option<usize>.None;
+}
+
+// In-place heapsort: O(n log n), constant auxiliary space, not stable.
+pub func sort<T: core.Copy>(values: T[], less: mut func(T, T) -> bit) -> void {
+    var start: usize = values.length / 2;
+    while (start > 0) {
+        start -= 1;
+        var root: usize = start;
+        while (root < values.length / 2) {
+            var child: usize = root * 2 + 1;
+            if (child + 1 < values.length && less(values[child], values[child + 1])) {
+                child += 1;
+            }
+            if (!less(values[root], values[child])) {
+                break;
+            }
+            var swapped: T = values[root];
+            values[root] = values[child];
+            values[child] = swapped;
+            root = child;
+        }
+    }
+    var end: usize = values.length;
+    while (end > 1) {
+        end -= 1;
+        var temporary: T = values[0];
+        values[0] = values[end];
+        values[end] = temporary;
+        var root: usize = 0;
+        while (root < end / 2) {
+            var child: usize = root * 2 + 1;
+            if (child + 1 < end && less(values[child], values[child + 1])) {
+                child += 1;
+            }
+            if (!less(values[root], values[child])) {
+                break;
+            }
+            var swapped: T = values[root];
+            values[root] = values[child];
+            values[child] = swapped;
+            root = child;
+        }
+    }
+}

@@ -1,0 +1,145 @@
+package env;
+import (
+    "stdlib"
+    "stdlib/unicode"
+    raw "stdlib/core/raw"
+);
+extern "system" from "kernel32" {
+    func GetEnvironmentVariableW(name: *u16, value: *u16, size: u32) -> u32;
+    func SetEnvironmentVariableW(name: *u16, value: *u16) -> i32;
+    func GetLastError() -> u32;
+    func SetLastError(error: u32) -> void;
+}
+
+func wide(value: u8[]) -> stdlib.Result<stdlib.List<u16>, EnvError> {
+    var converted = unicode.toUtf16(value);
+    match (converted) {
+        Err(error) => {
+            var kind: ErrorKind = ErrorKind.InvalidValue;
+            if (error.kind == unicode.ErrorKind.OutOfMemory) {
+                kind = ErrorKind.OutOfMemory;
+            }
+            return stdlib.Result<stdlib.List<u16>, EnvError>.Err(failure(kind, 0));
+        }
+        Ok(output) => {
+            if (output.push(0) != stdlib.AllocationError.None) {
+                return stdlib.Result<stdlib.List<u16>, EnvError>.Err(
+                    failure(ErrorKind.OutOfMemory, 0)
+                );
+            }
+            return stdlib.Result<stdlib.List<u16>, EnvError>.Ok(output);
+        }
+    }
+}
+
+func decodeWide(value: *u16, length: usize) -> stdlib.Result<stdlib.Bytes, EnvError> {
+    var decoded = unicode.fromUtf16(slice(value, length));
+    match (decoded) {
+        Err(error) => return stdlib.Result<stdlib.Bytes, EnvError>.Err(
+            failure(ErrorKind.OutOfMemory, 0)
+        );
+        Ok(output) => return stdlib.Result<stdlib.Bytes, EnvError>.Ok(output);
+    }
+}
+
+func nativeGet(name: u8[]) -> stdlib.Result<stdlib.Bytes, EnvError> {
+    if (!validName(name)) {
+        return stdlib.Result<stdlib.Bytes, EnvError>.Err(failure(ErrorKind.InvalidName, 0));
+    }
+    var converted = wide(name);
+    match (converted) {
+        Err(error) => return stdlib.Result<stdlib.Bytes, EnvError>.Err(error);
+        Ok(key) => {
+            var view: u16[] = key.view();
+            for (var attempt: usize = 0; attempt < 8; attempt += 1) {
+                SetLastError(0);
+                var count: u32 = GetEnvironmentVariableW(view.data, raw.null<u16>(), 0);
+                if (count == 0) {
+                    var code: u32 = GetLastError();
+                    if (code == 203) {
+                        return stdlib.Result<stdlib.Bytes, EnvError>.Err(
+                            failure(ErrorKind.Missing, 203)
+                        );
+                    }
+                    if (code != 0) {
+                        return stdlib.Result<stdlib.Bytes, EnvError>.Err(
+                            failure(ErrorKind.System, code.(isize))
+                        );
+                    }
+                    return stdlib.Result<stdlib.Bytes, EnvError>.Ok(stdlib.bytes(0));
+                }
+                var data: u16[] = raw.alloc<u16>(count);
+                if (data.length == 0) {
+                    return stdlib.Result<stdlib.Bytes, EnvError>.Err(
+                        failure(ErrorKind.OutOfMemory, 0)
+                    );
+                }
+                SetLastError(0);
+                var read: u32 = GetEnvironmentVariableW(view.data, data.data, count);
+                if (read >= count) {
+                    raw.release(data);
+                    continue;
+                }
+                if (read == 0 && GetLastError() != 0) {
+                    var code: u32 = GetLastError();
+                    raw.release(data);
+                    return stdlib.Result<stdlib.Bytes, EnvError>.Err(
+                        failure(ErrorKind.System, code.(isize))
+                    );
+                }
+                var output = decodeWide(data.data, read.(usize));
+                raw.release(data);
+                return output;
+            }
+            return stdlib.Result<stdlib.Bytes, EnvError>.Err(failure(ErrorKind.System, 0));
+        }
+    }
+}
+
+func nativeSet(name: u8[], value: u8[]) -> stdlib.Result<void, EnvError> {
+    if (!validName(name)) {
+        return stdlib.Result<void, EnvError>.Err(failure(ErrorKind.InvalidName, 0));
+    }
+    if (!validValue(value)) {
+        return stdlib.Result<void, EnvError>.Err(failure(ErrorKind.InvalidValue, 0));
+    }
+    var a = wide(name);
+    match (a) {
+        Err(error) => return stdlib.Result<void, EnvError>.Err(error);
+        Ok(key) => {
+            var b = wide(value);
+            match (b) {
+                Err(error) => return stdlib.Result<void, EnvError>.Err(error);
+                Ok(data) => {
+                    var av: u16[] = key.view();
+                    var bv: u16[] = data.view();
+                    if (SetEnvironmentVariableW(av.data, bv.data) == 0) {
+                        return stdlib.Result<void, EnvError>.Err(
+                            failure(ErrorKind.System, GetLastError().(isize))
+                        );
+                    }
+                    return stdlib.Result<void, EnvError>.Ok;
+                }
+            }
+        }
+    }
+}
+
+func nativeRemove(name: u8[]) -> stdlib.Result<void, EnvError> {
+    if (!validName(name)) {
+        return stdlib.Result<void, EnvError>.Err(failure(ErrorKind.InvalidName, 0));
+    }
+    var converted = wide(name);
+    match (converted) {
+        Err(error) => return stdlib.Result<void, EnvError>.Err(error);
+        Ok(key) => {
+            var view: u16[] = key.view();
+            if (SetEnvironmentVariableW(view.data, raw.null<u16>()) == 0) {
+                return stdlib.Result<void, EnvError>.Err(
+                    failure(ErrorKind.System, GetLastError().(isize))
+                );
+            }
+            return stdlib.Result<void, EnvError>.Ok;
+        }
+    }
+}

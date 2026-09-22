@@ -1,3 +1,11 @@
 package main;
-func use(values:float[2]) -> float { return values[0]; }
-func main() -> int { var values:double[2]; use(values); return 0; }
+
+func use(values: float[2]) -> float {
+    return values[0];
+}
+
+func main() -> int {
+    var values: double[2];
+    use(values);
+    return 0;
+}

@@ -1,3 +1,8 @@
 package main;
 import "stdlib";
-func main() -> void { if ("yes") { stdlib.println(1); } }
+
+func main() -> void {
+    if ("yes") {
+        stdlib.println(1);
+    }
+}

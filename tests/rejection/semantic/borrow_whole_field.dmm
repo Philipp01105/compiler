@@ -1,10 +1,15 @@
 package main;
-struct Pair { var first:int; var second:int; }
+
+struct Pair {
+    var first: int;
+    var second: int;
+}
+
 func main() -> int {
-    var pair:Pair;
-    var field=&mut pair.first;
-    var whole=&mut pair;
-    *field=1;
-    whole.first=2;
+    var pair: Pair;
+    var field = &mut pair.first;
+    var whole = &mut pair;
+    *field = 1;
+    whole.first = 2;
     return 0;
 }

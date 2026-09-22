@@ -1,5 +1,9 @@
 package main;
+
 func main() -> int {
-    defer func() { return; }
+    defer func() {
+        return;
+    }
+
     return 0;
 }

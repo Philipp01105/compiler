@@ -1,0 +1,4 @@
+# Pinned Unicode data and generated artifacts must be reproducible on both hosts.
+stdlib/unicode/data/** text eol=lf
+stdlib/unicode/tables.dmm text eol=lf
+tests/unicode/*.bin -text

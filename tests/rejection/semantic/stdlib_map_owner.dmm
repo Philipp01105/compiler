@@ -1,0 +1,23 @@
+package main;
+import (
+    "stdlib"
+);
+
+struct Resource {
+    var value: i32;
+    destructor {}
+}
+
+func value(resource: Resource) -> i32 {
+    return resource.value;
+}
+
+func main() -> int {
+    var owner = stdlib.Option<Resource>.Some(Resource{value: 42});
+    var result = stdlib.mapOption<Resource, i32>(
+        owner,
+        value
+    );
+    var again = stdlib.mapOption<Resource, i32>(owner, value);
+    return 0;
+}

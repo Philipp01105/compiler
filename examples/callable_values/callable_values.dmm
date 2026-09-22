@@ -1,28 +1,36 @@
 package main;
 import "stdlib";
 
-func increment(value:int) -> int { return value+1; }
-func twice(value:int) -> int { return value*2; }
-func identity<T>(value:T) -> T { return value; }
+func increment(value: int) -> int {
+    return value + 1;
+}
 
-func retain(callable:func<X>(X) -> X) -> func<Y>(Y) -> Y {
+func twice(value: int) -> int {
+    return value * 2;
+}
+
+func identity<T>(value: T) -> T {
+    return value;
+}
+
+func retain(callable: func<X>(X) -> X) -> func<Y>(Y) -> Y {
     return callable;
 }
 
 struct Pipeline {
-    var first:func(int) -> int;
-    var second:func(int) -> int;
+    var first: func(int) -> int;
+    var second: func(int) -> int;
 
-    func run(value:int) -> int {
+    func run(value: int) -> int {
         return second(first(value));
     }
 }
 
 struct Counter {
-    var value:int;
+    var value: int;
 
-    func add(amount:int) -> int {
-        return value+amount;
+    func add(amount: int) -> int {
+        return value + amount;
     }
 }
 
@@ -31,42 +39,50 @@ enum OptionalOperation {
     Some(func(int) -> int),
 }
 
-func choose(doubling:bit) -> func(int) -> int {
-    if (doubling) { return twice; }
+func choose(doubling: bit) -> func(int) -> int {
+    if (doubling) {
+        return twice;
+    }
     return increment;
 }
 
 func main() -> int {
-    var pipeline:Pipeline;
-    pipeline.first=increment;
-    pipeline.second=choose(true);
+    var pipeline: Pipeline;
+    pipeline.first = increment;
+    pipeline.second = choose(true);
 
     // Function values can also live in arrays and enum payloads.
-    var operations:(func(int) -> int)[2]=[increment,twice];
-    var optional:OptionalOperation=OptionalOperation.Some(operations[1]);
-    var selected:func(int) -> int=optional.Some();
+    var operations:(func(int) -> int)[2] = [increment, twice];
+    var optional: OptionalOperation = OptionalOperation.Some(operations[1]);
+    var selected: func(int) -> int = optional.Some();
 
     // Generic callable identities remain compile-time values until specialized.
-    var generic=retain(identity);
-    var integerIdentity:func(int) -> int=identity<int>;
-    var integer:int=generic(42);
-    var text:string=generic("polymorphic callable");
+    var generic = retain(identity);
+    var integerIdentity: func(int) -> int = identity<int>;
+    var integer: int = generic(42);
+    var text: string = generic("polymorphic callable");
 
     // A method name produces an unbound callable whose first argument is self.
-    var counter:Counter;
-    counter.value=40;
-    var add:func(*Counter,int) -> int=Counter.add;
+    var counter: Counter;
+    counter.value = 40;
+    var add: func(*Counter, int) -> int = Counter.add;
 
-    var piped:int=pipeline.run(20);
-    var selectedResult:int=selected(21);
-    var methodResult:int=add((&counter).(*Counter),2);
+    var piped: int = pipeline.run(20);
+    var selectedResult: int = selected(21);
+    var methodResult: int = add((&counter).(*Counter), 2);
     stdlib.println(piped);
     stdlib.println(selectedResult);
     stdlib.println(methodResult);
     stdlib.println(text);
 
-    if (piped != 42 || selectedResult != 42 || methodResult != 42) { return 1; }
-    if (operations[0] != increment || selected != twice) { return 2; }
-    if (integer != 42 || integerIdentity(42) != 42 || text != "polymorphic callable") { return 3; }
+    if (piped != 42 || selectedResult != 42 || methodResult != 42) {
+        return 1;
+    }
+    if (operations[0] != increment || selected != twice) {
+        return 2;
+    }
+    if (integer != 42 || integerIdentity(42) != 42 || text != "polymorphic callable") {
+        return 3;
+    }
     return 0;
 }

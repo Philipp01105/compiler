@@ -1,7 +1,8 @@
 package main;
 import "stdlib/core";
+
 func main() -> int {
-    var counter=core.atomicUsize(1.(usize));
-    var moved=counter;
-    return counter.load().(int)+moved.load().(int);
+    var counter = core.atomicUsize(1.(usize));
+    var moved = counter;
+    return counter.load().(int) + moved.load().(int);
 }

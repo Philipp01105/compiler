@@ -2,7 +2,7 @@ package main;
 import "stdlib";
 
 interface Measurable {
-    func measure(scale:int) -> int;
+    func measure(scale: int) -> int;
 }
 
 interface Named {
@@ -10,40 +10,52 @@ interface Named {
 }
 
 struct Width {
-    var value:int;
+    var value: int;
 
-    func measure(scale:int) -> int { return value*scale; }
-    func label() -> string { return "width"; }
+    func measure(scale: int) -> int {
+        return value * scale;
+    }
+
+    func label() -> string {
+        return "width";
+    }
 }
 
 struct Rectangle {
-    var width:int;
-    var height:int;
+    var width: int;
+    var height: int;
 
-    func measure(scale:int) -> int { return width*height*scale; }
-    func label() -> string { return "rectangle"; }
+    func measure(scale: int) -> int {
+        return width * height * scale;
+    }
+
+    func label() -> string {
+        return "rectangle";
+    }
 }
 
 struct Box<T> {
-    var value:T;
+    var value: T;
 }
 
-func identity<T>(value:T) -> T { return value; }
+func identity<T>(value: T) -> T {
+    return value;
+}
 
-func report<T:Measurable+Named>(value:T, scale:int) -> int {
+func report<T: Measurable + Named>(value: T, scale: int) -> int {
     stdlib.println(value.label());
     return value.measure(scale);
 }
 
-func dynamicTotal(values:Measurable[]) -> int {
-    var total:int=0;
-    for (var index:int=0; index < values.length; index+=1) {
-        total+=values[index].measure(1);
+func dynamicTotal(values: Measurable[]) -> int {
+    var total: int = 0;
+    for (var index: int = 0; index < values.length; index += 1) {
+        total += values[index].measure(1);
     }
     return total;
 }
 
-func typeLabel<T>(value:T) -> string {
+func typeLabel<T>(value: T) -> string {
     // Type matches are resolved for each concrete generic specialization.
     match (T) {
         case int -> return "integer specialization";
@@ -52,28 +64,28 @@ func typeLabel<T>(value:T) -> string {
 }
 
 func main() -> int {
-    var number:Box<int>;
-    number.value=42;
-    var copy=identity(number);
+    var number: Box<int>;
+    number.value = 42;
+    var copy = identity(number);
 
-    var width:Width;
-    width.value=3;
-    var rectangle:Rectangle;
-    rectangle.width=4;
-    rectangle.height=5;
+    var width: Width;
+    width.value = 3;
+    var rectangle: Rectangle;
+    rectangle.width = 4;
+    rectangle.height = 5;
 
     // Matching method shapes imply implementation; no separate impl block exists.
-    var values:Measurable[2]=[width,rectangle];
-    var views:Measurable[]=[width,rectangle];
+    var values: Measurable[2] = [width, rectangle];
+    var views: Measurable[] = [width, rectangle];
 
     stdlib.println(copy.value);
-    stdlib.println(report(width,2));
+    stdlib.println(report(width, 2));
     stdlib.println(dynamicTotal(values));
     stdlib.println(dynamicTotal(views));
     stdlib.println(typeLabel(42));
     stdlib.println(typeLabel(width));
 
-    if (copy.value != 42 || report(width,2) != 6 || dynamicTotal(values) != 23) {
+    if (copy.value != 42 || report(width, 2) != 6 || dynamicTotal(values) != 23) {
         return 1;
     }
     return 0;

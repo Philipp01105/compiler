@@ -403,6 +403,31 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
         }
 
         if (c == '\'') {
+            /* A closing quote keeps ordinary character literals unambiguous. */
+            size_t lifetime_end = i + 1;
+            if (lifetime_end < length &&
+                (isalpha((unsigned char)source[lifetime_end]) || source[lifetime_end] == '_')) {
+                while (lifetime_end < length &&
+                       (isalnum((unsigned char)source[lifetime_end]) || source[lifetime_end] == '_'))
+                    lifetime_end++;
+                TokenType previous = stream->count ? stream->tokens[stream->count - 1].type : TOKEN_ERROR;
+                if ((previous == TOKEN_AMPERSAND || previous == TOKEN_LESS || previous == TOKEN_COMMA) &&
+                    (lifetime_end == length || source[lifetime_end] != '\'')) {
+                    size_t lifetime_length = lifetime_end - i;
+                    if (lifetime_length >= MAX_TOKEN) {
+                        stream->has_error = 1;
+                        add_token(stream, TOKEN_ERROR, "Lifetime identifier exceeds lexer limit", line, column);
+                    } else {
+                        char lifetime[MAX_TOKEN];
+                        memcpy(lifetime, source + i, lifetime_length);
+                        lifetime[lifetime_length] = '\0';
+                        add_token(stream, TOKEN_LIFETIME, lifetime, line, column);
+                    }
+                    column += (int)lifetime_length;
+                    i = lifetime_end;
+                    continue;
+                }
+            }
             int start_col = column;
             int start_line = line;
             i++;
@@ -797,6 +822,7 @@ const char *token_type_to_string(TokenType type) {
         case TOKEN_NUMBER: return "NUMBER";
         case TOKEN_FLOAT_LITERAL: return "FLOAT";
         case TOKEN_CHAR_LITERAL: return "CHAR";
+        case TOKEN_LIFETIME: return "LIFETIME";
         case TOKEN_STRING_LITERAL: return "STRING";
 
         case TOKEN_PLUS: return "PLUS";

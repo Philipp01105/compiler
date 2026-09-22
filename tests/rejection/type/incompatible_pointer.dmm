@@ -1,2 +1,6 @@
 package main;
-func main() -> void { var x:int; var p:*double = &x; }
+
+func main() -> void {
+    var x: int;
+    var p: *double = &x;
+}

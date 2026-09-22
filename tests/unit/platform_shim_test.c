@@ -19,7 +19,7 @@ static void worker(void *pointer) {
     atomic_fetch_add(work->completed, 1);
 }
 int main(void) {
-    for (unsigned requirements = 0; requirements < 4; ++requirements) {
+    for (unsigned requirements = 0; requirements < 8; ++requirements) {
         RuntimeProfile profile = runtime_profile_for(requirements);
         CHECK(profile == (requirements ? RUNTIME_PLATFORM : RUNTIME_STANDALONE));
         for (LinkMode mode = LINK_AUTO; mode <= LINK_EXTERNAL; ++mode) {
@@ -36,7 +36,7 @@ int main(void) {
     IrModule module = {.functions = &function, .function_count = 1};
     CHECK(ir_runtime_requirements(&module) == 0);
     operations[1].runtime_requirements = RUNTIME_REQUIRE_NETWORK;
-    CHECK(ir_runtime_requirements(&module) == (RUNTIME_REQUIRE_PLATFORM | RUNTIME_REQUIRE_NETWORK));
+    CHECK(ir_runtime_requirements(&module) == (RUNTIME_REQUIRE_PLATFORM | RUNTIME_REQUIRE_NETWORK | RUNTIME_REQUIRE_EXECUTOR));
     function.instruction_count = 1;
     CHECK(ir_runtime_requirements(&module) == 0);
     void *event = __dmm_async_wait_create();

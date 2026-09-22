@@ -1,0 +1,3 @@
+module stdlib.language.gaps.async
+dmm 2026-10-04-dev
+features = ["async"]

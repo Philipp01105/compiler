@@ -1,12 +1,13 @@
 package main;
 import "stdlib";
+
 func main() -> void {
     stdlib.println(stdlib.System.in.fd);
     stdlib.println(stdlib.System.out.fd);
-    var result:int = stdlib.write_file("stdlib_io.tmp", "ok");
+    var result: int = stdlib.write_file("stdlib_io.tmp", "ok");
     stdlib.println(result);
-    var buffer:char[8];
-    var count:int = stdlib.read_file("stdlib_io.tmp", buffer, 7);
+    var buffer: char[8];
+    var count: int = stdlib.read_file("stdlib_io.tmp", buffer, 7);
     stdlib.println(count);
     sys_write(stdlib.System.out.fd, buffer, count);
     stdlib.println("");

@@ -1,2 +1,20 @@
 package main;
-interface Printable { func text() -> string; } struct Thing { func text() -> int { return 1; } } func output<T:Printable>(x:T) -> string { return x.text(); } func main() -> void { var x:Thing; output(x); }
+
+interface Printable {
+    func text() -> string;
+}
+
+struct Thing {
+    func text() -> int {
+        return 1;
+    }
+}
+
+func output<T: Printable>(x: T) -> string {
+    return x.text();
+}
+
+func main() -> void {
+    var x: Thing;
+    output(x);
+}

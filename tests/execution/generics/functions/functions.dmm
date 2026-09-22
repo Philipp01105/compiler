@@ -1,22 +1,41 @@
 package main;
 import "stdlib";
-func identity<T>(value:T) -> T { return value; }
-func first<T>(values:T[]) -> T { return values[0]; }
-func choose<T>(a:T,b:T) -> T { return b; }
-func choose(a:int,b:int) -> int { return a+b; }
-func factorial<T>(value:T) -> T {
-    if (value <= 1) { return value; }
+
+func identity<T>(value: T) -> T {
+    return value;
+}
+
+func first<T>(values: T[]) -> T {
+    return values[0];
+}
+
+func choose<T>(a: T, b: T) -> T {
+    return b;
+}
+
+func choose(a: int, b: int) -> int {
+    return a + b;
+}
+
+func factorial<T>(value: T) -> T {
+    if (value <= 1) {
+        return value;
+    }
     return value * factorial(value - 1);
 }
+
 func main() -> void {
     stdlib.println(identity(42));
     stdlib.println(identity("hello"));
     stdlib.println(identity('Z'));
     stdlib.println(identity(2.5));
     stdlib.println(identity(43));
-    stdlib.println(choose(2,3));
-    var numbers:int[3]; numbers[0]=7;
+    stdlib.println(choose(2, 3));
+    var numbers: int[3];
+    numbers[0] = 7;
     stdlib.println(first(numbers));
     stdlib.println(factorial(5));
-    var x:int=8; var p:*int=identity((&x).(*int)); stdlib.println(*p);
+    var x: int = 8;
+    var p: *int = identity((&x).(*int));
+    stdlib.println(*p);
 }

@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "ast.h"
 #include "semantic.h"
@@ -82,7 +83,9 @@ typedef enum {
     /* Fresh zeroed aggregate storage, filled by ordinary member stores. */
     IR_OP_STRUCT_LITERAL,
     /* Object lifetime start, distinct from an assignment to a live value. */
-    IR_OP_INIT, IR_OP_DESTROY
+    IR_OP_INIT, IR_OP_DESTROY,
+    /* Detached storage for a transferred lifetime before its source is reused. */
+    IR_OP_VALUE_SNAPSHOT
 } IrOpcode;
 
 typedef struct {
@@ -279,14 +282,20 @@ typedef struct {
 } IrModule;
 
 const IrNativeImport *ir_native_import(const IrModule *module, size_t symbol_id);
-/* Inspect the selected IR after optimization: discarded operations do not
-   require runtime facilities. Current operations (including async) are zero. */
+static inline int ir_native_import_used(const IrModule *module, size_t symbol_id);
+/* Inspect selected IR after optimization; discarded bodies
+   and unused imports do not require runtime facilities. */
 static inline RuntimeRequirements ir_runtime_requirements(const IrModule *module) {
     RuntimeRequirements result = module->runtime_requirements;
-    for (size_t f = 0; f < module->function_count; ++f)
-        if(!module->emission_selected || module->functions[f].emission_reachable)
-        for (size_t i = 0; i < module->functions[f].instruction_count; ++i)
+    for (size_t f = 0; f < module->function_count; ++f) {
+        if (module->emission_selected && !module->functions[f].emission_reachable) continue;
+        if (module->functions[f].is_async) result |= RUNTIME_REQUIRE_EXECUTOR;
+        for (size_t i = 0; i < module->functions[f].instruction_count; ++i) {
             result |= module->functions[f].instructions[i].runtime_requirements;
+            if (module->functions[f].instructions[i].opcode == IR_OP_EXECUTOR)
+                result |= RUNTIME_REQUIRE_EXECUTOR;
+        }
+    }
     return runtime_requirements_normalize(result);
 }
 void ir_select_runtime_functions(IrModule *module);

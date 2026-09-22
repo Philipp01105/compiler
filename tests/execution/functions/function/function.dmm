@@ -1,16 +1,17 @@
 package main;
 import "stdlib";
 // Function call test
-func add(x:int, y:int) -> int {
+func add(x: int, y: int) -> int {
     return x + y;
 }
 
 func main() -> void {
-    var result:int = add(7, 3);
+    var result: int = add(7, 3);
     {
-        var _output0:string = "7 + 3 = " + result;
+        var _output0: string = "7 + 3 = " + result;
         stdlib.println(_output0);
         free(_output0);
     }
 }
+
 // Category: execution/functions

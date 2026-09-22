@@ -1,0 +1,238 @@
+package fs;
+import (
+    "stdlib"
+    "stdlib/time"
+);
+
+pub enum ErrorKind {
+    pub InvalidPath,
+    pub InvalidInput,
+    pub Closed,
+    pub AccessDenied,
+    pub OutOfMemory,
+    pub LimitExceeded,
+    pub EndOfDirectory,
+    pub System,
+}
+
+pub enum ErrorDomain {
+    pub Library,
+    pub Posix,
+    pub Win32,
+}
+
+pub struct FsError {
+    pub var kind: ErrorKind;
+    pub var domain: ErrorDomain;
+    pub var code: isize;
+}
+
+pub enum OpenMode {
+    pub Read,
+    pub Write,
+    pub ReadWrite,
+    pub Append,
+}
+
+pub enum SeekFrom {
+    pub Start,
+    pub Current,
+    pub End,
+}
+
+pub enum EntryKind {
+    pub File,
+    pub Directory,
+    pub Symlink,
+    pub Other,
+    pub Unknown,
+}
+
+pub struct Metadata {
+    pub var kind: EntryKind;
+    pub var size: u64;
+    pub var modified: time.SystemTime;
+}
+
+pub struct DirectoryEntry {
+    pub var name: stdlib.Bytes;
+    pub var kind: EntryKind;
+}
+
+func failure(kind: ErrorKind) -> FsError {
+    return FsError{ kind: kind, domain: ErrorDomain.Library, code: 0 };
+}
+
+pub struct File {
+    var handle: usize;
+    var active: bit;
+    var readable: bit;
+    var writable: bit;
+    pub func isOpen() -> bit {
+        return active;
+    }
+
+    pub func close() -> stdlib.Result<void, FsError> {
+        if (!active) {
+            return stdlib.Result<void, FsError>.Ok;
+        }
+        active = false;
+        return nativeClose(handle);
+    }
+
+    pub func read(destination: &mut u8[]) -> stdlib.Result<usize, FsError> {
+        if (!active) {
+            return stdlib.Result<usize, FsError>.Err(failure(ErrorKind.Closed));
+        }
+        if (!readable) {
+            return stdlib.Result<usize, FsError>.Err(failure(ErrorKind.AccessDenied));
+        }
+        return nativeRead(handle, *destination);
+    }
+
+    pub func write(source: &u8[]) -> stdlib.Result<usize, FsError> {
+        if (!active) {
+            return stdlib.Result<usize, FsError>.Err(failure(ErrorKind.Closed));
+        }
+        if (!writable) {
+            return stdlib.Result<usize, FsError>.Err(failure(ErrorKind.AccessDenied));
+        }
+        return nativeWrite(handle, *source);
+    }
+
+    pub func writeAll(source: &u8[]) -> stdlib.Result<void, FsError> {
+        if (!active) {
+            return stdlib.Result<void, FsError>.Err(failure(ErrorKind.Closed));
+        }
+        if (!writable) {
+            return stdlib.Result<void, FsError>.Err(failure(ErrorKind.AccessDenied));
+        }
+        var offset: usize = 0;
+        while (offset < (*source).length) {
+            var written = nativeWrite(handle, (*source)[offset:]);
+            match (written) {
+                Err(error) => return stdlib.Result<void, FsError>.Err(error);
+                Ok(count) => {
+                    if (count == 0) {
+                        return stdlib.Result<void, FsError>.Err(failure(ErrorKind.System));
+                    }
+                    offset += count;
+                }
+            }
+        }
+        return stdlib.Result<void, FsError>.Ok;
+    }
+
+    pub func seek(offset: i64, origin: SeekFrom) -> stdlib.Result<u64, FsError> {
+        if (!active) {
+            return stdlib.Result<u64, FsError>.Err(failure(ErrorKind.Closed));
+        }
+        return nativeSeek(handle, offset, origin);
+    }
+
+    destructor {
+        if (active) {
+            nativeClose(handle);
+        }
+    }
+}
+
+pub func open(path: u8[], mode: OpenMode) -> stdlib.Result<File, FsError> {
+    return nativeOpen(path, mode);
+}
+
+// Public contract; target files implement the private native operations.
+pub func metadata(path: u8[]) -> stdlib.Result<Metadata, FsError> {
+    return nativeMetadata(path);
+}
+
+pub func removeFile(path: u8[]) -> stdlib.Result<void, FsError> {
+    return nativeRemoveFile(path);
+}
+
+pub func createDirectory(path: u8[]) -> stdlib.Result<void, FsError> {
+    return nativeCreateDirectory(path);
+}
+
+pub func removeDirectory(path: u8[]) -> stdlib.Result<void, FsError> {
+    return nativeRemoveDirectory(path);
+}
+
+pub func rename(oldPath: u8[], newPath: u8[]) -> stdlib.Result<void, FsError> {
+    return nativeRename(oldPath, newPath);
+}
+
+pub struct Directory {
+    var state: DirectoryState;
+    pub func close() -> stdlib.Result<void, FsError> {
+        return state.close();
+    }
+
+    pub func next() -> stdlib.Result<DirectoryEntry, FsError> {
+        return state.next();
+    }
+}
+
+pub func readDirectory(path: u8[]) -> stdlib.Result<Directory, FsError> {
+    var result = nativeReadDirectory(path);
+    match (result) {
+        Err(error) => return stdlib.Result<Directory, FsError>.Err(error);
+        Ok(state) => return stdlib.Result<Directory, FsError>.Ok(Directory{ state: state });
+    }
+}
+
+func readWhole(file: *File, maximum: usize) -> stdlib.Result<stdlib.Bytes, FsError> {
+    var output = stdlib.bytes(0);
+    var scratch: u8[4096];
+    var offset: usize = 0;
+    while (true) {
+        var count: usize = 4096;
+        if (offset <= maximum && maximum - offset < count) {
+            count = maximum - offset;
+        }
+        if (count == 0) {
+            count = 1;
+        }
+        var view: u8[] = scratch[: count];
+        var result = file.read(&mut view);
+        match (result) {
+            Err(error) => return stdlib.Result<stdlib.Bytes, FsError>.Err(error);
+            Ok(read) => {
+                if (read == 0) {
+                    break;
+                }
+                if (offset > maximum || read > maximum - offset) {
+                    return stdlib.Result<stdlib.Bytes, FsError>.Err(failure(ErrorKind.LimitExceeded));
+                }
+                var error = output.append(scratch[: read]);
+                if (error != stdlib.AllocationError.None) {
+                    return stdlib.Result<stdlib.Bytes, FsError>.Err(failure(ErrorKind.OutOfMemory));
+                }
+                offset += read;
+            }
+        }
+    }
+    return stdlib.Result<stdlib.Bytes, FsError>.Ok(output);
+}
+
+pub func readFile(path: u8[], maximum: usize) -> stdlib.Result<stdlib.Bytes, FsError> {
+    var opened = nativeOpen(path, OpenMode.Read);
+    match (opened) {
+        Err(error) => return stdlib.Result<stdlib.Bytes, FsError>.Err(error);
+        Ok(file) => return readWhole((&file).(*File), maximum);
+    }
+}
+
+pub func writeFile(path: u8[], source: &u8[]) -> stdlib.Result<void, FsError> {
+    var opened = nativeOpen(path, OpenMode.Write);
+    match (opened) {
+        Err(error) => return stdlib.Result<void, FsError>.Err(error);
+        Ok(file) => {
+            var written = file.writeAll(source);
+            match (written) {
+                Err(error) => return stdlib.Result<void, FsError>.Err(error);
+                Ok => return file.close();
+            }
+        }
+    }
+}

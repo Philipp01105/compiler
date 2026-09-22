@@ -1,0 +1,26 @@
+package internal;
+import (
+    "stdlib/core"
+    "stdlib/native/pthreads"
+);
+
+pub func create() -> *void {
+    var address: *pthreads.Mutex = core.core_alloc(pthreads.Mutex.size).(*pthreads.Mutex);
+    if (address == core.null<pthreads.Mutex>()) { return address.(*void); }
+    if (pthreads.mutexInit(address, core.null<pthreads.MutexAttributes>()) != 0) {
+        core.core_release(address.(*u8));
+        return core.core_null().(*void);
+    }
+    return address.(*void);
+}
+
+pub func lock(address: *void) -> void {
+    if (pthreads.mutexLock(address.(*pthreads.Mutex)) != 0) { core.core_trap(); }
+}
+pub func unlock(address: *void) -> void {
+    if (pthreads.mutexUnlock(address.(*pthreads.Mutex)) != 0) { core.core_trap(); }
+}
+pub func release(address: *void) -> void {
+    if (pthreads.mutexDestroy(address.(*pthreads.Mutex)) != 0) { core.core_trap(); }
+    core.core_release(address.(*u8));
+}

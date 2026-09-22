@@ -1,26 +1,37 @@
 package main;
 import "stdlib";
+
 func main() -> void {
-    var x:int = 10;
-    { var x:int = 20; stdlib.println(x); }
-    { var x:int = 30; stdlib.println(x); }
+    var x: int = 10;
+    {
+        var x: int = 20;
+        stdlib.println(x);
+    }
+    {
+        var x: int = 30;
+        stdlib.println(x);
+    }
     stdlib.println(x);
-    var total:int = 0;
-    for (var i:int=0; i<4; i++) {
-        if (i==1) { continue; }
-        var j:int = 0;
-        while (j<4) {
+    var total: int = 0;
+    for (var i: int = 0; i < 4; i++) {
+        if (i == 1) {
+            continue;
+        }
+        var j: int = 0;
+        while (j < 4) {
             j++;
-            if (j==3) { break; }
+            if (j == 3) {
+                break;
+            }
             total += i;
         }
     }
     stdlib.println(total);
-    var zero:int;
+    var zero: int;
     stdlib.println(zero);
-    var values:int[3000];
+    var values: int[3000];
     values[2999] = 42;
-    var p:*int = (&x).(*int);
+    var p: *int = (&x).(*int);
     *p = 7;
     modify(p);
     stdlib.println(x);
@@ -28,15 +39,27 @@ func main() -> void {
     stdlib.println(values[0]);
     values[1] = 5;
     stdlib.println(first(values));
-    var empty:string;
-    var names:string[2];
-    stdlib.println(empty==names[1]);
-    var cursor:int=0;
+    var empty: string;
+    var names: string[2];
+    stdlib.println(empty == names[1]);
+    var cursor: int = 0;
     values[index((&cursor).(*int))] += 3;
     stdlib.println(cursor);
     stdlib.println(values[0]);
 }
-func modify(p:*int) -> void { *p += 2; }
-func first(a:int[]) -> int { return a[1]; }
-func index(p:*int) -> int { var old:int=*p; *p += 1; return old; }
+
+func modify(p: *int) -> void {
+    *p += 2;
+}
+
+func first(a: int[]) -> int {
+    return a[1];
+}
+
+func index(p: *int) -> int {
+    var old: int = *p;
+    *p += 1;
+    return old;
+}
+
 // Category: execution/scopes

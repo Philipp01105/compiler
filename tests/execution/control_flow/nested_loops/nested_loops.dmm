@@ -3,15 +3,16 @@ import "stdlib";
 // Nested loops test
 func main() -> void {
     stdlib.println("Multiplication table (1-3):");
-    for (var i:int = 1; i <= 3; i++) {
-        for (var j:int = 1; j <= 3; j++) {
-            var product:int = i * j;
+    for (var i: int = 1; i <= 3; i++) {
+        for (var j: int = 1; j <= 3; j++) {
+            var product: int = i * j;
             {
-                var _output0:string = "  " + i + " x " + j + " = " + product;
+                var _output0: string = "  " + i + " x " + j + " = " + product;
                 stdlib.println(_output0);
                 free(_output0);
             }
         }
     }
 }
+
 // Category: execution/control_flow

@@ -1,38 +1,58 @@
 package main;
 import "stdlib";
 
-func effect() -> bit { stdlib.println("unexpected"); return true; }
-func invariant(n:int, scale:int) -> int {
-    var i=0;
-    var total=0;
-    while(i<n) { total+=scale*3; i+=1; }
+func effect() -> bit {
+    stdlib.println("unexpected");
+    return true;
+}
+
+func invariant(n: int, scale: int) -> int {
+    var i = 0;
+    var total = 0;
+    while (i < n) {
+        total += scale * 3;
+        i += 1;
+    }
     return total;
 }
-func repeated(i:int) -> int {
-    var values:int[4];
-    values[0]=3;
-    values[1]=5;
-    return values[i]+values[i];
+
+func repeated(i: int) -> int {
+    var values: int[4];
+    values[0] = 3;
+    values[1] = 5;
+    return values[i] + values[i];
 }
-func changed(i:int) -> int {
-    var values:int[4];
-    values[i]=3;
-    var before=values[i];
-    values[i]=5;
-    return before+values[i];
+
+func changed(i: int) -> int {
+    var values: int[4];
+    values[i] = 3;
+    var before = values[i];
+    values[i] = 5;
+    return before + values[i];
 }
-func guarded(n:int, divisor:int) -> int {
-    var i=0;
-    while(i<n) { var unused=1/divisor; i+=1; }
+
+func guarded(n: int, divisor: int) -> int {
+    var i = 0;
+    while (i < n) {
+        var unused = 1 / divisor;
+        i += 1;
+    }
     return 7;
 }
+
 func main() -> void {
-    if(true) { stdlib.println("branch"); } else { stdlib.println("unexpected"); }
-    while(false) { stdlib.println("unexpected"); }
+    if (true) {
+        stdlib.println("branch");
+    } else {
+        stdlib.println("unexpected");
+    }
+    while (false) {
+        stdlib.println("unexpected");
+    }
     stdlib.println(false && effect());
     stdlib.println(true || effect());
-    stdlib.println(invariant(3,4));
+    stdlib.println(invariant(3, 4));
     stdlib.println(repeated(1));
     stdlib.println(changed(1));
-    stdlib.println(guarded(0,0));
+    stdlib.println(guarded(0, 0));
 }

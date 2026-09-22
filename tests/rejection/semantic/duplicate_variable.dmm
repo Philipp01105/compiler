@@ -1,2 +1,6 @@
 package main;
-func main() -> void { var x:int = 1; var x:int = 2; }
+
+func main() -> void {
+    var x: int = 1;
+    var x: int = 2;
+}

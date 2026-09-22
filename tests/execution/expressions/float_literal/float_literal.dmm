@@ -1,7 +1,9 @@
 package main;
 import "stdlib";
+
 func main() -> void {
-    var x:float = 1.5;
+    var x: float = 1.5;
     stdlib.println(x);
 }
+
 // Category: execution/expressions

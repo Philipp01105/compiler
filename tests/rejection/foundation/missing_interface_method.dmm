@@ -1,2 +1,16 @@
 package main;
-interface A { func get() -> int; } struct S {} func use<T:A>(value:T) -> int { return value.get(); } func main() -> void { var s:S; use(s); }
+
+interface A {
+    func get() -> int;
+}
+
+struct S {}
+
+func use<T: A>(value: T) -> int {
+    return value.get();
+}
+
+func main() -> void {
+    var s: S;
+    use(s);
+}

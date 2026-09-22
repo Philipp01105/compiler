@@ -1,7 +1,18 @@
 package main;
-interface Value { func get() -> int; }
-struct Number { var number:int; func get() -> int { return number; } }
+
+interface Value {
+    func get() -> int;
+}
+
+struct Number {
+    var number: int;
+    func get() -> int {
+        return number;
+    }
+}
+
 func main() -> void {
-    var number:Number;
-    var values:Value[2] = [number; 2];
+    var number: Number;
+    var values: Value[2] = [number;
+    2];
 }

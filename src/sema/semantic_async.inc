@@ -36,8 +36,8 @@ static int async_graph_future(Analyzer *a,const AstExpression *e,size_t depth) {
                 (semantic_declared_type_properties(a,s->source_program,&s->declared_type.arguments->type)&SEMANTIC_TYPE_SEND)!=0;
         return async_graph_future(a,s->node,depth+1);
     }
-    if(e->async_operation==ASYNC_NET_WAIT)
-        return async_graph_origin(a,e->arguments,depth+1);
+    if(e->async_operation==ASYNC_NATIVE_FUTURE)
+        return 1; /* Native bridge promises stable, Send-safe frame storage. */
     if(e->async_operation==ASYNC_CANCEL) return async_graph_future(a,e->arguments,depth+1);
     if(e->kind!=AST_EXPR_CALL||e->resolved_symbol_id>=a->model->symbol_count) return 0;
     const SemanticSymbol *callee=&a->model->symbols[e->resolved_symbol_id];
@@ -166,6 +166,7 @@ static void check_async_spawns(Analyzer *a, const AstExpression *e, const AstSta
 static int async_expression_send(Analyzer *analyzer, const AstExpression *expression, size_t depth) {
     if (expression == NULL) return 1;
     if (depth > 128) return 0;
+    if (expression->async_operation==ASYNC_NATIVE_FUTURE) return 1;
     if (semantic_expression_is_future(expression)) {
         if (!(async_future_properties(analyzer, expression, depth + 1) & SEMANTIC_TYPE_SEND) &&
             !async_graph_future(analyzer,expression,depth+1)) return 0;

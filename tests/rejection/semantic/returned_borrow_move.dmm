@@ -1,9 +1,18 @@
 package main;
-struct Pair { var first:int; var second:int; destructor {} }
-func first(value:&Pair) -> &int { return &value.first; }
+
+struct Pair {
+    var first: int;
+    var second: int;
+    destructor {}
+}
+
+func first(value: &Pair) -> &int {
+    return &value.first;
+}
+
 func main() -> int {
-    var pair:Pair;
-    var reference=first(&pair);
-    var moved=pair;
-    return *reference+moved.second;
+    var pair: Pair;
+    var reference = first(&pair);
+    var moved = pair;
+    return *reference + moved.second;
 }

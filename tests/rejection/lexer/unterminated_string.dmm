@@ -1,3 +1,5 @@
 package main;
 import "stdlib";
-func main() -> void { stdlib.println("unterminated); }
+
+func main() -> void {
+    stdlib.println( "unterminated); }

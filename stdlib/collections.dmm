@@ -1,43 +1,181 @@
 package stdlib;
-import core "stdlib/core/raw";
-
-pub enum AllocationError {
-    pub None,
-    pub OutOfMemory,
-    pub CapacityOverflow,
-}
+import (
+    "stdlib/core"
+);
 
 pub struct Bytes {
-    var storage:u8[];
-    var count:usize;
-    pub var error:AllocationError;
+    var storage: u8[];
+    var count: usize;
+    pub var error: AllocationError;
 
-    pub func ok() -> bit { return error == AllocationError.None; }
-    pub func length() -> usize { return count; }
-    pub func capacity() -> usize { return storage.length; }
-    pub func view() -> u8[] { return slice(storage.data,count); }
-    pub func push(value:u8) -> AllocationError {
-        if (count == storage.length) {
-            var grownCapacity:usize=8;
-            if (storage.length > 0) {
-                if (storage.length > 4611686018427387903.(usize)) {
-                    error=AllocationError.CapacityOverflow;
-                    return error;
-                }
-                grownCapacity=storage.length*2;
-            }
-            var grown:u8[]=core.alloc<u8>(grownCapacity);
+    pub func ok() -> bit {
+        return error == AllocationError.None;
+    }
+
+    pub func length() -> usize {
+        return count;
+    }
+
+    pub func capacity() -> usize {
+        return storage.length;
+    }
+
+    pub func view() -> u8[] {
+        return slice(storage.data, count);
+    }
+
+    pub func ensureCapacity(capacity: usize) -> AllocationError {
+        if (capacity <= storage.length) {
+            error = AllocationError.None;
+            return error;
+        }
+        if (capacity > 9223372036854775807.(usize) / sizeof(u8)) {
+            error = AllocationError.CapacityOverflow;
+            return error;
+        }
+        var grown: u8[] = core.alloc<u8>(capacity);
+        if (grown.length == 0) {
+            error = AllocationError.OutOfMemory;
+            return error;
+        }
+        for (var i: usize = 0; i < count; i += 1) {
+            grown[i] = storage[i];
+        }
+        core.release(storage);
+        storage = grown;
+        error = AllocationError.None;
+        return error;
+    }
+
+    pub func clear() -> void {
+        count = 0;
+        error = AllocationError.None;
+    }
+
+    pub func truncate(length: usize) -> void {
+        if (length < count) {
+            count = length;
+        }
+    }
+
+    pub func append(values: u8[]) -> AllocationError {
+        if (values.length > 9223372036854775807.(usize) / sizeof(u8) - count) {
+            error = AllocationError.CapacityOverflow;
+            return error;
+        }
+        if (values.length == 0) {
+            error = AllocationError.None;
+            return error;
+        }
+        var snapshot: u8[] = core.alloc<u8>(values.length);
+        if (snapshot.length == 0) {
+            error = AllocationError.OutOfMemory;
+            return error;
+        }
+        for (var i: usize = 0; i < values.length; i += 1) {
+            snapshot[i] = values[i];
+        }
+        var needed: usize = count + values.length;
+        if (needed > storage.length) {
+            var grown: u8[] = core.alloc<u8>(needed);
             if (grown.length == 0) {
-                error=AllocationError.OutOfMemory;
+                core.release(snapshot);
+                error = AllocationError.OutOfMemory;
                 return error;
             }
-            core.core_copy(grown.data,storage.data,count);
+            for (var i: usize = 0; i < count; i += 1) {
+                grown[i] = storage[i];
+            }
             core.release(storage);
-            storage=grown;
+            storage = grown;
         }
-        storage[count]=value;
-        count+=1;
-        error=AllocationError.None;
+        for (var i: usize = 0; i < snapshot.length; i += 1) {
+            storage[count + i] = snapshot[i];
+        }
+        count = needed;
+        core.release(snapshot);
+        error = AllocationError.None;
+        return error;
+    }
+
+    pub func insert(index: usize, value: u8) -> AllocationError {
+        if (index > count) {
+            error = AllocationError.InvalidIndex;
+            return error;
+        }
+        if (count == storage.length) {
+            if (count >= 9223372036854775807.(usize) / sizeof(u8)) {
+                error = AllocationError.CapacityOverflow;
+                return error;
+            }
+            var capacity: usize = 8;
+            if (count > 0) {
+                capacity = count + 1;
+            }
+            var grown: u8[] = core.alloc<u8>(capacity);
+            if (grown.length == 0) {
+                error = AllocationError.OutOfMemory;
+                return error;
+            }
+            for (var i: usize = 0; i < count; i += 1) {
+                grown[i] = storage[i];
+            }
+            core.release(storage);
+            storage = grown;
+        }
+        var end: usize = count;
+        while (end > index) {
+            storage[end] = storage[end - 1];
+            end -= 1;
+        }
+        storage[index] = value;
+        count += 1;
+        error = AllocationError.None;
+        return error;
+    }
+
+    pub func remove(index: usize) -> Option<u8> {
+        if (index >= count) {
+            return Option<u8>.None;
+        }
+        var value: u8 = storage[index];
+        for (var i: usize = index + 1; i < count; i += 1) {
+            storage[i - 1] = storage[i];
+        }
+        count -= 1;
+        return Option<u8>.Some(value);
+    }
+
+    pub func pop() -> Option<u8> {
+        if (count == 0) {
+            return Option<u8>.None;
+        }
+        count -= 1;
+        return Option<u8>.Some(storage[count]);
+    }
+
+    pub func push(value: u8) -> AllocationError {
+        if (count == storage.length) {
+            var grownCapacity: usize = 8;
+            if (storage.length > 0) {
+                if (storage.length > 4611686018427387903.(usize)) {
+                    error = AllocationError.CapacityOverflow;
+                    return error;
+                }
+                grownCapacity = storage.length * 2;
+            }
+            var grown: u8[] = core.alloc<u8>(grownCapacity);
+            if (grown.length == 0) {
+                error = AllocationError.OutOfMemory;
+                return error;
+            }
+            core.core_copy(grown.data, storage.data, count);
+            core.release(storage);
+            storage = grown;
+        }
+        storage[count] = value;
+        count += 1;
+        error = AllocationError.None;
         return error;
     }
 
@@ -46,130 +184,222 @@ pub struct Bytes {
     }
 }
 
-pub func bytes(capacity:usize) -> Bytes {
-    var value:Bytes;
+pub func bytes(capacity: usize) -> Bytes {
+    var value: Bytes;
     if (capacity > 9223372036854775807.(usize)) {
-        value.error=AllocationError.CapacityOverflow;
+        value.error = AllocationError.CapacityOverflow;
         return value;
     }
     if (capacity > 0) {
-        value.storage=core.alloc<u8>(capacity);
+        value.storage = core.alloc<u8>(capacity);
         if (value.storage.length == 0) {
-            value.error=AllocationError.OutOfMemory;
+            value.error = AllocationError.OutOfMemory;
             return value;
         }
     }
     return value;
 }
 
-pub struct Buffer<T> {
-    var storage:T[];
-    pub var error:AllocationError;
+pub struct Buffer<T: core.Copy> {
+    var storage: T[];
+    pub var error: AllocationError;
 
-    pub func ok() -> bit { return error == AllocationError.None; }
-    pub func length() -> usize { return storage.length; }
-    pub func view() -> T[] { return storage; }
-    pub func get(index:usize) -> T { return storage[index]; }
-    pub func set(index:usize,value:T) -> void { storage[index]=value; }
+    pub func ok() -> bit {
+        return error == AllocationError.None;
+    }
+
+    pub func length() -> usize {
+        return storage.length;
+    }
+
+    pub func view() -> T[] {
+        return storage;
+    }
+
+    pub func get(index: usize) -> T {
+        return storage[index];
+    }
+
+    pub func set(index: usize, value: T) -> void {
+        storage[index] = value;
+    }
 
     destructor {
         core.release(storage);
     }
 }
 
-pub func buffer<T>(count:usize) -> Buffer<T> {
-    var value:Buffer<T>;
-    if (count > 9223372036854775807.(usize)/sizeof(T)) {
-        value.error=AllocationError.CapacityOverflow;
+pub func buffer<T: core.Copy>(count: usize) -> Buffer<T> {
+    var value: Buffer<T>;
+    if (count > 9223372036854775807.(usize) / sizeof(T)) {
+        value.error = AllocationError.CapacityOverflow;
         return value;
     }
     if (count > 0) {
-        value.storage=core.alloc<T>(count);
+        value.storage = core.alloc<T>(count);
         if (value.storage.length == 0) {
-            value.error=AllocationError.OutOfMemory;
+            value.error = AllocationError.OutOfMemory;
             return value;
         }
     }
     return value;
 }
 
+func growList<T>(storage:&mut *T, slots:&mut usize, count:usize, capacity:usize)->AllocationError {
+    if(capacity<=*slots) { return AllocationError.None; }
+    if(capacity>9223372036854775807.(usize)/sizeof(T)) { return AllocationError.CapacityOverflow; }
+    var grown:*T=core.core_alloc(capacity*sizeof(T)).(*T);
+    if(grown==core.null<T>()) { return AllocationError.OutOfMemory; }
+    for(var i:usize=0;i<count;i+=1) { core.initialize<T>(&grown[i],take((*storage)[i])); }
+    core.core_release((*storage).(*u8));
+    *storage=grown; *slots=capacity;
+    return AllocationError.None;
+}
+
 pub struct List<T> {
-    var storage:T[];
-    var count:usize;
-    pub var error:AllocationError;
+    var storage: *T;
+    var slots: usize;
+    var count: usize;
+    pub var error: AllocationError;
 
     pub func ok() -> bit { return error == AllocationError.None; }
     pub func length() -> usize { return count; }
-    pub func capacity() -> usize { return storage.length; }
-    pub func view() -> T[] { return slice(storage.data,count); }
-    pub func push(value:T) -> AllocationError {
-        if (count == storage.length) {
-            var grownCapacity:usize=8;
-            if (storage.length > 0) {
-                if (storage.length > 4611686018427387903.(usize)/sizeof(T)) {
-                    error=AllocationError.CapacityOverflow;
-                    return error;
-                }
-                grownCapacity=storage.length*2;
-            }
-            var grown:T[]=core.alloc<T>(grownCapacity);
-            if (grown.length == 0) {
-                error=AllocationError.OutOfMemory;
-                return error;
-            }
-            core.core_copy(grown.data.(*u8),storage.data.(*u8),count*sizeof(T));
-            core.release(storage);
-            storage=grown;
-        }
-        storage[count]=value;
-        count+=1;
-        error=AllocationError.None;
+    pub func capacity() -> usize { return slots; }
+    pub func view() -> T[] where T: core.Copy { return slice(storage, count); }
+
+    pub func ensureCapacity(capacity: usize) -> AllocationError {
+        error=growList<T>(&mut storage, &mut slots, count, capacity);
         return error;
     }
-    pub func get(index:usize) -> T { return storage[index]; }
-    pub func set(index:usize,value:T) -> void { storage[index]=value; }
 
+    pub func clear() -> void {
+        while (count>0) { count-=1; core.destroy<T>(&storage[count]); }
+        error=AllocationError.None;
+    }
+    pub func truncate(length:usize) -> void {
+        while (count>length) { count-=1; core.destroy<T>(&storage[count]); }
+    }
+
+    pub func append(values:T[]) -> AllocationError where T: core.Copy {
+        if(values.length > 9223372036854775807.(usize)/sizeof(T)-count) {
+            error=AllocationError.CapacityOverflow; return error;
+        }
+        if(values.length==0) { error=AllocationError.None; return error; }
+        // Snapshot permits appending a view into this same list.
+        var snapshot:*T=core.core_alloc(values.length*sizeof(T)).(*T);
+        if(snapshot==core.null<T>()) { error=AllocationError.OutOfMemory; return error; }
+        for(var i:usize=0;i<values.length;i+=1) { core.initialize<T>(&snapshot[i],values[i]); }
+        var status=growList<T>(&mut storage,&mut slots,count,count+values.length);
+        error=status;
+        if(status!=AllocationError.None) { core.core_release(snapshot.(*u8)); return status; }
+        for(var i:usize=0;i<values.length;i+=1) { core.initialize<T>(&storage[count+i],snapshot[i]); }
+        count+=values.length;
+        core.core_release(snapshot.(*u8)); return AllocationError.None;
+    }
+
+    pub func insert(index:usize,value:T) -> AllocationError {
+        if(index>count) { error=AllocationError.InvalidIndex; return error; }
+        if(count==slots) {
+            if(count>=9223372036854775807.(usize)/sizeof(T)) {
+                error=AllocationError.CapacityOverflow; return error;
+            }
+            var capacity:usize=8;
+            if(slots>0) {
+                if(slots>4611686018427387903.(usize)/sizeof(T)) {
+                    error=AllocationError.CapacityOverflow; return error;
+                }
+                capacity=slots*2;
+            }
+            var status=growList<T>(&mut storage,&mut slots,count,capacity);
+            error=status;
+            if(status!=AllocationError.None) { return status; }
+        }
+        var end:usize=count;
+        while(end>index) { core.initialize<T>(&storage[end],take(storage[end-1])); end-=1; }
+        core.initialize<T>(&storage[index],value);
+        count+=1; error=AllocationError.None; return error;
+    }
+
+    pub func remove(index:usize) -> Option<T> {
+        if(index>=count) { return Option<T>.None; }
+        var value=take(storage[index]);
+        for(var i:usize=index+1;i<count;i+=1) { core.initialize<T>(&storage[i-1],take(storage[i])); }
+        count-=1;
+        return Option<T>.Some(value);
+    }
+    pub func pop() -> Option<T> {
+        if(count==0) { return Option<T>.None; }
+        count-=1; return Option<T>.Some(take(storage[count]));
+    }
+    pub func push(value:T) -> AllocationError {
+        if(count==slots) {
+            var capacity:usize=8;
+            if(slots>0) {
+                if(slots>4611686018427387903.(usize)/sizeof(T)) {
+                    error=AllocationError.CapacityOverflow; return error;
+                }
+                capacity=slots*2;
+            }
+            var status=growList<T>(&mut storage,&mut slots,count,capacity);
+            error=status;
+            if(status!=AllocationError.None) { return status; }
+        }
+        core.initialize<T>(&storage[count],value);
+        count+=1; error=AllocationError.None; return error;
+    }
+    pub func get(index:usize) -> T where T: core.Copy {
+        if(index>=count) { core.core_trap(); } return storage[index];
+    }
+    pub func getRef(index:usize) -> &T {
+        if(index>=count) { core.core_trap(); } return &storage[index];
+    }
+    pub func getMut(index:usize) -> &mut T {
+        if(index>=count) { core.core_trap(); } return &mut storage[index];
+    }
+    pub func set(index:usize,value:T) -> void {
+        if(index>=count) { core.core_trap(); }
+        core.destroy<T>(&storage[index]); core.initialize<T>(&storage[index],value);
+    }
     destructor {
-        core.release(storage);
+        while(count>0) { count-=1; core.destroy<T>(&storage[count]); }
+        core.core_release(storage.(*u8));
     }
 }
 
 pub func list<T>(capacity:usize) -> List<T> {
     var value:List<T>;
-    if (capacity > 9223372036854775807.(usize)/sizeof(T)) {
-        value.error=AllocationError.CapacityOverflow;
-        return value;
-    }
-    if (capacity > 0) {
-        value.storage=core.alloc<T>(capacity);
-        if (value.storage.length == 0) {
-            value.error=AllocationError.OutOfMemory;
-            return value;
-        }
-    }
+    value.ensureCapacity(capacity);
     return value;
 }
 
 pub struct String {
-    var storage:string;
-    pub var error:AllocationError;
+    var storage: string;
+    pub var error: AllocationError;
 
-    pub func ok() -> bit { return error == AllocationError.None; }
-    pub func view() -> string { return storage; }
-    pub func length() -> usize { return strlen(storage).(usize); }
+    pub func ok() -> bit {
+        return error == AllocationError.None;
+    }
+
+    pub func view() -> string {
+        return storage;
+    }
+
+    pub func length() -> usize {
+        return strlen(storage).(usize);
+    }
 
     destructor {
         free(storage);
     }
 }
 
-pub func cloneString(text:string) -> String {
-    var value:String;
-    var copy:string=strdup(text);
+pub func cloneString(text: string) -> String {
+    var value: String;
+    var copy: string = strdup(text);
     if (core.core_string_data(copy) == core.null<u8>()) {
-        value.error=AllocationError.OutOfMemory;
+        value.error = AllocationError.OutOfMemory;
         return value;
     }
-    value.storage=copy;
+    value.storage = copy;
     return value;
 }

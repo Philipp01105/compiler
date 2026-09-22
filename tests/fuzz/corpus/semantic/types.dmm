@@ -1,15 +1,16 @@
 package main;
+
 struct Pair {
-    var left:int;
-    var right:double;
+    var left: int;
+    var right: double;
 }
 
-func scale(value:int, factor:double) -> double {
+func scale(value: int, factor: double) -> double {
     return value * factor;
 }
 
 func main() -> void {
-    var pair:Pair;
+    var pair: Pair;
     pair.left = 3;
     pair.right = scale(pair.left, 2.5);
 }

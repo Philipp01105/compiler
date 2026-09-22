@@ -1,2 +1,5 @@
 package main;
-func main() -> void { x = 10; }
+
+func main() -> void {
+    x = 10;
+}

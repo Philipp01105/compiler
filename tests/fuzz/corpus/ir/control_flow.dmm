@@ -1,12 +1,15 @@
 package main;
 import "stdlib";
-func choose(value:int) -> int {
-    if (value > 0 && value < 10) { return value; }
+
+func choose(value: int) -> int {
+    if (value > 0 && value < 10) {
+        return value;
+    }
     return 0 - value;
 }
 
 func main() -> void {
-    var index:int = 0;
+    var index: int = 0;
     while (index < 4) {
         stdlib.println(choose(index));
         index++;

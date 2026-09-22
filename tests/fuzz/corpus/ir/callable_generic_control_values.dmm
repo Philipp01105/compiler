@@ -1,26 +1,81 @@
 package main;
 
-func identity<T>(value:T)->T{return value;}
-func retain(callable:func<X>(X)->X)->func<Y>(Y)->Y{return callable;}
-func increment(value:int)->int{return value+1;}
-func doubleValue(value:int)->int{return value*2;}
-struct Pipeline {var stages:(func(int)->int)[2]; func run(value:int)->int{return stages[1](stages[0](value));}}
-struct Counter {var value:int; func add(delta:int)->int{return value+delta;}}
-enum Operation {None, Apply(func(int)->int)}
-enum Number {Empty, Integer(int), Pair(int,int)}
-func evaluate(number:Number)->int {
-    return match(number){Empty=>{0} Integer(value)=>{value} Pair(left,right)=>{left+right}};
+func identity<T>(value: T) -> T {
+    return value;
 }
-func main()->int {
-    var pipeline=Pipeline{stages:[increment,doubleValue]};
-    var callable=retain(identity);
-    var specialized:func(int)->int=identity<int>;
-    var operation=Operation.Apply(if(true){increment}else{doubleValue});
-    var selected:func(int)->int=operation.Apply();
-    var counter=Counter{value:40};
-    var unbound:func(*Counter,int)->int=Counter.add;
-    var total=callable(3)+specialized(5)+unbound((&counter).(*Counter),2);
-    var input=if(total>10){Number.Pair(7,9)}else{Number.Integer(4)};
-    var result={var intermediate=pipeline.run(evaluate(input)); selected(intermediate)};
-    return total+result;
+
+func retain(callable: func<X>(X) -> X) -> func<Y>(Y) -> Y {
+    return callable;
+}
+
+func increment(value: int) -> int {
+    return value + 1;
+}
+
+func doubleValue(value: int) -> int {
+    return value * 2;
+}
+
+struct Pipeline {
+    var stages:(func(int) -> int)[2];
+    func run(value: int) -> int {
+        return stages[1](stages[0](value));
+    }
+}
+
+struct Counter {
+    var value: int;
+    func add(delta: int) -> int {
+        return value + delta;
+    }
+}
+
+enum Operation {
+    None,
+    Apply(func(int) -> int)
+}
+
+enum Number {
+    Empty,
+    Integer(int),
+    Pair(int, int)
+}
+
+func evaluate(number: Number) -> int {
+    return match (number) {
+        Empty => {
+            0
+        }
+        Integer(value) => {
+            value
+        }
+        Pair(left, right) => {
+            left + right
+        }
+    };
+}
+
+func main() -> int {
+    var pipeline = Pipeline{ stages:[increment, doubleValue] };
+    var callable = retain(identity);
+    var specialized: func(int) -> int = identity<int>;
+    var operation = Operation.Apply(if (true) {
+        increment
+    } else {
+        doubleValue
+    });
+    var selected: func(int) -> int = operation.Apply();
+    var counter = Counter{ value: 40 };
+    var unbound: func(*Counter, int) -> int = Counter.add;
+    var total = callable(3) + specialized(5) + unbound((&counter).(*Counter), 2);
+    var input = if (total > 10) {
+        Number.Pair(7, 9)
+    } else {
+        Number.Integer(4)
+    };
+    var result = {
+        var intermediate = pipeline.run(evaluate(input));
+        selected(intermediate)
+    };
+    return total + result;
 }

@@ -1,6 +1,9 @@
 package main;
 import "stdlib";
-func echo(value:string) -> string { return value; }
+
+func echo(value: string) -> string {
+    return value;
+}
 
 func main() -> void {
     stdlib.println("" == "");

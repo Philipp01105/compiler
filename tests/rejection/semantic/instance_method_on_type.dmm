@@ -1,3 +1,9 @@
 package main;
-struct Item { func use() -> void {} }
-func main() -> void { Item.use(); }
+
+struct Item {
+    func use() -> void {}
+}
+
+func main() -> void {
+    Item.use();
+}

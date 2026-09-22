@@ -1,0 +1,52 @@
+package sync;
+import (
+    "stdlib"
+    "stdlib/core"
+    "stdlib/sync/internal"
+);
+
+struct MutexStorage<T> {
+    var platform: *void;
+    var value: T;
+}
+
+@[no_default] @[core.Send + core.Sync where T: core.Send] pub struct Mutex<T: core.Send> {
+    var storage: *MutexStorage<T>;
+
+    destructor {
+        core.destroy<T>(&storage.value);
+        internal.release(storage.platform);
+        core.core_release(storage.(*u8));
+    }
+}
+
+// The raw state pointer has no Send guarantee. The checked owner borrow keeps
+// the mutex live, including during the guard's destructor and OS unlock.
+@[no_default] pub struct MutexGuard<'a, T: core.Send> {
+    var owner: &'a Mutex<T>;
+    var storage: *MutexStorage<T>;
+
+    pub func getRef() -> &T { return &storage.value; }
+    pub func getMut() -> &mut T { return &mut storage.value; }
+
+    destructor { internal.unlock(storage.platform); }
+}
+
+pub func mutex<T: core.Send>(value: T) -> stdlib.Result<Mutex<T>, stdlib.AllocationError> {
+    var platform: *void = internal.create();
+    if (platform == core.core_null().(*void)) {
+        return stdlib.Result<Mutex<T>, stdlib.AllocationError>.Err(stdlib.AllocationError.OutOfMemory);
+    }
+    var storage: *MutexStorage<T> = core.core_alloc(sizeof(MutexStorage<T>)).(*MutexStorage<T>);
+    if (storage == core.null<MutexStorage<T>>()) {
+        internal.release(platform);
+        return stdlib.Result<Mutex<T>, stdlib.AllocationError>.Err(stdlib.AllocationError.OutOfMemory);
+    }
+    core.initialize<MutexStorage<T>>(storage, MutexStorage<T>{platform: platform, value: value});
+    return stdlib.Result<Mutex<T>, stdlib.AllocationError>.Ok(Mutex<T>{storage: storage});
+}
+
+pub func lock<'a, T: core.Send>(mutex: &'a Mutex<T>) -> MutexGuard<'a, T> {
+    internal.lock(mutex.storage.platform);
+    return MutexGuard<'a, T>{owner: mutex, storage: mutex.storage};
+}

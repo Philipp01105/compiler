@@ -30,6 +30,13 @@ static int invalid_never_type(const AstProgram *program, const AstType *type,
     return 0;
 }
 
+static int known_aggregate_field_type(const Analyzer *analyzer, const AstType *type,
+                                      const AstDeclarationNode *aggregate) {
+    Analyzer scoped = *analyzer;
+    scoped.current_function = aggregate;
+    return known_declared_type(&scoped, type);
+}
+
 static int returned_slice_expression_owns(const SemanticModel *model,
                                           const AstExpression *expression) {
     if (expression == NULL || !expression->resolved_is_slice) return 0;
@@ -177,12 +184,17 @@ static unsigned derived_declared_type_properties(const Analyzer *analyzer,
         return SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP |
                SEMANTIC_TYPE_MUST_CONSUME;
     if (type->kind == AST_TYPE_FUNCTION)
-        return SEMANTIC_TYPE_COPYABLE;
+        return type->callable_mode == 2 ? SEMANTIC_TYPE_MOVE_ONLY : SEMANTIC_TYPE_COPYABLE;
     if (primitive_type(program, type) != TYPE_UNKNOWN)
         return SEMANTIC_TYPE_COPYABLE | SEMANTIC_TYPE_SEND | SEMANTIC_TYPE_SYNC;
     size_t nested = resolve_named_symbol_id(
         analyzer, program, named_type_token(program, type));
-    return semantic_symbol_type_properties(analyzer->model, nested);
+    unsigned properties = semantic_symbol_type_properties(analyzer->model, nested);
+    if (type->callable_mode == 2) {
+        properties &= ~(unsigned)SEMANTIC_TYPE_COPYABLE;
+        properties |= SEMANTIC_TYPE_MOVE_ONLY;
+    }
+    return properties;
 }
 
 unsigned semantic_declared_type_properties(const Analyzer *analyzer,
@@ -236,6 +248,8 @@ void derive_type_properties(Analyzer *analyzer) {
             for (; field != NULL; field = field->next) {
                 unsigned nested = semantic_declared_type_properties(
                     analyzer, symbol->source_program, &field->type);
+                if (field->type.borrow_kind == AST_BORROW_MUTABLE)
+                    nested = (nested & ~(unsigned)SEMANTIC_TYPE_COPYABLE) | SEMANTIC_TYPE_MOVE_ONLY;
                 if (nested & SEMANTIC_TYPE_MOVE_ONLY)
                     derived = (derived & ~(unsigned) SEMANTIC_TYPE_COPYABLE) |
                               SEMANTIC_TYPE_MOVE_ONLY;
@@ -254,6 +268,8 @@ void derive_type_properties(Analyzer *analyzer) {
                          payload != NULL; payload = payload->next) {
                         unsigned nested = semantic_declared_type_properties(
                             analyzer, symbol->source_program, &payload->type);
+                        if (payload->type.borrow_kind == AST_BORROW_MUTABLE)
+                            nested = (nested & ~(unsigned)SEMANTIC_TYPE_COPYABLE) | SEMANTIC_TYPE_MOVE_ONLY;
                         if (nested & SEMANTIC_TYPE_MOVE_ONLY)
                             derived =
                                 (derived & ~(unsigned) SEMANTIC_TYPE_COPYABLE) |
@@ -301,6 +317,8 @@ int semantic_expression_is_move_only(const Analyzer *analyzer,
         expression->resolved_is_slice)
         return 0;
     if (semantic_expression_is_future(expression)) return 1;
+    if (expression->has_resolved_ast_type && expression->resolved_ast_type.callable_mode == 2)
+        return 1;
     if (expression->has_resolved_ast_type && (expression->resolved_ast_type.kind == AST_TYPE_JOIN ||
         expression->resolved_ast_type.kind == AST_TYPE_EXECUTOR)) return 1;
     if (expression->resolved_named_symbol_id < analyzer->model->symbol_count)
@@ -388,12 +406,13 @@ static int safe_borrow_return_origin(const Analyzer *analyzer,
     if (origin->kind == SEMANTIC_SYMBOL_FIELD &&
         origin->owner_symbol_id < analyzer->model->symbol_count &&
         analyzer->model->symbols[origin->owner_symbol_id].name_token == analyzer->current_owner_token &&
-        semantic_type_is_move_only(analyzer, origin->owner_symbol_id)) return 1;
+        (semantic_type_is_move_only(analyzer, origin->owner_symbol_id) ||
+         origin->declared_type.borrow_kind != AST_BORROW_NONE)) return 1;
     if (origin->scope_depth == 0 &&
         (origin->kind == SEMANTIC_SYMBOL_VARIABLE ||
          origin->kind == SEMANTIC_SYMBOL_CONSTANT))
         return 1;
-    return origin->kind == SEMANTIC_SYMBOL_PARAMETER &&
+    return (origin->kind == SEMANTIC_SYMBOL_PARAMETER || origin->kind == SEMANTIC_SYMBOL_LOCAL) &&
            origin->declared_type.borrow_kind != AST_BORROW_NONE;
 }
 
@@ -455,18 +474,17 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
             const SemanticSymbol *enum_symbol = nominal < analyzer->model->symbol_count
                                                     ? &analyzer->model->symbols[nominal]
                                                     : NULL;
-            if (!enum_symbol || enum_symbol->kind != SEMANTIC_SYMBOL_ENUM || pointer_expression(statement->value)) {
+            int borrowed_match = statement->value &&
+                statement->value->resolved_borrow_kind != AST_BORROW_NONE;
+            if (!enum_symbol || enum_symbol->kind != SEMANTIC_SYMBOL_ENUM ||
+                (pointer_expression(statement->value) && !borrowed_match)) {
                 semantic_error(analyzer, statement->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                "match requires an enum value");
                 continue;
             }
             const AstDeclarationNode *enumeration = enum_symbol->declaration;
             const AstProgram *enum_unit = enum_symbol->source_program;
-            const AstDeclarationNode *origin=enumeration->generic_origin;
-            int standard_result=origin && enum_unit->module_identity && !strcmp(enum_unit->module_identity,"stdlib") &&
-                (!strcmp(ast_program_lexeme(enum_unit,origin->name_token),"Result") ||
-                 !strcmp(ast_program_lexeme(enum_unit,origin->name_token),"Propagation"));
-            statement->is_consuming_match=(enumeration->is_async_builtin||standard_result) && enumeration->as.enum_decl.is_sum &&
+            statement->is_consuming_match=enumeration->as.enum_decl.is_sum &&
                 semantic_expression_is_move_only(analyzer,statement->value);
             size_t variants = 0, covered = 0;
             int wildcard = 0;
@@ -507,6 +525,7 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                         AstParameter *binding = arm->bindings;
                         for (; p && binding; p = p->next, binding = binding->next) {
                             binding->type = argument_type_copy(analyzer, enum_unit, p->type);
+                            if (borrowed_match) binding->type.borrow_kind = statement->value->resolved_borrow_kind;
                             validate_array_shape(analyzer, &binding->type);
                             if (!statement->is_consuming_match && (semantic_declared_type_properties(analyzer, analyzer->program,
                                                        &binding->type) &
@@ -615,6 +634,22 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                                                          &statement->type))
                     conversion_error(analyzer, statement->value, analyzer->program, &statement->type,
                                      NULL, "Cannot implicitly convert initializer");
+                else if (statement->type.kind == AST_TYPE_FUNCTION &&
+                         semantic_closure_method(analyzer, statement->value)) {
+                    /* A callable annotation constrains a closure's signature;
+                       its storage still contains the concrete environment. */
+                    unsigned mode = statement->type.callable_mode;
+                    statement->closure_callable_annotation = ast_program_alloc(
+                        analyzer->program, sizeof(*statement->closure_callable_annotation));
+                    if (statement->closure_callable_annotation)
+                        *statement->closure_callable_annotation = statement->type;
+                    else analyzer->allocation_failed = 1;
+                    statement->type = argument_type_copy(analyzer,
+                        statement->value->resolved_type_program ?
+                            statement->value->resolved_type_program : analyzer->program,
+                        statement->value->resolved_ast_type);
+                    statement->type.callable_mode = mode;
+                }
             }
             consume_owned_expression(analyzer, statement->value);
             if (statement->is_const && statement->value != NULL &&
@@ -1080,6 +1115,21 @@ void analyze_control_expression(Analyzer *analyzer, AstExpression *expression) {
 static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
     if (function->generic_parameters != NULL || function->semantic_body_checked) return;
     function->semantic_body_checked = 1;
+    for (const AstAutoCondition *c = function->where_conditions; c; c = c->next) {
+        if (!known_declared_type(analyzer, &c->type))
+            semantic_error(analyzer, c->type.name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN,
+                           "Unknown type in method where constraint");
+        for (const AstInterfaceBound *b = c->bounds; b; b = b->next) {
+            size_t id = resolve_named_symbol_id(analyzer, analyzer->program, b->name_token);
+            if (id >= analyzer->model->symbol_count ||
+                analyzer->model->symbols[id].kind != SEMANTIC_SYMBOL_INTERFACE)
+                semantic_error(analyzer, b->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN,
+                               "Unknown interface in method where constraint");
+        }
+    }
+    function->constraints_disabled = !semantic_method_constraints_satisfied(
+        analyzer, analyzer->program, function);
+    if (function->constraints_disabled) return;
     LocalSymbol *saved = analyzer->locals;
     size_t saved_function = analyzer->current_function_token;
     size_t saved_function_symbol = analyzer->current_function_symbol_id;
@@ -1140,7 +1190,8 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
     if (!function->is_native) {
         analyze_statement(analyzer, function->as.function.body);
         validate_function_ownership(analyzer, function);
-        validate_function_borrows(analyzer, function);
+        if (!analyzer->closure_probe || analyzer->closure_probe->closure_mode != 2)
+            validate_function_borrows(analyzer, function);
     }
     DataType return_type = primitive_type(analyzer->program,
                                           &function->as.function.return_type);
@@ -1160,8 +1211,30 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
     analyzer->current_function = saved_declaration;
 }
 
+void analyze_closure_function(Analyzer *analyzer, AstDeclarationNode *function) {
+    Analyzer isolated=*analyzer;
+    isolated.locals=NULL;
+    isolated.scope_depth=0;
+    isolated.loop_depth=0;
+    isolated.current_function=NULL;
+    isolated.current_owner_token=AST_TOKEN_NONE;
+    isolated.in_destructor=0;
+    isolated.in_defer_closure=0;
+    isolated.closure_probe=NULL;
+    if (function->as.function.owner_token != AST_TOKEN_NONE) {
+        size_t owner=resolve_named_symbol_id(analyzer,analyzer->program,function->as.function.owner_token);
+        if (owner<analyzer->model->symbol_count &&
+            analyzer->model->symbols[owner].declaration &&
+            analyzer->model->symbols[owner].declaration->is_closure_environment)
+            isolated.closure_probe=(AstDeclarationNode *)analyzer->model->symbols[owner].declaration;
+    }
+    analyze_function(&isolated,function);
+    analyzer->allocation_failed |= isolated.allocation_failed;
+}
+
 static void analyze_destructor(Analyzer *analyzer, AstDeclarationNode *resource) {
-    if (resource->as.struct_decl.destructor == NULL) return;
+    if (resource->as.struct_decl.destructor == NULL || resource->semantic_body_checked) return;
+    resource->semantic_body_checked = 1;
     LocalSymbol *saved = analyzer->locals;
     size_t saved_function = analyzer->current_function_token;
     size_t saved_function_symbol = analyzer->current_function_symbol_id;
@@ -1200,11 +1273,6 @@ void analyze_constant_declaration(Analyzer *analyzer,
         semantic_error(analyzer, declaration->name_token, ERROR_CATEGORY_TYPE,
                        ERR_TYPE_INVALID_OPERATION,
                        "Package variables cannot store polymorphic callable values");
-    if (declaration->kind == AST_DECL_VARIABLE &&
-        type->borrow_kind != AST_BORROW_NONE)
-        semantic_error(analyzer, type->name_token, ERROR_CATEGORY_TYPE,
-                       ERR_TYPE_INVALID_OPERATION,
-                       "Checked borrowed references cannot be stored in package variables");
     if (invalid_never_type(analyzer->program, type, 0) ||
         (type->kind == AST_TYPE_INFERRED && value != NULL &&
          value->resolved_type == TYPE_NEVER))
@@ -1223,6 +1291,7 @@ void analyze_constant_declaration(Analyzer *analyzer,
     if (value != NULL && (value->kind == AST_EXPR_ARRAY_LITERAL ||
                           value->kind == AST_EXPR_CONTROL))
         value->allocated_type = *type;
+    normalize_expression_types(analyzer, value);
     analyze_expression(analyzer, value);
     validate_expression(analyzer, value, 0);
     if (declaration->kind == AST_DECL_VARIABLE && value != NULL &&
@@ -1446,6 +1515,7 @@ SemanticModel *semantic_analyze_target(AstProgram *program, TargetFormat target)
     collect_declarations(&analyzer, program);
     for (size_t i = 0; i < program->owned_import_count; i++)
         collect_declarations(&analyzer, program->owned_imports[i]);
+    validate_package_reexports(&analyzer);
     derive_type_properties(&analyzer);
     analyzer.program = program;
     unsigned char *constant_states = calloc(program->owned_import_count + 1, 1);
@@ -1522,7 +1592,7 @@ SemanticModel *semantic_analyze_target(AstProgram *program, TargetFormat target)
                         semantic_error(&analyzer, field->name_token, ERROR_CATEGORY_TYPE,
                                        ERR_TYPE_INVALID_OPERATION,
                                        "Struct fields cannot store polymorphic callable values");
-                    if (!known_declared_type(&analyzer, &field->type))
+                    if (!known_aggregate_field_type(&analyzer, &field->type, declaration))
                         semantic_error(&analyzer, field->type.name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN,
                                        "Unknown field type");
                     if (primitive_type(unit, &field->type) == TYPE_VOID &&
@@ -1534,10 +1604,12 @@ SemanticModel *semantic_analyze_target(AstProgram *program, TargetFormat target)
                         semantic_error(&analyzer, field->type.name_token,
                                        ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                        "Field cannot have type never");
-                    if (field->type.borrow_kind != AST_BORROW_NONE)
+                    if (field->type.borrow_kind != AST_BORROW_NONE &&
+                        (field->type.lifetime_token >= unit->token_count ||
+                         unit->tokens[field->type.lifetime_token].type != TOKEN_LIFETIME))
                         semantic_error(&analyzer, field->type.name_token,
                                        ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                                       "Checked borrowed references cannot be stored in struct fields");
+                                       "Checked borrowed struct fields require an explicit declared lifetime");
                     validate_array_shape(&analyzer, &field->type);
                 }
                 analyze_destructor(&analyzer, declaration);
@@ -1547,7 +1619,7 @@ SemanticModel *semantic_analyze_target(AstProgram *program, TargetFormat target)
             } else if (declaration->kind == AST_DECL_ENUM) {
                 for (AstField *field = declaration->as.enum_decl.fields;
                      field != NULL; field = field->next) {
-                    if (!known_declared_type(&analyzer, &field->type))
+                    if (!known_aggregate_field_type(&analyzer, &field->type, declaration))
                         semantic_error(&analyzer, field->type.name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN,
                                        "Unknown enum field type");
                     if (field->type.is_slice)
@@ -1585,7 +1657,7 @@ SemanticModel *semantic_analyze_target(AstProgram *program, TargetFormat target)
                             semantic_error(&analyzer, p->type.name_token, ERROR_CATEGORY_TYPE,
                                            ERR_TYPE_INVALID_OPERATION,
                                            "Enum payloads cannot store polymorphic callable values");
-                        if (!known_declared_type(&analyzer, &p->type) ||
+                        if (!known_aggregate_field_type(&analyzer, &p->type, declaration) ||
                             (primitive_type(unit, &p->type) == TYPE_VOID && !p->type.pointer_depth) ||
                             invalid_never_type(unit, &p->type, 0))
                             semantic_error(&analyzer, p->type.name_token, ERROR_CATEGORY_TYPE,
@@ -1632,6 +1704,14 @@ SemanticModel *semantic_analyze_target(AstProgram *program, TargetFormat target)
     }
     for (size_t i = 0; i < model->symbol_count; i++) {
         SemanticSymbol *symbol = &model->symbols[i];
+        /* A later package/function may instantiate a generic owner after its
+         * source package's declaration walk. Its destructor still needs the
+         * same semantic checks and resolved field symbols as early instances. */
+        if (symbol->kind == SEMANTIC_SYMBOL_STRUCT && symbol->declaration != NULL &&
+            symbol->declaration->generic_parameters == NULL) {
+            analyzer.program = (AstProgram *) symbol->source_program;
+            analyze_destructor(&analyzer, (AstDeclarationNode *) symbol->declaration);
+        }
         if (symbol->kind == SEMANTIC_SYMBOL_FUNCTION && symbol->declaration != NULL) {
             if (symbol->owner_symbol_id < model->symbol_count &&
                 model->symbols[symbol->owner_symbol_id].kind == SEMANTIC_SYMBOL_INTERFACE)
@@ -1652,6 +1732,28 @@ SemanticModel *semantic_analyze_target(AstProgram *program, TargetFormat target)
                                ? "Recursive enum payload requires a pointer"
                                : "Recursive structure requires a pointer field");
         const AstDeclarationNode *declaration = symbol->declaration;
+        for (const AstLifetimeParameter *p = declaration->lifetime_parameters; p; p = p->next) {
+            const char *name = ast_program_lexeme(analyzer.program, p->name_token);
+            if (!strcmp(name, "'static"))
+                semantic_error(&analyzer, p->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                               "The static lifetime cannot be redeclared");
+            for (const AstLifetimeParameter *q = declaration->lifetime_parameters; q != p; q = q->next)
+                if (!strcmp(name, ast_program_lexeme(analyzer.program, q->name_token)))
+                    semantic_error(&analyzer, p->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                                   "Duplicate lifetime parameter");
+        }
+        const AstField *lifetime_fields = declaration->kind == AST_DECL_STRUCT
+            ? declaration->as.struct_decl.fields : declaration->as.enum_decl.fields;
+        for (const AstField *f = lifetime_fields; f; f = f->next) {
+            if (!valid_lifetime_type(&analyzer, &f->type, declaration))
+                semantic_error(&analyzer, f->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                               "Unknown lifetime or wrong lifetime argument count in aggregate field");
+            if (f->type.borrow_kind != AST_BORROW_NONE &&
+                (f->type.lifetime_token >= analyzer.program->token_count ||
+                 analyzer.program->tokens[f->type.lifetime_token].type != TOKEN_LIFETIME))
+                semantic_error(&analyzer, f->name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
+                               "Checked borrowed struct fields require an explicit declared lifetime");
+        }
         if (declaration->generic_origin) {
             AstType arguments[DMM_MAX_TYPE_PARAMETERS];
             size_t count = 0;
@@ -1666,7 +1768,7 @@ SemanticModel *semantic_analyze_target(AstProgram *program, TargetFormat target)
             for (AstEnumValue *v = declaration->as.enum_decl.values; v; v = v->next)
                 for (AstTypeArgument *p = v->payload_types; p; p = p->next) {
                     validate_array_shape(&analyzer, &p->type);
-                    if (!known_declared_type(&analyzer, &p->type) ||
+                    if (!known_aggregate_field_type(&analyzer, &p->type, declaration) ||
                         (primitive_type(analyzer.program, &p->type) == TYPE_VOID && !p->type.pointer_depth) ||
                         invalid_never_type(analyzer.program, &p->type, 0))
                         semantic_error(&analyzer, p->type.name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
@@ -1699,6 +1801,7 @@ SemanticModel *semantic_analyze_target(AstProgram *program, TargetFormat target)
                            ERROR_CATEGORY_TYPE, ERR_TYPE_INCOMPATIBLE_TYPES,
                            "main must have no parameters and return void or int");
     }
+    validate_package_borrows(&analyzer);
     derive_async_properties(&analyzer);
     pop_to(&analyzer, NULL);
     if (analyzer.allocation_failed) {

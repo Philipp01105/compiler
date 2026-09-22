@@ -1,10 +1,14 @@
 package main;
 import "stdlib";
+
 struct Counter {
-    var value:int;
-    static func twice(value:int) -> int { return value * 2; }
+    var value: int;
+    static func twice(value: int) -> int {
+        return value * 2;
+    }
 }
+
 func main() -> void {
-    var counter:Counter;
+    var counter: Counter;
     stdlib.println(counter.twice(2));
 }

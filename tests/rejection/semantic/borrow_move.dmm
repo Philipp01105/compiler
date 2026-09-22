@@ -1,9 +1,15 @@
 package main;
-struct Resource { var value:int; destructor {} }
-func consume(value:Resource) -> void {}
+
+struct Resource {
+    var value: int;
+    destructor {}
+}
+
+func consume(value: Resource) -> void {}
+
 func main() -> int {
-    var value:Resource;
-    var reference=&value.value;
+    var value: Resource;
+    var reference = &value.value;
     consume(value);
     return *reference;
 }

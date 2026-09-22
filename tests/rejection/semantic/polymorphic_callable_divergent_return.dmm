@@ -1,14 +1,21 @@
 package main;
 
-func first<T>(value:T) -> T { return value; }
-func second<T>(value:T) -> T { return value; }
+func first<T>(value: T) -> T {
+    return value;
+}
 
-func choose(flag:bit) -> func<X>(X) -> X {
-    if (flag) { return first; }
+func second<T>(value: T) -> T {
+    return value;
+}
+
+func choose(flag: bit) -> func<X>(X) -> X {
+    if (flag) {
+        return first;
+    }
     return second;
 }
 
 func main() -> int {
-    var callable=choose(true);
+    var callable = choose(true);
     return callable(1);
 }

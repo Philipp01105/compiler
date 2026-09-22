@@ -1,0 +1,16 @@
+package network;
+// The parity harness substitutes this file in a separate build package. These
+// empty hooks keep test controls and counters out of the installed component.
+func socketOpened() -> void {}
+
+func socketClosed() -> void {}
+
+func closeError(error: *Error) -> bit {
+    return false;
+}
+
+func runReactorHook() -> void {}
+
+func resolveJob(op: *Operation, error: *Error) -> *Addresses {
+    return resolveNative(op, error);
+}

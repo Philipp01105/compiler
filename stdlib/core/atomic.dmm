@@ -1,54 +1,67 @@
 package core;
 
+// The native boundary is four machine operations, not special DMM call names.
+extern "system" from "dmm_runtime" {
+    func atomicLoad(address: *usize) -> usize = "__dmm_core_atomic_load";
+    func atomicStore(address: *usize, value: usize) -> void = "__dmm_core_atomic_store";
+    func atomicSwap(address: *usize, value: usize) -> usize = "__dmm_core_atomic_swap";
+    func atomicCompare(address: *usize, expected: usize, value: usize) -> usize = "__dmm_core_atomic_compare_exchange";
+}
+
 // All operations use sequentially consistent ordering. The storage address
 // must remain aligned and must not be accessed non-atomically after sharing.
 pub struct AtomicUsize {
-    var value:usize;
+    var value: usize;
     destructor {}
 
     pub func load() -> usize {
-        return __dmm_intrinsic_atomic_load((&value).(*u8));
+        return atomicLoad((&value).(*usize));
     }
-    pub func store(next:usize) -> void {
-        __dmm_intrinsic_atomic_store((&value).(*u8), next);
+
+    pub func store(next: usize) -> void {
+        atomicStore((&value).(*usize), next);
     }
-    pub func swap(next:usize) -> usize {
-        return __dmm_intrinsic_atomic_swap((&value).(*u8), next);
+
+    pub func swap(next: usize) -> usize {
+        return atomicSwap((&value).(*usize), next);
     }
+
     // Returns the previous value; equality with expected indicates success.
-    pub func compareExchange(expected:usize,next:usize) -> usize {
-        return __dmm_intrinsic_atomic_compare_exchange((&value).(*u8), expected, next);
+    pub func compareExchange(expected: usize, next: usize) -> usize {
+        return atomicCompare((&value).(*usize), expected, next);
     }
 }
 
-pub func atomicUsize(initial:usize) -> AtomicUsize {
-    var result:AtomicUsize;
-    result.value=initial;
+pub func atomicUsize(initial: usize) -> AtomicUsize {
+    var result: AtomicUsize;
+    result.value = initial;
     return result;
 }
 
 pub struct AtomicBit {
-    var value:usize;
+    var value: usize;
     destructor {}
 
     pub func load() -> bit {
-        return __dmm_intrinsic_atomic_load((&value).(*u8)) != 0.(usize);
+        return atomicLoad((&value).(*usize)) != 0.(usize);
     }
-    pub func store(next:bit) -> void {
-        __dmm_intrinsic_atomic_store((&value).(*u8), next.(usize));
+
+    pub func store(next: bit) -> void {
+        atomicStore((&value).(*usize), next.(usize));
     }
-    pub func swap(next:bit) -> bit {
-        return __dmm_intrinsic_atomic_swap((&value).(*u8), next.(usize)) != 0.(usize);
+
+    pub func swap(next: bit) -> bit {
+        return atomicSwap((&value).(*usize), next.(usize)) != 0.(usize);
     }
+
     // Returns the previous value; equality with expected indicates success.
-    pub func compareExchange(expected:bit,next:bit) -> bit {
-        return __dmm_intrinsic_atomic_compare_exchange((&value).(*u8), expected.(usize),
-                                                        next.(usize)) != 0.(usize);
+    pub func compareExchange(expected: bit, next: bit) -> bit {
+        return atomicCompare((&value).(*usize), expected.(usize), next.(usize)) != 0.(usize);
     }
 }
 
-pub func atomicBit(initial:bit) -> AtomicBit {
-    var result:AtomicBit;
-    result.value=initial.(usize);
+pub func atomicBit(initial: bit) -> AtomicBit {
+    var result: AtomicBit;
+    result.value = initial.(usize);
     return result;
 }

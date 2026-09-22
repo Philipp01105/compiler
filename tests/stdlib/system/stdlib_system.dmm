@@ -1,0 +1,289 @@
+package main;
+import (
+    "stdlib"
+    "stdlib/text"
+    "stdlib/path"
+    "stdlib/fs"
+    "stdlib/env"
+    "stdlib/time"
+    "stdlib/random"
+    "stdlib/math"
+);
+
+func fsOk(value: stdlib.Result<void, fs.FsError>) -> bit {
+    match (value) {
+        Ok => return true;
+        Err(error) => return false;
+    }
+}
+
+func envOk(value: stdlib.Result<void, env.EnvError>) -> bit {
+    match (value) {
+        Ok => return true;
+        Err(error) => return false;
+    }
+}
+
+func main() -> int {
+    var normalized = path.normalize(text.bytes("/a/b/../c/./"), path.Style.Posix);
+    match (normalized) {
+        Err(error) => return 1;
+        Ok(value) => {
+            if (value.view() != text.bytes("/a/c")) {
+                return 2;
+            }
+        }
+    }
+    if (
+        path.basename(text.bytes("/a/file.txt"), path.Style.Posix) != text.bytes("file.txt") ||
+        path.extension(text.bytes(".hidden"), path.Style.Posix).length != 0
+    ) {
+        return 3;
+    }
+    if (
+        path.dirname(text.bytes("C:\\file.txt"), path.Style.Windows) != text.bytes("C:\\") ||
+        path.dirname(text.bytes("/"), path.Style.Posix) != text.bytes("/")
+    ) {
+        return 32;
+    }
+    var windows = path.normalize(
+        text.bytes("\\\\server\\share\\a\\..\\..\\b"),
+        path.Style.Windows
+    );
+    match (windows) {
+        Err(error) => return 33;
+        Ok(value) => {
+            if (value.view() != text.bytes("\\\\server\\share\\b")) {
+                return 34;
+            }
+        }
+    }
+    var overflow = time.seconds(18446744074.(u64));
+    match (overflow) {
+        Ok(value) => return 35;
+        Err(error) => {
+            if (error != time.TimeError.Overflow) {
+                return 36;
+            }
+        }
+    }
+    if (!envOk(env.set(text.bytes("DMM_STDLIB_TEST_VALUE"), text.bytes("grüße😀")))) {
+        return 4;
+    }
+    var variable = env.get(text.bytes("DMM_STDLIB_TEST_VALUE"));
+    match (variable) {
+        Err(error) => return 5;
+        Ok(value) => {
+            if (value.view() != text.bytes("grüße😀")) {
+                return 6;
+            }
+        }
+    }
+    if (!envOk(env.remove(text.bytes("DMM_STDLIB_TEST_VALUE")))) {
+        return 7;
+    }
+    var missing = env.get(text.bytes("DMM_STDLIB_TEST_VALUE"));
+    match (missing) {
+        Ok(value) => return 8;
+        Err(error) => {
+            if (error.kind != env.ErrorKind.Missing) {
+                return 9;
+            }
+        }
+    }
+    if (!envOk(env.set(text.bytes("DMM_STDLIB_TEST_VALUE"), text.bytes("")))) {
+        return 39;
+    }
+    var empty = env.get(text.bytes("DMM_STDLIB_TEST_VALUE"));
+    match (empty) {
+        Err(error) => return 40;
+        Ok(value) => {
+            if (value.length() != 0) {
+                return 41;
+            }
+        }
+    }
+    if (!envOk(env.remove(text.bytes("DMM_STDLIB_TEST_VALUE")))) {
+        return 42;
+    }
+    var first = time.now();
+    var second = time.now();
+    match (first) {
+        Err(error) => return 10;
+        Ok(a) => {
+            match (second) {
+                Err(error) => return 11;
+                Ok(b) => {
+                    var elapsed = b.since(a);
+                    match (elapsed) {
+                        Err(error) => return 12;
+                        Ok(duration) => {}
+                    }
+                }
+            }
+        }
+    }
+    var sleeping = time.sleep(time.nanoseconds(1000000));
+    match (sleeping) {
+        Err(error) => return 13;
+        Ok => {}
+    }
+    var wall = time.systemNow();
+    match (wall) {
+        Err(error) => return 14;
+        Ok(value) => {
+            if (value.seconds < 1700000000 || value.nanoseconds >= 1000000000) {
+                return 15;
+            }
+        }
+    }
+    var generator = random.seeded(42);
+    if (generator.next() != 10481999410520546993.(u64)) {
+        return 16;
+    }
+    for (var i: int = 0; i < 100; i += 1) {
+        var bounded = generator.below(7);
+        match (bounded) {
+            Err(error) => return 43;
+            Ok(value) => {
+                if (value >= 7) {
+                    return 44;
+                }
+            }
+        }
+    }
+    var samples: u8[32];
+    var sampleView: u8[] = samples;
+    var entropy = random.systemFill(&mut sampleView);
+    match (entropy) {
+        Err(error) => return 17;
+        Ok => {}
+    }
+    if (
+        math.sqrt(9.0) != 3.0 ||
+        math.floor(-1.2) != - 2.0 ||
+        math.abs(-7.0) != 7.0 ||
+        math.pow(2.0, 3.0) != 8.0 ||
+        !math.isFinite(math.PI)
+    ) {
+        return 18;
+    }
+    if (!fsOk(fs.createDirectory(text.bytes("dmm-stdlib-system-test")))) {
+        return 19;
+    }
+    var filePath: u8[] = text.bytes("dmm-stdlib-system-test/ä😀.txt");
+    var binary: u8[12] = [104, 101, 108, 108, 111, 0, 98, 105, 110, 97, 114, 121];
+    var content: u8[] = binary;
+    if (!fsOk(fs.writeFile(filePath, &content))) {
+        return 20;
+    }
+    var read = fs.readFile(filePath, 12);
+    match (read) {
+        Err(error) => return 21;
+        Ok(value) => {
+            if (value.view() != content) {
+                return 22;
+            }
+        }
+    }
+    var limited = fs.readFile(filePath, 11);
+    match (limited) {
+        Ok(value) => return 37;
+        Err(error) => {
+            if (error.kind != fs.ErrorKind.LimitExceeded) {
+                return 38;
+            }
+        }
+    }
+    var information = fs.metadata(filePath);
+    match (information) {
+        Err(error) => return 23;
+        Ok(value) => {
+            if (value.kind != fs.EntryKind.File || value.size != 12) {
+                return 24;
+            }
+        }
+    }
+    var opened = fs.open(filePath, fs.OpenMode.Read);
+    match (opened) {
+        Err(error) => return 45;
+        Ok(file) => {
+            var chunk: u8[3];
+            var view: u8[] = chunk;
+            var count = file.read(&mut view);
+            match (count) {
+                Err(error) => return 46;
+                Ok(value) => {
+                    if (value != 3 || chunk[0] != 104) {
+                        return 47;
+                    }
+                }
+            }
+            var sought = file.seek(0, fs.SeekFrom.End);
+            match (sought) {
+                Err(error) => return 48;
+                Ok(value) => {
+                    if (value != 12) {
+                        return 49;
+                    }
+                }
+            }
+            var eof = file.read(&mut view);
+            match (eof) {
+                Err(error) => return 50;
+                Ok(value) => {
+                    if (value != 0) {
+                        return 51;
+                    }
+                }
+            }
+            if (!fsOk(file.close()) || !fsOk(file.close())) {
+                return 52;
+            }
+            var closed = file.read(&mut view);
+            match (closed) {
+                Ok(value) => return 53;
+                Err(error) => {
+                    if (error.kind != fs.ErrorKind.Closed) {
+                        return 54;
+                    }
+                }
+            }
+        }
+    }
+    var directory = fs.readDirectory(text.bytes("dmm-stdlib-system-test"));
+    match (directory) {
+        Err(error) => return 25;
+        Ok(value) => {
+            var next = value.next();
+            match (next) {
+                Err(error) => return 26;
+                Ok(entry) => {
+                    if (entry.name.view() != text.bytes("ä😀.txt")) {
+                        return 27;
+                    }
+                }
+            }
+            var end = value.next();
+            match (end) {
+                Ok(entry) => return 28;
+                Err(error) => {
+                    if (error.kind != fs.ErrorKind.EndOfDirectory) {
+                        return 29;
+                    }
+                }
+            }
+            if (!fsOk(value.close())) {
+                return 30;
+            }
+        }
+    }
+    if (
+        !fsOk(fs.rename(filePath, text.bytes("dmm-stdlib-system-test/renamed.txt"))) ||
+        !fsOk(fs.removeFile(text.bytes("dmm-stdlib-system-test/renamed.txt"))) ||
+        !fsOk(fs.removeDirectory(text.bytes("dmm-stdlib-system-test")))
+    ) {
+        return 31;
+    }
+    return 0;
+}
