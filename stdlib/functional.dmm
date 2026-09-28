@@ -1,18 +1,14 @@
 package stdlib;
 
-// Value matches transfer ownership of move-only payloads to the mapper.
+// Propagation transfers owner payloads and preserves stored borrow origins.
 pub func mapOption<T, U>(value: Option<T>, mapper: once func(T) -> U) -> Option<U> {
-    match (value) {
-        Some(item) => return Option<U>.Some(mapper(item));
-        None => return Option<U>.None;
-    }
+    var item = value?;
+    return Option<U>.Some(mapper(item));
 }
 
 pub func andThenOption<T, U>(value: Option<T>, mapper: once func(T) -> Option<U>) -> Option<U> {
-    match (value) {
-        Some(item) => return mapper(item);
-        None => return Option<U>.None;
-    }
+    var item = value?;
+    return mapper(item);
 }
 
 pub func optionOr<T>(value: Option<T>, fallback: once func() -> T) -> T {

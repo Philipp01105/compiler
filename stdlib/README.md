@@ -72,6 +72,10 @@ All these callbacks accept shared or mutable closures and consume their callback
 binding when invoked. Unused callbacks still destroy their owned captures. Moving an
 owned capture in the body infers a consuming closure and transfers that capture once.
 Monomorphic callback signatures participate in type inference.
+`mapOption` and `andThenOption` use ordinary postfix propagation. Stored checked
+reference and slice payloads keep their origins through extraction and returned
+wrappers; mutable payloads retain exclusive access. Early None returns clean up
+unused owning callback captures.
 
 ## Owned collections
 

@@ -23,6 +23,41 @@ func readerChoice<'a,'b>(left:&'a i32,right:&'b i32)->ReaderChoice<'a,'b> {
 func choiceLeft<'a,'b>(value:ReaderChoice<'a,'b>,fallback:&'a i32)->&'a i32 {
  match(value) { Both(left,right)=>return left; Empty=>return fallback; }
 }
+func forwardOption(value:stdlib.Option<&i32>)->stdlib.Option<&i32> {
+ var reference=value?;
+ return stdlib.Option<&i32>.Some(reference);
+}
+func forwardResult(value:stdlib.Result<&i32,i32>)->stdlib.Result<&i32,i32> {
+ var reference=value?;
+ return stdlib.Result<&i32,i32>.Ok(reference);
+}
+func forwardResidual(value:stdlib.Result<i32,&i32>)->stdlib.Result<i32,&i32> {
+ var number=value?;
+ return stdlib.Result<i32,&i32>.Ok(number);
+}
+func forwardMutable(value:stdlib.Option<&mut i32>)->stdlib.Option<&mut i32> {
+ var output=value?;
+ return stdlib.Option<&mut i32>.Some(output);
+}
+enum BorrowFlow<'a> {
+ Valid(&'a i32), Invalid(i32),
+ ;
+ static func branch(value:Self)->stdlib.Propagation<&'a i32,i32> {
+  match(value) {
+   Valid(reference)=>return stdlib.Propagation<&'a i32,i32>.Continue(reference);
+   Invalid(error)=>return stdlib.Propagation<&'a i32,i32>.Break(error);
+  }
+ }
+ static func fromResidual(error:i32)->Self { return BorrowFlow<'a>.Invalid(error); }
+}
+func forwardFlow<'a>(value:BorrowFlow<'a>)->BorrowFlow<'a> {
+ var reference=value?;
+ return BorrowFlow<'a>.Valid(reference);
+}
+func forwardSlice(value:stdlib.Option<i32[]>)->stdlib.Option<i32[]> {
+ var view=value?;
+ return stdlib.Option<i32[]>.Some(view);
+}
 func nestedLeft<'a,'b>(value:&NestedReaders<'a,'b>)->&'a i32 { return value.left.source; }
 func leftReader<'a,'b>(value:&SeparateReaders<'a,'b>)->&'a i32 { return value.left; }
 func projectReader<'a,'b>(value:&SeparateReaders<'a,'b>)->Reader<'a> {
@@ -62,6 +97,49 @@ func main()->int {
   Empty=>return 27;
  }
  var source:i32=42;
+ match(forwardOption(stdlib.Option<&i32>.Some(&source))) {
+  Some(reference)=>{ if(*reference!=42) { return 32; } }
+  None=>return 33;
+ }
+ match(forwardOption(stdlib.Option<&i32>.None)) {
+  Some(reference)=>return 34;
+  None=>{}
+ }
+ match(forwardResult(stdlib.Result<&i32,i32>.Ok(&source))) {
+  Ok(reference)=>{ if(*reference!=42) { return 35; } }
+  Err(error)=>return 36;
+ }
+ match(forwardResult(stdlib.Result<&i32,i32>.Err(47))) {
+  Ok(reference)=>return 37;
+  Err(error)=>{ if(error!=47) { return 38; } }
+ }
+ match(forwardResidual(stdlib.Result<i32,&i32>.Err(&source))) {
+  Ok(number)=>return 47;
+  Err(reference)=>{ if(*reference!=42) { return 48; } }
+ }
+ match(forwardResidual(stdlib.Result<i32,&i32>.Ok(59))) {
+  Ok(number)=>{ if(number!=59) { return 49; } }
+  Err(reference)=>return 50;
+ }
+ match(forwardMutable(stdlib.Option<&mut i32>.Some(&mut source))) {
+  Some(output)=>{ *output=43; }
+  None=>return 39;
+ }
+ if(source!=43) { return 40; }
+ source=42;
+ match(forwardFlow(BorrowFlow.Valid(&source))) {
+  Valid(reference)=>{ if(*reference!=42) { return 41; } }
+  Invalid(error)=>return 42;
+ }
+ match(forwardFlow(BorrowFlow.Invalid(53))) {
+  Valid(reference)=>return 43;
+  Invalid(error)=>{ if(error!=53) { return 44; } }
+ }
+ { var items:i32[2]; items[0]=57;
+ match(forwardSlice(stdlib.Option<i32[]>.Some(items))) {
+  Some(view)=>{ if(view.length!=2 || view[0]!=57) { return 45; } }
+  None=>return 46;
+ } }
  match(stdlib.Option<&i32>.branch(stdlib.Option<&i32>.Some(&source))) {
   Continue(reference)=>{ if(*reference!=42) { return 29; } }
   Break(residual)=>return 30;

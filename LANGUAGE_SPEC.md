@@ -448,8 +448,11 @@ whole aggregates overlap. A postfix cast such as `reference.(*T)` explicitly cro
 unchecked raw pointer.
 
 A returned borrow cannot point to a by-value scalar parameter. Value-pattern bindings of stored reference
-payloads preserve their referents, and `Option<&T>.branch` can transfer those payloads. Returning an
-`Option<&T>` rebuilt from a local binding produced by `?` is still conservatively rejected.
+payloads preserve their referents. Postfix `?` preserves those origins when extracting checked references
+or slices into a binding and when rebuilding a returned aggregate. This applies to ordinary Propagate
+contracts, including Option, Result and user enums. Mutable outputs retain exclusive access and
+move-only operands remain consumed. The implicit residual return is also checked for local borrow escape.
+Unknown branch mappings retain a conservative union of input origins rather than the operand's payload tags.
 Nested checked-reference representation, borrowing a reference binding's slot, complete provenance for
 nested aggregate storage and interprocedural reassignment of stored borrows remain unfinished.
 

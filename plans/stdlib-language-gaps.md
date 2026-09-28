@@ -6,24 +6,31 @@ Dieses Dokument trennt allgemeine Sprachlücken von stdlib-Implementierung. Es i
 
 Der Gesamtplan ist noch nicht abgeschlossen. Die folgende Übersicht beschreibt den implementierten Umfang;
 die detaillierte Testabdeckung und Prüfkommandos stehen in [tests/stdlib/README.md](../tests/stdlib/README.md).
-Der letzte vollständige Windows-Lauf bestand 56 von 57 Verträgen; der anschließend korrigierte
-Sprachlücken-Vertrag bestand nach erneutem Build im gezielten Wiederholungslauf. Eine neue vollständige
-Suite und die Linux-Abnahme nach dieser Rücknahme werden damit nicht behauptet.
+Der gezielte Sprachlücken-Vertrag ist nach der Propagation-Korrektur bestanden. Die erneute vollständige
+Windows-Suite läuft; die Linux-Abnahme des aktuellen Stands bleibt ausstehend.
 
 | Bereich | Derzeit umgesetzt | Noch offen |
 |---|---|---|
 | Copy und Callback-Inferenz | Kanonisches `core.Copy`, bedingte Methoden, monomorphe Callback-Inferenz | Keine hier belegte Restlücke |
-| Patterns und Heap-Moves | Allgemeine consuming/borrowed Matches, `take`/`replace`, `Box.intoInner` | Vollständige Payload-Provenienz bei verschachtelten oder umgeordneten Rückgaben; Rückgabe rekonstruierter `Option<&T>` über lokale `?`-Bindings |
+| Patterns und Heap-Moves | Allgemeine consuming/borrowed Matches, `take`/`replace`, `Box.intoInner`, Borrow-Weitergabe über `?` | Vollständige Payload-Provenienz bei verschachtelten oder umgeordneten Rückgaben |
 | Gespeicherte Borrows | Explizite Lifetimes, direkte Feld-Projektionen, Binäradapter, Mutex/Guard, immutable permanente Paket-Borrows | Mutable Paket-Borrows, verschachtelte checked Referenzen/Referenzslots, vollständige verschachtelte Provenienz und interprozedurale Änderungen gespeicherter Borrows |
 | Owner-Collections | List/Deque/HashMap, checked Zugriffe, Allocation-Fehlerpfade und Destruktionszähler | Präzise Freigabe einzelner gespeicherter Loans nach Entfernen/clear |
 | Capturing Closures | Explizite Captures, shared/mut/once, Owner-Übertragung und Callable-Verbraucher | Rückgaben über eine benannte Callable-Abstraktion |
 | Future-Komposition | `Poll`, retained Waker, Context und normaler Poller-Vertrag | Exklusives typisiertes Future-Polling, gepinntes `fromPoller`, `select2`/`race2`/`join2`/`timeout`, nicht blockierende Timer |
 | Abschlussprüfung | Windows-Regressionen, O0/O1, ELF-/COFF-Ausgabe und isolierte stdlib-Tests vorhanden | Linux-Abnahme des aktuellen Sprachlücken-Stands und Abnahme der offenen Features |
 
-Rückgaben auf by-value skalare Parameter werden abgelehnt. `Option<&T>.branch` überträgt Referent-Payloads;
-eine Rückgabe rekonstruierter Option-Payloads über lokale `?`-Bindings bleibt konservativ abgelehnt und
-ist als Einschränkung reproduziert. Referenzslot-Borrows und sämtliche verschachtelten Parameter-Speicherfälle
-sind damit nicht als umgesetzt oder abgenommen markiert.
+Rückgaben auf by-value skalare Parameter werden abgelehnt. Borrow-Payloads behalten jetzt auch über lokale
+`?`-Bindings ihre Herkunft und können in Rückgaben weitergereicht werden. Ausführungsfälle prüfen Option,
+Result und einen normalen benutzerdefinierten Vertrag, shared/mutable Referenzen, Slices und geborgte
+Residuals. Lokale Flucht, konkurrierende Zugriffe und falsche deklarierte Lifetimes bleiben abgelehnt;
+der implizite Residual-Return wird ebenfalls geprüft. `mapOption` und `andThenOption` verwenden die
+allgemeine Propagation statt eigener Value-Matches. Unbekannte branch-Abbildungen behalten konservative
+Origin-Vereinigungen und verlieren die Payload-Tags des Eingabe-Enums. Referenzslot-Borrows und sämtliche
+verschachtelten Parameter-Speicherfälle sind damit nicht als umgesetzt oder abgenommen markiert.
+Generierte Closure-Aufrufe normalisieren importierte generische Rückgabetypen wie normale Funktionen.
+Owner-Callbacks in den umgestellten Option-Helfern werden auf None nicht aufgerufen und einmal bereinigt;
+Some führt sie aus und bereinigt ebenfalls einmal. Ein frischer Testing-Build erzeugt nun auch das
+von Netzwerk-/Callback-ABI-Tests benötigte Runtime-Testarchiv über eine explizite Build-Abhängigkeit.
 
 ## Copy-Constraint (Sprachmittel und Container-Anwendung umgesetzt)
 

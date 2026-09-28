@@ -934,6 +934,7 @@ static void materialize_closure(Analyzer *analyzer, AstExpression *expression) {
             add_member(analyzer, member->name_token, environment->name_token, member->type,
                        SEMANTIC_SYMBOL_FIELD, member, &member->resolved_symbol_id);
         AstDeclarationNode *invoke = environment->as.struct_decl.methods;
+        normalize_function_types(analyzer, invoke);
         add_global(analyzer, invoke, SEMANTIC_SYMBOL_FUNCTION, environment->name_token);
         derive_type_properties(analyzer);
         analyze_closure_function(analyzer, invoke);

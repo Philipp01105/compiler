@@ -711,8 +711,10 @@ static BorrowRecord *add_borrow_mode(BorrowChecker *, const AstExpression *, con
 static BorrowRecord *add_lifetime_parameter_borrows(BorrowChecker *, const AstExpression *,
     const AstExpression *, const AstProgram *, const AstType *, const char *, AstBorrowKind, size_t);
 static int type_has_view_arguments(const BorrowChecker *checker, const AstType *type);
+static int type_has_view_depth(const BorrowChecker *, const AstProgram *, const AstType *, size_t);
 static int type_has_mutable_view(const BorrowChecker *, const AstProgram *, const AstType *, unsigned);
 static const char *payload_lifetime(BorrowChecker *, const AstProgram *, const AstType *, size_t, size_t);
+static void check_future_return(BorrowChecker *, const AstExpression *);
 
 static void reserve_argument_borrows(BorrowChecker *checker, size_t temporary,
                                      const AstExpression *value) {
@@ -985,6 +987,25 @@ static void check_expression(BorrowChecker *checker,
                 ? BORROW_ACCESS_WRITE
                 : BORROW_ACCESS_READ;
         check_expression(checker, expression->left, operand_access);
+        if (type_has_view_depth(checker, expression->propagation_contract_program,
+                                &expression->propagation_residual_type, 0)) {
+            /* The Break path is an implicit return. Validate its possible
+               origins without transferring loans off the continuing path. */
+            AstExpression residual = *expression;
+            residual.has_resolved_ast_type = 1;
+            residual.resolved_ast_type = expression->propagation_residual_type;
+            residual.resolved_borrow_kind = residual.resolved_ast_type.borrow_kind;
+            residual.resolved_is_slice = residual.resolved_ast_type.is_slice;
+            residual.resolved_named_symbol_id = residual.resolved_ast_type.kind == AST_TYPE_NAMED
+                ? resolve_named_symbol_id(checker->analyzer, expression->propagation_contract_program,
+                    residual.resolved_ast_type.name_token) : AST_SYMBOL_NONE;
+            int saved_reserving = checker->reserving_loans;
+            checker->reserving_loans = 1;
+            checker->aggregate_capture_depth++;
+            check_future_return(checker, &residual);
+            checker->aggregate_capture_depth--;
+            checker->reserving_loans = saved_reserving;
+        }
         return;
     }
     if (expression->kind == AST_EXPR_UNARY &&
@@ -1056,6 +1077,11 @@ static BorrowRecord *add_borrow_mode(BorrowChecker *checker,
                                      int preserve_existing) {
     if (value == NULL || borrower == NULL)
         return NULL;
+    if (value->kind == AST_EXPR_PROPAGATE) {
+        BorrowRecord *boundary = checker->borrows;
+        clone_aggregate_borrows(checker, borrower, value, scope_depth);
+        return checker->borrows != boundary ? checker->borrows : NULL;
+    }
     /* An explicit result lifetime can be shared by multiple input origins.
        Retain all of them; runtime control flow chooses the actual referent. */
     if (value->kind == AST_EXPR_CALL && value->resolved_borrow_kind != AST_BORROW_NONE &&
@@ -1740,7 +1766,32 @@ static void clone_aggregate_borrows(BorrowChecker *checker,
         return;
     }
     if (source && source->kind == AST_EXPR_PROPAGATE) {
+        BorrowRecord *boundary = checker->borrows;
         clone_aggregate_borrows(checker, target, source->left, scope_depth);
+        /* A by-value aggregate parameter has no caller loans in this function.
+           Its view payloads nevertheless refer to caller storage, just as in
+           a value-pattern binding. Do not invent this origin for local owners. */
+        BorrowPlace parameter_place;
+        if (checker->borrows == boundary && expression_place(source->left, &parameter_place) &&
+            parameter_place.owner < checker->analyzer->model->symbol_count) {
+            const SemanticSymbol *parameter = &checker->analyzer->model->symbols[parameter_place.owner];
+            if (parameter->kind == SEMANTIC_SYMBOL_PARAMETER &&
+                type_has_view_depth(checker, parameter->source_program, &parameter->declared_type, 0) &&
+                (source->resolved_borrow_kind != AST_BORROW_NONE || source->resolved_is_slice ||
+                 (source->has_resolved_ast_type && type_has_view_arguments(checker, &source->resolved_ast_type)))) {
+                AstExpression referents = *source->left;
+                referents.resolved_borrow_kind = source->resolved_borrow_kind == AST_BORROW_NONE
+                    ? AST_BORROW_IMMUTABLE : source->resolved_borrow_kind;
+                add_borrow_mode(checker, target, &referents, scope_depth, 1);
+            }
+        }
+        /* branch is a normal DMM function and may reorder its input payloads.
+           An extracted output cannot keep the operand enum's payload tags. */
+        for (BorrowRecord *loan = checker->borrows; loan != boundary; loan = loan->next) {
+            loan->payload_known = 0;
+            if (source->resolved_borrow_kind != AST_BORROW_NONE)
+                loan->kind = source->resolved_borrow_kind;
+        }
         return;
     }
     if (source != NULL && source->kind == AST_EXPR_STRUCT_LITERAL) {

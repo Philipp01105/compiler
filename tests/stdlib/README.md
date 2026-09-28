@@ -15,7 +15,7 @@ Der Implementierungsstand und die offenen Sprachmittel stehen in
 | `language_lifetimes` | Gespeicherte Borrows, direkte Feld-Lifetimes und Projektionen, konservative verschachtelte Origins, permanente Paket-Borrows, Binäradapter und Mutex-Guard |
 | `language_collections` | Owner-List/Deque/HashMap, Wachstum, Ring-Wrap, Kollisionen, Entfernen, Ersetzen, clear/truncate und einmalige Destruktion |
 | `language_files` | File-Owner in Collections und fallible Option-/Result-Propagation |
-| `language_closures` | Explizite Captures, shared/mut/once, Owner-Captures, direkte Aufrufe und deferred Cleanup |
+| `language_closures` | Explizite Captures, shared/mut/once, Owner-Captures, direkte Aufrufe, deferred Cleanup und Callback-Cleanup auf None-/Some-Pfaden |
 | `language_gaps_async` | Poll/Poller-Grundlage, No-op-Waker/Context sowie Future-Payload-Loans bei Move, Match, Completion und Cancellation |
 | `collection_allocation_faults` | Allocation-Fehler vor Relocation, unveränderte vorhandene Inhalte, Destruktion eingehender Owner, Retry und null verbleibende Allocations |
 
@@ -28,11 +28,16 @@ Die eingebetteten Negativfälle prüfen Copy/Send-Anforderungen, Use-after-move,
 Consumption-Pflichten, Borrow-Escape, Alias-Konflikte, falsche Feld-/Payload-Lifetimes,
 unzulässige Paket-Borrows, mutable Zugriffe durch shared Referenzen und Closure-Verträge.
 Neu hinzugefügt ist die Ablehnung einer Rückgabe auf einen by-value skalaren Parameter.
-Positive Gegenfälle übertragen `Option<&i32>` durch `branch`, jeweils für Some und None.
-Ein separater Rejection-Fall reproduziert die noch konservativ abgelehnte Rückgabe
-einer aus einem lokalen `?`-Binding rekonstruierten Option; er markiert diese API nicht
-als umgesetzt. Bestehende Interface-/String-Rückgaben
+Positive Gegenfälle übertragen Borrow-Payloads durch `branch` und `?`: Option, Result und ein
+benutzerdefinierter Vertrag, shared/mutable Referenzen, Slices sowie geborgte Residuals,
+jeweils mit Success-/Residual-Pfaden. Rekonstruierte Option-Rückgaben sind nun Execution-Tests.
+Negativfälle prüfen lokale Flucht über Output und Residual, Konflikte nach Extraktion und
+Weitergabe sowie falsche deklarierte Lifetimes. Bestehende Interface-/String-Rückgaben
 bleiben durch die allgemeinen Frontend-, Execution- und Backend-Regressionen geschützt.
+Die Option-Helfer werden mit trap-auslösenden, unbenutzten Owner-Callbacks für None und
+mit ausgeführten Callbacks für Some geprüft. Destruktionszähler verlangen einmaliges
+Cleanup. Closures mit importierter generischer Option-Rückgabe werden dabei normalisiert
+und spezialisiert wie gewöhnliche Funktionen.
 Diese Negativfälle werden mit `--emit=obj` bei der voreingestellten Optimierungsstufe
 kompiliert und auf ihre Diagnose geprüft; sie sind keine O0/O1-Execution-Tests.
 
@@ -55,21 +60,16 @@ ctest --test-dir build-language-gaps -R stdlib_language_gaps_contract --output-o
 
 ## Noch nicht abgenommen
 
-Prüfergebnis vom 5. Oktober 2026: Im vollständigen Windows-Lauf bestanden 56 von 57
-CTest-Verträgen. Der Sprachlücken-Vertrag scheiterte dabei an der erwarteten Diagnose
-des neuen Parameter-Tests. Nach Rücknahme der ungeprüften Parameter-/Referenzslot-Erweiterung,
-erneutem Build und Anpassung an die bestehende Diagnose bestand auch dieser Vertrag
-im gezielten Wiederholungslauf (48,71 Sekunden). Die aktualisierten O0/O1-Fixtures,
-ELF-/COFF-Ausgaben, Negativfälle und isolierten Allocation-Fehlerpfade sind damit geprüft.
-Ein weiterer vollständiger Lauf nach dieser Rücknahme wurde nicht ausgeführt.
+Prüfstand vom 5. Oktober 2026: Der gezielte Sprachlücken-Vertrag mit der Propagation-Korrektur
+ist bestanden. Die vollständige Windows-Suite wird nach dem erneuten Build geprüft.
+Die abschließende Linux-Abnahme bleibt ausstehend.
 
 Exklusives öffentliches Future-Polling, der gepinnte fromPoller-Adapter,
 select2/race2/join2/timeout und nicht blockierende Timer sind noch nicht implementiert.
 Für diese APIs gibt es keine erfolgreiche Abnahme. Ebenso offen bleiben vollständige
 verschachtelte/interprozedurale Borrow-Provenienz, präzise Loan-Freigabe einzelner
-Container-Slots, verschachtelte checked Referenzen/Referenzslot-Borrows,
-die rekonstruierte Option-Rückgabe über lokale `?`-Bindings und Closure-Rückgaben
-über eine benannte Callable-Abstraktion.
+Container-Slots, verschachtelte checked Referenzen/Referenzslot-Borrows und
+Closure-Rückgaben über eine benannte Callable-Abstraktion.
 Die abschließende Linux-Ausführung des aktuellen Sprachlücken-Stands steht aus.
 
 Der frühere Abschluss der stdlib-Grundetappen ist ein historischer Prüfstand und

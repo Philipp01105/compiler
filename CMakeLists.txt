@@ -322,7 +322,9 @@ if (BUILD_TESTING)
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" VERBATIM)
         set_source_files_properties("${DMM_NETWORK_TEST_OBJECT}" PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
         add_executable(dmm_network_dmm_test tests/unit/network_shim_test.c "${DMM_NETWORK_TEST_OBJECT}" "${DMM_PLATFORM_COMPONENT}")
-        add_dependencies(dmm_network_dmm_test dmm_platform_runtime)
+        # The registered network/callback ABI contracts also consume the bundle.
+        # Make it part of a testing build instead of relying on cached artifacts.
+        add_dependencies(dmm_network_dmm_test dmm_network_runtime)
         target_include_directories(dmm_network_dmm_test PRIVATE ${DMM_INCLUDE_DIRS})
         target_compile_definitions(dmm_network_dmm_test PRIVATE _GNU_SOURCE _XOPEN_SOURCE=700)
         target_link_libraries(dmm_network_dmm_test PRIVATE Threads::Threads)
