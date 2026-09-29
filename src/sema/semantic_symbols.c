@@ -139,7 +139,8 @@ unsigned semantic_symbol_type_properties(const SemanticModel *model,
         return SEMANTIC_TYPE_COPYABLE;
     const SemanticSymbol *symbol = &model->symbols[type_symbol_id];
     if (symbol->kind == SEMANTIC_SYMBOL_INTERFACE)
-        return SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP;
+        return SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP |
+            ((symbol->declaration && symbol->declaration->must_consume) ? SEMANTIC_TYPE_MUST_CONSUME : 0u);
     if (symbol->kind != SEMANTIC_SYMBOL_STRUCT &&
         symbol->kind != SEMANTIC_SYMBOL_ENUM)
         return SEMANTIC_TYPE_COPYABLE;

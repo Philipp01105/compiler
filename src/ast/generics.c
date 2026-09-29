@@ -52,6 +52,8 @@ static int alpha_type_equal(const AstProgram *a, const AstType *x,
                             const AstGenericParameter *gx,
                             const AstProgram *b, const AstType *y,
                             const AstGenericParameter *gy) {
+    if ((x->reference_type != NULL) != (y->reference_type != NULL)) return 0;
+    if (x->reference_type && !alpha_type_equal(a, x->reference_type, gx, b, y->reference_type, gy)) return 0;
     int xi = alpha_parameter_index(a, x, gx);
     int yi = alpha_parameter_index(b, y, gy);
     if (xi >= 0 || yi >= 0)
@@ -95,6 +97,8 @@ static int alpha_type_equal(const AstProgram *a, const AstType *x,
 
 int ast_concrete_type_equal(const AstProgram *a, const AstType *x,
                               const AstProgram *b, const AstType *y) {
+    if ((x->reference_type != NULL) != (y->reference_type != NULL)) return 0;
+    if (x->reference_type && !ast_concrete_type_equal(a, x->reference_type, b, y->reference_type)) return 0;
     if (x->kind != y->kind || x->is_native_function != y->is_native_function || x->borrow_kind != y->borrow_kind ||
         x->pointer_depth != y->pointer_depth ||
         x->outer_pointer_depth != y->outer_pointer_depth || x->is_array != y->is_array ||
@@ -196,13 +200,40 @@ static size_t transplant_token(Substitution *s, size_t index) {
     return result;
 }
 
-static AstType concrete_copy(Substitution *s, AstType type) {
+typedef struct ConcreteLifetimeScope {
+    const AstLifetimeParameter *parameters;
+    const struct ConcreteLifetimeScope *parent;
+} ConcreteLifetimeScope;
+
+static int concrete_lifetime_bound(Substitution *s, size_t token,
+                                   const ConcreteLifetimeScope *scope) {
+    const AstToken *source = ast_program_token(s->argument_program, token);
+    if (!source || source->type != TOKEN_LIFETIME) return 0;
+    for (; scope; scope = scope->parent)
+        for (const AstLifetimeParameter *p = scope->parameters; p; p = p->next)
+            if (!strcmp(source->lexeme,
+                        ast_program_lexeme(s->argument_program, p->name_token))) return 1;
+    return 0;
+}
+
+static AstType concrete_copy_scoped(Substitution *s, AstType type,
+                                    const ConcreteLifetimeScope *scope) {
+    ConcreteLifetimeScope callable = {type.function_lifetime_parameters, scope};
+    if (type.function_lifetime_parameters) scope = &callable;
+    if (type.reference_type) {
+        AstType *reference = owned(s, sizeof(*reference));
+        if (reference) *reference = concrete_copy_scoped(s, *type.reference_type, scope);
+        type.reference_type = reference;
+    }
     type.name_token = transplant_token(s, type.name_token);
-    const AstToken *lifetime = ast_program_token(s->argument_program, type.lifetime_token);
-    type.lifetime_token = lifetime && lifetime->type == TOKEN_LIFETIME
+    /* Caller lifetime names do not belong to the specialized declaration.
+       Origins remain on expressions/loans; only callable-local binders are
+       part of the concrete type's own contract. */
+    type.lifetime_token = concrete_lifetime_bound(s, type.lifetime_token, scope)
         ? transplant_token(s, type.lifetime_token) : AST_TOKEN_NONE;
     AstLifetimeParameter *lifetimes = NULL, **lifetime_tail = &lifetimes;
     for (const AstLifetimeParameter *p = type.lifetime_arguments; p; p = p->next) {
+        if (!concrete_lifetime_bound(s, p->name_token, scope)) { lifetimes = NULL; break; }
         AstLifetimeParameter *copy = owned(s, sizeof(*copy));
         if (!copy) break;
         copy->name_token = transplant_token(s, p->name_token);
@@ -210,17 +241,26 @@ static AstType concrete_copy(Substitution *s, AstType type) {
         lifetime_tail = &copy->next;
     }
     type.lifetime_arguments = lifetimes;
+    AstLifetimeParameter *binders = NULL, **binder_tail = &binders;
+    for (const AstLifetimeParameter *p = type.function_lifetime_parameters; p; p = p->next) {
+        AstLifetimeParameter *copy = owned(s, sizeof(*copy));
+        if (!copy) break;
+        copy->name_token = transplant_token(s, p->name_token);
+        *binder_tail = copy;
+        binder_tail = &copy->next;
+    }
+    type.function_lifetime_parameters = binders;
     if (type.is_array) type.array_length_token = transplant_token(s, type.array_length_token);
     if (type.element_type != NULL) {
         AstType *element = owned(s, sizeof(*element));
-        if (element != NULL) *element = concrete_copy(s, *type.element_type);
+        if (element != NULL) *element = concrete_copy_scoped(s, *type.element_type, scope);
         type.element_type = element;
     }
     AstTypeArgument *head = NULL, **tail = &head;
     for (const AstTypeArgument *a = type.arguments; a; a = a->next) {
         AstTypeArgument *copy = owned(s, sizeof(*copy));
         if (!copy) break;
-        copy->type = concrete_copy(s, a->type);
+        copy->type = concrete_copy_scoped(s, a->type, scope);
         *tail = copy;
         tail = &copy->next;
     }
@@ -229,20 +269,30 @@ static AstType concrete_copy(Substitution *s, AstType type) {
     for (const AstTypeArgument *a = type.function_parameters; a; a = a->next) {
         AstTypeArgument *copy = owned(s, sizeof(*copy));
         if (!copy) break;
-        copy->type = concrete_copy(s, a->type);
+        copy->type = concrete_copy_scoped(s, a->type, scope);
         *parameter_tail = copy;
         parameter_tail = &copy->next;
     }
     type.function_parameters = parameters;
     if (type.function_return_type != NULL) {
         AstType *result = owned(s, sizeof(*result));
-        if (result != NULL) *result = concrete_copy(s, *type.function_return_type);
+        if (result != NULL) *result = concrete_copy_scoped(s, *type.function_return_type, scope);
         type.function_return_type = result;
     }
     return type;
 }
 
+static AstType concrete_copy(Substitution *s, AstType type) {
+    return concrete_copy_scoped(s, type, NULL);
+}
+
 static AstType substitute_type(Substitution *s, AstType type) {
+    if (type.reference_type) {
+        AstType *reference = owned(s, sizeof(*reference));
+        if (reference) *reference = substitute_type(s, *type.reference_type);
+        type.reference_type = reference;
+        return type;
+    }
     if (type.element_type != NULL) {
         AstType *element = owned(s, sizeof(*element));
         if (element != NULL) *element = substitute_type(s, *type.element_type);
@@ -274,6 +324,10 @@ static AstType substitute_type(Substitution *s, AstType type) {
             AstType result = concrete_copy(s, s->arguments[i]);
             result.span = type.span;
             if (type.borrow_kind != AST_BORROW_NONE) {
+                if (result.borrow_kind != AST_BORROW_NONE) {
+                    AstType *reference = owned(s, sizeof(*reference));
+                    if (reference) { *reference = result; result.reference_type = reference; result.pointer_depth++; }
+                }
                 result.borrow_kind = type.borrow_kind;
                 result.lifetime_token = type.lifetime_token;
             }
@@ -543,6 +597,8 @@ static int identity_type(char *key, size_t *used, const AstProgram *program, con
              type->outer_pointer_depth, type->is_array, type->is_slice, type->resolved_array_length,
              type->borrow_kind, type->callable_mode);
     if (!identity_text(key, used, number)) return 0;
+    if (type->reference_type && (!identity_text(key, used, "reference") ||
+        !identity_type(key, used, program, type->reference_type))) return 0;
     for (const AstTypeArgument *a = type->arguments; a; a = a->next)
         if (!identity_type(key, used, program, &a->type)) return 0;
     for (const AstTypeArgument *a = type->function_parameters; a; a = a->next)

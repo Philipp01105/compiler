@@ -64,6 +64,9 @@ static int emit_async_await(Emitter *emitter, const IrInstruction *instruction) 
                     emitter->function_index, instruction->target_a);
     write_labelf(emitter, ".LIR_async_resume_%zu_%zu:\n",
                  emitter->function_index, instruction->target_a);
+    write_value_load(emitter,"rax",instruction->operand_a);
+    write_x64_2(emitter,X64_OP_CMP,X64_WIDTH_QWORD,x64_memory(X64_WIDTH_QWORD,"rax",16),x64_immediate(-1));
+    write_x64_1(emitter,X64_OP_JE,X64_WIDTH_NONE,x64_label(ready));
     async_callback_mode(emitter, instruction->operand_a, 0,instruction->async_cleanup);
     write_x64_2(emitter, X64_OP_TEST, X64_WIDTH_QWORD, x64_register("rax"), x64_register("rax"));
     write_x64_1(emitter, X64_OP_JNE, X64_WIDTH_NONE, x64_label(ready));
@@ -100,6 +103,80 @@ static int emit_async_await(Emitter *emitter, const IrInstruction *instruction) 
 }
 
 static int emit_executor_operation(Emitter *e, const IrInstruction *in) {
+    if (in->async_operation==ASYNC_CONTEXT) {
+        write_x64_2(e,X64_OP_MOV,X64_WIDTH_QWORD,x64_register("rax"),
+                    x64_memory(X64_WIDTH_QWORD,"r14",async_header_offset(e,40)));
+        write_value_store(e,"rax",in->result);
+        return 1;
+    }
+    if (in->async_operation==ASYNC_POLL || in->async_operation==ASYNC_CANCEL_POLL) {
+        size_t seq=e->bounds_sequence++;
+        char valid[96],done[96];
+        snprintf(valid,sizeof(valid),".LIR_future_poll_valid_%zu_%zu",e->function_index,seq);
+        snprintf(done,sizeof(done),".LIR_future_poll_done_%zu_%zu",e->function_index,seq);
+        write_value_load(e,"rax",in->operand_a);
+        write_x64_2(e,X64_OP_MOV,X64_WIDTH_QWORD,x64_register("rbx"),x64_memory(X64_WIDTH_QWORD,"rax",0));
+        write_x64_2(e,X64_OP_CMP,X64_WIDTH_QWORD,x64_memory(X64_WIDTH_QWORD,"rbx",16),x64_immediate(0));
+        write_x64_1(e,X64_OP_JGE,X64_WIDTH_NONE,x64_label(valid));
+        if(in->async_operation==ASYNC_CANCEL_POLL) {
+            write_x64_2(e,X64_OP_CMP,X64_WIDTH_QWORD,x64_memory(X64_WIDTH_QWORD,"rbx",16),x64_immediate(-1));
+            write_x64_1(e,X64_OP_JE,X64_WIDTH_NONE,x64_label(valid));
+            write_x64_2(e,X64_OP_CMP,X64_WIDTH_QWORD,x64_memory(X64_WIDTH_QWORD,"rbx",16),x64_immediate(-2));
+            write_immediate(e,"rax",1);
+            write_x64_1(e,X64_OP_JE,X64_WIDTH_NONE,x64_label(done));
+        }
+        write_x64_0(e,X64_OP_UD2);
+        write_labelf(e,"%s:\n",valid);
+        write_value_load(e,"rax",in->operand_b);
+        write_register_move(e,argument_register(e->target,1),"rax");
+        write_register_move(e,argument_register(e->target,0),"rbx");
+        write_x64_2(e,X64_OP_MOV,X64_WIDTH_QWORD,x64_register("r11"),
+            x64_memory(X64_WIDTH_QWORD,"rbx",in->async_operation==ASYNC_POLL ? 0 : 24));
+        if(e->target==TARGET_COFF) write_x64_2(e,X64_OP_SUB,X64_WIDTH_QWORD,x64_register("rsp"),x64_immediate(32));
+        write_x64_1(e,X64_OP_CALL,X64_WIDTH_NONE,x64_register("r11"));
+        if(e->target==TARGET_COFF) write_x64_2(e,X64_OP_ADD,X64_WIDTH_QWORD,x64_register("rsp"),x64_immediate(32));
+        write_x64_2(e,X64_OP_TEST,X64_WIDTH_QWORD,x64_register("rax"),x64_register("rax"));
+        write_x64_1(e,X64_OP_SETNE,X64_WIDTH_BYTE,x64_register("al"));
+        write_x64_2(e,X64_OP_MOVZX,X64_WIDTH_QWORD,x64_register("rax"),x64_register("al"));
+        if(in->async_operation==ASYNC_CANCEL_POLL) {
+            write_x64_2(e,X64_OP_TEST,X64_WIDTH_QWORD,x64_register("rax"),x64_register("rax"));
+            write_x64_1(e,X64_OP_JE,X64_WIDTH_NONE,x64_label(done));
+            write_x64_2(e,X64_OP_MOV,X64_WIDTH_QWORD,x64_memory(X64_WIDTH_QWORD,"rbx",16),x64_immediate(-2));
+        }
+        write_labelf(e,"%s:\n",done);
+        write_value_store(e,"rax",in->result);
+        return 1;
+    }
+    if(in->async_operation==ASYNC_COMPLETE || in->async_operation==ASYNC_CANCEL_COMPLETE) {
+        size_t seq=e->bounds_sequence++;
+        char valid[96]; snprintf(valid,sizeof(valid),".LIR_future_complete_valid_%zu_%zu",e->function_index,seq);
+        write_value_load(e,"rax",in->operand_a);
+        write_x64_2(e,X64_OP_CMP,X64_WIDTH_QWORD,x64_memory(X64_WIDTH_QWORD,"rax",16),
+                    x64_immediate(in->async_operation==ASYNC_COMPLETE ? -1 : -2));
+        write_x64_1(e,X64_OP_JE,X64_WIDTH_NONE,x64_label(valid));
+        write_x64_0(e,X64_OP_UD2);
+        write_labelf(e,"%s:\n",valid);
+        if(in->result!=IR_VALUE_NONE) {
+            if(is_inline_structure(e->module,in) || in->is_array) {
+                write_x64_2(e,X64_OP_ADD,X64_WIDTH_QWORD,x64_register("rax"),x64_immediate(80));
+                write_x64_2(e,X64_OP_LEA,X64_WIDTH_QWORD,x64_register("rbx"),
+                    x64_memory(X64_WIDTH_NONE,"rbp",-(long long)aggregate_result_offset(e,in)));
+                if(!copy_async_storage(e,in->type_id,"rax","rbx")) return 0;
+                write_register_move(e,"rax","rbx");
+            } else write_x64_2(e,X64_OP_MOV,X64_WIDTH_QWORD,x64_register("rax"),x64_memory(X64_WIDTH_QWORD,"rax",80));
+            write_value_store(e,"rax",in->result);
+        }
+        if(in->async_operation==ASYNC_CANCEL_COMPLETE) {
+            write_value_load(e,"rax",in->operand_a);
+            write_register_move(e,argument_register(e->target,0),"rax");
+            write_immediate(e,argument_register(e->target,1),1);
+            write_x64_2(e,X64_OP_MOV,X64_WIDTH_QWORD,x64_register("r11"),x64_memory(X64_WIDTH_QWORD,"rax",8));
+            if(e->target==TARGET_COFF) write_x64_2(e,X64_OP_SUB,X64_WIDTH_QWORD,x64_register("rsp"),x64_immediate(32));
+            write_x64_1(e,X64_OP_CALL,X64_WIDTH_NONE,x64_register("r11"));
+            if(e->target==TARGET_COFF) write_x64_2(e,X64_OP_ADD,X64_WIDTH_QWORD,x64_register("rsp"),x64_immediate(32));
+        } else async_callback(e,in->operand_a,8);
+        return 1;
+    }
     if (in->async_operation==ASYNC_NATIVE_FUTURE) {
         write_value_load(e,"rax",in->operand_a);
         write_value_store(e,"rax",in->result);

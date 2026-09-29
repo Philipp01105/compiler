@@ -924,6 +924,9 @@ static int compact_ids(IrFunction *f) {
             size_t old = in->first_argument;
             in->first_argument = na;
             for (size_t a = 0; a < in->argument_count; ++a) arguments[na++] = values[f->arguments[old + a]];
+        } else if (in->opcode==IR_OP_CALL || in->opcode==IR_OP_ENUM_CONSTRUCT ||
+                   in->opcode==IR_OP_ARRAY_LITERAL || in->opcode==IR_OP_SUBSLICE) {
+            in->first_argument=0;
         }
     }
     f->next_value = nv;
@@ -1265,13 +1268,19 @@ static int remove_dead_functions(IrModule *module, IrOptimizationStats *stats) {
                                            ? &module->semantics->symbols[function->symbol_id]
                                            : NULL;
         const AstDeclarationNode *declaration = symbol == NULL ? NULL : symbol->declaration;
+        int interface_closure_entry=0;
+        for(size_t owner=0;owner<symbols && !interface_closure_entry;owner++) {
+            const AstDeclarationNode *environment=module->semantics->symbols[owner].declaration;
+            if(environment && environment->closure_consuming_invoke &&
+               environment->closure_consuming_invoke==declaration) interface_closure_entry=1;
+        }
         const char *name = function->is_package_init
                                ? "__dmm_package_init"
                                : function->is_package_cleanup
                                      ? "__dmm_package_cleanup"
                                : ast_program_lexeme(function->source_program,
                                                     function->name_token);
-        if (function->is_package_init || function->is_package_cleanup || function->is_native_export ||
+        if (function->is_package_init || function->is_package_cleanup || function->is_native_export || interface_closure_entry ||
             function->owner_symbol_id != AST_SYMBOL_NONE || !declaration || declaration->is_public ||
             !strcmp(name, "main")) {
             live[i] = 1;

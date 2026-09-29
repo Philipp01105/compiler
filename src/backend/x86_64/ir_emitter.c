@@ -970,24 +970,25 @@ static int emit_drop_type(Emitter *emitter, IrTypeId type_id) {
         write_x64_2(emitter, X64_OP_TEST, X64_WIDTH_QWORD,
                     x64_register("rax"), x64_register("rax"));
         write_x64_1(emitter, X64_OP_JE, X64_WIDTH_NONE, x64_label(done));
-        for (size_t s = 0; s < emitter->module->structure_count; s++) {
-            const IrAggregate *structure = &emitter->module->structures[s];
+        for (size_t s = 0; s < emitter->module->structure_count + emitter->module->enum_count; s++) {
+            size_t concrete = s < emitter->module->structure_count ? emitter->module->structures[s].symbol_id
+                : emitter->module->enums[s - emitter->module->structure_count].symbol_id;
             if (!semantic_implements_interface(emitter->module->semantics,
                                                type->symbol_id,
-                                               structure->symbol_id)) continue;
+                                               concrete)) continue;
             snprintf(next, sizeof(next), ".LIR_interface_drop_next_%zu_%zu_%zu",
                      emitter->function_index, sequence, s);
             write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
                         x64_register("rax"), x64_memory(X64_WIDTH_QWORD, "rbx", 0));
             write_immediate(emitter, "rdx",
                             (long long) ir_interface_type_tag(emitter->module,
-                                                                structure->symbol_id));
+                                                                concrete));
             write_x64_2(emitter, X64_OP_CMP, X64_WIDTH_QWORD,
                         x64_register("rax"), x64_register("rdx"));
             write_x64_1(emitter, X64_OP_JNE, X64_WIDTH_NONE, x64_label(next));
-            if (structure->type_properties & SEMANTIC_TYPE_NEEDS_DROP) {
+            if (semantic_symbol_type_properties(emitter->module->semantics, concrete) & SEMANTIC_TYPE_NEEDS_DROP) {
                 const IrFunction *glue = called_function(emitter->module,
-                                                         structure->symbol_id);
+                                                         concrete);
                 char buffer[4096];
                 if (glue == NULL || !glue->is_drop_glue) return 0;
                 const char *name = function_link_name(emitter->module, glue,
@@ -1026,6 +1027,20 @@ static int emit_drop_type(Emitter *emitter, IrTypeId type_id) {
                         emitter->target == TARGET_COFF ? "rcx" : "rdi",
                         "rax");
     write_call(emitter, name);
+    return 1;
+}
+
+int emit_consumed_interface(Emitter *emitter, size_t receiver, int transferred_environment) {
+    const IrInstruction *value = producer(emitter->function, receiver);
+    if (!value) return 0;
+    write_value_load(emitter, "rax", receiver);
+    if (!transferred_environment) return emit_drop_type(emitter, value->type_id);
+    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD,
+        x64_register(emitter->target == TARGET_COFF ? "rcx" : "rdi"), x64_memory(X64_WIDTH_QWORD, "rax", 8));
+    write_call(emitter, "free");
+    write_value_load(emitter, "rax", receiver);
+    write_immediate(emitter, "rdx", 0);
+    write_x64_2(emitter, X64_OP_MOV, X64_WIDTH_QWORD, x64_memory(X64_WIDTH_QWORD, "rax", 8), x64_register("rdx"));
     return 1;
 }
 

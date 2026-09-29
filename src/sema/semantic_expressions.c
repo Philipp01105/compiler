@@ -89,6 +89,11 @@ void set_expression_declared_type(Analyzer *analyzer,
     expression->resolved_is_slice = type->is_slice;
     expression->resolved_array_length = type->resolved_array_length;
     expression->resolved_ast_type = *type;
+    if (expression->resolved_named_symbol_id < analyzer->model->symbol_count) {
+        const SemanticSymbol *owner = &analyzer->model->symbols[expression->resolved_named_symbol_id];
+        if (owner->kind == SEMANTIC_SYMBOL_INTERFACE && owner->declaration)
+            expression->resolved_ast_type.callable_mode = owner->declaration->closure_mode;
+    }
     expression->resolved_type_program = program;
     expression->has_resolved_ast_type = 1;
 }
@@ -442,6 +447,7 @@ static void set_polymorphic_call_result(Analyzer *analyzer,
 }
 
 static int dereference_ast_type(AstType *type) {
+    if (type->reference_type) { *type = *type->reference_type; return 1; }
     if (type->borrow_kind != AST_BORROW_NONE) {
         type->borrow_kind = AST_BORROW_NONE;
         return 1;
@@ -739,7 +745,14 @@ const SemanticSymbol *semantic_closure_method(const Analyzer *analyzer, const As
     if (!expression || expression->resolved_named_symbol_id >= analyzer->model->symbol_count) return NULL;
     const SemanticSymbol *owner = &analyzer->model->symbols[expression->resolved_named_symbol_id];
     const AstDeclarationNode *declaration = owner->declaration;
-    if (!declaration || !declaration->is_closure_environment) return NULL;
+    if (!declaration) return NULL;
+    if (owner->kind == SEMANTIC_SYMBOL_INTERFACE) {
+        const AstDeclarationNode *method = declaration->as.interface_decl.methods;
+        if (!method || method->next || strcmp(ast_program_lexeme(owner->source_program, method->name_token), "__invoke")) return NULL;
+        return method->resolved_symbol_id < analyzer->model->symbol_count
+            ? &analyzer->model->symbols[method->resolved_symbol_id] : NULL;
+    }
+    if (!declaration->is_closure_environment) return NULL;
     const AstDeclarationNode *invoke = declaration->closure_consuming_invoke ?
         declaration->closure_consuming_invoke : declaration->as.struct_decl.methods;
     if (!invoke) return NULL;
@@ -889,10 +902,6 @@ static void materialize_closure(Analyzer *analyzer, AstExpression *expression) {
     for (AstExpression *capture = expression->arguments; capture && field;
          capture = capture->next, field = field->next) {
         analyze_expression_context(analyzer, capture, 0);
-        if (capture->kind == AST_EXPR_UNARY && capture->operator_type == TOKEN_AMPERSAND &&
-            capture->right && capture->right->resolved_borrow_kind != AST_BORROW_NONE)
-            semantic_error(analyzer, capture->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
-                           "Nested checked reference captures are not supported");
         field->type = inferred_argument_type(analyzer, capture);
         if (field->type.borrow_kind != AST_BORROW_NONE) {
             field->type.lifetime_token = concrete_token(analyzer, TOKEN_LIFETIME, "'capture");
@@ -1695,6 +1704,15 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
                     expression->resolved_outer_pointer_depth++;
                 else expression->resolved_pointer_depth++;
                 if (expression->has_resolved_ast_type) {
+                    if (expression->right->resolved_borrow_kind != AST_BORROW_NONE) {
+                        AstType *referent = ast_program_alloc(analyzer->program, sizeof(*referent));
+                        if (!referent) analyzer->allocation_failed = 1;
+                        else {
+                            *referent = expression->right->resolved_ast_type;
+                            expression->resolved_ast_type.reference_type = referent;
+                            expression->resolved_ast_type.pointer_depth++;
+                        }
+                    }
                     expression->resolved_ast_type.borrow_kind =
                         expression->resolved_borrow_kind;
                 }
@@ -1705,7 +1723,10 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
                 else if (expression->resolved_pointer_depth > 0)
                     expression->resolved_pointer_depth--;
                 if (expression->has_resolved_ast_type) {
-                    if (expression->resolved_ast_type.borrow_kind !=
+                    if (expression->resolved_ast_type.reference_type) {
+                        expression->resolved_ast_type = *expression->resolved_ast_type.reference_type;
+                        expression->resolved_borrow_kind = expression->resolved_ast_type.borrow_kind;
+                    } else if (expression->resolved_ast_type.borrow_kind !=
                         AST_BORROW_NONE)
                         expression->resolved_ast_type.borrow_kind =
                             AST_BORROW_NONE;
@@ -2128,7 +2149,8 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
     expression->lifetime_origin = AST_SYMBOL_NONE;
     if (expression->lifetime_operation && expression->arguments) {
         AstType pointee = inferred_argument_type(analyzer, expression->arguments);
-        if (pointee.outer_pointer_depth) pointee.outer_pointer_depth--;
+        if (pointee.reference_type) pointee = *pointee.reference_type;
+        else if (pointee.outer_pointer_depth) pointee.outer_pointer_depth--;
         else if (pointee.pointer_depth) pointee.pointer_depth--;
         expression->allocated_type = pointee;
         if (expression->lifetime_operation == LIFETIME_TAKE ||

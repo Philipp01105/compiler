@@ -393,15 +393,22 @@ static void read_call(OwnershipChecker *checker, OwnershipFlow *flow,
         }
         for (const AstExpression *arg = expression->arguments; arg; arg = arg->next)
             if (expression->async_operation == ASYNC_SPAWN || expression->async_operation == ASYNC_BLOCK_ON ||
-                expression->async_operation == ASYNC_CANCEL) consume_expression(checker, flow, arg);
+                expression->async_operation == ASYNC_CANCEL || expression->async_operation == ASYNC_COMPLETE ||
+                expression->async_operation == ASYNC_CANCEL_COMPLETE) consume_expression(checker, flow, arg);
             else read_expression(checker, flow, arg);
         return;
     }
     const AstExpression *callee = expression->left;
+    int once_receiver=0;
+    if(callee && callee->kind==AST_EXPR_MEMBER && expression->resolved_symbol_id<checker->count) {
+        const SemanticSymbol *method=&checker->analyzer->model->symbols[expression->resolved_symbol_id];
+        once_receiver=method->kind==SEMANTIC_SYMBOL_FUNCTION && method->declaration &&
+            method->declaration->as.function.receiver_mode==2;
+    }
     const AstExpression *callable = callee && callee->kind == AST_EXPR_MEMBER &&
-        semantic_closure_method(checker->analyzer, callee->left) ? callee->left : callee;
+        (once_receiver || semantic_closure_method(checker->analyzer, callee->left)) ? callee->left : callee;
     if (callable && callable->has_resolved_ast_type &&
-        callable->resolved_ast_type.callable_mode == 2) {
+        (once_receiver || callable->resolved_ast_type.callable_mode == 2)) {
         if (callable->resolved_borrow_kind != AST_BORROW_NONE) {
             read_expression(checker, flow, callable);
             ownership_error(checker, expression->first_token,

@@ -3,6 +3,17 @@ import ("stdlib" "stdlib/algorithms" "stdlib/core");
 var destroyed:i32=0;
 struct Resource { var value:i32; destructor { destroyed+=1; } }
 func apply(f:func(i32)->i32,x:i32)->i32 { return f(x); }
+interface Adder { func __invoke(value:i32)->i32; }
+interface Accumulator { mut func __invoke(value:i32)->i32; }
+interface OwnerFactory { once func __invoke()->Resource; }
+func makeAdder(offset:i32)->Adder { return func [move offset](value:i32)->i32 { return offset+value; }; }
+func makeAccumulator(initial:i32)->Accumulator {
+ return func [move initial](value:i32)->i32 { initial+=value; return initial; };
+}
+func makeOwner(value:i32)->OwnerFactory {
+ var owner=Resource{value:value};
+ return func [move owner]()->Resource { return owner; };
+}
 func applyMutable(f:mut func(i32)->i32,x:i32)->i32 { return f(x); }
 func applyTwice(f:mut func(i32)->i32,a:i32,b:i32)->i32 { var first=f(a); return first+f(b); }
 func compareOnce(f:func(i32,i32)->bit)->bit { return f(1,2); }
@@ -26,6 +37,15 @@ func choose<T:core.Copy>(first:T,second:T)->T {
  return selected(second);
 }
 func main()->int {
+ {
+  var add=makeAdder(211);
+  if(add(2)!=213 || add(3)!=214) { return 70; }
+  var sum=makeAccumulator(221);
+  if(sum(2)!=223 || sum(3)!=226) { return 71; }
+  { var make=makeOwner(231); var owner=make(); if(owner.value!=231) { return 72; } }
+  if(destroyed!=1) { return 73; }
+  destroyed=0;
+ }
  var single:once func(i32)->i32=increment;
  var movedSingle=single;
  if(movedSingle(4)!=5 || invokeOnce(increment,6)!=7) { return 19; }

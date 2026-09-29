@@ -527,24 +527,33 @@ static size_t interface_method(const SemanticModel *model,
     const AstDeclarationNode *methods = owner->kind == SEMANTIC_SYMBOL_STRUCT
                                             ? owner->declaration->as.struct_decl.methods
                                             : owner->declaration->as.enum_decl.methods;
+    int consuming_closure = owner->declaration->is_closure_environment &&
+        owner->declaration->closure_consuming_invoke != NULL;
+    if (consuming_closure) methods = owner->declaration->closure_consuming_invoke;
     for (const AstDeclarationNode *method = methods;
          method; method = method->next) {
         if (method->resolved_symbol_id >= model->symbol_count) continue;
         const SemanticSymbol *actual = &model->symbols[method->resolved_symbol_id];
         Analyzer lookup = {.model = (SemanticModel *)model, .program = (AstProgram *)actual->source_program};
         if (!semantic_method_constraints_satisfied(&lookup, actual->source_program, method)) continue;
-        if (actual->kind != SEMANTIC_SYMBOL_FUNCTION || actual->owner_symbol_id != struct_id ||
+        if (!strcmp(required_name, "__invoke") && owner->declaration->is_closure_environment) {
+            unsigned mode = consuming_closure ? 2U : semantic_function_mutates_receiver(&lookup, actual->id) ? 1U : 0U;
+            if (mode > required->declaration->as.function.receiver_mode) continue;
+        }
+        if (actual->kind != SEMANTIC_SYMBOL_FUNCTION || (!consuming_closure && actual->owner_symbol_id != struct_id) ||
             !actual->declaration ||
-            actual->declaration->as.function.is_static !=
-                required->declaration->as.function.is_static ||
-            !same_name(actual->source_program, actual->name_token, required_name) ||
-            parameter_count(actual->declaration) != required_parameters) continue;
+            (!consuming_closure && actual->declaration->as.function.is_static !=
+                required->declaration->as.function.is_static) ||
+            (!consuming_closure && !same_name(actual->source_program, actual->name_token, required_name)) ||
+            (consuming_closure && strcmp(required_name, "__invoke")) ||
+            parameter_count(actual->declaration) != required_parameters + (consuming_closure ? 1U : 0U)) continue;
         if (!interface_type_matches(model, required->source_program, required->declaration->as.function.return_type,
                                  actual->source_program, &actual->declaration->as.function.return_type,
                                  owner->source_program, &self,
                                  substitution)) continue;
         const AstParameter *expected = required->declaration->as.function.parameters;
         const AstParameter *provided = actual->declaration->as.function.parameters;
+        if (consuming_closure && provided) provided = provided->next;
         for (; expected && provided; expected = expected->next, provided = provided->next)
             if (!interface_type_matches(model, required->source_program, expected->type, actual->source_program,
                                      &provided->type, owner->source_program, &self,

@@ -83,6 +83,12 @@ static AstType expression_shape_copy(Analyzer *analyzer,
                                                    length);
     } else result.array_length_token = AST_TOKEN_NONE;
     result.element_type = NULL;
+    result.reference_type = NULL;
+    if (shape->reference_type) {
+        AstType *reference = ast_program_alloc(analyzer->program, sizeof(*reference));
+        if (!reference) analyzer->allocation_failed = 1;
+        else { *reference = expression_shape_copy(analyzer, shape->reference_type, base); result.reference_type = reference; }
+    }
     if (shape->element_type != NULL) {
         AstType *element = ast_program_alloc(analyzer->program,
                                             sizeof(*element));
@@ -170,6 +176,10 @@ void normalize_generic_type(Analyzer *analyzer, AstType *type, unsigned depth) {
     }
     if (type->element_type != NULL)
         normalize_generic_type(analyzer, type->element_type, depth + 1);
+    if (type->reference_type != NULL) {
+        normalize_generic_type(analyzer, type->reference_type, depth + 1);
+        return;
+    }
     if (type->kind == AST_TYPE_FUNCTION) {
         for (AstTypeArgument *parameter = type->function_parameters; parameter; parameter = parameter->next)
             normalize_generic_type(analyzer, &parameter->type, depth + 1);

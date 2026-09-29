@@ -54,3 +54,91 @@ pub interface Poller<T> {
     pub func poll(context: &mut Context) -> core.Poll<T>;
     pub func cancelPoll(context: &mut Context) -> core.Poll<CancelAck>;
 }
+
+// A pending result retains ownership of the handle and all of its loans.
+pub enum FuturePoll<T> {
+    pub Pending(Future<T>),
+    pub Ready(T)
+}
+
+pub func poll<T>(future: Future<T>, context: &mut Context) -> FuturePoll<T> {
+    if (futurePoll(&mut future, context.waker.raw)) {
+        return FuturePoll<T>.Ready(futureComplete(future));
+    }
+    return FuturePoll<T>.Pending(future);
+}
+
+pub enum VoidFuturePoll {
+    pub Pending(Future<void>),
+    pub Ready
+}
+
+pub func pollVoid(future:Future<void>,context:&mut Context)->VoidFuturePoll {
+    if(futurePoll(&mut future,context.waker.raw)) {
+        futureComplete(future);
+        return VoidFuturePoll.Ready;
+    }
+    return VoidFuturePoll.Pending(future);
+}
+
+func park() -> Future<void> { return nativeFuture(executor.parkFrame()); }
+
+pub async func fromPoller<T,P: Poller<T>>(poller: P) -> T {
+    var context=contextFromRaw(asyncContext());
+    var completed:bit=false;
+    defer func() {
+        if (!completed) {
+            var acknowledged:bit=false;
+            while (!acknowledged) {
+                match (poller.cancelPoll(&mut context)) {
+                    Ready(ack) => { acknowledged=true; }
+                    Pending => { park().await(); }
+                }
+            }
+        }
+    }
+    while (true) {
+        match (poller.poll(&mut context)) {
+            Ready(value) => { completed=true; return value; }
+            Pending => { park().await(); }
+        }
+    }
+    core.core_trap();
+}
+
+// The unselected handle remains owned by the caller, even when already ready.
+pub enum Selected<T,U> {
+    pub Left(T,Future<U>),
+    pub Right(Future<T>,U)
+}
+
+pub async func select2<T,U>(left:Future<T>,right:Future<U>) -> Selected<T,U> {
+    var context=contextFromRaw(asyncContext());
+    while (true) {
+        var leftReady=futurePoll(&mut left,context.waker.raw);
+        var rightReady=futurePoll(&mut right,context.waker.raw);
+        if (leftReady) { return Selected<T,U>.Left(futureComplete(left),right); }
+        if (rightReady) { return Selected<T,U>.Right(left,futureComplete(right)); }
+        park().await();
+    }
+    core.core_trap();
+}
+
+pub async func race2<T>(left:Future<T>,right:Future<T>) -> T {
+    match (select2(left,right).await()) {
+        Left(value,loser) => { cancel(loser).await(); return value; }
+        Right(loser,value) => { cancel(loser).await(); return value; }
+    }
+}
+
+pub struct Joined<T,U> {
+    pub var left:T;
+    pub var right:U;
+}
+
+pub async func join2<T,U>(left:Future<T>,right:Future<U>) -> Joined<T,U> {
+    match (select2(left,right).await()) {
+        Left(value,other) => { var second=other.await(); return Joined<T,U>{left:value,right:second}; }
+        Right(other,value) => { var first=other.await(); return Joined<T,U>{left:first,right:value}; }
+    }
+}

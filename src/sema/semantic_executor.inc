@@ -47,6 +47,11 @@ static int analyze_async_call(Analyzer *a, AstExpression *e) {
         if (!strcmp(name,"block_on")) op=ASYNC_BLOCK_ON;
         if (!strcmp(name,"cancel")) op=ASYNC_CANCEL;
         if (!strcmp(name,"nativeFuture")) op=ASYNC_NATIVE_FUTURE;
+        if (!strcmp(name,"futurePoll")) op=ASYNC_POLL;
+        if (!strcmp(name,"futureCancelPoll")) op=ASYNC_CANCEL_POLL;
+        if (!strcmp(name,"futureComplete")) op=ASYNC_COMPLETE;
+        if (!strcmp(name,"futureCancelComplete")) op=ASYNC_CANCEL_COMPLETE;
+        if (!strcmp(name,"asyncContext")) op=ASYNC_CONTEXT;
     } else if (callee->kind == AST_EXPR_MEMBER && callee->left) {
         const char *name=ast_program_lexeme(a->program,callee->value_token);
         if (!strcmp(name,"create") && callee->left->kind == AST_EXPR_NAME &&
@@ -66,15 +71,38 @@ static int analyze_async_call(Analyzer *a, AstExpression *e) {
                        "Executor operations require the async manifest feature");
     for (AstExpression *arg=e->arguments;arg;arg=arg->next) analyze_expression_context(a,arg,0);
     AstExpression *arg=e->arguments;
-    if (!arg || arg->next) {
+    unsigned count=0;
+    for (AstExpression *item=arg;item;item=item->next) count++;
+    unsigned expected=op==ASYNC_CONTEXT ? 0u :
+        (op==ASYNC_POLL || op==ASYNC_CANCEL_POLL) ? 2u : 1u;
+    if (count!=expected) {
         semantic_error(a,e->first_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_WRONG_ARG_COUNT,
-                       "Executor operation requires exactly one argument");
+                       "Async operation has an incorrect argument count");
         return 1;
     }
     AstType output={.kind=AST_TYPE_NAMED,.name_token=concrete_token(a,TOKEN_TYPE_VOID,"void"),
                     .array_length_token=AST_TOKEN_NONE};
     AstType type;
-    if (op==ASYNC_CREATE) {
+    if (op==ASYNC_CONTEXT) {
+        if (!a->current_function || !a->current_function->as.function.is_async)
+            semantic_error(a,e->first_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_INVALID_DECLARATION,
+                           "asyncContext is only valid inside an async function");
+        type=output; type.pointer_depth=1;
+    } else if (op==ASYNC_POLL || op==ASYNC_CANCEL_POLL) {
+        if (!arg->has_resolved_ast_type || arg->resolved_ast_type.kind!=AST_TYPE_FUTURE ||
+            arg->resolved_borrow_kind!=AST_BORROW_MUTABLE || arg->resolved_pointer_depth!=1 ||
+            arg->resolved_outer_pointer_depth || arg->resolved_is_array || arg->resolved_is_slice)
+            semantic_error(a,arg->first_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,
+                           "Future polling requires an exclusive checked reference to Future<T>");
+        const AstExpression *context=arg->next;
+        if (context->resolved_type!=TYPE_VOID || context->resolved_pointer_depth!=1 ||
+            context->resolved_borrow_kind!=AST_BORROW_NONE || context->resolved_outer_pointer_depth ||
+            context->resolved_is_array || context->resolved_is_slice)
+            semantic_error(a,context->first_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,
+                           "Future polling requires a native scheduler context (*void)");
+        type=(AstType){.kind=AST_TYPE_NAMED,.name_token=concrete_token(a,TOKEN_TYPE_BIT,"bit"),
+                       .array_length_token=AST_TOKEN_NONE};
+    } else if (op==ASYNC_CREATE) {
         if (!integral_expression(arg))
             semantic_error(a,arg->first_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,"workerCount must be usize");
         if (arg->kind == AST_EXPR_LITERAL &&
@@ -105,8 +133,9 @@ static int analyze_async_call(Analyzer *a, AstExpression *e) {
         const AstProgram *unit=arg->resolved_type_program ? arg->resolved_type_program : a->program;
         if (op==ASYNC_SPAWN) type=async_handle_type(a,AST_TYPE_JOIN,unit,&arg->resolved_ast_type.arguments->type);
         else if (op==ASYNC_CANCEL) type=async_handle_type(a,AST_TYPE_FUTURE,a->program,&output);
+        else if (op==ASYNC_CANCEL_COMPLETE) type=output;
         else {
-            if (a->current_function && a->current_function->as.function.is_async)
+            if (op==ASYNC_BLOCK_ON && a->current_function && a->current_function->as.function.is_async)
                 semantic_error(a,e->first_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_INVALID_DECLARATION,
                                "block_on is only valid inside a synchronous function");
             type=argument_type_copy(a,unit,arg->resolved_ast_type.arguments->type);

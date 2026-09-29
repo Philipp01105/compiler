@@ -28,7 +28,9 @@ typedef enum {
 typedef enum { AST_TYPE_INFERRED, AST_TYPE_NAMED, AST_TYPE_FUNCTION, AST_TYPE_FUTURE,
                AST_TYPE_JOIN, AST_TYPE_EXECUTOR } AstTypeKind;
 typedef enum { ASYNC_NONE, ASYNC_CREATE, ASYNC_SPAWN, ASYNC_BLOCK_ON,
-               ASYNC_SHUTDOWN, ASYNC_CANCEL, ASYNC_NATIVE_FUTURE } AstAsyncOperation;
+               ASYNC_SHUTDOWN, ASYNC_CANCEL, ASYNC_NATIVE_FUTURE,
+               ASYNC_POLL, ASYNC_CANCEL_POLL, ASYNC_COMPLETE,
+               ASYNC_CANCEL_COMPLETE, ASYNC_CONTEXT } AstAsyncOperation;
 typedef enum { LIFETIME_NONE, LIFETIME_INITIALIZE, LIFETIME_DESTROY,
                LIFETIME_TAKE, LIFETIME_REPLACE } AstLifetimeOperation;
 typedef enum { AST_BORROW_NONE, AST_BORROW_IMMUTABLE, AST_BORROW_MUTABLE } AstBorrowKind;
@@ -83,6 +85,8 @@ typedef struct AstType {
      * A single container remains in the legacy flat fields for compatibility.
      */
     struct AstType *element_type;
+    /* The checked referent of a reference to another checked-reference slot. */
+    struct AstType *reference_type;
     AstTypeArgument *arguments;
     /* Function types use type-only parameters and an explicit result type.
        Generic parameters make the value compile-time-only until specialized. */
@@ -280,6 +284,7 @@ struct AstEnumValue {
 struct AstDeclarationNode {
     int is_public;
     int no_default;
+    int must_consume;
     int is_closure_environment;
     unsigned closure_mode;
     AstField *closure_captures;
@@ -328,6 +333,7 @@ struct AstDeclarationNode {
             int is_async;
             size_t owner_token;
             int returns_owned_slice_backing;
+            unsigned receiver_mode; /* Callable interface: shared, mutable, consuming. */
         } function;
 
         struct {

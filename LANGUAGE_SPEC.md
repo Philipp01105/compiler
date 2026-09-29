@@ -68,8 +68,22 @@ and asynchronous file APIs remain future work. See [stdlib/core/net/README.md](s
 
 `core.Poll<T>` is an ordinary `Pending`/`Ready(T)` sum type. `stdlib/async` supplies
 the `asynchronous` package with retained `Waker`, owned `Context`, and a structural
-`Poller<T>` interface whose `cancelPoll` returns `Poll<CancelAck>`. The pinned
-`fromPoller` adapter and public Future composition operations are not available yet.
+`Poller<T>` interface whose `cancelPoll` returns `Poll<CancelAck>`. `fromPoller<T,P>` owns
+the poller in a pinned frame and parks on Pending. After body execution begins, deferred
+cancellation waits for acknowledgement before cleanup. Cancellation before the first body
+poll only cleans up captured parameters; initial native poller state must be safe to destroy.
+`poll` returns `FuturePoll<T>.Pending(Future<T>)` or `Ready(T)`; `pollVoid` handles void.
+`select2` polls both inputs and returns a value plus the remaining owned handle; `race2`
+confirms cancellation of the loser, and `join2` returns both values. The timers package
+provides sleep and timeout; started Timer cleanup requires completion/cancellation acknowledgement.
+Generic value composition uses a Unit payload for void results.
+
+`futurePoll(&mut Future<T>, context:*void)->bit` and `futureCancelPoll` poll exclusively
+without consuming the handle. `futureComplete(Future<T>)->T` and
+`futureCancelComplete(Future<T>)->void` consume ready or confirmed-cancelled handles,
+checking terminal frame states. `asyncContext()->*void` is available only inside async
+functions. Raw contexts/native frames remain a trusted ABI boundary. Await/block_on consume
+already-ready frames without polling them again. See [async API](stdlib/async/README.md).
 
 `core.Send` and `core.Sync` are canonical auto interfaces, derived through aggregate fields and enum payloads unless
 an explicit property rule overrides that derivation. Shared checked
@@ -440,6 +454,15 @@ obligations use the same checks as other enum payloads. Such a closure only sati
 capture remain unsupported. A capturing closure
 cannot convert to a native function pointer.
 
+An interface containing exactly one `__invoke` method can erase a callable while retaining
+its shared, mut or once invocation mode. Owned values use `callable(args)` syntax; invoking
+a once callable consumes its binding and cleans up remaining captures exactly once.
+For example, `interface Adder { func __invoke(value:i32)->i32; }` names a shared callable.
+`@[must_consume]` on a struct, enum or interface makes its owned values require explicit
+consumption. Erasure cannot remove this obligation: a callable retaining a Future requires
+a must-consume target interface, for example
+`@[must_consume] interface Resume { once func __invoke()->Future<i32>; }`.
+
 `&T` and `&mut T` are checked non-owning references created by `&value` and `&mut value`. Immutable references permit
 reads; mutable references are exclusive and permit reads and writes through `*reference`. While a conflicting borrow is
 live, the owner cannot be moved, replaced or accessed incompatibly. Lifetimes end conservatively after the last proven
@@ -453,8 +476,10 @@ or slices into a binding and when rebuilding a returned aggregate. This applies 
 contracts, including Option, Result and user enums. Mutable outputs retain exclusive access and
 move-only operands remain consumed. The implicit residual return is also checked for local borrow escape.
 Unknown branch mappings retain a conservative union of input origins rather than the operand's payload tags.
-Nested checked-reference representation, borrowing a reference binding's slot, complete provenance for
-nested aggregate storage and interprocedural reassignment of stored borrows remain unfinished.
+Nested checked references use parenthesized types such as `&(&i32)` and `&mut (&i32)`.
+Borrowing a reference binding's slot protects the binding separately from its referent;
+exclusive slot assignment updates stored provenance. Whole reference bindings support take/replace.
+Synchronous call summaries propagate stored-borrow updates, including forwarded setters.
 
 Edition `2026-10-04-dev` admits lifetime parameters before type parameters (`Reader<'a,T>`) and annotated references
 (`&'a T`, `&'a mut T`). Lifetimes have no runtime layout or specialization identity. Stored struct references must
@@ -473,7 +498,8 @@ receiver, or package storage. An explicit result lifetime may relate several inp
 remain live in the caller. A mismatched declared result lifetime is rejected. `'static` denotes permanently live
 storage and cannot be redeclared. Static reference parameters and fields require a proven permanent source.
 Immutable checked borrows in package variables require proven permanent origins and keep their storage fixed.
-Mutable package borrows remain unsupported. Some returned aggregate loans are conservatively
+Mutable package borrows keep their holders fixed and enforce exclusive access across synchronous
+calls and async captures until completion/cancellation. Some returned aggregate loans are conservatively
 tied to the whole result; these restrictions can reject disjoint operations until more precise provenance is available.
 
 Direct reference fields in a struct return preserve independent origins when explicit result lifetimes relate
@@ -481,8 +507,13 @@ each field to checked reference parameters or direct reference fields of aggrega
 Checked reference returns follow the matching fields' origins as well. If a lifetime also describes the
 aggregate's storage, both storage and referent loans remain live. The function body must satisfy each field's declared lifetime;
 swapping sources with distinct lifetimes is rejected. Reborrowing one such field does not suspend a disjoint field.
-Nested aggregates and owning payloads still use conservative origin unions. Nested fields with a single lifetime
-retain that relationship for return-lifetime validation.
+Nested struct fields and enum payload positions preserve full paths through construction, function
+returns and parameter projections, including multiple lifetimes and temporary aggregate arguments.
+Swapping nested sources with distinct lifetimes is rejected. Unknown mappings, unnamed views and
+owning payloads retain conservative origin unions. Known nested/reordered enum returns preserve payload origins
+independently. Future completion transfers captured loans to borrowed aggregate results before releasing the handle.
+Precise List.pop/clear release is tested; general remove/truncate, ring and hash storage remain unfinished. See
+[implementation and acceptance status](plans/stdlib-language-gaps.md).
 Explicit enum payload lifetimes are also checked independently at return boundaries and preserved on value-pattern
 bindings from aggregate parameters. Constructing an explicitly static enum payload requires permanent storage.
 Function calls, struct and enum constructors check
@@ -750,10 +781,11 @@ through `&storage.value` where storage is a raw heap pointer is permitted under 
 evaluates the new value first, transfers the previous value to the result, and starts the new lifetime in the place.
 Aggregate results use detached storage before the place can be reused. Discarding an owning result destroys it;
 MUST_CONSUME results must still be transferred or consumed. Tracked whole places receive lifetime, loan and cleanup
-flag checks. Tracked partial places, checked reference values, and dereferences through checked references are rejected. Dereferenced raw
+flag checks, including whole checked-reference bindings. Tracked partial places and take/replace through checked-reference dereferences are rejected. Dereferenced raw
 pointers and raw heap fields carry the same explicit validity, alignment and lifetime responsibilities as initialize
-and destroy. Replacement conservatively retains the union of old and new loans on both values until their borrowers
-end. Normal functions and callable locals named take or replace continue to shadow the built-in operations.
+and destroy. Replacement transfers the old loans to the returned value and retains the replacement loans on the
+new slot. Explicit destruction of a whole value releases its held loans; MUST_CONSUME values cannot be destroyed
+to evade consumption. Normal functions and callable locals named take or replace continue to shadow the built-in operations.
 
 Owning instance methods may return a checked borrow of heap storage reachable through their receiver. The returned
 borrow is tied to that receiver. This does not establish general safe raw-pointer lifetime management.
@@ -799,8 +831,10 @@ initializer proves an origin in permanently initialized package storage. The loa
 function, even when that function does not read the holder. Such holders cannot be rebound, moved, or modified;
 their sources cannot be mutated, moved, or destroyed while the program is running. Copies retain the same origins.
 An absent initializer or unprovable origin is rejected. An explicitly constructed empty enum variant needs no
-origin, but its package holder is still fixed. Mutable package borrows remain unsupported until exclusive access
-across function calls can be proved.
+origin, but its package holder is still fixed. Mutable checked package references are supported with
+fixed holders and exclusive access checked across synchronous calls. Access through the mutable
+reference may change its referent; conflicting direct source access is rejected. Async captures retain
+the exclusive loan until completion or cancellation.
 
 Current implementation status: semantic ownership classification, control-flow ownership-state merging,
 move/reinitialization checks, checked borrows, generic-specialization propagation, typed-IR ownership effects,
@@ -1056,8 +1090,9 @@ The staged contract is in [plans/ffi.md](plans/ffi.md).
 
 `--runtime-component` is an explicit compiler bootstrap mode, not an FFI language feature. It produces a
 library object or assembly with no application startup, package initialization/cleanup or automatic runtime
-linkage. Only the fixed private platform thread/event/exit exports and `__dmm_platform_thread_entry` are allowed;
-other runtime-reserved function names remain rejected. Components use scalar/POD values, raw pointers and
+linkage. Exports use the general native ABI rules without a function-name allowlist.
+Explicit runtime-component exports may use the reserved `__dmm_` prefix; ordinary user packages
+cannot define runtime-reserved function names. Components use scalar/POD values, raw pointers and
 native calls. Compiler base helpers must be declared as explicit native imports if used. Implicit runtime
 dependencies, reachable async/drop bodies and runtime global initializers are rejected. This mode supplies
 the DMM platform runtime described in [plans/ffi.md](plans/ffi.md).

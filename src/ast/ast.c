@@ -136,6 +136,7 @@ static int valid_type_depth(const AstProgram *program, const AstType *type, int 
     if (type->element_type != NULL &&
         !valid_type_depth(program, type->element_type, 0, depth + 1))
         return 0;
+    if (type->reference_type && !valid_type_depth(program, type->reference_type, 0, depth + 1)) return 0;
     unsigned count = 0;
     for (const AstTypeArgument *argument = type->arguments; argument; argument = argument->next)
         if (++count > 16 || !valid_type_depth(program, &argument->type, 0, depth + 1)) return 0;

@@ -280,6 +280,11 @@ static size_t ast_array_length(const AstProgram *program, const AstType *type) {
 
 static IrTypeId type_from_ast(IrModule *module, const AstProgram *program,
                               const AstType *type) {
+    if (type && type->reference_type) {
+        IrTypeId referent = type_from_ast(module, program, type->reference_type);
+        return intern_type(module, (IrType){.kind = IR_TYPE_POINTER, .primitive = TYPE_UNKNOWN,
+            .symbol_id = AST_SYMBOL_NONE, .element_type = referent});
+    }
     if(type && (type->is_array||type->is_slice) && type->borrow_kind!=AST_BORROW_NONE) {
         AstType referent=*type; referent.borrow_kind=AST_BORROW_NONE;
         IrTypeId id=type_from_ast(module,program,&referent);
@@ -538,8 +543,8 @@ static size_t coerce_interface(IrBuilder *builder, size_t value, IrTypeId target
         const IrType *concrete = &builder->module->types[source->type_id];
         if (concrete->kind != IR_TYPE_NAMED || concrete->symbol_id == destination->symbol_id ||
             concrete->symbol_id >= builder->module->semantics->symbol_count ||
-            builder->module->semantics->symbols[concrete->symbol_id].kind !=
-                SEMANTIC_SYMBOL_STRUCT ||
+            (builder->module->semantics->symbols[concrete->symbol_id].kind !=
+                SEMANTIC_SYMBOL_STRUCT && builder->module->semantics->symbols[concrete->symbol_id].kind != SEMANTIC_SYMBOL_ENUM) ||
             !semantic_implements_interface(builder->module->semantics,
                                            destination->symbol_id, concrete->symbol_id))
             return value;
@@ -571,15 +576,18 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         if (expression->left->kind==AST_EXPR_MEMBER && expression->async_operation!=ASYNC_CREATE)
             receiver=lower_expression(builder,expression->left->left);
         size_t value=lower_expression(builder,expression->arguments);
+        if (expression->async_operation==ASYNC_POLL || expression->async_operation==ASYNC_CANCEL_POLL)
+            receiver=lower_expression(builder,expression->arguments->next);
         if (expression->async_operation==ASYNC_SPAWN || expression->async_operation==ASYNC_BLOCK_ON ||
-            expression->async_operation==ASYNC_CANCEL) emit_move_if_owned(builder,expression->arguments);
+            expression->async_operation==ASYNC_CANCEL || expression->async_operation==ASYNC_COMPLETE ||
+            expression->async_operation==ASYNC_CANCEL_COMPLETE) emit_move_if_owned(builder,expression->arguments);
         if (expression->async_operation==ASYNC_SHUTDOWN) emit_move_if_owned(builder,expression->left->left);
         IrInstruction *in=emit(builder,IR_OP_EXECUTOR,expression->span);
         if (!in) return IR_VALUE_NONE;
         in->async_operation=expression->async_operation;
         in->operand_a=value; in->operand_b=receiver;
         set_expression_type(builder,in,expression);
-        if (data_type_has_value(expression->resolved_type)) in->result=new_value(builder);
+        if (data_type_has_value(expression->resolved_type) || expression->resolved_pointer_depth) in->result=new_value(builder);
         return in->result;
     }
     if (expression == NULL) return IR_VALUE_NONE;
@@ -1303,7 +1311,9 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         instruction->argument_count = argument_count;
     }
     size_t result = instruction->result;
-    if (has_receiver && expression->left->left &&
+    int consumed_receiver = has_receiver && method->declaration->as.function.receiver_mode == 2;
+    if (consumed_receiver) emit_move_if_owned(builder, expression->left->left);
+    if (has_receiver && !consumed_receiver && expression->left->left &&
         (expression->left->left->kind == AST_EXPR_STRUCT_LITERAL ||
          expression->left->left->kind == AST_EXPR_CALL ||
          expression->left->left->kind == AST_EXPR_CONTROL)) {
@@ -1448,9 +1458,15 @@ static int select_owned_type(IrModule *module,IrTypeId id,unsigned depth) {
     int changed=select_symbol(module,type->symbol_id);
     if(type->symbol_id<module->semantics->symbol_count &&
        module->semantics->symbols[type->symbol_id].kind==SEMANTIC_SYMBOL_INTERFACE)
-        for(size_t s=0;s<module->structure_count;s++)
-            if(semantic_implements_interface(module->semantics,type->symbol_id,module->structures[s].symbol_id))
-                changed|=select_symbol(module,module->structures[s].symbol_id);
+        for(size_t s=0;s<module->structure_count+module->enum_count;s++) {
+            size_t owner=s<module->structure_count ? module->structures[s].symbol_id :
+                module->enums[s-module->structure_count].symbol_id;
+            if(!semantic_implements_interface(module->semantics,type->symbol_id,owner)) continue;
+            changed|=select_symbol(module,owner);
+            const AstDeclarationNode *interface=module->semantics->symbols[type->symbol_id].declaration;
+            for(const AstDeclarationNode *method=interface->as.interface_decl.methods;method;method=method->next)
+                changed|=select_symbol(module,semantic_interface_method(module->semantics,method->resolved_symbol_id,owner));
+        }
     return changed;
 }
 void ir_select_runtime_functions(IrModule *module) {
@@ -3348,7 +3364,7 @@ uint64_t ir_interface_type_tag(const IrModule *module, size_t symbol_id) {
     if (module == NULL || module->semantics == NULL ||
         symbol_id >= module->semantics->symbol_count) return 0;
     const SemanticSymbol *symbol = &module->semantics->symbols[symbol_id];
-    if (symbol->kind != SEMANTIC_SYMBOL_STRUCT || symbol->source_program == NULL)
+    if ((symbol->kind != SEMANTIC_SYMBOL_STRUCT && symbol->kind != SEMANTIC_SYMBOL_ENUM) || symbol->source_program == NULL)
         return 0;
     const char *specialized = symbol->declaration != NULL
                                   ? symbol->declaration->specialization_identity
@@ -3358,6 +3374,7 @@ uint64_t ir_interface_type_tag(const IrModule *module, size_t symbol_id) {
     const char *type_name = ast_program_lexeme(symbol->source_program,
                                                 symbol->name_token);
     uint64_t hash = UINT64_C(14695981039346656037);
+    if (symbol->kind == SEMANTIC_SYMBOL_ENUM) hash = (hash ^ 'E') * UINT64_C(1099511628211);
     const unsigned char *part = (const unsigned char *)
         (specialized != NULL ? specialized : module_name);
     hash = (hash ^ (specialized != NULL ? 'S' : 'N')) * UINT64_C(1099511628211);

@@ -386,10 +386,15 @@ static AstType parse_type(SyntaxParser *parser) {
         }
     }
     if (borrow_kind != AST_BORROW_NONE) {
-        if (type.borrow_kind != AST_BORROW_NONE)
-            parser_failure(parser, ERR_PARSE_INVALID_DECLARATION, "Nested checked-reference types are not supported");
-        else
-            type.borrow_kind = borrow_kind;
+        if (type.borrow_kind != AST_BORROW_NONE) {
+            AstType *referent = allocate(parser, sizeof(*referent));
+            if (referent) {
+                *referent = type;
+                type.reference_type = referent;
+                type.pointer_depth++;
+            }
+        }
+        type.borrow_kind = borrow_kind;
         type.lifetime_token = lifetime_token;
     }
     type.span = range_span(parser, first, parser->current);
@@ -1781,8 +1786,11 @@ static AstDeclarationNode *parse_interface(SyntaxParser *parser) {
     while (!parser->failed && !check(parser, TOKEN_RBRACE) && !check(parser, TOKEN_EOF)) {
         int is_public = match(parser, TOKEN_KEYWORD_PUB);
         int is_static = match(parser, TOKEN_KEYWORD_STATIC);
+        unsigned mode = 0;
+        if (match(parser, TOKEN_KEYWORD_MUT)) mode = 1;
+        else if (!strcmp(ast_program_lexeme(parser->program, parser->current), "once")) { mode = 2; parser->current++; }
         AstDeclarationNode *method = parse_function(parser, is_static, interface);
-        if (method) method->is_public = is_public;
+        if (method) { method->is_public = is_public; method->as.function.receiver_mode = mode; }
         *tail = method;
         if (method) tail = &method->next;
     }
@@ -1791,6 +1799,9 @@ static AstDeclarationNode *parse_interface(SyntaxParser *parser) {
     if (d) {
         d->name_token = interface;
         d->as.interface_decl.methods = head;
+        d->lifetime_parameters = lifetimes;
+        if (head && !head->next && !strcmp(ast_program_lexeme(parser->program, head->name_token), "__invoke"))
+            d->closure_mode = head->as.function.receiver_mode;
     }
     finish_declaration(parser, d);
     return d;
@@ -1905,7 +1916,7 @@ static AstInterfaceBound *parse_auto_bounds(SyntaxParser *parser) {
     return head;
 }
 
-static AstAutoRule *parse_attributes(SyntaxParser *parser, int *no_default) {
+static AstAutoRule *parse_attributes(SyntaxParser *parser, int *no_default, int *must_consume) {
     AstAutoRule *head = NULL, **tail = &head;
     while (match(parser, TOKEN_AT)) {
         (void)consume(parser, TOKEN_LBRACKET);
@@ -1913,6 +1924,10 @@ static AstAutoRule *parse_attributes(SyntaxParser *parser, int *no_default) {
             if (*no_default) parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
                                             "Duplicate no_default attribute");
             *no_default = 1;
+            parser->current++;
+        } else if(spelling(parser,"must_consume")) {
+            if(*must_consume) parser_failure(parser,ERR_PARSE_INVALID_DECLARATION,"Duplicate must_consume attribute");
+            *must_consume=1;
             parser->current++;
         } else {
             AstAutoRule *rule = allocate(parser, sizeof(*rule));
@@ -1966,7 +1981,8 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
         if (recover_syntax) parser.reported = 0;
         AstDeclarationNode *declaration = NULL;
         int no_default = 0;
-        AstAutoRule *rules = parse_attributes(&parser, &no_default);
+        int must_consume = 0;
+        AstAutoRule *rules = parse_attributes(&parser, &no_default, &must_consume);
         int is_public = match(&parser, TOKEN_KEYWORD_PUB);
         if (check(&parser, TOKEN_KEYWORD_EXTERN)) {
             if (is_public) parser_failure(&parser, ERR_PARSE_INVALID_DECLARATION,
@@ -2013,7 +2029,7 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
             if (declaration) {
                 declaration->rule_target = target;
                 declaration->name_token = target.name_token;
-                if (!rules || no_default)
+                if (!rules || no_default || must_consume)
                     parser_failure(&parser, ERR_PARSE_INVALID_DECLARATION,
                                    "External type rules require auto attributes and a concrete target");
                 finish_declaration(&parser, declaration);
@@ -2028,12 +2044,14 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
         else
             parser_failure(&parser, ERR_PARSE_INVALID_DECLARATION,
                            "Expected function declaration");
-        if (declaration && (rules || no_default)) {
+        if (declaration && (rules || no_default || must_consume)) {
             if (declaration->kind != AST_DECL_STRUCT && declaration->kind != AST_DECL_ENUM &&
-                declaration->kind != AST_DECL_TYPE_RULE)
+                declaration->kind != AST_DECL_TYPE_RULE &&
+                !(declaration->kind==AST_DECL_INTERFACE && must_consume && !rules && !no_default))
                 parser_failure(&parser, ERR_PARSE_INVALID_DECLARATION,
                                "Type attributes require a struct, enum or external type rule");
             declaration->no_default = no_default;
+            declaration->must_consume = must_consume;
             declaration->auto_rules = rules;
         }
         if (parser.failed && recover_syntax && !parser.allocation_failed) {

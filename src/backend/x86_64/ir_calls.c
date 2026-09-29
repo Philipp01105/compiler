@@ -212,8 +212,9 @@ int emit_interface_call(Emitter *emitter, const IrInstruction *instruction) {
     char end[80], next[80];
     snprintf(end, sizeof(end), ".LIR_interface_end_%zu_%zu",
              emitter->function_index, sequence);
-    for (size_t s = 0; s < emitter->module->structure_count; s++) {
-        size_t struct_id = emitter->module->structures[s].symbol_id;
+    for (size_t s = 0; s < emitter->module->structure_count + emitter->module->enum_count; s++) {
+        size_t struct_id = s < emitter->module->structure_count ? emitter->module->structures[s].symbol_id
+            : emitter->module->enums[s - emitter->module->structure_count].symbol_id;
         size_t method_id = semantic_interface_method(emitter->module->semantics,
                                                      instruction->symbol_id, struct_id);
         if (method_id == AST_SYMBOL_NONE) continue;
@@ -230,6 +231,11 @@ int emit_interface_call(Emitter *emitter, const IrInstruction *instruction) {
                     x64_register("rax"), x64_register("rdx"));
         write_x64_1(emitter, X64_OP_JNE, X64_WIDTH_NONE, x64_label(next));
         if (!emit_typed_call(emitter, instruction, callee, 1, IR_VALUE_NONE)) return 0;
+        const SemanticSymbol *required = &emitter->module->semantics->symbols[instruction->symbol_id];
+        if (required->declaration->as.function.receiver_mode == 2) {
+            const SemanticSymbol *owner = &emitter->module->semantics->symbols[struct_id];
+            if (!emit_consumed_interface(emitter, receiver, owner->declaration && owner->declaration->closure_consuming_invoke)) return 0;
+        }
         write_x64_1(emitter, X64_OP_JMP, X64_WIDTH_NONE, x64_label(end));
         write_labelf(emitter, "%s:\n", next);
     }

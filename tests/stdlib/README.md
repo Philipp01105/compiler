@@ -1,76 +1,49 @@
 # Teststand der stdlib-Sprachlücken
 
-Stand: 5. Oktober 2026. Der Gesamtplan ist noch nicht abgeschlossen.
-Der Implementierungsstand und die offenen Sprachmittel stehen in
-[stdlib-language-gaps.md](../../plans/stdlib-language-gaps.md).
+Stand: 5. Oktober 2026. Die Implementierung läuft von oben nach unten weiter. Patterns/Heap-Moves und die definierten gespeicherten Borrow-Sprachmittel sind gezielt abgenommen; die vollständige Container-Loan-Freigabe bleibt offen. Siehe [Plan und offene Punkte](../../plans/stdlib-language-gaps.md).
 
 ## Automatisierte Abdeckung
 
-`stdlib_language_gaps_contract` wird durch
-[stdlib_language_gaps_test.cmake](../stdlib_language_gaps_test.cmake) ausgeführt.
+[stdlib_language_gaps_test.cmake](../stdlib_language_gaps_test.cmake) führt den Vertrag stdlib_language_gaps_contract aus.
 
-| Fixture | Geprüfter Umfang |
+| Fixture | Umfang |
 |---|---|
-| `language_gaps` | Copy-Bounds, Callback-Inferenz, allgemeine Owner-Patterns, take/replace, Box-Transfer und Destruktion |
-| `language_lifetimes` | Gespeicherte Borrows, direkte Feld-Lifetimes und Projektionen, konservative verschachtelte Origins, permanente Paket-Borrows, Binäradapter und Mutex-Guard |
-| `language_collections` | Owner-List/Deque/HashMap, Wachstum, Ring-Wrap, Kollisionen, Entfernen, Ersetzen, clear/truncate und einmalige Destruktion |
-| `language_files` | File-Owner in Collections und fallible Option-/Result-Propagation |
-| `language_closures` | Explizite Captures, shared/mut/once, Owner-Captures, direkte Aufrufe, deferred Cleanup und Callback-Cleanup auf None-/Some-Pfaden |
-| `language_gaps_async` | Poll/Poller-Grundlage, No-op-Waker/Context sowie Future-Payload-Loans bei Move, Match, Completion und Cancellation |
-| `collection_allocation_faults` | Allocation-Fehler vor Relocation, unveränderte vorhandene Inhalte, Destruktion eingehender Owner, Retry und null verbleibende Allocations |
+| language_gaps | Copy-Bounds, Callback-Inferenz, Owner-Patterns, take/replace und Box-Transfer |
+| language_lifetimes | Verschachtelte Feld-/Payload-Provenienz, umgeordnete Lifetime-Owner mit destroy, präzises replace auf Referenzen und Heap-Payloads, List.pop/clear, Referenzslots, Paket-Borrows, Setter, Binäradapter und MutexGuard |
+| language_collections | Owner-List/Deque/HashMap, Wachstum, Ring-Wrap, Kollisionen und Cleanup |
+| language_files | File-Owner in Collections und fallible Propagation |
+| language_closures | Shared/mut/once, benannte callable Interfaces, Captures und Cleanup |
+| language_gaps_async | Verschachtelte und umgeordnete Future-Patterns, präzises replace, Borrow-Aggregat-Ergebnisse über block_on/.await()/futureComplete, typisiertes Polling, gepinnte Poller, Cancellation, benannte Callables, select/race/join, sleep und timeout |
+| collection_allocation_faults | Isolierte Allocation-Fehler, unveränderte Inhalte, eingehende Owner, Retry und verbleibende Allocations |
 
-Die Execution-Fixtures laufen bei O0/O1 auf dem Host. Zusätzlich werden ELF und COFF
-als native Objekte sowie Intel-/ATT-Assembly ausgegeben. Das ist keine Linux-Ausführung.
-Allocation-Fehler werden nur in einer isolierten Kopie der installierten stdlib injiziert;
-die produktive stdlib erhält keine Test-Intrinsics.
+Execution-Fixtures laufen bei O0/O1 auf dem Host. ELF-/COFF-Objekte und Intel-/ATT-Assembly werden zusätzlich ausgegeben; das ist keine Linux-Ausführung. Allocation-Fehler werden in einer isolierten stdlib-Kopie injiziert.
 
-Die eingebetteten Negativfälle prüfen Copy/Send-Anforderungen, Use-after-move,
-Consumption-Pflichten, Borrow-Escape, Alias-Konflikte, falsche Feld-/Payload-Lifetimes,
-unzulässige Paket-Borrows, mutable Zugriffe durch shared Referenzen und Closure-Verträge.
-Neu hinzugefügt ist die Ablehnung einer Rückgabe auf einen by-value skalaren Parameter.
-Positive Gegenfälle übertragen Borrow-Payloads durch `branch` und `?`: Option, Result und ein
-benutzerdefinierter Vertrag, shared/mutable Referenzen, Slices sowie geborgte Residuals,
-jeweils mit Success-/Residual-Pfaden. Rekonstruierte Option-Rückgaben sind nun Execution-Tests.
-Negativfälle prüfen lokale Flucht über Output und Residual, Konflikte nach Extraktion und
-Weitergabe sowie falsche deklarierte Lifetimes. Bestehende Interface-/String-Rückgaben
-bleiben durch die allgemeinen Frontend-, Execution- und Backend-Regressionen geschützt.
-Die Option-Helfer werden mit trap-auslösenden, unbenutzten Owner-Callbacks für None und
-mit ausgeführten Callbacks für Some geprüft. Destruktionszähler verlangen einmaliges
-Cleanup. Closures mit importierter generischer Option-Rückgabe werden dabei normalisiert
-und spezialisiert wie gewöhnliche Funktionen.
-Diese Negativfälle werden mit `--emit=obj` bei der voreingestellten Optimierungsstufe
-kompiliert und auf ihre Diagnose geprüft; sie sind keine O0/O1-Execution-Tests.
+Negativfälle prüfen Consumption, Borrow-Escape, Alias-Konflikte, Lifetime-Zuordnungen, Slot-Zugriffe, Setter-Weiterleitung, Callable-Erasure und unzulässige Future-Operationen. Sie werden mit --emit=obj bei voreingestellter Optimierung auf Diagnosen geprüft und sind keine O0/O1-Execution-Tests.
 
-## Prüfkommandos
+## Tatsächlicher Prüfstand
 
-Im Repository-Verzeichnis mit der vorhandenen Windows-Konfiguration:
+Die vollständige Windows-Suite bestand nach Behebung der bisherigen Regressionen mit **57/57 Tests in 243,60 Sekunden**. Die anschließenden Pattern-/Heap-/Future-Borrow-Änderungen wurden gezielt geprüft: **stdlib_language_gaps_contract bestand in 49,84 Sekunden**, bei O0/O1 einschließlich Objekt-/Assembly-Ausgaben und Negativfällen. Im selben Lauf bestanden regression_rejection, async_semantic_unit, language_foundation_unit, resource_fault_unit und frontend_pipeline_unit (6/6 insgesamt). regression_positive und shared_language_contract bestanden vor der anschließenden Verfeinerung der Future-Ergebnisfelder. Die vollständige Windows-Suite wurde nach diesen anschließenden Änderungen nicht nochmals ausgeführt.
+
+Gezielte Linux-O1-Ausführungen des aktuellen language_lifetimes und language_gaps_async bestanden. Präzise Container-Loan-Freigabe ist bislang für List.pop/clear mit Kopien, Moves und Enum-Verpackung geprüft; weitere Remove-/truncate-/Ring-/Hash-Fälle bleiben offen.
+
+Keine vollständige Linux-Suite wurde zur abschließenden Abnahme ausgeführt. Unter Linux werden nur notwendige Tests ausgeführt; die vollständige Suite bleibt CI.
+
+## Gezielte Prüfkommandos
+
+Mit vorhandener Windows-Konfiguration und Compiler-Toolchain im PATH:
 
 ```powershell
-$env:PATH='C:/msys64/ucrt64/bin;'+$env:PATH
-cmake --build build-language-gaps --parallel 4
+cmake --build cmake-build-debug --target compiler --parallel 4
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-ctest --test-dir build-language-gaps --output-on-failure --parallel 4
+ctest --test-dir cmake-build-debug -R stdlib_language_gaps_contract --output-on-failure
 ```
 
-Für den gezielten Vertragstest:
+Für einen gezielten Async-Test mit vorhandener Linux-Konfiguration, im Repository-Verzeichnis:
 
-```powershell
-ctest --test-dir build-language-gaps -R stdlib_language_gaps_contract --output-on-failure
+```sh
+cmake --build build-shared-linux-make --target compiler --parallel 4
+build-shared-linux-make/compiler -O1 --emit=exe tests/stdlib/language_gaps_async/language_gaps_async.dmm -o build-shared-linux-make/language-gaps-async-focused
+build-shared-linux-make/language-gaps-async-focused
 ```
 
-## Noch nicht abgenommen
-
-Prüfstand vom 5. Oktober 2026: Der gezielte Sprachlücken-Vertrag mit der Propagation-Korrektur
-ist bestanden. Die vollständige Windows-Suite wird nach dem erneuten Build geprüft.
-Die abschließende Linux-Abnahme bleibt ausstehend.
-
-Exklusives öffentliches Future-Polling, der gepinnte fromPoller-Adapter,
-select2/race2/join2/timeout und nicht blockierende Timer sind noch nicht implementiert.
-Für diese APIs gibt es keine erfolgreiche Abnahme. Ebenso offen bleiben vollständige
-verschachtelte/interprozedurale Borrow-Provenienz, präzise Loan-Freigabe einzelner
-Container-Slots, verschachtelte checked Referenzen/Referenzslot-Borrows und
-Closure-Rückgaben über eine benannte Callable-Abstraktion.
-Die abschließende Linux-Ausführung des aktuellen Sprachlücken-Stands steht aus.
-
-Der frühere Abschluss der stdlib-Grundetappen ist ein historischer Prüfstand und
-belegt diese neuen oder noch offenen Sprachmittel nicht.
+Diese Kommandos prüfen die betroffenen Features; sie ersetzen keine vollständige CI-Abnahme.

@@ -44,36 +44,6 @@ static int reserved_link_name(const char *name) {
     return strncmp(name, "__dmm_", 6) == 0;
 }
 
-static int runtime_component_export(const char *name) {
-    static const char *const names[] = {
-        "__dmm_async_thread_create", "__dmm_async_thread_join", "__dmm_async_wait_create",
-        "__dmm_async_wait", "__dmm_async_wake", "__dmm_async_wait_reset",
-        "__dmm_async_wait_destroy", "__dmm_platform_exit", "__dmm_platform_thread_entry",
-        "__dmm_net_now", "__dmm_net_pointer", "__dmm_net_socket", "__dmm_net_bind",
-        "__dmm_net_listen", "__dmm_net_address", "__dmm_net_address_packet",
-        "__dmm_net_shutdown_socket", "__dmm_net_close", "__dmm_net_start",
-        "__dmm_net_cancel", "__dmm_net_poll", "__dmm_net_release", "__dmm_net_result",
-        "__dmm_net_result_address", "__dmm_net_addresses_count", "__dmm_net_addresses_get",
-        "__dmm_net_addresses_release", "__dmm_net_wait", "__dmm_net_begin_draining",
-        "__dmm_net_finish", "__dmm_net_reactor_entry", "__dmm_net_dns_entry",
-        "__dmm_net_future_poll", "__dmm_net_future_cancel", "__dmm_net_future_destroy",
-        "__dmm_net_test_socket_handles", "__dmm_net_test_close_error", "__dmm_net_test_dns_hook",
-        "__dmm_net_test_reactor_hook", "__dmm_net_test_submitted", "__dmm_net_test_send",
-        "__dmm_async_context_retain", "__dmm_async_context_release", "__dmm_async_context_wake",
-        "__dmm_async_cancel_requested", "__dmm_async_frame_destroy", "__dmm_async_worker",
-        "__dmm_async_executor_create", "__dmm_async_spawn", "__dmm_async_join_poll",
-        "__dmm_async_join_cancel", "__dmm_async_join_destroy", "__dmm_async_cancel",
-        "__dmm_async_adapter_destroy", "__dmm_async_cancel_poll", "__dmm_async_shutdown",
-        "__dmm_async_shutdown_poll", "__dmm_async_block_on", "__dmm_async_default_drain",
-        "__dmm_async_io_create", "__dmm_async_io_poll", "__dmm_async_io_request_cancel",
-        "__dmm_async_io_cancel_requested", "__dmm_async_io_confirm", "__dmm_async_io_destroy",
-        "__dmm_async_discard_poll", "__dmm_async_default"
-    };
-    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); ++i)
-        if (!strcmp(name, names[i])) return 1;
-    return 0;
-}
-
 static int append_symbol(Analyzer *analyzer, SemanticSymbol symbol) {
     if (semantic_append_symbol(analyzer->model, symbol)) return 1;
     analyzer->allocation_failed = 1;
@@ -120,14 +90,9 @@ void add_global(Analyzer *analyzer, AstDeclarationNode *declaration,
          !strcmp(package->path,"stdlib/core/net/internal"));
     if (owner_token == AST_TOKEN_NONE && kind == SEMANTIC_SYMBOL_FUNCTION &&
         reserved_link_name(name) &&
-        !((analyzer->model->program->runtime_component || runtime_source) && declaration->is_native_export &&
-          runtime_component_export(name)))
+        !((analyzer->model->program->runtime_component || runtime_source) && declaration->is_native_export))
         semantic_error(analyzer, declaration->name_token, ERROR_CATEGORY_SEMANTIC, ERR_SEM_INVALID_DECLARATION,
                        "Function name is reserved by the runtime");
-    if (analyzer->model->program->runtime_component && declaration->is_native_export &&
-        !runtime_component_export(name))
-        semantic_error(analyzer, declaration->name_token, ERROR_CATEGORY_SEMANTIC,
-                       ERR_SEM_INVALID_DECLARATION, "Runtime component export is outside the private runtime ABI");
     for (size_t i = 0; i < analyzer->model->symbol_count; i++) {
         const SemanticSymbol *existing = &analyzer->model->symbols[i];
         if (!same_package(analyzer->program, existing->source_program)) continue;
@@ -687,6 +652,13 @@ int expression_to_declared_type_allowed(const Analyzer *analyzer,
                                                const AstProgram *type_program,
                                                const AstType *type) {
     if (expression == NULL || type == NULL) return 0;
+    if (type->reference_type || (expression->has_resolved_ast_type && expression->resolved_ast_type.reference_type)) {
+        if (!expression->has_resolved_ast_type || !type->reference_type || !expression->resolved_ast_type.reference_type)
+            return 0;
+        if (!ast_concrete_type_equal(type_program, type->reference_type,
+            expression->resolved_type_program ? expression->resolved_type_program : analyzer->program,
+            expression->resolved_ast_type.reference_type)) return 0;
+    }
     if (type->kind == AST_TYPE_EXECUTOR)
         return expression->has_resolved_ast_type && expression->resolved_ast_type.kind == AST_TYPE_EXECUTOR &&
                ast_concrete_type_equal(type_program, type, expression->resolved_type_program != NULL ?
@@ -803,11 +775,12 @@ int expression_to_declared_type_allowed(const Analyzer *analyzer,
             !expression->resolved_is_array && !expression->resolved_is_slice &&
             analyzer->model->symbols[target_symbol].kind == SEMANTIC_SYMBOL_INTERFACE &&
             expression->resolved_named_symbol_id < analyzer->model->symbol_count &&
-            analyzer->model->symbols[expression->resolved_named_symbol_id].kind ==
-                SEMANTIC_SYMBOL_STRUCT &&
+            (analyzer->model->symbols[expression->resolved_named_symbol_id].kind ==
+                SEMANTIC_SYMBOL_STRUCT || analyzer->model->symbols[expression->resolved_named_symbol_id].kind == SEMANTIC_SYMBOL_ENUM) &&
             semantic_implements_interface(analyzer->model, target_symbol,
                                           expression->resolved_named_symbol_id))
-            return 1;
+            return !(semantic_symbol_type_properties(analyzer->model,expression->resolved_named_symbol_id) & SEMANTIC_TYPE_MUST_CONSUME) ||
+                (semantic_symbol_type_properties(analyzer->model,target_symbol) & SEMANTIC_TYPE_MUST_CONSUME);
         return target_symbol != AST_SYMBOL_NONE &&
                target_symbol == expression->resolved_named_symbol_id &&
                matching_shape;
@@ -908,11 +881,12 @@ int expression_assignment_allowed(const Analyzer *analyzer,
             !source_depth && !target_depth && !target->resolved_is_array &&
             !target->resolved_is_slice && !source->resolved_is_array && !source->resolved_is_slice &&
             source->resolved_named_symbol_id < analyzer->model->symbol_count &&
-            analyzer->model->symbols[source->resolved_named_symbol_id].kind ==
-                SEMANTIC_SYMBOL_STRUCT &&
+            (analyzer->model->symbols[source->resolved_named_symbol_id].kind ==
+                SEMANTIC_SYMBOL_STRUCT || analyzer->model->symbols[source->resolved_named_symbol_id].kind == SEMANTIC_SYMBOL_ENUM) &&
             semantic_implements_interface(analyzer->model, target->resolved_named_symbol_id,
                                 source->resolved_named_symbol_id))
-            return 1;
+            return !(semantic_symbol_type_properties(analyzer->model,source->resolved_named_symbol_id) & SEMANTIC_TYPE_MUST_CONSUME) ||
+                (semantic_symbol_type_properties(analyzer->model,target->resolved_named_symbol_id) & SEMANTIC_TYPE_MUST_CONSUME);
     if (target->resolved_named_symbol_id != AST_SYMBOL_NONE ||
         source->resolved_named_symbol_id != AST_SYMBOL_NONE)
         return target->resolved_named_symbol_id != AST_SYMBOL_NONE &&
@@ -1206,19 +1180,15 @@ static void validate_builtin_arguments(Analyzer *analyzer,
     int valid = 1;
     const CoreIntrinsic *core = core_intrinsic_find(name);
     if (expression->lifetime_operation) {
-        valid = a && pointer_expression(a) && !a->resolved_is_slice && !a->resolved_is_array;
+        valid = a && pointer_expression(a) &&
+            ((!a->resolved_is_slice && !a->resolved_is_array) ||
+             a->resolved_outer_pointer_depth || a->resolved_borrow_kind != AST_BORROW_NONE);
         if (expression->lifetime_operation == LIFETIME_DESTROY &&
             (semantic_declared_type_properties(analyzer, analyzer->program, &expression->allocated_type) &
              SEMANTIC_TYPE_MUST_CONSUME))
             semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_SEMANTIC,
                            ERR_SEM_INVALID_DECLARATION,
                            "destroy cannot discard a value with a consumption obligation; complete or cancel it first");
-        if ((expression->lifetime_operation == LIFETIME_TAKE ||
-             expression->lifetime_operation == LIFETIME_REPLACE) && a && a->right &&
-            a->right->resolved_borrow_kind != AST_BORROW_NONE)
-            semantic_error(analyzer, expression->first_token, ERROR_CATEGORY_SEMANTIC,
-                           ERR_SEM_INVALID_DECLARATION,
-                           "Lifetime transfer of checked reference values requires nested reference support");
         if ((expression->lifetime_operation == LIFETIME_TAKE ||
              expression->lifetime_operation == LIFETIME_REPLACE) && a && a->right &&
             a->right->kind == AST_EXPR_UNARY && a->right->operator_type == TOKEN_STAR &&
@@ -2069,6 +2039,7 @@ int valid_lifetime_type(const Analyzer *analyzer, const AstType *type,
         if (supplied != expected) return 0;
     }
     if (!valid_lifetime_type(analyzer, type->element_type, scope)) return 0;
+    if (!valid_lifetime_type(analyzer, type->reference_type, scope)) return 0;
     for (const AstTypeArgument *p = type->arguments; p; p = p->next)
         if (!valid_lifetime_type(analyzer, &p->type, scope)) return 0;
     /* Higher-ranked callable lifetime binders are checked in their own scope. */

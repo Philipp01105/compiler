@@ -1,0 +1,98 @@
+package asynchronous;
+import (
+    "stdlib/core"
+    "stdlib/core/executor"
+    "stdlib/native/threading"
+    "stdlib/time"
+);
+
+pub struct Unit {}
+
+extern "system" {
+    struct TimerState {
+        var io:*void;
+        var thread:*void;
+        var remaining:u64;
+    }
+}
+
+export "system" func dmm_async_timer_drop(address:*void)->void {
+    core.core_release(address.(*u8));
+}
+
+// Sleeping happens on the timer worker. Cancellation is checked between short
+// waits and acknowledged only after the worker has stopped touching its state.
+export "system" func dmm_async_timer_worker(address:*void)->void {
+    var state=address.(*TimerState);
+    while (state.remaining!=0 && executor.__dmm_async_io_cancel_requested(state.io)==0) {
+        var step:u64=state.remaining;
+        if(step>1000000) { step=1000000; }
+        match(time.sleep(time.nanoseconds(step))) {
+            Ok=>{}
+            Err(error)=>{ core.core_trap(); }
+        }
+        state.remaining-=step;
+    }
+    executor.__dmm_async_io_confirm(state.io);
+}
+
+@[no_default] @[core.Send] pub struct Timer {
+    var duration:time.Duration;
+    var state:*TimerState;
+
+    pub func poll(context:&mut Context)->core.Poll<Unit> {
+        if(state==core.core_null().(*TimerState)) {
+            state=reserve(TimerState);
+            state.remaining=duration.nanoseconds;
+            state.io=executor.__dmm_async_io_create(state.(*void),dmm_async_timer_drop);
+            state.thread=threading.__dmm_async_thread_create(dmm_async_timer_worker,state.(*void));
+        }
+        if(executor.__dmm_async_io_poll(state.io,context.waker.raw)!=0) {
+            return core.Poll<Unit>.Ready(Unit{});
+        }
+        return core.Poll<Unit>.Pending;
+    }
+
+    pub func cancelPoll(context:&mut Context)->core.Poll<CancelAck> {
+        if(state==core.core_null().(*TimerState)) {
+            return core.Poll<CancelAck>.Ready(CancelAck.Confirmed);
+        }
+        executor.__dmm_async_io_request_cancel(state.io);
+        if(executor.__dmm_async_io_poll(state.io,context.waker.raw)!=0) {
+            return core.Poll<CancelAck>.Ready(CancelAck.Confirmed);
+        }
+        return core.Poll<CancelAck>.Pending;
+    }
+
+    destructor {
+        if(state!=core.core_null().(*TimerState)) {
+            // A started poller must complete or acknowledge cancellation before
+            // destruction. Never turn an unacknowledged drop into a blocking wait.
+            if(executor.__dmm_async_io_poll(state.io,core.core_null().(*void))==0) {
+                core.core_trap();
+            }
+            threading.__dmm_async_thread_join(state.thread);
+            executor.__dmm_async_io_destroy(state.io);
+        }
+    }
+}
+
+pub func timer(duration:time.Duration)->Timer {
+    return Timer{duration:duration,state:core.core_null().(*TimerState)};
+}
+
+pub async func sleep(duration:time.Duration)->void {
+    fromPoller<Unit,Timer>(timer(duration)).await();
+}
+
+pub enum Timed<T> {
+    pub Completed(T),
+    pub Elapsed
+}
+
+pub async func timeout<T>(future:Future<T>,duration:time.Duration)->Timed<T> {
+    match(select2(future,fromPoller<Unit,Timer>(timer(duration))).await()) {
+        Left(value,clock)=>{ cancel(clock).await(); return Timed<T>.Completed(value); }
+        Right(pending,unit)=>{ cancel(pending).await(); return Timed<T>.Elapsed; }
+    }
+}

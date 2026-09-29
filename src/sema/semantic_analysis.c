@@ -230,6 +230,9 @@ void derive_type_properties(Analyzer *analyzer) {
             symbol->type_properties =
                 SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP |
                 SEMANTIC_TYPE_SEND | SEMANTIC_TYPE_SYNC;
+        if(symbol->declaration && symbol->declaration->must_consume)
+            symbol->type_properties=(symbol->type_properties & ~(unsigned)SEMANTIC_TYPE_COPYABLE) |
+                SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_MUST_CONSUME;
     }
 
     int changed;
@@ -391,6 +394,8 @@ static void consume_call_arguments(Analyzer *analyzer,
 static int safe_borrow_return_origin(const Analyzer *analyzer,
                                      const AstExpression *expression) {
     if (expression == NULL) return 0;
+    int reference_projection = expression->kind == AST_EXPR_MEMBER &&
+        expression->resolved_borrow_kind != AST_BORROW_NONE;
     while (expression->kind == AST_EXPR_UNARY &&
            expression->operator_type == TOKEN_AMPERSAND)
         expression = expression->right;
@@ -411,6 +416,10 @@ static int safe_borrow_return_origin(const Analyzer *analyzer,
     if (origin->scope_depth == 0 &&
         (origin->kind == SEMANTIC_SYMBOL_VARIABLE ||
          origin->kind == SEMANTIC_SYMBOL_CONSTANT))
+        return 1;
+    /* Fully resolved borrow validation checks the referent paths of copied
+       aggregate and pattern bindings after all function bodies are available. */
+    if (reference_projection && origin->resolved_named_symbol_id < analyzer->model->symbol_count)
         return 1;
     return (origin->kind == SEMANTIC_SYMBOL_PARAMETER || origin->kind == SEMANTIC_SYMBOL_LOCAL) &&
            origin->declared_type.borrow_kind != AST_BORROW_NONE;
@@ -1190,8 +1199,6 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
     if (!function->is_native) {
         analyze_statement(analyzer, function->as.function.body);
         validate_function_ownership(analyzer, function);
-        if (!analyzer->closure_probe || analyzer->closure_probe->closure_mode != 2)
-            validate_function_borrows(analyzer, function);
     }
     DataType return_type = primitive_type(analyzer->program,
                                           &function->as.function.return_type);
@@ -1251,7 +1258,6 @@ static void analyze_destructor(Analyzer *analyzer, AstDeclarationNode *resource)
     AstDeclarationNode destructor_function = {.kind = AST_DECL_FUNCTION, .name_token = resource->name_token};
     destructor_function.as.function.body = resource->as.struct_decl.destructor;
     validate_function_ownership(analyzer, &destructor_function);
-    validate_function_borrows(analyzer, &destructor_function);
     pop_to(analyzer, saved);
     analyzer->scope_depth--;
     analyzer->current_function_token = saved_function;
@@ -1802,6 +1808,37 @@ SemanticModel *semantic_analyze_target(AstProgram *program, TargetFormat target)
                            "main must have no parameters and return void or int");
     }
     validate_package_borrows(&analyzer);
+    /* Borrow summaries need resolved callee bodies, including methods and
+       closures instantiated during the symbol follow-up above. */
+    for (size_t i = 0; i < model->symbol_count; i++) {
+        const SemanticSymbol *symbol = &model->symbols[i];
+        const AstDeclarationNode *declaration = symbol->declaration;
+        if (!declaration || !declaration->semantic_body_checked || declaration->constraints_disabled) continue;
+        Analyzer borrow_analyzer = analyzer;
+        borrow_analyzer.program = (AstProgram *)symbol->source_program;
+        borrow_analyzer.scope_depth = 1;
+        borrow_analyzer.locals = NULL;
+        if (symbol->kind == SEMANTIC_SYMBOL_FUNCTION && !declaration->is_native) {
+            const AstDeclarationNode *owner = symbol->owner_symbol_id < model->symbol_count
+                ? model->symbols[symbol->owner_symbol_id].declaration : NULL;
+            if (owner && owner->is_closure_environment && owner->closure_mode == 2) continue;
+            borrow_analyzer.current_function = declaration;
+            borrow_analyzer.current_function_token = declaration->name_token;
+            borrow_analyzer.current_function_symbol_id = symbol->id;
+            borrow_analyzer.current_owner_token = declaration->as.function.owner_token;
+            validate_function_borrows(&borrow_analyzer, declaration);
+        } else if (symbol->kind == SEMANTIC_SYMBOL_STRUCT && declaration->as.struct_decl.destructor) {
+            AstDeclarationNode destructor_function = {.kind = AST_DECL_FUNCTION, .name_token = declaration->name_token};
+            destructor_function.as.function.body = declaration->as.struct_decl.destructor;
+            borrow_analyzer.current_function = NULL;
+            borrow_analyzer.current_function_token = AST_TOKEN_NONE;
+            borrow_analyzer.current_function_symbol_id = AST_SYMBOL_NONE;
+            borrow_analyzer.current_owner_token = declaration->name_token;
+            borrow_analyzer.in_destructor = 1;
+            validate_function_borrows(&borrow_analyzer, &destructor_function);
+        }
+        analyzer.allocation_failed |= borrow_analyzer.allocation_failed;
+    }
     derive_async_properties(&analyzer);
     pop_to(&analyzer, NULL);
     if (analyzer.allocation_failed) {

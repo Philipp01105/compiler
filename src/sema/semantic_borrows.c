@@ -5,6 +5,17 @@
 #include <stdlib.h>
 #include <string.h>
 
+typedef struct BorrowPath {
+    size_t id;
+    size_t parent;
+    size_t field;
+    int payload;
+    size_t enum_symbol;
+    size_t variant;
+    size_t index;
+    struct BorrowPath *next;
+} BorrowPath;
+
 typedef struct BorrowRecord {
     size_t owner_symbol;
     size_t field_symbol;
@@ -18,6 +29,7 @@ typedef struct BorrowRecord {
     size_t scope_depth;
     int active;
     int captured_by_future;
+    int future_frame_only;
     int captured_by_aggregate;
     int retained_until_drop;
     int package_storage;
@@ -27,8 +39,49 @@ typedef struct BorrowRecord {
     size_t payload_index;
     const char *origin_lifetime;
     const struct BorrowRecord *parent;
+    int summary_foreign;
+    int summary_effect;
+    int summary_exit_active;
+    int reference_slot;
+    int heap_storage;
+    size_t heap_anchor_owner;
+    size_t heap_anchor_field;
+    int64_t heap_min;
+    int64_t heap_max;
+    int64_t heap_exit_min;
+    int64_t heap_exit_max;
     struct BorrowRecord *next;
 } BorrowRecord;
+
+typedef struct BorrowCallSummary {
+    const AstExpression *call;
+    size_t result_symbol;
+    size_t epoch;
+    int heap_effect;
+    int unmodeled_storage;
+    struct BorrowCallSummary *next;
+} BorrowCallSummary;
+
+typedef struct BorrowStorage {
+    size_t symbol;
+    size_t owner;
+    size_t field;
+    int heap_index;
+    size_t index_owner;
+    size_t index_field;
+    struct BorrowStorage *next;
+} BorrowStorage;
+
+typedef struct BorrowWrite {
+    size_t owner;
+    size_t field;
+    struct BorrowWrite *next;
+} BorrowWrite;
+
+typedef struct BorrowContinuation {
+    const AstStatement *statements;
+    struct BorrowContinuation *next;
+} BorrowContinuation;
 
 typedef struct {
     Analyzer *analyzer;
@@ -40,11 +93,29 @@ typedef struct {
     const AstExpression *deferred_call;
     size_t temporary_borrowers;
     int reserving_loans;
+    BorrowPath *paths;
+    size_t path_count;
+    unsigned summary_depth;
+    size_t summary_functions[16];
+    int summarizing;
+    size_t summary_result;
+    BorrowCallSummary *summaries;
+    size_t evaluation_epoch;
+    BorrowStorage *storage;
+    BorrowWrite *writes;
+    Analyzer *caller_analyzer;
+    size_t call_token;
+    int heap_effect;
+    int unmodeled_storage;
+    const AstStatement *current_statement;
+    BorrowContinuation *continuations;
 } BorrowChecker;
 
 typedef struct {
     BorrowRecord *loan;
     int active;
+    int64_t heap_min;
+    int64_t heap_max;
 } FutureLoanState;
 
 typedef struct FutureLoanBranch {
@@ -65,7 +136,8 @@ static FutureLoanBranch future_loan_snapshot(BorrowChecker *checker) {
     }
     size_t index = 0;
     for (BorrowRecord *loan = checker->borrows; loan; loan = loan->next)
-        branch.state[index++] = (FutureLoanState) {.loan = loan, .active = loan->active};
+        branch.state[index++] = (FutureLoanState) {.loan = loan, .active = loan->active,
+            .heap_min=loan->heap_min,.heap_max=loan->heap_max};
     return branch;
 }
 
@@ -73,7 +145,21 @@ static void future_loan_restore(BorrowChecker *checker, const FutureLoanBranch *
     for (BorrowRecord *loan = checker->borrows; loan; loan = loan->next)
         loan->active = 0;
     if (branch != NULL)
-        for (size_t i = 0; i < branch->count; i++) branch->state[i].loan->active = branch->state[i].active;
+        for (size_t i = 0; i < branch->count; i++) {
+            branch->state[i].loan->active = branch->state[i].active;
+            branch->state[i].loan->heap_min=branch->state[i].heap_min;
+            branch->state[i].loan->heap_max=branch->state[i].heap_max;
+        }
+}
+
+static void join_loan_state(const FutureLoanState *state) {
+    BorrowRecord *loan=state->loan;
+    if(!state->active) return;
+    if(loan->active) {
+        if(state->heap_min<loan->heap_min) loan->heap_min=state->heap_min;
+        if(state->heap_max>loan->heap_max) loan->heap_max=state->heap_max;
+    } else { loan->heap_min=state->heap_min; loan->heap_max=state->heap_max; }
+    loan->active=1;
 }
 
 typedef enum {
@@ -89,6 +175,68 @@ typedef struct {
     size_t region_end;
     const BorrowRecord *through;
 } BorrowPlace;
+
+static const BorrowPath *borrow_path_node(const BorrowChecker *checker, size_t id) {
+    for (const BorrowPath *path = checker->paths; path; path = path->next)
+        if (path->id == id) return path;
+    return NULL;
+}
+
+static size_t borrow_path_append(BorrowChecker *checker, size_t parent, size_t field) {
+    if (field == AST_SYMBOL_NONE) return parent;
+    if (parent == AST_SYMBOL_NONE) return field;
+    const BorrowPath *suffix = borrow_path_node(checker, field);
+    if (suffix && suffix->parent != AST_SYMBOL_NONE) return borrow_path_append(checker,
+        borrow_path_append(checker, parent, suffix->parent), suffix->field);
+    for (const BorrowPath *path = checker->paths; path; path = path->next)
+        if (path->parent == parent && path->field == field) return path->id;
+    BorrowPath *path = malloc(sizeof(*path));
+    if (!path) { checker->analyzer->allocation_failed = 1; return AST_SYMBOL_NONE; }
+    *path = (BorrowPath){.id = AST_SYMBOL_NONE / 2 - checker->path_count++,
+        .parent = parent, .field = field, .next = checker->paths};
+    checker->paths = path;
+    return path->id;
+}
+
+static size_t borrow_payload_path(BorrowChecker *checker, size_t enum_symbol,
+                                  size_t variant, size_t index) {
+    for (const BorrowPath *path = checker->paths; path; path = path->next)
+        if (path->payload && path->enum_symbol == enum_symbol &&
+            path->variant == variant && path->index == index) return path->id;
+    BorrowPath *path = calloc(1, sizeof(*path));
+    if (!path) { checker->analyzer->allocation_failed = 1; return AST_SYMBOL_NONE; }
+    path->id = AST_SYMBOL_NONE / 2 - checker->path_count++;
+    path->parent = AST_SYMBOL_NONE;
+    path->field = path->id;
+    path->payload = 1;
+    path->enum_symbol = enum_symbol;
+    path->variant = variant;
+    path->index = index;
+    path->next = checker->paths;
+    checker->paths = path;
+    return path->id;
+}
+
+static int borrow_path_prefix(const BorrowChecker *checker, size_t prefix, size_t path) {
+    if (prefix == AST_SYMBOL_NONE) return 1;
+    for (;;) {
+        if (prefix == path) return 1;
+        const BorrowPath *node = borrow_path_node(checker, path);
+        if (!node) return 0;
+        path = node->parent;
+    }
+}
+
+static int borrow_paths_overlap(const BorrowChecker *checker, size_t left, size_t right) {
+    return borrow_path_prefix(checker, left, right) || borrow_path_prefix(checker, right, left);
+}
+
+static size_t borrow_path_relative(BorrowChecker *checker, size_t path, size_t prefix) {
+    if (path == prefix || path == AST_SYMBOL_NONE) return AST_SYMBOL_NONE;
+    const BorrowPath *node = borrow_path_node(checker, path);
+    if (!node) return prefix == AST_SYMBOL_NONE ? path : AST_SYMBOL_NONE;
+    return borrow_path_append(checker, borrow_path_relative(checker, node->parent, prefix), node->field);
+}
 
 static void collect_statement_uses(BorrowChecker *checker,
                                    const AstStatement *statement,
@@ -138,17 +286,16 @@ static BorrowRecord *borrow_by_borrower(BorrowChecker *checker,
         if (borrow->active && borrow->borrower_symbol == symbol &&
             borrow->borrower_field_symbol == field)
             return borrow;
-    /* Aggregate returns can retain an input loan on the whole result before
-       the callee's field mapping is available. Field access reborrows it. */
-    if (field != AST_SYMBOL_NONE)
-        for (BorrowRecord *borrow = checker->borrows; borrow; borrow = borrow->next)
-            if (borrow->active && borrow->borrower_symbol == symbol &&
-                borrow->borrower_field_symbol == AST_SYMBOL_NONE && !borrow->captured_by_future)
-                return borrow;
-    return NULL;
+    BorrowRecord *nearest = NULL;
+    for (BorrowRecord *borrow = checker->borrows; borrow; borrow = borrow->next)
+        if (borrow->active && borrow->borrower_symbol == symbol && !borrow->captured_by_future &&
+            borrow_path_prefix(checker, borrow->borrower_field_symbol, field) &&
+            (!nearest || borrow_path_prefix(checker, nearest->borrower_field_symbol,
+                                           borrow->borrower_field_symbol))) nearest = borrow;
+    return nearest;
 }
 
-static int expression_place(const AstExpression *expression,
+static int expression_place(BorrowChecker *checker, const AstExpression *expression,
                             BorrowPlace *place) {
     if (expression == NULL) return 0;
     if (expression->kind == AST_EXPR_NAME) {
@@ -161,33 +308,33 @@ static int expression_place(const AstExpression *expression,
         return place->owner != AST_SYMBOL_NONE;
     }
     if (expression->kind == AST_EXPR_MEMBER) {
-        if (!expression_place(expression->left, place)) return 0;
-        if (place->field == AST_SYMBOL_NONE &&
-            expression->resolved_symbol_id != AST_SYMBOL_NONE)
-            place->field = expression->resolved_symbol_id;
+        if (!expression_place(checker, expression->left, place)) return 0;
+        place->field = borrow_path_append(checker, place->field, expression->resolved_symbol_id);
         return 1;
     }
     if (expression->kind == AST_EXPR_INDEX ||
         expression->kind == AST_EXPR_SUBSLICE)
-        return expression_place(expression->left, place);
+        return expression_place(checker, expression->left, place);
     if (expression->kind == AST_EXPR_SLICE_DATA)
-        return expression_place(expression->left, place);
+        return expression_place(checker, expression->left, place);
     if (expression->kind == AST_EXPR_UNARY &&
         expression->operator_type == TOKEN_STAR)
-        return expression_place(expression->right, place);
+        return expression_place(checker, expression->right, place);
     return 0;
 }
 
 static int canonical_place(BorrowChecker *checker,
                            const AstExpression *expression,
                            BorrowPlace *place) {
-    if (!expression_place(expression, place)) return 0;
+    if (!expression_place(checker, expression, place)) return 0;
     const AstExpression *leaf = expression;
     while (leaf && ((leaf->kind == AST_EXPR_UNARY && leaf->operator_type == TOKEN_STAR) ||
                    leaf->kind == AST_EXPR_INDEX || leaf->kind == AST_EXPR_SUBSLICE))
         leaf = leaf->kind == AST_EXPR_UNARY ? leaf->right : leaf->left;
     size_t terminal_field = leaf && leaf->kind == AST_EXPR_MEMBER
         ? leaf->resolved_symbol_id : place->field;
+    const BorrowPath *terminal_path = borrow_path_node(checker, terminal_field);
+    if (terminal_path) terminal_field = terminal_path->field;
     if (expression->kind == AST_EXPR_INDEX &&
         expression->right != NULL &&
         expression->right->kind == AST_EXPR_LITERAL &&
@@ -210,13 +357,21 @@ static int canonical_place(BorrowChecker *checker,
                                         place->field)) != NULL) {
         /* A Future owns a loan; using its handle does not access the referent. */
         if (source->captured_by_future) break;
+        size_t source_field = source->borrower_field_symbol;
+        const BorrowPath *source_path = borrow_path_node(checker, source_field);
+        if (source_path) source_field = source_path->field;
+        int reference_field = source_field < checker->analyzer->model->symbol_count &&
+            checker->analyzer->model->symbols[source_field].declared_type.borrow_kind != AST_BORROW_NONE;
         if (source->captured_by_aggregate &&
-            (place->field == AST_SYMBOL_NONE || terminal_field == AST_SYMBOL_NONE ||
+            (place->field == AST_SYMBOL_NONE || (!reference_field && (terminal_field == AST_SYMBOL_NONE ||
              terminal_field >= checker->analyzer->model->symbol_count ||
-             checker->analyzer->model->symbols[terminal_field].declared_type.borrow_kind == AST_BORROW_NONE)) break;
+             checker->analyzer->model->symbols[terminal_field].declared_type.borrow_kind == AST_BORROW_NONE)))) break;
         if (!place->through) place->through = source;
+        if (place->owner == source->owner_symbol && place->field == source->field_symbol) break;
         place->owner = source->owner_symbol;
-        place->field = source->field_symbol;
+        size_t suffix = source->captured_by_aggregate && source->borrower_field_symbol == AST_SYMBOL_NONE
+            ? AST_SYMBOL_NONE : borrow_path_relative(checker, place->field, source->borrower_field_symbol);
+        place->field = borrow_path_append(checker, source->field_symbol, suffix);
         if (source->region_known) {
             place->region_known = 1;
             place->region_start = source->region_start;
@@ -224,8 +379,26 @@ static int canonical_place(BorrowChecker *checker,
         } else if (source->slice_view) {
             place->region_known = 0;
         }
+        if (source->reference_slot && expression->has_resolved_ast_type &&
+            expression->resolved_ast_type.reference_type) break;
     }
     return place->owner < checker->analyzer->model->symbol_count;
+}
+
+static int reference_storage_place(BorrowChecker *checker, const AstExpression *expression,
+                                    BorrowPlace *place) {
+    if (expression->kind == AST_EXPR_UNARY && expression->operator_type == TOKEN_STAR)
+        return canonical_place(checker, expression->right, place);
+    if (!expression_place(checker, expression, place)) return 0;
+    if (expression->kind == AST_EXPR_MEMBER && expression->left &&
+        expression->left->resolved_borrow_kind != AST_BORROW_NONE) {
+        BorrowPlace owner;
+        if (!canonical_place(checker, expression->left, &owner)) return 0;
+        place->owner = owner.owner;
+        place->field = borrow_path_append(checker, owner.field, expression->resolved_symbol_id);
+        place->through = owner.through;
+    }
+    return 1;
 }
 
 typedef struct {
@@ -322,7 +495,7 @@ static int expression_origin(BorrowChecker *checker,
                              BorrowPlace *place,
                              size_t depth) {
     if (expression == NULL || depth > 64) return 0;
-    if (expression_place(expression, place)) return 1;
+    if (expression_place(checker, expression, place)) return 1;
     if (expression->kind == AST_EXPR_SLICE)
         return expression_origin(checker, expression->left, place, depth + 1);
     if (expression->kind == AST_EXPR_CAST ||
@@ -358,11 +531,9 @@ static int returned_borrow_place_impl(BorrowChecker *checker,
             if (symbol != NULL && symbol->kind == SEMANTIC_SYMBOL_FIELD &&
                 call->left != NULL && call->left->kind == AST_EXPR_MEMBER &&
                 call->left->left != NULL) {
-                if (!canonical_place(checker, call->left->left, place)) return 0;
-                place->field = origin.field == AST_SYMBOL_NONE
-                                   ? origin.symbol
-                                   : origin.field;
-                return 1;
+                AstExpression field = {.kind = AST_EXPR_MEMBER, .left = call->left->left,
+                    .resolved_symbol_id = borrow_path_append(checker, origin.symbol, origin.field)};
+                return canonical_place(checker, &field, place);
             }
             if (symbol != NULL && symbol->kind == SEMANTIC_SYMBOL_PARAMETER) {
                 size_t index = 0;
@@ -427,17 +598,83 @@ static int returned_borrow_place(BorrowChecker *checker,
     return found;
 }
 
-static int places_overlap(const BorrowPlace *left,
+static int places_overlap(const BorrowChecker *checker, const BorrowPlace *left,
                           const BorrowRecord *right) {
     if (left->owner != right->owner_symbol) return 0;
-    if (left->field != AST_SYMBOL_NONE &&
-        right->field_symbol != AST_SYMBOL_NONE &&
-        left->field != right->field_symbol)
-        return 0;
+    if (!borrow_paths_overlap(checker, left->field, right->field_symbol)) return 0;
     if (left->region_known && right->region_known)
         return left->region_start < right->region_end &&
                right->region_start < left->region_end;
     return 1;
+}
+
+enum { BINDING_CONTINUES, BINDING_DEAD, BINDING_READ };
+
+static int binding_flow(const AstStatement *, size_t, unsigned);
+
+static int expression_reads_binding(const AstExpression *expression, size_t symbol, unsigned depth) {
+    if (depth > 128) return 1;
+    for (; expression; expression=expression->next) {
+        if ((expression->kind==AST_EXPR_NAME && expression->resolved_symbol_id==symbol) ||
+            expression_reads_binding(expression->left,symbol,depth+1) ||
+            expression_reads_binding(expression->right,symbol,depth+1) ||
+            expression_reads_binding(expression->arguments,symbol,depth+1) ||
+            (expression->control && binding_flow(expression->control,symbol,depth+1)==BINDING_READ)) return 1;
+    }
+    return 0;
+}
+
+/* Follow the remaining control-flow path until this binding is read, replaced,
+   or the path terminates. A later use of a replacement does not keep an old
+   slice/reference loan alive. Loop continuations conservatively revisit the
+   loop, while return paths do not inherit uses from subsequent iterations. */
+static int binding_flow(const AstStatement *statement, size_t symbol, unsigned depth) {
+    if (depth > 128) return BINDING_READ;
+    for (; statement; statement=statement->next) {
+        int replaces = statement->kind==AST_STMT_ASSIGNMENT &&
+            statement->assignment_operator==TOKEN_EQUAL && statement->expression &&
+            statement->expression->kind==AST_EXPR_NAME && statement->expression->resolved_symbol_id==symbol;
+        if ((!replaces && expression_reads_binding(statement->expression,symbol,depth+1)) ||
+            expression_reads_binding(statement->value,symbol,depth+1) ||
+            expression_reads_binding(statement->condition,symbol,depth+1) ||
+            expression_reads_binding(statement->update,symbol,depth+1) ||
+            expression_reads_binding(statement->result,symbol,depth+1)) return BINDING_READ;
+        if (replaces || statement->kind==AST_STMT_RETURN ||
+            (statement->kind==AST_STMT_VARIABLE && statement->resolved_symbol_id==symbol)) return BINDING_DEAD;
+        if (statement->kind==AST_STMT_IF) {
+            int left=binding_flow(statement->body,symbol,depth+1);
+            int right=binding_flow(statement->else_body,symbol,depth+1);
+            if (left==BINDING_READ || right==BINDING_READ) return BINDING_READ;
+            if (left==BINDING_DEAD && right==BINDING_DEAD) return BINDING_DEAD;
+        } else if (statement->kind==AST_STMT_MATCH) {
+            int all_dead=statement->match_exhaustive;
+            for (const AstMatchArm *arm=statement->match_arms;arm;arm=arm->next) {
+                int flow=binding_flow(arm->body,symbol,depth+1);
+                if (flow==BINDING_READ) return BINDING_READ;
+                if (flow!=BINDING_DEAD) all_dead=0;
+            }
+            if (all_dead) return BINDING_DEAD;
+        } else if (statement->kind==AST_STMT_WHILE || statement->kind==AST_STMT_FOR) {
+            if (binding_flow(statement->initializer,symbol,depth+1)==BINDING_READ ||
+                binding_flow(statement->body,symbol,depth+1)==BINDING_READ) return BINDING_READ;
+        } else if (statement->kind==AST_STMT_BLOCK) {
+            int flow=binding_flow(statement->body,symbol,depth+1);
+            if (flow!=BINDING_CONTINUES) return flow;
+        } else if (statement->kind==AST_STMT_DEFER) {
+            if (binding_flow(statement->body,symbol,depth+1)==BINDING_READ) return BINDING_READ;
+        }
+    }
+    return BINDING_CONTINUES;
+}
+
+static int binding_still_used(const BorrowChecker *checker, size_t symbol, size_t token) {
+    if (checker->summarizing || !checker->current_statement || checker->last_use[symbol]==SIZE_MAX)
+        return checker->last_use[symbol]>=token;
+    int flow=binding_flow(checker->current_statement,symbol,0);
+    for (const BorrowContinuation *tail=checker->continuations;
+         flow==BINDING_CONTINUES && tail;tail=tail->next)
+        flow=binding_flow(tail->statements,symbol,0);
+    return flow==BINDING_READ;
 }
 
 static int borrower_is_lent(const BorrowChecker *checker, const BorrowRecord *loan, size_t token) {
@@ -445,18 +682,18 @@ static int borrower_is_lent(const BorrowChecker *checker, const BorrowRecord *lo
         if (child != loan && child->active && child->owner_symbol == loan->borrower_symbol &&
             child->borrower_symbol < checker->analyzer->model->symbol_count &&
             (child->retained_until_drop || child->captured_by_future ||
-             checker->last_use[child->borrower_symbol] >= token)) return 1;
+             binding_still_used(checker,child->borrower_symbol,token))) return 1;
     return 0;
 }
 
 static void expire_borrows(BorrowChecker *checker, size_t token) {
     for (BorrowRecord *borrow = checker->borrows; borrow != NULL;
          borrow = borrow->next)
-        if (borrow->active && borrow->borrower_symbol != AST_SYMBOL_NONE &&
+        if (borrow->active && !borrow->summary_foreign && !borrow->summary_effect && borrow->borrower_symbol != AST_SYMBOL_NONE &&
             borrow->borrower_symbol < checker->analyzer->model->symbol_count &&
             !borrow->package_storage && !borrow->captured_by_future && !borrow->retained_until_drop &&
             checker->last_use[borrow->borrower_symbol] != SIZE_MAX &&
-            checker->last_use[borrow->borrower_symbol] < token &&
+            !binding_still_used(checker,borrow->borrower_symbol,token) &&
             !borrower_is_lent(checker, borrow, token))
             borrow->active = 0;
 }
@@ -464,12 +701,13 @@ static void expire_borrows(BorrowChecker *checker, size_t token) {
 static void deactivate_scope(BorrowChecker *checker, size_t scope_depth) {
     for (BorrowRecord *borrow = checker->borrows; borrow != NULL;
          borrow = borrow->next)
-        if (borrow->active && borrow->scope_depth >= scope_depth)
+        if (borrow->active && !borrow->summary_foreign && borrow->scope_depth >= scope_depth)
             borrow->active = 0;
 }
 
 static void report_borrow_error(BorrowChecker *checker, size_t token,
                                 const char *message) {
+    if (checker->summarizing) return;
     semantic_error(checker->analyzer, token, ERROR_CATEGORY_SEMANTIC,
                    ERR_SEM_INVALID_DECLARATION, message);
 }
@@ -507,9 +745,10 @@ static void check_place_access(BorrowChecker *checker,
         return;
     }
     BorrowPlace storage;
-    if (expression_place(expression, &storage)) {
+    if (expression_place(checker, expression, &storage)) {
         if (access == BORROW_ACCESS_WRITE && storage.owner < checker->analyzer->model->symbol_count &&
-            package_borrow_holder(checker, &checker->analyzer->model->symbols[storage.owner])) {
+            package_borrow_holder(checker, &checker->analyzer->model->symbols[storage.owner]) &&
+            !(expression->kind == AST_EXPR_UNARY && expression->operator_type == TOKEN_STAR)) {
             report_borrow_error(checker, expression->first_token,
                 "Package storage holding checked borrows cannot be rebound, moved, or modified");
             return;
@@ -518,9 +757,13 @@ static void check_place_access(BorrowChecker *checker,
             if (!child->active || !child->parent || child->borrower_symbol == storage.owner) continue;
             for (const BorrowRecord *parent = child->parent; parent; parent = parent->parent) {
                 if (parent->borrower_symbol == storage.owner &&
-                    (storage.field == AST_SYMBOL_NONE || parent->borrower_field_symbol == AST_SYMBOL_NONE ||
-                     parent->borrower_field_symbol == storage.field) &&
+                    borrow_paths_overlap(checker, storage.field, parent->borrower_field_symbol) &&
                     (access == BORROW_ACCESS_WRITE || child->kind == AST_BORROW_MUTABLE)) {
+                    if (checker->summarizing && child->summary_foreign && !child->package_storage &&
+                        storage.owner < checker->analyzer->model->symbol_count &&
+                        checker->analyzer->model->symbols[storage.owner].scope_depth == 0 && checker->caller_analyzer)
+                        semantic_error(checker->caller_analyzer, checker->call_token, ERROR_CATEGORY_SEMANTIC,
+                            ERR_SEM_INVALID_DECLARATION, "Function accesses package storage while a conflicting borrow is live");
                     report_borrow_error(checker, expression->first_token,
                                        "Cannot access a value while a conflicting reborrow is live");
                     return;
@@ -529,21 +772,33 @@ static void check_place_access(BorrowChecker *checker,
         }
     }
     BorrowPlace place;
-    if (!canonical_place(checker, expression, &place))
+    int slot_write = access == BORROW_ACCESS_WRITE && expression->resolved_borrow_kind != AST_BORROW_NONE;
+    if (!(slot_write ? reference_storage_place(checker, expression, &place) : canonical_place(checker, expression, &place)))
         return;
     for (const BorrowRecord *borrow = checker->borrows; borrow != NULL;
          borrow = borrow->next) {
-        if (!borrow->active || loan_ancestor(borrow, place.through) ||
-            !places_overlap(&place, borrow))
+        if (!borrow->active || (borrow->owner_symbol == borrow->borrower_symbol &&
+            borrow->field_symbol == borrow->borrower_field_symbol) || loan_ancestor(borrow, place.through) ||
+            !places_overlap(checker, &place, borrow))
             continue;
         if (access == BORROW_ACCESS_WRITE) {
             if (borrow->slice_view && expression->kind == AST_EXPR_INDEX)
                 continue;
+            if (checker->summarizing && borrow->summary_foreign && !borrow->package_storage &&
+                place.owner < checker->analyzer->model->symbol_count &&
+                checker->analyzer->model->symbols[place.owner].scope_depth == 0 && checker->caller_analyzer)
+                semantic_error(checker->caller_analyzer, checker->call_token, ERROR_CATEGORY_SEMANTIC,
+                    ERR_SEM_INVALID_DECLARATION, "Function accesses package storage while a conflicting borrow is live");
             report_borrow_error(checker, expression->first_token,
                                 "Cannot modify or move a value while it is borrowed");
             return;
         }
         if (borrow->kind == AST_BORROW_MUTABLE) {
+            if (checker->summarizing && borrow->summary_foreign && !borrow->package_storage &&
+                place.owner < checker->analyzer->model->symbol_count &&
+                checker->analyzer->model->symbols[place.owner].scope_depth == 0 && checker->caller_analyzer)
+                semantic_error(checker->caller_analyzer, checker->call_token, ERROR_CATEGORY_SEMANTIC,
+                    ERR_SEM_INVALID_DECLARATION, "Function accesses package storage while a conflicting borrow is live");
             report_borrow_error(checker, expression->first_token,
                                 "Cannot access a value while it is mutably borrowed");
             return;
@@ -564,11 +819,14 @@ static void check_new_borrow(BorrowChecker *checker,
                            "Cannot obtain mutable access through a shared checked reference");
         return;
     }
-    if (!canonical_place(checker, borrow_expression->right, &place)) return;
+    if (!(borrow_expression->right->resolved_borrow_kind != AST_BORROW_NONE
+        ? reference_storage_place(checker, borrow_expression->right, &place)
+        : canonical_place(checker, borrow_expression->right, &place))) return;
     for (const BorrowRecord *borrow = checker->borrows; borrow != NULL;
          borrow = borrow->next) {
-        if (!borrow->active || loan_ancestor(borrow, place.through) ||
-            !places_overlap(&place, borrow))
+        if (!borrow->active || (borrow->owner_symbol == borrow->borrower_symbol &&
+            borrow->field_symbol == borrow->borrower_field_symbol) || loan_ancestor(borrow, place.through) ||
+            !places_overlap(checker, &place, borrow))
             continue;
         if (borrow->slice_view && borrow_expression->right->kind == AST_EXPR_INDEX)
             continue;
@@ -584,6 +842,66 @@ static void check_new_borrow(BorrowChecker *checker,
 static void check_expression(BorrowChecker *checker,
                              const AstExpression *expression,
                              BorrowAccess access);
+/* Synthetic calls live in the AST arena because summaries retain call identity. */
+static void clone_aggregate_borrows(BorrowChecker *, const AstExpression *, const AstExpression *, size_t);
+static void clone_pattern_borrows(BorrowChecker *, const AstExpression *, const AstExpression *, size_t, size_t, size_t);
+static void release_argument_borrows(BorrowChecker *, size_t);
+static int call_returns_view_aggregate(const BorrowChecker *, const AstExpression *);
+static int function_package_borrows(BorrowChecker *, size_t, unsigned char *);
+static AstExpression *borrow_summary_call(BorrowChecker *checker, size_t symbol,
+                                         const AstExpression *argument, size_t token) {
+    if (symbol >= checker->analyzer->model->symbol_count) return NULL;
+    const SemanticSymbol *function = &checker->analyzer->model->symbols[symbol];
+    if (!function->declaration || function->declaration->kind != AST_DECL_FUNCTION) return NULL;
+    AstExpression *call = ast_program_alloc(checker->analyzer->program, sizeof(*call));
+    AstExpression *input = ast_program_alloc(checker->analyzer->program, sizeof(*input));
+    if (!call || !input) { checker->analyzer->allocation_failed = 1; return NULL; }
+    *input = *argument;
+    input->next = NULL;
+    *call = (AstExpression){.kind = AST_EXPR_CALL, .resolved_symbol_id = symbol,
+        .arguments = input, .first_token = token};
+    set_expression_declared_type(checker->analyzer, call, function->source_program,
+        &function->declaration->as.function.return_type);
+    return call;
+}
+
+static void clone_propagation_borrows(BorrowChecker *checker, const AstExpression *target,
+    const AstExpression *source, size_t scope_depth, int residual) {
+    AstExpression *branch = borrow_summary_call(checker, source->propagation_branch_symbol_id,
+                                               source->left, source->first_token);
+    if (!branch) return;
+    AstExpression branched = {.kind = AST_EXPR_NAME,
+        .resolved_symbol_id = AST_SYMBOL_NONE - 1 - checker->temporary_borrowers++,
+        .resolved_named_symbol_id = branch->resolved_named_symbol_id};
+    clone_aggregate_borrows(checker, &branched, branch, scope_depth);
+    if (!residual) {
+        clone_pattern_borrows(checker, target, &branched,
+            source->propagation_continue_symbol_id, 0, scope_depth);
+    } else {
+        AstExpression input = {.kind = AST_EXPR_NAME,
+            .resolved_symbol_id = AST_SYMBOL_NONE - 1 - checker->temporary_borrowers++};
+        set_expression_declared_type(checker->analyzer, &input, source->propagation_contract_program,
+            &source->propagation_residual_type);
+        clone_pattern_borrows(checker, &input, &branched,
+            source->propagation_break_symbol_id, 0, scope_depth);
+        AstExpression *conversion = borrow_summary_call(checker, source->propagation_from_residual_symbol_id,
+                                                        &input, source->first_token);
+        if (conversion) {
+            if (source->propagation_return_variant_symbol_id == AST_SYMBOL_NONE)
+                clone_aggregate_borrows(checker, target, conversion, scope_depth);
+            else {
+                const SemanticSymbol *variant = &checker->analyzer->model->symbols[source->propagation_return_variant_symbol_id];
+                AstExpression wrapped = {.kind = AST_EXPR_ENUM_CONSTRUCT,
+                    .resolved_named_symbol_id = variant->owner_symbol_id,
+                    .resolved_symbol_id = variant->id, .arguments = conversion};
+                clone_aggregate_borrows(checker, target, &wrapped, scope_depth);
+            }
+        }
+        release_argument_borrows(checker, input.resolved_symbol_id);
+    }
+    release_argument_borrows(checker, branched.resolved_symbol_id);
+}
+
 static void check_statement_list(BorrowChecker *checker,
                                  const AstStatement *statement,
                                  size_t scope_depth);
@@ -707,6 +1025,10 @@ static void deactivate_borrower(BorrowChecker *checker, size_t borrower_symbol,
                                 size_t borrower_field);
 static void clone_aggregate_borrows(BorrowChecker *checker, const AstExpression *target,
                                     const AstExpression *source, size_t scope_depth);
+static void heap_initialize(BorrowChecker *,const AstExpression *,const AstExpression *,size_t);
+static void heap_shift(BorrowChecker *,const AstStatement *);
+static int heap_take(BorrowChecker *,const AstExpression *,const AstExpression *,size_t);
+static int heap_drain(BorrowChecker *,const AstStatement *,const FutureLoanBranch *);
 static BorrowRecord *add_borrow_mode(BorrowChecker *, const AstExpression *, const AstExpression *, size_t, int);
 static BorrowRecord *add_lifetime_parameter_borrows(BorrowChecker *, const AstExpression *,
     const AstExpression *, const AstProgram *, const AstType *, const char *, AstBorrowKind, size_t);
@@ -715,6 +1037,14 @@ static int type_has_view_depth(const BorrowChecker *, const AstProgram *, const 
 static int type_has_mutable_view(const BorrowChecker *, const AstProgram *, const AstType *, unsigned);
 static const char *payload_lifetime(BorrowChecker *, const AstProgram *, const AstType *, size_t, size_t);
 static void check_future_return(BorrowChecker *, const AstExpression *);
+static BorrowCallSummary *summarize_call_borrows(BorrowChecker *, const AstExpression *);
+static void clone_propagation_borrows(BorrowChecker *, const AstExpression *,
+                                     const AstExpression *, size_t, int);
+static BorrowRecord *clone_call_summary(BorrowChecker *, const AstExpression *,
+                                        BorrowCallSummary *, size_t);
+static BorrowCallSummary *replacement_borrows(BorrowChecker *, const AstExpression *, size_t);
+static int clone_result_field_borrows(BorrowChecker *, const AstExpression *,
+                                      const AstExpression *, size_t);
 
 static void reserve_argument_borrows(BorrowChecker *checker, size_t temporary,
                                      const AstExpression *value) {
@@ -729,12 +1059,8 @@ static void reserve_argument_borrows(BorrowChecker *checker, size_t temporary,
 }
 
 static void release_argument_borrows(BorrowChecker *checker, size_t temporary) {
-    BorrowRecord **cursor = &checker->borrows;
-    while (*cursor) {
-        BorrowRecord *loan = *cursor;
-        if (loan->borrower_symbol == temporary) { *cursor = loan->next; free(loan); }
-        else cursor = &loan->next;
-    }
+    for (BorrowRecord *loan = checker->borrows; loan; loan = loan->next)
+        if (loan->borrower_symbol == temporary) loan->active = 0;
 }
 
 static void release_future_value(BorrowChecker *checker, const AstExpression *value) {
@@ -784,7 +1110,7 @@ static void check_call_argument_borrows(BorrowChecker *checker,
                 .region_start = right_place.region_start,
                 .region_end = right_place.region_end
             };
-            if (places_overlap(&left_place, &loan)) {
+            if (places_overlap(checker, &left_place, &loan)) {
                 report_borrow_error(checker, right->first_token,
                                     "Conflicting checked borrows in simultaneous arguments");
                 break;
@@ -807,20 +1133,29 @@ static void check_call(BorrowChecker *checker,
         if (place) check_place_access(checker, place, BORROW_ACCESS_WRITE);
         else {
             BorrowPlace origin;
-            if (ptr && canonical_place(checker, ptr, &origin) && origin.through)
+            int checked_pointer = ptr && (ptr->resolved_borrow_kind != AST_BORROW_NONE ||
+                (ptr->kind == AST_EXPR_NAME && ptr->resolved_symbol_id < checker->analyzer->model->symbol_count &&
+                 checker->analyzer->model->symbols[ptr->resolved_symbol_id].resolved_borrow_kind != AST_BORROW_NONE));
+            if (checked_pointer &&
+                canonical_place(checker, ptr, &origin) && origin.through)
                 report_borrow_error(checker, expression->first_token,
                                    "Cannot change a value's lifetime while it is borrowed");
             check_expression(checker, ptr, BORROW_ACCESS_READ);
         }
-        if (expression->lifetime_operation == LIFETIME_INITIALIZE)
+        if (expression->lifetime_operation == LIFETIME_INITIALIZE) {
             check_expression(checker, ptr ? ptr->next : NULL, BORROW_ACCESS_WRITE);
-        if (expression->lifetime_operation == LIFETIME_REPLACE && place &&
-            place->kind == AST_EXPR_NAME && place->resolved_symbol_id < checker->analyzer->model->symbol_count) {
-            checker->aggregate_capture_depth++;
-            clone_aggregate_borrows(checker, place, ptr->next,
-                checker->analyzer->model->symbols[place->resolved_symbol_id].scope_depth);
-            checker->aggregate_capture_depth--;
+            heap_initialize(checker,ptr,ptr ? ptr->next:NULL,checker->current_scope_depth);
         }
+        if (expression->lifetime_operation == LIFETIME_DESTROY) {
+            AstExpression discarded={.kind=AST_EXPR_NAME,
+                .resolved_symbol_id=AST_SYMBOL_NONE-1-checker->temporary_borrowers++};
+            if (heap_take(checker,&discarded,ptr,checker->current_scope_depth))
+                deactivate_borrower(checker,discarded.resolved_symbol_id,AST_SYMBOL_NONE);
+            else if (place && place->kind==AST_EXPR_NAME)
+                deactivate_borrower(checker,place->resolved_symbol_id,AST_SYMBOL_NONE);
+        }
+        if (expression->lifetime_operation == LIFETIME_REPLACE)
+            replacement_borrows(checker,expression,checker->current_scope_depth);
         return;
     }
     const AstParameter *parameter = NULL;
@@ -857,7 +1192,7 @@ static void check_call(BorrowChecker *checker,
         BorrowAccess receiver_access =
             (expression->left->left->has_resolved_ast_type &&
              expression->left->left->resolved_ast_type.callable_mode == 2) || statements_mutate_receiver(
-                checker, function, function->declaration->as.function.body) ||
+                checker, function, function->declaration->as.function.body) || function->declaration->as.function.receiver_mode != 0 ||
             function->declaration->as.function.is_async ||
             type_has_mutable_view(checker, function->source_program,
                 &function->declaration->as.function.return_type, 0)
@@ -880,7 +1215,7 @@ static void check_call(BorrowChecker *checker,
         BorrowPlace origin;
         if (returned_borrow_place(checker, expression, &origin)) {
             for (const BorrowRecord *loan = checker->borrows; loan; loan = loan->next) {
-                if (!loan->active || loan == origin.through || !places_overlap(&origin, loan)) continue;
+                if (!loan->active || loan == origin.through || !places_overlap(checker, &origin, loan)) continue;
                 if (expression->resolved_borrow_kind == AST_BORROW_MUTABLE || loan->kind == AST_BORROW_MUTABLE) {
                     report_borrow_error(checker, expression->first_token, "Conflicting checked borrows in returned reference");
                     break;
@@ -910,7 +1245,14 @@ static void check_call(BorrowChecker *checker,
         if (parameter != NULL) parameter = parameter->next;
     }
     release_argument_borrows(checker, temporary_arguments);
-    if (function && function->declaration && !function->declaration->as.function.is_static &&
+    BorrowCallSummary *call_summary=summarize_call_borrows(checker, expression);
+    if (function && function->declaration && function->declaration->as.function.receiver_mode == 2 &&
+        expression->left && expression->left->kind == AST_EXPR_MEMBER) {
+        BorrowPlace consumed;
+        if (expression_place(checker, expression->left->left, &consumed))
+            deactivate_borrower(checker, consumed.owner, consumed.field);
+    }
+    if ((!call_summary || !call_summary->heap_effect) && function && function->declaration && !function->declaration->as.function.is_static &&
         expression->left && expression->left->kind == AST_EXPR_MEMBER && expression->left->left &&
         statements_mutate_receiver(checker, function, function->declaration->as.function.body)) {
         const AstParameter *owned = function->declaration->as.function.parameters;
@@ -960,9 +1302,17 @@ static void check_expression(BorrowChecker *checker,
                              const AstExpression *expression,
                              BorrowAccess access) {
     if (expression == NULL) return;
-    if (expression->async_operation == ASYNC_BLOCK_ON) {
+    if (expression->async_operation == ASYNC_CANCEL_COMPLETE) {
+        check_call(checker,expression);
+        release_future_value(checker,expression->arguments);
+        return;
+    }
+    if ((expression->async_operation == ASYNC_BLOCK_ON || expression->async_operation == ASYNC_COMPLETE)) {
         check_call(checker,expression);
         if (!semantic_expression_is_future(expression) && expression->resolved_borrow_kind==AST_BORROW_NONE && !expression->resolved_is_slice &&
+            !(expression->has_resolved_ast_type && type_has_view_depth(checker,
+                expression->resolved_type_program ? expression->resolved_type_program : checker->analyzer->program,
+                &expression->resolved_ast_type, 0)) &&
             !(semantic_symbol_type_properties(checker->analyzer->model, expression->resolved_named_symbol_id) & SEMANTIC_TYPE_MUST_CONSUME))
             release_future_value(checker,expression->arguments);
         return;
@@ -971,6 +1321,9 @@ static void check_expression(BorrowChecker *checker,
         check_expression(checker, expression->right, BORROW_ACCESS_WRITE);
         if (!semantic_expression_is_future(expression) &&
             expression->resolved_borrow_kind == AST_BORROW_NONE && !expression->resolved_is_slice &&
+            !(expression->has_resolved_ast_type && type_has_view_depth(checker,
+                expression->resolved_type_program ? expression->resolved_type_program : checker->analyzer->program,
+                &expression->resolved_ast_type, 0)) &&
             !(semantic_symbol_type_properties(checker->analyzer->model, expression->resolved_named_symbol_id) & SEMANTIC_TYPE_MUST_CONSUME))
             release_future_value(checker, expression->right);
         return;
@@ -991,18 +1344,17 @@ static void check_expression(BorrowChecker *checker,
                                 &expression->propagation_residual_type, 0)) {
             /* The Break path is an implicit return. Validate its possible
                origins without transferring loans off the continuing path. */
-            AstExpression residual = *expression;
-            residual.has_resolved_ast_type = 1;
-            residual.resolved_ast_type = expression->propagation_residual_type;
-            residual.resolved_borrow_kind = residual.resolved_ast_type.borrow_kind;
-            residual.resolved_is_slice = residual.resolved_ast_type.is_slice;
-            residual.resolved_named_symbol_id = residual.resolved_ast_type.kind == AST_TYPE_NAMED
-                ? resolve_named_symbol_id(checker->analyzer, expression->propagation_contract_program,
-                    residual.resolved_ast_type.name_token) : AST_SYMBOL_NONE;
+            AstExpression residual = {.kind = AST_EXPR_NAME,
+                .resolved_symbol_id = AST_SYMBOL_NONE - 1 - checker->temporary_borrowers++,
+                .first_token = expression->first_token};
+            set_expression_declared_type(checker->analyzer, &residual,
+                checker->analyzer->program, &checker->analyzer->current_function->as.function.return_type);
             int saved_reserving = checker->reserving_loans;
             checker->reserving_loans = 1;
             checker->aggregate_capture_depth++;
+            clone_propagation_borrows(checker, &residual, expression, checker->current_scope_depth, 1);
             check_future_return(checker, &residual);
+            release_argument_borrows(checker, residual.resolved_symbol_id);
             checker->aggregate_capture_depth--;
             checker->reserving_loans = saved_reserving;
         }
@@ -1066,7 +1418,7 @@ static void deactivate_borrower(BorrowChecker *checker,
     for (BorrowRecord *old = checker->borrows; old != NULL; old = old->next)
         if (old->active && !old->package_storage && old->borrower_symbol == borrower_symbol &&
             (borrower_field == AST_SYMBOL_NONE ||
-             old->borrower_field_symbol == borrower_field))
+             borrow_path_prefix(checker, borrower_field, old->borrower_field_symbol)))
             old->active = 0;
 }
 
@@ -1077,6 +1429,11 @@ static BorrowRecord *add_borrow_mode(BorrowChecker *checker,
                                      int preserve_existing) {
     if (value == NULL || borrower == NULL)
         return NULL;
+    if (value->lifetime_operation == LIFETIME_TAKE || value->lifetime_operation == LIFETIME_REPLACE) {
+        BorrowRecord *boundary=checker->borrows;
+        clone_aggregate_borrows(checker,borrower,value,scope_depth);
+        return checker->borrows!=boundary ? checker->borrows:NULL;
+    }
     if (value->kind == AST_EXPR_PROPAGATE) {
         BorrowRecord *boundary = checker->borrows;
         clone_aggregate_borrows(checker, borrower, value, scope_depth);
@@ -1086,6 +1443,8 @@ static BorrowRecord *add_borrow_mode(BorrowChecker *checker,
        Retain all of them; runtime control flow chooses the actual referent. */
     if (value->kind == AST_EXPR_CALL && value->resolved_borrow_kind != AST_BORROW_NONE &&
         value->resolved_symbol_id < checker->analyzer->model->symbol_count) {
+        BorrowCallSummary *summary = summarize_call_borrows(checker, value);
+        if (summary) return clone_call_summary(checker, borrower, summary, scope_depth);
         const SemanticSymbol *function = &checker->analyzer->model->symbols[value->resolved_symbol_id];
         const AstDeclarationNode *declaration = function->kind == SEMANTIC_SYMBOL_FUNCTION ? function->declaration : NULL;
         const char *lifetime = declaration ? borrow_lifetime(function->source_program,
@@ -1093,7 +1452,7 @@ static BorrowRecord *add_borrow_mode(BorrowChecker *checker,
         if (lifetime) {
             BorrowRecord *first = NULL;
             BorrowPlace target;
-            if (!expression_place(borrower, &target)) return NULL;
+            if (!expression_place(checker, borrower, &target)) return NULL;
             if (!preserve_existing) deactivate_borrower(checker, target.owner, target.field);
             const AstExpression *argument = value->arguments;
             for (const AstParameter *p = declaration->as.function.parameters; p && argument; p = p->next, argument = argument->next) {
@@ -1107,7 +1466,7 @@ static BorrowRecord *add_borrow_mode(BorrowChecker *checker,
     }
     if (value->kind == AST_EXPR_CONTROL && value->control != NULL) {
         BorrowPlace borrower_place;
-        if (!expression_place(borrower, &borrower_place)) return NULL;
+        if (!expression_place(checker, borrower, &borrower_place)) return NULL;
         if (!preserve_existing)
             deactivate_borrower(checker, borrower_place.owner,
                                 borrower_place.field);
@@ -1152,22 +1511,21 @@ static BorrowRecord *add_borrow_mode(BorrowChecker *checker,
             referent->operator_type == TOKEN_STAR;
     }
     BorrowPlace storage;
-    if (follows_referent && referent && expression_place(referent, &storage)) {
+    if (follows_referent && referent && expression_place(checker, referent, &storage)) {
         size_t count = 0;
         for (const BorrowRecord *old = checker->borrows; old; old = old->next)
             if (old->active && !old->captured_by_future && old->borrower_symbol == storage.owner &&
-                (storage.field == AST_SYMBOL_NONE || old->borrower_field_symbol == storage.field ||
-                 old->borrower_field_symbol == AST_SYMBOL_NONE)) count++;
+                borrow_paths_overlap(checker, storage.field, old->borrower_field_symbol)) count++;
         if (count > 1) {
             size_t temporary = AST_SYMBOL_NONE - 1 - checker->temporary_borrowers++;
             BorrowRecord *boundary = checker->borrows;
             for (const BorrowRecord *old = boundary; old; old = old->next) {
                 if (!old->active || old->captured_by_future || old->borrower_symbol != storage.owner ||
-                    (storage.field != AST_SYMBOL_NONE && old->borrower_field_symbol != storage.field &&
-                     old->borrower_field_symbol != AST_SYMBOL_NONE)) continue;
+                    !borrow_paths_overlap(checker, storage.field, old->borrower_field_symbol)) continue;
                 BorrowRecord *copy = malloc(sizeof(*copy));
                 if (!copy) { checker->analyzer->allocation_failed = 1; break; }
                 *copy = *old;
+                copy->summary_foreign = 0;
                 copy->borrower_symbol = temporary;
                 copy->borrower_field_symbol = AST_SYMBOL_NONE;
                 copy->parent = old;
@@ -1197,7 +1555,7 @@ static BorrowRecord *add_borrow_mode(BorrowChecker *checker,
                              returned_borrow_place(checker, value,
                                                    &returned_place);
     const AstExpression *completed=value->kind==AST_EXPR_AWAIT ? value->right :
-                                   value->async_operation==ASYNC_BLOCK_ON ? value->arguments:NULL;
+                                   (value->async_operation==ASYNC_BLOCK_ON || value->async_operation==ASYNC_COMPLETE) ? value->arguments:NULL;
     if (completed != NULL) {
         if (completed->kind == AST_EXPR_CALL)
             has_returned_place = returned_borrow_place(checker, completed, &returned_place);
@@ -1223,13 +1581,15 @@ static BorrowRecord *add_borrow_mode(BorrowChecker *checker,
         value->resolved_borrow_kind == AST_BORROW_NONE)
         return NULL;
     BorrowPlace place, borrower_place;
-    if (!expression_place(borrower, &borrower_place))
+    if (!expression_place(checker, borrower, &borrower_place))
         return NULL;
     const AstExpression *origin = value;
+    int reference_slot = value->kind == AST_EXPR_UNARY && value->operator_type == TOKEN_AMPERSAND &&
+        value->right && value->right->resolved_borrow_kind != AST_BORROW_NONE;
     if (origin->kind == AST_EXPR_UNARY &&
         origin->operator_type == TOKEN_AMPERSAND)
         origin = origin->right;
-    if (!canonical_place(checker, origin, &place)) {
+    if (!(reference_slot ? reference_storage_place(checker, origin, &place) : canonical_place(checker, origin, &place))) {
         if (!has_returned_place) return NULL;
         place = returned_place;
     }
@@ -1255,6 +1615,8 @@ static BorrowRecord *add_borrow_mode(BorrowChecker *checker,
     borrow->region_end = place.region_end;
     borrow->scope_depth = scope_depth;
     borrow->active = 1;
+    borrow->reference_slot = reference_slot || (place.through && place.through->reference_slot &&
+        value->has_resolved_ast_type && value->resolved_ast_type.reference_type);
     borrow->parent = place.through;
     borrow->origin_lifetime = place.through ? place.through->origin_lifetime : NULL;
     if (borrower_place.owner < checker->analyzer->model->symbol_count) {
@@ -1302,7 +1664,7 @@ static int type_has_borrow_depth(const BorrowChecker *checker, const AstProgram 
         if (type_has_borrow_depth(checker, unit, &argument->type, depth + 1, include_slices)) return 1;
     if (type_has_borrow_depth(checker, unit, type->element_type, depth + 1, include_slices)) return 1;
     if (type->kind != AST_TYPE_NAMED || primitive_type(unit, type) != TYPE_UNKNOWN) return 0;
-    size_t id = resolve_named_symbol_id(checker->analyzer, unit, type->name_token);
+    size_t id = resolve_named_symbol_id(checker->analyzer, unit, named_type_token(unit, type));
     if (id >= checker->analyzer->model->symbol_count) return 0;
     const SemanticSymbol *symbol = &checker->analyzer->model->symbols[id];
     const AstDeclarationNode *decl = symbol->declaration;
@@ -1336,7 +1698,7 @@ static int type_has_mutable_view(const BorrowChecker *checker, const AstProgram 
         if (type_has_mutable_view(checker, unit, &p->type, depth + 1)) return 1;
     if (type_has_mutable_view(checker, unit, type->element_type, depth + 1)) return 1;
     if (type->kind != AST_TYPE_NAMED || primitive_type(unit, type) != TYPE_UNKNOWN) return 0;
-    size_t id = resolve_named_symbol_id(checker->analyzer, unit, type->name_token);
+    size_t id = resolve_named_symbol_id(checker->analyzer, unit, named_type_token(unit, type));
     if (id >= checker->analyzer->model->symbol_count) return 0;
     const SemanticSymbol *symbol = &checker->analyzer->model->symbols[id];
     const AstDeclarationNode *d = symbol->declaration;
@@ -1366,6 +1728,13 @@ static void capture_future_borrows(BorrowChecker *checker,
                                    const AstExpression *value,
                                    size_t scope_depth) {
     if (!semantic_expression_is_future(value)) return;
+    if (value->kind == AST_EXPR_CALL) {
+        BorrowCallSummary *summary = summarize_call_borrows(checker, value);
+        if (summary) {
+            clone_call_summary(checker, borrower, summary, scope_depth);
+            return;
+        }
+    }
     if (value->lifetime_operation == LIFETIME_TAKE || value->lifetime_operation == LIFETIME_REPLACE) {
         clone_aggregate_borrows(checker, borrower, value, scope_depth);
         return;
@@ -1374,7 +1743,7 @@ static void capture_future_borrows(BorrowChecker *checker,
         clone_aggregate_borrows(checker, borrower, value, scope_depth);
         return;
     }
-    if (value->kind == AST_EXPR_AWAIT || value->async_operation==ASYNC_BLOCK_ON) {
+    if (value->kind == AST_EXPR_AWAIT || (value->async_operation==ASYNC_BLOCK_ON || value->async_operation==ASYNC_COMPLETE)) {
         capture_future_borrows(checker, borrower, value->kind==AST_EXPR_AWAIT ? value->right:value->arguments, scope_depth);
         return;
     }
@@ -1394,6 +1763,26 @@ static void capture_future_borrows(BorrowChecker *checker,
         return;
     }
     if (value->kind != AST_EXPR_CALL) return;
+    BorrowRecord *frame_boundary = checker->borrows;
+    unsigned char *package_uses = calloc(checker->analyzer->model->symbol_count, 1);
+    if (!package_uses) { checker->analyzer->allocation_failed = 1; return; }
+    if (function_package_borrows(checker, value->resolved_symbol_id, package_uses)) {
+        BorrowRecord *boundary = checker->borrows;
+        for (BorrowRecord *global = boundary; global; global = global->next) {
+            if (!global->package_storage || !global->active || global->kind != AST_BORROW_MUTABLE ||
+                global->borrower_symbol >= checker->analyzer->model->symbol_count ||
+                !package_uses[global->borrower_symbol]) continue;
+            AstExpression input = {.kind = AST_EXPR_NAME, .resolved_symbol_id = global->borrower_symbol,
+                .resolved_borrow_kind = AST_BORROW_MUTABLE, .first_token = value->first_token};
+            AstExpression referent = {.kind = AST_EXPR_UNARY, .operator_type = TOKEN_STAR, .right = &input};
+            AstExpression reborrow = {.kind = AST_EXPR_UNARY, .operator_type = TOKEN_AMPERSAND,
+                .right = &referent, .mutable_borrow = 1, .first_token = value->first_token};
+            check_new_borrow(checker, &reborrow);
+            BorrowRecord *loan = add_borrow_mode(checker, borrower, &input, scope_depth, 1);
+            if (loan) loan->captured_by_future = 1;
+        }
+    }
+    free(package_uses);
     const AstParameter *parameter = NULL;
     if (value->resolved_symbol_id < checker->analyzer->model->symbol_count) {
         const SemanticSymbol *function = &checker->analyzer->model->symbols[value->resolved_symbol_id];
@@ -1465,6 +1854,7 @@ static void capture_future_borrows(BorrowChecker *checker,
                     return;
                 }
                 *copy = *old;
+                copy->summary_foreign = 0;
                 copy->payload_known = 0;
                 copy->borrower_symbol = borrower->resolved_symbol_id;
                 copy->scope_depth = scope_depth;
@@ -1475,13 +1865,25 @@ static void capture_future_borrows(BorrowChecker *checker,
         }
         if (parameter != NULL) parameter = parameter->next;
     }
+    BorrowRecord *result_boundary = checker->borrows;
+    checker->aggregate_capture_depth++;
+    int mapped_result = clone_result_field_borrows(checker, borrower, value, scope_depth);
+    checker->aggregate_capture_depth--;
+    if (mapped_result) {
+        for (BorrowRecord *loan = result_boundary; loan != frame_boundary; loan = loan->next)
+            loan->future_frame_only = 1;
+        for (BorrowRecord *loan = checker->borrows; loan != result_boundary; loan = loan->next) {
+            loan->captured_by_future = 1;
+            loan->future_frame_only = 0;
+        }
+    }
 }
 
 static const char *aggregate_lifetime(BorrowChecker *checker, const AstProgram *unit,
                                      const AstType *type, const char *declared) {
     if (!declared || !type || type->kind != AST_TYPE_NAMED) return NULL;
     if (!strcmp(declared, "'static")) return declared;
-    size_t id = resolve_named_symbol_id(checker->analyzer, unit, type->name_token);
+    size_t id = resolve_named_symbol_id(checker->analyzer, unit, named_type_token(unit, type));
     if (id >= checker->analyzer->model->symbol_count) return NULL;
     const SemanticSymbol *owner = &checker->analyzer->model->symbols[id];
     if (!owner->declaration) return NULL;
@@ -1496,7 +1898,7 @@ static const char *aggregate_lifetime(BorrowChecker *checker, const AstProgram *
 static const char *payload_lifetime(BorrowChecker *checker, const AstProgram *unit,
                                    const AstType *type, size_t variant, size_t index) {
     if (!type || type->kind != AST_TYPE_NAMED) return NULL;
-    size_t id = resolve_named_symbol_id(checker->analyzer, unit, type->name_token);
+    size_t id = resolve_named_symbol_id(checker->analyzer, unit, named_type_token(unit, type));
     if (id >= checker->analyzer->model->symbol_count) return NULL;
     const SemanticSymbol *owner = &checker->analyzer->model->symbols[id];
     if (!owner->declaration || owner->declaration->kind != AST_DECL_ENUM) return NULL;
@@ -1517,23 +1919,381 @@ static const char *payload_lifetime(BorrowChecker *checker, const AstProgram *un
 
 static const char *result_field_lifetime(BorrowChecker *checker, const AstProgram *unit,
                                         const AstType *result, size_t field_id) {
-    if (!result || result->kind != AST_TYPE_NAMED ||
-        field_id >= checker->analyzer->model->symbol_count) return NULL;
-    const SemanticSymbol *field = &checker->analyzer->model->symbols[field_id];
-    size_t owner = resolve_named_symbol_id(checker->analyzer, unit, result->name_token);
-    if (field->kind != SEMANTIC_SYMBOL_FIELD || field->owner_symbol_id != owner ||
-        owner >= checker->analyzer->model->symbol_count) return NULL;
-    const AstDeclarationNode *aggregate = checker->analyzer->model->symbols[owner].declaration;
-    const char *declared = borrow_lifetime(field->source_program, &field->declared_type);
-    /* A nested aggregate with one lifetime retains that relationship even
-       while its individual inner field paths are represented conservatively. */
-    if (!declared && field->declared_type.kind == AST_TYPE_NAMED &&
-        !field->declared_type.pointer_depth && !field->declared_type.outer_pointer_depth &&
-        field->declared_type.lifetime_arguments && !field->declared_type.lifetime_arguments->next)
-        declared = ast_program_lexeme(field->source_program,
-            field->declared_type.lifetime_arguments->name_token);
-    if (!aggregate || !declared) return NULL;
+    if (!result || result->kind != AST_TYPE_NAMED || field_id == AST_SYMBOL_NONE) return NULL;
+    size_t root = field_id;
+    const BorrowPath *path;
+    while ((path = borrow_path_node(checker, root)) && path->parent != AST_SYMBOL_NONE)
+        root = path->parent;
+    size_t owner = resolve_named_symbol_id(checker->analyzer, unit, named_type_token(unit, result));
+    if (owner >= checker->analyzer->model->symbol_count) return NULL;
+    const SemanticSymbol *aggregate = &checker->analyzer->model->symbols[owner];
+    const AstType *child = NULL;
+    const AstProgram *child_unit = aggregate->source_program;
+    if (path && path->payload) {
+        if (path->enum_symbol != owner || !aggregate->declaration ||
+            aggregate->declaration->kind != AST_DECL_ENUM) return NULL;
+        for (const AstEnumValue *value = aggregate->declaration->as.enum_decl.values; value; value = value->next) {
+            if (value->resolved_symbol_id != path->variant) continue;
+            const AstTypeArgument *payload = value->payload_types;
+            for (size_t i = 0; payload && i < path->index; i++) payload = payload->next;
+            if (payload) child = &payload->type;
+            break;
+        }
+    } else if (root < checker->analyzer->model->symbol_count) {
+        const SemanticSymbol *field = &checker->analyzer->model->symbols[root];
+        if (field->kind != SEMANTIC_SYMBOL_FIELD || field->owner_symbol_id != owner) return NULL;
+        child = &field->declared_type;
+        child_unit = field->source_program;
+    }
+    if (!child) return NULL;
+    if (field_id != root) {
+        const char *inner = result_field_lifetime(checker, child_unit, child,
+            borrow_path_relative(checker, field_id, root));
+        return aggregate_lifetime(checker, unit, result, inner);
+    }
+    const char *declared = borrow_lifetime(child_unit, child);
+    if (!declared && child->kind == AST_TYPE_NAMED &&
+        !child->pointer_depth && !child->outer_pointer_depth &&
+        child->lifetime_arguments && !child->lifetime_arguments->next)
+        declared = ast_program_lexeme(child_unit, child->lifetime_arguments->name_token);
     return aggregate_lifetime(checker, unit, result, declared);
+}
+
+static void summary_storage_map(BorrowChecker *checker, size_t symbol,
+                                size_t owner, size_t field) {
+    BorrowStorage *storage = malloc(sizeof(*storage));
+    if (!storage) { checker->analyzer->allocation_failed = 1; return; }
+    *storage = (BorrowStorage){.symbol = symbol, .owner = owner, .field = field,
+        .next = checker->storage};
+    checker->storage = storage;
+}
+
+static int summary_write_place(BorrowChecker *checker, const AstExpression *target,
+                               BorrowPlace *place) {
+    if (!checker->summarizing || !expression_place(checker, target, place)) return 0;
+    for (const BorrowStorage *storage = checker->storage; storage; storage = storage->next) {
+        if (storage->symbol != place->owner) continue;
+        place->owner = storage->owner;
+        place->field = borrow_path_append(checker, storage->field, place->field);
+        BorrowWrite *write = malloc(sizeof(*write));
+        if (!write) { checker->analyzer->allocation_failed = 1; return 0; }
+        *write = (BorrowWrite){.owner = place->owner, .field = place->field, .next = checker->writes};
+        checker->writes = write;
+        return 1;
+    }
+    return 0;
+}
+
+static int summary_written(const BorrowChecker *checker, const BorrowRecord *loan) {
+    for (const BorrowWrite *write = checker->writes; write; write = write->next)
+        if (write->owner == loan->borrower_symbol &&
+            borrow_path_prefix(checker, write->field, loan->borrower_field_symbol)) return 1;
+    return 0;
+}
+
+static void summary_capture_exit(BorrowChecker *checker) {
+    for (BorrowRecord *loan = checker->borrows; loan; loan = loan->next) {
+        if(loan->active) {
+            if(!loan->summary_exit_active) { loan->heap_exit_min=loan->heap_min; loan->heap_exit_max=loan->heap_max; }
+            else {
+                if(loan->heap_min<loan->heap_exit_min) loan->heap_exit_min=loan->heap_min;
+                if(loan->heap_max>loan->heap_exit_max) loan->heap_exit_max=loan->heap_max;
+            }
+        }
+        loan->summary_exit_active |= loan->active;
+    }
+}
+
+typedef struct {
+    BorrowPlace storage;
+    BorrowPlace anchor;
+    int anchored;
+} HeapBorrowPlace;
+
+static const BorrowStorage *heap_map_place(BorrowChecker *checker,BorrowPlace *place) {
+    const BorrowStorage *first=NULL;
+    for(unsigned depth=0;depth<32;depth++) {
+        const BorrowStorage *match=NULL;
+        for(const BorrowStorage *storage=checker->storage;storage;storage=storage->next)
+            if(storage->symbol==place->owner) { match=storage; break; }
+        if(!match || (match->owner==place->owner && match->field==AST_SYMBOL_NONE)) break;
+        if(!first) first=match;
+        place->field=borrow_path_append(checker,match->field,place->field);
+        place->owner=match->owner;
+    }
+    return first;
+}
+
+static int heap_borrow_place(BorrowChecker *checker,const AstExpression *pointer,HeapBorrowPlace *place) {
+    if(!pointer) return 0;
+    const AstExpression *value=pointer;
+    if(value->kind==AST_EXPR_UNARY && value->operator_type==TOKEN_AMPERSAND) value=value->right;
+    if(!expression_place(checker,value,&place->storage)) return 0;
+    const BorrowStorage *mapped=heap_map_place(checker,&place->storage);
+    place->anchored=0;
+    if(value->kind==AST_EXPR_INDEX) {
+        if(expression_place(checker,value->right,&place->anchor)) {
+            heap_map_place(checker,&place->anchor);
+            place->anchored=1;
+        }
+    } else if(mapped && mapped->heap_index) {
+        place->anchor=(BorrowPlace){.owner=mapped->index_owner,.field=mapped->index_field};
+        heap_map_place(checker,&place->anchor);
+        place->anchored=1;
+    } else return 0;
+    if(place->storage.owner>=checker->analyzer->model->symbol_count) return 0;
+    const SemanticSymbol *owner=&checker->analyzer->model->symbols[place->storage.owner];
+    return !owner->resolved_pointer_depth && !owner->resolved_outer_pointer_depth &&
+        owner->resolved_named_symbol_id<checker->analyzer->model->symbol_count &&
+        (semantic_symbol_type_properties(checker->analyzer->model,owner->resolved_named_symbol_id)&SEMANTIC_TYPE_NEEDS_DROP);
+}
+
+static void heap_write(BorrowChecker *checker,const BorrowPlace *place) {
+    BorrowWrite *write=malloc(sizeof(*write));
+    if(!write) { checker->analyzer->allocation_failed=1; return; }
+    *write=(BorrowWrite){.owner=place->owner,.field=place->field,.next=checker->writes};
+    checker->writes=write;
+    checker->heap_effect=1;
+}
+
+static int heap_value_has_views(BorrowChecker *checker,const AstExpression *value,unsigned depth) {
+    if (!value || depth>64) return depth>64;
+    if (value->resolved_borrow_kind!=AST_BORROW_NONE || value->resolved_is_slice ||
+        semantic_expression_is_future(value) || (value->has_resolved_ast_type &&
+        type_has_view_depth(checker,value->resolved_type_program ? value->resolved_type_program : checker->analyzer->program,
+            &value->resolved_ast_type,0))) return 1;
+    if (value->kind==AST_EXPR_STRUCT_LITERAL || value->kind==AST_EXPR_ENUM_CONSTRUCT)
+        for (const AstExpression *field=value->arguments;field;field=field->next)
+            if (heap_value_has_views(checker,field,depth+1)) return 1;
+    return 0;
+}
+
+static void heap_initialize(BorrowChecker *checker,const AstExpression *pointer,
+                            const AstExpression *value,size_t scope_depth) {
+    HeapBorrowPlace storage;
+    if(!value) return;
+    if (!heap_value_has_views(checker,value,0)) return;
+    if (!heap_borrow_place(checker,pointer,&storage)) {
+        checker->unmodeled_storage=1;
+        return;
+    }
+    AstExpression owner={.kind=AST_EXPR_NAME,.resolved_symbol_id=storage.storage.owner};
+    AstExpression field={.kind=AST_EXPR_MEMBER,.left=&owner,.resolved_symbol_id=storage.storage.field};
+    BorrowRecord *boundary=checker->borrows;
+    checker->aggregate_capture_depth++;
+    if(!add_borrow_mode(checker,&field,value,scope_depth,1))
+        clone_aggregate_borrows(checker,&field,value,scope_depth);
+    checker->aggregate_capture_depth--;
+    for(BorrowRecord *loan=checker->borrows;loan!=boundary;loan=loan->next) {
+        loan->heap_storage=1;
+        loan->summary_exit_active=0;
+        loan->heap_anchor_owner=storage.anchored ? storage.anchor.owner:AST_SYMBOL_NONE;
+        loan->heap_anchor_field=storage.anchored ? storage.anchor.field:AST_SYMBOL_NONE;
+        loan->heap_min=storage.anchored ? 0:INT64_MIN;
+        loan->heap_max=storage.anchored ? 0:INT64_MAX;
+        loan->retained_until_drop=1;
+        loan->captured_by_aggregate=1;
+        loan->summary_effect=checker->summarizing;
+        loan->scope_depth=checker->summarizing ? 0:checker->analyzer->model->symbols[storage.storage.owner].scope_depth;
+    }
+    heap_write(checker,&storage.storage);
+}
+
+static void heap_shift(BorrowChecker *checker,const AstStatement *statement) {
+    BorrowPlace anchor;
+    if(!expression_place(checker,statement->expression,&anchor)) return;
+    heap_map_place(checker,&anchor);
+    int unit_shift = (statement->assignment_operator == TOKEN_PLUS_EQUAL ||
+        statement->assignment_operator == TOKEN_MINUS_EQUAL) && statement->value &&
+        statement->value->kind == AST_EXPR_LITERAL &&
+        !strcmp(ast_program_lexeme(checker->analyzer->program, statement->value->value_token), "1");
+    int64_t delta=statement->assignment_operator==TOKEN_PLUS_EQUAL ? -1:1;
+    for(BorrowRecord *loan=checker->borrows;loan;loan=loan->next) {
+        if(!loan->active || !loan->heap_storage || loan->heap_anchor_owner!=anchor.owner ||
+           loan->heap_anchor_field!=anchor.field) continue;
+        if (!unit_shift) { loan->heap_min=INT64_MIN; loan->heap_max=INT64_MAX; }
+        else {
+            if(loan->heap_min!=INT64_MIN && loan->heap_min!=INT64_MAX) loan->heap_min+=delta;
+            if(loan->heap_max!=INT64_MIN && loan->heap_max!=INT64_MAX) loan->heap_max+=delta;
+        }
+        BorrowPlace storage={.owner=loan->borrower_symbol,.field=loan->borrower_field_symbol};
+        heap_write(checker,&storage);
+    }
+}
+
+static int heap_take(BorrowChecker *checker,const AstExpression *target,
+                     const AstExpression *pointer,size_t scope_depth) {
+    HeapBorrowPlace source;
+    BorrowPlace destination;
+    if(!heap_borrow_place(checker,pointer,&source) || !expression_place(checker,target,&destination)) return 0;
+    int found=0;
+    BorrowRecord *boundary=checker->borrows;
+    for(BorrowRecord *loan=boundary;loan;loan=loan->next) {
+        if(!loan->active || !loan->heap_storage || loan->borrower_symbol!=source.storage.owner ||
+           !borrow_path_prefix(checker,source.storage.field,loan->borrower_field_symbol)) continue;
+        int same=source.anchored && loan->heap_anchor_owner==source.anchor.owner &&
+            loan->heap_anchor_field==source.anchor.field;
+        if(same && (loan->heap_min>0 || loan->heap_max<0)) continue;
+        BorrowRecord *copy=malloc(sizeof(*copy));
+        if(!copy) { checker->analyzer->allocation_failed=1; return 1; }
+        *copy=*loan;
+        copy->borrower_symbol=destination.owner;
+        copy->borrower_field_symbol=borrow_path_append(checker,destination.field,
+            borrow_path_relative(checker,loan->borrower_field_symbol,source.storage.field));
+        copy->heap_storage=0;
+        copy->summary_foreign=0;
+        copy->summary_effect=0;
+        copy->summary_exit_active=0;
+        copy->scope_depth=scope_depth;
+        copy->next=checker->borrows;
+        checker->borrows=copy;
+        if (same && !checker->reserving_loans) {
+            if (loan->heap_min==0 && loan->heap_max==0) loan->active=0;
+            else if (loan->heap_max==0) loan->heap_max=-1;
+            else if (loan->heap_min==0) loan->heap_min=1;
+        }
+        found=1;
+    }
+    if(found && !checker->reserving_loans) heap_write(checker,&source.storage);
+    return found;
+}
+
+/* Prove a complete countdown traversal: each iteration decrements the same
+   bound and destroys that indexed slot unconditionally. Type/package/method
+   names do not participate in this proof. */
+static int heap_drain(BorrowChecker *checker,const AstStatement *loop,const FutureLoanBranch *entry) {
+    if(loop->kind!=AST_STMT_WHILE || !loop->condition || loop->condition->kind!=AST_EXPR_BINARY ||
+       loop->condition->operator_type!=TOKEN_GREATER || !loop->condition->right ||
+       loop->condition->right->kind!=AST_EXPR_LITERAL ||
+       strcmp(ast_program_lexeme(checker->analyzer->program,loop->condition->right->value_token),"0")) return 0;
+    BorrowPlace anchor;
+    if(!expression_place(checker,loop->condition->left,&anchor)) return 0;
+    heap_map_place(checker,&anchor);
+    const AstStatement *body=loop->body;
+    if(body && body->kind==AST_STMT_BLOCK) body=body->body;
+    if(!body || body->kind!=AST_STMT_ASSIGNMENT || body->assignment_operator!=TOKEN_MINUS_EQUAL ||
+       !body->value || body->value->kind!=AST_EXPR_LITERAL ||
+       strcmp(ast_program_lexeme(checker->analyzer->program,body->value->value_token),"1")) return 0;
+    BorrowPlace update;
+    if(!expression_place(checker,body->expression,&update)) return 0;
+    heap_map_place(checker,&update);
+    if(update.owner!=anchor.owner || update.field!=anchor.field) return 0;
+    const AstStatement *drop=body->next;
+    if(!drop || drop->next || !drop->expression || drop->expression->kind!=AST_EXPR_CALL) return 0;
+    const AstExpression *call=drop->expression;
+    const SemanticSymbol *function=call->resolved_symbol_id<checker->analyzer->model->symbol_count ?
+        &checker->analyzer->model->symbols[call->resolved_symbol_id]:NULL;
+    const AstExpression *operation=call;
+    if(function && function->declaration) {
+        const AstStatement *inner=function->declaration->as.function.body;
+        if(inner && inner->kind==AST_STMT_BLOCK) inner=inner->body;
+        if(!inner || inner->next || !inner->expression) return 0;
+        operation=inner->expression;
+    }
+    if(operation->lifetime_operation!=LIFETIME_DESTROY) return 0;
+    HeapBorrowPlace storage;
+    if(!heap_borrow_place(checker,call->arguments,&storage) || !storage.anchored ||
+       storage.anchor.owner!=anchor.owner || storage.anchor.field!=anchor.field) return 0;
+    for (size_t i=0; i<entry->count; i++) {
+        BorrowRecord *loan=entry->state[i].loan;
+        if(loan->heap_storage && loan->borrower_symbol==storage.storage.owner &&
+           borrow_path_prefix(checker,storage.storage.field,loan->borrower_field_symbol) &&
+           loan->heap_anchor_owner==anchor.owner && loan->heap_anchor_field==anchor.field &&
+           entry->state[i].heap_min!=INT64_MIN && entry->state[i].heap_max<0) loan->active=0;
+    }
+    heap_write(checker,&storage.storage);
+    return 1;
+}
+
+/* An initialized slot strictly before an unsigned countdown bound proves that
+   the bound is nonzero. Only call summaries use this fact; ordinary checking
+   still validates both branches of the function body. */
+static int heap_condition_value(BorrowChecker *checker, const AstExpression *condition) {
+    if (!checker->summarizing || !condition || condition->kind!=AST_EXPR_BINARY ||
+        (condition->operator_type!=TOKEN_EQUAL_EQUAL && condition->operator_type!=TOKEN_BANG_EQUAL) ||
+        !condition->right || condition->right->kind!=AST_EXPR_LITERAL ||
+        strcmp(ast_program_lexeme(checker->analyzer->program,condition->right->value_token),"0")) return -1;
+    BorrowPlace anchor;
+    if (!expression_place(checker,condition->left,&anchor)) return -1;
+    heap_map_place(checker,&anchor);
+    DataType type=condition->left->resolved_type;
+    /* Narrow counters can wrap while their storage still contains loans. */
+    if (type!=TYPE_USIZE && type!=TYPE_U64) return -1;
+    for (const BorrowRecord *loan=checker->borrows;loan;loan=loan->next)
+        if (loan->active && loan->heap_storage && loan->heap_anchor_owner==anchor.owner &&
+            loan->heap_anchor_field==anchor.field && loan->heap_min!=INT64_MIN && loan->heap_max<0)
+            return condition->operator_type==TOKEN_BANG_EQUAL;
+    return -1;
+}
+
+/* Walk declared aggregate leaves using their full struct/enum payload paths. */
+typedef int (*BorrowFieldVisitor)(BorrowChecker *, size_t, const AstType *, void *);
+
+static int visit_borrow_fields(BorrowChecker *checker, const AstProgram *unit,
+    const AstType *type, size_t path, BorrowFieldVisitor visitor, void *context, size_t depth) {
+    if (type->borrow_kind != AST_BORROW_NONE || type->is_slice || type->kind == AST_TYPE_FUTURE)
+        return visitor ? visitor(checker, path, type, context) : 1;
+    if (depth > 32 || type->kind != AST_TYPE_NAMED || type->borrow_kind != AST_BORROW_NONE ||
+        type->pointer_depth || type->outer_pointer_depth || type->is_slice || type->is_array) return 0;
+    size_t id = resolve_named_symbol_id(checker->analyzer, unit, named_type_token(unit, type));
+    if (id >= checker->analyzer->model->symbol_count) return 0;
+    const SemanticSymbol *owner = &checker->analyzer->model->symbols[id];
+    const AstDeclarationNode *aggregate = owner->declaration;
+    if (!aggregate) return 0;
+    if (aggregate->kind == AST_DECL_ENUM) {
+        for (const AstEnumValue *value = aggregate->as.enum_decl.values; value; value = value->next) {
+            size_t index = 0;
+            for (const AstTypeArgument *payload = value->payload_types; payload; payload = payload->next, index++) {
+                if (!type_has_view_depth(checker, owner->source_program, &payload->type, 0)) continue;
+                size_t child = borrow_path_append(checker, path,
+                    borrow_payload_path(checker, id, value->resolved_symbol_id, index));
+                if (payload->type.borrow_kind != AST_BORROW_NONE) {
+                    if (visitor && !visitor(checker, child, &payload->type, context)) return 0;
+                } else if (!visit_borrow_fields(checker, owner->source_program, &payload->type,
+                                               child, visitor, context, depth + 1)) return 0;
+            }
+        }
+        return 1;
+    }
+    if (aggregate->kind != AST_DECL_STRUCT) return 0;
+    for (const AstField *field = aggregate->as.struct_decl.fields; field; field = field->next) {
+        if (!type_has_view_depth(checker, owner->source_program, &field->type, 0)) {
+            if (semantic_declared_type_properties(checker->analyzer, owner->source_program,
+                &field->type) & SEMANTIC_TYPE_MOVE_ONLY) return 0;
+            continue;
+        }
+        size_t child = borrow_path_append(checker, path, field->resolved_symbol_id);
+        if (field->type.borrow_kind != AST_BORROW_NONE) {
+            if (visitor && !visitor(checker, child, &field->type, context)) return 0;
+        } else if (!visit_borrow_fields(checker, owner->source_program, &field->type,
+                                       child, visitor, context, depth + 1)) return 0;
+    }
+    return 1;
+}
+
+typedef struct {
+    const AstExpression *target;
+    const AstExpression *base;
+    const AstProgram *unit;
+    const AstType *type;
+    const char *lifetime;
+    AstBorrowKind kind;
+    size_t scope_depth;
+    BorrowRecord *first;
+} ParameterFieldBorrows;
+
+static int add_parameter_borrow_field(BorrowChecker *checker, size_t path,
+                                      const AstType *type, void *context) {
+    (void)type;
+    ParameterFieldBorrows *fields = context;
+    const char *lifetime = result_field_lifetime(checker, fields->unit, fields->type, path);
+    if (!lifetime || strcmp(lifetime, fields->lifetime)) return 1;
+    AstExpression input = {.kind = AST_EXPR_MEMBER, .left = (AstExpression *)fields->base,
+        .resolved_symbol_id = path, .resolved_borrow_kind = fields->kind,
+        .first_token = fields->base->first_token};
+    BorrowRecord *loan = add_borrow_mode(checker, fields->target, &input, fields->scope_depth, 1);
+    if (!fields->first) fields->first = loan;
+    return 1;
 }
 
 /* A reference returned from an aggregate parameter follows the reference fields
@@ -1543,34 +2303,28 @@ static BorrowRecord *add_parameter_field_borrows(BorrowChecker *checker,
     const AstType *parameter, const char *lifetime, AstBorrowKind kind, size_t scope_depth) {
     if (parameter->kind != AST_TYPE_NAMED || parameter->pointer_depth ||
         parameter->outer_pointer_depth) return NULL;
-    size_t id = resolve_named_symbol_id(checker->analyzer, unit, parameter->name_token);
-    if (id >= checker->analyzer->model->symbol_count) return NULL;
-    const SemanticSymbol *owner = &checker->analyzer->model->symbols[id];
-    const AstDeclarationNode *aggregate = owner->declaration;
-    if (!aggregate || aggregate->kind != AST_DECL_STRUCT) return NULL;
-    for (const AstField *field = aggregate->as.struct_decl.fields; field; field = field->next)
-        if (field->type.borrow_kind == AST_BORROW_NONE &&
-            (type_has_view_depth(checker, owner->source_program, &field->type, 0) ||
-             (semantic_declared_type_properties(checker->analyzer, owner->source_program,
-                &field->type) & SEMANTIC_TYPE_MOVE_ONLY))) return NULL;
+    AstType referent = *parameter;
+    referent.borrow_kind = AST_BORROW_NONE;
+    if (!visit_borrow_fields(checker, unit, &referent, AST_SYMBOL_NONE, NULL, NULL, 0)) return NULL;
     const AstExpression *base = argument;
     if (base->kind == AST_EXPR_UNARY && base->operator_type == TOKEN_AMPERSAND)
         base = base->right;
     BorrowPlace storage;
-    if (!expression_place(base, &storage)) return NULL;
-    BorrowRecord *first = NULL;
-    for (const AstField *field = aggregate->as.struct_decl.fields; field; field = field->next) {
-        if (field->type.borrow_kind == AST_BORROW_NONE) continue;
-        const char *field_lifetime = result_field_lifetime(checker, unit, parameter,
-            field->resolved_symbol_id);
-        if (!field_lifetime || strcmp(field_lifetime, lifetime)) continue;
-        AstExpression input = {.kind = AST_EXPR_MEMBER, .left = (AstExpression *)base,
-            .resolved_symbol_id = field->resolved_symbol_id, .resolved_borrow_kind = kind,
-            .first_token = argument->first_token};
-        BorrowRecord *loan = add_borrow_mode(checker, target, &input, scope_depth, 1);
-        if (!first) first = loan;
+    AstExpression temporary = {.kind = AST_EXPR_NAME,
+        .resolved_symbol_id = AST_SYMBOL_NONE - 1 - checker->temporary_borrowers++,
+        .first_token = argument->first_token};
+    int materialized = !expression_place(checker, base, &storage);
+    if (materialized) {
+        checker->aggregate_capture_depth++;
+        clone_aggregate_borrows(checker, &temporary, base, scope_depth);
+        checker->aggregate_capture_depth--;
+        base = &temporary;
     }
-    return first;
+    ParameterFieldBorrows fields = {.target = target, .base = base, .unit = unit,
+        .type = parameter, .lifetime = lifetime, .kind = kind, .scope_depth = scope_depth};
+    visit_borrow_fields(checker, unit, &referent, AST_SYMBOL_NONE, add_parameter_borrow_field, &fields, 0);
+    if (materialized) deactivate_borrower(checker, temporary.resolved_symbol_id, AST_SYMBOL_NONE);
+    return fields.first;
 }
 
 static BorrowRecord *add_lifetime_parameter_borrows(BorrowChecker *checker,
@@ -1605,6 +2359,15 @@ static BorrowRecord *add_lifetime_parameter_borrows(BorrowChecker *checker,
 }
 
 static void check_future_return(BorrowChecker *checker, const AstExpression *value) {
+    if (checker->summarizing) {
+        AstExpression output = {.kind = AST_EXPR_NAME, .resolved_symbol_id = checker->summary_result};
+        checker->aggregate_capture_depth++;
+        if (semantic_expression_is_future(value)) capture_future_borrows(checker, &output, value, 0);
+        else if (!add_borrow_mode(checker, &output, value, 0, 1))
+            clone_aggregate_borrows(checker, &output, value, 0);
+        checker->aggregate_capture_depth--;
+        return;
+    }
     if (value == NULL || (!semantic_expression_is_future(value) &&
         !semantic_expression_is_move_only(checker->analyzer, value) &&
         !value->resolved_is_slice && value->resolved_type != TYPE_STRING &&
@@ -1677,11 +2440,10 @@ static void check_future_return(BorrowChecker *checker, const AstExpression *val
             }
         }
     }
-    while (checker->borrows != boundary) {
-        BorrowRecord *next = checker->borrows->next;
-        free(checker->borrows);
-        checker->borrows = next;
-    }
+    /* Summaries retain inactive ancestors and cached result markers. Keep their
+       addresses valid until this checker is destroyed. */
+    for (BorrowRecord *loan = checker->borrows; loan != boundary; loan = loan->next)
+        loan->active = 0;
 }
 
 static BorrowRecord *add_borrow(BorrowChecker *checker,
@@ -1691,59 +2453,57 @@ static BorrowRecord *add_borrow(BorrowChecker *checker,
     return add_borrow_mode(checker, borrower, value, scope_depth, 0);
 }
 
-/* Explicit result lifetimes describe direct reference fields independently.
-   More complex owner/aggregate payloads retain the conservative union below. */
+typedef struct {
+    const SemanticSymbol *function;
+    const AstExpression *target;
+    const AstExpression *call;
+    size_t scope_depth;
+    size_t count;
+    int emit;
+} ResultFieldBorrows;
+
+static int clone_result_borrow_field(BorrowChecker *checker, size_t path,
+                                    const AstType *type, void *context) {
+    ResultFieldBorrows *fields = context;
+    const SemanticSymbol *function = fields->function;
+    const char *lifetime = result_field_lifetime(checker, function->source_program,
+        &function->declaration->as.function.return_type, path);
+    if (!lifetime) return 0;
+    AstExpression destination = {.kind = AST_EXPR_MEMBER, .left = (AstExpression *)fields->target,
+        .resolved_symbol_id = path};
+    int found = 0;
+    const AstExpression *argument = fields->call->arguments;
+    for (const AstParameter *parameter = function->declaration->as.function.parameters;
+         parameter && argument; parameter = parameter->next, argument = argument->next) {
+        if (!type_mentions_lifetime(function->source_program, &parameter->type, lifetime)) continue;
+        found = 1;
+        if (fields->emit) add_lifetime_parameter_borrows(checker, &destination, argument,
+            function->source_program, &parameter->type, lifetime, type->borrow_kind, fields->scope_depth);
+    }
+    fields->count++;
+    return found;
+}
+
+/* Each returned reference leaf follows its declared lifetime, independently
+   of how many struct levels or sibling lifetimes surround it. */
 static int clone_result_field_borrows(BorrowChecker *checker, const AstExpression *target,
                                       const AstExpression *call, size_t scope_depth) {
     if (call->resolved_symbol_id >= checker->analyzer->model->symbol_count) return 0;
     const SemanticSymbol *function = &checker->analyzer->model->symbols[call->resolved_symbol_id];
-    if (function->kind != SEMANTIC_SYMBOL_FUNCTION || !function->declaration ||
-        function->declaration->as.function.is_async) return 0;
+    if (function->kind != SEMANTIC_SYMBOL_FUNCTION || !function->declaration) return 0;
     const AstType *result = &function->declaration->as.function.return_type;
     if (result->kind != AST_TYPE_NAMED || result->borrow_kind != AST_BORROW_NONE ||
         result->pointer_depth || result->outer_pointer_depth) return 0;
-    size_t id = resolve_named_symbol_id(checker->analyzer, function->source_program, result->name_token);
-    if (id >= checker->analyzer->model->symbol_count) return 0;
-    const SemanticSymbol *owner = &checker->analyzer->model->symbols[id];
-    const AstDeclarationNode *aggregate = owner->declaration;
-    if (!aggregate || aggregate->kind != AST_DECL_STRUCT) return 0;
-    int references = 0;
-    for (const AstField *field = aggregate->as.struct_decl.fields; field; field = field->next) {
-        if (field->type.borrow_kind == AST_BORROW_NONE) {
-            if (type_has_view_depth(checker, owner->source_program, &field->type, 0) ||
-                (semantic_declared_type_properties(checker->analyzer, owner->source_program,
-                    &field->type) & SEMANTIC_TYPE_MOVE_ONLY)) return 0;
-            continue;
-        }
-        const char *lifetime = result_field_lifetime(checker, function->source_program,
-            result, field->resolved_symbol_id);
-        if (!lifetime) return 0;
-        int found = 0;
-        const AstExpression *argument = call->arguments;
-        for (const AstParameter *parameter = function->declaration->as.function.parameters;
-             parameter && argument; parameter = parameter->next, argument = argument->next)
-            if (type_mentions_lifetime(function->source_program, &parameter->type, lifetime)) found = 1;
-        if (!found) return 0;
-        references++;
-    }
-    if (!references) return 0;
+    ResultFieldBorrows fields = {.function = function, .target = target, .call = call,
+        .scope_depth = scope_depth};
+    if (!visit_borrow_fields(checker, function->source_program, result, AST_SYMBOL_NONE,
+        clone_result_borrow_field, &fields, 0) || !fields.count) return 0;
     BorrowPlace place;
-    if (!expression_place(target, &place)) return 0;
+    if (!expression_place(checker, target, &place)) return 0;
     if (!checker->aggregate_capture_depth) deactivate_borrower(checker, place.owner, place.field);
-    for (const AstField *field = aggregate->as.struct_decl.fields; field; field = field->next) {
-        if (field->type.borrow_kind == AST_BORROW_NONE) continue;
-        const char *lifetime = result_field_lifetime(checker, function->source_program,
-            result, field->resolved_symbol_id);
-        AstExpression destination = {.kind = AST_EXPR_MEMBER, .left = (AstExpression *)target,
-            .resolved_symbol_id = field->resolved_symbol_id};
-        const AstExpression *argument = call->arguments;
-        for (const AstParameter *parameter = function->declaration->as.function.parameters;
-             parameter && argument; parameter = parameter->next, argument = argument->next) {
-            if (!type_mentions_lifetime(function->source_program, &parameter->type, lifetime)) continue;
-            add_lifetime_parameter_borrows(checker, &destination, argument, function->source_program,
-                &parameter->type, lifetime, field->type.borrow_kind, scope_depth);
-        }
-    }
+    fields.emit = 1;
+    visit_borrow_fields(checker, function->source_program, result, AST_SYMBOL_NONE,
+        clone_result_borrow_field, &fields, 0);
     return 1;
 }
 
@@ -1751,8 +2511,22 @@ static void clone_aggregate_borrows(BorrowChecker *checker,
                                     const AstExpression *target,
                                     const AstExpression *source,
                                     size_t scope_depth) {
+    if (source && source->kind == AST_EXPR_INDEX && source->resolved_borrow_kind == AST_BORROW_NONE) {
+        int saved = checker->reserving_loans;
+        checker->reserving_loans = 1;
+        int copied = heap_take(checker, target, source, scope_depth);
+        checker->reserving_loans = saved;
+        if (copied) return;
+    }
     if (source && (source->lifetime_operation == LIFETIME_TAKE ||
                    source->lifetime_operation == LIFETIME_REPLACE)) {
+        if (source->lifetime_operation == LIFETIME_REPLACE)
+            for (BorrowCallSummary *entry=checker->summaries;entry;entry=entry->next)
+                if (entry->call==source) {
+                    clone_call_summary(checker,target,entry,scope_depth);
+                    return;
+                }
+        if(source->lifetime_operation==LIFETIME_TAKE && heap_take(checker,target,source->arguments,scope_depth)) return;
         const AstExpression *ptr = source->arguments;
         const AstExpression *place = ptr && ptr->kind == AST_EXPR_UNARY &&
             ptr->operator_type == TOKEN_AMPERSAND ? ptr->right : NULL;
@@ -1766,37 +2540,12 @@ static void clone_aggregate_borrows(BorrowChecker *checker,
         return;
     }
     if (source && source->kind == AST_EXPR_PROPAGATE) {
-        BorrowRecord *boundary = checker->borrows;
-        clone_aggregate_borrows(checker, target, source->left, scope_depth);
-        /* A by-value aggregate parameter has no caller loans in this function.
-           Its view payloads nevertheless refer to caller storage, just as in
-           a value-pattern binding. Do not invent this origin for local owners. */
-        BorrowPlace parameter_place;
-        if (checker->borrows == boundary && expression_place(source->left, &parameter_place) &&
-            parameter_place.owner < checker->analyzer->model->symbol_count) {
-            const SemanticSymbol *parameter = &checker->analyzer->model->symbols[parameter_place.owner];
-            if (parameter->kind == SEMANTIC_SYMBOL_PARAMETER &&
-                type_has_view_depth(checker, parameter->source_program, &parameter->declared_type, 0) &&
-                (source->resolved_borrow_kind != AST_BORROW_NONE || source->resolved_is_slice ||
-                 (source->has_resolved_ast_type && type_has_view_arguments(checker, &source->resolved_ast_type)))) {
-                AstExpression referents = *source->left;
-                referents.resolved_borrow_kind = source->resolved_borrow_kind == AST_BORROW_NONE
-                    ? AST_BORROW_IMMUTABLE : source->resolved_borrow_kind;
-                add_borrow_mode(checker, target, &referents, scope_depth, 1);
-            }
-        }
-        /* branch is a normal DMM function and may reorder its input payloads.
-           An extracted output cannot keep the operand enum's payload tags. */
-        for (BorrowRecord *loan = checker->borrows; loan != boundary; loan = loan->next) {
-            loan->payload_known = 0;
-            if (source->resolved_borrow_kind != AST_BORROW_NONE)
-                loan->kind = source->resolved_borrow_kind;
-        }
+        clone_propagation_borrows(checker, target, source, scope_depth, 0);
         return;
     }
     if (source != NULL && source->kind == AST_EXPR_STRUCT_LITERAL) {
         BorrowPlace place;
-        if (!expression_place(target, &place)) return;
+        if (!expression_place(checker, target, &place)) return;
         if (!checker->aggregate_capture_depth)
             deactivate_borrower(checker, place.owner, place.field);
         checker->aggregate_capture_depth++;
@@ -1813,35 +2562,58 @@ static void clone_aggregate_borrows(BorrowChecker *checker,
             if (semantic_expression_is_future(value))
                 capture_future_borrows(checker, target, value, scope_depth);
             else if (add_borrow_mode(checker, &field, &view, scope_depth, 1) == NULL) {
-                BorrowRecord *boundary = checker->borrows;
-                clone_aggregate_borrows(checker, target, value, scope_depth);
-                /* Until nested paths are represented, these origins belong to
-                   an unknown inner field of the containing aggregate. */
-                for (BorrowRecord *loan = checker->borrows; loan != boundary; loan = loan->next) {
-                    loan->borrower_field_symbol = AST_SYMBOL_NONE;
-                    loan->payload_known = 0;
-                }
+                clone_aggregate_borrows(checker, &field, value, scope_depth);
             }
         }
         checker->aggregate_capture_depth--;
         return;
     }
-    if (source != NULL && (source->kind == AST_EXPR_AWAIT || source->async_operation == ASYNC_BLOCK_ON) &&
-        (semantic_symbol_type_properties(checker->analyzer->model,
-                                         source->resolved_named_symbol_id) & SEMANTIC_TYPE_MUST_CONSUME)) {
+    if (source != NULL && (source->kind == AST_EXPR_AWAIT || (source->async_operation == ASYNC_BLOCK_ON || source->async_operation == ASYNC_COMPLETE)) &&
+        ((semantic_symbol_type_properties(checker->analyzer->model,
+                                         source->resolved_named_symbol_id) & SEMANTIC_TYPE_MUST_CONSUME) ||
+         (source->has_resolved_ast_type && type_has_view_depth(checker,
+             source->resolved_type_program ? source->resolved_type_program : checker->analyzer->program,
+             &source->resolved_ast_type,0)))) {
         capture_future_borrows(checker, target,
             source->kind == AST_EXPR_AWAIT ? source->right : source->arguments, scope_depth);
+        BorrowPlace destination;
+        if (expression_place(checker, target, &destination))
+            for (BorrowRecord *loan = checker->borrows; loan; loan = loan->next)
+                if (loan->active && loan->borrower_symbol == destination.owner &&
+                    borrow_path_prefix(checker, destination.field, loan->borrower_field_symbol) &&
+                    loan->future_frame_only) loan->active = 0;
+        if(expression_place(checker,target,&destination) &&
+           !(semantic_symbol_type_properties(checker->analyzer->model,source->resolved_named_symbol_id) & SEMANTIC_TYPE_MUST_CONSUME))
+            for(BorrowRecord *loan=checker->borrows;loan;loan=loan->next)
+                if(loan->active && loan->borrower_symbol==destination.owner &&
+                   borrow_path_prefix(checker,destination.field,loan->borrower_field_symbol)) loan->captured_by_future=0;
         return;
     }
     if (source != NULL && source->kind == AST_EXPR_ENUM_CONSTRUCT) {
+        BorrowPlace place;
+        if (!expression_place(checker, target, &place)) return;
+        if (!checker->aggregate_capture_depth) deactivate_borrower(checker, place.owner, place.field);
         checker->aggregate_capture_depth++;
         size_t index = 0;
         for (const AstExpression *payload = source->arguments; payload; payload = payload->next) {
             BorrowRecord *boundary = checker->borrows;
+            AstExpression destination = {.kind = AST_EXPR_MEMBER, .left = (AstExpression *)target,
+                .resolved_symbol_id = borrow_payload_path(checker, source->resolved_named_symbol_id,
+                    source->resolved_symbol_id, index)};
+            AstExpression view = *payload;
+            if (source->resolved_symbol_id < checker->analyzer->model->symbol_count) {
+                const SemanticSymbol *variant = &checker->analyzer->model->symbols[source->resolved_symbol_id];
+                const AstTypeArgument *type = variant->node ? ((const AstEnumValue *)variant->node)->payload_types : NULL;
+                for (size_t i = 0; type && i < index; i++) type = type->next;
+                if (type && type->type.is_slice && payload->resolved_is_array) {
+                    view.resolved_is_slice = 1;
+                    view.resolved_is_array = 0;
+                }
+            }
             if (semantic_expression_is_future(payload))
-                capture_future_borrows(checker, target, payload, scope_depth);
-            else if (add_borrow_mode(checker, target, payload, scope_depth, 1) == NULL)
-                clone_aggregate_borrows(checker, target, payload, scope_depth);
+                capture_future_borrows(checker, &destination, payload, scope_depth);
+            else if (add_borrow_mode(checker, &destination, &view, scope_depth, 1) == NULL)
+                clone_aggregate_borrows(checker, &destination, payload, scope_depth);
             for (BorrowRecord *loan = checker->borrows; loan != boundary; loan = loan->next) {
                 loan->payload_known = 1;
                 loan->payload_enum = source->resolved_named_symbol_id;
@@ -1858,6 +2630,11 @@ static void clone_aggregate_borrows(BorrowChecker *checker,
          call_returns_view_aggregate(checker,source) ||
          (semantic_symbol_type_properties(checker->analyzer->model,
                                           source->resolved_named_symbol_id) & SEMANTIC_TYPE_MUST_CONSUME))) {
+        BorrowCallSummary *summary = summarize_call_borrows(checker, source);
+        if (summary && !summary->unmodeled_storage) {
+            clone_call_summary(checker, target, summary, scope_depth);
+            return;
+        }
         BorrowRecord *boundary = checker->borrows;
         if (clone_result_field_borrows(checker, target, source, scope_depth)) {
             for (BorrowRecord *loan = checker->borrows; loan != boundary; loan = loan->next)
@@ -1910,18 +2687,20 @@ static void clone_aggregate_borrows(BorrowChecker *checker,
     if (source == NULL ||
         (!semantic_expression_is_future(source) && source->resolved_borrow_kind == AST_BORROW_NONE &&
          source->resolved_named_symbol_id == AST_SYMBOL_NONE && !source->resolved_is_array && !source->resolved_is_slice &&
-         source->resolved_type != TYPE_STRING))
+         source->resolved_type != TYPE_STRING &&
+         (!source->has_resolved_ast_type || !type_has_view_depth(checker,
+             source->resolved_type_program ? source->resolved_type_program : checker->analyzer->program,
+             &source->resolved_ast_type, 0))))
         return;
     BorrowPlace target_place, source_place;
-    if (!expression_place(target, &target_place) ||
-        !expression_place(source, &source_place))
+    if (!expression_place(checker, target, &target_place) ||
+        !expression_place(checker, source, &source_place))
         return;
     if (!checker->aggregate_capture_depth)
         deactivate_borrower(checker, target_place.owner, target_place.field);
     for (BorrowRecord *old = checker->borrows; old != NULL; old = old->next) {
         if (!old->active || old->borrower_symbol != source_place.owner ||
-            (source_place.field != AST_SYMBOL_NONE && old->borrower_field_symbol != AST_SYMBOL_NONE &&
-             old->borrower_field_symbol != source_place.field))
+            !borrow_paths_overlap(checker, source_place.field, old->borrower_field_symbol))
             continue;
         BorrowRecord *copy = calloc(1, sizeof(*copy));
         if (copy == NULL) {
@@ -1929,12 +2708,21 @@ static void clone_aggregate_borrows(BorrowChecker *checker,
             return;
         }
         *copy = *old;
+                copy->summary_foreign = 0;
+        copy->summary_exit_active = 0;
+        if (source->kind == AST_EXPR_INDEX) copy->heap_storage = 0;
         copy->package_storage = 0;
         copy->borrower_symbol = target_place.owner;
         if (source_place.field != AST_SYMBOL_NONE && old->borrower_field_symbol == AST_SYMBOL_NONE)
             copy->payload_known = 0;
-        if (target_place.field != AST_SYMBOL_NONE) copy->borrower_field_symbol = target_place.field;
-        else if (source_place.field != AST_SYMBOL_NONE) copy->borrower_field_symbol = AST_SYMBOL_NONE;
+        copy->borrower_field_symbol = borrow_path_append(checker, target_place.field,
+            borrow_path_relative(checker, old->borrower_field_symbol, source_place.field));
+        if (copy->heap_storage && old->heap_anchor_owner == source_place.owner &&
+            borrow_path_prefix(checker, source_place.field, old->heap_anchor_field)) {
+            copy->heap_anchor_owner = target_place.owner;
+            copy->heap_anchor_field = borrow_path_append(checker, target_place.field,
+                borrow_path_relative(checker, old->heap_anchor_field, source_place.field));
+        }
         copy->scope_depth = scope_depth;
         if (target_place.owner < checker->analyzer->model->symbol_count) {
             const SemanticSymbol *target_symbol = &checker->analyzer->model->symbols[target_place.owner];
@@ -1984,19 +2772,33 @@ static void clone_pattern_borrows(BorrowChecker *checker, const AstExpression *t
     AstExpression source = *value;
     source.resolved_borrow_kind = AST_BORROW_IMMUTABLE;
     if (value->kind != AST_EXPR_NAME) {
-        clone_aggregate_borrows(checker, target, &source, scope_depth);
+        size_t temporary = AST_SYMBOL_NONE - 1 - checker->temporary_borrowers++;
+        AstExpression materialized = {.kind = AST_EXPR_NAME, .resolved_symbol_id = temporary,
+            .resolved_named_symbol_id = value->resolved_named_symbol_id};
+        clone_aggregate_borrows(checker, &materialized, &source, scope_depth);
+        clone_pattern_borrows(checker, target, &materialized, variant, index, scope_depth);
+        release_argument_borrows(checker, temporary);
         return;
     }
     size_t temporary = AST_SYMBOL_NONE - 1 - checker->temporary_borrowers++;
     BorrowRecord *boundary = checker->borrows;
+    size_t selected = borrow_payload_path(checker, value->resolved_named_symbol_id, variant, index);
     for (const BorrowRecord *old = boundary; old; old = old->next) {
         if (!old->active || old->borrower_symbol != value->resolved_symbol_id) continue;
+        if (!borrow_paths_overlap(checker, selected, old->borrower_field_symbol)) continue;
         if (old->payload_known && old->payload_enum == value->resolved_named_symbol_id &&
             (old->payload_variant != variant || old->payload_index != index)) continue;
         BorrowRecord *copy = malloc(sizeof(*copy));
         if (!copy) { checker->analyzer->allocation_failed = 1; break; }
         *copy = *old;
+                copy->summary_foreign = 0;
         copy->borrower_symbol = temporary;
+        copy->borrower_field_symbol = borrow_path_relative(checker, old->borrower_field_symbol, selected);
+        if (copy->heap_storage && old->heap_anchor_owner == value->resolved_symbol_id &&
+            borrow_path_prefix(checker, selected, old->heap_anchor_field)) {
+            copy->heap_anchor_owner = temporary;
+            copy->heap_anchor_field = borrow_path_relative(checker, old->heap_anchor_field, selected);
+        }
         copy->package_storage = 0;
         copy->payload_known = 0;
         copy->next = checker->borrows;
@@ -2011,8 +2813,16 @@ static void check_statement_list(BorrowChecker *checker,
                                  const AstStatement *statement,
                                  size_t scope_depth) {
     size_t saved_scope_depth = checker->current_scope_depth;
+    const AstStatement *saved_statement=checker->current_statement;
+    BorrowContinuation *saved_continuations=checker->continuations;
+    BorrowContinuation continuation={.statements=saved_statement ?
+        ((saved_statement->kind==AST_STMT_WHILE || saved_statement->kind==AST_STMT_FOR) ?
+            saved_statement : saved_statement->next) : NULL, .next=saved_continuations};
+    if (saved_statement) checker->continuations=&continuation;
     checker->current_scope_depth = scope_depth;
     for (; statement != NULL; statement = statement->next) {
+        checker->current_statement=statement;
+        checker->evaluation_epoch++;
         expire_borrows(checker, statement->first_token);
         if (statement->kind == AST_STMT_VARIABLE) {
             BorrowAccess value_access =
@@ -2041,12 +2851,13 @@ static void check_statement_list(BorrowChecker *checker,
                 clone_aggregate_borrows(checker, &borrower,
                                         statement->value, scope_depth);
             capture_future_borrows(checker, &borrower, statement->value, scope_depth);
-            if (statement->value != NULL && (statement->value->kind == AST_EXPR_AWAIT || statement->value->async_operation==ASYNC_BLOCK_ON) &&
+            if (statement->value != NULL && (statement->value->kind == AST_EXPR_AWAIT || (statement->value->async_operation==ASYNC_BLOCK_ON || statement->value->async_operation==ASYNC_COMPLETE)) &&
                 !semantic_expression_is_future(statement->value))
                 release_future_value(checker, statement->value->kind==AST_EXPR_AWAIT ? statement->value->right:statement->value->arguments);
             continue;
         }
         if (statement->kind == AST_STMT_ASSIGNMENT) {
+            heap_shift(checker,statement);
             check_expression(checker, statement->expression,
                              BORROW_ACCESS_WRITE);
             BorrowAccess value_access =
@@ -2055,6 +2866,43 @@ static void check_statement_list(BorrowChecker *checker,
                     ? BORROW_ACCESS_WRITE
                     : BORROW_ACCESS_READ;
             check_expression(checker, statement->value, value_access);
+            /* A checked storage parameter belongs to the caller. A value
+               assigned into it must satisfy the same escape/lifetime proof as
+               an explicitly returned value, even when both lexical scopes match. */
+            BorrowPlace checked_storage;
+            if(!checker->summarizing && statement->expression && statement->expression->has_resolved_ast_type &&
+               reference_storage_place(checker,statement->expression,&checked_storage) &&
+               checked_storage.owner<checker->analyzer->model->symbol_count) {
+                const SemanticSymbol *holder=&checker->analyzer->model->symbols[checked_storage.owner];
+                if((holder->kind==SEMANTIC_SYMBOL_FIELD ||
+                    (holder->kind==SEMANTIC_SYMBOL_PARAMETER && holder->resolved_borrow_kind!=AST_BORROW_NONE)) &&
+                   type_has_borrow_depth(checker,checker->analyzer->program,
+                       &statement->expression->resolved_ast_type,0,0)) {
+                    const AstDeclarationNode *saved=checker->analyzer->current_function;
+                    AstDeclarationNode contract={.kind=AST_DECL_FUNCTION};
+                    contract.as.function.return_type=statement->expression->resolved_ast_type;
+                    checker->analyzer->current_function=&contract;
+                    int saved_reserving=checker->reserving_loans;
+                    checker->reserving_loans=1;
+                    check_future_return(checker,statement->value);
+                    checker->reserving_loans=saved_reserving;
+                    checker->analyzer->current_function=saved;
+                }
+            }
+            BorrowPlace storage;
+            int external = summary_write_place(checker, statement->expression, &storage);
+            int slot_assignment = !external && statement->expression &&
+                statement->expression->kind == AST_EXPR_UNARY && statement->expression->operator_type == TOKEN_STAR &&
+                statement->expression->resolved_borrow_kind != AST_BORROW_NONE &&
+                reference_storage_place(checker, statement->expression, &storage);
+            AstExpression owner, field;
+            const AstExpression *destination = statement->expression;
+            if (external || slot_assignment) {
+                owner = (AstExpression){.kind = AST_EXPR_NAME, .resolved_symbol_id = storage.owner};
+                field = (AstExpression){.kind = AST_EXPR_MEMBER, .left = &owner, .resolved_symbol_id = storage.field};
+                destination = storage.field == AST_SYMBOL_NONE ? &owner : &field;
+                deactivate_borrower(checker, storage.owner, storage.field);
+            }
             AstExpression view;
             const AstExpression *assigned = statement->value;
             if (assigned && assigned->resolved_is_array && statement->expression &&
@@ -2065,12 +2913,24 @@ static void check_statement_list(BorrowChecker *checker,
                 assigned = &view;
             }
             if (!semantic_expression_is_future(statement->value) &&
-                add_borrow(checker, statement->expression,
+                add_borrow(checker, destination,
                            assigned, scope_depth) == NULL)
-                clone_aggregate_borrows(checker, statement->expression,
+                clone_aggregate_borrows(checker, destination,
                                         statement->value, scope_depth);
-            capture_future_borrows(checker, statement->expression, statement->value, scope_depth);
-            if (statement->value != NULL && (statement->value->kind == AST_EXPR_AWAIT || statement->value->async_operation==ASYNC_BLOCK_ON) &&
+            capture_future_borrows(checker, destination, statement->value, scope_depth);
+            if (external) {
+                for (BorrowRecord *loan = checker->borrows; loan; loan = loan->next)
+                    if (loan->active && loan->borrower_symbol == storage.owner &&
+                        borrow_path_prefix(checker, storage.field, loan->borrower_field_symbol)) {
+                        loan->scope_depth = 0;
+                        loan->summary_effect = 1;
+                    }
+                /* Subsequent reads through the parameter must see the updated slots. */
+                AstExpression updated = *destination;
+                updated.resolved_borrow_kind = AST_BORROW_IMMUTABLE;
+                clone_aggregate_borrows(checker, statement->expression, &updated, scope_depth);
+            }
+            if (statement->value != NULL && (statement->value->kind == AST_EXPR_AWAIT || (statement->value->async_operation==ASYNC_BLOCK_ON || statement->value->async_operation==ASYNC_COMPLETE)) &&
                 !semantic_expression_is_future(statement->value))
                 release_future_value(checker, statement->value->kind==AST_EXPR_AWAIT ? statement->value->right:statement->value->arguments);
             continue;
@@ -2085,8 +2945,6 @@ static void check_statement_list(BorrowChecker *checker,
         }
 
         check_expression(checker, statement->expression, BORROW_ACCESS_READ);
-        if (statement->kind == AST_STMT_RETURN)
-            check_future_return(checker, statement->value);
         check_expression(checker, statement->condition, BORROW_ACCESS_READ);
         check_expression(checker, statement->update, BORROW_ACCESS_READ);
         check_expression(checker, statement->value,
@@ -2095,10 +2953,20 @@ static void check_statement_list(BorrowChecker *checker,
                                                           statement->value)
                              ? BORROW_ACCESS_WRITE
                              : BORROW_ACCESS_READ);
+        if (statement->kind == AST_STMT_RETURN) {
+            check_future_return(checker, statement->value);
+            if (checker->summarizing) summary_capture_exit(checker);
+        }
 
         check_statement_list(checker, statement->initializer,
                              scope_depth + 1);
         if (statement->kind == AST_STMT_IF) {
+            int condition=heap_condition_value(checker,statement->condition);
+            if (condition>=0) {
+                check_statement_list(checker,condition ? statement->body : statement->else_body,scope_depth+1);
+                deactivate_scope(checker,scope_depth+1);
+                continue;
+            }
             size_t count = 0;
             for (BorrowRecord *loan = checker->borrows; loan; loan = loan->next)
                 count++;
@@ -2109,7 +2977,8 @@ static void check_statement_list(BorrowChecker *checker,
             }
             size_t index = 0;
             for (BorrowRecord *loan = checker->borrows; loan; loan = loan->next)
-                entry[index++] = (FutureLoanState) {.loan = loan, .active = loan->active};
+                entry[index++] = (FutureLoanState) {.loan = loan, .active = loan->active,
+                    .heap_min=loan->heap_min,.heap_max=loan->heap_max};
             check_statement_list(checker, statement->body, scope_depth + 1);
             deactivate_scope(checker, scope_depth + 1);
             int then_reachable = statement_may_fall_through(statement->body);
@@ -2125,10 +2994,15 @@ static void check_statement_list(BorrowChecker *checker,
             index = 0;
             for (BorrowRecord *loan = checker->borrows; loan; loan = loan->next)
                 {
-                    then_state[index++] = (FutureLoanState) {.loan = loan, .active = loan->active};
+                    then_state[index++] = (FutureLoanState) {.loan = loan, .active = loan->active,
+                        .heap_min=loan->heap_min,.heap_max=loan->heap_max};
                     loan->active = 0;
                 }
-            for (index = 0; index < count; index++) entry[index].loan->active = entry[index].active;
+            for (index = 0; index < count; index++) {
+                entry[index].loan->active = entry[index].active;
+                entry[index].loan->heap_min=entry[index].heap_min;
+                entry[index].loan->heap_max=entry[index].heap_max;
+            }
             check_statement_list(checker, statement->else_body, scope_depth + 1);
             deactivate_scope(checker, scope_depth + 1);
             if (!statement_may_fall_through(statement->else_body))
@@ -2136,7 +3010,7 @@ static void check_statement_list(BorrowChecker *checker,
                     loan->active = 0;
             if (then_reachable)
                 for (index = 0; index < then_count; index++)
-                    then_state[index].loan->active |= then_state[index].active;
+                    join_loan_state(&then_state[index]);
             free(entry);
             free(then_state);
             continue;
@@ -2146,7 +3020,8 @@ static void check_statement_list(BorrowChecker *checker,
             FutureLoanBranch *branches = NULL;
             for (const AstMatchArm *arm = statement->match_arms; arm; arm = arm->next) {
                 future_loan_restore(checker, &entry);
-                for (const AstParameter *binding = arm->bindings; binding; binding = binding->next) {
+                size_t binding_index = 0;
+                for (const AstParameter *binding = arm->bindings; binding; binding = binding->next, binding_index++) {
                     const AstType *type = binding->resolved_symbol_id < checker->analyzer->model->symbol_count
                         ? &checker->analyzer->model->symbols[binding->resolved_symbol_id].declared_type : &binding->type;
                     AstExpression borrower = {.kind = AST_EXPR_NAME,
@@ -2156,8 +3031,10 @@ static void check_statement_list(BorrowChecker *checker,
                         continue;
                     }
                     if (statement->is_consuming_match || !type_has_view_arguments(checker, type)) continue;
-                    clone_aggregate_borrows(checker, &borrower, statement->value, scope_depth + 1);
-                    if (statement->value && statement->value->resolved_symbol_id < checker->analyzer->model->symbol_count &&
+                    BorrowRecord *boundary = checker->borrows;
+                    clone_pattern_borrows(checker, &borrower, statement->value,
+                        arm->resolved_variant_symbol, binding_index, scope_depth + 1);
+                    if (checker->borrows == boundary && statement->value && statement->value->resolved_symbol_id < checker->analyzer->model->symbol_count &&
                         checker->analyzer->model->symbols[statement->value->resolved_symbol_id].kind == SEMANTIC_SYMBOL_PARAMETER) {
                         AstExpression source = *statement->value;
                         source.resolved_borrow_kind = type_has_mutable_view(checker, checker->analyzer->program, type, 0)
@@ -2175,9 +3052,10 @@ static void check_statement_list(BorrowChecker *checker,
                             .resolved_symbol_id = binding->resolved_symbol_id};
                         AstExpression source = *statement->value;
                         source.resolved_borrow_kind = AST_BORROW_IMMUTABLE;
+                        BorrowRecord *boundary = checker->borrows;
                         clone_pattern_borrows(checker, &borrower, statement->value,
                             arm->resolved_variant_symbol, index, scope_depth + 1);
-                        if (statement->value->resolved_symbol_id < checker->analyzer->model->symbol_count &&
+                        if (checker->borrows == boundary && statement->value->resolved_symbol_id < checker->analyzer->model->symbol_count &&
                             checker->analyzer->model->symbols[statement->value->resolved_symbol_id].kind == SEMANTIC_SYMBOL_PARAMETER &&
                             type_has_view_arguments(checker, &binding->type))
                             add_borrow_mode(checker, &borrower, &source, scope_depth + 1, 1);
@@ -2215,7 +3093,7 @@ static void check_statement_list(BorrowChecker *checker,
             future_loan_restore(checker, statement->match_exhaustive ? NULL : &entry);
             while (branches != NULL) {
                 for (size_t i = 0; i < branches->count; i++)
-                    branches->state[i].loan->active |= branches->state[i].active;
+                    join_loan_state(&branches->state[i]);
                 FutureLoanBranch *next = branches->next;
                 free(branches->state); free(branches); branches = next;
             }
@@ -2228,7 +3106,10 @@ static void check_statement_list(BorrowChecker *checker,
             deactivate_scope(checker, scope_depth + 1);
             /* The loop may execute zero times. A return in its body does not
                consume the loan on the fall-through path. */
-            for (size_t i = 0; i < entry.count; i++) entry.state[i].loan->active |= entry.state[i].active;
+            for (size_t i = 0; i < entry.count; i++) join_loan_state(&entry.state[i]);
+            if(!heap_drain(checker,statement,&entry))
+                for(BorrowRecord *loan=checker->borrows;loan;loan=loan->next)
+                    if(loan->active && loan->heap_storage) { loan->heap_min=INT64_MIN; loan->heap_max=INT64_MAX; }
             free(entry.state);
             continue;
         }
@@ -2252,6 +3133,8 @@ static void check_statement_list(BorrowChecker *checker,
         }
     }
     checker->current_scope_depth = saved_scope_depth;
+    checker->current_statement=saved_statement;
+    checker->continuations=saved_continuations;
 }
 
 /* Package loans are fixed for the lifetime of the program. Seed the same
@@ -2334,9 +3217,6 @@ static void seed_package_symbol(BorrowChecker *checker, size_t id,
             borrowed_type->pointer_depth < origin->resolved_pointer_depth)
             report_borrow_error(checker, symbol->name_token,
                 "Raw pointer storage does not prove a permanently live referent");
-        if (validate && loan->kind == AST_BORROW_MUTABLE)
-            report_borrow_error(checker, symbol->name_token,
-                "Mutable package borrows require interprocedural exclusive-access proof");
     }
     if (validate && !found && !empty_package_variant(checker, value, 0))
         report_borrow_error(checker, symbol->name_token,
@@ -2353,7 +3233,404 @@ static void seed_package_borrows(BorrowChecker *checker, int validate) {
     free(states);
 }
 
+static void collect_package_statement_uses(BorrowChecker *, const AstStatement *, unsigned char *, unsigned char *);
+static void collect_package_function_uses(BorrowChecker *checker, size_t symbol,
+                                          unsigned char *uses, unsigned char *visited) {
+    if (symbol >= checker->analyzer->model->symbol_count || visited[symbol]) return;
+    visited[symbol] = 1;
+    const SemanticSymbol *function = &checker->analyzer->model->symbols[symbol];
+    if (function->kind == SEMANTIC_SYMBOL_FUNCTION && function->declaration)
+        collect_package_statement_uses(checker, function->declaration->as.function.body, uses, visited);
+}
+
+static void collect_package_expression_uses(BorrowChecker *checker, const AstExpression *expression,
+                                            unsigned char *uses, unsigned char *visited) {
+    for (; expression; expression = expression->next) {
+        if (expression->kind == AST_EXPR_NAME && expression->resolved_symbol_id < checker->analyzer->model->symbol_count) {
+            const SemanticSymbol *symbol = &checker->analyzer->model->symbols[expression->resolved_symbol_id];
+            if (!symbol->scope_depth && (symbol->kind == SEMANTIC_SYMBOL_VARIABLE || symbol->kind == SEMANTIC_SYMBOL_CONSTANT))
+                uses[symbol->id] = 1;
+        }
+        if (expression->kind == AST_EXPR_CALL)
+            collect_package_function_uses(checker, expression->resolved_symbol_id, uses, visited);
+        collect_package_expression_uses(checker, expression->left, uses, visited);
+        collect_package_expression_uses(checker, expression->right, uses, visited);
+        collect_package_expression_uses(checker, expression->arguments, uses, visited);
+        collect_package_statement_uses(checker, expression->control, uses, visited);
+    }
+}
+
+static void collect_package_statement_uses(BorrowChecker *checker, const AstStatement *statement,
+                                           unsigned char *uses, unsigned char *visited) {
+    for (; statement; statement = statement->next) {
+        collect_package_expression_uses(checker, statement->expression, uses, visited);
+        collect_package_expression_uses(checker, statement->value, uses, visited);
+        collect_package_expression_uses(checker, statement->condition, uses, visited);
+        collect_package_expression_uses(checker, statement->update, uses, visited);
+        collect_package_expression_uses(checker, statement->result, uses, visited);
+        collect_package_statement_uses(checker, statement->initializer, uses, visited);
+        collect_package_statement_uses(checker, statement->body, uses, visited);
+        collect_package_statement_uses(checker, statement->else_body, uses, visited);
+        for (const AstMatchArm *arm = statement->match_arms; arm; arm = arm->next)
+            collect_package_statement_uses(checker, arm->body, uses, visited);
+    }
+}
+
+static int function_package_borrows(BorrowChecker *checker, size_t symbol, unsigned char *uses) {
+    int present = 0;
+    for (const BorrowRecord *loan = checker->borrows; loan; loan = loan->next)
+        if (loan->active && loan->package_storage && loan->kind == AST_BORROW_MUTABLE) { present = 1; break; }
+    if (!present) return 0;
+    size_t count = checker->analyzer->model->symbol_count;
+    unsigned char *visited = calloc(count, 1);
+    unsigned char *owned_uses = uses ? NULL : calloc(count, 1);
+    if (!visited || (!uses && !owned_uses)) {
+        free(visited); free(owned_uses); checker->analyzer->allocation_failed = 1; return 0;
+    }
+    if (!uses) uses = owned_uses;
+    collect_package_function_uses(checker, symbol, uses, visited);
+    int found = 0;
+    for (const BorrowRecord *loan = checker->borrows; loan; loan = loan->next)
+        if (loan->active && loan->package_storage && loan->kind == AST_BORROW_MUTABLE &&
+            loan->borrower_symbol < count && uses[loan->borrower_symbol]) { found = 1; break; }
+    free(visited); free(owned_uses);
+    return found;
+}
+
+static BorrowRecord *clone_call_summary(BorrowChecker *checker, const AstExpression *target,
+                                        BorrowCallSummary *summary, size_t scope_depth) {
+    AstExpression source = {.kind = AST_EXPR_NAME, .resolved_symbol_id = summary->result_symbol,
+        .resolved_borrow_kind = AST_BORROW_IMMUTABLE};
+    for (BorrowRecord *loan = checker->borrows; loan; loan = loan->next)
+        if (loan->borrower_symbol == summary->result_symbol) loan->active = 1;
+    BorrowRecord *boundary = checker->borrows;
+    clone_aggregate_borrows(checker, target, &source, scope_depth);
+    for (BorrowRecord *loan = boundary; loan; loan = loan->next)
+        if (loan->borrower_symbol == summary->result_symbol) loan->active = 0;
+    return checker->borrows != boundary ? checker->borrows : NULL;
+}
+
+/* Snapshot the old value after evaluating the replacement. Returned-value
+   loans and new-slot loans have independent origins. */
+static BorrowCallSummary *replacement_borrows(BorrowChecker *checker,
+                                             const AstExpression *call,size_t scope_depth) {
+    for (BorrowCallSummary *entry=checker->summaries;entry;entry=entry->next)
+        if (entry->call==call && entry->epoch==checker->evaluation_epoch) return entry;
+    BorrowCallSummary *entry=calloc(1,sizeof(*entry));
+    if (!entry) { checker->analyzer->allocation_failed=1; return NULL; }
+    entry->call=call;
+    entry->epoch=checker->evaluation_epoch;
+    entry->result_symbol=AST_SYMBOL_NONE-1-checker->temporary_borrowers++;
+    AstExpression result={.kind=AST_EXPR_NAME,.resolved_symbol_id=entry->result_symbol};
+    const AstExpression *pointer=call->arguments;
+    const AstExpression *place=pointer && pointer->kind==AST_EXPR_UNARY &&
+        pointer->operator_type==TOKEN_AMPERSAND ? pointer->right:NULL;
+    int heap=heap_take(checker,&result,pointer,scope_depth);
+    if (!heap && place) {
+        if (!add_borrow_mode(checker,&result,place,scope_depth,1))
+            clone_aggregate_borrows(checker,&result,place,scope_depth);
+    }
+    for (BorrowRecord *loan=checker->borrows;loan;loan=loan->next)
+        if (loan->borrower_symbol==entry->result_symbol) loan->active=0;
+    if (heap) heap_initialize(checker,pointer,pointer->next,scope_depth);
+    else if (place && place->kind==AST_EXPR_NAME) {
+        deactivate_borrower(checker,place->resolved_symbol_id,AST_SYMBOL_NONE);
+        if (!add_borrow_mode(checker,place,pointer->next,scope_depth,1))
+            clone_aggregate_borrows(checker,place,pointer->next,scope_depth);
+    }
+    entry->next=checker->summaries;
+    checker->summaries=entry;
+    return entry;
+}
+
+/* Evaluate the resolved borrow flow of a synchronous callee with its parameters
+   bound to caller origins. Runtime values remain abstract; branch/loop joins
+   are the same conservative joins used in ordinary function checking. */
+typedef struct {
+    const AstExpression *target;
+    const AstExpression *source;
+    const AstType *type;
+    const AstProgram *unit;
+} AbstractParameterBorrows;
+
+static int seed_abstract_parameter_field(BorrowChecker *checker, size_t path,
+                                        const AstType *type, void *context) {
+    AbstractParameterBorrows *fields = context;
+    AstExpression target = {.kind = AST_EXPR_MEMBER, .left = (AstExpression *)fields->target,
+        .resolved_symbol_id = path};
+    AstExpression source = {.kind = AST_EXPR_MEMBER, .left = (AstExpression *)fields->source,
+        .resolved_symbol_id = path, .resolved_named_symbol_id = AST_SYMBOL_NONE,
+        .resolved_borrow_kind = type->borrow_kind == AST_BORROW_NONE ? AST_BORROW_IMMUTABLE : type->borrow_kind};
+    BorrowRecord *loan = add_borrow_mode(checker, &target, &source, 1, 1);
+    if (loan) loan->origin_lifetime = result_field_lifetime(checker, fields->unit, fields->type, path);
+    return 1;
+}
+
+static BorrowCallSummary *summarize_call_borrows(BorrowChecker *checker, const AstExpression *call) {
+    if (!call || call->kind != AST_EXPR_CALL || checker->summary_depth >= 16 ||
+        call->resolved_symbol_id >= checker->analyzer->model->symbol_count) return NULL;
+    for (unsigned i = 0; i < checker->summary_depth; i++)
+        if (checker->summary_functions[i] == call->resolved_symbol_id) return NULL;
+    for (BorrowCallSummary *entry = checker->summaries; entry; entry = entry->next)
+        if (entry->call == call && entry->epoch == checker->evaluation_epoch) return entry;
+    const SemanticSymbol *function = &checker->analyzer->model->symbols[call->resolved_symbol_id];
+    if (function->kind != SEMANTIC_SYMBOL_FUNCTION || !function->declaration ||
+        !function->declaration->as.function.body || function->declaration->as.function.is_async) return NULL;
+    int needed = call->resolved_borrow_kind != AST_BORROW_NONE || call->resolved_is_slice ||
+        semantic_expression_is_future(call) ||
+        type_has_view_depth(checker, function->source_program,
+            &function->declaration->as.function.return_type, 0);
+    for (const AstExpression *arg = call->arguments; arg && !needed; arg = arg->next)
+        if (arg->has_resolved_ast_type && !arg->resolved_is_slice &&
+            arg->resolved_borrow_kind == AST_BORROW_NONE &&
+            type_has_view_depth(checker,
+                arg->resolved_type_program ? arg->resolved_type_program : checker->analyzer->program,
+                &arg->resolved_ast_type, 0)) needed = 1;
+    needed |= function_package_borrows(checker, function->id, NULL);
+    const AstParameter *mutable_parameter = function->declaration->as.function.parameters;
+    for (const AstExpression *arg = call->arguments; arg && mutable_parameter;
+         arg = arg->next, mutable_parameter = mutable_parameter->next)
+        if (mutable_parameter->type.borrow_kind == AST_BORROW_MUTABLE) {
+            AstType referent = mutable_parameter->type;
+            referent.borrow_kind = AST_BORROW_NONE;
+            if (type_has_view_depth(checker, function->source_program, &referent, 0)) needed = 1;
+        }
+    if (!function->declaration->as.function.is_static && call->left &&
+        call->left->kind == AST_EXPR_MEMBER && call->left->left &&
+        function->owner_symbol_id < checker->analyzer->model->symbol_count) {
+        const SemanticSymbol *owner = &checker->analyzer->model->symbols[function->owner_symbol_id];
+        if (type_has_view_depth(checker, owner->source_program, &owner->declared_type, 0) &&
+            statements_mutate_receiver(checker, function, function->declaration->as.function.body)) needed = 1;
+        BorrowPlace receiver;
+        if(expression_place(checker,call->left->left,&receiver))
+            for(const BorrowRecord *loan=checker->borrows;loan;loan=loan->next)
+                if(loan->active && loan->heap_storage && loan->borrower_symbol==receiver.owner) { needed=1; break; }
+    }
+    if (!needed && semantic_expression_is_move_only(checker->analyzer, call)) {
+        for (const AstExpression *arg = call->arguments; arg && !needed; arg = arg->next) {
+            if (semantic_expression_is_move_only(checker->analyzer, arg)) { needed = 1; break; }
+            BorrowPlace storage;
+            if (!expression_place(checker, arg, &storage)) continue;
+            for (const BorrowRecord *loan = checker->borrows; loan; loan = loan->next)
+                if (loan->active && loan->borrower_symbol == storage.owner) { needed = 1; break; }
+        }
+    }
+    if (!needed) return NULL;
+    size_t count = 0;
+    for (const BorrowRecord *loan = checker->borrows; loan; loan = loan->next)
+        if (loan->active) count++;
+    BorrowRecord **original = count ? calloc(count, sizeof(*original)) : NULL;
+    BorrowRecord **foreign = count ? calloc(count, sizeof(*foreign)) : NULL;
+    unsigned char *consumed = count ? calloc(count, 1) : NULL;
+    BorrowCallSummary *entry = calloc(1, sizeof(*entry));
+    if (!entry || (count && (!original || !foreign || !consumed))) {
+        free(original); free(foreign); free(consumed); free(entry);
+        checker->analyzer->allocation_failed = 1;
+        return NULL;
+    }
+    entry->call = call;
+    entry->epoch = checker->evaluation_epoch;
+    entry->result_symbol = AST_SYMBOL_NONE - 1 - checker->temporary_borrowers++;
+    Analyzer analyzer = *checker->analyzer;
+    analyzer.program = (AstProgram *)function->source_program;
+    analyzer.current_function = function->declaration;
+    analyzer.current_function_symbol_id = function->id;
+    BorrowChecker nested = {.analyzer = &analyzer, .summarizing = 1,
+        .summary_depth = checker->summary_depth + 1, .summary_result = entry->result_symbol,
+        .paths = checker->paths, .path_count = checker->path_count,
+        .temporary_borrowers = checker->temporary_borrowers};
+    nested.caller_analyzer = checker->caller_analyzer ? checker->caller_analyzer : checker->analyzer;
+    nested.call_token = checker->caller_analyzer ? checker->call_token : call->first_token;
+    memcpy(nested.summary_functions, checker->summary_functions, sizeof(nested.summary_functions));
+    nested.summary_functions[checker->summary_depth] = function->id;
+    nested.last_use = calloc(analyzer.model->symbol_count, sizeof(*nested.last_use));
+    if (!nested.last_use) analyzer.allocation_failed = 1;
+    size_t index = 0;
+    for (BorrowRecord *loan = checker->borrows; loan && !analyzer.allocation_failed; loan = loan->next) {
+        if (!loan->active) continue;
+        BorrowRecord *copy = malloc(sizeof(*copy));
+        if (!copy) { analyzer.allocation_failed = 1; break; }
+        *copy = *loan;
+        copy->summary_exit_active = 0;
+        copy->summary_foreign = 1;
+        copy->scope_depth = 0;
+        copy->next = nested.borrows;
+        nested.borrows = copy;
+        original[index] = loan;
+        foreign[index++] = copy;
+    }
+    for (size_t i = 0; i < index; i++)
+        for (size_t j = 0; j < index; j++)
+            if (foreign[i]->parent == original[j]) { foreign[i]->parent = foreign[j]; break; }
+    if (!analyzer.allocation_failed) {
+        collect_statement_uses(&nested, function->declaration->as.function.body, 0);
+        /* Input expressions still use caller token IDs (notably constant
+           slice/index regions). Switch units only when entering the body. */
+        analyzer.program = checker->analyzer->program;
+        const AstExpression *argument = call->arguments;
+        for (const AstParameter *parameter = function->declaration->as.function.parameters;
+             parameter && argument; parameter = parameter->next, argument = argument->next) {
+            AstExpression target = {.kind = AST_EXPR_NAME, .resolved_symbol_id = parameter->resolved_symbol_id};
+            nested.aggregate_capture_depth++;
+            nested.reserving_loans = 1;
+            BorrowRecord *boundary = nested.borrows;
+            if (semantic_expression_is_future(argument)) capture_future_borrows(&nested, &target, argument, 1);
+            else if (!add_borrow_mode(&nested, &target, argument, 1, 1))
+                clone_aggregate_borrows(&nested, &target, argument, 1);
+            if (nested.borrows == boundary && type_has_view_depth(&nested, function->source_program, &parameter->type, 0)) {
+                BorrowPlace place;
+                if (expression_place(&nested, argument, &place) && place.owner < analyzer.model->symbol_count &&
+                    analyzer.model->symbols[place.owner].kind == SEMANTIC_SYMBOL_PARAMETER) {
+                    const SemanticSymbol *origin = &analyzer.model->symbols[place.owner];
+                    AbstractParameterBorrows fields = {.target = &target, .source = argument,
+                        .type = &origin->declared_type, .unit = origin->source_program};
+                    visit_borrow_fields(&nested, origin->source_program, &origin->declared_type,
+                        AST_SYMBOL_NONE, seed_abstract_parameter_field, &fields, 0);
+                }
+            }
+            nested.reserving_loans = 0;
+            nested.aggregate_capture_depth--;
+            if (parameter->type.borrow_kind == AST_BORROW_MUTABLE) {
+                const AstExpression *base = argument;
+                if (base->kind == AST_EXPR_UNARY && base->operator_type == TOKEN_AMPERSAND) base = base->right;
+                BorrowPlace place;
+                if (canonical_place(&nested, base, &place))
+                    summary_storage_map(&nested, parameter->resolved_symbol_id, place.owner, place.field);
+            }
+            if(parameter->type.pointer_depth && parameter->type.borrow_kind==AST_BORROW_NONE) {
+                HeapBorrowPlace heap = {0};
+                if(heap_borrow_place(checker,argument,&heap)) {
+                    summary_storage_map(&nested,parameter->resolved_symbol_id,heap.storage.owner,heap.storage.field);
+                    nested.storage->heap_index=heap.anchored;
+                    nested.storage->index_owner=heap.anchor.owner;
+                    nested.storage->index_field=heap.anchor.field;
+                }
+            }
+            if (parameter->type.borrow_kind == AST_BORROW_NONE &&
+                semantic_expression_is_move_only(checker->analyzer, argument)) {
+                BorrowPlace place;
+                if (expression_place(&nested, argument, &place)) {
+                    for (size_t i = 0; i < index; i++)
+                        if (foreign[i]->borrower_symbol == place.owner &&
+                            borrow_path_prefix(&nested, place.field, foreign[i]->borrower_field_symbol)) consumed[i] = 1;
+                    deactivate_borrower(&nested, place.owner, place.field);
+                }
+            }
+        }
+        if (!function->declaration->as.function.is_static && call->left &&
+            call->left->kind == AST_EXPR_MEMBER && call->left->left) {
+            BorrowPlace receiver_storage;
+            int receiver_heap = 0;
+            if (expression_place(checker, call->left->left, &receiver_storage))
+                for (const BorrowRecord *loan = checker->borrows; loan; loan = loan->next)
+                    if (loan->active && loan->heap_storage && loan->borrower_symbol == receiver_storage.owner &&
+                        borrow_path_prefix(checker, receiver_storage.field, loan->borrower_field_symbol)) {
+                        receiver_heap = 1; break;
+                    }
+            for (size_t i = 0; i < analyzer.model->symbol_count; i++) {
+                const SemanticSymbol *field = &analyzer.model->symbols[i];
+                if (field->kind != SEMANTIC_SYMBOL_FIELD || field->owner_symbol_id != function->owner_symbol_id) continue;
+                AstExpression target = {.kind = AST_EXPR_NAME, .resolved_symbol_id = i};
+                AstExpression source = {.kind = AST_EXPR_MEMBER, .left = call->left->left,
+                    .resolved_symbol_id = i, .resolved_borrow_kind = field->resolved_borrow_kind,
+                    .resolved_type = field->resolved_type, .resolved_named_symbol_id = field->resolved_named_symbol_id,
+                    .resolved_pointer_depth = field->resolved_pointer_depth,
+                    .resolved_ast_type = field->declared_type, .has_resolved_ast_type = 1,
+                    .resolved_type_program = field->source_program};
+                /* A checked getter into raw storage owned by a receiver still
+                   borrows that receiver. Its allocation must outlive the view. */
+                if (source.resolved_borrow_kind == AST_BORROW_NONE &&
+                    (field->resolved_pointer_depth || field->resolved_outer_pointer_depth) &&
+                    (call->resolved_borrow_kind != AST_BORROW_NONE ||
+                     (!receiver_heap && call_returns_view_aggregate(checker, call))))
+                    source.resolved_borrow_kind = AST_BORROW_IMMUTABLE;
+                nested.aggregate_capture_depth++;
+                if (!add_borrow_mode(&nested, &target, &source, 1, 1))
+                    clone_aggregate_borrows(&nested, &target, &source, 1);
+                nested.aggregate_capture_depth--;
+                BorrowPlace receiver;
+                if (canonical_place(&nested, call->left->left, &receiver))
+                    summary_storage_map(&nested, i, receiver.owner,
+                        borrow_path_append(&nested, receiver.field, i));
+            }
+        }
+        analyzer.program = (AstProgram *)function->source_program;
+        check_statement_list(&nested, function->declaration->as.function.body, 1);
+        if (statement_may_fall_through(function->declaration->as.function.body)) summary_capture_exit(&nested);
+    }
+    for (BorrowRecord *loan = nested.borrows; loan; loan = loan->next) {
+        if (!loan->summary_foreign)
+            for (size_t i = 0; i < index; i++)
+                if (loan->parent == foreign[i]) { loan->parent = original[i]; break; }
+        if (loan->summary_foreign) {
+            for (size_t i = 0; i < index; i++)
+                if (loan == foreign[i]) {
+                    if (consumed[i]) original[i]->active = 0;
+                    else if (summary_written(&nested, loan)) {
+                        original[i]->active = loan->summary_exit_active;
+                        original[i]->heap_min=loan->heap_exit_min;
+                        original[i]->heap_max=loan->heap_exit_max;
+                    }
+                }
+        }
+        int effect = !loan->summary_foreign && summary_written(&nested, loan) && loan->summary_exit_active;
+        if(effect) { loan->heap_min=loan->heap_exit_min; loan->heap_max=loan->heap_exit_max; }
+        loan->active = effect;
+        if (effect && loan->borrower_symbol < analyzer.model->symbol_count)
+            loan->scope_depth = analyzer.model->symbols[loan->borrower_symbol].scope_depth;
+        loan->summary_foreign = 0;
+        loan->summary_effect = checker->summarizing && effect;
+        if(loan->summary_effect) loan->scope_depth=0;
+        loan->summary_exit_active = 0;
+    }
+    if (nested.borrows) {
+        BorrowRecord *tail = nested.borrows;
+        while (tail->next) tail = tail->next;
+        tail->next = checker->borrows;
+        checker->borrows = nested.borrows;
+    }
+    checker->paths = nested.paths;
+    checker->path_count = nested.path_count;
+    checker->temporary_borrowers = nested.temporary_borrowers;
+    entry->heap_effect=nested.heap_effect;
+    entry->unmodeled_storage=nested.unmodeled_storage;
+    checker->unmodeled_storage|=nested.unmodeled_storage;
+    checker->heap_effect|=nested.heap_effect;
+    if (analyzer.allocation_failed) checker->analyzer->allocation_failed = 1;
+    BorrowCallSummary *child = nested.summaries;
+    while (child) {
+        BorrowCallSummary *next = child->next;
+        free(child);
+        child = next;
+    }
+    free(nested.last_use);
+    while (nested.storage) {
+        BorrowStorage *next = nested.storage->next;
+        free(nested.storage); nested.storage = next;
+    }
+    while (nested.writes) {
+        BorrowWrite *next = nested.writes->next;
+        if(checker->summarizing) {
+            nested.writes->next=checker->writes;
+            checker->writes=nested.writes;
+        } else free(nested.writes);
+        nested.writes = next;
+    }
+    free(original); free(foreign); free(consumed);
+    entry->next = checker->summaries;
+    checker->summaries = entry;
+    return entry;
+}
+
 static void free_borrow_checker(BorrowChecker *checker) {
+    while(checker->storage) {
+        BorrowStorage *next=checker->storage->next;
+        free(checker->storage); checker->storage=next;
+    }
+    while(checker->writes) {
+        BorrowWrite *next=checker->writes->next;
+        free(checker->writes); checker->writes=next;
+    }
     BorrowRecord *borrow = checker->borrows;
     while (borrow) {
         BorrowRecord *next = borrow->next;
@@ -2361,6 +3638,18 @@ static void free_borrow_checker(BorrowChecker *checker) {
         borrow = next;
     }
     free(checker->last_use);
+    BorrowPath *path = checker->paths;
+    while (path) {
+        BorrowPath *next = path->next;
+        free(path);
+        path = next;
+    }
+    BorrowCallSummary *summary = checker->summaries;
+    while (summary) {
+        BorrowCallSummary *next = summary->next;
+        free(summary);
+        summary = next;
+    }
 }
 
 void validate_package_borrows(Analyzer *analyzer) {
@@ -2396,6 +3685,16 @@ void validate_function_borrows(Analyzer *analyzer,
     }
     collect_statement_uses(&checker, function->as.function.body, 0);
     seed_package_borrows(&checker, 0);
+    for (const AstParameter *parameter = function->as.function.parameters; parameter; parameter = parameter->next) {
+        if (parameter->type.borrow_kind != AST_BORROW_NONE) continue;
+        AstExpression target = {.kind = AST_EXPR_NAME, .resolved_symbol_id = parameter->resolved_symbol_id};
+        AbstractParameterBorrows fields = {.target = &target, .source = &target,
+            .type = &parameter->type, .unit = analyzer->program};
+        checker.summarizing = 1;
+        visit_borrow_fields(&checker, analyzer->program, &parameter->type,
+            AST_SYMBOL_NONE, seed_abstract_parameter_field, &fields, 0);
+        checker.summarizing = 0;
+    }
     check_statement_list(&checker, function->as.function.body,
                          analyzer->scope_depth);
 

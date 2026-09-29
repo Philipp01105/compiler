@@ -96,6 +96,10 @@ static int symbol_field(FILE *output, size_t symbol) {
 
 static int dump_type(FILE *output, const AstProgram *program, const AstType *type) {
     if (type->kind == AST_TYPE_INFERRED) return fputs("inferred", output) != EOF;
+    if (type->reference_type) {
+        if (fputs(type->borrow_kind == AST_BORROW_MUTABLE ? "&mut (" : "&(", output) == EOF) return 0;
+        return dump_type(output, program, type->reference_type) && fputc(')', output) != EOF;
+    }
     if (type->element_type != NULL) {
         if (type->borrow_kind == AST_BORROW_IMMUTABLE && fputc('&', output) == EOF)
             return 0;

@@ -1,6 +1,7 @@
 package main;
 import (
     "stdlib"
+    "stdlib/core"
     "stdlib/binary"
     "stdlib/sync"
 );
@@ -10,13 +11,80 @@ struct Reader<'a> {
  func getRef()->&'a i32 { return source; }
 }
 struct Writer<'a> { var source: &'a mut i32; func write(value:i32)->void { *source=value; } }
+var borrowOwnerDrops:i32=0;
+struct BorrowOwner<'a> {
+ var source:&'a i32;
+ var tag:i32;
+ destructor { borrowOwnerDrops+=tag; }
+}
+enum BorrowOwners<'a,'b> { Pair(BorrowOwner<'a>,BorrowOwner<'b>), Empty }
+func reorderOwners<'a,'b>(value:BorrowOwners<'a,'b>)->BorrowOwners<'b,'a> {
+ match(value) {
+  Pair(left,right)=>return BorrowOwners<'b,'a>.Pair(right,left);
+  Empty=>return BorrowOwners<'b,'a>.Empty;
+ }
+}
+struct BorrowStack<'a> {
+ var storage:*Reader<'a>;
+ var count:usize;
+ func push(value:Reader<'a>)->void {
+  core.initialize(&storage[count],value); count+=1;
+ }
+ func exchange(value:Reader<'a>)->Reader<'a> {
+  count-=1;
+  var prior=replace(storage[count],value);
+  count+=1;
+  return prior;
+ }
+ destructor {
+  while(count>0) { count-=1; core.destroy(&storage[count]); }
+  core.core_release(storage.(*u8));
+ }
+}
 struct SharedPair<'a> { var left:&'a i32; var right:&'a i32; }
 struct MutablePair<'a> { var left:&'a mut i32; var right:&'a mut i32; }
 struct WriterPair<'a> { var left:Writer<'a>; var right:Writer<'a>; }
 struct SeparatePair<'a,'b> { var left:&'a mut i32; var right:&'b mut i32; }
 struct SeparateReaders<'a,'b> { var left:&'a i32; var right:&'b i32; }
 struct NestedReaders<'a,'b> { var left:Reader<'a>; var right:Reader<'b>; }
+struct DeepReader<'a> { var reader:Reader<'a>; }
+struct DeepReaders<'a,'b> { var left:DeepReader<'a>; var right:DeepReader<'b>; }
+struct ReaderTree<'a,'b> { var readers:SeparateReaders<'a,'b>; }
+func readerTree<'a,'b>(left:&'a i32,right:&'b i32)->ReaderTree<'a,'b> {
+ return ReaderTree<'a,'b>{readers:SeparateReaders<'a,'b>{left:left,right:right}};
+}
+func treeRight<'a,'b>(tree:&ReaderTree<'a,'b>)->&'b i32 { return tree.readers.right; }
+func sameLifetime<'a>(left:&'a i32,right:&'a i32)->SharedPair<'a> {
+ return SharedPair<'a>{left:left,right:right};
+}
+func swapReaders<'a,'b>(value:SeparateReaders<'a,'b>)->SeparateReaders<'b,'a> {
+ return SeparateReaders<'b,'a>{left:value.right,right:value.left};
+}
+struct NestedWriters<'a,'b> { var left:Writer<'a>; var right:Writer<'b>; }
+func nestedWriters<'a,'b>(left:&'a mut i32,right:&'b mut i32)->NestedWriters<'a,'b> {
+ return NestedWriters<'a,'b>{left:Writer<'a>{source:left},right:Writer<'b>{source:right}};
+}
+func nestedReaders<'a,'b>(left:&'a i32,right:&'b i32)->NestedReaders<'a,'b> {
+ return NestedReaders<'a,'b>{left:Reader<'a>{source:left},right:Reader<'b>{source:right}};
+}
+func deepReaders<'a,'b>(left:&'a i32,right:&'b i32)->DeepReaders<'a,'b> {
+ return DeepReaders<'a,'b>{left:DeepReader<'a>{reader:Reader<'a>{source:left}},right:DeepReader<'b>{reader:Reader<'b>{source:right}}};
+}
+func nestedProjection<'a,'b>(value:&NestedReaders<'a,'b>)->Reader<'a> {
+ return Reader<'a>{source:value.left.source};
+}
+func forwardNested<'a,'b>(value:NestedReaders<'a,'b>)->NestedReaders<'a,'b> {
+ return value;
+}
 enum ReaderChoice<'a,'b> { Both(&'a i32,&'b i32), Empty }
+enum ReaderBranch<'a,'b> { Pair(SeparateReaders<'a,'b>), Empty }
+struct BranchTree<'a,'b> { var branch:ReaderBranch<'a,'b>; }
+func branchTree<'a,'b>(left:&'a i32,right:&'b i32)->BranchTree<'a,'b> {
+ return BranchTree<'a,'b>{branch:ReaderBranch<'a,'b>.Pair(SeparateReaders<'a,'b>{left:left,right:right})};
+}
+func branchRight<'a,'b>(tree:BranchTree<'a,'b>,fallback:&'b i32)->&'b i32 {
+ match(tree.branch) { Pair(pair)=>return pair.right; Empty=>return fallback; }
+}
 func readerChoice<'a,'b>(left:&'a i32,right:&'b i32)->ReaderChoice<'a,'b> {
  return ReaderChoice<'a,'b>.Both(left,right);
 }
@@ -74,11 +142,16 @@ func genericSeparate<'a,'b,T>(left:&'a mut T,right:&'b mut T)->GenericPair<'a,'b
  return GenericPair<'a,'b,T>{left:left,right:right};
 }
 func reader<'a>(source: &'a i32)->Reader<'a> { return Reader<'a>{ source:source }; }
+func updateReader<'a>(target:&mut Reader<'a>,source:&'a i32)->void { (*target).source=source; }
 func writer<'a>(source: &'a mut i32)->Writer<'a> { return Writer<'a>{ source:source }; }
 func choose<'a>(left:&'a i32,right:&'a i32,first:bit)->&'a i32 {
  if(first) { return left; } return right;
 }
 var permanent:i32=61;
+var exclusive:i32=181;
+var exclusiveRef:&'static mut i32=&mut exclusive;
+func updateExclusive(value:i32)->void { *exclusiveRef=value; }
+func readExclusive()->i32 { return *exclusiveRef; }
 var permanentRef:&'static i32=&permanent;
 var permanentReader:Reader<'static>=Reader<'static>{source:&permanent};
 var permanentCopy:Reader<'static>=permanentReader;
@@ -89,6 +162,154 @@ func readPermanent()->i32 { return permanentCopy.read()+*permanentRef; }
 var drops:i32=0;
 struct Resource { var value:i32; destructor { drops+=1; } }
 func main()->int {
+ { var left:i32=1; var right:i32=2;
+ var pair=reorderOwners(BorrowOwners.Pair(BorrowOwner{source:&left,tag:1},BorrowOwner{source:&right,tag:2}));
+ match(pair) {
+  Pair(first,second)=>{
+   if(*first.source!=2 || *second.source!=1) { return 91; }
+   core.destroy(&first); right=3;
+   if(*second.source!=1) { return 92; }
+   core.destroy(&second); left=4;
+  }
+  Empty=>return 93;
+ }
+ if(borrowOwnerDrops!=3) { return 94; } }
+ { var left:i32=1; var right:i32=2;
+ var stack=BorrowStack{storage:core.core_alloc(sizeof(Reader)).(*Reader),count:0};
+ stack.push(Reader{source:&left});
+ { var prior=stack.exchange(Reader{source:&right}); if(*prior.source!=1) { return 89; } }
+ left=3;
+ if(*stack.storage[0].source!=2) { return 90; } }
+ { var left:i32=1; var right:i32=2; var reference=&left;
+ { var prior=replace(reference,&right); if(*prior!=1) { return 87; } }
+ left=3;
+ if(*reference!=2) { return 88; } }
+ { var source:i32=1;
+ var values=stdlib.list<Reader>(2);
+ values.push(Reader{source:&source});
+ values.clear(); source=2;
+ values.push(Reader{source:&source});
+ if(values.length()!=1 || *values.get(0).source!=2) { return 80; } }
+ { var left:i32=1; var right:i32=2;
+ var values=stdlib.list<Reader>(2);
+ values.push(Reader{source:&left}); values.push(Reader{source:&right});
+ { var removed=values.pop(); match(removed) {
+   Some(value)=>{ if(*value.source!=2) { return 81; } }
+   None=>return 82;
+ } }
+ right=3;
+ if(*values.get(0).source!=1) { return 83; }
+ values.clear(); left=4; }
+ { var source:i32=1;
+ var values=stdlib.list<Reader>(2); values.push(Reader{source:&source});
+ var moved=values; moved.clear(); source=2;
+ moved.push(Reader{source:&source});
+ if(*moved.get(0).source!=2) { return 84; } }
+ { var source:i32=1;
+ var values=stdlib.list<Reader>(2); values.push(Reader{source:&source});
+ var wrapped=stdlib.Option<stdlib.List<Reader>>.Some(values);
+ match(wrapped) {
+   Some(moved)=>{ moved.clear(); source=2; if(moved.length()!=0) { return 85; } }
+   None=>return 86;
+ } }
+ {
+  var left:i32=201; var right:i32=202;
+  var reference=&left;
+  var previous=replace(reference,&right);
+  if(*previous!=201 || *reference!=202) { return 57; }
+  var transferred=take(reference);
+  if(*transferred!=202) { return 58; }
+ }
+ {
+  var left:i32=191; var right:i32=192;
+  var reference=&left;
+  { var slot:&(&i32)=&reference; if(**slot!=191) { return 54; } }
+  { var slot:&mut (&i32)=&mut reference; *slot=&right; if(**slot!=192) { return 55; } }
+  left=193;
+  if(*reference!=192 || left!=193) { return 56; }
+ }
+ updateExclusive(182);
+ if(readExclusive()!=182) { return 53; }
+ {
+  var left:i32=171; var right:i32=172;
+  var value=reader(&left);
+  updateReader(&mut value,&right);
+  left=173;
+  if(value.read()!=172 || left!=173) { return 52; }
+ }
+ {
+  var left:i32=161; var right:i32=162;
+  var tree=branchTree(&left,&right);
+  var projected=branchRight(tree,&right);
+  left=163;
+  if(*projected!=162 || left!=163) { return 51; }
+ }
+ {
+  var left:i32=141; var right:i32=142;
+  var pair=sameLifetime(&left,&right);
+  var projected=pair.left;
+  right=143;
+  if(*projected!=141 || right!=143) { return 47; }
+ }
+ {
+  var left:i32=151; var right:i32=152;
+  var input=SeparateReaders{left:&left,right:&right};
+  var swapped=swapReaders(input);
+  var projected=swapped.left;
+  left=153;
+  if(*projected!=152 || left!=153) { return 48; }
+ }
+ {
+  var left:i32=121; var right:i32=122;
+  var tree=readerTree(&left,&right);
+  var projected=treeRight(&tree);
+  left=123;
+  if(*projected!=122 || left!=123) { return 45; }
+ }
+ {
+  var left:i32=131; var right:i32=132;
+  var tree=ReaderTree{readers:SeparateReaders{left:&left,right:&right}};
+  var projected=tree.readers.left;
+  right=133;
+  if(*projected!=131 || right!=133) { return 46; }
+ }
+ {
+  var left:i32=101; var right:i32=102;
+  var pair=forwardNested(nestedReaders(&left,&right));
+  var projected=pair.right;
+  left=103;
+  if(projected.read()!=102 || left!=103) { return 43; }
+ }
+ {
+  var left:i32=111; var right:i32=112;
+  {
+   var pair=nestedWriters(&mut left,&mut right);
+   pair.left.write(113);
+   pair.right.write(114);
+  }
+  if(left!=113 || right!=114) { return 44; }
+ }
+ {
+  var left:i32=71; var right:i32=72;
+  var pair=nestedReaders(&left,&right);
+  var projected=nestedProjection(&pair);
+  right=73;
+  if(projected.read()!=71 || right!=73) { return 40; }
+ }
+ {
+  var left:i32=81; var right:i32=82;
+  var pair=deepReaders(&left,&right);
+  var projected=pair.left.reader;
+  right=83;
+  if(projected.read()!=81 || right!=83) { return 41; }
+ }
+ {
+  var left:i32=91; var right:i32=92;
+  var pair=NestedReaders{left:Reader{source:&left},right:Reader{source:&right}};
+  var projected=pair.left;
+  right=93;
+  if(projected.read()!=91 || right!=93) { return 42; }
+ }
  match(absent) { Some(value)=>return 18; None=>{} }
  match(absentCopy) { Some(value)=>return 19; None=>{} }
  if(readPermanent()!=122 || permanentReader.read()!=61 || inferredReader.read()!=61) { return 13; }

@@ -67,8 +67,36 @@ function(reject name source pattern)
 endfunction()
 reject(reserved "package component; export \"system\" func __dmm_platform_exit(code:i32) -> void {}"
     "reserved by the runtime" -c)
-reject(foreign "package component; export \"system\" func applicationHook() -> void {}"
-    "outside the private runtime ABI" --runtime-component)
+file(MAKE_DIRECTORY "${OUTPUT_DIR}/custom_exports")
+file(WRITE "${OUTPUT_DIR}/custom_exports/dmm.manifest" "module component.test/custom_exports\ndmm 2026-09-22-dev\n")
+file(WRITE "${OUTPUT_DIR}/custom_exports/library.dmm"
+    "package component; export \"system\" func applicationHook(value:i32) -> i32 { return value+1; } export \"system\" func __dmm_custom_hook(value:i32) -> i32 { return applicationHook(value)+1; }\n")
+file(WRITE "${OUTPUT_DIR}/custom_exports/caller.c"
+    "extern int applicationHook(int); extern int __dmm_custom_hook(int); int main(void) { return applicationHook(40)!=41 || __dmm_custom_hook(40)!=42; }\n")
+foreach(target elf coff)
+    foreach(level 0 1)
+        set(object "${OUTPUT_DIR}/custom_exports/${target}_${level}.o")
+        compile_ok(--runtime-component "--target=${target}" "-O${level}"
+            -o "${object}" "${OUTPUT_DIR}/custom_exports/library.dmm")
+        execute_process(COMMAND "${NM}" -g --defined-only "${object}"
+            RESULT_VARIABLE result OUTPUT_VARIABLE exported)
+        if(NOT result EQUAL 0 OR NOT exported MATCHES "applicationHook" OR
+           NOT exported MATCHES "__dmm_custom_hook")
+            message(FATAL_ERROR "Custom component exports missing: ${exported}")
+        endif()
+        if(target STREQUAL host)
+            execute_process(COMMAND "${C_DRIVER}" "${OUTPUT_DIR}/custom_exports/caller.c"
+                "${object}" -o "${object}.exe" RESULT_VARIABLE result ERROR_VARIABLE errors TIMEOUT 30)
+            if(NOT result EQUAL 0)
+                message(FATAL_ERROR "Custom component export link failed: ${errors}")
+            endif()
+            execute_process(COMMAND "${object}.exe" RESULT_VARIABLE result TIMEOUT 20)
+            if(NOT result EQUAL 0)
+                message(FATAL_ERROR "Custom component export ABI failed: ${result}")
+            endif()
+        endif()
+    endforeach()
+endforeach()
 reject(executable "package component;" "require object/assembly" --runtime-component --emit=exe)
 reject(linker "package component;" "without linker or runtime overrides" --runtime-component --link=external)
 reject(startup "package main; func main() -> int { return 0; }" "requires a library package" --runtime-component)

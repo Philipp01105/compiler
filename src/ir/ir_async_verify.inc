@@ -46,7 +46,7 @@ static int verify_async_effects(const IrModule *module, const IrFunction *functi
                 const IrInstruction *in = &function->instructions[i];
                 if (in->result != IR_VALUE_NONE) state[in->result] = 0;
                 if (in->opcode == IR_OP_AWAIT || in->opcode == IR_OP_CANCEL_AWAIT ||
-                    (in->opcode==IR_OP_EXECUTOR && (in->async_operation==ASYNC_SPAWN || in->async_operation==ASYNC_CANCEL || in->async_operation==ASYNC_BLOCK_ON)) ||
+                    (in->opcode==IR_OP_EXECUTOR && (in->async_operation==ASYNC_SPAWN || in->async_operation==ASYNC_CANCEL || in->async_operation==ASYNC_BLOCK_ON || in->async_operation==ASYNC_COMPLETE || in->async_operation==ASYNC_CANCEL_COMPLETE)) ||
                     (in->opcode == IR_OP_DROP && in->operand_a != IR_VALUE_NONE)) {
                     if (state[in->operand_a]) { valid = 0; break; }
                     state[in->operand_a] = 1;

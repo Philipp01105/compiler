@@ -572,6 +572,7 @@ pub export "system" func __dmm_async_shutdown_poll(address: *void, context: *voi
 }
 
 pub export "system" func __dmm_async_block_on(address: *void) -> *void {
+    if(address.(*Frame).state == -1) { return address; }
     var frame: *Frame = address.(*Frame);
     var e: *Scheduler = allocate(Scheduler.size).(*Scheduler);
     e.refs = 1;
@@ -681,4 +682,30 @@ pub export "system" func __dmm_async_io_destroy(address: *void) -> void {
     require(io.confirmed != 0);
     unlock((&io.lock).(*usize));
     ioRelease(io);
+}
+
+// This frame parks the adapter until its poller wakes the retained context.
+// The next scheduler visit completes the park; no executor thread blocks.
+export "system" func dmm_async_park_poll(address: *void, context: *void) -> i32 {
+    var frame=address.(*Frame);
+    if (frame.state==0) { frame.state=1; return 0; }
+    frame.state=-1;
+    return 1;
+}
+
+export "system" func dmm_async_park_cancel(address: *void, context: *void) -> i32 {
+    address.(*Frame).state=-2;
+    return 1;
+}
+
+export "system" func dmm_async_park_destroy(address: *void, discard: i32) -> void {
+    runtimeFree(address);
+}
+
+pub func parkFrame() -> *void {
+    var frame=reserve(Frame);
+    frame.poll=dmm_async_park_poll;
+    frame.cancelPoll=dmm_async_park_cancel;
+    frame.destroy=dmm_async_park_destroy;
+    return frame.(*void);
 }

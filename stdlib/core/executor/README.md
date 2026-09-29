@@ -32,6 +32,12 @@ frame is promised Send-safe; the compiler still checks the enclosing DMM loans.
 There is no by-value FFI marshaling of `Future<T>`. `core/net` uses this general
 bridge after its ordinary DMM package `wait` call; there are no network intrinsics.
 
+The internal `parkFrame()` bridge supplies a native void frame for async poller
+adapters to suspend between polls. Its storage uses the compiler allocator and
+matching runtime release. Its raw frame/context representation follows the same
+trusted ABI contract. Await and block_on consume already-ready frames without
+repeating their poll callback.
+
 `stdlib/system` is the default source provider. The compiler retains the ABI functions needed by generated
 frames and startup from its normal package graph. There are no required runtime objects or archives.
 See [stdlib/system/README.md](../../system/README.md) for installation and manual linking.

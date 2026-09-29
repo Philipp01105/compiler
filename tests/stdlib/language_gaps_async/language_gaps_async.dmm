@@ -1,6 +1,8 @@
 package main;
-import ("stdlib/core" "stdlib/async");
+import ("stdlib/core" "stdlib/async" "stdlib/time");
 var destroyed: i32 = 0;
+var cancelPolls:i32=0;
+var pollerDrops:i32=0;
 struct Payload { var value: i32; destructor { destroyed += 1; } }
 struct Immediate {
     var result: i32;
@@ -11,9 +13,73 @@ struct Immediate {
         return core.Poll<asynchronous.CancelAck>.Ready(asynchronous.CancelAck.Confirmed);
     }
 }
+struct WakeOnce {
+    var ready:bit;
+    pub func poll(context:&mut asynchronous.Context)->core.Poll<i32> {
+        if (ready) { return core.Poll<i32>.Ready(43); }
+        ready=true;
+        var wake=context.retainWaker();
+        wake.wake();
+        return core.Poll<i32>.Pending;
+    }
+    pub func cancelPoll(context:&mut asynchronous.Context)->core.Poll<asynchronous.CancelAck> {
+        return core.Poll<asynchronous.CancelAck>.Ready(asynchronous.CancelAck.Confirmed);
+    }
+}
+struct UntilCancelled {
+    var remaining:i32;
+    var address:*i32;
+    pub func poll(context:&mut asynchronous.Context)->core.Poll<i32> {
+        if(address==core.core_null().(*i32)) { address=(&remaining).(*i32); }
+        if(address!=(&remaining).(*i32)) { core.core_trap(); }
+        return core.Poll<i32>.Pending;
+    }
+    pub func cancelPoll(context:&mut asynchronous.Context)->core.Poll<asynchronous.CancelAck> {
+        if(address!=(&remaining).(*i32)) { core.core_trap(); }
+        cancelPolls+=1;
+        if(remaining!=0) {
+            remaining-=1;
+            var wake=context.retainWaker(); wake.wake();
+            return core.Poll<asynchronous.CancelAck>.Pending;
+        }
+        return core.Poll<asynchronous.CancelAck>.Ready(asynchronous.CancelAck.Confirmed);
+    }
+    destructor { pollerDrops+=1; }
+}
 enum Tasks { Task(Future<i32>), Empty }
+@[must_consume] interface Resume { once func __invoke()->Future<i32>; }
+func namedResume(child:Future<i32>)->Resume {
+    return func [move child]()->Future<i32> { return child; };
+}
 enum TaskPair { Both(Future<i32>,Future<i32>), Empty }
+enum TaskBundle { Packed(TaskPair), Empty }
+func swapTasks(value:TaskPair)->TaskPair {
+    match(value) {
+        Both(left,right)=>return TaskPair.Both(right,left);
+        Empty=>return TaskPair.Empty;
+    }
+}
+func swapBundle(value:TaskBundle)->TaskBundle {
+    match(value) {
+        Packed(pair)=>return TaskBundle.Packed(swapTasks(pair));
+        Empty=>return TaskBundle.Empty;
+    }
+}
 async func work(value: &i32) -> i32 { return *value; }
+struct BorrowedResult<'a> { var source:&'a i32; }
+struct NestedResult<'a> { var reader:BorrowedResult<'a>; }
+struct SplitResult<'a,'b> { var left:NestedResult<'a>; var right:NestedResult<'b>; }
+async func splitResult<'a,'b>(left:&'a i32,right:&'b i32,extra:&i32)->SplitResult<'a,'b> {
+    return SplitResult<'a,'b>{left:NestedResult<'a>{reader:BorrowedResult<'a>{source:left}},
+        right:NestedResult<'b>{reader:BorrowedResult<'b>{source:right}}};
+}
+async func borrowedResult<'a>(source:&'a i32)->NestedResult<'a> {
+    return NestedResult<'a>{reader:BorrowedResult<'a>{source:source}};
+}
+async func forwardBorrowedResult<'a>(source:&'a i32)->NestedResult<'a> {
+    var task=borrowedResult(source);
+    return task.await();
+}
 func acceptSend<T: core.Send>(value: T) -> void {}
 func drive<P: asynchronous.Poller<i32>>(poller: &mut P, context: &mut asynchronous.Context) -> i32 {
     match (poller.poll(context)) {
@@ -22,6 +88,112 @@ func drive<P: asynchronous.Poller<i32>>(poller: &mut P, context: &mut asynchrono
     }
 }
 func main() -> int {
+    {
+        var left:i32=91; var right:i32=92; var extra:i32=93;
+        var task=splitResult(&left,&right,&extra);
+        var result=block_on(task);
+        extra=94;
+        var projected=result.left;
+        right=95;
+        if(*projected.reader.source!=91 || extra!=94 || right!=95) { return 49; }
+    }
+    {
+        var source:i32=81;
+        {
+            var task=forwardBorrowedResult(&source);
+            var result=block_on(task);
+            if(*result.reader.source!=81) { return 46; }
+        }
+        source=82;
+        {
+            var result=block_on(borrowedResult(&source));
+            if(*result.reader.source!=82) { return 47; }
+        }
+        source=83;
+        {
+            var task=borrowedResult(&source);
+            while(!futurePoll(&mut task,core.core_null().(*void))) {}
+            var result=futureComplete(task);
+            if(*result.reader.source!=83) { return 48; }
+        }
+        source=84;
+    }
+    {
+        var left:i32=61; var right:i32=62;
+        var bundle=TaskBundle.Packed(TaskPair.Both(work(&left),work(&right)));
+        var mapped=swapBundle(bundle);
+        var reordered=take(mapped);
+        match(reordered) {
+            Packed(pair)=>{ match(pair) {
+                Both(first,second)=>{
+                    var firstValue=block_on(first);
+                    right=63;
+                    var secondValue=block_on(second);
+                    left=64;
+                    if(firstValue!=62 || secondValue!=61) { return 42; }
+                }
+                Empty=>return 44;
+            } }
+            Empty=>return 45;
+        }
+    }
+    {
+        var left:i32=71; var right:i32=72;
+        var child=work(&left);
+        var firstValue=block_on(replace(child,work(&right)));
+        left=73;
+        var secondValue=block_on(child);
+        right=74;
+        if(firstValue!=71 || secondValue!=72) { return 46; }
+    }
+    {
+        var source:i32=53;
+        var resume=namedResume(work(&source));
+        var child=resume();
+        if(block_on(child)!=53) { return 41; }
+        source=54;
+    }
+    block_on(asynchronous.sleep(time.nanoseconds(1000000)));
+    {
+        var number:i32=51;
+        match(block_on(asynchronous.timeout(work(&number),time.nanoseconds(1000000000)))) {
+            Completed(value)=>{ if(value!=51) { return 37; } }
+            Elapsed=>return 38;
+        }
+        number=52;
+    }
+    match(block_on(asynchronous.timeout(
+        asynchronous.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:core.core_null().(*i32)}),
+        time.nanoseconds(1000000)))) {
+        Completed(value)=>return 39;
+        Elapsed=>{}
+    }
+    if(cancelPolls!=3 || pollerDrops!=1) { return 40; }
+    if (block_on(asynchronous.fromPoller<i32,Immediate>(Immediate{result:37}))!=37) { return 30; }
+    if (block_on(asynchronous.fromPoller<i32,WakeOnce>(WakeOnce{ready:false}))!=43) { return 34; }
+    {
+        var left:i32=44;
+        var right:i32=45;
+        var joined=block_on(asynchronous.join2(work(&left),work(&right)));
+        if(joined.left!=44 || joined.right!=45) { return 35; }
+        left=46; right=47;
+        if(block_on(asynchronous.race2(work(&left),work(&right)))!=46) { return 36; }
+        left=48; right=49;
+    }
+    {
+        var context=asynchronous.context(asynchronous.noopWaker());
+        var source:i32=39;
+        match (asynchronous.poll(work(&source),&mut context)) {
+            Ready(value)=>{ source=40; if(value!=39) { return 31; } }
+            Pending(child)=>{ if(block_on(child)!=39) { return 32; } }
+        }
+        source=41;
+        var child=work(&source);
+        var acknowledged=futureCancelPoll(&mut child,core.core_null().(*void));
+        futureCancelComplete(child);
+        if(!acknowledged) { return 33; }
+        source=42;
+    }
     {
         var idle = asynchronous.noopWaker();
         var polling = asynchronous.context(idle);

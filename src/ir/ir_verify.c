@@ -322,9 +322,23 @@ static int verify_instruction_types(const IrModule *module,
             (ir_type_properties(module,instruction->type_id)&SEMANTIC_TYPE_NEEDS_DROP) &&
             instruction->target_a>0 && instruction->target_a<=function->async_state_count;
         case IR_OP_EXECUTOR:
-            if (!a || instruction->async_operation<ASYNC_CREATE || instruction->async_operation>ASYNC_NATIVE_FUTURE) return 0;
-            if (b && module->types[b->type_id].kind!=IR_TYPE_EXECUTOR) return 0;
+            if (instruction->async_operation==ASYNC_CONTEXT)
+                return function->is_async && !a && !b && instruction->type==TYPE_VOID && instruction->pointer_depth==1;
+            if (!a || instruction->async_operation<ASYNC_CREATE || instruction->async_operation>ASYNC_CONTEXT) return 0;
+            if (b && instruction->async_operation!=ASYNC_POLL && instruction->async_operation!=ASYNC_CANCEL_POLL &&
+                module->types[b->type_id].kind!=IR_TYPE_EXECUTOR) return 0;
             switch (instruction->async_operation) {
+                case ASYNC_POLL:
+                case ASYNC_CANCEL_POLL:
+                    return module->types[a->type_id].kind==IR_TYPE_POINTER &&
+                        module->types[module->types[a->type_id].element_type].kind==IR_TYPE_FUTURE &&
+                        b && b->type==TYPE_VOID && b->pointer_depth==1 && instruction->type==TYPE_BIT;
+                case ASYNC_COMPLETE:
+                    return !b && module->types[a->type_id].kind==IR_TYPE_FUTURE &&
+                        module->types[a->type_id].element_type==instruction->type_id;
+                case ASYNC_CANCEL_COMPLETE:
+                    return !b && module->types[a->type_id].kind==IR_TYPE_FUTURE && ir_void_type(module,instruction->type_id);
+                case ASYNC_CONTEXT: return 0;
                 case ASYNC_NATIVE_FUTURE: return a->type==TYPE_VOID && a->pointer_depth==1 &&
                     module->types[instruction->type_id].kind==IR_TYPE_FUTURE &&
                     module->types[module->types[instruction->type_id].element_type].kind==IR_TYPE_PRIMITIVE &&
@@ -424,8 +438,8 @@ static int verify_instruction_types(const IrModule *module,
                    module->types[a->type_id].kind == IR_TYPE_NAMED &&
                    module->types[instruction->type_id].kind == IR_TYPE_NAMED &&
                    module->types[a->type_id].symbol_id < module->semantics->symbol_count &&
-                   module->semantics->symbols[module->types[a->type_id].symbol_id].kind ==
-                       SEMANTIC_SYMBOL_STRUCT &&
+                   (module->semantics->symbols[module->types[a->type_id].symbol_id].kind ==
+                       SEMANTIC_SYMBOL_STRUCT || module->semantics->symbols[module->types[a->type_id].symbol_id].kind == SEMANTIC_SYMBOL_ENUM) &&
                    semantic_implements_interface(module->semantics,
                        module->types[instruction->type_id].symbol_id,
                        module->types[a->type_id].symbol_id);
@@ -1188,7 +1202,7 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                     REQUIRE_VALUE(instruction->operand_a);
                     break;
                 case IR_OP_EXECUTOR:
-                    REQUIRE_VALUE(instruction->operand_a);
+                    if(instruction->async_operation!=ASYNC_CONTEXT) REQUIRE_VALUE(instruction->operand_a);
                     if(instruction->operand_b!=IR_VALUE_NONE) REQUIRE_VALUE(instruction->operand_b);
                     break;
                 case IR_OP_ENUM_IS:
