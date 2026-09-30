@@ -512,7 +512,26 @@ returns and parameter projections, including multiple lifetimes and temporary ag
 Swapping nested sources with distinct lifetimes is rejected. Unknown mappings, unnamed views and
 owning payloads retain conservative origin unions. Known nested/reordered enum returns preserve payload origins
 independently. Future completion transfers captured loans to borrowed aggregate results before releasing the handle.
-Precise List.pop/clear release is tested; general remove/truncate, ring and hash storage remain unfinished. See
+Constant and offset heap indices survive synchronous calls with unchanged value parameters.
+Precise List.pop/clear/truncate release is tested for zero, frozen tail-relative bounds and literal
+bounds justified by size guards, including checked wrappers. Unchanged scalar snapshots and simple
+field getters preserve affine indices; assignments and mutable calls invalidate these facts.
+Contiguous `initialize(storage[i-1], take(storage[i]))` loops preserve element provenance when
+their range is proved, including middle removal followed by pop. Removed values retain their loans.
+Live bounds that change with the countdown, unsigned underflow and unknown ranges remain conservative.
+Loops preserve the slot coordinates of containers they do not modify. Modular heap indices preserve
+the ring head, logical index and modulus across synchronous calls, moves and enum payloads.
+Size guards prove the occupied prefix before a ring drain releases its loans; counter wrap and
+skipped positions retain conservative origins. Heap member projections preserve independent field loans.
+Scalar guard facts remain usable inside a conditional or match arm and expire at its join.
+Tagged heap slots preserve their discriminant and a proved allocation extent. Unsigned modulo
+indices, including probing steps using the same unchanged modulus, stay within that extent.
+A full unit-step traversal destroys stored loans when its guard matches the preserved tag and
+its destroy operation covers the whole slot. Moves and enum payloads preserve this proof.
+Tag, index or extent mutations invalidate the corresponding facts; effectful conditions require
+a fresh tag observation. Copies of indexed heap members retain their own referent loans after
+the container is cleared. This supports HashMap.clear for proved stored slots, including borrowed keys and values.
+Arbitrary dynamic index relationships, allocation relocation and precise hash-key removal remain unfinished. See
 [implementation and acceptance status](plans/stdlib-language-gaps.md).
 Explicit enum payload lifetimes are also checked independently at return boundaries and preserved on value-pattern
 bindings from aggregate parameters. Constructing an explicitly static enum payload requires permanent storage.

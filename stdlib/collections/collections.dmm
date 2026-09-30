@@ -59,8 +59,8 @@ pub struct Deque<T> {
             var status=growDeque<T>(&mut storage,&mut slots,&mut head,count,capacity);
             if(status!=stdlib.AllocationError.None) { return status; }
         }
-        if(head==0) { head=slots; } head-=1;
-        core.initialize<T>(&storage[head],value); count+=1;
+        head=(head+slots-1)%slots;
+        core.initialize<T>(&storage[(head+0)%slots],value); count+=1;
         return stdlib.AllocationError.None;
     }
     pub func popFront()->stdlib.Option<T> {
@@ -188,9 +188,11 @@ pub struct HashMap<K,V> {
             for(var scanned:usize=0;scanned<slots;scanned+=1) {
                 if(entries[index].state==0) { break; }
                 if(entries[index].state==1 && callbacks.sameKey(&entries[index].key,&key)) {
-                    core.destroy<V>(&entries[index].value);
-                    core.initialize<V>(&entries[index].value,value);
-                    return stdlib.AllocationError.None;
+                    if(entries[index].state==1) {
+                        core.destroy<V>(&entries[index].value);
+                        core.initialize<V>(&entries[index].value,value);
+                        return stdlib.AllocationError.None;
+                    }
                 }
                 index=(index+1)%slots;
             }
