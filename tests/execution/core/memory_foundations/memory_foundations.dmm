@@ -137,19 +137,19 @@ func main() -> int {
     if (node == core.null<Node>()) {
         return 11;
     }
-    if (node.value != 0 || node.next != core.null<Node>() || node.children.length != 0) {
+    if ((*node).value != 0 || (*node).next != core.null<Node>() || (*node).children.length != 0) {
         return 12;
     }
-    node.value = 123;
-    node.children = core.alloc<Node>(2);
-    if (node.children.length != 2 || node.children[1].value != 0) {
+    (*node).value = 123;
+    (*node).children = core.alloc<Node>(2);
+    if ((*node).children.length != 2 || (*node).children[1].value != 0) {
         return 13;
     }
-    node.children[1].value = 456;
-    if (node.children[0].value != 0 || node.children[1].value != 456) {
+    (*node).children[1].value = 456;
+    if ((*node).children[0].value != 0 || (*node).children[1].value != 456) {
         return 14;
     }
-    core.release(node.children);
+    core.release((*node).children);
     core.release(node);
     var values = allocate_values(4);
     if (values.length != 4 || values[0] != 0 || values[3] != 0) {

@@ -10,6 +10,8 @@ Importing this package exposes `asynchronous` and requires the async manifest fe
 
 `fromPoller<T,P>` owns a poller in a pinned async frame, polling and parking on Pending. Cancellation after the body starts runs deferred cancelPoll until acknowledgement before cleanup. Cancellation before the first body execution only cleans up captured parameters, so a poller's initial native state must already be safe to destroy.
 
+fromPoller and select2 refresh their Context on every poll and cancellation poll. A pending future first polled manually can subsequently register the current block_on or task waker.
+
 ## Future handles
 
 `poll` consumes a handle and returns `FuturePoll<T>.Pending(Future<T>)` or `Ready(T)`. A Pending handle retains its captured loans and must still be consumed. `pollVoid` uses `VoidFuturePoll` for Future<void>. An already-ready handle can be consumed through await/block_on without polling it again.
@@ -25,6 +27,10 @@ The compiler operations `futurePoll` and `futureCancelPoll` require an exclusive
 | join2(left,right) | Joined with left/right values |
 | timers.sleep(duration) | Future<void> completing after the duration |
 | timers.timeout(future,duration) | Timed.Completed(value) or Elapsed, after cancellation acknowledgement |
+| asUnit(future) | Future<Unit> from Future<void> |
+| selectVoid(left,right) | Selected<Unit,Unit>; remaining Future<Unit> must be consumed |
+| raceVoid(left,right) / joinVoid(left,right) | Future<void>; both children are consumed |
+| timers.timeoutVoid(future,duration) | TimedVoid.Completed or Elapsed |
 
 The remaining handle from select2 must be consumed even if it is already ready. Generic value composition uses a Unit payload for void results; void polling has its own API.
 
@@ -34,4 +40,4 @@ The Timer poller returns Unit. Its worker sleeps in chunks of at most one millis
 
 The language_gaps_async fixture covers typed polling, pinned poller state, repeated cancellation acknowledgement, named consuming callables, selection, race, join, sleep and timeout. It also checks nested/reordered Future payloads, independent replacement loans and borrowed aggregate results through block_on, .await() and futureComplete. The current Windows gap contract passed at O0/O1, and a focused Linux O1 execution passed.
 
-The earlier collection compilation regressions are fixed. Full container-loan release and further scheduler/wake race coverage remain open. See [test status](../../tests/stdlib/README.md) and [remaining gaps](../../plans/stdlib-language-gaps.md).
+Additional cases cover waker-context migration after manual polling, delayed cancellation with a new context, external cancellation of select/race/join/timeout, cancellation before the first body poll, void/mixed composition and exactly-once owner cleanup. The executor unit adds synchronized concurrent wakes racing a gated poll and cancellation; its repeated runs complement the native DMM runtime contracts. See the current [test status](../../tests/stdlib/README.md) and [remaining gaps](../../plans/stdlib-language-gaps.md).

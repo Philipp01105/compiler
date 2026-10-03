@@ -46,6 +46,21 @@ struct UntilCancelled {
     }
     destructor { pollerDrops+=1; }
 }
+struct WakeTwice {
+    var remaining:i32;
+    pub func poll(context:&mut asynchronous.Context)->core.Poll<i32> {
+        if(remaining==0) { return core.Poll<i32>.Ready(101); }
+        remaining-=1; var wake=context.retainWaker(); wake.wake();
+        return core.Poll<i32>.Pending;
+    }
+    pub func cancelPoll(context:&mut asynchronous.Context)->core.Poll<asynchronous.CancelAck> {
+        return core.Poll<asynchronous.CancelAck>.Ready(asynchronous.CancelAck.Confirmed);
+    }
+}
+async func nothing()->void {}
+var compositionDrops:i32=0;
+struct CompositionOwner { var value:i32; destructor { compositionDrops+=1; } }
+async func ownedNothing(owner:CompositionOwner)->void {}
 enum Tasks { Task(Future<i32>), Empty }
 @[must_consume] interface Resume { once func __invoke()->Future<i32>; }
 func namedResume(child:Future<i32>)->Resume {
@@ -88,6 +103,83 @@ func drive<P: asynchronous.Poller<i32>>(poller: &mut P, context: &mut asynchrono
     }
 }
 func main() -> int {
+    {
+        var left=ownedNothing(CompositionOwner{value:7});
+        var right=ownedNothing(CompositionOwner{value:8});
+        var joined=asynchronous.join2(asynchronous.asUnit(left),asynchronous.asUnit(right));
+        var result=block_on(joined);
+        if(compositionDrops!=2) { return 77; }
+        compositionDrops=0;
+    }
+    {
+        var prior=cancelPolls; var dropped=pollerDrops;
+        var outer=asynchronous.select2(
+            asynchronous.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:core.core_null().(*i32)}),
+            asynchronous.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:core.core_null().(*i32)}));
+        var ready=futurePoll(&mut outer,core.core_null().(*void));
+        block_on(cancel(outer));
+        if(ready || cancelPolls!=prior+6 || pollerDrops!=dropped+2) { return 71; }
+        prior=cancelPolls; dropped=pollerDrops;
+        var joined=asynchronous.join2(
+            asynchronous.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:core.core_null().(*i32)}),
+            asynchronous.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:core.core_null().(*i32)}));
+        ready=futurePoll(&mut joined,core.core_null().(*void)); block_on(cancel(joined));
+        if(ready || cancelPolls!=prior+6 || pollerDrops!=dropped+2) { return 72; }
+        prior=cancelPolls; dropped=pollerDrops;
+        var raced=asynchronous.race2(
+            asynchronous.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:core.core_null().(*i32)}),
+            asynchronous.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:core.core_null().(*i32)}));
+        ready=futurePoll(&mut raced,core.core_null().(*void)); block_on(cancel(raced));
+        if(ready || cancelPolls!=prior+6 || pollerDrops!=dropped+2) { return 73; }
+        prior=cancelPolls; dropped=pollerDrops;
+        var timed=asynchronous.timeout(
+            asynchronous.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:core.core_null().(*i32)}),
+            time.nanoseconds(1000000000));
+        ready=futurePoll(&mut timed,core.core_null().(*void)); block_on(cancel(timed));
+        if(ready || cancelPolls!=prior+3 || pollerDrops!=dropped+1) { return 74; }
+        dropped=pollerDrops;
+        block_on(cancel(asynchronous.select2(
+            asynchronous.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:core.core_null().(*i32)}),
+            asynchronous.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:core.core_null().(*i32)}))));
+        if(pollerDrops!=dropped+2) { return 75; }
+        cancelPolls=0; pollerDrops=0;
+        block_on(asynchronous.joinVoid(ownedNothing(CompositionOwner{value:1}),ownedNothing(CompositionOwner{value:2})));
+        block_on(asynchronous.raceVoid(ownedNothing(CompositionOwner{value:3}),ownedNothing(CompositionOwner{value:4})));
+        block_on(cancel(asynchronous.joinVoid(ownedNothing(CompositionOwner{value:5}),ownedNothing(CompositionOwner{value:6}))));
+        if(compositionDrops!=6) { return 76; }
+    }
+    {
+        var task=asynchronous.fromPoller<i32,WakeTwice>(WakeTwice{remaining:2});
+        if(futurePoll(&mut task,core.core_null().(*void))) { block_on(cancel(task)); return 61; }
+        if(block_on(task)!=101) { return 62; }
+        var selected=asynchronous.select2(
+            asynchronous.fromPoller<i32,WakeTwice>(WakeTwice{remaining:2}),
+            asynchronous.fromPoller<i32,WakeTwice>(WakeTwice{remaining:2}));
+        if(futurePoll(&mut selected,core.core_null().(*void))) { block_on(cancel(selected)); return 63; }
+        match(block_on(selected)) {
+            Left(value,other)=>{ if(value!=101 || block_on(other)!=101) { return 64; } }
+            Right(other,value)=>{ if(value!=101 || block_on(other)!=101) { return 65; } }
+        }
+        var prior=cancelPolls;
+        var pending=asynchronous.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:core.core_null().(*i32)});
+        if(futurePoll(&mut pending,core.core_null().(*void))) { block_on(cancel(pending)); return 66; }
+        block_on(cancel(pending));
+        if(cancelPolls!=prior+3) { return 67; }
+        cancelPolls=0; pollerDrops=0;
+        block_on(asynchronous.joinVoid(nothing(),nothing()));
+        block_on(asynchronous.raceVoid(nothing(),nothing()));
+        match(block_on(asynchronous.selectVoid(nothing(),nothing()))) {
+            Left(unit,other)=>{ block_on(other); }
+            Right(other,unit)=>{ block_on(other); }
+        }
+        match(block_on(asynchronous.timeoutVoid(nothing(),time.nanoseconds(1000000000)))) {
+            Completed=>{} Elapsed=>return 68;
+        }
+        var number:i32=69;
+        var joined=block_on(asynchronous.join2(asynchronous.asUnit(nothing()),work(&number)));
+        if(joined.right!=69) { return 69; }
+        number=70;
+    }
     {
         var left:i32=91; var right:i32=92; var extra:i32=93;
         var task=splitResult(&left,&right,&extra);

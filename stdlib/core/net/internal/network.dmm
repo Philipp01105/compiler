@@ -121,14 +121,14 @@ func heapSwap(a: usize, b: usize) -> void {
     var saved: *Operation = deadlineHeap[a];
     deadlineHeap[a] = deadlineHeap[b];
     deadlineHeap[b] = saved;
-    deadlineHeap[a].heapIndex = a;
-    deadlineHeap[b].heapIndex = b;
+    (*deadlineHeap[a]).heapIndex = a;
+    (*deadlineHeap[b]).heapIndex = b;
 }
 
 func heapUp(index: usize) -> void {
     while (
         index != 0 &&
-        deadlineHeap[index].request.deadline < deadlineHeap[(index - 1) / 2].request.deadline
+        (*deadlineHeap[index]).request.deadline < (*deadlineHeap[(index - 1) / 2]).request.deadline
     ) {
         heapSwap(index, (index - 1) / 2);
         index = (index - 1) / 2;
@@ -136,20 +136,20 @@ func heapUp(index: usize) -> void {
 }
 
 func heapRemove(op: *Operation) -> void {
-    var index: usize = op.heapIndex;
+    var index: usize = (*op).heapIndex;
     if (index == INVALID) {
         return;
     }
-    op.heapIndex = INVALID;
+    (*op).heapIndex = INVALID;
     heapCount = heapCount - 1;
     if (index == heapCount) {
         return;
     }
     var moved: *Operation = deadlineHeap[heapCount];
     deadlineHeap[index] = moved;
-    moved.heapIndex = index;
+    (*moved).heapIndex = index;
     heapUp(index);
-    index = moved.heapIndex;
+    index = (*moved).heapIndex;
     while (true) {
         var child: usize = index * 2 + 1;
         if (child >= heapCount) {
@@ -157,11 +157,11 @@ func heapRemove(op: *Operation) -> void {
         }
         if (
             child + 1 < heapCount &&
-            deadlineHeap[child + 1].request.deadline < deadlineHeap[child].request.deadline
+            (*deadlineHeap[child + 1]).request.deadline < (*deadlineHeap[child]).request.deadline
         ) {
             child = child + 1;
         }
-        if (deadlineHeap[index].request.deadline <= deadlineHeap[child].request.deadline) {
+        if ((*deadlineHeap[index]).request.deadline <= (*deadlineHeap[child]).request.deadline) {
             break;
         }
         heapSwap(index, child);
@@ -170,7 +170,7 @@ func heapRemove(op: *Operation) -> void {
 }
 
 func heapInsert(op: *Operation) -> bit {
-    if (op.request.deadline == NEVER) {
+    if ((*op).request.deadline == NEVER) {
         return true;
     }
     if (heapCount == heapCapacity) {
@@ -188,61 +188,61 @@ func heapInsert(op: *Operation) -> bit {
         deadlineHeap = grown.(**Operation);
         heapCapacity = capacity;
     }
-    op.heapIndex = heapCount;
+    (*op).heapIndex = heapCount;
     deadlineHeap[heapCount] = op;
     heapCount = heapCount + 1;
-    heapUp(op.heapIndex);
+    heapUp((*op).heapIndex);
     return true;
 }
 
 func releaseLocked(op: *Operation) -> void {
-    op.refs = op.refs - 1;
-    if (op.refs != 0) {
+    (*op).refs = (*op).refs - 1;
+    if ((*op).refs != 0) {
         return;
     }
-    require(op.done != 0 && op.notified != 0);
-    executor.__dmm_async_io_destroy(op.io);
-    if (op.accepted != nullPointer().(*Socket)) {
-        if (op.accepted.fd != INVALID) {
-            closeFd(op.accepted.fd);
+    require((*op).done != 0 && (*op).notified != 0);
+    executor.__dmm_async_io_destroy((*op).io);
+    if ((*op).accepted != nullPointer().(*Socket)) {
+        if ((*(*op).accepted).fd != INVALID) {
+            closeFd((*(*op).accepted).fd);
         }
-        release(op.accepted.(*void));
+        release((*op).accepted.(*void));
     }
-    release(op.addresses.(*void));
-    release(op.hostname.(*void));
+    release((*op).addresses.(*void));
+    release((*op).hostname.(*void));
     release(op.(*void));
 }
 
 func completeLocked(op: *Operation, error: Error) -> void {
-    if (op.done != 0) {
+    if ((*op).done != 0) {
         return;
     }
     heapRemove(op);
-    op.done = 1;
-    op.error = error;
-    var s: *Socket = op.request.socket;
+    (*op).done = 1;
+    (*op).error = error;
+    var s: *Socket = (*op).request.socket;
     if (s != nullPointer().(*Socket)) {
-        var claimed: bit = s.read == op || s.write == op;
-        if (s.read == op) {
-            s.read = nullPointer().(*Operation);
+        var claimed: bit = (*s).read == op || (*s).write == op;
+        if ((*s).read == op) {
+            (*s).read = nullPointer().(*Operation);
         }
-        if (s.write == op) {
-            s.write = nullPointer().(*Operation);
+        if ((*s).write == op) {
+            (*s).write = nullPointer().(*Operation);
         }
-        if (op.request.command == 1 && claimed) {
+        if ((*op).request.command == 1 && claimed) {
             if (error.kind != 0) {
-                if (s.fd != INVALID) {
-                    closeFd(s.fd);
+                if ((*s).fd != INVALID) {
+                    closeFd((*s).fd);
                 }
-                s.fd = INVALID;
+                (*s).fd = INVALID;
             } else {
-                s.state = 3;
+                (*s).state = 3;
             }
         }
         updateInterest(s);
     }
-    op.refs = op.refs + 1;
-    op.notifyNext = notifications;
+    (*op).refs = (*op).refs + 1;
+    (*op).notifyNext = notifications;
     notifications = op;
 }
 
@@ -254,11 +254,11 @@ func deliver() -> void {
             unlockNet();
             return;
         }
-        notifications = op.notifyNext;
-        op.notified = 1;
+        notifications = (*op).notifyNext;
+        (*op).notified = 1;
         unlockNet();
         // Wakers may reenter networking: acknowledgement is outside the lock.
-        executor.__dmm_async_io_confirm(op.io);
+        executor.__dmm_async_io_confirm((*op).io);
         lockNet();
         releaseLocked(op);
         unlockNet();
@@ -304,7 +304,7 @@ func usable(s: *Socket, error: *Error, admission: bit) -> bit {
         *error = netError(3);
         return false;
     }
-    if (s == nullPointer().(*Socket) || s.fd == INVALID) {
+    if (s == nullPointer().(*Socket) || (*s).fd == INVALID) {
         *error = netError(3);
         return false;
     }
@@ -334,10 +334,10 @@ pub export "system" func __dmm_net_socket(family: u64, transport: u64, error: *E
         unlockNet();
         return s;
     }
-    s.fd = newFd(family, transport, error);
-    s.family = family;
-    s.transport = transport;
-    if (s.fd == INVALID) {
+    (*s).fd = newFd(family, transport, error);
+    (*s).family = family;
+    (*s).transport = transport;
+    if ((*s).fd == INVALID) {
         release(s.(*void));
         s = nullPointer().(*Socket);
     }
@@ -353,9 +353,9 @@ pub export "system" func __dmm_net_bind(s: *Socket, address: *Address, error: *E
     if (
         ok &&
         (
-            s.read != nullPointer().(*Operation) ||
-            s.write != nullPointer().(*Operation) ||
-            s.state != 0
+            (*s).read != nullPointer().(*Operation) ||
+            (*s).write != nullPointer().(*Operation) ||
+            (*s).state != 0
         )
     ) {
         *error = netError(4);
@@ -365,18 +365,18 @@ pub export "system" func __dmm_net_bind(s: *Socket, address: *Address, error: *E
         ok &&
         (
             !toNative(address, (&native).(*NativeAddress), (&length).(*i32)) ||
-            address.family != s.family
+            (*address).family != (*s).family
         )
     ) {
         *error = netError(5);
         ok = false;
     }
-    if (ok && bindFd(s.fd, (&native).(*NativeAddress), length) != 0) {
+    if (ok && bindFd((*s).fd, (&native).(*NativeAddress), length) != 0) {
         *error = nativeError(osError());
         ok = false;
     }
     if (ok) {
-        s.state = 1;
+        (*s).state = 1;
     }
     unlockNet();
     return ok.(i32);
@@ -388,10 +388,10 @@ pub export "system" func __dmm_net_listen(s: *Socket, backlog: u64, error: *Erro
     if (
         ok &&
         (
-            s.transport != 1 ||
-            s.state != 1 ||
-            s.read != nullPointer().(*Operation) ||
-            s.write != nullPointer().(*Operation)
+            (*s).transport != 1 ||
+            (*s).state != 1 ||
+            (*s).read != nullPointer().(*Operation) ||
+            (*s).write != nullPointer().(*Operation)
         )
     ) {
         *error = netError(4);
@@ -401,12 +401,12 @@ pub export "system" func __dmm_net_listen(s: *Socket, backlog: u64, error: *Erro
         *error = netError(5);
         ok = false;
     }
-    if (ok && listenFd(s.fd, backlog.(i32)) != 0) {
+    if (ok && listenFd((*s).fd, backlog.(i32)) != 0) {
         *error = nativeError(osError());
         ok = false;
     }
     if (ok) {
-        s.state = 2;
+        (*s).state = 2;
     }
     unlockNet();
     return ok.(i32);
@@ -417,13 +417,13 @@ pub export "system" func __dmm_net_address(s: *Socket, peer: u64, out: *Address,
     var ok: bit = usable(s, error, true);
     var native: NativeAddress;
     var length: i32 = (NativeAddress.size).(i32);
-    if (ok && ((peer != 0 && s.state != 3) || (peer == 0 && s.state == 0))) {
+    if (ok && ((peer != 0 && (*s).state != 3) || (peer == 0 && (*s).state == 0))) {
         *error = netError(4);
         ok = false;
     }
     if (
         ok &&
-        addressFd(s.fd, peer, (&native).(*NativeAddress), (&length).(*i32)) != 0
+        addressFd((*s).fd, peer, (&native).(*NativeAddress), (&length).(*i32)) != 0
     ) {
         *error = nativeError(osError());
         ok = false;
@@ -445,9 +445,9 @@ pub export "system" func __dmm_net_shutdown_socket(s: *Socket, direction: u64, e
     if (
         ok &&
         (
-            s.read != nullPointer().(*Operation) ||
-            s.write != nullPointer().(*Operation) ||
-            s.state != 3
+            (*s).read != nullPointer().(*Operation) ||
+            (*s).write != nullPointer().(*Operation) ||
+            (*s).state != 3
         )
     ) {
         *error = netError(4);
@@ -457,7 +457,7 @@ pub export "system" func __dmm_net_shutdown_socket(s: *Socket, direction: u64, e
         *error = netError(5);
         ok = false;
     }
-    if (ok && shutdownFd(s.fd, direction.(i32)) != 0) {
+    if (ok && shutdownFd((*s).fd, direction.(i32)) != 0) {
         *error = nativeError(osError());
         ok = false;
     }
@@ -472,18 +472,18 @@ pub export "system" func __dmm_net_close(s: *Socket, error: *Error) -> i32 {
     }
     lockNet();
     require(
-        s.read == nullPointer().(*Operation) &&
-        s.write == nullPointer().(*Operation)
+        (*s).read == nullPointer().(*Operation) &&
+        (*s).write == nullPointer().(*Operation)
     );
     var ok: i32 = 1;
-    if (s.fd != INVALID && closeFd(s.fd) != 0) {
+    if ((*s).fd != INVALID && closeFd((*s).fd) != 0) {
         *error = nativeError(osError());
         ok = 0;
     }
     if (closeError(error)) {
         ok = 0;
     }
-    s.fd = INVALID;
+    (*s).fd = INVALID;
     unlockNet();
     release(s.(*void));
     return ok;

@@ -156,6 +156,14 @@ void validate_overload_sets(Analyzer *analyzer);
 void validate_package_reexports(Analyzer *analyzer);
 int expression_assignment_allowed(const Analyzer *analyzer, const AstExpression *source,
                                   const AstExpression *target);
+/* Only committed conversion contexts may mark a view; overload probing must
+   remain free of effects on the expression's ownership. */
+static inline void semantic_mark_array_view(const AstExpression *source, const AstType *target) {
+    if (source && target && source->resolved_is_array && !source->resolved_outer_pointer_depth &&
+        source->resolved_borrow_kind==AST_BORROW_NONE && target->is_slice &&
+        !target->outer_pointer_depth && target->borrow_kind==AST_BORROW_NONE)
+        ((AstExpression *)source)->is_array_view=1;
+}
 int plain_numeric_expression(const AstExpression *expression);
 int pointer_expression(const AstExpression *expression);
 int semantic_type_is_move_only(const Analyzer *analyzer, size_t type_symbol_id);

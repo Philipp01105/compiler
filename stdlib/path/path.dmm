@@ -1,6 +1,7 @@
 package path;
 import (
-    "stdlib"
+    "stdlib/core"
+    "stdlib/collections"
     "stdlib/text"
 );
 
@@ -13,19 +14,13 @@ pub func nativeStyle() -> Style {
     return targetStyle();
 }
 
-pub enum PathError {
-    pub InvalidPath,
-    pub OutOfMemory,
-    pub CapacityOverflow,
-}
-
-func allocation(error: stdlib.AllocationError) -> PathError {
-    if (error == stdlib.AllocationError.CapacityOverflow) {
-        return PathError.CapacityOverflow;
+pub enum ErrorKind {pub InvalidPath,pub OutOfMemory,pub CapacityOverflow}
+pub struct Error {
+    pub var kind:ErrorKind;
+    pub static func fromResidual(error:core.AllocError)->Self {
+        match(error){OutOfMemory=>return Error{kind:ErrorKind.OutOfMemory};CapacityOverflow=>return Error{kind:ErrorKind.CapacityOverflow};}
     }
-    return PathError.OutOfMemory;
 }
-
 pub func valid(value: u8[]) -> bit {
     for (var i: usize = 0; i < value.length; i += 1) {
         if (value[i] == 0) {
@@ -120,64 +115,38 @@ pub func extension(value: u8[], style: Style) -> u8[] {
     return name[name.length:];
 }
 
-pub func join(left: u8[], right: u8[], style: Style) -> stdlib.Result<stdlib.Bytes, PathError> {
+pub func join(left: u8[], right: u8[], style: Style) -> core.Result<collections.List<u8>,Error> {
     if (!valid(left) || !valid(right)) {
-        return stdlib.Result<stdlib.Bytes, PathError>.Err(PathError.InvalidPath);
+        return core.Result<collections.List<u8>,Error>.Err(Error{kind:ErrorKind.InvalidPath});
     }
-    var result = stdlib.bytes(0);
-    var error: stdlib.AllocationError;
-    if (
-        isAbsolute(right, style) ||
-        (style == Style.Windows && right.length >= 2 && right[1] == 58)
-    ) {
-        error = result.append(right);
+    var result=collections.list<u8>();
+    if(isAbsolute(right,style) || (style==Style.Windows && right.length>=2 && right[1]==58)) {
+        result.appendSlice(&right)?;
+    } else if(style==Style.Windows && right.length>0 && separator(right[0],style)) {
+        if(left.length>=2 && left[1]==58){var drive=left[:2];result.appendSlice(&drive)?;}
+        result.appendSlice(&right)?;
     } else {
-        if (style == Style.Windows && right.length > 0 && separator(right[0], style)) {
-            if (left.length >= 2 && left[1] == 58) {
-                error = result.append(left[: 2]);
-            }
-            if (error == stdlib.AllocationError.None) {
-                error = result.append(right);
-            }
-        } else {
-            error = result.append(left);
-            if (
-                error == stdlib.AllocationError.None &&
-                left.length > 0 &&
-                right.length > 0 &&
-                !separator(left[left.length - 1], style)
-            ) {
-                var code: u8 = 47;
-                if (style == Style.Windows) {
-                    code = 92;
-                }
-                error = result.push(code);
-            }
-            if (error == stdlib.AllocationError.None) {
-                error = result.append(right);
-            }
+        result.appendSlice(&left)?;
+        if(left.length>0 && right.length>0 && !separator(left[left.length-1],style)) {
+            var code:u8=47;if(style==Style.Windows){code=92;}
+            result.append(code)?;
         }
+        result.appendSlice(&right)?;
     }
-    if (error != stdlib.AllocationError.None) {
-        return stdlib.Result<stdlib.Bytes, PathError>.Err(allocation(error));
-    }
-    return stdlib.Result<stdlib.Bytes, PathError>.Ok(result);
+    return core.Result<collections.List<u8>,Error>.Ok(result);
 }
 
 // Lexical normalization only: no filesystem access or symlink resolution.
-pub func normalize(value: u8[], style: Style) -> stdlib.Result<stdlib.Bytes, PathError> {
+pub func normalize(value: u8[], style: Style) -> core.Result<collections.List<u8>,Error> {
     if (!valid(value)) {
-        return stdlib.Result<stdlib.Bytes, PathError>.Err(PathError.InvalidPath);
+        return core.Result<collections.List<u8>,Error>.Err(Error{kind:ErrorKind.InvalidPath});
     }
     if (value.length >= 9223372036854775806.(usize)) {
-        return stdlib.Result<stdlib.Bytes, PathError>.Err(PathError.CapacityOverflow);
+        return core.Result<collections.List<u8>,Error>.Err(Error{kind:ErrorKind.CapacityOverflow});
     }
-    var result = stdlib.bytes(value.length + 2);
-    if (!result.ok()) {
-        return stdlib.Result<stdlib.Bytes, PathError>.Err(allocation(result.error));
-    }
-    var positions = stdlib.list<usize>(0);
-    var parents = stdlib.list<bit>(0);
+    var result=collections.list<u8>();result.ensureCapacity(value.length+2)?;
+    var positions=collections.list<usize>();
+    var parents=collections.list<bit>();
     var offset: usize = 0;
     var root: usize = 0;
     var anchored: bit = false;
@@ -186,23 +155,23 @@ pub func normalize(value: u8[], style: Style) -> stdlib.Result<stdlib.Bytes, Pat
         sep = 92;
     }
     if (style == Style.Windows && value.length >= 2 && value[1] == 58) {
-        result.push(value[0]);
-        result.push(58);
+        result.append(value[0])?;
+        result.append(58)?;
         offset = 2;
         if (offset < value.length && separator(value[offset], style)) {
-            result.push(sep);
+            result.append(sep)?;
             offset += 1;
             anchored = true;
         }
         root = result.length();
     } else {
         if (value.length > 0 && separator(value[0], style)) {
-            result.push(sep);
+            result.append(sep)?;
             offset = 1;
             anchored = true;
             root = 1;
             if (style == Style.Windows && value.length > 1 && separator(value[1], style)) {
-                result.push(sep);
+                result.append(sep)?;
                 offset = 2;
                 // UNC server/share are the immutable lexical root.
                 for (var component: usize = 0; component < 2; component += 1) {
@@ -214,13 +183,10 @@ pub func normalize(value: u8[], style: Style) -> stdlib.Result<stdlib.Bytes, Pat
                         offset += 1;
                     }
                     if (start == offset) {
-                        return stdlib.Result<stdlib.Bytes, PathError>.Err(PathError.InvalidPath);
+                        return core.Result<collections.List<u8>,Error>.Err(Error{kind:ErrorKind.InvalidPath});
                     }
-                    var error = result.append(value[start: offset]);
-                    if (error != stdlib.AllocationError.None) {
-                        return stdlib.Result<stdlib.Bytes, PathError>.Err(allocation(error));
-                    }
-                    result.push(sep);
+                    var part=value[start:offset];result.appendSlice(&part)?;
+                    result.append(sep)?;
                 }
                 root = result.length();
             }
@@ -239,8 +205,8 @@ pub func normalize(value: u8[], style: Style) -> stdlib.Result<stdlib.Bytes, Pat
             continue;
         }
         var parent: bit = length == 2 && value[start] == 46 && value[start + 1] == 46;
-        if (parent && positions.length() > 0 && !parents.get(parents.length() - 1)) {
-            var index: usize = positions.get(positions.length() - 1);
+        if (parent && positions.length() > 0 && !*parents.get(parents.length() - 1)) {
+            var index: usize = *positions.get(positions.length() - 1);
             result.truncate(index);
             positions.truncate(positions.length() - 1);
             parents.truncate(parents.length() - 1);
@@ -251,28 +217,11 @@ pub func normalize(value: u8[], style: Style) -> stdlib.Result<stdlib.Bytes, Pat
         }
         var before: usize = result.length();
         if (before > root && before > 0) {
-            result.push(sep);
+            result.append(sep)?;
         }
-        var error = result.append(value[start: offset]);
-        if (error != stdlib.AllocationError.None) {
-            return stdlib.Result<stdlib.Bytes, PathError>.Err(allocation(error));
-        }
-        error = positions.push(before);
-        if (error == stdlib.AllocationError.None) {
-            error = parents.push(parent);
-        }
-        if (error != stdlib.AllocationError.None) {
-            return stdlib.Result<stdlib.Bytes, PathError>.Err(allocation(error));
-        }
+                    var part=value[start:offset];result.appendSlice(&part)?;
+        positions.append(before)?;parents.append(parent)?;
     }
-    if (!result.ok()) {
-        return stdlib.Result<stdlib.Bytes, PathError>.Err(allocation(result.error));
-    }
-    if (result.length() == 0) {
-        var error = result.push(46);
-        if (error != stdlib.AllocationError.None) {
-            return stdlib.Result<stdlib.Bytes, PathError>.Err(allocation(error));
-        }
-    }
-    return stdlib.Result<stdlib.Bytes, PathError>.Ok(result);
+    if(result.length()==0){result.append(46)?;}
+    return core.Result<collections.List<u8>,Error>.Ok(result);
 }

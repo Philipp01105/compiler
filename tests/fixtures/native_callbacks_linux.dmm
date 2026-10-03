@@ -5,7 +5,7 @@ extern "system" from "callbacks" {
 
 export "system" func threadMain(address: *void) -> *void {
     var context: *Context = address.(*Context);
-    context.result = context.value * 3;
+    (*context).result = (*context).value * 3;
     return address;
 }
 

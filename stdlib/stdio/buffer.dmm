@@ -75,7 +75,7 @@ pub func readToEnd(source: *Stream, maximum: usize) -> Bytes {
             core.release(bytes.storage);
             bytes.storage = grown;
         }
-        var result: Transfer = source.read(
+        var result: Transfer = (*source).read(
             subview(bytes.storage, bytes.length, bytes.storage.length - bytes.length)
         );
         bytes.length += result.count;
@@ -98,7 +98,7 @@ pub func readLine(source: *Stream, maximum: usize) -> Bytes {
         return bytes;
     }
     while (bytes.length < maximum) {
-        var result: ByteResult = source.readByte();
+        var result: ByteResult = (*source).readByte();
         if (result.status != Status.Ok) {
             bytes.status = result.status;
             bytes.error = result.error;

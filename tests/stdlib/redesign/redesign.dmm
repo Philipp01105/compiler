@@ -1,0 +1,209 @@
+package main;
+import ("stdlib/core" "stdlib/collections" "stdlib/collections/hash" "stdlib/iter" "stdlib/text" "stdlib/io" "stdlib/fs" byteops "stdlib/bytes");
+var dropped:int=0;
+struct Owner { var value:int; destructor { dropped+=1; } }
+func owned(index:usize)->Owner { return Owner{value:index.(int)}; }
+func positive(value:&int)->bit { return *value>0; }
+func doubled(value:int)->int { return value*2; }
+func add(left:int,right:int)->int { return left+right; }
+func hashOwner(key:&Owner)->u64 {return key.value.(u64)%2;}
+func equalOwner(left:&Owner,right:&Owner)->bit {return left.value==right.value;}
+async func listTask(value:collections.List<int>)->int {return value.length().(int);}
+async func mapTask(value:collections.Map<int,int>)->int {return value.length().(int);}
+async func stringTask(value:text.String)->int {return value.length().(int);}
+async func joined(value:JoinHandle<int>)->int {
+    match(value.await()){Ok(number)=>return number;Err(error)=>return -1;}
+}
+func main()->int {
+    var empty:core.Option<Owner>;
+    match(empty) { None=>{} Some(value)=>return 1; }
+    var values=collections.list<int>();
+    match(values.append(4)) { Ok=>{} Err(error)=>return 2; }
+    match(values.append(6)) { Ok=>{} Err(error)=>return 3; }
+    for(var &mut value=values) { *value+=1; }
+    var sum:int=0;
+    for(var value=values) { sum+=value; }
+    if(sum!=12) { return 4; }
+    for(var &value=values) { sum+=*value; }
+    if(sum!=24) { return 5; }
+    {
+        var owners=collections.list<Owner>();
+        match(owners.append(Owner{value:10})) { Ok=>{} Err(error)=>return 6; }
+        for(var &mut value=owners) { value.value+=1; }
+        for(var &value=owners) { if(value.value!=11) { return 7; } }
+        match(owners.pop()) { Some(value)=>{ if(value.value!=11){return 8;} } None=>return 9; }
+    }
+    if(dropped!=1) { return 10; }
+    {
+        match(collections.bufferWith<Owner>(3,owned)) {
+            Ok(buffer)=>{
+                for(var &mut value=buffer) { value.value+=1; }
+                var total:int=0;
+                for(var &value=buffer) { total+=value.value; }
+                if(total!=6) {return 11;}
+            }
+            Err(error)=>return 12;
+        }
+    }
+    if(dropped!=4) { return 13; }
+    var cursor=values.iter();
+    match(iter.map(&mut cursor,doubled)) {
+        Ok(mapped)=>{
+            var source=mapped.iter();
+            match(iter.filter(&mut source,positive)) {
+                Ok(selected)=>{
+                    var items=selected.iter();
+                    if(iter.fold(&mut items,0,add)!=24) { return 14; }
+                }
+                Err(error)=>return 15;
+            }
+        }
+        Err(error)=>return 16;
+    }
+    match(text.fromString("hello")) {
+        Ok(value)=>{ if(!value.startsWith("he") || !value.contains("ell") || value.length()!=5){return 17;} }
+        Err(error)=>return 18;
+    }
+    var raw:u8[5]=[65,0,195,169,10]; var storage:u8[]=raw[:];
+    match(text.fromUtf8(&storage)) {
+        Ok(value)=>{
+            var view=value.view();
+            if(view.length()!=5 || view.byteAt(1)!=0) {return 19;}
+            var points=view.codepoints(); var total:int=0;
+            for(var point=points) {total+=point.(int);}
+            if(total!=308) {return 20;}
+            match(view.substring(3,4)){Ok(part)=>return 21; Err(error)=>{}}
+            var lines=view.split(10); var count:int=0;
+            for(var line=lines){count+=1;}
+            if(count!=2) {return 22;}
+        }
+        Err(error)=>return 23;
+    }
+    var input:u8[4]=[1,2,3,4]; var source:u8[]=input[:];
+    var reader=io.reader(&source);
+    match(io.readAll(&mut reader,4)) {
+        Ok(output)=>{if(output.length()!=4 || *output.get(3)!=4){return 24;}}
+        Err(error)=>return 25;
+    }
+    var target:u8[2]; var destination:u8[]=target[:];
+    var writer=io.writer(&mut destination);
+    match(io.writeAll(&mut writer,&source)) {
+        Ok=>return 26;
+        Err(error)=>{if(error.kind!=io.ErrorKind.WriteZero || error.transferred!=2){return 27;}}
+    }
+    if(target[0]!=1 || target[1]!=2){return 28;}
+    var lines=text.bytes("a\r\nb\n"); var lineReader=io.reader(&lines);
+    match(io.bufferedReader(&mut lineReader,2)) {
+        Ok(buffer)=>{
+            match(buffer.readLine(8)) {
+                Ok(value)=>match(value){Some(line)=>{if(line.length()!=1 || *line.get(0)!=97){return 29;}} None=>return 30;}
+                Err(error)=>return 31;
+            }
+            match(buffer.readLine(8)) {
+                Ok(value)=>match(value){Some(line)=>{if(line.length()!=1 || *line.get(0)!=98){return 32;}} None=>return 33;}
+                Err(error)=>return 34;
+            }
+        }
+        Err(error)=>return 35;
+    }
+    var fileInput=text.bytes("DMM\n");
+    match(fs.writeFile("redesign-file.tmp",&fileInput)){Ok=>{} Err(error)=>return 36;}
+    match(fs.open("redesign-file.tmp")) {
+        Ok(file)=>{
+            match(io.readAll(&mut file,4)){Ok(data)=>{if(data.length()!=4 || *data.get(2)!=77){return 37;}} Err(error)=>return 38;}
+            match(file.close()){Ok=>{} Err(error)=>return 39;}
+        }
+        Err(error)=>return 40;
+    }
+    match(fs.removeFile("redesign-file.tmp")){Ok=>{} Err(error)=>return 41;}
+    match(fs.exists("redesign-file.tmp")){Ok(present)=>{if(present){return 42;}} Err(error)=>return 43;}
+    match(collections.map<int,int>()) {
+        Ok(values)=>{
+            for(var i:int=0;i<20;i+=1){match(values.insert(i,i*2)){Ok=>{} Err(e)=>return 44;}}
+            var key:int=7;
+            match(values.get(&key)){Some(value)=>{if(*value!=14){return 45;}} None=>return 46;}
+            var total:int=0;
+            for(var entry=values){total+=*entry.value;}
+            if(total!=380){return 47;}
+            match(values.remove(&key)){Some(value)=>{if(value!=14){return 48;}} None=>return 49;}
+            if(values.contains(&key)){return 50;}
+        }
+        Err(error)=>return 51;
+    }
+    var before=dropped;
+    match(collections.set<Owner>(hashOwner,equalOwner)) {
+        Ok(values)=>{
+            match(values.insert(Owner{value:3})){Ok=>{} Err(e)=>return 52;}
+            match(values.insert(Owner{value:3})){Ok=>{} Err(e)=>return 53;}
+            if(values.length()!=1){return 54;}
+            for(var &value=values){if(value.value!=3){return 55;}}
+            var key=Owner{value:3};
+            match(values.remove(&key)){Some(value)=>{if(value.value!=3){return 56;}} None=>return 57;}
+        }
+        Err(error)=>return 58;
+    }
+    if(dropped-before!=3){return 59;}
+    var emptyBytes:u8[1];var zero=emptyBytes[:0];
+    if(hash.sipHash(&zero,506097522914230528.(u64),1084818905618843912.(u64))!=8246050544436514353.(u64)){return 60;}
+    var single:u8[1]=[0];var one=single[:];
+    if(hash.sipHash(&one,506097522914230528.(u64),1084818905618843912.(u64))!=8428550223375919101.(u64)){return 61;}
+    match(text.map<int>()) {
+        Ok(values)=>{
+            match(text.fromString("name")){
+                Ok(key)=>match(values.insert(key,9)){Ok=>{} Err(e)=>return 62;}
+                Err(e)=>return 63;
+            }
+            match(text.fromString("name")){
+                Ok(key)=>match(values.get(&key)){Some(value)=>{if(*value!=9){return 64;}} None=>return 65;}
+                Err(e)=>return 66;
+            }
+            var entries=values.entriesMut();
+            match(entries.next()){Some(entry)=>{*entry.value+=1;} None=>return 67;}
+        }
+        Err(e)=>return 68;
+    }
+    var sought:int=5;
+    if(!collections.contains(&values,&sought)){return 69;}
+    var greeting=text.bytes("hello");var pattern=text.bytes("ell");
+    match(text.view(&greeting)){
+        Ok(view)=>match(text.view(&pattern)){
+            Ok(needle)=>{if(!view.contains(needle) || !text.contains("hello","ell")){return 70;}}
+            Err(e)=>return 71;
+        }
+        Err(e)=>return 72;
+    }
+    var transferred=collections.list<int>();
+    match(transferred.append(1)){Ok=>{}Err(e)=>return 73;}
+    if(block_on(joined(spawn(listTask(transferred))))!=1){return 74;}
+    match(collections.map<int,int>()){
+        Ok(owner)=>{
+            match(owner.insert(1,2)){Ok=>{}Err(e)=>return 75;}
+            var borrowed:core.Option<&int>=core.Option<&int>.None;
+            {var key:int=1;borrowed=owner.get(&key);}
+            match(borrowed){Some(number)=>{if(*number!=2){return 76;}}None=>return 77;}
+            if(block_on(joined(spawn(mapTask(owner))))!=1){return 78;}
+        }
+        Err(e)=>return 79;
+    }
+    match(text.fromString("owned")){
+        Ok(owner)=>{if(block_on(joined(spawn(stringTask(owner))))!=5){return 80;}}
+        Err(e)=>return 81;
+    }
+    match(fs.createDirs("redesign-directory/child")){Ok=>{}Err(e)=>return 82;}
+    match(fs.createDirs("redesign-directory/child")){Ok=>{}Err(e)=>return 83;}
+    match(fs.readDir("redesign-directory")){
+        Ok(entries)=>{if(entries.length()!=1 || entries.get(0).kind!=fs.EntryKind.Directory){return 84;}}
+        Err(e)=>return 85;
+    }
+    match(fs.removeDir("redesign-directory/child")){Ok=>{}Err(e)=>return 86;}
+    match(fs.removeDir("redesign-directory")){Ok=>{}Err(e)=>return 87;}
+    var splitInput=text.bytes("a,,");var splitCursor=byteops.split(&splitInput,44);
+    var fields:usize=0;
+    for(var field=splitCursor){
+        if(fields==0 && (field.length!=1 || field[0]!=97)){return 88;}
+        if(fields>0 && field.length!=0){return 89;}
+        fields+=1;
+    }
+    if(fields!=3){return 90;}
+    return 0;
+}

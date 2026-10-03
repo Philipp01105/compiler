@@ -261,6 +261,7 @@ static int dump_statement(FILE *output, const AstProgram *program,
         (fputs(" operator=", output) == EOF ||
          !quoted(output, operator_name(statement->assignment_operator))))
         return 0;
+    if (statement->iterator_mode && fprintf(output," iterator=%u",statement->iterator_mode)<0) return 0;
     if (fputc('\n', output) == EOF) return 0;
     for (const AstMatchArm *a = statement->match_arms; a; a = a->next) {
         if (!indent(output, depth + 1) || fputs("pattern=", output) == EOF ||

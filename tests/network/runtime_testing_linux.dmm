@@ -2,14 +2,14 @@ package network;
 import "stdlib/native/glibc";
 export "system" func __dmm_net_test_submitted(op: *Operation) -> i32 {
     lockNet();
-    var submitted: i32 = op.started;
+    var submitted: i32 = (*op).started;
     unlockNet();
     return submitted;
 }
 
 export "system" func __dmm_net_test_send(s: *Socket, bytes: *u8, length: i32) -> i32 {
     lockNet();
-    var count: isize = glibc.send(s.fd.(i32), bytes.(*void), length.(usize), 16384);
+    var count: isize = glibc.send((*s).fd.(i32), bytes.(*void), length.(usize), 16384);
     unlockNet();
     return count.(i32);
 }

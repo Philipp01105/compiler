@@ -765,8 +765,12 @@ int expression_to_declared_type_allowed(const Analyzer *analyzer,
                          type->is_slice == expression->resolved_is_slice;
     if (type->is_array)
         matching_shape = matching_shape &&
-                         type->pointer_depth == expression->resolved_pointer_depth &&
-                         type->outer_pointer_depth == expression->resolved_outer_pointer_depth &&
+                         type->pointer_depth ==
+                             (type->borrow_kind != AST_BORROW_NONE && expression->has_resolved_ast_type
+                                 ? expression->resolved_ast_type.pointer_depth : expression->resolved_pointer_depth) &&
+                         type->outer_pointer_depth ==
+                             (type->borrow_kind != AST_BORROW_NONE && expression->has_resolved_ast_type
+                                 ? expression->resolved_ast_type.outer_pointer_depth : expression->resolved_outer_pointer_depth) &&
                          type->resolved_array_length == expression->resolved_array_length;
     if (target_name != AST_TOKEN_NONE) {
         size_t target_symbol = resolve_named_symbol_id(analyzer, type_program, target_name);
@@ -798,6 +802,12 @@ int expression_assignment_allowed(const Analyzer *analyzer,
                                          const AstExpression *source,
                                          const AstExpression *target) {
     if (source == NULL || target == NULL) return 0;
+    if (target->has_resolved_ast_type && target->resolved_is_slice &&
+        target->resolved_borrow_kind==AST_BORROW_NONE && !target->resolved_outer_pointer_depth &&
+        source->resolved_is_array && !source->resolved_outer_pointer_depth)
+        return expression_to_declared_type_allowed(analyzer,source,
+            target->resolved_type_program ? target->resolved_type_program : analyzer->program,
+            &target->resolved_ast_type);
     if (semantic_expression_is_future(source) || semantic_expression_is_future(target)) {
         if (!semantic_expression_is_future(source) || !semantic_expression_is_future(target)) return 0;
         return ast_concrete_type_equal(
@@ -1297,6 +1307,7 @@ static void validate_function_arguments(Analyzer *analyzer,
     const AstParameter *parameter = function->declaration->as.function.parameters;
     for (; argument != NULL && parameter != NULL;
            argument = argument->next, parameter = parameter->next) {
+        semantic_mark_array_view(argument,&parameter->type);
         if (!expression_to_declared_type_allowed(analyzer, argument,
                                                  function->source_program, &parameter->type))
             conversion_error(analyzer, argument, function->source_program, &parameter->type,
@@ -1321,10 +1332,12 @@ static void validate_callable_arguments(Analyzer *analyzer,
                        ERR_SEM_WRONG_ARG_COUNT, message);
         return;
     }
-    for (; parameter && argument; parameter = parameter->next, argument = argument->next)
+    for (; parameter && argument; parameter = parameter->next, argument = argument->next) {
+        semantic_mark_array_view(argument,&parameter->type);
         if (!expression_to_declared_type_allowed(analyzer, argument, program, &parameter->type))
             conversion_error(analyzer, argument, program, &parameter->type, NULL,
                              "Cannot implicitly convert argument to callable parameter type");
+    }
 }
 
 void validate_expression(Analyzer *analyzer, AstExpression *expression,
@@ -1442,6 +1455,7 @@ void validate_expression(Analyzer *analyzer, AstExpression *expression,
         const AstTypeArgument *payload = value->payload_types;
         AstExpression *argument = expression->arguments;
         for (; payload && argument; payload = payload->next, argument = argument->next) {
+            semantic_mark_array_view(argument,&payload->type);
             if (!expression_to_declared_type_allowed(analyzer, argument, variant->source_program, &payload->type))
                 conversion_error(analyzer, argument, variant->source_program, &payload->type, NULL,
                                  "Enum payload type mismatch");

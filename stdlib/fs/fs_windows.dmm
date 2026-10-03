@@ -1,7 +1,8 @@
 package fs;
 import (
-    "stdlib"
-    "stdlib/unicode"
+    "stdlib/core"
+    "stdlib/collections"
+    "stdlib/text/utf16"
     "stdlib/time"
     raw "stdlib/core/raw"
 );
@@ -62,11 +63,18 @@ extern "system" from "kernel32" {
     func FindClose(handle: *void) -> i32;
 }
 
-func systemError() -> FsError {
-    return FsError{
-        kind: ErrorKind.System,
+func systemError() -> Error {
+    var code=GetLastError();
+    var kind:ErrorKind=ErrorKind.System;
+    if(code==2 || code==3) {kind=ErrorKind.NotFound;}
+    if(code==80 || code==183) {kind=ErrorKind.AlreadyExists;}
+    if(code==5) {kind=ErrorKind.AccessDenied;}
+    if(code==267) {kind=ErrorKind.NotDirectory;}
+    if(code==206) {kind=ErrorKind.InvalidPath;}
+    return Error{
+        kind: kind,
         domain: ErrorDomain.Win32,
-        code: GetLastError().(isize)
+        code: code.(isize), transferred:0
     };
 }
 
@@ -76,37 +84,23 @@ func handle(bits: usize) -> *void {
     return p.handle;
 }
 
-func widePath(path: u8[]) -> stdlib.Result<stdlib.List<u16>, FsError> {
-    for (var i: usize = 0; i < path.length; i += 1) {
-        if (path[i] == 0) {
-            return stdlib.Result<stdlib.List<u16>, FsError>.Err(failure(ErrorKind.InvalidPath));
+func widePath(path:u8[])->core.Result<collections.List<u16>,Error> {
+    for(var i:usize=0;i<path.length;i+=1){if(path[i]==0){return core.Result<collections.List<u16>,Error>.Err(failure(ErrorKind.InvalidPath));}}
+    match(utf16.fromUtf8(&path)){
+        Err(error)=>{
+            var kind:ErrorKind=ErrorKind.InvalidPath;
+            if(error.kind==utf16.ErrorKind.OutOfMemory){kind=ErrorKind.OutOfMemory;}
+            if(error.kind==utf16.ErrorKind.CapacityOverflow){kind=ErrorKind.CapacityOverflow;}
+            return core.Result<collections.List<u16>,Error>.Err(failure(kind));
         }
-    }
-    var converted = unicode.toUtf16(path);
-    match (converted) {
-        Err(error) => {
-            var kind: ErrorKind = ErrorKind.InvalidPath;
-            if (
-                error.kind == unicode.ErrorKind.OutOfMemory ||
-                error.kind == unicode.ErrorKind.CapacityOverflow
-            ) {
-                kind = ErrorKind.OutOfMemory;
-            }
-            return stdlib.Result<stdlib.List<u16>, FsError>.Err(failure(kind));
-        }
-        Ok(value) => {
-            if (value.push(0) != stdlib.AllocationError.None) {
-                return stdlib.Result<stdlib.List<u16>, FsError>.Err(failure(ErrorKind.OutOfMemory));
-            }
-            return stdlib.Result<stdlib.List<u16>, FsError>.Ok(value);
-        }
+        Ok(value)=>{value.append(0)?;return core.Result<collections.List<u16>,Error>.Ok(value);}
     }
 }
 
-func nativeOpen(path: u8[], mode: OpenMode) -> stdlib.Result<File, FsError> {
+func nativeOpen(path: u8[], mode: OpenMode) -> core.Result<File, Error> {
     var converted = widePath(path);
     match (converted) {
-        Err(error) => return stdlib.Result<File, FsError>.Err(error);
+        Err(error) => return core.Result<File, Error>.Err(error);
         Ok(value) => {
             var access: u32 = 2147483648;
             var creation: u32 = 3;
@@ -138,9 +132,9 @@ func nativeOpen(path: u8[], mode: OpenMode) -> stdlib.Result<File, FsError> {
                 nil.handle
             );
             if (p.bits == 18446744073709551615.(usize)) {
-                return stdlib.Result<File, FsError>.Err(systemError());
+                return core.Result<File, Error>.Err(systemError());
             }
-            return stdlib.Result<File, FsError>.Ok(
+            return core.Result<File, Error>.Ok(
                 File{
                     handle: p.bits,
                     active: true,
@@ -152,16 +146,16 @@ func nativeOpen(path: u8[], mode: OpenMode) -> stdlib.Result<File, FsError> {
     }
 }
 
-func nativeClose(bits: usize) -> stdlib.Result<void, FsError> {
+func nativeClose(bits: usize) -> core.Result<void, Error> {
     if (CloseHandle(handle(bits)) == 0) {
-        return stdlib.Result<void, FsError>.Err(systemError());
+        return core.Result<void, Error>.Err(systemError());
     }
-    return stdlib.Result<void, FsError>.Ok;
+    return core.Result<void, Error>.Ok;
 }
 
-func nativeRead(bits: usize, destination: u8[]) -> stdlib.Result<usize, FsError> {
+func nativeRead(bits: usize, destination: u8[]) -> core.Result<usize, Error> {
     if (destination.length == 0) {
-        return stdlib.Result<usize, FsError>.Ok(0);
+        return core.Result<usize, Error>.Ok(0);
     }
     var count: usize = destination.length;
     if (count > 1073741824) {
@@ -178,14 +172,16 @@ func nativeRead(bits: usize, destination: u8[]) -> stdlib.Result<usize, FsError>
             nil.handle
         ) == 0
     ) {
-        return stdlib.Result<usize, FsError>.Err(systemError());
+        var error=systemError(); error.transferred=read.(usize);
+        if(error.code==109 || error.code==38) {return core.Result<usize,Error>.Ok(0);}
+        return core.Result<usize, Error>.Err(error);
     }
-    return stdlib.Result<usize, FsError>.Ok(read.(usize));
+    return core.Result<usize, Error>.Ok(read.(usize));
 }
 
-func nativeWrite(bits: usize, source: u8[]) -> stdlib.Result<usize, FsError> {
+func nativeWrite(bits: usize, source: u8[]) -> core.Result<usize, Error> {
     if (source.length == 0) {
-        return stdlib.Result<usize, FsError>.Ok(0);
+        return core.Result<usize, Error>.Ok(0);
     }
     var count: usize = source.length;
     if (count > 1073741824) {
@@ -202,24 +198,25 @@ func nativeWrite(bits: usize, source: u8[]) -> stdlib.Result<usize, FsError> {
             nil.handle
         ) == 0
     ) {
-        return stdlib.Result<usize, FsError>.Err(systemError());
+        var error=systemError(); error.transferred=written.(usize);
+        return core.Result<usize, Error>.Err(error);
     }
-    return stdlib.Result<usize, FsError>.Ok(written.(usize));
+    return core.Result<usize, Error>.Ok(written.(usize));
 }
 
-func nativeSeek(bits: usize, offset: i64, origin: SeekFrom) -> stdlib.Result<u64, FsError> {
+func nativeSeek(bits: usize, offset: i64, origin: SeekOrigin) -> core.Result<u64, Error> {
     var method: u32 = 0;
-    if (origin == SeekFrom.Current) {
+    if (origin == SeekOrigin.Current) {
         method = 1;
     }
-    if (origin == SeekFrom.End) {
+    if (origin == SeekOrigin.End) {
         method = 2;
     }
     var position: i64;
     if (SetFilePointerEx(handle(bits), offset, (&position).(*i64), method) == 0) {
-        return stdlib.Result<u64, FsError>.Err(systemError());
+        return core.Result<u64, Error>.Err(systemError());
     }
-    return stdlib.Result<u64, FsError>.Ok(position.(u64));
+    return core.Result<u64, Error>.Ok(position.(u64));
 }
 
 func kind(attributes: u32) -> EntryKind {
@@ -232,18 +229,18 @@ func kind(attributes: u32) -> EntryKind {
     return EntryKind.File;
 }
 
-func nativeMetadata(path: u8[]) -> stdlib.Result<Metadata, FsError> {
+func nativeMetadata(path: u8[]) -> core.Result<Metadata, Error> {
     var converted = widePath(path);
     match (converted) {
-        Err(error) => return stdlib.Result<Metadata, FsError>.Err(error);
+        Err(error) => return core.Result<Metadata, Error>.Err(error);
         Ok(value) => {
             var view: u16[] = value.view();
             var data: FileData;
             if (GetFileAttributesExW(view.data, 0, (&data).(*FileData)) == 0) {
-                return stdlib.Result<Metadata, FsError>.Err(systemError());
+                return core.Result<Metadata, Error>.Err(systemError());
             }
             var ticks: u64 = data.modified.high.(u64) * 4294967296 + data.modified.low.(u64);
-            return stdlib.Result<Metadata, FsError>.Ok(
+            return core.Result<Metadata, Error>.Ok(
                 Metadata{
                     kind: kind(data.attributes),
                     size: data.sizeHigh.(u64) * 4294967296 + data.sizeLow.(u64),
@@ -257,64 +254,64 @@ func nativeMetadata(path: u8[]) -> stdlib.Result<Metadata, FsError> {
     }
 }
 
-func nativeRemoveFile(path: u8[]) -> stdlib.Result<void, FsError> {
+func nativeRemoveFile(path: u8[]) -> core.Result<void, Error> {
     var converted = widePath(path);
     match (converted) {
-        Err(error) => return stdlib.Result<void, FsError>.Err(error);
+        Err(error) => return core.Result<void, Error>.Err(error);
         Ok(value) => {
             var view: u16[] = value.view();
             if (DeleteFileW(view.data) == 0) {
-                return stdlib.Result<void, FsError>.Err(systemError());
+                return core.Result<void, Error>.Err(systemError());
             }
-            return stdlib.Result<void, FsError>.Ok;
+            return core.Result<void, Error>.Ok;
         }
     }
 }
 
-func nativeCreateDirectory(path: u8[]) -> stdlib.Result<void, FsError> {
+func nativeCreateDirectory(path: u8[]) -> core.Result<void, Error> {
     var converted = widePath(path);
     match (converted) {
-        Err(error) => return stdlib.Result<void, FsError>.Err(error);
+        Err(error) => return core.Result<void, Error>.Err(error);
         Ok(value) => {
             var view: u16[] = value.view();
             var nil: Pointer;
             if (CreateDirectoryW(view.data, nil.handle) == 0) {
-                return stdlib.Result<void, FsError>.Err(systemError());
+                return core.Result<void, Error>.Err(systemError());
             }
-            return stdlib.Result<void, FsError>.Ok;
+            return core.Result<void, Error>.Ok;
         }
     }
 }
 
-func nativeRemoveDirectory(path: u8[]) -> stdlib.Result<void, FsError> {
+func nativeRemoveDirectory(path: u8[]) -> core.Result<void, Error> {
     var converted = widePath(path);
     match (converted) {
-        Err(error) => return stdlib.Result<void, FsError>.Err(error);
+        Err(error) => return core.Result<void, Error>.Err(error);
         Ok(value) => {
             var view: u16[] = value.view();
             if (RemoveDirectoryW(view.data) == 0) {
-                return stdlib.Result<void, FsError>.Err(systemError());
+                return core.Result<void, Error>.Err(systemError());
             }
-            return stdlib.Result<void, FsError>.Ok;
+            return core.Result<void, Error>.Ok;
         }
     }
 }
 
-func nativeRename(oldPath: u8[], newPath: u8[]) -> stdlib.Result<void, FsError> {
+func nativeRename(oldPath: u8[], newPath: u8[]) -> core.Result<void, Error> {
     var first = widePath(oldPath);
     match (first) {
-        Err(error) => return stdlib.Result<void, FsError>.Err(error);
+        Err(error) => return core.Result<void, Error>.Err(error);
         Ok(a) => {
             var second = widePath(newPath);
             match (second) {
-                Err(error) => return stdlib.Result<void, FsError>.Err(error);
+                Err(error) => return core.Result<void, Error>.Err(error);
                 Ok(b) => {
                     var av: u16[] = a.view();
                     var bv: u16[] = b.view();
                     if (MoveFileExW(av.data, bv.data, 1) == 0) {
-                        return stdlib.Result<void, FsError>.Err(systemError());
+                        return core.Result<void, Error>.Err(systemError());
                     }
-                    return stdlib.Result<void, FsError>.Ok;
+                    return core.Result<void, Error>.Ok;
                 }
             }
         }
@@ -326,18 +323,18 @@ struct DirectoryState {
     var active: bit;
     var first: bit;
     var data: FindData;
-    pub func close() -> stdlib.Result<void, FsError> {
+    pub func close() -> core.Result<void, Error> {
         if (!active) {
-            return stdlib.Result<void, FsError>.Ok;
+            return core.Result<void, Error>.Ok;
         }
         active = false;
         if (FindClose(handleFromBits(handle)) == 0) {
-            return stdlib.Result<void, FsError>.Err(systemError());
+            return core.Result<void, Error>.Err(systemError());
         }
-        return stdlib.Result<void, FsError>.Ok;
+        return core.Result<void, Error>.Ok;
     }
 
-    pub func next() -> stdlib.Result<DirectoryEntry, FsError> {
+    pub func next() -> core.Result<core.Option<Entry>, Error> {
         while (active) {
             if (first) {
                 first = false;
@@ -345,11 +342,9 @@ struct DirectoryState {
                 if (FindNextFileW(handleFromBits(handle), (&data).(*FindData)) == 0) {
                     var code: u32 = GetLastError();
                     if (code == 18) {
-                        return stdlib.Result<DirectoryEntry, FsError>.Err(
-                            failure(ErrorKind.EndOfDirectory)
-                        );
+                        return core.Result<core.Option<Entry>, Error>.Ok(core.Option<Entry>.None);
                     }
-                    return stdlib.Result<DirectoryEntry, FsError>.Err(systemError());
+                    return core.Result<core.Option<Entry>, Error>.Err(systemError());
                 }
             }
             var length: usize = 0;
@@ -362,17 +357,18 @@ struct DirectoryState {
             ) {
                 continue;
             }
-            var converted = unicode.fromUtf16(data.fileName[: length]);
+            var units=data.fileName[:length];
+            var converted=utf16.toUtf8(&units);
             match (converted) {
-                Err(error) => return stdlib.Result<DirectoryEntry, FsError>.Err(
+                Err(error) => return core.Result<core.Option<Entry>, Error>.Err(
                     failure(ErrorKind.OutOfMemory)
                 );
-                Ok(name) => return stdlib.Result<DirectoryEntry, FsError>.Ok(
-                    DirectoryEntry{ name: name, kind: kind(data.attributes) }
+                Ok(name) => return core.Result<core.Option<Entry>, Error>.Ok(
+                    core.Option<Entry>.Some(Entry{ name: name, kind: kind(data.attributes) })
                 );
             }
         }
-        return stdlib.Result<DirectoryEntry, FsError>.Err(failure(ErrorKind.EndOfDirectory));
+        return core.Result<core.Option<Entry>, Error>.Ok(core.Option<Entry>.None);
     }
 
     destructor {
@@ -386,27 +382,21 @@ func handleFromBits(bits: usize) -> *void {
     return handle(bits);
 }
 
-func nativeReadDirectory(path: u8[]) -> stdlib.Result<DirectoryState, FsError> {
+func nativeReadDirectory(path: u8[]) -> core.Result<DirectoryState, Error> {
     var checked = metadata(path);
     match (checked) {
-        Err(error) => return stdlib.Result<DirectoryState, FsError>.Err(error);
+        Err(error) => return core.Result<DirectoryState, Error>.Err(error);
         Ok(data) => {
             if (data.kind != EntryKind.Directory) {
-                return stdlib.Result<DirectoryState, FsError>.Err(failure(ErrorKind.InvalidPath));
+                return core.Result<DirectoryState, Error>.Err(failure(ErrorKind.NotDirectory));
             }
         }
     }
-    var pattern = stdlib.bytes(0);
-    if (
-        pattern.append(path) != stdlib.AllocationError.None ||
-        pattern.push(47) != stdlib.AllocationError.None ||
-        pattern.push(42) != stdlib.AllocationError.None
-    ) {
-        return stdlib.Result<DirectoryState, FsError>.Err(failure(ErrorKind.OutOfMemory));
-    }
+    var pattern=collections.list<u8>();
+    pattern.appendSlice(&path)?;pattern.append(47)?;pattern.append(42)?;
     var converted = widePath(pattern.view());
     match (converted) {
-        Err(error) => return stdlib.Result<DirectoryState, FsError>.Err(error);
+        Err(error) => return core.Result<DirectoryState, Error>.Err(error);
         Ok(value) => {
             var view: u16[] = value.view();
             var directory: DirectoryState;
@@ -414,14 +404,14 @@ func nativeReadDirectory(path: u8[]) -> stdlib.Result<DirectoryState, FsError> {
             p.handle = FindFirstFileW(view.data, (&directory.data).(*FindData));
             if (p.bits == 18446744073709551615.(usize)) {
                 if (GetLastError() == 2) {
-                    return stdlib.Result<DirectoryState, FsError>.Ok(directory);
+                    return core.Result<DirectoryState, Error>.Ok(directory);
                 }
-                return stdlib.Result<DirectoryState, FsError>.Err(systemError());
+                return core.Result<DirectoryState, Error>.Err(systemError());
             }
             directory.handle = p.bits;
             directory.active = true;
             directory.first = true;
-            return stdlib.Result<DirectoryState, FsError>.Ok(directory);
+            return core.Result<DirectoryState, Error>.Ok(directory);
         }
     }
 }

@@ -1,0 +1,3 @@
+module tests/iterators
+dmm 2026-10-04-dev
+features = ["async"]

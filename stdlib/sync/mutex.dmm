@@ -14,8 +14,8 @@ struct MutexStorage<T> {
     var storage: *MutexStorage<T>;
 
     destructor {
-        core.destroy<T>(&storage.value);
-        internal.release(storage.platform);
+        core.destroy<T>(&(*storage).value);
+        internal.release((*storage).platform);
         core.core_release(storage.(*u8));
     }
 }
@@ -26,10 +26,10 @@ struct MutexStorage<T> {
     var owner: &'a Mutex<T>;
     var storage: *MutexStorage<T>;
 
-    pub func getRef() -> &T { return &storage.value; }
-    pub func getMut() -> &mut T { return &mut storage.value; }
+    pub func getRef() -> &T { return &(*storage).value; }
+    pub func getMut() -> &mut T { return &mut (*storage).value; }
 
-    destructor { internal.unlock(storage.platform); }
+    destructor { internal.unlock((*storage).platform); }
 }
 
 pub func mutex<T: core.Send>(value: T) -> stdlib.Result<Mutex<T>, stdlib.AllocationError> {
@@ -47,6 +47,6 @@ pub func mutex<T: core.Send>(value: T) -> stdlib.Result<Mutex<T>, stdlib.Allocat
 }
 
 pub func lock<'a, T: core.Send>(mutex: &'a Mutex<T>) -> MutexGuard<'a, T> {
-    internal.lock(mutex.storage.platform);
+    internal.lock((*mutex.storage).platform);
     return MutexGuard<'a, T>{owner: mutex, storage: mutex.storage};
 }

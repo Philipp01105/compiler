@@ -113,8 +113,8 @@ func main() -> int {
 
         // A custom aggregate can also live in explicitly managed raw storage.
         var stored: *Cell < SampleStats >= reserve(Cell<SampleStats>);
-        stored.value = stats;
-        if (stored.value.total != 15) {
+        (*stored).value = stats;
+        if ((*stored).value.total != 15) {
             free(stored);
             return 6;
         }

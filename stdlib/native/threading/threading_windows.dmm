@@ -29,7 +29,7 @@ func wait(handle: *void) -> void {
 
 pub export "system" func __dmm_platform_thread_entry(address: *void) -> u32 {
     var thread: *Thread = address.(*Thread);
-    thread.callback(thread.argument);
+    (*thread).callback((*thread).argument);
     return 0;
 }
 
@@ -42,8 +42,8 @@ pub export "system" func __dmm_async_thread_create(
         abort();
     }
     var thread: *Thread = address.(*Thread);
-    thread.callback = callback;
-    thread.argument = argument;
+    (*thread).callback = callback;
+    (*thread).argument = argument;
     var handle: usize = ucrt.beginThread(
         nullPointer(),
         0,
@@ -55,14 +55,14 @@ pub export "system" func __dmm_async_thread_create(
     if (handle == 0) {
         abort();
     }
-    thread.handle = kernel32.handleFromBits(handle);
+    (*thread).handle = kernel32.handleFromBits(handle);
     return address;
 }
 
 pub export "system" func __dmm_async_thread_join(address: *void) -> void {
     var thread: *Thread = address.(*Thread);
-    wait(thread.handle);
-    check(kernel32.CloseHandle(thread.handle));
+    wait((*thread).handle);
+    check(kernel32.CloseHandle((*thread).handle));
     ucrt.release(address);
 }
 

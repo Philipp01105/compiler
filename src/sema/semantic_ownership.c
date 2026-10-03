@@ -399,20 +399,27 @@ static void read_call(OwnershipChecker *checker, OwnershipFlow *flow,
         return;
     }
     const AstExpression *callee = expression->left;
-    int once_receiver=0;
+    int once_receiver=expression->receiver_contract_mode==2;
     if(callee && callee->kind==AST_EXPR_MEMBER && expression->resolved_symbol_id<checker->count) {
         const SemanticSymbol *method=&checker->analyzer->model->symbols[expression->resolved_symbol_id];
-        once_receiver=method->kind==SEMANTIC_SYMBOL_FUNCTION && method->declaration &&
+        once_receiver |= method->kind==SEMANTIC_SYMBOL_FUNCTION && method->declaration &&
             method->declaration->as.function.receiver_mode==2;
     }
     const AstExpression *callable = callee && callee->kind == AST_EXPR_MEMBER &&
         (once_receiver || semantic_closure_method(checker->analyzer, callee->left)) ? callee->left : callee;
     if (callable && callable->has_resolved_ast_type &&
         (once_receiver || callable->resolved_ast_type.callable_mode == 2)) {
-        if (callable->resolved_borrow_kind != AST_BORROW_NONE) {
+        if (callable->resolved_borrow_kind != AST_BORROW_NONE ||
+            (callable->kind==AST_EXPR_UNARY && callable->operator_type==TOKEN_STAR && callable->right &&
+             callable->right->resolved_borrow_kind!=AST_BORROW_NONE)) {
             read_expression(checker, flow, callable);
             ownership_error(checker, expression->first_token,
                             "A once callable requires an owned value; invocation through a checked reference is forbidden");
+        } else if (once_receiver && callable->kind==AST_EXPR_NAME && callable->resolved_symbol_id<checker->count) {
+            if (expression_available(checker,flow,callable)) {
+                flow->values[callable->resolved_symbol_id]=OWNERSHIP_MOVED;
+                flow->move_tokens[callable->resolved_symbol_id]=callable->value_token;
+            }
         } else consume_expression(checker, flow, callable);
     }
     else
@@ -447,7 +454,9 @@ static void read_call(OwnershipChecker *checker, OwnershipFlow *flow,
 
 static void read_expression(OwnershipChecker *checker, OwnershipFlow *flow,
                             const AstExpression *expression) {
-    for (; expression != NULL; expression = expression->next) {
+    /* Call/aggregate argument loops own sibling traversal. Reading one
+       argument must not consume the following arguments a second time. */
+    for (; expression != NULL; expression = NULL) {
         if (!flow->reachable) return;
         if (expression->kind == AST_EXPR_NAME) {
             (void) expression_available(checker, flow, expression);
@@ -494,7 +503,9 @@ static void read_expression(OwnershipChecker *checker, OwnershipFlow *flow,
         }
         read_expression(checker, flow, expression->left);
         read_expression(checker, flow, expression->right);
-        read_expression(checker, flow, expression->arguments);
+        for (const AstExpression *argument = expression->arguments;
+             argument != NULL; argument = argument->next)
+            read_expression(checker, flow, argument);
     }
 }
 
@@ -898,6 +909,13 @@ void validate_function_ownership(Analyzer *analyzer,
         if (s->kind == SEMANTIC_SYMBOL_VARIABLE)
             flow.values[id] = explicit_init_symbol(&checker, id) && s->declaration &&
                 !s->declaration->as.constant.value ? OWNERSHIP_UNINITIALIZED : OWNERSHIP_LIVE;
+    }
+    if (function->as.function.receiver_parameter != NULL) {
+        size_t receiver = function->as.function.receiver_parameter->resolved_symbol_id;
+        if (receiver < checker.count) {
+            flow.values[receiver] = OWNERSHIP_LIVE;
+            flow.move_tokens[receiver] = AST_TOKEN_NONE;
+        }
     }
     for (const AstParameter *parameter = function->as.function.parameters;
          parameter != NULL; parameter = parameter->next)

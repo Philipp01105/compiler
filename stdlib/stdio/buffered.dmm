@@ -18,7 +18,7 @@ func bufferedRead(
         return transfer(0, Status.Ok, 0);
     }
     if (*position == * end) {
-        var result: Transfer = stream.read(storage);
+        var result: Transfer = (*stream).read(storage);
         if (!result.ok()) {
             return result;
         }
@@ -140,7 +140,7 @@ pub func bufferedReader(stream: *Stream, capacity: usize) -> BufferedReader {
         reader.status = Status.InvalidInput;
         return reader;
     }
-    if (!stream.canRead()) {
+    if (!(*stream).canRead()) {
         reader.status = Status.AccessDenied;
         return reader;
     }
@@ -161,7 +161,7 @@ func flushBuffer(stream: *Stream, storage: u8[], pending: &mut usize, active: bi
     if (*pending == 0) {
         return transfer(0, Status.Ok, 0);
     }
-    var result: Transfer = stream.writeAll(subview(storage, 0, *pending));
+    var result: Transfer = (*stream).writeAll(subview(storage, 0, *pending));
     *pending -= result.count;
     if (result.count > 0 && *pending > 0) {
         core.core_copy(
@@ -183,7 +183,7 @@ func bufferedWrite(
     if (!active) {
         return transfer(0, Status.Closed, 0);
     }
-    if (!stream.canWrite()) {
+    if (!(*stream).canWrite()) {
         return transfer(0, Status.AccessDenied, 0);
     }
     var total: usize = 0;
@@ -298,7 +298,7 @@ pub func bufferedWriter(stream: *Stream, capacity: usize) -> BufferedWriter {
         writer.status = Status.InvalidInput;
         return writer;
     }
-    if (!stream.canWrite()) {
+    if (!(*stream).canWrite()) {
         writer.status = Status.AccessDenied;
         return writer;
     }

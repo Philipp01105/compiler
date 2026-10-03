@@ -350,6 +350,24 @@ static void test_nested_cross_executor(void) {
     finish_executor(a); finish_executor(b); gate_drop(&gate);
 }
 
+static void test_wakes_racing_cancellation(void) {
+    for (unsigned round=0;round<30;round++) {
+        Counts c; counts_init(&c); Gate gate; gate_init(&gate);
+        DmmExecutor *e=dmm_executor_create(4);
+        DmmTask *task=dmm_executor_spawn(e,future(&c,GATED_PENDING,&gate));
+        gate_wait(&gate,1);
+        WakeJob job={c.retained}; TestThread threads[4];
+        for (unsigned i=0;i<4;i++) threads[i]=start(wake_many,&job);
+        dmm_join_cancel(task);
+        assert(dmm_cancel_poll(task,NULL)==DMM_PENDING);
+        for (unsigned i=0;i<4;i++) join(threads[i]);
+        gate_release(&gate); dmm_cancel_block_on(task); finish_executor(e);
+        assert(atomic_load(&c.polls)==1 && atomic_load(&c.cancel_polls)==1);
+        assert(atomic_load(&c.destroyed)==1 && atomic_load(&c.taken)==0);
+        dmm_waker_wake(c.retained); dmm_waker_drop(c.retained); gate_drop(&gate);
+    }
+}
+
 static void test_cancel_pending_poll(void) {
     Counts c; counts_init(&c); Gate gate; gate_init(&gate);
     DmmExecutor *e=dmm_executor_create(2);
@@ -481,6 +499,7 @@ int main(void) {
     test_shutdown_preserves_completed();
     test_io_confirmation();
     test_concurrent_wakes();
+    test_wakes_racing_cancellation();
     test_nested_cross_executor();
     test_cancel_pending_poll();
     test_nested_cancellation();

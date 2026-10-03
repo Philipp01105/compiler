@@ -1,0 +1,113 @@
+package utf8;
+import "stdlib/core";
+pub enum ErrorKind { pub InvalidUtf8, pub InvalidScalar, pub BufferTooSmall }
+pub struct Error { pub var kind:ErrorKind; pub var offset:usize; }
+pub struct Decoded { pub var scalar:u32; pub var next:usize; }
+func failure(kind:ErrorKind,offset:usize)->Error { return Error{kind:kind,offset:offset}; }
+pub func isScalar(value: u32) -> bit {
+    return value <= 1114111 && !(value >= 55296 && value <= 57343);
+}
+
+pub func decode(input: &u8[], offset: usize) -> core.Result<Decoded, Error> {
+    if (offset >= input.length) {
+        return core.Result<Decoded, Error>.Err(failure(ErrorKind.InvalidUtf8, offset));
+    }
+    var first: u32 = input[offset].(u32);
+    var length: usize = 1;
+    var scalar: u32 = first;
+    var minimum: u32 = 0;
+    if (first >= 194 && first <= 223) {
+        length = 2;
+        scalar = first - 192;
+        minimum = 128;
+    } else {
+        if (first >= 224 && first <= 239) {
+            length = 3;
+            scalar = first - 224;
+            minimum = 2048;
+        } else {
+            if (first >= 240 && first <= 244) {
+                length = 4;
+                scalar = first - 240;
+                minimum = 65536;
+            } else {
+                if (first >= 128) {
+                    return core.Result<Decoded, Error>.Err(
+                        failure(ErrorKind.InvalidUtf8, offset)
+                    );
+                }
+            }
+        }
+    }
+    if (length > input.length - offset) {
+        return core.Result<Decoded, Error>.Err(failure(ErrorKind.InvalidUtf8, offset));
+    }
+    for (var i: usize = 1; i < length; i += 1) {
+        var next: u32 = input[offset + i].(u32);
+        if (next < 128 || next > 191) {
+            return core.Result<Decoded, Error>.Err(
+                failure(ErrorKind.InvalidUtf8, offset + i)
+            );
+        }
+        scalar = scalar * 64 + next - 128;
+    }
+    if (scalar < minimum || !isScalar(scalar)) {
+        return core.Result<Decoded, Error>.Err(failure(ErrorKind.InvalidUtf8, offset));
+    }
+    return core.Result<Decoded, Error>.Ok(Decoded{ scalar: scalar, next: offset + length });
+}
+
+pub func validate(input: &u8[]) -> core.Result<void, Error> {
+    var offset: usize = 0;
+    while (offset < input.length) {
+        var decoded = decode(input, offset);
+        match (decoded) {
+            Err(error) => return core.Result<void, Error>.Err(error);
+            Ok(value) => offset = value.next;
+        }
+    }
+    return core.Result<void, Error>.Ok;
+}
+
+pub func encode(scalar: u32, output: &mut u8[], offset: usize) -> core.Result<usize, Error> {
+    if (!isScalar(scalar)) {
+        return core.Result<usize, Error>.Err(failure(ErrorKind.InvalidScalar, offset));
+    }
+    var length: usize = 1;
+    if (scalar >= 128) {
+        length = 2;
+    }
+    if (scalar >= 2048) {
+        length = 3;
+    }
+    if (scalar >= 65536) {
+        length = 4;
+    }
+    if (offset > (*output).length || length > (*output).length - offset) {
+        return core.Result<usize, Error>.Err(failure(ErrorKind.BufferTooSmall, offset));
+    }
+    if (length == 1) {
+        (*output)[offset] = scalar.(u8);
+    } else {
+        var divisor: u32 = 64;
+        if (length == 3) {
+            divisor = 4096;
+        }
+        if (length == 4) {
+            divisor = 262144;
+        }
+        var prefix: u32 = 192;
+        if (length == 3) {
+            prefix = 224;
+        }
+        if (length == 4) {
+            prefix = 240;
+        }(*output)[offset] = (prefix + scalar / divisor).(u8);
+        for (var i: usize = 1; i < length; i += 1) {
+            divisor /= 64;
+            (*output)[offset + i] = (128 + (scalar / divisor) % 64).(u8);
+        }
+    }
+    return core.Result<usize, Error>.Ok(offset + length);
+}
+

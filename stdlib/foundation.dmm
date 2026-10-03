@@ -1,18 +1,8 @@
 package stdlib;
-import (
-    "stdlib/core"
-);
 pub import (
+    "stdlib/core"
     "stdlib/types"
 );
-
-pub interface Propagate<Output, Residual> {
-    pub static func branch(value: Self) -> Propagation<Output, Residual>;
-}
-
-pub interface FromResidual<Residual> {
-    pub static func fromResidual(residual: Residual) -> Self;
-}
 
 pub struct Cell<T> {
     pub var value: T;
@@ -31,13 +21,6 @@ pub interface Printable {
 
 pub interface Equal {
     pub func equal(other: Self) -> bit;
-}
-
-pub func unwrapOr<T>(value: Option<T>, fallback: T) -> T {
-    match (value) {
-        Some(v) => return v;
-        None => return fallback;
-    }
 }
 
 pub func printValue<T: Printable>(value: T) -> void {

@@ -27,6 +27,7 @@ typedef struct BorrowRecord {
     size_t region_start;
     size_t region_end;
     size_t scope_depth;
+    size_t iteration_scope_depth;
     int active;
     int captured_by_future;
     int future_frame_only;
@@ -47,6 +48,8 @@ typedef struct BorrowRecord {
     int heap_ring;
     int heap_bounded;
     int heap_tagged;
+    const AstStatement *heap_relocation_head_update;
+    const AstStatement *heap_relocation_mod_update;
     size_t heap_extent_owner;
     size_t heap_extent_field;
     size_t heap_tag_field;
@@ -355,6 +358,15 @@ static int expression_place(BorrowChecker *checker, const AstExpression *express
     if (expression->kind == AST_EXPR_NAME) {
         place->owner = expression->resolved_symbol_id;
         place->field = AST_SYMBOL_NONE;
+        const AstDeclarationNode *function = checker->analyzer->current_function;
+        if (function && function->as.function.uses_receiver_reference && function->as.function.receiver_parameter &&
+            expression->resolved_symbol_id < checker->analyzer->model->symbol_count &&
+            checker->analyzer->model->symbols[expression->resolved_symbol_id].kind == SEMANTIC_SYMBOL_FIELD &&
+            checker->analyzer->model->symbols[expression->resolved_symbol_id].owner_symbol_id ==
+                checker->analyzer->model->symbols[function->resolved_symbol_id].owner_symbol_id) {
+            place->owner = function->as.function.receiver_parameter->resolved_symbol_id;
+            place->field = borrow_path_append(checker, AST_SYMBOL_NONE, expression->resolved_symbol_id);
+        }
         place->region_known = 0;
         place->region_start = 0;
         place->region_end = 0;
@@ -590,6 +602,17 @@ static int returned_borrow_place_impl(BorrowChecker *checker,
                 return canonical_place(checker, &field, place);
             }
             if (symbol != NULL && symbol->kind == SEMANTIC_SYMBOL_PARAMETER) {
+                const AstParameter *receiver = function->declaration->as.function.receiver_parameter;
+                if (receiver != NULL && receiver->resolved_symbol_id == origin.symbol &&
+                    call->left != NULL && call->left->kind == AST_EXPR_MEMBER &&
+                    call->left->left != NULL) {
+                    if (origin.field != AST_SYMBOL_NONE) {
+                        AstExpression field = {.kind = AST_EXPR_MEMBER,
+                            .left = call->left->left, .resolved_symbol_id = origin.field};
+                        return canonical_place(checker, &field, place);
+                    }
+                    return canonical_place(checker, call->left->left, place);
+                }
                 size_t index = 0;
                 const AstParameter *parameter =
                     function->declaration->as.function.parameters;
@@ -976,6 +999,7 @@ static int expression_targets_field(const BorrowChecker *checker,
                                     const SemanticSymbol *function,
                                     const AstExpression *expression) {
     if (expression == NULL) return 0;
+    if (expression->is_receiver_reference) return 1;
     if (expression->kind == AST_EXPR_NAME) {
         if (expression->resolved_symbol_id <
             checker->analyzer->model->symbol_count)
@@ -1250,6 +1274,7 @@ static void check_call(BorrowChecker *checker,
             (expression->left->left->has_resolved_ast_type &&
              expression->left->left->resolved_ast_type.callable_mode == 2) || statements_mutate_receiver(
                 checker, function, function->declaration->as.function.body) || function->declaration->as.function.receiver_mode != 0 ||
+            expression->receiver_contract_mode != 0 ||
             function->declaration->as.function.is_async ||
             type_has_mutable_view(checker, function->source_program,
                 &function->declaration->as.function.return_type, 0)
@@ -1304,7 +1329,7 @@ static void check_call(BorrowChecker *checker,
     release_argument_borrows(checker, temporary_arguments);
     BorrowCallSummary *call_summary=summarize_call_borrows(checker, expression);
     index_invalidate_call(checker, expression, function, call_summary != NULL);
-    if (function && function->declaration && function->declaration->as.function.receiver_mode == 2 &&
+    if (function && function->declaration && (function->declaration->as.function.receiver_mode == 2 || expression->receiver_contract_mode==2) &&
         expression->left && expression->left->kind == AST_EXPR_MEMBER) {
         BorrowPlace consumed;
         if (expression_place(checker, expression->left->left, &consumed))
@@ -1631,7 +1656,7 @@ static BorrowRecord *add_borrow_mode(BorrowChecker *checker,
             }
         }
     }
-    int slice_view = value->resolved_is_slice &&
+    int slice_view = (value->resolved_is_slice || value->is_array_view) &&
                      value->resolved_borrow_kind == AST_BORROW_NONE;
     int string_view = value->resolved_type == TYPE_STRING &&
                       has_returned_place;
@@ -1676,6 +1701,7 @@ static BorrowRecord *add_borrow_mode(BorrowChecker *checker,
     borrow->reference_slot = reference_slot || (place.through && place.through->reference_slot &&
         value->has_resolved_ast_type && value->resolved_ast_type.reference_type);
     borrow->parent = place.through;
+    borrow->iteration_scope_depth = place.through ? place.through->iteration_scope_depth : 0;
     borrow->origin_lifetime = place.through ? place.through->origin_lifetime : NULL;
     if (borrower_place.owner < checker->analyzer->model->symbol_count) {
         const SemanticSymbol *target = &checker->analyzer->model->symbols[borrower_place.owner];
@@ -2682,16 +2708,23 @@ static void heap_shift(BorrowChecker *checker,const AstStatement *statement) {
     int64_t delta=statement->assignment_operator==TOKEN_PLUS_EQUAL ? -1:1;
     for(BorrowRecord *loan=checker->borrows;loan;loan=loan->next) {
         if(!loan->active || !loan->heap_storage) continue;
+        int relocation_extent_update=statement==loan->heap_relocation_mod_update;
         if(loan->borrower_symbol==anchor.owner &&
             borrow_paths_overlap(checker,anchor.field,loan->heap_tag_field)) loan->heap_tagged=0;
-        if((loan->heap_extent_owner==anchor.owner &&
+        if((loan->heap_extent_owner==anchor.owner && !relocation_extent_update &&
             borrow_paths_overlap(checker,anchor.field,loan->heap_extent_field)) ||
             (loan->borrower_symbol==anchor.owner &&
              borrow_path_prefix(checker,anchor.field,loan->borrower_field_symbol))) loan->heap_bounded=0;
+        if (relocation_extent_update && !loan->heap_ring) loan->heap_relocation_mod_update=NULL;
         int ring_change=loan->heap_ring &&
             ((loan->heap_head_owner==anchor.owner && loan->heap_head_field==anchor.field) ||
              (loan->heap_mod_owner==anchor.owner && loan->heap_mod_field==anchor.field));
         if (ring_change) {
+            if (statement==loan->heap_relocation_head_update || statement==loan->heap_relocation_mod_update) {
+                if (statement==loan->heap_relocation_head_update) loan->heap_relocation_head_update=NULL;
+                if (statement==loan->heap_relocation_mod_update) loan->heap_relocation_mod_update=NULL;
+                continue;
+            }
             const AstExpression *value=statement->value;
             BorrowPlace head, modulus;
             int64_t one;
@@ -3084,6 +3117,253 @@ static int heap_ring_drain(BorrowChecker *checker, const AstStatement *loop, con
     return found;
 }
 
+/* Transport a proved occupied prefix to another allocation without merging
+   the referents of individual slots. Raw allocation validity remains the
+   owner's responsibility; the proof concerns initialize/take and the range. */
+static int heap_relocate_storage(BorrowChecker *checker, const AstStatement *loop) {
+    if (!checker->summarizing || loop->kind!=AST_STMT_FOR || !loop->condition ||
+        loop->condition->kind!=AST_EXPR_BINARY || loop->condition->operator_type!=TOKEN_LESS ||
+        !loop->condition->left || loop->condition->left->kind!=AST_EXPR_NAME ||
+        loop->condition->left->resolved_type!=TYPE_USIZE) return 0;
+    size_t cursor=loop->condition->left->resolved_symbol_id;
+    const AstStatement *initial=loop->initializer, *update=loop->else_body;
+    int64_t number, offset;
+    BorrowPlace count;
+    if (!initial || initial->next || initial->kind!=AST_STMT_VARIABLE || initial->resolved_symbol_id!=cursor ||
+        !heap_index_constant(checker,initial->value,&number,0) || number!=0 ||
+        !update || update->next || update->kind!=AST_STMT_ASSIGNMENT || update->assignment_operator!=TOKEN_PLUS_EQUAL ||
+        !update->expression || update->expression->kind!=AST_EXPR_NAME || update->expression->resolved_symbol_id!=cursor ||
+        !heap_index_constant(checker,update->value,&number,0) || number!=1 ||
+        !heap_index_place(checker,loop->condition->right,&count,&offset,0) ||
+        (count.owner!=AST_SYMBOL_NONE && offset!=0)) return 0;
+    const AstStatement *body=loop->body;
+    if (body && body->kind==AST_STMT_BLOCK) {
+        if (body->next || body->result) return 0;
+        body=body->body;
+    }
+    if (!body || body->next || body->kind!=AST_STMT_EXPRESSION ||
+        !heap_forwarded_operation(checker,body->expression,LIFETIME_INITIALIZE)) return 0;
+    const AstExpression *pointer=body->expression->arguments, *value=pointer ? pointer->next : NULL;
+    if (!value || value->next || value->lifetime_operation!=LIFETIME_TAKE ||
+        !heap_indexed_by(pointer,cursor)) return 0;
+    /* Whole slots only: member moves require a separate coverage proof. */
+    const AstExpression *dst=pointer, *src=value->arguments;
+    if (dst->kind==AST_EXPR_UNARY && dst->operator_type==TOKEN_AMPERSAND) dst=dst->right;
+    if (src->kind==AST_EXPR_UNARY && src->operator_type==TOKEN_AMPERSAND) src=src->right;
+    HeapBorrowPlace source;
+    BorrowPlace destination;
+    if (src->kind!=AST_EXPR_INDEX || dst->kind!=AST_EXPR_INDEX ||
+        !heap_borrow_place(checker,value->arguments,&source) ||
+        !expression_place(checker,dst->left,&destination)) return 0;
+    const AstStatement *head_update=NULL, *mod_update=NULL;
+    if (source.ring) {
+        const AstExpression *index=src->right;
+        if (!index || index->kind!=AST_EXPR_BINARY || index->operator_type!=TOKEN_PERCENT ||
+            !index->left || index->left->kind!=AST_EXPR_BINARY || index->left->operator_type!=TOKEN_PLUS ||
+            !index->left->right || index->left->right->kind!=AST_EXPR_NAME ||
+            index->left->right->resolved_symbol_id!=cursor) return 0;
+        /* Normalize the transported logical prefix only for the exact
+           subsequent pointer/capacity/head commit sequence. */
+        const AstStatement *commit=loop->next;
+        if (commit && commit->kind==AST_STMT_EXPRESSION) commit=commit->next;
+        mod_update=commit ? commit->next : NULL;
+        head_update=mod_update ? mod_update->next : NULL;
+        BorrowPlace place, fresh, modulus, head;
+        if (!commit || commit->kind!=AST_STMT_ASSIGNMENT || commit->assignment_operator!=TOKEN_EQUAL ||
+            !expression_place(checker,commit->expression,&place) ||
+            !expression_place(checker,commit->value,&fresh) ||
+            !mod_update || mod_update->kind!=AST_STMT_ASSIGNMENT || mod_update->assignment_operator!=TOKEN_EQUAL ||
+            !expression_place(checker,mod_update->expression,&modulus) ||
+            !head_update || head_update->kind!=AST_STMT_ASSIGNMENT || head_update->assignment_operator!=TOKEN_EQUAL ||
+            !expression_place(checker,head_update->expression,&head) ||
+            !heap_index_constant(checker,head_update->value,&number,0) || number!=0) return 0;
+        heap_map_place(checker,&place); heap_map_place(checker,&fresh);
+        heap_map_place(checker,&modulus); heap_map_place(checker,&head);
+        if (place.owner!=source.storage.owner || place.field!=source.storage.field ||
+            fresh.owner!=destination.owner || fresh.field!=destination.field ||
+            modulus.owner!=source.modulus.owner || modulus.field!=source.modulus.field ||
+            head.owner!=source.head.owner || head.field!=source.head.field) return 0;
+    } else if (!heap_indexed_by(value->arguments,cursor)) return 0;
+    heap_map_place(checker,&destination);
+    /* Scratch storage belongs to this invocation. Do not export a write to
+       its declaration as a caller-visible effect or reuse it on a later call. */
+    if (destination.owner>=checker->analyzer->model->symbol_count || destination.field!=AST_SYMBOL_NONE ||
+        checker->analyzer->model->symbols[destination.owner].kind!=SEMANTIC_SYMBOL_LOCAL) return 0;
+    if (source.storage.owner==destination.owner &&
+        borrow_paths_overlap(checker,source.storage.field,destination.field)) return 0;
+    int64_t minimum=0; int exact=0;
+    if (count.owner==AST_SYMBOL_NONE) {
+        minimum=offset;
+    } else index_bound_value(checker,&count,&minimum,&exact);
+    int found=0;
+    BorrowRecord *boundary=checker->borrows;
+    for (BorrowRecord *loan=boundary;loan;loan=loan->next) {
+        if (!loan->active || !loan->heap_storage || loan->borrower_symbol!=source.storage.owner ||
+            !borrow_path_prefix(checker,source.storage.field,loan->borrower_field_symbol)) continue;
+        if (loan->heap_ring!=source.ring || loan->heap_min==INT64_MIN || loan->heap_max==INT64_MAX) return 0;
+        if (source.ring && (loan->heap_head_owner!=source.head.owner || loan->heap_head_field!=source.head.field ||
+            loan->heap_mod_owner!=source.modulus.owner || loan->heap_mod_field!=source.modulus.field)) return 0;
+        if (loan->heap_anchor_owner==AST_SYMBOL_NONE) {
+            if (loan->heap_min<0 || loan->heap_max>=minimum) return 0;
+        } else if (loan->heap_anchor_owner!=count.owner || loan->heap_anchor_field!=count.field ||
+                   loan->heap_max>=0 || minimum < -loan->heap_min) return 0;
+        found=1;
+    }
+    if (!found) return 0;
+    for (BorrowRecord *loan=boundary;loan;loan=loan->next) {
+        if (!loan->active || !loan->heap_storage || loan->borrower_symbol!=source.storage.owner ||
+            !borrow_path_prefix(checker,source.storage.field,loan->borrower_field_symbol)) continue;
+        BorrowRecord *copy=malloc(sizeof(*copy));
+        if (!copy) { checker->analyzer->allocation_failed=1; return 1; }
+        *copy=*loan;
+        copy->borrower_symbol=destination.owner;
+        copy->borrower_field_symbol=borrow_path_append(checker,destination.field,
+            borrow_path_relative(checker,loan->borrower_field_symbol,source.storage.field));
+        copy->heap_bounded=0; copy->heap_tagged=0;
+        copy->heap_relocation_head_update=head_update;
+        copy->heap_relocation_mod_update=mod_update;
+        copy->summary_foreign=0; copy->summary_effect=1; copy->summary_exit_active=0;
+        copy->scope_depth=checker->current_scope_depth;
+        copy->next=checker->borrows; checker->borrows=copy;
+        loan->active=0;
+    }
+    heap_write(checker,&source.storage);
+    BorrowPlace induction={.owner=cursor,.field=AST_SYMBOL_NONE};
+    index_invalidate_place(checker,&induction);
+    return 1;
+}
+
+/* Scan every old tagged slot and move it to a bounded probing coordinate in
+   scratch storage. The key/hash callback is checked before trusting the tag. */
+static int heap_rehash_storage(BorrowChecker *checker, const AstStatement *loop) {
+    if (!checker->summarizing || loop->kind!=AST_STMT_FOR || !loop->condition ||
+        loop->condition->kind!=AST_EXPR_BINARY || loop->condition->operator_type!=TOKEN_LESS ||
+        !loop->condition->left || loop->condition->left->kind!=AST_EXPR_NAME ||
+        loop->condition->left->resolved_type!=TYPE_USIZE) return 0;
+    size_t cursor=loop->condition->left->resolved_symbol_id;
+    const AstStatement *initial=loop->initializer, *update=loop->else_body;
+    int64_t number, tag_value;
+    BorrowPlace extent;
+    if (!initial || initial->next || initial->kind!=AST_STMT_VARIABLE || initial->resolved_symbol_id!=cursor ||
+        !heap_index_constant(checker,initial->value,&number,0) || number!=0 ||
+        !update || update->next || update->kind!=AST_STMT_ASSIGNMENT || update->assignment_operator!=TOKEN_PLUS_EQUAL ||
+        !update->expression || update->expression->kind!=AST_EXPR_NAME || update->expression->resolved_symbol_id!=cursor ||
+        !heap_index_constant(checker,update->value,&number,0) || number!=1 ||
+        !expression_place(checker,loop->condition->right,&extent)) return 0;
+    heap_map_place(checker,&extent);
+    const AstStatement *guard=loop->body;
+    if (guard && guard->kind==AST_STMT_BLOCK) {
+        if (guard->next || guard->result) return 0;
+        guard=guard->body;
+    }
+    if (!guard || guard->next || guard->kind!=AST_STMT_IF || guard->else_body || !guard->condition ||
+        guard->condition->kind!=AST_EXPR_BINARY || guard->condition->operator_type!=TOKEN_EQUAL_EQUAL ||
+        !guard->condition->left || guard->condition->left->kind!=AST_EXPR_MEMBER ||
+        !heap_indexed_by(guard->condition->left,cursor) ||
+        !heap_index_constant(checker,guard->condition->right,&tag_value,0)) return 0;
+    const AstStatement *index=guard->body;
+    if (index && index->kind==AST_STMT_BLOCK) {
+        if (index->next || index->result) return 0;
+        index=index->body;
+    }
+    const AstStatement *probe=index ? index->next : NULL, *move=probe ? probe->next : NULL;
+    if (!index || index->kind!=AST_STMT_VARIABLE || !index->value || index->value->kind!=AST_EXPR_BINARY ||
+        index->value->operator_type!=TOKEN_PERCENT || index->value->resolved_type!=TYPE_USIZE ||
+        !probe || probe->kind!=AST_STMT_WHILE || !probe->condition ||
+        probe->condition->kind!=AST_EXPR_BINARY || probe->condition->operator_type!=TOKEN_EQUAL_EQUAL ||
+        !probe->condition->left || probe->condition->left->kind!=AST_EXPR_MEMBER ||
+        !heap_indexed_by(probe->condition->left,index->resolved_symbol_id) ||
+        !heap_index_constant(checker,probe->condition->right,&number,0) || number!=tag_value ||
+        !move || move->next || move->kind!=AST_STMT_EXPRESSION ||
+        !heap_forwarded_operation(checker,move->expression,LIFETIME_INITIALIZE)) return 0;
+    const AstStatement *step=probe->body;
+    if (step && step->kind==AST_STMT_BLOCK) {
+        if (step->next || step->result) return 0;
+        step=step->body;
+    }
+    const AstExpression *advance=step ? step->value : NULL;
+    BorrowPlace modulus, stepped_modulus;
+    if (!step || step->next || step->kind!=AST_STMT_ASSIGNMENT || step->assignment_operator!=TOKEN_EQUAL ||
+        !step->expression || step->expression->kind!=AST_EXPR_NAME ||
+        step->expression->resolved_symbol_id!=index->resolved_symbol_id ||
+        !advance || advance->kind!=AST_EXPR_BINARY || advance->operator_type!=TOKEN_PERCENT ||
+        !advance->left || advance->left->kind!=AST_EXPR_BINARY || advance->left->operator_type!=TOKEN_PLUS ||
+        !advance->left->left || advance->left->left->kind!=AST_EXPR_NAME ||
+        advance->left->left->resolved_symbol_id!=index->resolved_symbol_id ||
+        !heap_index_constant(checker,advance->left->right,&number,0) || number!=1 ||
+        !expression_place(checker,index->value->right,&modulus) ||
+        !expression_place(checker,advance->right,&stepped_modulus)) return 0;
+    heap_map_place(checker,&modulus); heap_map_place(checker,&stepped_modulus);
+    if (modulus.owner!=stepped_modulus.owner || modulus.field!=stepped_modulus.field) return 0;
+    const AstExpression *pointer=move->expression->arguments, *value=pointer ? pointer->next : NULL;
+    if (!value || value->next || value->lifetime_operation!=LIFETIME_TAKE ||
+        !heap_indexed_by(value->arguments,cursor) || !heap_indexed_by(pointer,index->resolved_symbol_id)) return 0;
+    const AstExpression *dst=pointer, *src=value->arguments;
+    if (dst->kind==AST_EXPR_UNARY && dst->operator_type==TOKEN_AMPERSAND) dst=dst->right;
+    if (src->kind==AST_EXPR_UNARY && src->operator_type==TOKEN_AMPERSAND) src=src->right;
+    HeapBorrowPlace source, tag;
+    BorrowPlace destination, probed;
+    if (src->kind!=AST_EXPR_INDEX || dst->kind!=AST_EXPR_INDEX ||
+        !heap_borrow_place(checker,src,&source) || !heap_borrow_place(checker,guard->condition->left,&tag) ||
+        !expression_place(checker,dst->left,&destination) ||
+        !expression_place(checker,probe->condition->left->left->left,&probed)) return 0;
+    heap_map_place(checker,&destination); heap_map_place(checker,&probed);
+    if (destination.owner!=probed.owner || destination.field!=probed.field ||
+        destination.owner>=checker->analyzer->model->symbol_count || destination.field!=AST_SYMBOL_NONE ||
+        checker->analyzer->model->symbols[destination.owner].kind!=SEMANTIC_SYMBOL_LOCAL ||
+        tag.storage.owner!=source.storage.owner ||
+        tag.storage.field!=borrow_path_append(checker,source.storage.field,guard->condition->left->resolved_symbol_id) ||
+        probe->condition->left->resolved_symbol_id!=guard->condition->left->resolved_symbol_id) return 0;
+    const AstStatement *commit=loop->next;
+    if (commit && commit->kind==AST_STMT_EXPRESSION) commit=commit->next;
+    const AstStatement *resize=commit ? commit->next : NULL;
+    BorrowPlace target, fresh, resized, size;
+    if (!commit || commit->kind!=AST_STMT_ASSIGNMENT || commit->assignment_operator!=TOKEN_EQUAL ||
+        !expression_place(checker,commit->expression,&target) || !expression_place(checker,commit->value,&fresh) ||
+        !resize || resize->kind!=AST_STMT_ASSIGNMENT || resize->assignment_operator!=TOKEN_EQUAL ||
+        !expression_place(checker,resize->expression,&resized) || !expression_place(checker,resize->value,&size)) return 0;
+    heap_map_place(checker,&target); heap_map_place(checker,&fresh);
+    heap_map_place(checker,&resized); heap_map_place(checker,&size);
+    if (target.owner!=source.storage.owner || target.field!=source.storage.field ||
+        fresh.owner!=destination.owner || fresh.field!=destination.field ||
+        resized.owner!=extent.owner || resized.field!=extent.field ||
+        size.owner!=modulus.owner || size.field!=modulus.field) return 0;
+    check_expression(checker,index->value,BORROW_ACCESS_READ);
+    int found=0;
+    BorrowRecord *boundary=checker->borrows;
+    for (BorrowRecord *loan=boundary;loan;loan=loan->next) {
+        if (!loan->active || !loan->heap_storage || loan->borrower_symbol!=source.storage.owner ||
+            !borrow_path_prefix(checker,source.storage.field,loan->borrower_field_symbol)) continue;
+        if (!loan->heap_bounded || !loan->heap_tagged || loan->heap_extent_owner!=extent.owner ||
+            loan->heap_extent_field!=extent.field || loan->heap_tag_field!=tag.storage.field ||
+            loan->heap_tag_value!=tag_value) return 0;
+        found=1;
+    }
+    if (!found) return 0;
+    for (BorrowRecord *loan=boundary;loan;loan=loan->next) {
+        if (!loan->active || !loan->heap_storage || loan->borrower_symbol!=source.storage.owner ||
+            !borrow_path_prefix(checker,source.storage.field,loan->borrower_field_symbol)) continue;
+        BorrowRecord *copy=malloc(sizeof(*copy));
+        if (!copy) { checker->analyzer->allocation_failed=1; return 1; }
+        *copy=*loan;
+        copy->borrower_symbol=destination.owner;
+        copy->borrower_field_symbol=borrow_path_append(checker,destination.field,
+            borrow_path_relative(checker,loan->borrower_field_symbol,source.storage.field));
+        copy->heap_tag_field=borrow_path_append(checker,destination.field,guard->condition->left->resolved_symbol_id);
+        copy->heap_ring=0; copy->heap_anchor_owner=AST_SYMBOL_NONE; copy->heap_anchor_field=AST_SYMBOL_NONE;
+        copy->heap_min=INT64_MIN; copy->heap_max=INT64_MAX;
+        copy->heap_relocation_mod_update=resize;
+        copy->summary_foreign=0; copy->summary_effect=1; copy->summary_exit_active=0;
+        copy->scope_depth=checker->current_scope_depth;
+        copy->next=checker->borrows; checker->borrows=copy;
+        loan->active=0;
+    }
+    heap_write(checker,&source.storage);
+    BorrowPlace induction={.owner=cursor,.field=AST_SYMBOL_NONE};
+    index_invalidate_place(checker,&induction);
+    return 1;
+}
+
 /* A contiguous left relocation moves each live slot once. Its affine range
    follows the induction variable, independently of container/type names. */
 static int heap_relocate_left(BorrowChecker *checker, const AstStatement *loop) {
@@ -3347,6 +3627,27 @@ static BorrowRecord *add_lifetime_parameter_borrows(BorrowChecker *checker,
     return fields ? fields : storage;
 }
 
+/* Raw slice fields retain their existing explicit storage contract. A proved
+   view of a tracked fixed array still cannot escape its array owner, even when
+   the surrounding aggregate does not have checked lifetime parameters. */
+static int has_array_view_origin(BorrowChecker *checker, const AstExpression *value, unsigned depth) {
+    if (!value || depth>64) return 0;
+    if (value->is_array_view) return 1;
+    if (value->kind==AST_EXPR_STRUCT_LITERAL || value->kind==AST_EXPR_ENUM_CONSTRUCT)
+        for (const AstExpression *argument=value->arguments;argument;argument=argument->next)
+            if (has_array_view_origin(checker,argument,depth+1)) return 1;
+    BorrowPlace place;
+    if (expression_place(checker,value,&place))
+        for (const BorrowRecord *loan=checker->borrows;loan;loan=loan->next)
+            if (loan->active && loan->borrower_symbol==place.owner &&
+                borrow_paths_overlap(checker,place.field,loan->borrower_field_symbol) &&
+                loan->owner_symbol<checker->analyzer->model->symbol_count) {
+                const AstType *origin=&checker->analyzer->model->symbols[loan->owner_symbol].declared_type;
+                if (origin->is_array && !origin->outer_pointer_depth && origin->borrow_kind==AST_BORROW_NONE) return 1;
+            }
+    return 0;
+}
+
 static void check_future_return(BorrowChecker *checker, const AstExpression *value) {
     if (checker->summarizing) {
         AstExpression output = {.kind = AST_EXPR_NAME, .resolved_symbol_id = checker->summary_result};
@@ -3359,10 +3660,10 @@ static void check_future_return(BorrowChecker *checker, const AstExpression *val
     }
     if (value == NULL || (!semantic_expression_is_future(value) &&
         !semantic_expression_is_move_only(checker->analyzer, value) &&
-        !value->resolved_is_slice && value->resolved_type != TYPE_STRING &&
+        !value->resolved_is_slice && !value->is_array_view && value->resolved_type != TYPE_STRING &&
         value->resolved_borrow_kind == AST_BORROW_NONE &&
         value->kind != AST_EXPR_ENUM_CONSTRUCT &&
-        !call_returns_view_aggregate(checker,value) &&
+        !call_returns_view_aggregate(checker,value) && !has_array_view_origin(checker,value,0) &&
         !(value->has_resolved_ast_type && type_has_view_arguments(checker, &value->resolved_ast_type)))) return;
     AstExpression escaped = {.kind = AST_EXPR_NAME,
         .resolved_symbol_id = checker->analyzer->current_function_symbol_id};
@@ -3378,6 +3679,10 @@ static void check_future_return(BorrowChecker *checker, const AstExpression *val
         const char *field_required = function ? result_field_lifetime(checker,
             checker->analyzer->program, &function->as.function.return_type,
             loan->borrower_field_symbol) : NULL;
+        if (loan->active && loan->iteration_scope_depth &&
+            loan->borrower_symbol == escaped.resolved_symbol_id)
+            report_borrow_error(checker, value->first_token,
+                "A mutable iterator item cannot escape its iteration");
         const char *loan_required = required ? required : field_required;
         if (!loan_required && function && function->as.function.return_type.kind == AST_TYPE_NAMED &&
             loan->payload_known &&
@@ -3517,6 +3822,39 @@ static void heap_rebase_ring(BorrowChecker *checker, BorrowRecord *loan,
             *fields[i]=borrow_path_append(checker,target->field,
                 borrow_path_relative(checker,*fields[i],source->field));
         }
+}
+
+static int clone_heap_storage_borrows(BorrowChecker *checker, const AstExpression *target,
+                                     const AstExpression *source, size_t scope_depth) {
+    /* Raw pointer copies carry the loans of storage already tracked behind
+       that pointer, even though the pointer type itself has no checked view. */
+    if (source && source->resolved_pointer_depth && source->resolved_borrow_kind==AST_BORROW_NONE) {
+        BorrowPlace from, to;
+        if (expression_place(checker,source,&from) && expression_place(checker,target,&to)) {
+            heap_map_place(checker,&from); heap_map_place(checker,&to);
+            if (from.owner==to.owner && from.field==to.field) return 1;
+            BorrowRecord *boundary=checker->borrows;
+            int copied=0;
+            for (BorrowRecord *loan=boundary;loan;loan=loan->next) {
+                if (!loan->active || !loan->heap_storage || loan->borrower_symbol!=from.owner ||
+                    !borrow_path_prefix(checker,from.field,loan->borrower_field_symbol)) continue;
+                BorrowRecord *copy=malloc(sizeof(*copy));
+                if (!copy) { checker->analyzer->allocation_failed=1; return 1; }
+                *copy=*loan;
+                copy->borrower_symbol=to.owner;
+                copy->borrower_field_symbol=borrow_path_append(checker,to.field,
+                    borrow_path_relative(checker,loan->borrower_field_symbol,from.field));
+                heap_rebase_ring(checker,copy,&from,&to);
+                copy->summary_foreign=0; copy->summary_exit_active=0;
+                copy->summary_effect=checker->summarizing;
+                copy->scope_depth=checker->summarizing ? 0:scope_depth;
+                copy->next=checker->borrows; checker->borrows=copy;
+                copied=1;
+            }
+            if (copied) return 1;
+        }
+    }
+    return 0;
 }
 
 static void clone_aggregate_borrows(BorrowChecker *checker,
@@ -3827,6 +4165,20 @@ static void clone_pattern_borrows(BorrowChecker *checker, const AstExpression *t
     release_argument_borrows(checker, temporary);
 }
 
+static void check_iteration_escapes(BorrowChecker *checker, size_t token) {
+    if (checker->summarizing) return;
+    for (BorrowRecord *loan = checker->borrows; loan; loan = loan->next) {
+        if (!loan->active || !loan->iteration_scope_depth ||
+            loan->borrower_symbol >= checker->analyzer->model->symbol_count) continue;
+        const SemanticSymbol *holder = &checker->analyzer->model->symbols[loan->borrower_symbol];
+        if (holder->scope_depth < loan->iteration_scope_depth) {
+            report_borrow_error(checker, token,
+                "A mutable iterator item cannot escape its iteration");
+            loan->iteration_scope_depth = 0; /* Avoid repeating the same diagnostic. */
+        }
+    }
+}
+
 static void check_statement_list(BorrowChecker *checker,
                                  const AstStatement *statement,
                                  size_t scope_depth) {
@@ -3839,6 +4191,7 @@ static void check_statement_list(BorrowChecker *checker,
     if (saved_statement) checker->continuations=&continuation;
     checker->current_scope_depth = scope_depth;
     for (; statement != NULL; statement = statement->next) {
+        check_iteration_escapes(checker, statement->first_token);
         checker->current_statement=statement;
         checker->evaluation_epoch++;
         expire_borrows(checker, statement->first_token);
@@ -3934,7 +4287,20 @@ static void check_statement_list(BorrowChecker *checker,
                 owner = (AstExpression){.kind = AST_EXPR_NAME, .resolved_symbol_id = storage.owner};
                 field = (AstExpression){.kind = AST_EXPR_MEMBER, .left = &owner, .resolved_symbol_id = storage.field};
                 destination = storage.field == AST_SYMBOL_NONE ? &owner : &field;
-                deactivate_borrower(checker, storage.owner, storage.field);
+                /* Replacing a raw storage pointer cannot prove that omitted
+                   elements were transferred or destroyed. A complete
+                   relocation has already consumed these source loans. */
+                if (statement->value && statement->value->resolved_pointer_depth &&
+                    statement->value->resolved_borrow_kind==AST_BORROW_NONE) {
+                    for (BorrowRecord *loan=checker->borrows;loan;loan=loan->next)
+                        if (loan->active && loan->borrower_symbol==storage.owner &&
+                            borrow_path_prefix(checker,storage.field,loan->borrower_field_symbol)) {
+                            if (loan->heap_storage) {
+                                loan->heap_min=INT64_MIN; loan->heap_max=INT64_MAX;
+                                loan->heap_bounded=0; loan->heap_tagged=0;
+                            } else loan->active=0;
+                        }
+                } else deactivate_borrower(checker, storage.owner, storage.field);
             }
             AstExpression view;
             const AstExpression *assigned = statement->value;
@@ -3945,11 +4311,16 @@ static void check_statement_list(BorrowChecker *checker,
                 view.resolved_is_array = 0;
                 assigned = &view;
             }
-            if (!semantic_expression_is_future(statement->value) &&
+            int raw_storage_assignment=(external || slot_assignment) && assigned &&
+                assigned->resolved_pointer_depth && assigned->resolved_borrow_kind==AST_BORROW_NONE;
+            if (raw_storage_assignment) checker->aggregate_capture_depth++;
+            if (!(raw_storage_assignment && clone_heap_storage_borrows(checker,destination,assigned,scope_depth)) &&
+                !semantic_expression_is_future(statement->value) &&
                 add_borrow(checker, destination,
                            assigned, scope_depth) == NULL)
                 clone_aggregate_borrows(checker, destination,
                                         statement->value, scope_depth);
+            if (raw_storage_assignment) checker->aggregate_capture_depth--;
             capture_future_borrows(checker, destination, statement->value, scope_depth);
             if (external) {
                 for (BorrowRecord *loan = checker->borrows; loan; loan = loan->next)
@@ -4128,6 +4499,12 @@ static void check_statement_list(BorrowChecker *checker,
                         }
                     }
                 }
+                for (const AstParameter *binding = arm->bindings; binding; binding = binding->next)
+                    if (binding->iteration_borrow)
+                        for (BorrowRecord *loan = checker->borrows; loan; loan = loan->next)
+                            if (loan->active && loan->kind == AST_BORROW_MUTABLE &&
+                                loan->borrower_symbol == binding->resolved_symbol_id)
+                                loan->iteration_scope_depth = checker->analyzer->model->symbols[binding->resolved_symbol_id].scope_depth;
                 check_statement_list(checker, arm->body, scope_depth + 1);
                 index_discard_since(checker,index_boundary);
                 deactivate_scope(checker, scope_depth + 1);
@@ -4150,7 +4527,8 @@ static void check_statement_list(BorrowChecker *checker,
         }
         if (statement->kind == AST_STMT_WHILE || statement->kind == AST_STMT_FOR) {
             if (heap_condition_value(checker, statement->condition) == 0) continue;
-            if (heap_relocate_left(checker, statement)) continue;
+            if (heap_relocate_storage(checker, statement) || heap_rehash_storage(checker, statement) ||
+                heap_relocate_left(checker, statement)) continue;
             HeapBorrowPlace limit = {0};
             if (statement->condition)
                 limit.anchored = heap_index_place(checker, statement->condition->right,
@@ -4208,6 +4586,7 @@ static void check_statement_list(BorrowChecker *checker,
             deactivate_scope(checker, scope_depth + 1);
         }
     }
+    check_iteration_escapes(checker, saved_statement ? saved_statement->first_token : AST_TOKEN_NONE);
     checker->current_scope_depth = saved_scope_depth;
     checker->current_statement=saved_statement;
     checker->continuations=saved_continuations;
@@ -4642,6 +5021,18 @@ static BorrowCallSummary *summarize_call_borrows(BorrowChecker *checker, const A
         }
         if (!function->declaration->as.function.is_static && call->left &&
             call->left->kind == AST_EXPR_MEMBER && call->left->left) {
+            if (function->declaration->as.function.uses_receiver_reference && function->declaration->as.function.receiver_parameter) {
+                AstExpression target = {.kind=AST_EXPR_NAME,
+                    .resolved_symbol_id=function->declaration->as.function.receiver_parameter->resolved_symbol_id};
+                AstExpression source = *call->left->left;
+                source.resolved_borrow_kind = statements_mutate_receiver(checker,function,function->declaration->as.function.body) ||
+                    type_has_mutable_view(checker,function->source_program,&function->declaration->as.function.return_type,0)
+                    ? AST_BORROW_MUTABLE : AST_BORROW_IMMUTABLE;
+                add_borrow_mode(&nested,&target,&source,1,1);
+                BorrowPlace receiver;
+                if (canonical_place(&nested,call->left->left,&receiver))
+                    summary_storage_map(&nested,target.resolved_symbol_id,receiver.owner,receiver.field);
+            }
             BorrowPlace receiver_storage;
             int receiver_heap = 0;
             if (expression_place(checker, call->left->left, &receiver_storage))

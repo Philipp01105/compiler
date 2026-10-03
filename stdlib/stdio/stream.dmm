@@ -333,14 +333,14 @@ pub func copy(source: *Stream, destination: *Stream, scratch: u8[]) -> Transfer 
     }
     var total: usize = 0;
     while (true) {
-        var readResult: Transfer = source.read(scratch);
+        var readResult: Transfer = (*source).read(scratch);
         if (readResult.status == Status.EndOfStream) {
             return transfer(total, Status.Ok, 0);
         }
         if (!readResult.ok()) {
             return transfer(total, readResult.status, readResult.error);
         }
-        var written: Transfer = destination.writeAll(subview(scratch, 0, readResult.count));
+        var written: Transfer = (*destination).writeAll(subview(scratch, 0, readResult.count));
         total += written.count;
         if (!written.ok()) {
             return transfer(total, written.status, written.error);

@@ -2,7 +2,7 @@
 
 Dieses Dokument trennt allgemeine Sprachlücken von stdlib-Implementierung. Compiler-Sonderbehandlungen anhand von stdlib-Typ- oder Methodennamen sind kein Lösungsweg.
 
-## Stand vom 5. Oktober 2026
+## Stand vom 7. Oktober 2026
 
 Die Implementierungsarbeit läuft wieder in der Reihenfolge dieses Plans. **Patterns/Heap-Moves und die definierten gespeicherten Borrow-Sprachmittel sind umgesetzt und gezielt abgenommen.** Der Gesamtplan bleibt offen, bis auch die präzise Container-Loan-Freigabe vollständig umgesetzt ist. Die vorherigen Testregressionen sind behoben.
 
@@ -11,9 +11,9 @@ Die Implementierungsarbeit läuft wieder in der Reihenfolge dieses Plans. **Patt
 | Copy und Callbacks | Allgemeine Copy-Bounds, Callback-Inferenz und konkrete Closure-Spezialisierung | Keine belegte Restlücke |
 | Patterns und Heap-Moves | Owner-Patterns, take/replace, verschachtelte und umgeordnete Payload-Provenienz, getrennte alte/neue replace-Loans, destroy-Freigabe | Geschlossen im definierten Umfang; unbekannte Pfade bleiben konservativ |
 | Gespeicherte Borrows | Verschachtelte Pfade, Referenzslots, mutable Paket-Borrows, synchrone interprozedurale Änderungen und Loan-Transfer aus Future-Ergebnissen | Geschlossen im definierten Umfang; Container-Freigabe wird separat verfolgt |
-| Collections | Owner-List/Deque/HashMap, Allocation-Fehler-Regressionsfälle, List.pop/clear/truncate, bewiesene Remove-Relocation, Ring-Drains, getrennte Heap-Felder und vollständige belegungsabhängige Slot-Drains einschließlich HashMap.clear | Beliebige dynamische Indexbeziehungen, Allocation-Relocation und präzise Hash-Key-Entnahme bleiben offen |
-| Closures | Shared/mut/once, benannte callable Interfaces und Erhaltung von Consumption-Pflichten | Allgemeine consuming Interface-Methoden benötigen breitere Prüfung |
-| Future-Komposition | Typisiertes Polling, fromPoller, select2/race2/join2, Timer und timeout | Weitere Scheduler-/Wake-Rennen; generische Wertkomposition verwendet für void einen Unit-Wert |
+| Collections | Owner-Collections, List.pop/clear/truncate, Remove-Relocation, Ring-Drains, getrennte Heap-Felder, tagged Slot-Drains sowie zusammenhängender, modularer Ring- und tagged Rehash-Allocation-Transfer | Beliebige dynamische Indexbeziehungen, präzise Hash-Key-Entnahme und partielle Slot-Transfers bleiben offen |
+| Closures | Shared/mut/once, benannte Callables, allgemeine consuming Interface-Methoden, generische Receiver-Verträge und Consumption-Pflichten | Unbekannte Receiver-Provenienz wird nicht durch eine allgemeine Typgleichheitsannahme ersetzt |
+| Future-Komposition | Typisiertes Polling, fromPoller, select2/race2/join2, Timer, timeout, Void-Adapter und Kontextwechsel bei Pending/Cancellation | Native Poller müssen selbst Wake und Cancellation-Bestätigung korrekt implementieren |
 
 ## Copy, Patterns und Ownership
 
@@ -45,6 +45,8 @@ interface OwnerFactory { once func __invoke()->Resource; }
 
 Aufrufsyntax ist `callable(args)`. Shared/mut/once-Verträge gelten auch für erasure und konsumierende Closure-Umgebungen. Ein once-Aufruf konsumiert den owned Callable; nicht übertragene Captures werden einmal zerstört. `@[must_consume]` an einem Struct, Enum oder Interface bewahrt eine verpflichtende Consumption. Ein Callable mit verborgenem Future darf diese Pflicht nicht durch Konversion in ein gewöhnliches Interface verlieren.
 
+Receiver-Verträge gelten ebenso für andere Methodennamen und mehrmethodige Interfaces. Generische Bounds bewahren mut/once bei konkreter Spezialisierung, direkten Parameteraufrufen und lokalen Alias-Bindings. once konsumiert auch Copy-Receiver; checked Referenzen dürfen den Aufruf nicht ausführen. Eine gewöhnliche konkrete Implementierung des once-Vertrags wird unmittelbar nach dem Aufruf aufgeräumt. Verschachtelte konsumierende Argumente werden nur einmal geprüft.
+
 ## Future-Polling und Komposition
 
 Die allgemeinen Compileroperationen sind:
@@ -59,7 +61,9 @@ Terminalzustände werden im Frame geprüft. Raw-Kontexte und native Frames bleib
 
 `asynchronous.poll` liefert `FuturePoll<T>.Pending(Future<T>)` oder `Ready(T)`; `pollVoid` verwendet den separaten VoidFuturePoll. Pending überträgt Handle und Loans an den Aufrufer. `fromPoller<T,P>` besitzt den Poller in einem gepinnten async Frame und parkt bei Pending. Nach begonnenem Funktionskörper bestätigt deferred Cancellation den Abbruch vor Cleanup. Cancellation vor dem ersten Body-Poll führt nur Parameter-Cleanup aus; native Anfangszustände müssen deshalb schon sicher zerstörbar sein.
 
-`select2` pollt beide Eingaben und liefert das Ergebnis sowie den weiterhin verpflichtend zu konsumierenden anderen Handle. Dieser kann bereits fertig sein. `race2` bestätigt Cancellation des Verlierers vor der Rückgabe. `join2` liefert `Joined<T,U>` mit left/right. Void-Komposition verwendet einen Unit-Payload oder das separate Void-Polling.
+`select2` pollt beide Eingaben und liefert das Ergebnis sowie den weiterhin verpflichtend zu konsumierenden anderen Handle. Dieser kann bereits fertig sein. `race2` bestätigt Cancellation des Verlierers vor der Rückgabe. `join2` liefert `Joined<T,U>` mit left/right. fromPoller und select2 erzeugen ihren Kontext bei jedem Poll neu, auch während Cancellation. Ein nach manuellem Poll an block_on übergebener Pending-Future registriert damit den aktuellen Waker.
+
+`asUnit(Future<void>)` liefert Future<Unit>; `selectVoid` liefert Selected<Unit,Unit> mit verpflichtend zu konsumierendem Resthandle. `raceVoid` und `joinVoid` liefern Future<void>, `timeoutVoid` liefert TimedVoid.Completed/Elapsed. Generische Wertkomposition behält ihre Payload-Regeln.
 
 `asynchronous.timers` stellt Timer, sleep und timeout bereit. Ein Worker schläft in Abschnitten von höchstens einer Millisekunde, prüft Cancellation und weckt einen retained Kontext. `timeout` liefert `Timed<T>.Completed(T)` oder `Elapsed` nach bestätigter Cancellation. Ein gestarteter Timer darf erst nach Completion-/Cancellation-Bestätigung zerstört werden; andernfalls trappt der Destruktor. Die Adapter erledigen diesen Ablauf.
 
@@ -81,9 +85,31 @@ Belegungsabhängige Heap-Slot-Drains sind jetzt allgemein nachweisbar: Unsigned 
 
 Geprüft sind HashMap.clear nach einem Insert, borrowed Keys und Values sowie ein umbenannter Benutzer-Container mit Kollisionen, Wrap, Feld-Ersetzung und Enum-Verpackung. Kopierte Heap-Member erhalten jetzt ebenfalls ihre eigenen Referenten-Loans und bleiben nach clear geschützt. Negativfälle prüfen falsche Guards, veränderte oder mutable geborgte Kapazität, Callback-Änderungen, veraltete Guards, geänderte Cursor, unbeschränkte Indizes und ausgelassene oder verschobene Destroy-Slots.
 
-Die früheren falschen Konflikte in den Allocation-Fehler-Fixtures sind behoben. Beliebige dynamische Indexbeziehungen, Borrow-Provenienz beim Transport in neue Allocations und präzise Hash-Key-Entnahme bleiben offen. Mehrere HashMap.insert-Aufrufe bleiben insbesondere dann konservativ, wenn eine mögliche Allocation-Relocation die bisherigen Slot-Nachweise verliert; auch ein anschließendes clear muss deshalb nicht alle bisherigen Loans freigeben. Der Gesamtplan ist weiterhin nicht abgeschlossen.
+Zusammenhängender Transport in neue Allocations erhält jetzt die einzelnen Slot-Origins: Eine Schleife `for(i=0;i<count;i+=1) initialize(&fresh[i],take(storage[i]))` überträgt ganze Slots in lokalen Scratch-Storage, wenn Größenfakten alle gehaltenen Slots im besuchten Präfix beweisen. Eine anschließende Pointer-Zuweisung über synchrone checked Parameter oder Owner-Felder übernimmt die Loans. Frühe Fehler-Returns behalten die alten Loans. Scratch-Storage wird nicht als externer Schreibeffekt exportiert und darf deshalb keine Origins in einen späteren Aufruf desselben Helpers tragen. Unvollständige oder unbekannte Transfers behalten beim Pointer-Austausch konservative Origins; das Austauschen des Pointers allein beweist keine Freigabe.
+
+Geprüft sind List-Wachstum mit anschließender unabhängiger pop-/clear-Freigabe, einmalige Destruktion move-only Borrow-Owner, ein umbenannter Benutzer-Owner über einen checked Wrapper und Enum-Verpackung sowie injizierter Allocation-Fehler mit unveränderten Inhalten und erfolgreichem Retry. Negativfälle prüfen lebende Restwerte, entnommene und kopierte Ergebnisse, checked Slot-Borrows, Fehler-Returns, ausgelassene oder verschobene Slots, verkürzte Grenzen und Veränderungen des Zählers im Loop.
+
+Auch `initialize(&fresh[i],take(old[(head+i)%slots]))` erhält nun das bewiesene belegte Präfix, wenn anschließend derselbe Storage-Pointer, die Kapazität und head=0 übernommen werden. Vollständige tagged Scans mit modulo-begrenztem Probing übertragen ganze Rehash-Einträge. Callback-Effekte werden vor dem Belegungsnachweis geprüft. Deque, HashMap und umbenannte Benutzer-Container prüfen wiederholtes Wachstum, Kollisionen, Wrap, borrowed Keys/Values und clear; instrumentierte Fehler-/Retry-Tests prüfen Inhalt und einmaligen Cleanup. Falscher Modulus/Head, unvollständiger Scan, falsches Tag und unbeschränktes Probing bleiben konservativ.
+
+Beliebige dynamische Indexbeziehungen, partielle Slot-Transfers und präzise Hash-Key-Entnahme bleiben offen. `limit_hash_key_release` reproduziert die verbleibende konservative Ablehnung: Ein gewöhnlicher Callback beweist keine Beziehung zwischen Suchschlüssel und Slot-Origin. Der Gesamtplan der Sprachlücken bleibt damit offen; der konkrete Folgearbeitsplan steht in [stdlib-language-gaps-next.md](stdlib-language-gaps-next.md).
 
 ## Prüfung
+
+### Fortsetzung: Borrowed Algorithmen und Array-Views
+
+`algorithms.findBorrowed/countBorrowed/allBorrowed/anyBorrowed` nehmen einen checked Slice-Descriptor und einen wiederholt aufrufbaren Predicate auf `&T`. `forEachMut` verwendet `&mut T[]` und `&mut T`-Callbacks. Damit sind Owner-Elemente ohne Copy-Bound durchsuchbar und in-place veränderbar. Leere Eingaben, Short-Circuit, mutable Captures und einmaliger Cleanup von Callback-Ownern werden geprüft.
+
+Die neue Owner-Fixture reproduzierte einen tatsächlichen Compilerfehler: Ein named Array wurde beim Anlegen einer Slice-View als bewegt markiert, obwohl die View dessen Elemente nicht besitzt; der Array-Cleanup entfiel. Jetzt erhalten festgelegte Array-zu-Slice-Konversionen eine View-Markierung, die Ownership und IR berücksichtigen. Dies gilt für Initialisierung, Zuweisung, Funktions-/Callable-Argumente, Feld-/Payload-/Element-Konversionen und typisierte Rückgaben/Wertzweige. Overload-Probing verändert die Ownership nicht. Bekannte Views lokaler Arrays dürfen auch über Struct-Felder nicht fliehen; raw Slice-Felder behalten ansonsten ihren bestehenden expliziten Storage-Vertrag.
+
+`stdlib_borrowed_algorithms_contract` prüft O0/O1, ELF/COFF und Assembly sowie Ablehnung von Shared-Mutation, Consumption durch Borrow, lebenden Element-Borrows, Array-Moves trotz View, konsumierenden Overloads, once-Predicates und lokaler View-Flucht. Die abschließende vollständige Windows-Suite bestand mit **58/58 Tests in 546,59 Sekunden**, darin der neue Vertrag mit 5,02 Sekunden und der Sprachlücken-Vertrag mit 91,79 Sekunden. Der gezielte Linux-Vertrag bestand mit **42,53 Sekunden**, einschließlich O0/O1, Backend-Ausgaben und Negativfällen. Nach diesen Läufen wurde nur die Dokumentation aktualisiert; die vollständige Linux-Suite bleibt CI.
+
+### Vorheriger Folgeplan
+
+Der aktuelle Folgeplan bestand abschließend unter Windows mit **57/57 Tests in 538,64 Sekunden**, darin `stdlib_language_gaps_contract` mit 90,96 Sekunden: O0/O1, Allocation-Fehler/Retry, ELF-/COFF-Objekt-/Assembly-Ausgaben, Receiver-Matrix und checked Snapshot-Weiterleitung. Der synchronisierte Executor-Test bestand zusätzlich 20 Wiederholungen. Unter Linux bestanden die drei Async-Verträge (17,84 Sekunden), language_lifetimes/language_closures/language_gaps_async bei O1, Allocation-Fehler/Retry bei O0/O1 und der Executor-Unit-Test. Der umfangreiche Linux-Sprachlücken-Matrixlauf überschritt sein 180-Sekunden-Limit. Die vollständige Linux-Suite bleibt CI. Der Folgeplan ist im definierten Umfang abgearbeitet; die dokumentierten allgemeinen Index-/Key-Grenzen bleiben offen. Details stehen in [stdlib-language-gaps-next.md](stdlib-language-gaps-next.md) und [tests/stdlib/README.md](../tests/stdlib/README.md).
+
+Die folgenden Absätze dokumentieren frühere Prüfstände vor diesem Folgeplan:
+
+Die Erweiterung vom 7. Oktober bestand unter Windows mit `stdlib_language_gaps_contract` (78,23 Sekunden): O0/O1-Ausführung einschließlich Allocation-Fehler/Retry, ELF-/COFF-Objekt- und Assembly-Ausgaben sowie Negativfälle. `regression_rejection`, `async_semantic_unit`, `language_foundation_unit`, `resource_fault_unit` und `frontend_pipeline_unit` bestanden mit 5/5 Tests (16,24 Sekunden). `regression_positive` und `shared_language_contract` bestanden ebenfalls mit 2/2 Tests (54,48 Sekunden). Für diese Erweiterung wurde keine Linux-Ausführung und keine vollständige Windows-Suite durchgeführt.
 
 Die vollständige Windows-Suite bestand nach Behebung der bisherigen Regressionen mit 57/57 Tests (243,60 Sekunden). Die anschließenden Container-, Ring-, Heap-Feld- und belegungsabhängigen Drain-Erweiterungen bestanden gezielt mit regression_rejection, async_semantic_unit, language_foundation_unit, resource_fault_unit und frontend_pipeline_unit (6/6 insgesamt, 58,64 Sekunden). `stdlib_language_gaps_contract` prüfte O0/O1, ELF-/COFF-Ausgaben und die erweiterten Negativfälle (57,39 Sekunden). Nach Ergänzung der positiven Feld-Ersetzung und des negativen Kapazitäts-Callback-Falls bestand der abschließende Vertragslauf ebenfalls (56,76 Sekunden). regression_positive und shared_language_contract bestanden vor den anschließenden Verfeinerungen.
 

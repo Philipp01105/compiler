@@ -546,6 +546,38 @@ if (BUILD_TESTING)
             -P ${CMAKE_SOURCE_DIR}/tests/core_runtime_test.cmake)
     set_tests_properties(core_runtime_contract PROPERTIES
             LABELS "integration;core;runtime;execution;abi;safety")
+    add_test(NAME auto_deref_contract COMMAND ${CMAKE_COMMAND}
+        -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DCOMPILER=$<TARGET_FILE:compiler>
+        -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/auto_deref_test
+        -P ${CMAKE_SOURCE_DIR}/tests/auto_deref_test.cmake)
+    set_tests_properties(auto_deref_contract PROPERTIES
+        LABELS "integration;ownership;execution;safety;generics;async" TIMEOUT 180)
+    add_test(NAME iterator_contract COMMAND ${CMAKE_COMMAND}
+        -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DCOMPILER=$<TARGET_FILE:compiler>
+        -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/iterator_test
+        -P ${CMAKE_SOURCE_DIR}/tests/iterator_test.cmake)
+    set_tests_properties(iterator_contract PROPERTIES
+        LABELS "integration;ownership;execution;safety;generics" TIMEOUT 240)
+    add_test(NAME stdlib_redesign_allocation_contract COMMAND ${CMAKE_COMMAND}
+        -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -DCOMPILER=$<TARGET_FILE:compiler>
+        -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/stdlib_redesign_allocation_test
+        -DFAULT_FIXTURES=redesign_allocation_faults
+        -P ${CMAKE_SOURCE_DIR}/tests/collection_allocation_faults_test.cmake)
+    set_tests_properties(stdlib_redesign_allocation_contract PROPERTIES
+        LABELS "integration;stdlib;ownership;safety;execution" TIMEOUT 180)
+    add_test(NAME stdlib_redesign_contract COMMAND ${CMAKE_COMMAND}
+        -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DCOMPILER=$<TARGET_FILE:compiler>
+        -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/stdlib_redesign_test
+        -P ${CMAKE_SOURCE_DIR}/tests/stdlib_redesign_test.cmake)
+    set_tests_properties(stdlib_redesign_contract PROPERTIES
+        LABELS "integration;stdlib;ownership;execution;safety;generics" TIMEOUT 360)
+    add_test(NAME stdlib_borrowed_algorithms_contract COMMAND ${CMAKE_COMMAND}
+        -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DCOMPILER=$<TARGET_FILE:compiler>
+        -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/stdlib_borrowed_algorithms_test
+        -P ${CMAKE_SOURCE_DIR}/tests/stdlib_borrowed_algorithms_test.cmake)
+    set_tests_properties(stdlib_borrowed_algorithms_contract PROPERTIES
+        LABELS "integration;stdlib;ownership;execution;safety" TIMEOUT 180)
     add_test(NAME stdlib_expansion_contract COMMAND ${CMAKE_COMMAND}
         -DCOMPILER=$<TARGET_FILE:compiler> -DASSEMBLER=${DMM_ASSEMBLER}
         -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/stdlib_expansion_test

@@ -37,7 +37,7 @@ func allocate(size: usize) -> *void {
 
 pub export "system" func __dmm_platform_thread_entry(address: *void) -> *void {
     var thread: *Thread = address.(*Thread);
-    thread.callback(thread.argument);
+    (*thread).callback((*thread).argument);
     return nullPointer();
 }
 
@@ -46,11 +46,11 @@ pub export "system" func __dmm_async_thread_create(
     argument: *void
 ) -> *void {
     var thread: *Thread = allocate(Thread.size).(*Thread);
-    thread.callback = callback;
-    thread.argument = argument;
+    (*thread).callback = callback;
+    (*thread).argument = argument;
     check(
         pthreads.create(
-            (&thread.handle).(*usize),
+            (&(*thread).handle).(*usize),
             nullPointer().(*pthreads.Attributes),
             __dmm_platform_thread_entry,
             thread.(*void)
@@ -61,7 +61,7 @@ pub export "system" func __dmm_async_thread_create(
 
 pub export "system" func __dmm_async_thread_join(address: *void) -> void {
     var thread: *Thread = address.(*Thread);
-    check(pthreads.join(thread.handle, nullPointer().(**void)));
+    check(pthreads.join((*thread).handle, nullPointer().(**void)));
     glibc.release(address);
 }
 
@@ -69,13 +69,13 @@ pub export "system" func __dmm_async_wait_create() -> *void {
     var event: *Event = allocate(Event.size).(*Event);
     check(
         pthreads.mutexInit(
-            (&event.mutex).(*pthreads.Mutex),
+            (&(*event).mutex).(*pthreads.Mutex),
             nullPointer().(*pthreads.MutexAttributes)
         )
     );
     check(
         pthreads.conditionInit(
-            (&event.condition).(*pthreads.Condition),
+            (&(*event).condition).(*pthreads.Condition),
             nullPointer().(*pthreads.ConditionAttributes)
         )
     );
@@ -84,37 +84,37 @@ pub export "system" func __dmm_async_wait_create() -> *void {
 
 pub export "system" func __dmm_async_wait(address: *void) -> void {
     var event: *Event = address.(*Event);
-    check(pthreads.mutexLock((&event.mutex).(*pthreads.Mutex)));
-    while (event.signalled == 0) {
+    check(pthreads.mutexLock((&(*event).mutex).(*pthreads.Mutex)));
+    while ((*event).signalled == 0) {
         check(
             pthreads.conditionWait(
-                (&event.condition).(*pthreads.Condition),
-                (&event.mutex).(*pthreads.Mutex)
+                (&(*event).condition).(*pthreads.Condition),
+                (&(*event).mutex).(*pthreads.Mutex)
             )
         );
     }
-    check(pthreads.mutexUnlock((&event.mutex).(*pthreads.Mutex)));
+    check(pthreads.mutexUnlock((&(*event).mutex).(*pthreads.Mutex)));
 }
 
 pub export "system" func __dmm_async_wake(address: *void) -> void {
     var event: *Event = address.(*Event);
-    check(pthreads.mutexLock((&event.mutex).(*pthreads.Mutex)));
-    event.signalled = 1;
-    check(pthreads.conditionBroadcast((&event.condition).(*pthreads.Condition)));
-    check(pthreads.mutexUnlock((&event.mutex).(*pthreads.Mutex)));
+    check(pthreads.mutexLock((&(*event).mutex).(*pthreads.Mutex)));
+    (*event).signalled = 1;
+    check(pthreads.conditionBroadcast((&(*event).condition).(*pthreads.Condition)));
+    check(pthreads.mutexUnlock((&(*event).mutex).(*pthreads.Mutex)));
 }
 
 pub export "system" func __dmm_async_wait_reset(address: *void) -> void {
     var event: *Event = address.(*Event);
-    check(pthreads.mutexLock((&event.mutex).(*pthreads.Mutex)));
-    event.signalled = 0;
-    check(pthreads.mutexUnlock((&event.mutex).(*pthreads.Mutex)));
+    check(pthreads.mutexLock((&(*event).mutex).(*pthreads.Mutex)));
+    (*event).signalled = 0;
+    check(pthreads.mutexUnlock((&(*event).mutex).(*pthreads.Mutex)));
 }
 
 pub export "system" func __dmm_async_wait_destroy(address: *void) -> void {
     var event: *Event = address.(*Event);
-    check(pthreads.conditionDestroy((&event.condition).(*pthreads.Condition)));
-    check(pthreads.mutexDestroy((&event.mutex).(*pthreads.Mutex)));
+    check(pthreads.conditionDestroy((&(*event).condition).(*pthreads.Condition)));
+    check(pthreads.mutexDestroy((&(*event).mutex).(*pthreads.Mutex)));
     glibc.release(address);
 }
 

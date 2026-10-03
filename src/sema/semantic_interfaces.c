@@ -540,6 +540,11 @@ static size_t interface_method(const SemanticModel *model,
             unsigned mode = consuming_closure ? 2U : semantic_function_mutates_receiver(&lookup, actual->id) ? 1U : 0U;
             if (mode > required->declaration->as.function.receiver_mode) continue;
         }
+        /* Erasure and generic bounds must not weaken an explicit receiver
+           contract, regardless of the method name. A once interface may
+           consume a shared/mutable implementation and clean it up afterward. */
+        if (actual->declaration && !consuming_closure &&
+            actual->declaration->as.function.receiver_mode > required->declaration->as.function.receiver_mode) continue;
         if (actual->kind != SEMANTIC_SYMBOL_FUNCTION || (!consuming_closure && actual->owner_symbol_id != struct_id) ||
             !actual->declaration ||
             (!consuming_closure && actual->declaration->as.function.is_static !=

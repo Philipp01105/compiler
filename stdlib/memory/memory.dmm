@@ -8,22 +8,22 @@ struct BoxStorage<T> {
     var value: T;
 }
 
-@[no_default] pub struct Box<T> {
+@[no_default] @[core.Send where T:core.Send] @[core.Sync where T:core.Sync] pub struct Box<T> {
     var storage: *BoxStorage<T>;
     pub func get() -> &T {
         if (storage == core.null<BoxStorage<T>>()) { core.core_trap(); }
-        return &storage.value;
+        return &(*self.storage).value;
     }
 
     pub func getMut() -> &mut T {
         if (storage == core.null<BoxStorage<T>>()) { core.core_trap(); }
-        return &mut storage.value;
+        return &mut (*self.storage).value;
     }
 
     // Transfer the payload and release its allocation. This box becomes empty.
     pub func intoInner() -> T {
         if (storage == core.null<BoxStorage<T>>()) { core.core_trap(); }
-        var value: T = take(storage.value);
+        var value: T = take((*storage).value);
         core.core_release(storage.(*u8));
         storage = core.null<BoxStorage<T>>();
         return value;
@@ -37,13 +37,13 @@ struct BoxStorage<T> {
     }
 }
 
-pub func box<T>(value: T) -> stdlib.Result<Box<T>, stdlib.AllocationError> {
+pub func box<T>(value: T) -> core.Result<Box<T>,core.AllocError> {
     var storage: *BoxStorage < T >= core.core_alloc(sizeof(BoxStorage<T>)).(*BoxStorage<T>);
     if (storage == core.null<BoxStorage<T>>()) {
-        return stdlib.Result<Box<T>, stdlib.AllocationError>.Err(stdlib.AllocationError.OutOfMemory);
+        return core.Result<Box<T>,core.AllocError>.Err(core.AllocError.OutOfMemory);
     }
     core.initialize<BoxStorage<T>>(storage, BoxStorage<T>{ value: value });
-    return stdlib.Result<Box<T>, stdlib.AllocationError>.Ok(Box<T>{ storage: storage });
+    return core.Result<Box<T>,core.AllocError>.Ok(Box<T>{ storage: storage });
 }
 
 pub struct Arena {

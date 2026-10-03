@@ -161,7 +161,7 @@ func appendScalar(output: *stdlib.Bytes, scalar: u32) -> stdlib.AllocationError 
     var encoded = encodeUtf8(scalar, &mut view, 0);
     match (encoded) {
         Err(error) => return stdlib.AllocationError.InvalidIndex;
-        Ok(end) => return output.append(bytes[: end]);
+        Ok(end) => return (*output).append(bytes[: end]);
     }
 }
 
@@ -514,18 +514,18 @@ func decompose(output: *stdlib.List<u32>, scalar: u32, compat: bit) -> stdlib.Al
         }
         return stdlib.AllocationError.None;
     }
-    var error = output.push(scalar);
+    var error = (*output).push(scalar);
     if (error != stdlib.AllocationError.None) {
         return error;
     }
     var ccc: u32 = combiningClass(scalar);
-    var index: usize = output.length() - 1;
+    var index: usize = (*output).length() - 1;
     if (ccc != 0) {
-        while (index > 0 && combiningClass(output.get(index - 1)) > ccc) {
-            output.set(index, output.get(index - 1));
+        while (index > 0 && combiningClass((*output).get(index - 1)) > ccc) {
+            (*output).set(index, (*output).get(index - 1));
             index -= 1;
         }
-        output.set(index, scalar);
+        (*output).set(index, scalar);
     }
     return stdlib.AllocationError.None;
 }
@@ -561,8 +561,8 @@ func compose(a: u32, b: u32) -> u32 {
 
 func renderPoints(points: *stdlib.List<u32>) -> stdlib.Result<stdlib.Bytes, UnicodeError> {
     var output = stdlib.bytes(0);
-    for (var i: usize = 0; i < points.length(); i += 1) {
-        var error = appendScalar((&output).(*stdlib.Bytes), points.get(i));
+    for (var i: usize = 0; i < (*points).length(); i += 1) {
+        var error = appendScalar((&output).(*stdlib.Bytes), (*points).get(i));
         if (error != stdlib.AllocationError.None) {
             return stdlib.Result<stdlib.Bytes, UnicodeError>.Err(allocation(error));
         }

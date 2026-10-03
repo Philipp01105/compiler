@@ -4,13 +4,14 @@ import (
     "stdlib/text"
     "stdlib/path"
     "stdlib/fs"
+    "stdlib/io"
     "stdlib/env"
     "stdlib/time"
     "stdlib/random"
     "stdlib/math"
 );
 
-func fsOk(value: stdlib.Result<void, fs.FsError>) -> bit {
+func fsOk(value: stdlib.Result<void, fs.Error>) -> bit {
     match (value) {
         Ok => return true;
         Err(error) => return false;
@@ -22,6 +23,10 @@ func envOk(value: stdlib.Result<void, env.EnvError>) -> bit {
         Ok => return true;
         Err(error) => return false;
     }
+}
+
+func ioOk(value:stdlib.Result<void,io.Error>)->bit {
+    match(value){Ok=>return true;Err(error)=>return false;}
 }
 
 func main() -> int {
@@ -168,7 +173,7 @@ func main() -> int {
     ) {
         return 18;
     }
-    if (!fsOk(fs.createDirectory(text.bytes("dmm-stdlib-system-test")))) {
+    if (!fsOk(fs.createDir(text.bytes("dmm-stdlib-system-test")))) {
         return 19;
     }
     var filePath: u8[] = text.bytes("dmm-stdlib-system-test/ä😀.txt");
@@ -219,7 +224,7 @@ func main() -> int {
                     }
                 }
             }
-            var sought = file.seek(0, fs.SeekFrom.End);
+            var sought = file.seek(0, fs.SeekOrigin.End);
             match (sought) {
                 Err(error) => return 48;
                 Ok(value) => {
@@ -237,41 +242,37 @@ func main() -> int {
                     }
                 }
             }
-            if (!fsOk(file.close()) || !fsOk(file.close())) {
+            if (!ioOk(file.close()) || !ioOk(file.close())) {
                 return 52;
             }
             var closed = file.read(&mut view);
             match (closed) {
                 Ok(value) => return 53;
                 Err(error) => {
-                    if (error.kind != fs.ErrorKind.Closed) {
+                    if (error.kind != io.ErrorKind.Closed) {
                         return 54;
                     }
                 }
             }
         }
     }
-    var directory = fs.readDirectory(text.bytes("dmm-stdlib-system-test"));
+    var directory = fs.openDir(text.bytes("dmm-stdlib-system-test"));
     match (directory) {
         Err(error) => return 25;
         Ok(value) => {
             var next = value.next();
             match (next) {
                 Err(error) => return 26;
-                Ok(entry) => {
+                Ok(optional) => match(optional) {Some(entry)=>{
                     if (entry.name.view() != text.bytes("ä😀.txt")) {
                         return 27;
                     }
-                }
+                } None=>return 27;}
             }
             var end = value.next();
             match (end) {
-                Ok(entry) => return 28;
-                Err(error) => {
-                    if (error.kind != fs.ErrorKind.EndOfDirectory) {
-                        return 29;
-                    }
-                }
+                Ok(optional) => match(optional){Some(entry)=>return 28;None=>{}}
+                Err(error) => return 29;
             }
             if (!fsOk(value.close())) {
                 return 30;
@@ -281,7 +282,7 @@ func main() -> int {
     if (
         !fsOk(fs.rename(filePath, text.bytes("dmm-stdlib-system-test/renamed.txt"))) ||
         !fsOk(fs.removeFile(text.bytes("dmm-stdlib-system-test/renamed.txt"))) ||
-        !fsOk(fs.removeDirectory(text.bytes("dmm-stdlib-system-test")))
+        !fsOk(fs.removeDir(text.bytes("dmm-stdlib-system-test")))
     ) {
         return 31;
     }

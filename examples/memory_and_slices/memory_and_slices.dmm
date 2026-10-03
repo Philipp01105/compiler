@@ -11,7 +11,7 @@ struct FiveValues {
 
 func allocateCell<T>(value: T) -> *Cell<T> {
     var cell: *Cell < T >= reserve(Cell<T>);
-    cell.value = value;
+    (*cell).value = value;
     return cell;
 }
 
@@ -60,7 +60,7 @@ func main() -> int {
     stdlib.println(rows[1][0]);
     stdlib.println(sum(middle));
     stdlib.println(sum(repeated));
-    stdlib.println(cell.value);
+    stdlib.println((*cell).value);
     stdlib.println(sizeof(Cell<i32>));
     stdlib.println(alignof(Cell<i32>));
 
@@ -68,7 +68,7 @@ func main() -> int {
         free(cell);
         return 1;
     }
-    if (generated != expected || sum(generated) != 26 || sum(repeated) != 12 || cell.value != 26) {
+    if (generated != expected || sum(generated) != 26 || sum(repeated) != 12 || (*cell).value != 26) {
         free(cell);
         return 2;
     }

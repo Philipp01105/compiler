@@ -1,0 +1,49 @@
+package collections;
+import (raw "stdlib/core/raw" "stdlib/collections/hash");
+func scalarHash(value:u64,key0:u64,key1:u64)->u64 {
+    var input:u8[8];
+    for(var i:usize=0;i<8;i+=1) {input[i]=(value%256).(u8);value/=256;}
+    var source:u8[]=input[:];
+    return hash.sipHash(&source,key0,key1);
+}
+func defaultHash<K>(key:&K,key0:u64,key1:u64)->u64 {
+    match(K) {
+        case int->return scalarHash((*key).(u64),key0,key1);
+        case char->return scalarHash((*key).(u64),key0,key1);
+        case byte->return scalarHash((*key).(u64),key0,key1);
+        case bit->return scalarHash((*key).(u64),key0,key1);
+        case i8->return scalarHash((*key).(u64),key0,key1);
+        case u8->return scalarHash((*key).(u64),key0,key1);
+        case i16->return scalarHash((*key).(u64),key0,key1);
+        case u16->return scalarHash((*key).(u64),key0,key1);
+        case i32->return scalarHash((*key).(u64),key0,key1);
+        case u32->return scalarHash((*key).(u64),key0,key1);
+        case i64->return scalarHash((*key).(u64),key0,key1);
+        case u64->return scalarHash((*key).(u64),key0,key1);
+        case isize->return scalarHash((*key).(u64),key0,key1);
+        case usize->return scalarHash((*key).(u64),key0,key1);
+        case string->{
+            var input=slice(raw.core_string_data(*key),raw.core_string_length(*key));
+            return hash.sipHash(&input,key0,key1);
+        }
+    }
+}
+func defaultEqual<K>(left:&K,right:&K)->bit {
+    match(K) {
+        case int->return *left==*right;
+        case char->return *left==*right;
+        case byte->return *left==*right;
+        case bit->return *left==*right;
+        case i8->return *left==*right;
+        case u8->return *left==*right;
+        case i16->return *left==*right;
+        case u16->return *left==*right;
+        case i32->return *left==*right;
+        case u32->return *left==*right;
+        case i64->return *left==*right;
+        case u64->return *left==*right;
+        case isize->return *left==*right;
+        case usize->return *left==*right;
+        case string->return *left==*right;
+    }
+}

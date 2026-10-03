@@ -49,7 +49,7 @@ func branch(flag: bit) -> int {
     defer record(&mut audit, 7);
     var block: *Lease < int >= reserve(Lease<int>);
     initialize<Lease<int>>(block, make(21, 5));
-    var output = block.payload + moved.payload + lease.payload;
+    var output = (*block).payload + moved.payload + lease.payload;
     destroy<Lease<int>>(block);
     initialize<Lease<int>>(block, make(34, 6));
     destroy<Lease<int>>(block);

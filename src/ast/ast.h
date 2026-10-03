@@ -175,6 +175,8 @@ struct AstExpression {
     int explicit_type_arguments;
     int explicit_generic_reference;
     int direct_call_target;
+    int is_receiver_reference;
+    unsigned iterator_protocol_mode; /* 1..3 factory, 4..6 next. */
     /* Sema-owned folded constant spelling, separate from the source tree. */
     AstToken folded_constant;
     DataType resolved_type;
@@ -193,8 +195,10 @@ struct AstExpression {
     int has_resolved_ast_type;
     /* Sema-proven ownership of compiler-created slice backing storage. */
     int owns_slice_backing;
+    int is_array_view; /* Context converts the fixed array to a non-owning slice. */
     size_t resolved_symbol_id;
     /* Declaration identity for compile-time polymorphic callable values. */
+    unsigned receiver_contract_mode; /* Generic interface contract survives specialization. */
     const struct AstDeclarationNode *resolved_callable;
     const struct AstProgram *resolved_callable_program;
     AstBorrowKind resolved_borrow_kind;
@@ -223,6 +227,7 @@ struct AstStatement {
        to its concrete environment, so specializations can recheck it. */
     AstType *closure_callable_annotation;
     int is_const;
+    unsigned iterator_mode; /* 0: classical for; 1: value; 2: shared; 3: mutable. */
     AstExpression *expression;
     AstExpression *value;
     AstExpression *condition;
@@ -254,6 +259,7 @@ struct AstMatchArm {
 };
 
 struct AstParameter {
+    int iteration_borrow;
     AstSourceSpan span;
     size_t name_token;
     AstType type;
@@ -263,6 +269,7 @@ struct AstParameter {
 };
 
 struct AstField {
+    int closure_capture_by_reference; /* Explicit & capture, rather than move of a reference. */
     int is_public;
     AstSourceSpan span;
     size_t name_token;
@@ -327,6 +334,8 @@ struct AstDeclarationNode {
 
         struct {
             AstParameter *parameters;
+            AstParameter *receiver_parameter; /* Semantic-only checked self; not an ABI argument. */
+            int uses_receiver_reference;
             AstType return_type;
             AstStatement *body;
             int is_static;

@@ -80,6 +80,40 @@ pub func any<T: core.Copy>(values: T[], predicate: mut func(T) -> bit) -> bit {
     return false;
 }
 
+// Borrow each element instead of requiring a copy of its owned value.
+pub func findBorrowed<T>(values:&T[],predicate:mut func(&T)->bit)->stdlib.Option<usize> {
+    for(var i:usize=0;i<values.length;i+=1) {
+        if(predicate(&values[i])) { return stdlib.Option<usize>.Some(i); }
+    }
+    return stdlib.Option<usize>.None;
+}
+
+pub func countBorrowed<T>(values:&T[],predicate:mut func(&T)->bit)->usize {
+    var result:usize=0;
+    for(var i:usize=0;i<values.length;i+=1) {
+        if(predicate(&values[i])) { result+=1; }
+    }
+    return result;
+}
+
+pub func allBorrowed<T>(values:&T[],predicate:mut func(&T)->bit)->bit {
+    for(var i:usize=0;i<values.length;i+=1) {
+        if(!predicate(&values[i])) { return false; }
+    }
+    return true;
+}
+
+pub func anyBorrowed<T>(values:&T[],predicate:mut func(&T)->bit)->bit {
+    for(var i:usize=0;i<values.length;i+=1) {
+        if(predicate(&values[i])) { return true; }
+    }
+    return false;
+}
+
+pub func forEachMut<T>(values:&mut T[],action:mut func(&mut T)->void)->void {
+    for(var i:usize=0;i<values.length;i+=1) { action(&mut values[i]); }
+}
+
 pub func reverse<T: core.Copy>(values: T[]) -> void {
     var left: usize = 0;
     var right: usize = values.length;

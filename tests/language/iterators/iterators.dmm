@@ -1,0 +1,180 @@
+package main;
+import ("stdlib" "stdlib/core");
+var factories:i32=0;
+var advances:i32=0;
+var sources:i32=0;
+var iteratorDrops:i32=0;
+var ownerDrops:i32=0;
+struct TestList<T> {
+    var values:T[3];
+    var count:usize;
+    func iter<'a>()->ValueIterator<'a,T> where T:core.Copy {
+        factories+=1; return ValueIterator<'a,T>{source:&self,index:0};
+    }
+    func iterRef<'a>()->RefIterator<'a,T> {
+        factories+=1; return RefIterator<'a,T>{source:&self,index:0};
+    }
+    func iterMut<'a>()->MutIterator<'a,T> {
+        factories+=1; return MutIterator<'a,T>{source:&mut self,index:0};
+    }
+}
+struct ValueIterator<'a,T> {
+    var source:&'a TestList<T>;
+    var index:usize;
+    func next()->stdlib.Option<T> where T:core.Copy {
+        advances+=1;
+        if(index>=source.count) { return stdlib.Option<T>.None; }
+        var position=index; index+=1;
+        return stdlib.Option<T>.Some(source.values[position]);
+    }
+    destructor { iteratorDrops+=1; }
+}
+struct RefIterator<'a,T> {
+    var source:&'a TestList<T>;
+    var index:usize;
+    func next()->stdlib.Option<&'a T> {
+        advances+=1;
+        if(index>=source.count) { return stdlib.Option<&'a T>.None; }
+        var position=index; index+=1;
+        return stdlib.Option<&'a T>.Some(&source.values[position]);
+    }
+    destructor { iteratorDrops+=1; }
+}
+struct MutIterator<'a,T> {
+    var source:&'a mut TestList<T>;
+    var index:usize;
+    func next()->stdlib.Option<&mut T> {
+        advances+=1;
+        if(index>=source.count) { return stdlib.Option<&mut T>.None; }
+        var position=index; index+=1;
+        return stdlib.Option<&mut T>.Some(&mut self.source.values[position]);
+    }
+    destructor { iteratorDrops+=1; }
+}
+struct Owner { var value:i32; destructor { ownerDrops+=1; } }
+func sample()->TestList<i32> { sources+=1; return TestList<i32>{values:[1,2,3],count:3}; }
+// A separate structure supplies its own iteration without indexing or iterMut.
+struct Counter {
+    var limit:i32;
+    func iter()->CounterIterator { return CounterIterator{index:0,limit:self.limit}; }
+}
+struct CounterIterator {
+    var index:i32; var limit:i32;
+    func next()->stdlib.Option<i32> {
+        if(index>=limit) { return stdlib.Option<i32>.None; }
+        var result=index; index+=1; return stdlib.Option<i32>.Some(result);
+    }
+}
+// Owned values can be produced by next(), without consuming the collection.
+struct Producer {
+    func iter()->OwnedIterator { return OwnedIterator{remaining:3}; }
+}
+struct OwnedIterator {
+    var remaining:i32;
+    func next()->stdlib.Option<Owner> {
+        if(remaining==0) { return stdlib.Option<Owner>.None; }
+        remaining-=1; return stdlib.Option<Owner>.Some(Owner{value:remaining});
+    }
+    destructor { iteratorDrops+=1; }
+}
+func genericSum<T:core.Copy>(list:&TestList<T>)->i32 {
+    var sum:i32=0;
+    for(var x=list) { sum+=x.(i32); }
+    return sum;
+}
+func early(list:&TestList<i32>)->i32 {
+    for(var x=list) { return x; }
+    return 0;
+}
+func increment(item:&mut i32)->void { *item+=1; }
+func first<'a>(list:&'a TestList<i32>)->&'a i32 {
+    for(var &x=list) { return x; }
+    return &list.values[0];
+}
+async func readAsync(item:&mut i32)->i32 { return *item; }
+struct DefaultReferences<'a> {
+    var source:&'a TestList<i32>;
+    func iter()->RefIterator<'a,i32> { return RefIterator<'a,i32>{source:source,index:0}; }
+}
+struct Wrapper { var list:TestList<i32>; }
+func ownedSample()->TestList<Owner> {
+    return TestList<Owner>{values:[Owner{value:1},Owner{value:2},Owner{value:3}],count:3};
+}
+func earlyOwned()->i32 {
+    var source=Producer{};
+    for(var x=source) { return x.value; }
+    return 0;
+}
+func main()->int {
+    var list=sample();
+    var sum:i32=0;
+    for(var x=list) { sum+=x; }
+    if(sum!=6 || factories!=1 || advances!=4 || iteratorDrops!=1) { return 1; }
+    sum=0;
+    for(var &x=list) { sum+=*x; }
+    if(sum!=6 || factories!=2 || advances!=8 || iteratorDrops!=2) { return 2; }
+    for(var &mut x=list) { *x+=10; }
+    if(list.values[0]!=11 || list.values[2]!=13 || iteratorDrops!=3) { return 3; }
+    sum=0;
+    for(var x=sample()) { sum+=x; }
+    if(sources!=2 || sum!=6 || iteratorDrops!=4) { return 4; }
+    {
+        var owners=TestList<Owner>{values:[Owner{value:1},Owner{value:2},Owner{value:3}],count:3};
+        for(var &x=owners) { sum+=x.value; }
+        for(var &mut x=owners) { x.value+=1; }
+        if(ownerDrops!=0 || owners.values[2].value!=4) { return 5; }
+    }
+    if(ownerDrops!=3) { return 6; }
+    var counter=Counter{limit:4}; sum=0;
+    for(var x=counter) {
+        if(x==1) { continue; }
+        if(x==3) { break; }
+        sum+=x;
+    }
+    if(sum!=2) { return 7; }
+    var empty=Counter{limit:0};
+    for(var x=empty) { return 8; }
+    var pairs:i32=0;
+    for(var x=counter) { for(var y=counter) { pairs+=1; } }
+    if(pairs!=16) { return 9; }
+    var before=iteratorDrops;
+    if(early(&list)!=11 || iteratorDrops!=before+1) { return 10; }
+    if(genericSum(&list)!=36) { return 11; }
+    var checked=&mut list;
+    for(var &mut x=checked) { increment(x); }
+    if(list.values[0]!=12) { return 12; }
+    before=iteratorDrops;
+    var drops=ownerDrops;
+    var producer=Producer{};
+    for(var x=producer) { if(x.value==2) { continue; } break; }
+    if(ownerDrops!=drops+2 || iteratorDrops!=before+1) { return 13; }
+    for(var x=producer) { sum+=x.value; }
+    if(ownerDrops!=drops+5) { return 14; }
+    // The factory remains an ordinary source-language instance method.
+    { var iterator=list.iterRef(); var item=iterator.next();
+      match(item) { Some(x)=>{ sum+=*x; } None=>{} }
+    }
+    if(*first(&list)!=12) { return 15; }
+    var references=DefaultReferences{source:&list};
+    sum=0; for(var x=references) { sum+=*x; }
+    if(sum!=39) { return 16; }
+    for(var &mut x=list) {
+        var callback=func [move x]()->i32 { return *x; };
+        sum+=callback();
+    }
+    for(var &mut x=list) { sum+=block_on(readAsync(x)); }
+    sum=0;
+    var sourceBefore=sources;
+    for(var x=Wrapper{list:sample()}.list) { sum+=x; }
+    if(sum!=6 || sources!=sourceBefore+1) { return 17; }
+    // Existing C-style loops retain their parsing and control flow.
+    sum=0;
+    for(var index:usize=0; index<3; index+=1) { sum+=list.values[index]; }
+    if(sum!=39) { return 18; }
+    drops=ownerDrops; before=iteratorDrops;
+    for(var &x=ownedSample()) { if(x.value!=1) { return 19; } break; }
+    if(ownerDrops!=drops+3 || iteratorDrops!=before+1) { return 20; }
+    drops=ownerDrops; before=iteratorDrops;
+    if(earlyOwned()!=2 || ownerDrops!=drops+1 || iteratorDrops!=before+1) { return 21; }
+    return 0;
+}

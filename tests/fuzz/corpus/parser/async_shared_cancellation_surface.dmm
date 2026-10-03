@@ -1,5 +1,5 @@
 package main;
-import "stdlib/core";
+import "stdlib/core"; import "stdlib/memory";
 import "stdlib";
 
 struct State {
@@ -7,7 +7,7 @@ struct State {
     var errors: core.AtomicUsize;
 }
 
-async func worker(owner: core.Shared<State>, rounds: int) -> stdlib.Result<int, int> {
+async func worker(owner: memory.Shared<State>, rounds: int) -> stdlib.Result<int, int> {
     var state = owner.get();
     for (var i = 0; i < rounds; i += 1) {
         var count = state.processed.load();
@@ -35,7 +35,7 @@ async func collect(handle: JoinHandle<stdlib.Result<int, int>>) -> int {
 
 func main() -> int {
     match (
-        core.shared(
+        memory.shared(
             State{
                 processed: core.atomicUsize(0.(usize)),
                 errors: core.atomicUsize(0.(usize))

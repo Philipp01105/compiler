@@ -77,6 +77,11 @@ poll only cleans up captured parameters; initial native poller state must be saf
 confirms cancellation of the loser, and `join2` returns both values. The timers package
 provides sleep and timeout; started Timer cleanup requires completion/cancellation acknowledgement.
 Generic value composition uses a Unit payload for void results.
+`asUnit` adapts Future<void> to Future<Unit>. `selectVoid` returns Selected<Unit,Unit>
+with an owned remaining handle; `raceVoid` and `joinVoid` return Future<void>.
+`timeoutVoid` returns TimedVoid.Completed or Elapsed after cancellation acknowledgement.
+fromPoller and select2 refresh their context on every poll, including cancellation polls,
+so a pending handle can be driven with a new waker context.
 
 `futurePoll(&mut Future<T>, context:*void)->bit` and `futureCancelPoll` poll exclusively
 without consuming the handle. `futureComplete(Future<T>)->T` and
@@ -455,7 +460,12 @@ capture remain unsupported. A capturing closure
 cannot convert to a native function pointer.
 
 An interface containing exactly one `__invoke` method can erase a callable while retaining
-its shared, mut or once invocation mode. Owned values use `callable(args)` syntax; invoking
+its shared, mut or once invocation mode. Receiver contracts also apply to other interface
+method names and multi-method interfaces. Generic bounds preserve mut/once contracts
+through concrete specialization and local aliases of their parameters. A once method
+consumes its owned receiver, including Copy receivers; checked references cannot invoke it.
+Untransferred owner state is destroyed immediately after the consuming call.
+Owned values use `callable(args)` syntax; invoking
 a once callable consumes its binding and cleans up remaining captures exactly once.
 For example, `interface Adder { func __invoke(value:i32)->i32; }` names a shared callable.
 `@[must_consume]` on a struct, enum or interface makes its owned values require explicit
@@ -477,6 +487,21 @@ contracts, including Option, Result and user enums. Mutable outputs retain exclu
 move-only operands remain consumed. The implicit residual return is also checked for local borrow escape.
 Unknown branch mappings retain a conservative union of input origins rather than the operand's payload tags.
 Nested checked references use parenthesized types such as `&(&i32)` and `&mut (&i32)`.
+Checked references automatically dereference only for instance member access, array/slice indexing and method
+resolution. Thus `p.x`, `values.length`, `values[i]`, `&values[i]` and `p.method()` have the same meaning as
+their explicitly dereferenced forms. Nested checked reference layers are removed until access resolves;
+for example `p:&(&Point)` permits `p.x`, equivalent to `(**p).x`. Indexing remains an addressable place
+with the same bounds checks and loan origins. Every shared layer retains its restriction on mutation:
+`&mut Point` permits `p.x = 10` and mutating methods, whereas `&(&mut Point)` does not.
+
+Automatic dereferencing stops at every raw pointer. `p:*Point` requires `(*p).x` or `(*p).method()`;
+`p:&(*Point)` also requires an explicit raw dereference, such as `(**p).x`. Compile-time `.type` metadata
+continues to describe the original expression type and does not access the pointee. Existing direct raw-pointer
+indexing is unchanged. There is no implicit dereferencing for operators, initialization, assignment, returns
+or ordinary function arguments: `x:&i32` needs `*x` when an `i32` value is required. There is no additional
+auto-borrow rule. Instance methods retain their existing implicit receiver and Shared/Mut/Once contracts;
+auto-deref cannot obtain ownership of a referent or permit a consuming receiver through a checked reference.
+
 Borrowing a reference binding's slot protects the binding separately from its referent;
 exclusive slot assignment updates stored provenance. Whole reference bindings support take/replace.
 Synchronous call summaries propagate stored-borrow updates, including forwarded setters.
@@ -531,7 +556,19 @@ its destroy operation covers the whole slot. Moves and enum payloads preserve th
 Tag, index or extent mutations invalidate the corresponding facts; effectful conditions require
 a fresh tag observation. Copies of indexed heap members retain their own referent loans after
 the container is cleared. This supports HashMap.clear for proved stored slots, including borrowed keys and values.
-Arbitrary dynamic index relationships, allocation relocation and precise hash-key removal remain unfinished. See
+Whole-slot `initialize(new[i], take(old[i]))` loops with a zero-based, unit-step
+traversal of a proved occupied prefix preserve individual slot origins in local scratch storage.
+Assigning that storage through a synchronous checked parameter or owner field transfers its loans;
+early failure returns retain the old storage's loans. Scratch loans do not escape the invocation.
+An unproved or incomplete transfer retains conservative origins when the pointer is replaced.
+List growth and user-defined owners are covered, including wrappers, moves, enum payloads,
+live removed/copied results and allocation-failure retry. Arbitrary dynamic index relationships
+and precise hash-key removal remain unfinished. Whole-slot ring transfers from
+`old[(head+i)%slots]` to `new[i]` preserve logical coordinates for the proved
+pointer/capacity/head=0 commit sequence. A full tagged scan with modulo-bounded
+probing transfers whole rehash entries, preserving independent key/value origins.
+Callback effects are checked before trusting the source occupancy proof.
+Partial slot transfers and differing commit/control-flow shapes remain conservative. See
 [implementation and acceptance status](plans/stdlib-language-gaps.md).
 Explicit enum payload lifetimes are also checked independently at return boundaries and preserved on value-pattern
 bindings from aggregate parameters. Constructing an explicitly static enum payload requires permanent storage.
@@ -559,6 +596,11 @@ or slice type. They may be parameters,
 local bindings, fields, enum payloads, package variables and return values. A matching fixed array converts to a slice
 without copying its elements. Ordinary assignment and return copy the view; they do not duplicate the underlying
 storage.
+This conversion does not move a named fixed array, including arrays of move-only
+elements: the array retains ownership and its element cleanup. Conversion is recorded
+only after selecting the actual destination/parameter type; probing a slice overload
+cannot suppress consumption by a selected owning-array overload. Proven views of local
+fixed-array storage cannot escape through a return, including aggregate fields/payloads.
 `.length:usize` and `.data:*T` are read-only properties. Indexing checks the current count, including negative indices.
 `value[start:end]` creates a non-owning slice over the half-open range `[start,end)`; `value[:end]`,
 `value[start:]`, and `value[:]` default the omitted bound to zero or the source length. Fixed arrays and slices may be
@@ -640,6 +682,42 @@ backing is released in reverse initialization order. The terminating `exit` intr
 
 DMM supports blocks, `if`/`else`, `for`, `while`, `break`, `continue`, and `return`. `break` and `continue` are valid
 only in loops. Every reachable path of a non-void function must return a value of the declared type.
+
+Iterator loops use `for (var x = source)`, `for (var &x = source)`, or
+`for (var &mut x = source)`. A data structure implements this protocol in ordinary DMM code:
+
+| Loop binding | Parameterless instance factory | Required `next()` result |
+| --- | --- | --- |
+| `var x` | `iter()` | `stdlib.Option<Item>`; `x` has type `Item` |
+| `var &x` | `iterRef()` | `stdlib.Option<&T>`; `x` has type `&T` |
+| `var &mut x` | `iterMut()` | `stdlib.Option<&mut T>`; `x` has type `&mut T` |
+
+The factory returns a concrete iterator struct. Both factory and `next()` are non-consuming instance methods
+with no explicit parameters or method type parameters; lifetime parameters and constraints on the enclosing
+generic structure are supported. `next()` may mutate its iterator state. The required option is the standard
+`stdlib.Option`, not another enum with matching variant names. There is no indexing fallback or built-in
+collection implementation. Missing methods or an incompatible result are compilation errors.
+
+The source expression and factory execute once. A named source is borrowed rather than moved; an owned
+temporary source is retained in a hidden local until the loop exits. Value and shared iteration borrow the
+source immutably, while mutable iteration requires exclusive access. A checked reference source is reborrowed
+with that access mode. Raw pointers require an explicit dereference. The plain binding keeps exactly the item
+type returned by `next()`; it can therefore receive an owned value or a checked reference.
+
+Each `Some(item)` executes the body in a fresh scope. `None` terminates the loop. Item cleanup occurs before
+the next call, including on `continue`; `break` and `return` clean up the item, iterator, and any temporary source
+through the ordinary destruction path. A mutable iterator item and its derived borrows are restricted to that
+iteration. Storing them in outer variables, aggregates, closures or futures, or returning them, is rejected.
+They may be forwarded to ordinary calls, closures or futures that finish within the iteration. Shared items
+follow the ordinary source lifetime rules.
+
+An instance method exposes its receiver as the addressable place `self`. `self.field`, `&self`, and `&mut self`
+refer to the existing receiver; they do not add an ABI argument. Checked borrows of the whole receiver conflict
+with overlapping field borrows and mutations. A factory can use `iterRef<'a>() -> Iterator<'a>` and store
+`&self` in an explicitly lifetime-annotated iterator field. Returning that iterator retains the receiver's
+borrow origin. Mutation and exclusive borrows require mutable receiver access at the call site. `self` cannot
+be shadowed inside an instance method, moved as a whole, or assigned a replacement receiver. Free and static
+functions have no implicit `self`.
 
 Blocks, `if`/`else`, and `match` can also produce values. A value block ends with an expression without a semicolon:
 `var total:int = { var fee:int = 2; fee + 40 };`. A value `if` requires both branches and braces:
@@ -809,7 +887,7 @@ to evade consumption. Normal functions and callable locals named take or replace
 Owning instance methods may return a checked borrow of heap storage reachable through their receiver. The returned
 borrow is tied to that receiver. This does not establish general safe raw-pointer lifetime management.
 
-`core.shared<T>(value:T)` returns `stdlib.Result<core.Shared<T>,stdlib.AllocationError>`. Shared is a move-only library
+`memory.shared<T>(value:T)` in `stdlib/memory` returns `core.Result<memory.Shared<T>,core.AllocError>`. Shared is a move-only library
 owner with no default or empty handle. Clone borrows its receiver and adds one reference without copying T; Get returns
 an owner-bound `&T`. Its explicit Send/Sync guarantee requires both properties of T. The constructor initializes one
 heap payload; allocation failure drops the incoming value and returns OutOfMemory. Sequentially consistent CAS loops
@@ -1288,7 +1366,9 @@ if-statement    = "if", "(", expression, ")", statement,
                   ["else", (if-statement | statement)] ;
 while-statement = "while", "(", expression, ")", statement ;
 for-statement   = "for", "(", [for-initializer], ";", [expression], ";",
-                  [for-update], ")", statement ;
+                  [for-update], ")", statement
+                | "for", "(", "var", ["&", ["mut"]], identifier, "=", expression,
+                  ")", statement ;
 for-initializer = variable-declaration-without-semicolon
                 | lvalue, "=", expression ;
 for-update      = lvalue, assignment-operator, expression

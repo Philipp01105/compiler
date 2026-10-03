@@ -2,6 +2,21 @@ package main;
 import ("stdlib" "stdlib/algorithms" "stdlib/core");
 var destroyed:i32=0;
 struct Resource { var value:i32; destructor { destroyed+=1; } }
+interface Finisher { once func finish()->i32; func peek()->i32; }
+struct FinishOwner {
+ var owner:Resource;
+ func finish()->i32 { return owner.value; }
+ func peek()->i32 { return owner.value; }
+}
+struct SharedFinishOwner {
+ var owner:Resource;
+ func finish()->i32 { return owner.value; }
+ func peek()->i32 { return owner.value; }
+}
+func finishGeneric<F:Finisher>(value:F)->i32 { return value.finish(); }
+interface Counter { mut func advance()->i32; }
+struct Count { var value:i32; func advance()->i32 { value+=1; return value; } }
+func advanceGeneric<C:Counter>(value:&mut C)->i32 { return (*value).advance(); }
 func apply(f:func(i32)->i32,x:i32)->i32 { return f(x); }
 interface Adder { func __invoke(value:i32)->i32; }
 interface Accumulator { mut func __invoke(value:i32)->i32; }
@@ -37,6 +52,16 @@ func choose<T:core.Copy>(first:T,second:T)->T {
  return selected(second);
 }
 func main()->int {
+ { var counter=Count{value:3}; if(advanceGeneric(&mut counter)!=4 || advanceGeneric(&mut counter)!=5) { return 77; } }
+ {
+  var before=destroyed;
+  var finisher:Finisher=FinishOwner{owner:Resource{value:241}};
+  if(finisher.peek()!=241 || finisher.finish()!=241 || destroyed!=before+1) { return 74; }
+  var shared:Finisher=SharedFinishOwner{owner:Resource{value:242}};
+  if(shared.finish()!=242 || destroyed!=before+2) { return 75; }
+  if(finishGeneric(FinishOwner{owner:Resource{value:243}})!=243 || destroyed!=before+3) { return 76; }
+  destroyed=0;
+ }
  {
   var add=makeAdder(211);
   if(add(2)!=213 || add(3)!=214) { return 70; }

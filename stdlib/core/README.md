@@ -1,13 +1,14 @@
 # stdlib/core
 
-`import "stdlib/core";` loads low-level operations and shared ownership. It provides
+`import "stdlib/core";` loads language-adjacent contracts and the remaining low-level forwarding APIs. It provides
 ordinary typed DMM functions. It participates in the module/package visibility model.
 Null pointers, pointer offsets, overlap-safe byte copying and filling are implemented in DMM. Atomic types use
 explicit native declarations for the four sequentially consistent machine primitives; their function names
 receive no special semantic treatment.
 The `stdlib/core/raw` package implements allocation, byte operations, raw I/O, and process operations.
-Core forwards that API and imports the independent `stdlib/types` package for Result and AllocationError.
-Root stdlib publicly re-exports those types, preserving their nominal identity and existing spellings.
+Core defines Option, Result, propagation, AllocError and Iterator<T> directly.
+Root stdlib publicly re-exports those canonical types. The old AllocationError
+status enum is transitional and is not used by the redesigned owning APIs.
 The package graph is acyclic, so root containers can use canonical `core.Copy` bounds.
 `core.Poll<T>` is an ordinary public sum type with `Pending` and `Ready(T)`;
 matching a move-only `Ready` payload transfers it under the normal consuming-pattern rules.
@@ -37,7 +38,7 @@ func main() -> int {
 
 ## Shared ownership and lifetimes
 
-`core.shared(value)` takes ownership and returns `stdlib.Result<core.Shared<T>,stdlib.AllocationError>`.
+`memory.shared(value)` in `stdlib/memory` takes ownership and returns `core.Result<memory.Shared<T>,core.AllocError>`.
 Every successful handle owns a non-null heap block containing an atomic reference count and one initialized payload.
 `handle.clone()` borrows the handle and increments only its reference count; `handle.get()` returns a checked `&T`
 whose lifetime is tied to that handle. The final release destroys the payload once and frees the block. Reference-count
@@ -71,7 +72,7 @@ See [the executable Shared Async example](../../examples/shared_async/shared_asy
 | `core.core_load(data:*u8, offset:usize) -> u8`                   | Read a byte using ordinary DMM pointer dereference.                                           |
 | `core.core_store(data:*u8, offset:usize, value:u8)`              | Write a byte using ordinary DMM pointer dereference.                                          |
 | `core.core_string_data(text:string) -> *u8`                      | Borrow the existing NUL-terminated string representation without copying.                     |
-| `core.core_string_length(text:string) -> usize`                  | Traverse the borrowed string in DMM. A null string has length zero.                           |
+| `core.core_string_length(text:string) -> usize`                  | Return the runtime byte length, including embedded NULs. A null string has length zero.                           |
 | `core.core_read(fd:int, destination:*u8, bytes:usize) -> isize`  | Return bytes read, zero at EOF, or a negative error.                                          |
 | `core.core_write(fd:int, source:*u8, bytes:usize) -> isize`      | Return bytes written or a negative error.                                                     |
 | `core.core_open(path:string, flags:int, permissions:int) -> int` | Return a descriptor or a negative error.                                                      |
@@ -84,8 +85,8 @@ pointers or counts above `INT64_MAX`. Other region validity, pointer arithmetic,
 responsibilities. Only allocation base pointers may be released. A zero-byte allocation may return a releasable
 allocation or null. Borrowed string bytes must not be mutated or released through the core API.
 
-Reads and writes expose short operations directly. `stdlib/stdio` implements streams, buffering, complete-transfer loops
-and structured results in DMM; see [stdlib/stdio/README.md](../stdio/README.md). Error values are platform-dependent; portable callers test for
+Reads and writes expose short operations directly. `stdlib/io` provides Reader/Writer, buffering, complete-transfer loops
+and structured results; see [stdlib/io/README.md](../io/README.md). The older stdio package remains pending migration. Error values are platform-dependent; portable callers test for
 a negative result. Windows operations currently accept counts up to `UINT32_MAX`, and use the runtime's descriptor
 table. Linux uses direct syscalls. The supported portable open flags are `CORE_READ_ONLY`,
 `CORE_WRITE_ONLY`, `CORE_READ_WRITE`, `CORE_CREATE`, `CORE_TRUNCATE` and

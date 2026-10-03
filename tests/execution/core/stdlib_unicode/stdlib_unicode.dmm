@@ -2,6 +2,7 @@ package main;
 import (
     "stdlib"
     "stdlib/text"
+    byteops "stdlib/bytes"
     "stdlib/unicode"
 );
 
@@ -93,7 +94,7 @@ func main() -> int {
             }
         }
     }
-    var replaced = text.replace(text.bytes("abcabc"), text.bytes("ab"), text.bytes("X"));
+    var replaced = byteops.replace(text.bytes("abcabc"), text.bytes("ab"), text.bytes("X"));
     match (replaced) {
         Err(error) => return 12;
         Ok(value) => {
@@ -102,16 +103,10 @@ func main() -> int {
             }
         }
     }
-    var builder = text.builder(0);
-    match (builder) {
-        Err(error) => return 14;
-        Ok(value) => {
-            value.appendString("abc");
-            if (value.view() != text.bytes("abc")) {
-                return 15;
-            }
-        }
-    }
+    var builder=text.builder();
+    match(builder.append("abc")){Ok=>{}Err(error)=>return 14;}
+    var built=text.finish(builder);
+    if(!built.contains("abc") || built.length()!=3){return 15;}
     var surrogate: u16[1] = [55296];
     var rejected = unicode.fromUtf16(surrogate);
     match (rejected) {
@@ -137,10 +132,11 @@ func main() -> int {
             }
         }
     }
-    if (text.trimAscii(text.bytes(" \tword\r\n")) != text.bytes("word")) {
+    if (byteops.trimAscii(text.bytes(" \tword\r\n")) != text.bytes("word")) {
         return 20;
     }
-    var pieces = text.split(text.bytes("a,,"), 44);
+    var splitInput = text.bytes("a,,");
+    var pieces = byteops.split(&splitInput, 44);
     var first = pieces.next();
     match (first) {
         None => return 21;

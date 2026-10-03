@@ -221,42 +221,42 @@ func addressFd(fd: usize, peer: u64, address: *NativeAddress, length: *i32) -> i
 
 func interest(s: *Socket) -> u32 {
     var events: u32 = 0;
-    if (s.read != nullPointer().(*Operation)) {
+    if ((*s).read != nullPointer().(*Operation)) {
         events = events + 1;
     }
-    if (s.write != nullPointer().(*Operation)) {
+    if ((*s).write != nullPointer().(*Operation)) {
         events = events + 4;
     }
     return events;
 }
 
 func updateInterest(s: *Socket) -> void {
-    if (s.fd == INVALID) {
+    if ((*s).fd == INVALID) {
         return;
     }
     var event: glibc.EpollEvent;
     event.events = interest(s);
     if (event.events != 0) {
         if (
-            glibc.epollControl(epollFd, 3, s.fd.(i32), (&event).(*glibc.EpollEvent)) != 0 &&
+            glibc.epollControl(epollFd, 3, (*s).fd.(i32), (&event).(*glibc.EpollEvent)) != 0 &&
             osError() == 2
         ) {
-            glibc.epollControl(epollFd, 1, s.fd.(i32), (&event).(*glibc.EpollEvent));
+            glibc.epollControl(epollFd, 1, (*s).fd.(i32), (&event).(*glibc.EpollEvent));
         }
     } else {
-        glibc.epollControl(epollFd, 2, s.fd.(i32), nullPointer().(*glibc.EpollEvent));
+        glibc.epollControl(epollFd, 2, (*s).fd.(i32), nullPointer().(*glibc.EpollEvent));
     }
 }
 
 func pending(op: *Operation) -> void {
     var event: glibc.EpollEvent;
-    event.events = interest(op.request.socket);
+    event.events = interest((*op).request.socket);
     event.data.wide = 1;
     if (
         glibc.epollControl(
             epollFd,
             3,
-            op.request.socket.fd.(i32),
+            (*(*op).request.socket).fd.(i32),
             (&event).(*glibc.EpollEvent)
         ) != 0
     ) {
@@ -265,7 +265,7 @@ func pending(op: *Operation) -> void {
             glibc.epollControl(
                 epollFd,
                 1,
-                op.request.socket.fd.(i32),
+                (*(*op).request.socket).fd.(i32),
                 (&event).(*glibc.EpollEvent)
             ) != 0
         ) {
@@ -281,29 +281,29 @@ func cancelOs(op: *Operation) -> bit {
 }
 
 func step(op: *Operation) -> void {
-    var s: *Socket = op.request.socket;
-    var command: u64 = op.request.command;
+    var s: *Socket = (*op).request.socket;
+    var command: u64 = (*op).request.command;
     if (command != 1) {
-        op.started = 1;
+        (*op).started = 1;
     }
     var address: NativeAddress;
     var length: i32 = 0;
     var count: isize = -1;
     var code: i32 = 0;
     if (command == 1) {
-        if (op.started == 0) {
+        if ((*op).started == 0) {
             toNative(
-                (&op.request.address).(*Address),
+                (&(*op).request.address).(*Address),
                 (&address).(*NativeAddress),
                 (&length).(*i32)
             );
-            op.started = 1;
+            (*op).started = 1;
             var result: i32 = glibc.connect(
-                s.fd.(i32),
+                (*s).fd.(i32),
                 (&address).(*glibc.Sockaddr),
                 length.(u32)
             );
-            s.state = 1;
+            (*s).state = 1;
             if (result == 0) {
                 completeLocked(op, netError(0));
                 return;
@@ -319,7 +319,7 @@ func step(op: *Operation) -> void {
             var size: u32 = 4;
             if (
                 glibc.getsockopt(
-                    s.fd.(i32),
+                    (*s).fd.(i32),
                     1,
                     4,
                     (&code).(*void),
@@ -331,7 +331,7 @@ func step(op: *Operation) -> void {
             if (
                 code == 0 &&
                 glibc.getpeername(
-                    s.fd.(i32),
+                    (*s).fd.(i32),
                     (&peer).(*glibc.Sockaddr),
                     (&peerSize).(*u32)
                 ) != 0
@@ -353,76 +353,76 @@ func step(op: *Operation) -> void {
     if (command == 2) {
         var size: u32 = 128;
         var fd: i32 = glibc.accept4(
-            s.fd.(i32),
+            (*s).fd.(i32),
             (&address).(*glibc.Sockaddr),
             (&size).(*u32),
             526336
         );
         if (fd >= 0) {
             socketOpened();
-            op.accepted = allocate(Socket.size).(*Socket);
-            if (op.accepted == nullPointer().(*Socket)) {
+            (*op).accepted = allocate(Socket.size).(*Socket);
+            if ((*op).accepted == nullPointer().(*Socket)) {
                 closeFd(fd.(usize));
                 completeLocked(op, netError(10));
                 return;
             }
-            op.accepted.fd = fd.(usize);
-            op.accepted.family = s.family;
-            op.accepted.transport = 1;
-            op.accepted.state = 3;
-            fromNative((&address).(*NativeAddress), (&op.peer).(*Address));
+            (*(*op).accepted).fd = fd.(usize);
+            (*(*op).accepted).family = (*s).family;
+            (*(*op).accepted).transport = 1;
+            (*(*op).accepted).state = 3;
+            fromNative((&address).(*NativeAddress), (&(*op).peer).(*Address));
             completeLocked(op, netError(0));
             return;
         }
     } else if (command == 3) {
         count = glibc.recv(
-            s.fd.(i32),
-            op.request.buffer,
-            op.request.length.(usize),
+            (*s).fd.(i32),
+            (*op).request.buffer,
+            (*op).request.length.(usize),
             0
         );
     } else if (command == 4) {
         count = glibc.send(
-            s.fd.(i32),
-            op.request.buffer,
-            op.request.length.(usize),
+            (*s).fd.(i32),
+            (*op).request.buffer,
+            (*op).request.length.(usize),
             16384
         );
     } else if (command == 6) {
         toNative(
-            (&op.request.address).(*Address),
+            (&(*op).request.address).(*Address),
             (&address).(*NativeAddress),
             (&length).(*i32)
         );
         count = glibc.sendto(
-            s.fd.(i32),
-            op.request.buffer,
-            op.request.length.(usize),
+            (*s).fd.(i32),
+            (*op).request.buffer,
+            (*op).request.length.(usize),
             16384,
             (&address).(*glibc.Sockaddr),
             length.(u32)
         );
     } else if (command == 5) {
         var buffer: Iovec;
-        buffer.base = op.request.buffer;
-        buffer.length = op.request.length.(usize);
+        buffer.base = (*op).request.buffer;
+        buffer.length = (*op).request.length.(usize);
         var message: Message;
         message.name = (&address).(*void);
         message.nameLength = 128;
         message.vectors = (&buffer).(*Iovec);
         message.vectorCount = 1;
-        count = recvMessage(s.fd.(i32), (&message).(*Message), 0);
+        count = recvMessage((*s).fd.(i32), (&message).(*Message), 0);
         if (count >= 0) {
-            op.truncated = ((message.flags / 32) % 2 != 0).(i32);
-            fromNative((&address).(*NativeAddress), (&op.peer).(*Address));
+            (*op).truncated = ((message.flags / 32) % 2 != 0).(i32);
+            fromNative((&address).(*NativeAddress), (&(*op).peer).(*Address));
         }
     }
     if (count >= 0) {
         if (command == 6) {
-            s.state = 1;
+            (*s).state = 1;
         }
-        op.count = count.(u64);
-        op.eof = (command == 3 && count == 0 && op.request.length != 0).(i32);
+        (*op).count = count.(u64);
+        (*op).eof = (command == 3 && count == 0 && (*op).request.length != 0).(i32);
         completeLocked(op, netError(0));
         return;
     }
@@ -465,19 +465,19 @@ func finishOs() -> void {
 func resolveNative(op: *Operation, error: *Error) -> *Addresses {
     var hints: glibc.Addrinfo;
     hints.family = 0;
-    if (op.request.address.family == 4) {
+    if ((*op).request.address.family == 4) {
         hints.family = 2;
     }
-    if (op.request.address.family == 6) {
+    if ((*op).request.address.family == 6) {
         hints.family = 10;
     }
-    hints.socketType = op.request.transport.(i32);
+    hints.socketType = (*op).request.transport.(i32);
     hints.flags = 1024;
     var service: u8[6];
-    serviceName(op.request.address.port, (&service[0]).(*u8));
+    serviceName((*op).request.address.port, (&service[0]).(*u8));
     var answers: *glibc.Addrinfo;
     var code: i32 = glibc.getaddrinfo(
-        op.hostname,
+        (*op).hostname,
         (&service[0]).(*u8),
         (&hints).(*glibc.Addrinfo),
         (&answers).(**glibc.Addrinfo)
@@ -493,10 +493,10 @@ func resolveNative(op: *Operation, error: *Error) -> *Addresses {
     var count: usize = 0;
     var a: *glibc.Addrinfo = answers;
     while (a != nullPointer().(*glibc.Addrinfo)) {
-        if (a.family == 2 || a.family == 10) {
+        if ((*a).family == 2 || (*a).family == 10) {
             count = count + 1;
         }
-        a = a.next;
+        a = (*a).next;
     }
     var list: *Addresses = nullPointer().(*Addresses);
     if (count <= (INVALID - Addresses.size) / Address.size) {
@@ -510,13 +510,13 @@ func resolveNative(op: *Operation, error: *Error) -> *Addresses {
         while (a != nullPointer().(*glibc.Addrinfo)) {
             if (
                 fromNative(
-                    a.address.(*NativeAddress),
-                    (&values[list.count]).(*Address)
+                    (*a).address.(*NativeAddress),
+                    (&values[(*list).count]).(*Address)
                 )
             ) {
-                list.count = list.count + 1;
+                (*list).count = (*list).count + 1;
             }
-            a = a.next;
+            a = (*a).next;
         }
     }
     glibc.freeaddrinfo(answers);

@@ -1,0 +1,231 @@
+package collections;
+import ("stdlib/core" "stdlib/random");
+
+pub enum ErrorKind { pub OutOfMemory, pub CapacityOverflow, pub Entropy }
+pub struct Error {
+    pub var kind:ErrorKind;
+    pub static func fromResidual(error:core.AllocError)->Self {
+        match(error) {
+            OutOfMemory=>return Error{kind:ErrorKind.OutOfMemory};
+            CapacityOverflow=>return Error{kind:ErrorKind.CapacityOverflow};
+        }
+    }
+}
+struct Bucket<K,V> { var state:u8; var key:K; var value:V; }
+
+enum HashPolicy<K> { Plain(func(&K)->u64), Keyed(func(&K,u64,u64)->u64,u64,u64) }
+func hashKey<K>(policy:HashPolicy<K>,key:&K)->u64 {match(policy){Plain(hash)=>return hash(key);Keyed(hash,left,right)=>return hash(key,left,right);}}
+@[no_default] @[core.Send where K:core.Send,V:core.Send] @[core.Sync where K:core.Sync,V:core.Sync]
+pub struct Map<K,V> {
+    var entries:*Bucket<K,V>; var slots:usize; var count:usize;
+    var policy:HashPolicy<K>;
+    var equal:func(&K,&K)->bit;
+
+    func find(key:&K)->core.Option<usize> {
+        if(slots==0) {return core.Option<usize>.None;}
+        var index=hashKey<K>(policy,key).(usize)%slots;
+        for(var scanned:usize=0;scanned<slots;scanned+=1) {
+            if(entries[index].state==0) {break;}
+            if(entries[index].state==1 && equal(&entries[index].key,key)) {
+                return core.Option<usize>.Some(index);
+            }
+            index=(index+1)%slots;
+        }
+        return core.Option<usize>.None;
+    }
+    pub func length()->usize {return count;}
+    pub func capacity()->usize {return slots/2;}
+    pub func ensureCapacity(capacity:usize)->core.Result<void,Error> {
+        if(capacity<=slots/2) {return core.Result<void,Error>.Ok;}
+        if(capacity>4611686018427387903.(usize)/sizeof(Bucket<K,V>)) {
+            return core.Result<void,Error>.Err(Error{kind:ErrorKind.CapacityOverflow});
+        }
+        var required=capacity*2;
+        if(required<8) {required=8;}
+        var grown:*Bucket<K,V>=core.core_alloc(required*sizeof(Bucket<K,V>)).(*Bucket<K,V>);
+        if(grown==core.null<Bucket<K,V>>()) {
+            return core.Result<void,Error>.Err(Error{kind:ErrorKind.OutOfMemory});
+        }
+        for(var i:usize=0;i<required;i+=1) {grown[i].state=0;}
+        for(var i:usize=0;i<slots;i+=1) {
+            if(entries[i].state==1) {
+                var index=hashKey<K>(policy,&entries[i].key).(usize)%required;
+                while(grown[index].state==1) {index=(index+1)%required;}
+                core.initialize<Bucket<K,V>>(&grown[index],take(entries[i]));
+            }
+        }
+        core.core_release(entries.(*u8)); entries=grown; slots=required;
+        return core.Result<void,Error>.Ok;
+    }
+    pub func insert(key:K,value:V)->core.Result<void,Error> {
+        match(self.find(&key)) {
+            Some(index)=>{
+                if(slots>0){
+                    var slot=index%slots;
+                    if(entries[slot].state==1){
+                        core.destroy<V>(&entries[slot].value);
+                        core.initialize<V>(&entries[slot].value,value);
+                        return core.Result<void,Error>.Ok;
+                    }
+                }
+            }
+            None=>{}
+        }
+        if(count>=slots/2) {
+            var capacity:usize=4;
+            if(slots>0) {
+                if(slots>4611686018427387903.(usize)/sizeof(Bucket<K,V>)) {
+                    return core.Result<void,Error>.Err(Error{kind:ErrorKind.CapacityOverflow});
+                }
+                capacity=slots;
+            }
+            self.ensureCapacity(capacity)?;
+        }
+        var index=hashKey<K>(policy,&key).(usize)%slots;
+        while(entries[index].state==1) {index=(index+1)%slots;}
+        core.initialize<Bucket<K,V>>(&entries[index],Bucket<K,V>{state:1,key:key,value:value});
+        count+=1;
+        return core.Result<void,Error>.Ok;
+    }
+    pub func contains(key:&K)->bit {
+        match(self.find(key)) {Some(index)=>return true;None=>return false;}
+    }
+    pub func get<'a>(key:&K)->core.Option<&'a V> {
+        match(self.find(key)) {
+            Some(index)=>return core.Option<&'a V>.Some(&self.entries[index].value);
+            None=>return core.Option<&'a V>.None;
+        }
+    }
+    pub func getMut<'a>(key:&K)->core.Option<&'a mut V> {
+        match(self.find(key)) {
+            Some(index)=>return core.Option<&'a mut V>.Some(&mut self.entries[index].value);
+            None=>return core.Option<&'a mut V>.None;
+        }
+    }
+    pub func remove(key:&K)->core.Option<V> {
+        match(self.find(key)) {
+            Some(index)=>{
+                var value=take(entries[index].value);
+                core.destroy<K>(&entries[index].key);
+                entries[index].state=2; count-=1;
+                return core.Option<V>.Some(value);
+            }
+            None=>return core.Option<V>.None;
+        }
+    }
+    func removeKey(key:&K)->core.Option<K> {
+        match(self.find(key)) {
+            Some(index)=>{
+                var value=take(entries[index].key);
+                core.destroy<V>(&entries[index].value);
+                entries[index].state=2; count-=1;
+                return core.Option<K>.Some(value);
+            }
+            None=>return core.Option<K>.None;
+        }
+    }
+    pub func clear()->void {
+        for(var i:usize=0;i<slots;i+=1) {
+            if(entries[i].state==1) {core.destroy<Bucket<K,V>>(&entries[i]);}
+            entries[i].state=0;
+        }
+        count=0;
+    }
+    pub func iter<'a>()->MapEntries<'a,K,V> {return MapEntries<'a,K,V>{source:&self,index:0};}
+    pub func entriesMut<'a>()->MapEntriesMut<'a,K,V> {return MapEntriesMut<'a,K,V>{source:&mut self,index:0};}
+    destructor {
+        for(var i:usize=0;i<slots;i+=1) {
+            if(entries[i].state==1) {core.destroy<Bucket<K,V>>(&entries[i]);}
+        }
+        core.core_release(entries.(*u8));
+    }
+}
+pub struct EntryRef<'a,K,V> {pub var key:&'a K;pub var value:&'a V;}
+pub struct EntryMut<'a,K,V> {pub var key:&'a K;pub var value:&'a mut V;}
+pub struct MapEntries<'a,K,V> {
+    var source:&'a Map<K,V>;var index:usize;
+    pub func next()->core.Option<EntryRef<'a,K,V>> {
+        while(index<source.slots) {
+            var position=index;index+=1;
+            if(source.entries[position].state==1) {
+                return core.Option<EntryRef<'a,K,V>>.Some(EntryRef<'a,K,V>{
+                    key:&source.entries[position].key,value:&source.entries[position].value
+                });
+            }
+        }
+        return core.Option<EntryRef<'a,K,V>>.None;
+    }
+}
+pub struct MapEntriesMut<'a,K,V> {
+    var source:&'a mut Map<K,V>;var index:usize;
+    pub func next()->core.Option<EntryMut<'a,K,V>> {
+        while(index<source.slots) {
+            var position=index;index+=1;
+            if(source.entries[position].state==1) {
+                return core.Option<EntryMut<'a,K,V>>.Some(EntryMut<'a,K,V>{
+                    key:&source.entries[position].key,value:&mut self.source.entries[position].value
+                });
+            }
+        }
+        return core.Option<EntryMut<'a,K,V>>.None;
+    }
+}
+pub func map<K,V>(hash:func(&K)->u64,equal:func(&K,&K)->bit)->core.Result<Map<K,V>,Error> {
+    return core.Result<Map<K,V>,Error>.Ok(Map<K,V>{
+        entries:core.null<Bucket<K,V>>(),slots:0,count:0,policy:HashPolicy<K>.Plain(hash),
+        equal:equal
+    });
+}
+// Explicit advanced hook for policies that need per-map keyed hashing.
+// The key is supplied by this owner, never a capturing/erased callback.
+pub func seededMap<K,V>(hash:func(&K,u64,u64)->u64,equal:func(&K,&K)->bit)->core.Result<Map<K,V>,Error> {
+    var entropy:u8[16];var output:u8[]=entropy[:];
+    match(random.systemFill(&mut output)) {
+        Ok=>{}
+        Err(error)=>return core.Result<Map<K,V>,Error>.Err(Error{kind:ErrorKind.Entropy});
+    }
+    var left:u64=0;var right:u64=0;var power:u64=1;
+    for(var i:usize=0;i<8;i+=1) {
+        left+=entropy[i].(u64)*power;right+=entropy[i+8].(u64)*power;power*=256;
+    }
+    return core.Result<Map<K,V>,Error>.Ok(Map<K,V>{
+        entries:core.null<Bucket<K,V>>(),slots:0,count:0,policy:HashPolicy<K>.Keyed(hash,left,right),
+        equal:equal
+    });
+}
+pub func map<K,V>()->core.Result<Map<K,V>,Error> {
+    return seededMap<K,V>(defaultHash<K>,defaultEqual<K>);
+}
+
+@[core.Send where T:core.Send] @[core.Sync where T:core.Sync] @[no_default]
+pub struct Set<T> {
+    var values:Map<T,bit>;
+    pub func length()->usize {return values.length();}
+    pub func ensureCapacity(capacity:usize)->core.Result<void,Error> {return values.ensureCapacity(capacity);}
+    pub func insert(value:T)->core.Result<void,Error> {return values.insert(value,true);}
+    pub func contains(value:&T)->bit {return values.contains(value);}
+    pub func remove(value:&T)->core.Option<T> {return values.removeKey(value);}
+    pub func clear()->void {values.clear();}
+    pub func iterRef<'a>()->SetRefs<'a,T> {return SetRefs<'a,T>{source:&self,index:0};}
+}
+pub struct SetRefs<'a,T> {
+    var source:&'a Set<T>;var index:usize;
+    pub func next()->core.Option<&'a T> {
+        while(index<source.values.slots) {
+            var position=index;index+=1;
+            if(source.values.entries[position].state==1) {
+                return core.Option<&'a T>.Some(&source.values.entries[position].key);
+            }
+        }
+        return core.Option<&'a T>.None;
+    }
+}
+pub func set<T>()->core.Result<Set<T>,Error> {
+    return core.Result<Set<T>,Error>.Ok(Set<T>{values:map<T,bit>()?});
+}
+pub func set<T>(hash:func(&T)->u64,equal:func(&T,&T)->bit)->core.Result<Set<T>,Error> {
+    return core.Result<Set<T>,Error>.Ok(Set<T>{values:map<T,bit>(hash,equal)?});
+}
+pub func seededSet<T>(hash:func(&T,u64,u64)->u64,equal:func(&T,&T)->bit)->core.Result<Set<T>,Error> {
+    return core.Result<Set<T>,Error>.Ok(Set<T>{values:seededMap<T,bit>(hash,equal)?});
+}

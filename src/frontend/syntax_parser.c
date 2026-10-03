@@ -601,6 +601,7 @@ static AstExpression *parse_closure(SyntaxParser *parser) {
         value->initializer_name_token=name;
         finish_expression(parser,value);
         field->name_token=name;
+        field->closure_capture_by_reference=borrowed;
         field->span=value->span;
         field->type=inferred_type();
         field->resolved_symbol_id=AST_SYMBOL_NONE;
@@ -1339,11 +1340,34 @@ static AstStatement *parse_statement_impl(SyntaxParser *parser) {
         AstStatement *statement = new_statement(parser, AST_STMT_FOR, first);
         (void) consume(parser, TOKEN_LPAREN);
         AstStatement *initializer = NULL;
+        unsigned iterator_mode = 0;
+        if (check(parser, TOKEN_KEYWORD_VAR) && parser->current + 1 < parser->program->token_count &&
+            parser->program->tokens[parser->current + 1].type == TOKEN_AMPERSAND) {
+            size_t binding_first = parser->current++;
+            parser->current++;
+            iterator_mode = match(parser, TOKEN_KEYWORD_MUT) ? 3 : 2;
+            initializer = new_statement(parser, AST_STMT_VARIABLE, binding_first);
+            size_t name = consume(parser, TOKEN_IDENTIFIER);
+            (void) consume(parser, TOKEN_EQUAL);
+            AstExpression *source = parse_expression(parser);
+            if (initializer) { initializer->name_token = name; initializer->type = inferred_type(); initializer->value = source; }
+            finish_statement(parser, initializer);
+        } else
         if (!check(parser, TOKEN_SEMICOLON)) {
             initializer = (check(parser, TOKEN_KEYWORD_VAR) ||
                            check(parser, TOKEN_KEYWORD_CONST))
                               ? parse_variable(parser, parser->current, 0)
                               : parse_expression_statement(parser, 0);
+        }
+        if (check(parser, TOKEN_RPAREN) || iterator_mode) {
+            if (!initializer || initializer->kind != AST_STMT_VARIABLE || initializer->is_const ||
+                !initializer->value || initializer->type.kind != AST_TYPE_INFERRED)
+                parser_failure(parser, ERR_PARSE_INVALID_DECLARATION, "Iterator for requires var [&, &mut] name = source");
+            (void) consume(parser, TOKEN_RPAREN);
+            AstStatement *body = parse_statement(parser);
+            if (statement) { statement->initializer = initializer; statement->body = body; statement->iterator_mode = iterator_mode ? iterator_mode : 1; }
+            finish_statement(parser, statement);
+            return statement;
         }
         (void) consume(parser, TOKEN_SEMICOLON);
         AstExpression *condition = NULL;

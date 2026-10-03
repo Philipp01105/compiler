@@ -84,12 +84,12 @@ pub func pollVoid(future:Future<void>,context:&mut Context)->VoidFuturePoll {
 func park() -> Future<void> { return nativeFuture(executor.parkFrame()); }
 
 pub async func fromPoller<T,P: Poller<T>>(poller: P) -> T {
-    var context=contextFromRaw(asyncContext());
     var completed:bit=false;
     defer func() {
         if (!completed) {
             var acknowledged:bit=false;
             while (!acknowledged) {
+                var context=contextFromRaw(asyncContext());
                 match (poller.cancelPoll(&mut context)) {
                     Ready(ack) => { acknowledged=true; }
                     Pending => { park().await(); }
@@ -98,6 +98,8 @@ pub async func fromPoller<T,P: Poller<T>>(poller: P) -> T {
         }
     }
     while (true) {
+        // A pending handle can move to another driving task/context.
+        var context=contextFromRaw(asyncContext());
         match (poller.poll(&mut context)) {
             Ready(value) => { completed=true; return value; }
             Pending => { park().await(); }
@@ -113,8 +115,8 @@ pub enum Selected<T,U> {
 }
 
 pub async func select2<T,U>(left:Future<T>,right:Future<U>) -> Selected<T,U> {
-    var context=contextFromRaw(asyncContext());
     while (true) {
+        var context=contextFromRaw(asyncContext());
         var leftReady=futurePoll(&mut left,context.waker.raw);
         var rightReady=futurePoll(&mut right,context.waker.raw);
         if (leftReady) { return Selected<T,U>.Left(futureComplete(left),right); }
@@ -141,4 +143,19 @@ pub async func join2<T,U>(left:Future<T>,right:Future<U>) -> Joined<T,U> {
         Left(value,other) => { var second=other.await(); return Joined<T,U>{left:value,right:second}; }
         Right(other,value) => { var first=other.await(); return Joined<T,U>{left:first,right:value}; }
     }
+}
+
+// Unit adapters keep the ordinary value/ownership rules for void children.
+pub async func asUnit(future:Future<void>)->Unit { future.await(); return Unit{}; }
+pub async func selectVoid(left:Future<void>,right:Future<void>)->Selected<Unit,Unit> {
+    var first=asUnit(left); var second=asUnit(right);
+    return select2(first,second).await();
+}
+pub async func raceVoid(left:Future<void>,right:Future<void>)->void {
+    var first=asUnit(left); var second=asUnit(right);
+    race2(first,second).await();
+}
+pub async func joinVoid(left:Future<void>,right:Future<void>)->void {
+    var first=asUnit(left); var second=asUnit(right);
+    join2(first,second).await();
 }

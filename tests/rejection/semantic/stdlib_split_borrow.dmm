@@ -2,12 +2,14 @@ package main;
 import (
     "stdlib"
     "stdlib/text"
+    byteops "stdlib/bytes"
 );
 
 func main() -> int {
     var owner = stdlib.bytes(8);
     owner.push(65);
-    var iterator = text.split(owner.view(), 44);
+    var data = owner.view();
+    var iterator = byteops.split(&data, 44);
     owner.clear();
     var next = iterator.next();
     match (next) {

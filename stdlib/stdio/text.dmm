@@ -17,7 +17,7 @@ pub func writeUint(destination: *Stream, value: u64) -> Transfer {
     }
     position -= 1;
     digits[position] = (48.(u64) + value).(u8);
-    return destination.writeAll(subview(digits, position, 20 - position));
+    return (*destination).writeAll(subview(digits, position, 20 - position));
 }
 
 pub func writeInt(destination: *Stream, value: i64) -> Transfer {
@@ -42,5 +42,5 @@ pub func writeInt(destination: *Stream, value: i64) -> Transfer {
         position -= 1;
         digits[position] = 45;
     }
-    return destination.writeAll(subview(digits, position, 21 - position));
+    return (*destination).writeAll(subview(digits, position, 21 - position));
 }

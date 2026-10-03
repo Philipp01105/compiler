@@ -320,15 +320,15 @@ func addressFd(fd: usize, peer: u64, address: *NativeAddress, length: *i32) -> i
 func updateInterest(s: *Socket) -> void {}
 
 func prepareOperation(op: *Operation) -> void {
-    op.acceptedFd = INVALID;
+    (*op).acceptedFd = INVALID;
 }
 
 func cancelOs(op: *Operation) -> bit {
-    if (op.submitted != 0) {
+    if ((*op).submitted != 0) {
         // Both success and ERROR_NOT_FOUND require consuming the final packet.
         kernel32.CancelIoEx(
-            pointer(op.request.socket.fd),
-            (&op.overlapped).(*kernel32.Overlapped)
+            pointer((*(*op).request.socket).fd),
+            (&(*op).overlapped).(*kernel32.Overlapped)
         );
         return true;
     }
@@ -337,29 +337,29 @@ func cancelOs(op: *Operation) -> bit {
 
 func submissionFailed(op: *Operation) -> void {
     completeLocked(op, nativeError(osError()));
-    if (op.acceptedFd != INVALID) {
-        closeFd(op.acceptedFd);
-        op.acceptedFd = INVALID;
+    if ((*op).acceptedFd != INVALID) {
+        closeFd((*op).acceptedFd);
+        (*op).acceptedFd = INVALID;
     }
 }
 
 func step(op: *Operation) -> void {
-    if (op.submitted != 0) {
+    if ((*op).submitted != 0) {
         return;
     }
-    var s: *Socket = op.request.socket;
-    var command: u64 = op.request.command;
+    var s: *Socket = (*op).request.socket;
+    var command: u64 = (*op).request.command;
     var transferred: u32 = 0;
     var result: i32 = -1;
     var completion: CompletionFunction;
-    op.wsabuf.data = op.request.buffer.(*u8);
-    op.wsabuf.length = op.request.length.(u32);
+    (*op).wsabuf.data = (*op).request.buffer.(*u8);
+    (*op).wsabuf.length = (*op).request.length.(u32);
     if (command == 1) {
         var guid: winsock.Guid = winsock.connectExId();
         var callback: ConnectFunction;
         if (
             winsock.WSAIoctl(
-                s.fd,
+                (*s).fd,
                 3355443206,
                 (&guid).(*void),
                 16,
@@ -373,9 +373,9 @@ func step(op: *Operation) -> void {
             submissionFailed(op);
             return;
         }
-        if (s.state == 0) {
+        if ((*s).state == 0) {
             var any: Address;
-            any.family = s.family;
+            any.family = (*s).family;
             var address: NativeAddress;
             var length: i32;
             toNative(
@@ -383,26 +383,26 @@ func step(op: *Operation) -> void {
                 (&address).(*NativeAddress),
                 (&length).(*i32)
             );
-            if (bindFd(s.fd, (&address).(*NativeAddress), length) != 0) {
+            if (bindFd((*s).fd, (&address).(*NativeAddress), length) != 0) {
                 submissionFailed(op);
                 return;
             }
-            s.state = 1;
+            (*s).state = 1;
         }
         toNative(
-            (&op.request.address).(*Address),
-            (&op.sockaddr).(*NativeAddress),
-            (&op.sockaddrLength).(*i32)
+            (&(*op).request.address).(*Address),
+            (&(*op).sockaddr).(*NativeAddress),
+            (&(*op).sockaddrLength).(*i32)
         );
         if (
             callback.callback(
-                s.fd,
-                (&op.sockaddr).(*winsock.Sockaddr),
-                op.sockaddrLength,
+                (*s).fd,
+                (&(*op).sockaddr).(*winsock.Sockaddr),
+                (*op).sockaddrLength,
                 nullPointer(),
                 0,
                 (&transferred).(*u32),
-                (&op.overlapped).(*kernel32.Overlapped)
+                (&(*op).overlapped).(*kernel32.Overlapped)
             ) != 0
         ) {
             result = 0;
@@ -412,7 +412,7 @@ func step(op: *Operation) -> void {
         var callback: AcceptFunction;
         if (
             winsock.WSAIoctl(
-                s.fd,
+                (*s).fd,
                 3355443206,
                 (&guid).(*void),
                 16,
@@ -427,133 +427,133 @@ func step(op: *Operation) -> void {
             return;
         }
         var error: Error = netError(0);
-        op.acceptedFd = newFd(s.family, 1, (&error).(*Error));
-        if (op.acceptedFd == INVALID) {
+        (*op).acceptedFd = newFd((*s).family, 1, (&error).(*Error));
+        if ((*op).acceptedFd == INVALID) {
             completeLocked(op, error);
             return;
         }
         if (
             callback.callback(
-                s.fd,
-                op.acceptedFd,
-                (&op.acceptBuffer[0]).(*void),
+                (*s).fd,
+                (*op).acceptedFd,
+                (&(*op).acceptBuffer[0]).(*void),
                 0,
                 144,
                 144,
                 (&transferred).(*u32),
-                (&op.overlapped).(*kernel32.Overlapped)
+                (&(*op).overlapped).(*kernel32.Overlapped)
             ) != 0
         ) {
             result = 0;
         }
     } else if (command == 3) {
         result = winsock.WSARecv(
-            s.fd,
-            (&op.wsabuf).(*winsock.WsaBuffer),
+            (*s).fd,
+            (&(*op).wsabuf).(*winsock.WsaBuffer),
             1,
-            (&op.transferred).(*u32),
-            (&op.flags).(*u32),
-            (&op.overlapped).(*kernel32.Overlapped),
+            (&(*op).transferred).(*u32),
+            (&(*op).flags).(*u32),
+            (&(*op).overlapped).(*kernel32.Overlapped),
             completion.callback
         );
     } else if (command == 4) {
         result = winsock.WSASend(
-            s.fd,
-            (&op.wsabuf).(*winsock.WsaBuffer),
+            (*s).fd,
+            (&(*op).wsabuf).(*winsock.WsaBuffer),
             1,
-            (&op.transferred).(*u32),
+            (&(*op).transferred).(*u32),
             0,
-            (&op.overlapped).(*kernel32.Overlapped),
+            (&(*op).overlapped).(*kernel32.Overlapped),
             completion.callback
         );
     } else if (command == 6) {
         toNative(
-            (&op.request.address).(*Address),
-            (&op.sockaddr).(*NativeAddress),
-            (&op.sockaddrLength).(*i32)
+            (&(*op).request.address).(*Address),
+            (&(*op).sockaddr).(*NativeAddress),
+            (&(*op).sockaddrLength).(*i32)
         );
         result = winsock.WSASendTo(
-            s.fd,
-            (&op.wsabuf).(*winsock.WsaBuffer),
+            (*s).fd,
+            (&(*op).wsabuf).(*winsock.WsaBuffer),
             1,
-            (&op.transferred).(*u32),
+            (&(*op).transferred).(*u32),
             0,
-            (&op.sockaddr).(*winsock.Sockaddr),
-            op.sockaddrLength,
-            (&op.overlapped).(*kernel32.Overlapped),
+            (&(*op).sockaddr).(*winsock.Sockaddr),
+            (*op).sockaddrLength,
+            (&(*op).overlapped).(*kernel32.Overlapped),
             completion.callback
         );
     } else if (command == 5) {
-        op.sockaddrLength = 128;
+        (*op).sockaddrLength = 128;
         result = winsock.WSARecvFrom(
-            s.fd,
-            (&op.wsabuf).(*winsock.WsaBuffer),
+            (*s).fd,
+            (&(*op).wsabuf).(*winsock.WsaBuffer),
             1,
-            (&op.transferred).(*u32),
-            (&op.flags).(*u32),
-            (&op.sockaddr).(*winsock.Sockaddr),
-            (&op.sockaddrLength).(*i32),
-            (&op.overlapped).(*kernel32.Overlapped),
+            (&(*op).transferred).(*u32),
+            (&(*op).flags).(*u32),
+            (&(*op).sockaddr).(*winsock.Sockaddr),
+            (&(*op).sockaddrLength).(*i32),
+            (&(*op).overlapped).(*kernel32.Overlapped),
             completion.callback
         );
     }
     if (result == 0 || osError() == 997) {
-        op.submitted = 1;
+        (*op).submitted = 1;
         return;
     }
     submissionFailed(op);
 }
 
 func windowsComplete(op: *Operation, bytes: u32, code: i32) -> void {
-    require(op.submitted != 0 && op.done == 0);
-    op.submitted = 0;
-    if (op.request.deadline != NEVER && op.request.deadline <= __dmm_net_now()) {
-        op.timeout = 1;
+    require((*op).submitted != 0 && (*op).done == 0);
+    (*op).submitted = 0;
+    if ((*op).request.deadline != NEVER && (*op).request.deadline <= __dmm_net_now()) {
+        (*op).timeout = 1;
     }
-    var command: u64 = op.request.command;
-    var s: *Socket = op.request.socket;
+    var command: u64 = (*op).request.command;
+    var s: *Socket = (*op).request.socket;
     var winsockDomain: bit = false;
-    if (op.cancel != 0 || op.timeout != 0) {
-        if (op.acceptedFd != INVALID) {
-            closeFd(op.acceptedFd);
-            op.acceptedFd = INVALID;
+    if ((*op).cancel != 0 || (*op).timeout != 0) {
+        if ((*op).acceptedFd != INVALID) {
+            closeFd((*op).acceptedFd);
+            (*op).acceptedFd = INVALID;
         }
         var kind: u64 = 3;
-        if (op.timeout != 0) {
+        if ((*op).timeout != 0) {
             kind = 2;
         }
         completeLocked(op, netError(kind));
         return;
     }
     if (command == 5 && (code == 10040 || code == 234)) {
-        op.truncated = 1;
-        bytes = op.request.length.(u32);
+        (*op).truncated = 1;
+        bytes = (*op).request.length.(u32);
         code = 0;
     }
     if (code == 0 && command == 1) {
-        if (winsock.setsockopt(s.fd, 65535, 28688, nullPointer(), 0) != 0) {
+        if (winsock.setsockopt((*s).fd, 65535, 28688, nullPointer(), 0) != 0) {
             code = osError();
             winsockDomain = true;
         }
     }
     if (code == 0 && command == 2) {
-        if (winsock.setsockopt(op.acceptedFd, 65535, 28683, (&s.fd).(*void), 8) != 0) {
+        if (winsock.setsockopt((*op).acceptedFd, 65535, 28683, (&(*s).fd).(*void), 8) != 0) {
             code = osError();
             winsockDomain = true;
         } else {
-            op.accepted = allocate(Socket.size).(*Socket);
-            if (op.accepted == nullPointer().(*Socket)) {
+            (*op).accepted = allocate(Socket.size).(*Socket);
+            if ((*op).accepted == nullPointer().(*Socket)) {
                 code = 8;
             } else {
-                op.accepted.fd = op.acceptedFd;
-                op.accepted.family = s.family;
-                op.accepted.transport = 1;
-                op.accepted.state = 3;
+                (*(*op).accepted).fd = (*op).acceptedFd;
+                (*(*op).accepted).family = (*s).family;
+                (*(*op).accepted).transport = 1;
+                (*(*op).accepted).state = 3;
                 var address: NativeAddress;
                 var length: i32 = 128;
                 if (
                     addressFd(
-                        op.acceptedFd,
+                        (*op).acceptedFd,
                         1,
                         (&address).(*NativeAddress),
                         (&length).(*i32)
@@ -562,24 +562,24 @@ func windowsComplete(op: *Operation, bytes: u32, code: i32) -> void {
                     code = osError();
                     winsockDomain = true;
                 } else {
-                    fromNative((&address).(*NativeAddress), (&op.peer).(*Address));
+                    fromNative((&address).(*NativeAddress), (&(*op).peer).(*Address));
                 }
-                op.acceptedFd = INVALID;
+                (*op).acceptedFd = INVALID;
             }
         }
     }
-    if (op.acceptedFd != INVALID) {
-        closeFd(op.acceptedFd);
-        op.acceptedFd = INVALID;
+    if ((*op).acceptedFd != INVALID) {
+        closeFd((*op).acceptedFd);
+        (*op).acceptedFd = INVALID;
     }
     if (code == 0) {
         if (command == 6) {
-            s.state = 1;
+            (*s).state = 1;
         }
-        op.count = bytes.(u64);
-        op.eof = (command == 3 && bytes == 0 && op.request.length != 0).(i32);
+        (*op).count = bytes.(u64);
+        (*op).eof = (command == 3 && bytes == 0 && (*op).request.length != 0).(i32);
         if (command == 5) {
-            fromNative((&op.sockaddr).(*NativeAddress), (&op.peer).(*Address));
+            fromNative((&(*op).sockaddr).(*NativeAddress), (&(*op).peer).(*Address));
         }
     }
     var error: Error = netError(0);
@@ -634,19 +634,19 @@ func finishOs() -> void {
 func resolveNative(op: *Operation, error: *Error) -> *Addresses {
     var hints: winsock.Addrinfo;
     hints.family = 0;
-    if (op.request.address.family == 4) {
+    if ((*op).request.address.family == 4) {
         hints.family = 2;
     }
-    if (op.request.address.family == 6) {
+    if ((*op).request.address.family == 6) {
         hints.family = 23;
     }
-    hints.socketType = op.request.transport.(i32);
+    hints.socketType = (*op).request.transport.(i32);
     hints.flags = 8;
     var service: u8[6];
-    serviceName(op.request.address.port, (&service[0]).(*u8));
+    serviceName((*op).request.address.port, (&service[0]).(*u8));
     var answers: *winsock.Addrinfo;
     var code: i32 = winsock.getaddrinfo(
-        op.hostname,
+        (*op).hostname,
         (&service[0]).(*u8),
         (&hints).(*winsock.Addrinfo),
         (&answers).(**winsock.Addrinfo)
@@ -662,10 +662,10 @@ func resolveNative(op: *Operation, error: *Error) -> *Addresses {
     var count: usize = 0;
     var a: *winsock.Addrinfo = answers;
     while (a != nullPointer().(*winsock.Addrinfo)) {
-        if (a.family == 2 || a.family == 23) {
+        if ((*a).family == 2 || (*a).family == 23) {
             count = count + 1;
         }
-        a = a.next;
+        a = (*a).next;
     }
     var list: *Addresses = nullPointer().(*Addresses);
     if (count <= (INVALID - Addresses.size) / Address.size) {
@@ -679,13 +679,13 @@ func resolveNative(op: *Operation, error: *Error) -> *Addresses {
         while (a != nullPointer().(*winsock.Addrinfo)) {
             if (
                 fromNative(
-                    a.address.(*NativeAddress),
-                    (&values[list.count]).(*Address)
+                    (*a).address.(*NativeAddress),
+                    (&values[(*list).count]).(*Address)
                 )
             ) {
-                list.count = list.count + 1;
+                (*list).count = (*list).count + 1;
             }
-            a = a.next;
+            a = (*a).next;
         }
     }
     winsock.freeaddrinfo(answers);

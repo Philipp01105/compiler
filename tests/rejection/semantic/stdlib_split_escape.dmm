@@ -2,12 +2,14 @@ package main;
 import (
     "stdlib"
     "stdlib/text"
+    byteops "stdlib/bytes"
 );
 
 func dangling() -> u8[] {
     var owner = stdlib.bytes(8);
     owner.push(65);
-    var iterator = text.split(owner.view(), 44);
+    var data = owner.view();
+    var iterator = byteops.split(&data, 44);
     var next = iterator.next();
     match (next) {
         Some(value) => return value;

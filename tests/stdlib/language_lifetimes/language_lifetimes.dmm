@@ -19,6 +19,19 @@ func borrowedReaderSame(left:&Reader,right:&Reader)->bit { return *(*left).sourc
 struct TaggedReader<'a> { var occupied:u8; var reader:Reader<'a>; }
 struct BorrowTable<'a> {
  var memory:*TaggedReader<'a>; var limit:usize;
+ func grow(size:usize)->void {
+  var fresh=core.core_alloc(size*sizeof(TaggedReader)).(*TaggedReader<'a>);
+  if(fresh==core.null<TaggedReader<'a>>()) { return; }
+  for(var cursor:usize=0;cursor<size;cursor+=1) { fresh[cursor].occupied=0; }
+  for(var cursor:usize=0;cursor<limit;cursor+=1) {
+   if(memory[cursor].occupied==7) {
+    var index:usize=(*memory[cursor].reader.source).(usize)%size;
+    while(fresh[index].occupied==7) { index=(index+1)%size; }
+    core.initialize(&fresh[index],take(memory[cursor]));
+   }
+  }
+  core.core_release(memory.(*u8)); memory=fresh; limit=size;
+ }
  func put(key:usize,value:Reader<'a>)->void {
   var cursor:usize=key%limit;
   while(memory[cursor].occupied==7) { cursor=(cursor+1)%limit; }
@@ -41,6 +54,8 @@ struct BorrowTable<'a> {
 }
 enum WrappedTable<'a> { Table(BorrowTable<'a>), Empty }
 var borrowOwnerDrops:i32=0;
+var relocationDrops:i32=0;
+struct RelocationOwner<'a> { var source:&'a i32; var tag:i32; destructor { relocationDrops+=tag; } }
 struct BorrowOwner<'a> {
  var source:&'a i32;
  var tag:i32;
@@ -85,6 +100,12 @@ struct BorrowRing<'a> {
  var storage:*Reader<'a>; var start:usize; var capacity:usize; var used:usize;
  func length()->usize { return used; }
  func slots()->usize { return capacity; }
+ func grow(size:usize)->void {
+  var fresh=core.core_alloc(size*sizeof(Reader)).(*Reader<'a>);
+  if(fresh==core.null<Reader<'a>>()) { return; }
+  for(var cursor:usize=0;cursor<used;cursor+=1) { core.initialize(&fresh[cursor],take(storage[(start+cursor)%capacity])); }
+  core.core_release(storage.(*u8)); storage=fresh; capacity=size; start=0;
+ }
  func push(value:Reader<'a>)->void {
   core.initialize(&storage[(start+used)%capacity],value); used+=1;
  }
@@ -120,6 +141,25 @@ struct BorrowSlots<'a> {
   core.core_release(storage.(*u8));
  }
 }
+struct GrowingReaders<'a> {
+ var memory:*Reader<'a>; var used:usize;
+ func append(value:Reader<'a>)->void { core.initialize(&memory[used],value); used+=1; }
+ func relocate(fail:bit)->void {
+  if(fail) { return; }
+  var fresh=core.core_alloc(4*sizeof(Reader)).(*Reader<'a>);
+  if(fresh==core.null<Reader<'a>>()) { return; }
+  for(var cursor:usize=0;cursor<used;cursor+=1) { core.initialize(&fresh[cursor],take(memory[cursor])); }
+  core.core_release(memory.(*u8)); memory=fresh;
+ }
+ func tail()->Reader<'a> { used-=1; return take(memory[used]); }
+ func clear()->void { while(used>0) { used-=1; core.destroy(&memory[used]); } }
+ destructor { while(used>0) { used-=1; core.destroy(&memory[used]); } core.core_release(memory.(*u8)); }
+}
+func removeSnapshot<'a>(slots:&mut BorrowSlots<'a>,index:usize)->Reader<'a> {
+ var snapshot=index; return (*slots).remove(snapshot);
+}
+func forwardRelocation(values:&mut GrowingReaders,fail:bit)->void { (*values).relocate(fail); }
+enum RelocatedReaders<'a> { Held(GrowingReaders<'a>), Empty }
 struct HeapReaders<'a,'b> { var left:Reader<'a>; var right:Reader<'b>; }
 struct HeapFields<'a,'b> {
  var storage:*HeapReaders<'a,'b>;
@@ -253,6 +293,76 @@ func readPermanent()->i32 { return permanentCopy.read()+*permanentRef; }
 var drops:i32=0;
 struct Resource { var value:i32; destructor { drops+=1; } }
 func main()->int {
+ { var left:i32=1; var right:i32=2;
+ var table=BorrowTable{memory:core.core_alloc(3*sizeof(TaggedReader)).(*TaggedReader),limit:3};
+ for(var cursor:usize=0;cursor<3;cursor+=1) { table.memory[cursor].occupied=0; }
+ table.put(2,Reader{source:&left}); table.put(2,Reader{source:&right});
+ table.grow(4); table.grow(8); table.clear(); left=3; right=4;
+ }
+ { var a:i32=1; var b:i32=2; var c:i32=3; var d:i32=4; var e:i32=5;
+ var values=collections.hashMap<i32,Reader>(readerHash,readerSame);
+ values.insert(1,Reader{source:&a}); values.insert(9,Reader{source:&b});
+ values.insert(17,Reader{source:&c}); values.insert(25,Reader{source:&d}); values.insert(33,Reader{source:&e});
+ match(values.get(33)) { Some(value)=>{ if(value.read()!=5) { return 163; } } None=>return 164; }
+ values.clear(); a=6; b=7; c=8; d=9; e=10;
+ }
+ { var left:i32=1; var right:i32=2;
+ var ring=BorrowRing{storage:core.core_alloc(3*sizeof(Reader)).(*Reader),start:2,capacity:3,used:0};
+ ring.push(Reader{source:&left}); ring.push(Reader{source:&right});
+ if(ring.length()!=2) { return 151; }
+ ring.grow(4); if(ring.length()!=2) { return 160; } ring.grow(8);
+ { var removed=ring.tail(); if(removed.read()!=2) { return 152; } }
+ right=3; if(ring.length()!=1) { return 153; } ring.empty(); left=4;
+ }
+ { var left:i32=1; var right:i32=2;
+ match(collections.deque<Reader>(3)) { Ok(ring)=>{
+  ring.pushBack(Reader{source:&right}); if(ring.length()!=1) { return 154; }
+  ring.pushFront(Reader{source:&left}); if(ring.length()!=2) { return 155; }
+  ring.ensureCapacity(5); if(ring.length()!=2) { return 161; } ring.ensureCapacity(8);
+  if(ring.length()!=2) { return 162; }
+  { var removed=ring.popFront(); match(removed) { Some(value)=>{ if(value.read()!=1) { return 156; } } None=>return 157; } }
+  left=3; if(ring.length()!=1) { return 158; } ring.clear(); right=4;
+ } Err(error)=>return 159; }
+ }
+ { var left:i32=1; var right:i32=2; var prior=relocationDrops;
+ var values=stdlib.list<RelocationOwner>(2);
+ values.push(RelocationOwner{source:&left,tag:1}); values.push(RelocationOwner{source:&right,tag:2});
+ if(values.length()!=2) { return 129; }
+ values.ensureCapacity(4);
+ if(relocationDrops!=prior) { return 130; }
+ { var removed=values.pop(); match(removed) { Some(value)=>{ if(*value.source!=2) { return 131; } } None=>return 132; } }
+ right=3; values.clear(); left=4;
+ if(relocationDrops!=prior+3) { return 133; }
+ }
+ { var left:i32=1; var right:i32=2;
+ var values=GrowingReaders{memory:core.core_alloc(2*sizeof(Reader)).(*Reader),used:0};
+ values.append(Reader{source:&left}); values.append(Reader{source:&right});
+ if(values.used!=2) { return 124; }
+ forwardRelocation(&mut values,false);
+ var wrapped=RelocatedReaders.Held(values);
+ match(wrapped) { Held(moved)=>{
+  { var tail=moved.tail(); if(tail.read()!=2) { return 125; } }
+  right=3; moved.clear(); left=4;
+ } Empty=>return 126; }
+ }
+ { var source:i32=1;
+ var values=GrowingReaders{memory:core.core_alloc(sizeof(Reader)).(*Reader),used:0};
+ values.append(Reader{source:&source});
+ if(values.used!=1) { return 127; }
+ forwardRelocation(&mut values,true);
+ if(values.memory[0].read()!=1) { return 128; }
+ values.clear(); source=2;
+ }
+ { var left:i32=1; var right:i32=2;
+ var values=stdlib.list<Reader>(2);
+ values.push(Reader{source:&left}); values.push(Reader{source:&right});
+ if(values.length()!=2) { return 120; }
+ values.ensureCapacity(4);
+ { var removed=values.pop(); match(removed) { Some(value)=>{ if(value.read()!=2) { return 121; } } None=>return 122; } }
+ right=3;
+ values.clear(); left=4;
+ if(left+right!=7) { return 123; }
+ }
  { var source:i32=1;
  var values=collections.hashMap<i32,Reader>(readerHash,readerSame);
  values.insert(1,Reader{source:&source});
@@ -393,7 +503,7 @@ func main()->int {
  { var left:i32=1; var right:i32=2;
  var slots=BorrowSlots{storage:core.core_alloc(2*sizeof(Reader)).(*Reader),leftLive:false,rightLive:false};
  slots.put(0,Reader{source:&left}); slots.put(1,Reader{source:&right});
- { var removed=slots.remove(1); if(*removed.source!=2) { return 95; } }
+ { var removed=removeSnapshot(&mut slots,1); if(*removed.source!=2) { return 95; } }
  right=3;
  if(*slots.storage[0].source!=1) { return 96; } }
  { var source:i32=1;

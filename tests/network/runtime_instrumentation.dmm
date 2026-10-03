@@ -91,8 +91,8 @@ func resolveJob(op: *Operation, error: *Error) -> *Addresses {
     }
     var address: Address;
     var code: i32 = hook.callback(
-        op.hostname,
-        (&op.request.address).(*Address),
+        (*op).hostname,
+        (&(*op).request.address).(*Address),
         (&address).(*Address),
         argument
     );
@@ -105,7 +105,7 @@ func resolveJob(op: *Operation, error: *Error) -> *Addresses {
         *error = netError(10);
         return list;
     }
-    list.count = 1;
+    (*list).count = 1;
     var values: *Address = listValues(list);
     values[0] = address;
     return list;

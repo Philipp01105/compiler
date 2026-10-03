@@ -35,7 +35,7 @@ func describe<T>(value: T) -> int {
         case int -> return value + 1;
         case string -> return strlen(value);
         case Node -> return value.value;
-        case * Node -> return value.value;
+        case * Node -> return (*value).value;
         case i32[] -> return value.length.(int);
         case _ -> return -1;
     }

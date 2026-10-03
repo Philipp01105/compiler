@@ -8,6 +8,46 @@
 #include <stdlib.h>
 #include <string.h>
 
+static const AstType *generic_receiver_type(const Analyzer *analyzer, const AstExpression *receiver, unsigned depth) {
+    if (!receiver || depth>32 || !analyzer->current_function || !analyzer->current_function->generic_origin) return NULL;
+    /* Aggregate specialization points at the struct/enum origin, whose union
+       does not contain function parameters. */
+    if (analyzer->current_function->generic_origin->kind != AST_DECL_FUNCTION) return NULL;
+    if (receiver->kind==AST_EXPR_UNARY && receiver->operator_type==TOKEN_STAR)
+        return generic_receiver_type(analyzer,receiver->right,depth+1);
+    if (receiver->kind!=AST_EXPR_NAME) return NULL;
+    const AstParameter *actual=analyzer->current_function->as.function.parameters;
+    const AstParameter *original=analyzer->current_function->generic_origin->as.function.parameters;
+    for (;actual && original;actual=actual->next,original=original->next)
+        if (actual->resolved_symbol_id==receiver->resolved_symbol_id) return &original->type;
+    if (receiver->resolved_symbol_id<analyzer->model->symbol_count) {
+        const SemanticSymbol *symbol=&analyzer->model->symbols[receiver->resolved_symbol_id];
+        if (symbol->kind==SEMANTIC_SYMBOL_LOCAL && symbol->node)
+            return generic_receiver_type(analyzer,(const AstExpression *)symbol->node,depth+1);
+    }
+    return NULL;
+}
+
+static unsigned generic_receiver_mode(Analyzer *analyzer, const AstExpression *receiver, const char *method) {
+    const AstType *type=generic_receiver_type(analyzer,receiver,0);
+    if (!type || type->kind!=AST_TYPE_NAMED) return 0;
+    const AstDeclarationNode *origin=analyzer->current_function->generic_origin;
+    unsigned mode=0;
+    for (const AstGenericParameter *parameter=origin->generic_parameters;parameter;parameter=parameter->next) {
+        if (!same_name(analyzer->program,parameter->name_token,ast_program_lexeme(analyzer->program,type->name_token))) continue;
+        for (const AstInterfaceBound *bound=parameter->bounds;bound;bound=bound->next) {
+            AstProgram *unit=NULL;
+            const AstDeclarationNode *interface=find_language_declaration(analyzer->model->program,analyzer->program,
+                ast_program_lexeme(analyzer->program,bound->name_token),AST_DECL_INTERFACE,&unit);
+            if (!interface) continue;
+            for (const AstDeclarationNode *required=interface->as.interface_decl.methods;required;required=required->next)
+                if (same_name(unit,required->name_token,method) && required->as.function.receiver_mode>mode)
+                    mode=required->as.function.receiver_mode;
+        }
+    }
+    return mode;
+}
+
 static void metadata_name(DiagnosticText *text, const Analyzer *analyzer, const AstProgram *unit, const AstType *type,
                           unsigned depth) {
     if (depth > 64) {
@@ -68,6 +108,7 @@ static void metadata_name(DiagnosticText *text, const Analyzer *analyzer, const 
 static int array_literal_element_allowed(const Analyzer *analyzer,
                                          const AstExpression *element,
                                          const AstType *element_type) {
+    semantic_mark_array_view(element,element_type);
     return expression_to_declared_type_allowed(analyzer, element,
                                                analyzer->program, element_type);
 }
@@ -1028,6 +1069,7 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
                                    ERR_SEM_INVALID_DECLARATION, "Duplicate field in struct initializer");
                     break;
                 }
+            semantic_mark_array_view(value,&field->type);
             if (!expression_to_declared_type_allowed(analyzer, value, owner_program, &field->type))
                 semantic_error(analyzer, value->first_token, ERROR_CATEGORY_TYPE, ERR_TYPE_INVALID_OPERATION,
                                "Struct initializer value is incompatible with its field type");
@@ -1092,6 +1134,42 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
     }
     analyze_expression_context(analyzer, expression->left,
                                expression->kind == AST_EXPR_CALL);
+    /* Access sugar only: checked references become ordinary dereference places.
+       Never peel a raw pointer, nor change the type of a value conversion. */
+    if (expression->left &&
+        (expression->kind == AST_EXPR_INDEX ||
+         (expression->kind == AST_EXPR_MEMBER &&
+          !same_name(analyzer->program, expression->value_token, "type")))) {
+        while (expression->left->resolved_borrow_kind != AST_BORROW_NONE) {
+            AstExpression *dereference = ast_program_alloc(analyzer->program, sizeof(*dereference));
+            if (!dereference) { analyzer->allocation_failed = 1; return; }
+            dereference->kind = AST_EXPR_UNARY;
+            dereference->operator_type = TOKEN_STAR;
+            dereference->first_token = expression->left->first_token;
+            dereference->span = expression->left->span;
+            dereference->token_count = expression->left->token_count;
+            dereference->right = expression->left;
+            analyze_expression_context(analyzer, dereference, 0);
+            expression->left = dereference;
+        }
+        const AstExpression *base = expression->left;
+        if (expression->kind == AST_EXPR_MEMBER &&
+            (base->resolved_outer_pointer_depth ||
+             (!(base->resolved_is_array || base->resolved_is_slice) && base->resolved_pointer_depth))) {
+            DiagnosticText message = {0};
+            diagnostic_append(&message,
+                "Raw pointer member/method access requires explicit dereference: (*ptr).member; receiver type: ");
+            diagnostic_type(&message, analyzer, base->resolved_type, base->resolved_named_symbol_id,
+                base->resolved_pointer_depth, base->resolved_outer_pointer_depth,
+                base->resolved_is_array, base->resolved_is_slice, NULL);
+            semantic_error(analyzer, expression->value_token, ERROR_CATEGORY_TYPE,
+                           ERR_TYPE_INVALID_OPERATION,
+                           message.failed ? "Raw pointer member/method access requires explicit dereference: (*ptr).member"
+                                          : message.text);
+            free(message.text);
+            return;
+        }
+    }
     analyze_expression_context(analyzer, expression->right, 0);
     contextualize_direct_call_literals(analyzer, expression);
     AstLifetimeOperation lifetime = semantic_lifetime_operation(analyzer, expression);
@@ -1195,6 +1273,7 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
         return;
     }
     expression->resolved_type = TYPE_UNKNOWN;
+    expression->is_array_view=0;
     expression->resolved_borrow_kind = AST_BORROW_NONE;
     expression->resolved_pointer_depth = 0;
     expression->resolved_outer_pointer_depth = 0;
@@ -1487,6 +1566,11 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
                     expression->resolved_is_slice = local->resolved_is_slice;
                 }
                 if (local->symbol_id < analyzer->model->symbol_count) {
+                    expression->is_receiver_reference = analyzer->current_function &&
+                        analyzer->current_function->as.function.receiver_parameter &&
+                        local->symbol_id == analyzer->current_function->as.function.receiver_parameter->resolved_symbol_id;
+                    if (expression->is_receiver_reference)
+                        ((AstDeclarationNode *)analyzer->current_function)->as.function.uses_receiver_reference=1;
                     const SemanticSymbol *local_symbol = &analyzer->model->symbols[local->symbol_id];
                     const AstExpression *initializer = local_symbol->node;
                     if (initializer != NULL) {
@@ -1657,11 +1741,12 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
            analyzer->current_function->as.function.owner_token!=AST_TOKEN_NONE &&
            expression->resolved_symbol_id<analyzer->model->symbol_count) {
             const SemanticSymbol *field=&analyzer->model->symbols[expression->resolved_symbol_id];
-            if(field->kind==SEMANTIC_SYMBOL_FIELD && field->declared_type.borrow_kind!=AST_BORROW_NONE &&
+            if(field->kind==SEMANTIC_SYMBOL_FIELD &&
                field->owner_token==analyzer->current_function->as.function.owner_token &&
                field->owner_symbol_id<analyzer->model->symbol_count &&
                analyzer->model->symbols[field->owner_symbol_id].declaration &&
-               analyzer->model->symbols[field->owner_symbol_id].declaration->is_closure_environment) {
+               analyzer->model->symbols[field->owner_symbol_id].declaration->is_closure_environment &&
+               field->node && ((const AstField *)field->node)->closure_capture_by_reference) {
                 AstExpression *inner=ast_program_alloc(analyzer->program,sizeof(*inner));
                 if(inner) {
                     *inner=*expression; inner->next=NULL; inner->closure_capture_binding=1;
@@ -1697,6 +1782,17 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
             expression->resolved_type_program = expression->right->resolved_type_program;
             expression->has_resolved_ast_type = expression->right->has_resolved_ast_type;
             if (expression->operator_type == TOKEN_AMPERSAND) {
+                if (expression->right->is_receiver_reference) {
+                    AstExpression *place = ast_program_alloc(analyzer->program, sizeof(*place));
+                    if (!place) { analyzer->allocation_failed=1; return; }
+                    place->kind=AST_EXPR_UNARY; place->operator_type=TOKEN_STAR;
+                    place->right=expression->right; place->first_token=expression->right->first_token;
+                    place->span=expression->right->span;
+                    place->token_count=expression->right->token_count;
+                    expression->right=place;
+                    analyze_expression_context(analyzer,expression,0);
+                    return;
+                }
                 expression->resolved_borrow_kind = expression->mutable_borrow
                                                        ? AST_BORROW_MUTABLE
                                                        : AST_BORROW_IMMUTABLE;
@@ -1963,6 +2059,8 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
             (void) ambiguous;
             if (method != NULL) {
                 expression->resolved_symbol_id = method->id;
+                expression->receiver_contract_mode=generic_receiver_mode(analyzer,receiver,
+                    ast_program_lexeme(analyzer->program,expression->left->value_token));
                 set_expression_declared_type(analyzer, expression,
                                              method->source_program,
                                              &method->declared_type);
@@ -2129,6 +2227,46 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
             if (reserved_type->is_array || reserved_type->is_slice)
                 expression->resolved_ast_type.outer_pointer_depth++;
             else expression->resolved_ast_type.pointer_depth++;
+        }
+    }
+    if (expression->iterator_protocol_mode) {
+        unsigned mode=expression->iterator_protocol_mode;
+        const SemanticSymbol *method=expression->resolved_symbol_id<analyzer->model->symbol_count
+            ? &analyzer->model->symbols[expression->resolved_symbol_id] : NULL;
+        const AstDeclarationNode *function=method && method->kind==SEMANTIC_SYMBOL_FUNCTION ? method->declaration : NULL;
+        if (!function || function->as.function.is_static || function->as.function.parameters ||
+            function->generic_parameters || function->as.function.receiver_mode==2) {
+            semantic_error(analyzer,expression->first_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,
+                "Iterator protocol requires a non-consuming, parameterless instance method");
+        } else if (mode<=3) {
+            if (expression->resolved_named_symbol_id>=analyzer->model->symbol_count ||
+                analyzer->model->symbols[expression->resolved_named_symbol_id].kind!=SEMANTIC_SYMBOL_STRUCT ||
+                expression->resolved_borrow_kind!=AST_BORROW_NONE || expression->resolved_pointer_depth ||
+                expression->resolved_outer_pointer_depth || expression->resolved_is_array || expression->resolved_is_slice)
+                semantic_error(analyzer,expression->first_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,
+                    "Iterator factory must return a concrete iterator struct");
+        } else {
+            const SemanticSymbol *result=expression->resolved_named_symbol_id<analyzer->model->symbol_count
+                ? &analyzer->model->symbols[expression->resolved_named_symbol_id] : NULL;
+            /* The protocol uses the canonical core declaration, independent of
+             * a caller's import alias or a root stdlib reexport. */
+            const AstDeclarationNode *option=find_language_declaration(
+                analyzer->model->program,analyzer->program,"stdlib/core::Option",AST_DECL_ENUM,NULL);
+            const AstDeclarationNode *actual=result && result->kind==SEMANTIC_SYMBOL_ENUM ? result->declaration : NULL;
+            if (!option || !actual || (actual!=option && actual->generic_origin!=option) ||
+                expression->resolved_borrow_kind!=AST_BORROW_NONE || expression->resolved_pointer_depth ||
+                expression->resolved_outer_pointer_depth || expression->resolved_is_array || expression->resolved_is_slice)
+                semantic_error(analyzer,expression->first_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,
+                    "Iterator next() must return core.Option<Item>");
+            else {
+                const AstEnumValue *some=find_enum_value_by_symbol(analyzer,result->id,concrete_token(analyzer,TOKEN_IDENTIFIER,"Some"));
+                const AstTypeArgument *payload=some ? some->payload_types : NULL;
+                if (!payload || payload->next ||
+                    (mode==5 && payload->type.borrow_kind!=AST_BORROW_IMMUTABLE) ||
+                    (mode==6 && payload->type.borrow_kind!=AST_BORROW_MUTABLE))
+                    semantic_error(analyzer,expression->first_token,ERROR_CATEGORY_TYPE,ERR_TYPE_INVALID_OPERATION,
+                        "Iterator next() item does not match the requested shared/mutable binding");
+            }
         }
     }
     if (expression->kind == AST_EXPR_UNARY && expression->right != NULL)

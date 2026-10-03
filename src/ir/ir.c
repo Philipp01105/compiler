@@ -1280,6 +1280,7 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
     }
     instruction->auxiliary_token = expression->value_token;
     instruction->symbol_id = expression->resolved_symbol_id;
+    if (expression->is_receiver_reference) instruction->symbol_id = builder->function->owner_symbol_id;
     instruction->operator_type = expression->operator_type;
     set_expression_type(builder, instruction, expression);
     if (expression->kind == AST_EXPR_SUBSLICE &&
@@ -1311,8 +1312,17 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         instruction->argument_count = argument_count;
     }
     size_t result = instruction->result;
-    int consumed_receiver = has_receiver && method->declaration->as.function.receiver_mode == 2;
+    int consumed_receiver = has_receiver && (method->declaration->as.function.receiver_mode == 2 ||
+        expression->receiver_contract_mode==2);
     if (consumed_receiver) emit_move_if_owned(builder, expression->left->left);
+    if (consumed_receiver && expression->receiver_contract_mode==2 && method->declaration->as.function.receiver_mode!=2) {
+        IrTypeId type=type_from_expression(builder->module,builder->program,expression->left->left);
+        if (ir_type_properties(builder->module,type)&SEMANTIC_TYPE_NEEDS_DROP) {
+            IrInstruction *drop=emit(builder,IR_OP_DROP,expression->span);
+            if (!drop) return IR_VALUE_NONE;
+            drop->type=TYPE_VOID; drop->type_id=type; drop->operand_a=receiver;
+        }
+    }
     if (has_receiver && !consumed_receiver && expression->left->left &&
         (expression->left->left->kind == AST_EXPR_STRUCT_LITERAL ||
          expression->left->left->kind == AST_EXPR_CALL ||
@@ -1564,6 +1574,7 @@ static void register_local_drop(IrBuilder *builder, size_t symbol_id,
 
 static int expression_moves_ownership(const IrBuilder *builder,
                                       const AstExpression *expression) {
+    if (expression && expression->is_array_view) return 0;
     if (expression != NULL && expression->kind == AST_EXPR_NAME &&
         expression->has_resolved_ast_type &&
         (expression->resolved_ast_type.kind == AST_TYPE_FUTURE || expression->resolved_ast_type.kind == AST_TYPE_JOIN ||

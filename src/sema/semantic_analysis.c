@@ -314,7 +314,7 @@ void derive_type_properties(Analyzer *analyzer) {
 
 int semantic_expression_is_move_only(const Analyzer *analyzer,
                                      const AstExpression *expression) {
-    if (expression == NULL || expression->resolved_borrow_kind != AST_BORROW_NONE ||
+    if (expression == NULL || expression->is_array_view || expression->resolved_borrow_kind != AST_BORROW_NONE ||
         expression->resolved_pointer_depth != 0 ||
         expression->resolved_outer_pointer_depth != 0 ||
         expression->resolved_is_slice)
@@ -334,6 +334,11 @@ int semantic_expression_is_move_only(const Analyzer *analyzer,
 
 static void consume_owned_expression(Analyzer *analyzer,
                                      const AstExpression *expression) {
+    if (expression && expression->is_receiver_reference) {
+        semantic_error(analyzer,expression->first_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_INVALID_DECLARATION,
+            "self must be accessed through a member or an explicit checked borrow");
+        return;
+    }
     if (!semantic_expression_is_move_only(analyzer, expression)) return;
     if (analyzer->in_destructor &&
         expression->resolved_symbol_id < analyzer->model->symbol_count &&
@@ -396,13 +401,16 @@ static int safe_borrow_return_origin(const Analyzer *analyzer,
     if (expression == NULL) return 0;
     int reference_projection = expression->kind == AST_EXPR_MEMBER &&
         expression->resolved_borrow_kind != AST_BORROW_NONE;
-    while (expression->kind == AST_EXPR_UNARY &&
-           expression->operator_type == TOKEN_AMPERSAND)
-        expression = expression->right;
-    while ((expression->kind == AST_EXPR_MEMBER ||
-            expression->kind == AST_EXPR_INDEX) &&
-           expression->left != NULL)
-        expression = expression->left;
+    /* Explicit and access-inserted dereferences have identical origins. */
+    while (expression != NULL) {
+        if (expression->kind == AST_EXPR_UNARY &&
+            (expression->operator_type == TOKEN_AMPERSAND || expression->operator_type == TOKEN_STAR))
+            expression = expression->right;
+        else if (expression->kind == AST_EXPR_MEMBER || expression->kind == AST_EXPR_INDEX)
+            expression = expression->left;
+        else break;
+    }
+    if (expression == NULL) return 0;
     if (expression->kind != AST_EXPR_NAME ||
         expression->resolved_symbol_id >= analyzer->model->symbol_count)
         return 0;
@@ -425,8 +433,11 @@ static int safe_borrow_return_origin(const Analyzer *analyzer,
            origin->declared_type.borrow_kind != AST_BORROW_NONE;
 }
 
+#include "semantic_iterators.inc"
+
 static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
     for (; statement != NULL; statement = statement->next) {
+        if (statement->kind == AST_STMT_FOR && statement->iterator_mode && !lower_iterator_for(analyzer,statement)) continue;
         if (statement->kind == AST_STMT_MATCH) {
             analyze_expression(analyzer, statement->value);
             if (statement->value && statement->value->kind == AST_EXPR_TYPE_INFO) {
@@ -533,6 +544,12 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                         const AstTypeArgument *p = v->payload_types;
                         AstParameter *binding = arm->bindings;
                         for (; p && binding; p = p->next, binding = binding->next) {
+                            if (analyzer->current_function &&
+                                analyzer->current_function->as.function.receiver_parameter &&
+                                same_name(analyzer->program, binding->name_token, "self"))
+                                semantic_error(analyzer, binding->name_token,
+                                    ERROR_CATEGORY_SEMANTIC, ERR_SEM_INVALID_DECLARATION,
+                                    "Reserved name cannot be declared");
                             binding->type = argument_type_copy(analyzer, enum_unit, p->type);
                             if (borrowed_match) binding->type.borrow_kind = statement->value->resolved_borrow_kind;
                             validate_array_shape(analyzer, &binding->type);
@@ -660,6 +677,7 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                     statement->type.callable_mode = mode;
                 }
             }
+            semantic_mark_array_view(statement->value,&statement->type);
             consume_owned_expression(analyzer, statement->value);
             if (statement->is_const && statement->value != NULL &&
                 analyzer->model->error_count == errors_before &&
@@ -670,7 +688,8 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                                          ? statement->value->resolved_type
                                          : primitive_type(analyzer->program, &statement->type));
             if (same_name(analyzer->program, statement->name_token, "true") ||
-                same_name(analyzer->program, statement->name_token, "false"))
+                same_name(analyzer->program, statement->name_token, "false") ||
+                (analyzer->current_owner_token != AST_TOKEN_NONE && same_name(analyzer->program, statement->name_token, "self")))
                 semantic_error(analyzer, statement->name_token,
                                ERROR_CATEGORY_SEMANTIC, ERR_SEM_INVALID_DECLARATION,
                                "Reserved name cannot be declared");
@@ -727,6 +746,11 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
             if (statement->kind == AST_STMT_ASSIGNMENT) {
                 analyzer->assignment_target = statement->expression;
                 analyze_expression(analyzer, statement->expression);
+                if (statement->expression && (statement->expression->is_receiver_reference ||
+                    (statement->expression->kind==AST_EXPR_UNARY && statement->expression->operator_type==TOKEN_STAR &&
+                     statement->expression->right && statement->expression->right->is_receiver_reference)))
+                    semantic_error(analyzer,statement->first_token,ERROR_CATEGORY_SEMANTIC,ERR_SEM_INVALID_DECLARATION,
+                        "Cannot replace the entire self receiver");
                 analyzer->assignment_target = NULL;
             } else analyze_expression(analyzer, statement->expression);
             if (statement->value != NULL &&
@@ -770,6 +794,8 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
             }
             if (statement->kind == AST_STMT_ASSIGNMENT &&
                 statement->assignment_operator == TOKEN_EQUAL) {
+                if (statement->expression && statement->expression->has_resolved_ast_type)
+                    semantic_mark_array_view(statement->value,&statement->expression->resolved_ast_type);
                 consume_owned_expression(analyzer, statement->value);
                 if (statement->expression != NULL &&
                     statement->expression->kind == AST_EXPR_NAME) {
@@ -855,6 +881,7 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                     conversion_error(analyzer, statement->value, analyzer->program,
                                      &analyzer->current_function->as.function.return_type,
                                      NULL, "Cannot implicitly convert returned value");
+                semantic_mark_array_view(statement->value,&analyzer->current_function->as.function.return_type);
                 consume_owned_expression(analyzer, statement->value);
                 if (analyzer->current_function->as.function.return_type.borrow_kind !=
                         AST_BORROW_NONE &&
@@ -902,7 +929,7 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
 static const AstExpression *borrow_origin_name(const AstExpression *expression) {
     while (expression != NULL &&
            ((expression->kind == AST_EXPR_UNARY &&
-             expression->operator_type == TOKEN_AMPERSAND) ||
+             (expression->operator_type == TOKEN_AMPERSAND || expression->operator_type == TOKEN_STAR)) ||
             expression->kind == AST_EXPR_MEMBER ||
             expression->kind == AST_EXPR_INDEX))
         expression = expression->kind == AST_EXPR_UNARY
@@ -987,6 +1014,7 @@ static void validate_control_branch(Analyzer *analyzer,
                            "Value branch cannot return a borrow of a local binding");
     }
     if (control->allocated_type.kind != AST_TYPE_INFERRED) {
+        semantic_mark_array_view(result,&control->allocated_type);
         validate_slice_branch_lifetime(analyzer, result,
                                        &control->allocated_type);
         if (!expression_to_declared_type_allowed(analyzer, result,
@@ -1124,6 +1152,8 @@ void analyze_control_expression(Analyzer *analyzer, AstExpression *expression) {
 static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
     if (function->generic_parameters != NULL || function->semantic_body_checked) return;
     function->semantic_body_checked = 1;
+    function->as.function.receiver_parameter = NULL;
+    function->as.function.uses_receiver_reference = 0;
     for (const AstAutoCondition *c = function->where_conditions; c; c = c->next) {
         if (!known_declared_type(analyzer, &c->type))
             semantic_error(analyzer, c->type.name_token, ERROR_CATEGORY_TYPE, ERR_TYPE_UNKNOWN,
@@ -1161,6 +1191,18 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
                        "never is only valid as a direct function return type");
     validate_array_shape(analyzer, &function->as.function.return_type);
     analyzer->scope_depth++;
+    if (!function->as.function.is_static && function->as.function.owner_token != AST_TOKEN_NONE) {
+        AstParameter *receiver = ast_program_alloc(analyzer->program, sizeof(*receiver));
+        if (!receiver) { analyzer->allocation_failed = 1; goto restore_function; }
+        receiver->resolved_symbol_id = AST_SYMBOL_NONE;
+        receiver->name_token = concrete_token(analyzer, TOKEN_IDENTIFIER, "self");
+        receiver->type = (AstType){.kind=AST_TYPE_NAMED, .name_token=function->as.function.owner_token,
+            .array_length_token=AST_TOKEN_NONE, .borrow_kind=AST_BORROW_MUTABLE,
+            .lifetime_token=function->lifetime_parameters ? function->lifetime_parameters->name_token : AST_TOKEN_NONE};
+        LocalSymbol *local = push_local(analyzer, receiver->name_token, receiver->type, SEMANTIC_SYMBOL_PARAMETER, NULL, 0);
+        if (local) receiver->resolved_symbol_id = local->symbol_id;
+        function->as.function.receiver_parameter = receiver;
+    }
     for (AstParameter *parameter = function->as.function.parameters;
          parameter != NULL; parameter = parameter->next) {
         if (!known_declared_type(analyzer, &parameter->type))
@@ -1210,6 +1252,7 @@ static void analyze_function(Analyzer *analyzer, AstDeclarationNode *function) {
                        return_type == TYPE_NEVER
                            ? "Never-returning function can complete normally"
                            : "Function does not return on all paths");
+restore_function:
     pop_to(analyzer, saved);
     analyzer->scope_depth--;
     analyzer->current_function_token = saved_function;
@@ -1323,6 +1366,7 @@ void analyze_constant_declaration(Analyzer *analyzer,
         !expression_to_declared_type_allowed(analyzer, value, analyzer->program, type))
         conversion_error(analyzer, value, analyzer->program, type,
                          NULL, "Cannot implicitly convert constant initializer");
+    semantic_mark_array_view(value,type);
     if (value != NULL && analyzer->model->error_count == errors_before &&
         constant_expression_allowed(analyzer, value) &&
         !(value->has_resolved_ast_type &&

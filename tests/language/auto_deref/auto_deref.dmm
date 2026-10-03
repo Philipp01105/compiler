@@ -1,0 +1,102 @@
+package main;
+import ("stdlib/async");
+var calls:i32=0;
+var drops:i32=0;
+struct Point {
+    var x:i32;
+    func read()->i32 { return x; }
+    func add(amount:i32)->void { x+=amount; }
+    func choose(amount:i32)->i32 { return x+amount; }
+    func choose(amount:bit)->i32 { if(amount) { return x; } return 0; }
+    async func later()->i32 { return x; }
+}
+struct Box<T> { var value:T; func get()->T { return value; } }
+struct Owner { var value:i32; destructor { drops+=1; } }
+struct Callback { var invoke:func(i32)->i32; }
+struct Stored<'a> { var source:&'a i32; func borrow()->&'a i32 { return source; } }
+struct OtherPoint { var x:i32; func read()->i32 { return x; } func add(amount:i32)->void { x+=amount; } }
+interface Reader { func read()->i32; }
+interface Advance { mut func add(amount:i32)->void; }
+func genericRead<T:Reader>(value:&T)->i32 { return value.read(); }
+func genericAdd<T:Advance>(value:&mut T)->void { value.add(2); }
+func increment(value:i32)->i32 { return value+1; }
+func next(value:&mut Point)->&mut Point { calls+=1; return value; }
+func nextIndex()->usize { calls+=1; return 1; }
+func shared(value:&Point)->i32 { return value.x+value.read(); }
+func project(value:&Point)->&i32 { return &value.x; }
+func nested(value:&(&Point))->i32 { return value.x+value.read(); }
+func nestedMutable(value:&mut (&mut Point))->void { value.x+=1; value.add(2); }
+func slices(values:&i32[], storage:&i32[3])->bit {
+    var item=&values[1];
+    return values.length==3 && values[0]==3 && *item==4 && storage[2]==5;
+}
+func nestedSlice(values:&(&i32[]))->i32 { return values[2]+values.length.(i32); }
+func mutableSlice(values:&mut i32[])->void { values[nextIndex()]+=10; }
+func mutableArray(values:&mut i32[3])->void { values[2]+=1; }
+func raw(pointer:*Point)->i32 { (*pointer).add(1); return (*pointer).x; }
+async func asyncCheck()->bit {
+    var point=Point{x:19};
+    var reference=&mut point;
+    var future=reference.later();
+    var result=future.await();
+    return result==19;
+}
+func main()->int {
+    var point=Point{x:10};
+    { var p=&point; if(shared(p)!=20 || nested(&p)!=20) { return 1; } }
+    {
+        var p=&mut point;
+        p.x=11;
+        p.add(2);
+        nestedMutable(&mut p);
+        genericAdd(p);
+    }
+    if(point.x!=18 || genericRead(&point)!=18) { return 2; }
+    { var other=OtherPoint{x:30}; genericAdd(&mut other); if(genericRead(&other)!=32) { return 18; } }
+    { var p=&point; var result=project(p); if(*result!=18) { return 19; } }
+    {
+        var p=&point;
+        var amount:i32=3;
+        if(p.choose(amount)!=21 || p.choose(true)!=18) { return 3; }
+        var stored=Stored{source:&point.x};
+        var storedReference=&stored;
+        var result=storedReference.borrow();
+        if(*result!=18) { return 4; }
+    }
+    next(&mut point).add(1);
+    if(calls!=1 || point.x!=19) { return 5; }
+    next(&mut point).x+=1;
+    if(calls!=2 || point.x!=20) { return 6; }
+    var storage:i32[3]=[3,4,5];
+    var values:i32[]=storage;
+    { var p=&values; if(!slices(p,&storage) || nestedSlice(&p)!=8) { return 7; } }
+    mutableSlice(&mut values);
+    if(calls!=3 || values[1]!=14) { return 8; }
+    { var array:i32[3]=[3,4,5]; mutableArray(&mut array); if(array[2]!=6) { return 20; } }
+    {
+        var ownerStorage:Owner[2]=[Owner{value:7},Owner{value:8}];
+        var ownerValues:Owner[]=ownerStorage;
+        var reference=&mut ownerValues;
+        reference[0].value+=1;
+        var item=&reference[1];
+        if(item.value!=8 || reference[0].value!=8 || drops!=0) { return 9; }
+    }
+    if(drops!=2) { return 10; }
+    var box=Box<i32>{value:21};
+    var boxReference=&box;
+    if(boxReference.value!=21 || boxReference.get()!=21) { return 11; }
+    var callback=Callback{invoke:increment};
+    var callbackReference=&callback;
+    if(callbackReference.invoke(5)!=6) { return 12; }
+    var erased:Reader=Point{x:22};
+    var erasedReference=&erased;
+    if(erasedReference.read()!=22) { return 13; }
+    var pointer:*Point=(&mut point).(*Point);
+    if(raw(pointer)!=21) { return 14; }
+    var pointerReference=&pointer;
+    if((*(*pointerReference)).read()!=21) { return 15; }
+    var explicit=&point;
+    if((*explicit).x!=explicit.x || (*explicit).read()!=explicit.read()) { return 16; }
+    if(!block_on(asyncCheck())) { return 17; }
+    return 0;
+}

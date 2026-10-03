@@ -1,0 +1,235 @@
+package collections;
+import "stdlib/core";
+
+func growStorage<T>(storage:&mut *T, slots:&mut usize, count:usize, capacity:usize)
+    ->core.Result<void,core.AllocError> {
+    if(capacity<=*slots) { return core.Result<void,core.AllocError>.Ok; }
+    if(capacity>9223372036854775807.(usize)/sizeof(T)) {
+        return core.Result<void,core.AllocError>.Err(core.AllocError.CapacityOverflow);
+    }
+    var grown:*T=core.core_alloc(capacity*sizeof(T)).(*T);
+    if(grown==core.null<T>()) {
+        return core.Result<void,core.AllocError>.Err(core.AllocError.OutOfMemory);
+    }
+    for(var i:usize=0;i<count;i+=1) {
+        core.initialize<T>(&grown[i],take((*storage)[i]));
+    }
+    core.core_release((*storage).(*u8));
+    *storage=grown; *slots=capacity;
+    return core.Result<void,core.AllocError>.Ok;
+}
+
+// Empty lists are valid and allocation-free; only initialized elements are live.
+@[core.Send where T:core.Send] @[core.Sync where T:core.Sync] pub struct List<T> {
+    var storage:*T;
+    var slots:usize;
+    var count:usize;
+
+    pub func length()->usize { return count; }
+    pub func capacity()->usize { return slots; }
+    pub func view()->T[] where T:core.Copy { return slice(self.storage,count); }
+    pub func ensureCapacity(capacity:usize)->core.Result<void,core.AllocError> {
+        return growStorage<T>(&mut storage,&mut slots,count,capacity);
+    }
+    pub func append(value:T)->core.Result<void,core.AllocError> {
+        if(count==slots) {
+            var capacity:usize=8;
+            if(slots>0) {
+                if(slots>4611686018427387903.(usize)/sizeof(T)) {
+                    return core.Result<void,core.AllocError>.Err(core.AllocError.CapacityOverflow);
+                }
+                capacity=slots*2;
+            }
+            growStorage<T>(&mut storage,&mut slots,count,capacity)?;
+        }
+        core.initialize<T>(&storage[count],value); count+=1;
+        return core.Result<void,core.AllocError>.Ok;
+    }
+    pub func appendSlice(values:&T[])->core.Result<void,core.AllocError> where T:core.Copy {
+        if(values.length>9223372036854775807.(usize)/sizeof(T)-count) {
+            return core.Result<void,core.AllocError>.Err(core.AllocError.CapacityOverflow);
+        }
+        // The checked input loan must be disjoint from this mutable receiver.
+        growStorage<T>(&mut storage,&mut slots,count,count+values.length)?;
+        for(var i:usize=0;i<values.length;i+=1) {
+            var value:T=(*values)[i];
+            core.initialize<T>(&storage[count+i],value);
+        }
+        count+=values.length;
+        return core.Result<void,core.AllocError>.Ok;
+    }
+    pub func insert(index:usize,value:T)->core.Result<void,core.AllocError> {
+        if(index>count) { core.core_trap(); }
+        if(count==slots) {
+            var capacity:usize=8;
+            if(slots>0) {
+                if(slots>4611686018427387903.(usize)/sizeof(T)) {
+                    return core.Result<void,core.AllocError>.Err(core.AllocError.CapacityOverflow);
+                }
+                capacity=slots*2;
+            }
+            growStorage<T>(&mut storage,&mut slots,count,capacity)?;
+        }
+        var end:usize=count;
+        while(end>index) {
+            core.initialize<T>(&storage[end],take(storage[end-1])); end-=1;
+        }
+        core.initialize<T>(&storage[index],value); count+=1;
+        return core.Result<void,core.AllocError>.Ok;
+    }
+    pub func get(index:usize)->&T {
+        if(index>=count) { core.core_trap(); }
+        return &self.storage[index];
+    }
+    pub func getMut(index:usize)->&mut T {
+        if(index>=count) { core.core_trap(); }
+        return &mut self.storage[index];
+    }
+    pub func contains(value:&T,equal:func(&T,&T)->bit)->bit {
+        for(var i:usize=0;i<count;i+=1) {
+            if(equal(&storage[i],value)) { return true; }
+        }
+        return false;
+    }
+    pub func pop()->core.Option<T> {
+        if(count==0) { return core.Option<T>.None; }
+        count-=1; return core.Option<T>.Some(take(storage[count]));
+    }
+    pub func remove(index:usize)->core.Option<T> {
+        if(index>=count) { return core.Option<T>.None; }
+        var value=take(storage[index]);
+        for(var i:usize=index+1;i<count;i+=1) {
+            core.initialize<T>(&storage[i-1],take(storage[i]));
+        }
+        count-=1; return core.Option<T>.Some(value);
+    }
+    pub func clear()->void {
+        while(count>0) { count-=1; core.destroy<T>(&storage[count]); }
+    }
+    pub func truncate(length:usize)->void {
+        while(count>length) { count-=1; core.destroy<T>(&storage[count]); }
+    }
+    pub func iter<'a>()->ListIter<'a,T> where T:core.Copy {
+        return ListIter<'a,T>{source:&self,index:0};
+    }
+    pub func iterRef<'a>()->ListRefIter<'a,T> {
+        return ListRefIter<'a,T>{source:&self,index:0};
+    }
+    pub func iterMut<'a>()->ListMutIter<'a,T> {
+        return ListMutIter<'a,T>{source:&mut self.storage,count:count,index:0};
+    }
+    destructor {
+        while(count>0) { count-=1; core.destroy<T>(&storage[count]); }
+        core.core_release(storage.(*u8));
+    }
+}
+
+// Keep the default policy in a free generic function: unsupported element types
+// can still instantiate List and use its explicit borrowed equality method.
+pub func contains<T>(values:&List<T>,value:&T)->bit {
+    return values.contains(value,defaultEqual<T>);
+}
+pub func list<T>()->List<T> { var result:List<T>; return result; }
+
+pub struct ListIter<'a,T> {
+    var source:&'a List<T>; var index:usize;
+    pub func next()->core.Option<T> where T:core.Copy {
+        if(index>=source.count) { return core.Option<T>.None; }
+        var position=index; index+=1;
+        return core.Option<T>.Some(source.storage[position]);
+    }
+}
+pub struct ListRefIter<'a,T> {
+    var source:&'a List<T>; var index:usize;
+    pub func next()->core.Option<&'a T> {
+        if(index>=source.count) { return core.Option<&'a T>.None; }
+        var position=index; index+=1;
+        return core.Option<&'a T>.Some(&source.storage[position]);
+    }
+}
+pub struct ListMutIter<'a,T> {
+    var source:&'a mut *T; var count:usize; var index:usize;
+    pub func next()->core.Option<&mut T> {
+        if(index>=count) { return core.Option<&mut T>.None; }
+        var position=index; index+=1;
+        return core.Option<&mut T>.Some(&mut (*self.source)[position]);
+    }
+}
+
+@[core.Send where T:core.Send] @[core.Sync where T:core.Sync] pub struct Buffer<T> {
+    var storage:*T; var count:usize;
+    pub func length()->usize { return count; }
+    pub func view()->T[] where T:core.Copy { return slice(self.storage,count); }
+    pub func get(index:usize)->&T {
+        if(index>=count) { core.core_trap(); } return &self.storage[index];
+    }
+    pub func getMut(index:usize)->&mut T {
+        if(index>=count) { core.core_trap(); } return &mut self.storage[index];
+    }
+    pub func iter<'a>()->BufferIter<'a,T> where T:core.Copy {
+        return BufferIter<'a,T>{source:&self,index:0};
+    }
+    pub func iterRef<'a>()->BufferRefIter<'a,T> {
+        return BufferRefIter<'a,T>{source:&self,index:0};
+    }
+    pub func iterMut<'a>()->BufferMutIter<'a,T> {
+        return BufferMutIter<'a,T>{source:&mut self,index:0};
+    }
+    destructor {
+        while(count>0) { count-=1; core.destroy<T>(&storage[count]); }
+        core.core_release(storage.(*u8));
+    }
+}
+pub func buffer<T:core.Copy>(count:usize,initial:T)->core.Result<Buffer<T>,core.AllocError> {
+    if(count>9223372036854775807.(usize)/sizeof(T)) {
+        return core.Result<Buffer<T>,core.AllocError>.Err(core.AllocError.CapacityOverflow);
+    }
+    var result:Buffer<T>;
+    if(count>0) {
+        result.storage=core.core_alloc(count*sizeof(T)).(*T);
+        if(result.storage==core.null<T>()) {
+            return core.Result<Buffer<T>,core.AllocError>.Err(core.AllocError.OutOfMemory);
+        }
+    }
+    for(var i:usize=0;i<count;i+=1) {
+        core.initialize<T>(&result.storage[i],initial); result.count+=1;
+    }
+    return core.Result<Buffer<T>,core.AllocError>.Ok(result);
+}
+pub func bufferWith<T>(count:usize,init:mut func(usize)->T)->core.Result<Buffer<T>,core.AllocError> {
+    if(count>9223372036854775807.(usize)/sizeof(T)) {
+        return core.Result<Buffer<T>,core.AllocError>.Err(core.AllocError.CapacityOverflow);
+    }
+    var result:Buffer<T>;
+    if(count>0) {
+        result.storage=core.core_alloc(count*sizeof(T)).(*T);
+        if(result.storage==core.null<T>()) {
+            return core.Result<Buffer<T>,core.AllocError>.Err(core.AllocError.OutOfMemory);
+        }
+    }
+    for(var i:usize=0;i<count;i+=1) {
+        core.initialize<T>(&result.storage[i],init(i)); result.count+=1;
+    }
+    return core.Result<Buffer<T>,core.AllocError>.Ok(result);
+}
+pub struct BufferIter<'a,T> {
+    var source:&'a Buffer<T>; var index:usize;
+    pub func next()->core.Option<T> where T:core.Copy {
+        if(index>=source.count) { return core.Option<T>.None; }
+        var position=index; index+=1; return core.Option<T>.Some(source.storage[position]);
+    }
+}
+pub struct BufferRefIter<'a,T> {
+    var source:&'a Buffer<T>; var index:usize;
+    pub func next()->core.Option<&'a T> {
+        if(index>=source.count) { return core.Option<&'a T>.None; }
+        var position=index; index+=1; return core.Option<&'a T>.Some(&source.storage[position]);
+    }
+}
+pub struct BufferMutIter<'a,T> {
+    var source:&'a mut Buffer<T>; var index:usize;
+    pub func next()->core.Option<&mut T> {
+        if(index>=source.count) { return core.Option<&mut T>.None; }
+        var position=index; index+=1; return core.Option<&mut T>.Some(self.source.getMut(position));
+    }
+}
