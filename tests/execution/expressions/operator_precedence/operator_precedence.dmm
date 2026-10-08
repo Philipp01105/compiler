@@ -1,14 +1,15 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 func main() -> void {
     var grouped: int = (1 + 2) * 3;
-    stdlib.println(1 + 2 * 3);
-    stdlib.println(grouped);
-    stdlib.println(1 + 2 * 3 == 7);
-    stdlib.println(1 + 2 < 4 && 5 > 3);
-    stdlib.println(true || false && false);
-    stdlib.println(!(1 == 2));
-    stdlib.println(20 / 5 * 2 + 3 % 2);
-    stdlib.println(-2 * 3 + 10);
+    io.println(1 + 2 * 3);
+    io.println(grouped);
+    io.println(1 + 2 * 3 == 7);
+    io.println(1 + 2 < 4 && 5 > 3);
+    io.println(true || false && false);
+    io.println(!(1 == 2));
+    io.println(20 / 5 * 2 + 3 % 2);
+    io.println(-2 * 3 + 10);
 }

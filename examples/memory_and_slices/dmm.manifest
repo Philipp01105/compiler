@@ -1,6 +1,0 @@
-/* main
-Nested fixed arrays, checked subslices, raw slices, returned literal storage, generic allocation and layout queries.
-*/
-
-module dmm.example/memory_and_slices
-dmm 2026-09-22-dev

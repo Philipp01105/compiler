@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 // Test heap management with custom struct types
 
 struct Point {
@@ -20,32 +21,32 @@ struct Person {
 
 // Test 1: Basic struct allocation
 func test1_basic_struct() -> void {
-    stdlib.println("[TEST 1] Basic struct allocation");
+    io.println("[TEST 1] Basic struct allocation");
     var p: *Point = reserve(Point);
-    stdlib.println("  [OK] Point struct allocated");
+    io.println("  [OK] Point struct allocated");
     free(p);
-    stdlib.println("  [OK] Point struct freed");
+    io.println("  [OK] Point struct freed");
 }
 
 // Test 2: Multiple struct allocations
 func test2_multiple_structs() -> void {
-    stdlib.println("[TEST 2] Multiple struct allocations");
+    io.println("[TEST 2] Multiple struct allocations");
     var p1: *Point = reserve(Point);
     var p2: *Point = reserve(Point);
     var r: *Rectangle = reserve(Rectangle);
-    stdlib.println("  [OK] Three structs allocated");
+    io.println("  [OK] Three structs allocated");
     free(p1);
     free(p2);
     free(r);
-    stdlib.println("  [OK] Three structs freed");
+    io.println("  [OK] Three structs freed");
 }
 
 // Test 3: manual ownership with structs
 func test3_gc_structs() -> void {
-    stdlib.println("[TEST 3] manual ownership with structs");
+    io.println("[TEST 3] manual ownership with structs");
     var p: *Point = reserve(Point);
     var r: *Rectangle = reserve(Rectangle);
-    stdlib.println("  [OK] manual ownership structs allocated (explicit release follows)");
+    io.println("  [OK] manual ownership structs allocated (explicit release follows)");
 
     free(r);
     free(p);
@@ -53,80 +54,80 @@ func test3_gc_structs() -> void {
 
 // Test 4: Mixed struct types
 func test4_mixed_struct_types() -> void {
-    stdlib.println("[TEST 4] Mixed struct types");
+    io.println("[TEST 4] Mixed struct types");
     var point: *Point = reserve(Point);
     var rect: *Rectangle = reserve(Rectangle);
     var person: *Person = reserve(Person);
-    stdlib.println("  [OK] Three different struct types allocated");
+    io.println("  [OK] Three different struct types allocated");
     free(person);
     free(rect);
     free(point);
-    stdlib.println("  [OK] All struct types freed");
+    io.println("  [OK] All struct types freed");
 }
 
 // Test 5: Manual and manual ownership structs together
 func test5_manual_and_gc_structs() -> void {
-    stdlib.println("[TEST 5] Manual and manual ownership structs");
+    io.println("[TEST 5] Manual and manual ownership structs");
     var manual: *Point = reserve(Point);
     var automatic: *Rectangle = reserve(Rectangle);
-    stdlib.println("  [OK] Manual and manual ownership structs allocated");
+    io.println("  [OK] Manual and manual ownership structs allocated");
     free(manual);
-    stdlib.println("  [OK] Manual struct freed (explicit releases follow)");
+    io.println("  [OK] Manual struct freed (explicit releases follow)");
 
     free(automatic);
 }
 
 // Test 6: Sequential struct operations
 func test6_sequential_structs() -> void {
-    stdlib.println("[TEST 6] Sequential struct operations");
+    io.println("[TEST 6] Sequential struct operations");
     var p: *Point = reserve(Point);
-    stdlib.println("  [OK] Point allocated");
+    io.println("  [OK] Point allocated");
     free(p);
-    stdlib.println("  [OK] Point freed");
+    io.println("  [OK] Point freed");
     var r: *Rectangle = reserve(Rectangle);
-    stdlib.println("  [OK] Rectangle allocated");
+    io.println("  [OK] Rectangle allocated");
     free(r);
-    stdlib.println("  [OK] Rectangle freed");
+    io.println("  [OK] Rectangle freed");
 }
 
 // Test 7: Many struct pointers
 func test7_many_struct_pointers() -> void {
-    stdlib.println("[TEST 7] Many struct pointers");
+    io.println("[TEST 7] Many struct pointers");
     var p1: *Point = reserve(Point);
     var p2: *Point = reserve(Point);
     var p3: *Point = reserve(Point);
     var p4: *Point = reserve(Point);
     var p5: *Point = reserve(Point);
-    stdlib.println("  [OK] Five Point structs allocated");
+    io.println("  [OK] Five Point structs allocated");
     free(p1);
     free(p2);
     free(p3);
     free(p4);
     free(p5);
-    stdlib.println("  [OK] Five Point structs freed");
+    io.println("  [OK] Five Point structs freed");
 }
 
 // Test 8: Struct with different sizes
 func test8_different_sizes() -> void {
-    stdlib.println("[TEST 8] Structs with different sizes");
+    io.println("[TEST 8] Structs with different sizes");
     // Point has 2 ints (8 bytes)
     var small: *Point = reserve(Point);
     // Rectangle has 3 ints (12 bytes)
     var medium: *Rectangle = reserve(Rectangle);
     // Person has int + char (5+ bytes with padding)
     var compact: *Person = reserve(Person);
-    stdlib.println("  [OK] Different sized structs allocated");
+    io.println("  [OK] Different sized structs allocated");
     free(small);
     free(medium);
     free(compact);
-    stdlib.println("  [OK] All different sized structs freed");
+    io.println("  [OK] All different sized structs freed");
 }
 
 func main() -> void {
-    stdlib.println("============================================");
-    stdlib.println("  STRUCT HEAP MANAGEMENT TEST");
-    stdlib.println("============================================");
-    stdlib.println("");
+    io.println("============================================");
+    io.println("  STRUCT HEAP MANAGEMENT TEST");
+    io.println("============================================");
+    io.println("");
     test1_basic_struct();
     test2_multiple_structs();
     test3_gc_structs();
@@ -135,10 +136,10 @@ func main() -> void {
     test6_sequential_structs();
     test7_many_struct_pointers();
     test8_different_sizes();
-    stdlib.println("");
-    stdlib.println("============================================");
-    stdlib.println("  ALL STRUCT TESTS PASSED!");
-    stdlib.println("============================================");
+    io.println("");
+    io.println("============================================");
+    io.println("  ALL STRUCT TESTS PASSED!");
+    io.println("============================================");
 }
 
 // Category: execution/heap

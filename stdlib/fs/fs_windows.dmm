@@ -4,7 +4,7 @@ import (
     "stdlib/collections"
     "stdlib/text/utf16"
     "stdlib/time"
-    raw "stdlib/core/raw"
+    raw "stdlib/memory/raw"
 );
 extern "system" from "kernel32" {
     union Pointer {

@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 const PRECISE: u64 = 18446744073709551615;
 const PRECISE_DIV: u64 = PRECISE / 3;
 const WRAPPED: u8 = 255.(u8) + 1.(u8);
@@ -38,17 +39,17 @@ func small(
 
 func main() -> void {
     var maximum: u64 = (-1).(u64);
-    stdlib.println(compare(maximum, 9223372036854775807.(u64)));
-    stdlib.println(divide(maximum, 3) == 6148914691236517205.(u64));
-    stdlib.println(maximum % 3 == 0);
+    io.println(compare(maximum, 9223372036854775807.(u64)));
+    io.println(divide(maximum, 3) == 6148914691236517205.(u64));
+    io.println(maximum % 3 == 0);
     maximum /= 3;
-    stdlib.println(maximum == 6148914691236517205.(u64));
+    io.println(maximum == 6148914691236517205.(u64));
     var narrow: i8 = 127;
     narrow += 1;
-    stdlib.println(narrow == - 128);
-    stdlib.println((255.(u8) + 1.(u8)) == 0);
-    stdlib.println(identity(5000000000.(i64)) == 5000000000.(i64));
-    stdlib.println(
+    io.println(narrow == - 128);
+    io.println((255.(u8) + 1.(u8)) == 0);
+    io.println(identity(5000000000.(i64)) == 5000000000.(i64));
+    io.println(
         small(
             -1,
             255,
@@ -68,16 +69,16 @@ func main() -> void {
     words[2] = 42;
     var pointer: *u16 = (&words[0]).(*u16);
     pointer[1] = 65534;
-    stdlib.println(words[0] == 65535 && words[1] == 65534 && words[2] == 42);
+    io.println(words[0] == 65535 && words[1] == 65534 && words[2] == 42);
     var large: u64 = 13835058055282163712;
-    stdlib.println(large.(double).(u64) == large);
-    stdlib.println(large.(float).(u64) == large);
+    io.println(large.(double).(u64) == large);
+    io.println(large.(float).(u64) == large);
     var signed: i16 = (-1).(i16);
-    stdlib.println(signed.(i64) == - 1);
-    stdlib.println(PRECISE_DIV);
-    stdlib.println(NEGATIVE);
-    stdlib.println(WRAPPED);
-    stdlib.println("max=" + PRECISE);
-    stdlib.println(PRECISE_TEXT == "max=18446744073709551615");
-    stdlib.println(FLOAT_CONSTANT == 13835058055282163712);
+    io.println(signed.(i64) == - 1);
+    io.println(PRECISE_DIV);
+    io.println(NEGATIVE);
+    io.println(WRAPPED);
+    io.println("max=" + PRECISE);
+    io.println(PRECISE_TEXT == "max=18446744073709551615");
+    io.println(FLOAT_CONSTANT == 13835058055282163712);
 }

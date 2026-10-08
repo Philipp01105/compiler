@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 enum State(code: int, text: string, weight: float, active: bit) {
     idle(-1, "idle", -1.5, false),
@@ -12,15 +13,15 @@ func echo(value: State) -> State {
 
 func main() -> void {
     var state: State = State.idle;
-    stdlib.println(state == State.idle);
-    stdlib.println(state.code);
-    stdlib.println(state.text);
-    stdlib.println(state.weight);
-    stdlib.println(state.active);
+    io.println(state == State.idle);
+    io.println(state.code);
+    io.println(state.text);
+    io.println(state.weight);
+    io.println(state.active);
     state = echo(State.ready);
-    stdlib.println(state != State.idle);
-    stdlib.println(state.code);
-    stdlib.println(state.text);
-    stdlib.println(state.weight);
-    stdlib.println(state.active);
+    io.println(state != State.idle);
+    io.println(state.code);
+    io.println(state.text);
+    io.println(state.weight);
+    io.println(state.active);
 }

@@ -1,5 +1,7 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+interface Printable{func toString()->string;}
+interface Equal{func equal(other:Self)->bit;}
 
 struct Person {
     var name: string;
@@ -12,11 +14,11 @@ struct Person {
     }
 }
 
-func output<T: stdlib.Printable>(value: T) -> void {
-    stdlib.println(value.toString());
+func output<T: Printable>(value: T) -> void {
+    io.println(value.toString());
 }
 
-func compare<T: stdlib.Printable + stdlib.Equal>(a: T, b: T) -> bit {
+func compare<T: Printable + Equal>(a: T, b: T) -> bit {
     output(a);
     return a.equal(b);
 }
@@ -26,5 +28,5 @@ func main() -> void {
     p.name = "Ada";
     var q: Person;
     q.name = "Ada";
-    stdlib.println(compare(p, q));
+    io.println(compare(p, q));
 }

@@ -1,8 +1,9 @@
 package main;
+import memraw "stdlib/memory/raw";
 import "stdlib/core";
 
 func main() -> int {
-    var typed = core.alloc<int>();
-    var missing = core.alloc();
+    var typed = memraw.alloc<int>();
+    var missing = memraw.alloc();
     return 0;
 }

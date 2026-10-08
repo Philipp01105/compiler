@@ -1,0 +1,94 @@
+package net;
+import ("stdlib/core" "stdlib/time" "stdlib/collections" raw "stdlib/net/raw");
+pub import "stdlib/net/address";
+
+pub struct TcpStream {
+    var socket:raw.Socket;
+    pub async func read(destination:&mut u8[],deadline:time.Deadline)->core.Result<usize,Error> {
+        var result=raw.read(&self.socket,destination,deadline).await()?;
+        return core.Result<usize,Error>.Ok(result.bytes);
+    }
+    pub async func write(source:&u8[],deadline:time.Deadline)->core.Result<usize,Error> {
+        return raw.write(&self.socket,source,deadline).await();
+    }
+    pub func shutdown(direction:Shutdown)->core.Result<void,Error> {return raw.shutdown(&mut socket,direction);}
+    pub func localAddress()->core.Result<Endpoint,Error> {return raw.localAddress(&socket);}
+    pub func peerAddress()->core.Result<Endpoint,Error> {return raw.peerAddress(&socket);}
+    pub async func read(destination:&mut u8[])->core.Result<usize,Error>{return self.read(destination,time.Deadline.noTimeout()).await();}
+    pub async func write(source:&u8[])->core.Result<usize,Error>{return self.write(source,time.Deadline.noTimeout()).await();}
+    pub async func writeAll(source:&u8[],deadline:time.Deadline)->core.Result<void,Error>{
+        var total:usize=0;
+        while(total<source.length){
+            var remaining=(*source)[total:];
+            match(raw.write(&self.socket,&remaining,deadline).await()){
+                Ok(count)=>{
+                    if(count==0){return core.Result<void,Error>.Err(Error{kind:ErrorKind.WriteZero,domain:ErrorDomain.Runtime,code:0,transferred:total});}
+                    total+=count;
+                }
+                Err(error)=>{error.transferred+=total;return core.Result<void,Error>.Err(error);}
+            }
+        }
+        return core.Result<void,Error>.Ok;
+    }
+    pub async func writeAll(source:&u8[])->core.Result<void,Error>{return self.writeAll(source,time.Deadline.noTimeout()).await();}
+    pub func shutdownWrite()->core.Result<void,Error>{return self.shutdown(Shutdown.Write);}
+
+}
+pub async func connect(endpoint:Endpoint,deadline:time.Deadline)->core.Result<TcpStream,Error> {
+    var family=AddressFamily.IPv4;match(endpoint.address){V4(value)=>{}V6(value)=>family=AddressFamily.IPv6;}
+    var socket=raw.socket(family,Transport.TCP)?;
+    raw.connect(&socket,endpoint,deadline).await()?;
+    return core.Result<TcpStream,Error>.Ok(TcpStream{socket:socket});
+}
+pub struct Accepted {pub var stream:TcpStream;pub var peer:Endpoint;}
+pub struct TcpListener {
+    var socket:raw.Socket;
+    pub func localAddress()->core.Result<Endpoint,Error>{return raw.localAddress(&socket);}
+    pub async func accept()->core.Result<Accepted,Error>{return self.accept(time.Deadline.noTimeout()).await();}
+    pub async func accept(deadline:time.Deadline)->core.Result<Accepted,Error>{
+        var value=raw.accept(&self.socket,deadline).await()?;
+        var peer=value.peer;
+        return core.Result<Accepted,Error>.Ok(Accepted{stream:TcpStream{socket:raw.intoSocket(value)},peer:peer});
+    }
+}
+pub func listen(endpoint:Endpoint,backlog:usize)->core.Result<TcpListener,Error>{
+    var family=AddressFamily.IPv4;match(endpoint.address){V4(value)=>{}V6(value)=>family=AddressFamily.IPv6;}
+    var socket=raw.socket(family,Transport.TCP)?;
+    raw.bind(&mut socket,endpoint)?;raw.listen(&mut socket,backlog)?;
+    return core.Result<TcpListener,Error>.Ok(TcpListener{socket:socket});
+}
+pub struct Datagram {pub var bytes:usize;pub var peer:Endpoint;pub var truncated:bit;}
+pub struct UdpSocket {
+    var socket:raw.Socket;
+    pub func localAddress()->core.Result<Endpoint,Error>{return raw.localAddress(&socket);}
+    pub async func receive(destination:&mut u8[])->core.Result<Datagram,Error>{return self.receive(destination,time.Deadline.noTimeout()).await();}
+    pub async func receive(destination:&mut u8[],deadline:time.Deadline)->core.Result<Datagram,Error>{
+        var value=raw.recvFrom(&self.socket,destination,deadline).await()?;
+        return core.Result<Datagram,Error>.Ok(Datagram{bytes:value.bytes,peer:value.peer,truncated:value.truncated});
+    }
+    pub async func send(source:&u8[],endpoint:Endpoint)->core.Result<usize,Error>{return self.send(source,endpoint,time.Deadline.noTimeout()).await();}
+    pub async func send(source:&u8[],endpoint:Endpoint,deadline:time.Deadline)->core.Result<usize,Error>{
+        return raw.sendTo(&self.socket,source,endpoint,deadline).await();
+    }
+}
+pub func udpBind(endpoint:Endpoint)->core.Result<UdpSocket,Error>{
+    var family=AddressFamily.IPv4;match(endpoint.address){V4(value)=>{}V6(value)=>family=AddressFamily.IPv6;}
+    var socket=raw.socket(family,Transport.UDP)?;raw.bind(&mut socket,endpoint)?;
+    return core.Result<UdpSocket,Error>.Ok(UdpSocket{socket:socket});
+}
+pub async func resolve(hostname:string,port:u16,family:AddressFamily,transport:Transport,deadline:time.Deadline)->core.Result<collections.List<Endpoint>,Error> {
+    var values=raw.resolve(hostname,port,family,transport,deadline).await()?;
+    var output=collections.list<Endpoint>();output.ensureCapacity(values.length())?;
+    for(var i:usize=0;i<values.length();i+=1){match(values.get(i)){Some(value)=>output.append(value)?;None=>{}}}
+    return core.Result<collections.List<Endpoint>,Error>.Ok(output);
+}
+pub async func resolve(hostname:string,port:u16,deadline:time.Deadline)->core.Result<collections.List<Endpoint>,Error>{return resolve(hostname,port,AddressFamily.Any,Transport.TCP,deadline).await();}
+pub async func resolve(hostname:string,port:u16)->core.Result<collections.List<Endpoint>,Error>{return resolve(hostname,port,time.Deadline.noTimeout()).await();}
+pub async func dial(hostname:string,port:u16,deadline:time.Deadline)->core.Result<TcpStream,Error>{
+    var addresses=resolve(hostname,port,deadline).await()?;
+    var last=Error{kind:ErrorKind.Unreachable,domain:ErrorDomain.Runtime,code:0,transferred:0};
+    for(var &endpoint=addresses){match(connect(*endpoint,deadline).await()){Ok(stream)=>return core.Result<TcpStream,Error>.Ok(stream);Err(error)=>last=error;}}
+    return core.Result<TcpStream,Error>.Err(last);
+}
+pub async func dial(hostname:string,port:u16)->core.Result<TcpStream,Error>{return dial(hostname,port,time.Deadline.noTimeout()).await();}
+pub func listen(endpoint:Endpoint)->core.Result<TcpListener,Error>{return listen(endpoint,128);}

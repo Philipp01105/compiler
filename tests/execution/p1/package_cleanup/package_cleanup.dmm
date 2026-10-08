@@ -1,11 +1,12 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 struct FirstResource {
     var value: int;
 
     destructor {
-        stdlib.println(1);
+        io.println(1);
     }
 }
 
@@ -13,7 +14,7 @@ struct SecondResource {
     var value: int;
 
     destructor {
-        stdlib.println(2);
+        io.println(2);
     }
 }
 

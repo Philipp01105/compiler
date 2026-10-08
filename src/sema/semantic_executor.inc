@@ -57,6 +57,16 @@ static int analyze_async_call(Analyzer *a, AstExpression *e) {
         if (!strcmp(name,"create") && callee->left->kind == AST_EXPR_NAME &&
             !strcmp(ast_program_lexeme(a->program,callee->left->value_token),"Executor")) op=ASYNC_CREATE;
         else if (!strcmp(name,"spawn") || !strcmp(name,"block_on") || !strcmp(name,"shutdown")) {
+            /* Imported functions share these names with Executor methods.
+               A package qualifier has no value type to probe. */
+            if (callee->left->kind == AST_EXPR_NAME &&
+                !find_local(a, callee->left->value_token)) {
+                const char *alias = ast_program_lexeme(a->program, callee->left->value_token);
+                for (const AstDeclarationNode *d = a->program->root; d; d = d->next)
+                    if (d->kind == AST_DECL_IMPORT)
+                        for (const AstImportPath *p = d->as.import_decl.paths; p; p = p->next)
+                            if (p->alias && !strcmp(alias, p->alias)) return 0;
+            }
             analyze_expression_context(a,callee->left,0);
             if (async_owned_kind(callee->left,AST_TYPE_EXECUTOR)) {
                 receiver=callee->left;

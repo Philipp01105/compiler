@@ -1,5 +1,7 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
+struct Cell<T>{var value:T;}
 
 pub func abi_identity<T>(value: T) -> T {
     return value;
@@ -38,21 +40,21 @@ pub func abi_i8(value: i8) -> i8 {
     return value - 1.(i8);
 }
 
-pub func abi_generic_cell(value: stdlib.Cell<int>) -> int {
-    var copy: stdlib.Cell<int> = abi_identity(value);
+pub func abi_generic_cell(value: Cell<int>) -> int {
+    var copy: Cell<int> = abi_identity(value);
     copy.value = copy.value + 1;
     return copy.value;
 }
 
-pub func abi_generic_option(value: stdlib.Option<stdlib.Cell<int>>) -> int {
-    var copy: stdlib.Option<stdlib.Cell<int>> = abi_identity(value);
+pub func abi_generic_option(value: stdlib.Option<Cell<int>>) -> int {
+    var copy: stdlib.Option<Cell<int>> = abi_identity(value);
     match (copy) {
         Some(cell) => return cell.value;
         None => return -1;
     }
 }
 
-pub func abi_generic_sum_value(value: stdlib.Option<stdlib.Cell<int>>) -> int {
+pub func abi_generic_sum_value(value: stdlib.Option<Cell<int>>) -> int {
     match (value) {
         Some(cell) => return cell.value;
         None => return -1;
@@ -60,9 +62,9 @@ pub func abi_generic_sum_value(value: stdlib.Option<stdlib.Cell<int>>) -> int {
 }
 
 func main() -> void {
-    stdlib.println(abi_ints(1, 2, 3, 4, 5, 6, 7, 8));
-    stdlib.println(abi_floats(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0));
-    stdlib.println(
+    io.println(abi_ints(1, 2, 3, 4, 5, 6, 7, 8));
+    io.println(abi_floats(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0));
+    io.println(
         abi_mixed(
             1,
             2.0,
@@ -85,7 +87,7 @@ func main() -> void {
             19.0
         )
     );
-    stdlib.println(abi_float(1.25, 2.5, 3.75, 4.0, 5.0));
+    io.println(abi_float(1.25, 2.5, 3.75, 4.0, 5.0));
 }
 
 pub func abi_ints(a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int) -> int {

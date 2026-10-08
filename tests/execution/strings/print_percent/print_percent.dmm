@@ -1,10 +1,11 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 func main() -> void {
-    stdlib.print("100% %s %n %%");
-    stdlib.println(" done");
-    stdlib.println("%d %f %p");
+    io.print("100% %s %n %%");
+    io.println(" done");
+    io.println("%d %f %p");
 }
 
 // Category: execution/strings

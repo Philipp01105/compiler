@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 struct Pair {
     var x: int;
@@ -21,22 +22,22 @@ func main() -> void {
     original.x = 1;
     original.y = 2;
     var copy: Pair = changed(original);
-    stdlib.println(original.x);
-    stdlib.println(copy.x);
+    io.println(original.x);
+    io.println(copy.x);
     var assigned: Pair;
     assigned = copy;
     assigned.y = 9;
-    stdlib.println(copy.y);
-    stdlib.println(assigned.y);
+    io.println(copy.y);
+    io.println(assigned.y);
 
     var box: Box;
     box.pair = assigned;
     box.marker = 'Z';
-    stdlib.println(box.pair.x);
-    stdlib.println(box.marker);
+    io.println(box.pair.x);
+    io.println(box.marker);
 
     var items: Pair[2];
     items[1] = box.pair;
-    stdlib.println(items[1].x);
-    stdlib.println(items[1].y);
+    io.println(items[1].x);
+    io.println(items[1].y);
 }

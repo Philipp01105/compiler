@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 func mix(a: int, b: double, c: int, d: float) -> double {
     return a + b + c + d;
@@ -27,10 +28,10 @@ func main() -> void {
     var flag: bit = true;
     var f: float = 1.5;
     var d: double = f;
-    stdlib.println(pass_char(c));
-    stdlib.println(pass_byte(b));
-    stdlib.println(flag == true);
-    stdlib.println(pass_float(f));
-    stdlib.println(pass_double(d + 2.5));
-    stdlib.println(mix(1, 2.5, 3, 4.5));
+    io.println(pass_char(c));
+    io.println(pass_byte(b));
+    io.println(flag == true);
+    io.println(pass_float(f));
+    io.println(pass_double(d + 2.5));
+    io.println(mix(1, 2.5, 3, 4.5));
 }

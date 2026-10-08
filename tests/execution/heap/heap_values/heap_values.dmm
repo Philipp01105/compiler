@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 func set_value(p: *int, value: int) -> void {
     *p = value;
@@ -10,8 +11,8 @@ func main() -> void {
     var second: *double = reserve(double);
     set_value(first, 42);
     *second = 3.5;
-    stdlib.println(*first);
-    stdlib.println(*second);
+    io.println(*first);
+    io.println(*second);
     free(second);
     free(first);
 }

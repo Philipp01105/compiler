@@ -1,4 +1,5 @@
 package io;
+import memraw "stdlib/memory/raw";
 import "stdlib/core";
 extern "system" from "kernel32" {
     func GetStdHandle(kind:u32)->*void;
@@ -11,7 +12,7 @@ func standardRead(fd:int,output:u8[])->core.Result<usize,Error> {
     var requested=output.length;
     if(requested>1073741824) { requested=1073741824; }
     var count:u32=0;
-    var result=ReadFile(GetStdHandle((0-10-fd).(u32)),output.data,requested.(u32),(&count).(*u32),core.null<u8>().(*void));
+    var result=ReadFile(GetStdHandle((0-10-fd).(u32)),output.data,requested.(u32),(&count).(*u32),memraw.null<u8>().(*void));
     if(result==0) {
         var code=GetLastError();
         if(code==109 || code==38) { return core.Result<usize,Error>.Ok(0); }
@@ -24,7 +25,7 @@ func standardWrite(fd:int,input:u8[])->core.Result<usize,Error> {
     var requested=input.length;
     if(requested>1073741824) { requested=1073741824; }
     var count:u32=0;
-    var result=WriteFile(GetStdHandle((0-10-fd).(u32)),input.data,requested.(u32),(&count).(*u32),core.null<u8>().(*void));
+    var result=WriteFile(GetStdHandle((0-10-fd).(u32)),input.data,requested.(u32),(&count).(*u32),memraw.null<u8>().(*void));
     if(result==0) {
         return core.Result<usize,Error>.Err(Error{kind:ErrorKind.System,domain:ErrorDomain.Win32,code:GetLastError().(isize),transferred:count.(usize)});
     }

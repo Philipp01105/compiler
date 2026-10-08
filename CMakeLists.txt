@@ -143,22 +143,22 @@ if (NOT MSVC)
     # Optional native component artifacts exist for ABI tests; applications
     # compile the stdlib runtime packages directly. They are never installed.
     file(GLOB_RECURSE DMM_PLATFORM_SOURCES CONFIGURE_DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/native/threading/*"
+        "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/internal/threading/*"
         "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/native/*.dmm")
     set(DMM_PLATFORM_OBJECT "${CMAKE_CURRENT_BINARY_DIR}/dmm-runtime/${DMM_SHIM_FORMAT}/platform-shim.o")
     set(DMM_PLATFORM_COMPONENT "${CMAKE_CURRENT_BINARY_DIR}/dmm-runtime/${DMM_SHIM_FORMAT}/platform.o")
     set(DMM_EXECUTOR_COMPONENT "${CMAKE_CURRENT_BINARY_DIR}/dmm-runtime/${DMM_SHIM_FORMAT}/executor.o")
-    file(GLOB DMM_EXECUTOR_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/core/executor/*")
+    file(GLOB DMM_EXECUTOR_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/internal/executor/*")
     set(DMM_NETWORK_OBJECT "${CMAKE_CURRENT_BINARY_DIR}/dmm-runtime/${DMM_SHIM_FORMAT}/network-shim.a")
     add_custom_command(OUTPUT "${DMM_PLATFORM_OBJECT}"
         BYPRODUCTS "${DMM_PLATFORM_OBJECT}.link" "${DMM_PLATFORM_COMPONENT}" "${DMM_EXECUTOR_COMPONENT}" "${DMM_EXECUTOR_COMPONENT}.link"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/dmm-runtime/${DMM_SHIM_FORMAT}"
         COMMAND $<TARGET_FILE:compiler> --runtime-component -O1 --target=${DMM_SHIM_FORMAT}
             --dump-native-link "${DMM_PLATFORM_OBJECT}.link"
-            -o "${DMM_PLATFORM_COMPONENT}" "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/native/threading/threading.dmm"
+            -o "${DMM_PLATFORM_COMPONENT}" "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/internal/threading/threading.dmm"
         COMMAND $<TARGET_FILE:compiler> --runtime-component -O1 --target=${DMM_SHIM_FORMAT}
             --dump-native-link "${DMM_EXECUTOR_COMPONENT}.link"
-            -o "${DMM_EXECUTOR_COMPONENT}" "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/core/executor/executor.dmm"
+            -o "${DMM_EXECUTOR_COMPONENT}" "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/internal/executor/executor.dmm"
         COMMAND ${CMAKE_COMMAND} -E rm -f "${DMM_PLATFORM_OBJECT}"
         COMMAND ${CMAKE_AR} qc "${DMM_PLATFORM_OBJECT}" "${DMM_PLATFORM_COMPONENT}" "${DMM_EXECUTOR_COMPONENT}"
         COMMAND ${CMAKE_RANLIB} "${DMM_PLATFORM_OBJECT}"
@@ -170,14 +170,14 @@ if (NOT MSVC)
     add_custom_target(dmm_platform_runtime DEPENDS "${DMM_PLATFORM_OBJECT}")
     set_source_files_properties("${DMM_PLATFORM_OBJECT}" PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
     set_source_files_properties("${DMM_PLATFORM_COMPONENT}" PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
-    file(GLOB DMM_NETWORK_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/core/net/internal/*")
+    file(GLOB DMM_NETWORK_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/internal/net/*")
     set(DMM_NETWORK_COMPONENT "${CMAKE_CURRENT_BINARY_DIR}/dmm-runtime/${DMM_SHIM_FORMAT}/network.o")
     add_custom_command(OUTPUT "${DMM_NETWORK_COMPONENT}"
         BYPRODUCTS "${DMM_NETWORK_COMPONENT}.link"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/dmm-runtime/${DMM_SHIM_FORMAT}"
         COMMAND $<TARGET_FILE:compiler> --runtime-component -O1 --target=${DMM_SHIM_FORMAT}
             --dump-native-link "${DMM_NETWORK_COMPONENT}.link"
-            -o "${DMM_NETWORK_COMPONENT}" "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/core/net/internal/network.dmm"
+            -o "${DMM_NETWORK_COMPONENT}" "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/internal/net/network.dmm"
         DEPENDS compiler ${DMM_NETWORK_SOURCES} ${DMM_PLATFORM_SOURCES}
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" VERBATIM)
     add_custom_target(dmm_network_component DEPENDS "${DMM_NETWORK_COMPONENT}")
@@ -562,7 +562,7 @@ if (BUILD_TESTING)
         -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
         -DCOMPILER=$<TARGET_FILE:compiler>
         -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/stdlib_redesign_allocation_test
-        -DFAULT_FIXTURES=redesign_allocation_faults
+        "-DFAULT_FIXTURES=redesign_allocation_faults;env_allocation_faults"
         -P ${CMAKE_SOURCE_DIR}/tests/collection_allocation_faults_test.cmake)
     set_tests_properties(stdlib_redesign_allocation_contract PROPERTIES
         LABELS "integration;stdlib;ownership;safety;execution" TIMEOUT 180)
@@ -578,6 +578,11 @@ if (BUILD_TESTING)
         -P ${CMAKE_SOURCE_DIR}/tests/stdlib_borrowed_algorithms_test.cmake)
     set_tests_properties(stdlib_borrowed_algorithms_contract PROPERTIES
         LABELS "integration;stdlib;ownership;execution;safety" TIMEOUT 180)
+    add_test(NAME stdlib_process_contract COMMAND ${CMAKE_COMMAND}
+        -DCOMPILER=$<TARGET_FILE:compiler> -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/stdlib_process_test
+        -P ${CMAKE_SOURCE_DIR}/tests/stdlib_process_test.cmake)
+    set_tests_properties(stdlib_process_contract PROPERTIES LABELS "integration;stdlib;ffi;execution;safety" TIMEOUT 240)
     add_test(NAME stdlib_expansion_contract COMMAND ${CMAKE_COMMAND}
         -DCOMPILER=$<TARGET_FILE:compiler> -DASSEMBLER=${DMM_ASSEMBLER}
         -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/stdlib_expansion_test
@@ -587,7 +592,10 @@ if (BUILD_TESTING)
         -DCOMPILER=$<TARGET_FILE:compiler> -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
         -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/stdlib_language_gaps_test
         -P ${CMAKE_SOURCE_DIR}/tests/stdlib_language_gaps_test.cmake)
-    set_tests_properties(stdlib_language_gaps_contract PROPERTIES LABELS "integration;stdlib;execution;safety" TIMEOUT 180)
+    # This gate includes allocation faults, the six-fixture backend matrix and
+    # over 260 ownership/async rejection cases. Allow for slow source filesystem
+    # access in WSL; each compiler and program invocation has its own timeout.
+    set_tests_properties(stdlib_language_gaps_contract PROPERTIES LABELS "integration;stdlib;execution;safety" TIMEOUT 1800)
     add_test(NAME unicode_conformance_contract COMMAND ${CMAKE_COMMAND}
         -DCOMPILER=$<TARGET_FILE:compiler> -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
         -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/unicode_conformance_test
@@ -757,6 +765,22 @@ if (BUILD_TESTING)
 
     file(GLOB_RECURSE DMM_FRONTEND_CORPUS CONFIGURE_DEPENDS
             ${CMAKE_SOURCE_DIR}/tests/execution/*.dmm)
+    find_program(DMM_EXAMPLES_NODE_EXECUTABLE NAMES node nodejs)
+    add_test(NAME json_values_contract COMMAND ${CMAKE_COMMAND}
+            -DCOMPILER=$<TARGET_FILE:compiler> -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+            -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/json_values_test
+            -P ${CMAKE_SOURCE_DIR}/tests/json_values_test.cmake)
+    set_tests_properties(json_values_contract PROPERTIES
+            LABELS "integration;examples;json;ownership;execution" TIMEOUT 300)
+    add_test(NAME application_examples_contract COMMAND ${CMAKE_COMMAND}
+            -DCOMPILER=$<TARGET_FILE:compiler> -DC_DRIVER=${CMAKE_C_COMPILER}
+            -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/application_examples_test
+            -DNODE_EXECUTABLE=${DMM_EXAMPLES_NODE_EXECUTABLE}
+            -P ${CMAKE_SOURCE_DIR}/tests/application_examples_test.cmake)
+    # Five applications, two optimization levels and both object formats, plus
+    # execution checks (including two HTTP deadline tests), need a larger budget.
+    set_tests_properties(application_examples_contract PROPERTIES
+            LABELS "integration;examples;stdlib;ffi;execution" TIMEOUT 600)
     file(GLOB_RECURSE DMM_EXAMPLE_CORPUS CONFIGURE_DEPENDS
             ${CMAKE_SOURCE_DIR}/examples/*.dmm)
 

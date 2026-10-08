@@ -1,8 +1,9 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 func main() -> void {
     if ("yes") {
-        stdlib.println(1);
+        io.println(1);
     }
 }

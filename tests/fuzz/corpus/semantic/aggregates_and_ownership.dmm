@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 enum PacketKind(id: int, name: string, reliable: bit, weight: double) {
     data(10, "data", true, 1.25),
@@ -87,7 +88,7 @@ func main() -> void {
     var label: string = "packet=" + kind.name + ",id=" + kind.id + ",reliable=" + kind.reliable + ",checksum=" + buffer.checksum + ",allocated=" + allocated_value(
         buffer.used
     ) + ",weight=" + * manual;
-    stdlib.println(label);
+    io.println(label);
     free(label);
     free(manual);
 }

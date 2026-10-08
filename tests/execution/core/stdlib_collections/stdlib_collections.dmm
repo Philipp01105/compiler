@@ -1,172 +1,47 @@
 package main;
-import (
-    "stdlib"
-    "stdlib/collections"
-    "stdlib/memory"
-);
-var drops: int;
-
-struct Resource {
-    var value: int;
-    destructor {
-        drops += 1;
-    }
+import ("stdlib/core" "stdlib/collections" "stdlib/memory");
+var drops:int;
+struct Resource{var value:int;destructor{drops+=1;}}
+func hash(value:&i32)->u64{return 1;}
+func same(left:&i32,right:&i32)->bit{return *left==*right;}
+func option(value:core.Option<i32>,expected:i32)->bit{match(value){Some(item)=>return item==expected;None=>return false;}}
+func lookup(values:&collections.Map<i32,i32>,key:i32,expected:i32)->bit{
+    match(values.get(&key)){Some(value)=>return *value==expected;None=>return false;}
 }
-
-func hash(value: i32) -> u64 {
-    return 1;
+func check()->core.Result<int,collections.Error>{
+    var list=collections.list<i32>();list.append(2)?;list.insert(0,1)?;
+    var data:i32[2]=[3,4];var input=data[:];list.appendSlice(&input)?;
+    if(list.length()!=4){return core.Result<int,collections.Error>.Ok(2);}
+    if(!option(list.remove(1),2)||!option(list.pop(),4)||*list.get(1)!=3){return core.Result<int,collections.Error>.Ok(3);}
+    list.ensureCapacity(32)?;if(list.capacity()!=32){return core.Result<int,collections.Error>.Ok(4);}
+    list.truncate(1);list.clear();
+    match(list.ensureCapacity(9223372036854775807.(usize))){Ok=>return core.Result<int,collections.Error>.Ok(22);Err(error)=>{if(error!=core.AllocError.CapacityOverflow){return core.Result<int,collections.Error>.Ok(22);}}}
+    if(list.length()!=0||list.capacity()!=32){return core.Result<int,collections.Error>.Ok(22);}
+    match(testRing<i32>(1)){
+        Err(error)=>return core.Result<int,collections.Error>.Ok(6);
+        Ok(ring)=>{
+            for(var i:i32=0;i<50;i+=1){if(ring.pushBack(i)!=TestStatus.None){return core.Result<int,collections.Error>.Ok(7);}}
+            for(var i:i32=0;i<25;i+=1){if(!option(ring.popFront(),i)){return core.Result<int,collections.Error>.Ok(8);}}
+            if(ring.pushFront(99)!=TestStatus.None||!option(ring.popFront(),99)){return core.Result<int,collections.Error>.Ok(9);}
+            if(!option(ring.popBack(),49)||ring.get(0)!=25){return core.Result<int,collections.Error>.Ok(10);}
+        }
+    }
+    var map=collections.map<i32,i32>(hash,same)?;
+    for(var i:i32=0;i<100;i+=1){map.insert(i,i*2)?;}
+    for(var i:i32=0;i<100;i+=1){if(!lookup(&map,i,i*2)){return core.Result<int,collections.Error>.Ok(12);}}
+    var key:i32=20;if(!option(map.remove(&key),40)){return core.Result<int,collections.Error>.Ok(13);}
+    map.insert(21,7)?;
+    if(!lookup(&map,21,7)||map.length()!=99){return core.Result<int,collections.Error>.Ok(13);}
+    for(var i:i32=0;i<100;i+=1){map.remove(&i);}
+    for(var i:i32=100;i<200;i+=1){map.insert(i,i)?;if(!lookup(&map,i,i)){return core.Result<int,collections.Error>.Ok(23);}}
+    map.clear();if(map.length()!=0){return core.Result<int,collections.Error>.Ok(24);}
+    var set=collections.set<i32>(hash,same)?;set.insert(1)?;set.insert(1)?;var item:i32=1;
+    if(set.length()!=1||!set.contains(&item)||!option(set.remove(&item),1)||set.contains(&item)){return core.Result<int,collections.Error>.Ok(14);}
+    {var owner=memory.box(Resource{value:42})?;if(owner.get().value!=42){return core.Result<int,collections.Error>.Ok(16);}}
+    if(drops!=1){return core.Result<int,collections.Error>.Ok(17);}
+    {var owner=memory.box<i32>(1)?;*owner.getMut()=7;if(*owner.get()!=7){return core.Result<int,collections.Error>.Ok(26);}}
+    var buffer=collections.buffer<u8>(16,0)?;*buffer.getMut(0)=7;
+    if(*buffer.get(0)!=7||buffer.length()!=16){return core.Result<int,collections.Error>.Ok(20);}
+    return core.Result<int,collections.Error>.Ok(0);
 }
-
-func same(a: i32, b: i32) -> bit {
-    return a == b;
-}
-
-func option(value: stdlib.Option<i32>, expected: i32) -> bit {
-    match (value) {
-        Some(item) => return item == expected;
-        None => return false;
-    }
-}
-
-func main() -> int {
-    var list = stdlib.list<i32>(0);
-    if (
-        list.push(2) != stdlib.AllocationError.None ||
-        list.insert(0, 1) != stdlib.AllocationError.None
-    ) {
-        return 1;
-    }
-    var data: i32[2] = [3, 4];
-    if (list.append(data) != stdlib.AllocationError.None || list.length() != 4) {
-        return 2;
-    }
-    if (!option(list.remove(1), 2) || !option(list.pop(), 4) || list.get(1) != 3) {
-        return 3;
-    }
-    if (list.ensureCapacity(32) != stdlib.AllocationError.None || list.capacity() != 32) {
-        return 4;
-    }
-    list.truncate(1);
-    list.clear();
-    if (list.length() != 0) {
-        return 5;
-    }
-    if (
-        list.ensureCapacity(9223372036854775807.(usize)) != stdlib.AllocationError.CapacityOverflow ||
-        list.length() != 0 ||
-        list.capacity() != 32
-    ) {
-        return 22;
-    }
-    var created = collections.deque<i32>(1);
-    match (created) {
-        Err(error) => return 6;
-        Ok(deque) => {
-            for (var i: i32 = 0; i < 50; i += 1) {
-                if (deque.pushBack(i) != stdlib.AllocationError.None) {
-                    return 7;
-                }
-            }
-            for (var i: i32 = 0; i < 25; i += 1) {
-                if (!option(deque.popFront(), i)) {
-                    return 8;
-                }
-            }
-            if (
-                deque.pushFront(99) != stdlib.AllocationError.None ||
-                !option(deque.popFront(), 99)
-            ) {
-                return 9;
-            }
-            if (!option(deque.popBack(), 49) || deque.get(0) != 25) {
-                return 10;
-            }
-        }
-    }
-    var map = collections.hashMap<i32, i32>(hash, same);
-    for (var i: i32 = 0; i < 100; i += 1) {
-        if (map.insert(i, i * 2) != stdlib.AllocationError.None) {
-            return 11;
-        }
-    }
-    for (var i: i32 = 0; i < 100; i += 1) {
-        if (!option(map.get(i), i * 2)) {
-            return 12;
-        }
-    }
-    if (
-        !option(map.remove(20), 40) ||
-        map.insert(21, 7) != stdlib.AllocationError.None ||
-        !option(map.get(21), 7) ||
-        map.length() != 99
-    ) {
-        return 13;
-    }
-    for (var i: i32 = 0; i < 100; i += 1) {
-        map.remove(i);
-    }
-    for (var i: i32 = 100; i < 200; i += 1) {
-        if (map.insert(i, i) != stdlib.AllocationError.None || !option(map.get(i), i)) {
-            return 23;
-        }
-    }
-    map.clear();
-    if (map.length() != 0) {
-        return 24;
-    }
-    var set = collections.hashSet<i32>(hash, same);
-    set.insert(1);
-    set.insert(1);
-    if (set.length() != 1 || !set.contains(1) || !set.remove(1) || set.contains(1)) {
-        return 14;
-    }
-    var owned = memory.box<Resource>(Resource{ value: 42 });
-    match (owned) {
-        Err(error) => return 15;
-        Ok(value) => {
-            var borrow = value.get();
-            if (borrow.value != 42) {
-                return 16;
-            }
-        }
-    }
-    if (drops != 1) {
-        return 17;
-    }
-    var scalar = memory.box<i32>(1);
-    match (scalar) {
-        Err(error) => return 25;
-        Ok(value) => {
-            {
-                var borrow = value.getMut();
-                *borrow = 7;
-            }
-            var borrow = value.get();
-            if (*borrow != 7) {
-                return 26;
-            }
-        }
-    }
-    var region = memory.arena(16);
-    match (region) {
-        Err(error) => return 18;
-        Ok(arena) => {
-            var allocation = arena.allocate(8);
-            match (allocation) {
-                Err(error) => return 19;
-                Ok(offset) => {
-                    var view = arena.region(offset, 8);
-                    view[0] = 7;
-                    if (view[0] != 7) {
-                        return 20;
-                    }
-                }
-            }
-            arena.reset();
-            if (arena.length() != 0) {
-                return 21;
-            }
-        }
-    }
-    return 0;
-}
+func main()->int{match(check()){Ok(code)=>return code;Err(error)=>return 99;}}

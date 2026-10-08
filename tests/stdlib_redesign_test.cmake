@@ -31,6 +31,28 @@ function(reject name source expected)
         message(FATAL_ERROR "Stdlib redesign ${name} rejection: ${status} ${errors}")
     endif()
 endfunction()
+foreach(component executor net threading system)
+    reject(internal_${component}
+        "import \"stdlib/internal/${component}\"; func main()->int{return 0;}"
+        "internal")
+endforeach()
+reject(map_retained_reference [=[
+import ("stdlib/core" "stdlib/collections");
+struct Reader<'a>{var source:&'a int;}
+func hash(value:&int)->u64{return (*value).(u64);}
+func same(left:&int,right:&int)->bit{return *left==*right;}
+func main()->int{
+ var source:int=1;
+ match(collections.map<int,Reader>(hash,same)){
+  Ok(values)=>{
+   match(values.insert(1,Reader{source:&source})){Ok=>{}Err(error)=>return 1;}
+   source=2;var key:int=1;
+   match(values.get(&key)){Some(value)=>return *value.source;None=>return 1;}
+  }
+  Err(error)=>return 1;
+ }
+}
+]=] "borrow")
 reject(result_default [=[
 import "stdlib/core";
 func main()->int {var value:core.Result<int,int>; match(value){Ok(number)=>return number;Err(error)=>return error;}}

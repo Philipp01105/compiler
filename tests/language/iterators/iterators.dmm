@@ -1,5 +1,5 @@
 package main;
-import ("stdlib" "stdlib/core");
+import (stdlib "stdlib/core" "stdlib/core");
 var factories:i32=0;
 var advances:i32=0;
 var sources:i32=0;

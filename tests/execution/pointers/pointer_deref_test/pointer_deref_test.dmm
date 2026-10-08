@@ -1,58 +1,59 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 // Test pointer dereferencing, address-of, and writes through heap pointers.
 
 // Test 1: Basic pointer and dereference
 func test1_basic_deref() -> void {
-    stdlib.println("[TEST 1] Basic pointer dereference");
+    io.println("[TEST 1] Basic pointer dereference");
     var x: int = 42;
     var p: *int = (&x).(*int); // Explicit checked-borrow to raw-pointer boundary
     var value: int = *p; // Dereference p to get value
-    stdlib.print("Original value: ");
-    stdlib.println(x);
-    stdlib.print("Value through pointer: ");
-    stdlib.println(value);
-    stdlib.println("  [OK] Basic dereference works");
+    io.print("Original value: ");
+    io.println(x);
+    io.print("Value through pointer: ");
+    io.println(value);
+    io.println("  [OK] Basic dereference works");
 }
 
 // Test 2: Multiple int pointers
 func test2_multiple_pointers() -> void {
-    stdlib.println("[TEST 2] Multiple int pointers");
+    io.println("[TEST 2] Multiple int pointers");
     var a: int = 100;
     var b: int = 200;
     var pa: *int = (&a).(*int);
     var pb: *int = (&b).(*int);
-    stdlib.print("First value: ");
-    stdlib.println(*pa);
-    stdlib.print("Second value: ");
-    stdlib.println(*pb);
-    stdlib.println("  [OK] Multiple pointers work");
+    io.print("First value: ");
+    io.println(*pa);
+    io.print("Second value: ");
+    io.println(*pb);
+    io.println("  [OK] Multiple pointers work");
 }
 
 // Test 3: Heap allocated pointer dereference
 func test3_heap_deref() -> void {
-    stdlib.println("[TEST 3] Heap allocated pointer dereference");
+    io.println("[TEST 3] Heap allocated pointer dereference");
     var p: *int = reserve(int);
     *p = 73;
     {
         var _output0: string = "Heap value: " + * p;
-        stdlib.println(_output0);
+        io.println(_output0);
         free(_output0);
     }
     free(p);
-    stdlib.println("  [OK] Heap pointer freed");
+    io.println("  [OK] Heap pointer freed");
 }
 
 func main() -> void {
-    stdlib.println("============================================");
-    stdlib.println("  POINTER DEREFERENCE TEST");
-    stdlib.println("============================================");
-    stdlib.println("");
+    io.println("============================================");
+    io.println("  POINTER DEREFERENCE TEST");
+    io.println("============================================");
+    io.println("");
     test1_basic_deref();
     test2_multiple_pointers();
     test3_heap_deref();
-    stdlib.println("");
-    stdlib.println("============================================");
-    stdlib.println("  ALL TESTS PASSED!");
-    stdlib.println("============================================");
+    io.println("");
+    io.println("============================================");
+    io.println("  ALL TESTS PASSED!");
+    io.println("============================================");
 }

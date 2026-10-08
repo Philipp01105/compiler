@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 enum test(id: int, name: string) {
     In(1, "test"),
@@ -7,18 +8,18 @@ enum test(id: int, name: string) {
 }
 
 func main() -> void {
-    stdlib.print("In id: ");
-    stdlib.print(test.In.id);
-    stdlib.println("");
-    stdlib.print("Out id: ");
-    stdlib.print(test.Out.id);
-    stdlib.println("");
-    stdlib.print("In name: ");
-    stdlib.print(test.In.name);
-    stdlib.println("");
-    stdlib.print("Out name: ");
-    stdlib.print(test.Out.name);
-    stdlib.println("");
+    io.print("In id: ");
+    io.print(test.In.id);
+    io.println("");
+    io.print("Out id: ");
+    io.print(test.Out.id);
+    io.println("");
+    io.print("In name: ");
+    io.print(test.In.name);
+    io.println("");
+    io.print("Out name: ");
+    io.print(test.Out.name);
+    io.println("");
 }
 
 // Category: execution/enums

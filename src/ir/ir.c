@@ -1488,9 +1488,9 @@ void ir_select_runtime_functions(IrModule *module) {
         int user_unit=!fn->source_program->module_identity ||
             strncmp(fn->source_program->module_identity,"stdlib",6)!=0;
         int provider = fn->source_program->package &&
-            (!strcmp(fn->source_program->package->path,"stdlib/native/threading") ||
-             !strcmp(fn->source_program->package->path,"stdlib/core/executor") ||
-             !strcmp(fn->source_program->package->path,"stdlib/core/net/internal"));
+            (!strcmp(fn->source_program->package->path,"stdlib/internal/threading") ||
+             !strcmp(fn->source_program->package->path,"stdlib/internal/executor") ||
+             !strcmp(fn->source_program->package->path,"stdlib/internal/net"));
         fn->emission_reachable=fn->is_package_init||fn->is_package_cleanup||
             (fn->is_native_export && !provider)||
             user_unit||
@@ -1518,7 +1518,7 @@ void ir_select_runtime_functions(IrModule *module) {
             IrFunction *fn=&module->functions[f];
             if(fn->is_native_export) required|=RUNTIME_REQUIRE_PLATFORM;
             if(fn->source_program->package &&
-               !strcmp(fn->source_program->package->path,"stdlib/core/net/internal"))
+               !strcmp(fn->source_program->package->path,"stdlib/internal/net"))
                 required|=RUNTIME_REQUIRE_NETWORK;
         }
         for(size_t n=0;n<module->native_import_count;n++)
@@ -1534,9 +1534,9 @@ void ir_select_runtime_functions(IrModule *module) {
             IrFunction *fn=&module->functions[f];
             if(!fn->is_native_export || !fn->source_program->package) continue;
             const char *path=fn->source_program->package->path;
-            int needed=(!strcmp(path,"stdlib/native/threading") && (required&RUNTIME_REQUIRE_PLATFORM)) ||
-                (!strcmp(path,"stdlib/core/executor") && (required&RUNTIME_REQUIRE_EXECUTOR)) ||
-                (!strcmp(path,"stdlib/core/net/internal") && (required&RUNTIME_REQUIRE_NETWORK));
+            int needed=(!strcmp(path,"stdlib/internal/threading") && (required&RUNTIME_REQUIRE_PLATFORM)) ||
+                (!strcmp(path,"stdlib/internal/executor") && (required&RUNTIME_REQUIRE_EXECUTOR)) ||
+                (!strcmp(path,"stdlib/internal/net") && (required&RUNTIME_REQUIRE_NETWORK));
             if(needed && !fn->emission_reachable) { fn->emission_reachable=1; changed=1; }
         }
         for(size_t f=0;f<module->function_count;f++) if(module->functions[f].emission_reachable) {

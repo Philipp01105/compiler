@@ -1,0 +1,9 @@
+package main;
+import memraw "stdlib/memory/raw";
+import ("stdlib/core" "stdlib/collections");
+func testList<T>(capacity:usize)->collections.List<T> {
+ var value=collections.list<T>();match(value.ensureCapacity(capacity)){Ok=>{}Err(error)=>{memraw.core_trap();}}return value;
+}
+func testMap<K,V>(hash:func(&K)->u64,equal:func(&K,&K)->bit)->collections.Map<K,V> {
+ match(collections.map<K,V>(hash,equal)){Ok(value)=>return value;Err(error)=>{memraw.core_trap();}}
+}

@@ -1,8 +1,9 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 func effect() -> bit {
-    stdlib.println("unexpected");
+    io.println("unexpected");
     return true;
 }
 
@@ -42,17 +43,17 @@ func guarded(n: int, divisor: int) -> int {
 
 func main() -> void {
     if (true) {
-        stdlib.println("branch");
+        io.println("branch");
     } else {
-        stdlib.println("unexpected");
+        io.println("unexpected");
     }
     while (false) {
-        stdlib.println("unexpected");
+        io.println("unexpected");
     }
-    stdlib.println(false && effect());
-    stdlib.println(true || effect());
-    stdlib.println(invariant(3, 4));
-    stdlib.println(repeated(1));
-    stdlib.println(changed(1));
-    stdlib.println(guarded(0, 0));
+    io.println(false && effect());
+    io.println(true || effect());
+    io.println(invariant(3, 4));
+    io.println(repeated(1));
+    io.println(changed(1));
+    io.println(guarded(0, 0));
 }

@@ -1,0 +1,62 @@
+package env;
+import ("stdlib/core" "stdlib/collections" "stdlib/text" raw "stdlib/memory/raw" "stdlib/sync");
+extern "system" from "dmm_runtime" {
+    func argumentCount()->usize="__dmm_process_argc";
+    func argumentVector()->**u8="__dmm_process_argv";
+}
+extern "system" from "c" {
+    func getcwd(buffer:*u8,size:usize)->*u8;
+    func chdir(path:*u8)->i32;
+    func posix_spawnp(pid:*i32,file:*u8,actions:*void,attributes:*void,args:**u8,environment:**u8)->i32;
+    func waitpid(pid:i32,status:*i32,options:i32)->i32;
+}
+extern "system" from "dl" {func dlsym(handle:*void,name:*u8)->*void;}
+pub func args()->core.Result<collections.List<collections.List<u8>>,Error> {
+    var output=collections.list<collections.List<u8>>();
+    var count=argumentCount();var arguments=argumentVector();
+    for(var i:usize=1;i<count;i+=1){
+        var value=arguments[i];var length:usize=0;while(value[length]!=0){length+=1;}
+        var bytes=slice(value,length);var item=collections.list<u8>();item.appendSlice(&bytes)?;output.append(item)?;
+    }
+    return core.Result<collections.List<collections.List<u8>>,Error>.Ok(output);
+}
+pub func cwd()->core.Result<collections.List<u8>,Error> {
+    var guard=sync.lock(&stateLock);var capacity:usize=256;
+    while(true) {
+        var storage=collections.buffer<u8>(capacity,0)?;var bytes=storage.view();
+        if(getcwd(bytes.data,capacity)!=raw.null<u8>()) {
+            var count:usize=0;while(bytes[count]!=0){count+=1;}
+            var output=collections.list<u8>();var value=bytes[:count];output.appendSlice(&value)?;
+            return core.Result<collections.List<u8>,Error>.Ok(output);
+        }
+        var code=*errnoAddress();if(code!=34){return core.Result<collections.List<u8>,Error>.Err(failure(ErrorKind.System,code.(isize)));}
+        if(capacity>1073741824){return core.Result<collections.List<u8>,Error>.Err(failure(ErrorKind.CapacityOverflow,0));}capacity*=2;
+    }
+    return core.Result<collections.List<u8>,Error>.Err(failure(ErrorKind.System,0));
+}
+pub func setCwd(path:u8[])->core.Result<void,Error> {
+    if(!validValue(path)||path.length==0){return core.Result<void,Error>.Err(failure(ErrorKind.InvalidValue,0));}
+    var value=terminated(path)?;var bytes=value.view();var guard=sync.lock(&stateLock);
+    if(chdir(bytes.data)!=0){return core.Result<void,Error>.Err(failure(ErrorKind.System,(*errnoAddress()).(isize)));}
+    return core.Result<void,Error>.Ok;
+}
+pub func run(fileBytes:u8[],args:&Argument[])->core.Result<ExitStatus,Error> {
+    if(!validValue(fileBytes)||fileBytes.length==0){return core.Result<ExitStatus,Error>.Err(failure(ErrorKind.InvalidValue,0));}
+    var strings=collections.list<collections.List<u8>>();strings.append(terminated(fileBytes)?)?;
+    for(var i:usize=0;i<args.length;i+=1){var input=args[i].bytes;if(!validValue(input)){return core.Result<ExitStatus,Error>.Err(failure(ErrorKind.InvalidValue,0));}strings.append(terminated(input)?)?;}
+    var pointers=collections.list<*u8>();
+    for(var &value=strings){var bytes=value.view();pointers.append(bytes.data)?;}
+    pointers.append(raw.null<u8>())?;var argv=pointers.view();var pid:i32;
+    {
+        var guard=sync.lock(&stateLock);
+        var name=text.bytes("environ");var symbol=dlsym(raw.core_null().(*void),name.data);
+        if(symbol==raw.core_null().(*void)){return core.Result<ExitStatus,Error>.Err(failure(ErrorKind.System,0));}
+        var environment=*symbol.(***u8);
+        var code=posix_spawnp((&pid).(*i32),argv[0],raw.core_null().(*void),raw.core_null().(*void),argv.data,environment);
+        if(code!=0){var kind=ErrorKind.System;if(code==2){kind=ErrorKind.NotFound;}if(code==13){kind=ErrorKind.AccessDenied;}return core.Result<ExitStatus,Error>.Err(failure(kind,code.(isize)));}
+    }
+    var status:i32;
+    while(waitpid(pid,(&status).(*i32),0)<0){var code=*errnoAddress();if(code!=4){return core.Result<ExitStatus,Error>.Err(failure(ErrorKind.System,code.(isize)));}}
+    if(status%128==0){return core.Result<ExitStatus,Error>.Ok(ExitStatus.Code((status/256)%256));}
+    return core.Result<ExitStatus,Error>.Ok(ExitStatus.Signal(status%128));
+}

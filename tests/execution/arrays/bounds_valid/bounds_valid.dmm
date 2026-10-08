@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 func sum(a: int[]) -> int {
     var total: int = 0;
@@ -16,7 +17,7 @@ func main() -> void {
     values[2] = 3;
     values[3] = 4;
     values[4] = 5;
-    stdlib.println(values[0]);
-    stdlib.println(values[4]);
-    stdlib.println(sum(values));
+    io.println(values[0]);
+    io.println(values[4]);
+    io.println(sum(values));
 }

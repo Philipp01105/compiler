@@ -1,6 +1,0 @@
-/* main
-Core syntax through a score report: constants, structs, methods, overloads, never-returning validation, arrays, slices, casts and metadata.
-*/
-
-module dmm.example/language_tour
-dmm 2026-09-22-dev

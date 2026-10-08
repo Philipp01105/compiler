@@ -1,5 +1,0 @@
-package stdlib;
-import "stdlib/core";
-pub func optionOr<T>(value:Option<T>, fallback:once func()->T)->T {
-    return core.unwrapOrElse(value,fallback);
-}

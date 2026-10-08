@@ -1,16 +1,17 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 struct Resource {
     var id: int;
 
     destructor {
-        stdlib.println(id);
+        io.println(id);
     }
 }
 
 func calculate(value: int) -> int {
-    stdlib.println(value);
+    io.println(value);
     return value;
 }
 
@@ -30,6 +31,6 @@ var resource: Resource = acquire(9);
 var values: int[] = sequence(second);
 
 func main() -> int {
-    stdlib.println(values[1]);
+    io.println(values[1]);
     return 0;
 }

@@ -1,6 +1,0 @@
-/* main
-Module imports, aliases, public APIs and cleanup of package-stored values.
-*/
-
-module dmm.example/packages
-dmm 2026-09-22-dev

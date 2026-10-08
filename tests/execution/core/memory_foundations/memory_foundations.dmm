@@ -1,5 +1,7 @@
 package main;
-import "stdlib";
+import memraw "stdlib/memory/raw";
+import "stdlib/io";
+import stdlib "stdlib/core";
 import "stdlib/core";
 
 struct Node {
@@ -32,7 +34,7 @@ func identity<T>(value: T) -> T {
 }
 
 func allocate_values(count: usize) -> i32[] {
-    return core.alloc<i32>(count);
+    return memraw.alloc<i32>(count);
 }
 
 func forward(values: i32[]) -> i32[] {
@@ -133,15 +135,15 @@ func main() -> int {
     if (extracted.length != 3 || extracted[2] != 11) {
         return 10;
     }
-    var node = core.alloc<Node>();
-    if (node == core.null<Node>()) {
+    var node = memraw.alloc<Node>();
+    if (node == memraw.null<Node>()) {
         return 11;
     }
-    if ((*node).value != 0 || (*node).next != core.null<Node>() || (*node).children.length != 0) {
+    if ((*node).value != 0 || (*node).next != memraw.null<Node>() || (*node).children.length != 0) {
         return 12;
     }
     (*node).value = 123;
-    (*node).children = core.alloc<Node>(2);
+    (*node).children = memraw.alloc<Node>(2);
     if ((*node).children.length != 2 || (*node).children[1].value != 0) {
         return 13;
     }
@@ -149,8 +151,8 @@ func main() -> int {
     if ((*node).children[0].value != 0 || (*node).children[1].value != 456) {
         return 14;
     }
-    core.release((*node).children);
-    core.release(node);
+    memraw.release((*node).children);
+    memraw.release(node);
     var values = allocate_values(4);
     if (values.length != 4 || values[0] != 0 || values[3] != 0) {
         return 15;
@@ -159,53 +161,53 @@ func main() -> int {
     if (forward(values)[3] != 17) {
         return 16;
     }
-    core.release(values);
-    var empty = core.alloc<u8>(0);
-    if (empty.length != 0 || empty.data != core.null<u8>()) {
+    memraw.release(values);
+    var empty = memraw.alloc<u8>(0);
+    if (empty.length != 0 || empty.data != memraw.null<u8>()) {
         return 17;
     }
-    core.release(empty);
-    var failed = core.alloc<i64>(18446744073709551615.(usize));
-    if (failed.length != 0 || failed.data != core.null<i64>()) {
+    memraw.release(empty);
+    var failed = memraw.alloc<i64>(18446744073709551615.(usize));
+    if (failed.length != 0 || failed.data != memraw.null<i64>()) {
         return 18;
     }
-    core.release(failed);
-    var byte_value = core.alloc<u8>();
-    if (byte_value == core.null<u8>()) {
+    memraw.release(failed);
+    var byte_value = memraw.alloc<u8>();
+    if (byte_value == memraw.null<u8>()) {
         return 19;
     }
     *byte_value = 255;
     if (*byte_value != 255 || identity<u8>(255) != 255) {
         return 20;
     }
-    core.release(byte_value);
-    var descriptor = core.alloc<i32[]>();
-    if (descriptor == core.null<i32[]>()) {
+    memraw.release(byte_value);
+    var descriptor = memraw.alloc<i32[]>();
+    if (descriptor == memraw.null<i32[]>()) {
         return 21;
     }
     *descriptor = borrowed;
     if ((*descriptor).length != 3 || (*descriptor)[0] != 2) {
         return 22;
     }
-    core.release(descriptor);
-    var real = core.alloc<float>();
-    if (real == core.null<float>()) {
+    memraw.release(descriptor);
+    var real = memraw.alloc<float>();
+    if (real == memraw.null<float>()) {
         return 23;
     }
     *real = 1.25;
     if (*real != 1.25) {
         return 24;
     }
-    var wide = core.alloc<double>();
-    if (wide == core.null<double>()) {
-        core.release(real);
+    var wide = memraw.alloc<double>();
+    if (wide == memraw.null<double>()) {
+        memraw.release(real);
         return 29;
     }
     if (floating_pointers(real, 2.5, wide, 4.25) != 6.75 || *real != 2.5 || *wide != 4.25) {
         return 30;
     }
-    core.release(wide);
-    core.release(real);
+    memraw.release(wide);
+    memraw.release(real);
     var floating_values: float[2];
     floating_values[0] = 1.25;
     if (floating_array(floating_values, 2.5) != 3.75 || floating_values[1] != 2.5) {
@@ -233,6 +235,6 @@ func main() -> int {
         return 28;
     }
     free(descriptor2);
-    stdlib.println("memory foundations");
+    io.println("memory foundations");
     return 0;
 }

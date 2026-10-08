@@ -1,4 +1,5 @@
 package io;
+import memraw "stdlib/memory/raw";
 import ("stdlib/core" "stdlib/collections");
 
 pub enum ErrorKind {
@@ -51,7 +52,7 @@ pub func readExact<R:Reader>(source:&mut R,output:&mut u8[])->core.Result<void,E
             Err(error)=>{ error.transferred+=offset; return core.Result<void,Error>.Err(error); }
             Ok(count)=>{
                 if(count==0) { return core.Result<void,Error>.Err(failure(ErrorKind.UnexpectedEof,offset)); }
-                if(count>remaining.length) { core.core_trap(); }
+                if(count>remaining.length) { memraw.core_trap(); }
                 offset+=count;
             }
         }
@@ -66,7 +67,7 @@ pub func writeAll<W:Writer>(target:&mut W,input:&u8[])->core.Result<void,Error> 
             Err(error)=>{ error.transferred+=offset; return core.Result<void,Error>.Err(error); }
             Ok(count)=>{
                 if(count==0) { return core.Result<void,Error>.Err(failure(ErrorKind.WriteZero,offset)); }
-                if(count>remaining.length) { core.core_trap(); }
+                if(count>remaining.length) { memraw.core_trap(); }
                 offset+=count;
             }
         }
@@ -84,9 +85,14 @@ pub func readToEnd<R:Reader>(source:&mut R,target:&mut collections.List<u8>,maxi
         match(source.read(&mut destination)) {
             Err(error)=>{ error.transferred+=total; return core.Result<usize,Error>.Err(error); }
             Ok(read)=>{
-                if(read>count) { core.core_trap(); }
+                if(read>count) { memraw.core_trap(); }
                 if(read==0) { break; }
                 if(read>maximum-total) {
+                    var prefix=scratch[:maximum-total];
+                    match(target.appendSlice(&prefix)) {
+                        Ok=>{}
+                        Err(error)=>{var converted=Error.fromResidual(error);converted.transferred=total+read;return core.Result<usize,Error>.Err(converted);}
+                    }
                     return core.Result<usize,Error>.Err(failure(ErrorKind.LimitExceeded,total+read));
                 }
                 var input=scratch[:read];
@@ -121,7 +127,7 @@ pub func copy<R:Reader,W:Writer>(source:&mut R,target:&mut W)->core.Result<usize
             Err(error)=>{error.transferred=total; return core.Result<usize,Error>.Err(error);}
         }
         if(read==0) { break; }
-        if(read>destination.length) { core.core_trap(); }
+        if(read>destination.length) { memraw.core_trap(); }
         var input=scratch[:read];
         match(writeAll(target,&input)) {
             Ok=>{}

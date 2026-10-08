@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 func folded() -> int {
     var i = 0;
@@ -14,7 +15,7 @@ func folded() -> int {
 func side_effects() -> int {
     var i = 0;
     while (i < 3) {
-        stdlib.println(i);
+        io.println(i);
         i += 1;
     }
     return i;
@@ -36,8 +37,8 @@ func same_source(x: int) -> int {
 }
 
 func main() -> void {
-    stdlib.println(folded());
-    stdlib.println(side_effects());
-    stdlib.println(inclusive());
-    stdlib.println(same_source(7));
+    io.println(folded());
+    io.println(side_effects());
+    io.println(inclusive());
+    io.println(same_source(7));
 }

@@ -1,4 +1,5 @@
 package collections;
+import memraw "stdlib/memory/raw";
 import "stdlib/core";
 
 func growStorage<T>(storage:&mut *T, slots:&mut usize, count:usize, capacity:usize)
@@ -7,14 +8,14 @@ func growStorage<T>(storage:&mut *T, slots:&mut usize, count:usize, capacity:usi
     if(capacity>9223372036854775807.(usize)/sizeof(T)) {
         return core.Result<void,core.AllocError>.Err(core.AllocError.CapacityOverflow);
     }
-    var grown:*T=core.core_alloc(capacity*sizeof(T)).(*T);
-    if(grown==core.null<T>()) {
+    var grown:*T=memraw.core_alloc(capacity*sizeof(T)).(*T);
+    if(grown==memraw.null<T>()) {
         return core.Result<void,core.AllocError>.Err(core.AllocError.OutOfMemory);
     }
     for(var i:usize=0;i<count;i+=1) {
-        core.initialize<T>(&grown[i],take((*storage)[i]));
+        memraw.initialize<T>(&grown[i],take((*storage)[i]));
     }
-    core.core_release((*storage).(*u8));
+    memraw.core_release((*storage).(*u8));
     *storage=grown; *slots=capacity;
     return core.Result<void,core.AllocError>.Ok;
 }
@@ -42,7 +43,7 @@ func growStorage<T>(storage:&mut *T, slots:&mut usize, count:usize, capacity:usi
             }
             growStorage<T>(&mut storage,&mut slots,count,capacity)?;
         }
-        core.initialize<T>(&storage[count],value); count+=1;
+        memraw.initialize<T>(&storage[count],value); count+=1;
         return core.Result<void,core.AllocError>.Ok;
     }
     pub func appendSlice(values:&T[])->core.Result<void,core.AllocError> where T:core.Copy {
@@ -53,13 +54,13 @@ func growStorage<T>(storage:&mut *T, slots:&mut usize, count:usize, capacity:usi
         growStorage<T>(&mut storage,&mut slots,count,count+values.length)?;
         for(var i:usize=0;i<values.length;i+=1) {
             var value:T=(*values)[i];
-            core.initialize<T>(&storage[count+i],value);
+            memraw.initialize<T>(&storage[count+i],value);
         }
         count+=values.length;
         return core.Result<void,core.AllocError>.Ok;
     }
     pub func insert(index:usize,value:T)->core.Result<void,core.AllocError> {
-        if(index>count) { core.core_trap(); }
+        if(index>count) { memraw.core_trap(); }
         if(count==slots) {
             var capacity:usize=8;
             if(slots>0) {
@@ -72,17 +73,17 @@ func growStorage<T>(storage:&mut *T, slots:&mut usize, count:usize, capacity:usi
         }
         var end:usize=count;
         while(end>index) {
-            core.initialize<T>(&storage[end],take(storage[end-1])); end-=1;
+            memraw.initialize<T>(&storage[end],take(storage[end-1])); end-=1;
         }
-        core.initialize<T>(&storage[index],value); count+=1;
+        memraw.initialize<T>(&storage[index],value); count+=1;
         return core.Result<void,core.AllocError>.Ok;
     }
     pub func get(index:usize)->&T {
-        if(index>=count) { core.core_trap(); }
+        if(index>=count) { memraw.core_trap(); }
         return &self.storage[index];
     }
     pub func getMut(index:usize)->&mut T {
-        if(index>=count) { core.core_trap(); }
+        if(index>=count) { memraw.core_trap(); }
         return &mut self.storage[index];
     }
     pub func contains(value:&T,equal:func(&T,&T)->bit)->bit {
@@ -99,15 +100,15 @@ func growStorage<T>(storage:&mut *T, slots:&mut usize, count:usize, capacity:usi
         if(index>=count) { return core.Option<T>.None; }
         var value=take(storage[index]);
         for(var i:usize=index+1;i<count;i+=1) {
-            core.initialize<T>(&storage[i-1],take(storage[i]));
+            memraw.initialize<T>(&storage[i-1],take(storage[i]));
         }
         count-=1; return core.Option<T>.Some(value);
     }
     pub func clear()->void {
-        while(count>0) { count-=1; core.destroy<T>(&storage[count]); }
+        while(count>0) { count-=1; memraw.destroy<T>(&storage[count]); }
     }
     pub func truncate(length:usize)->void {
-        while(count>length) { count-=1; core.destroy<T>(&storage[count]); }
+        while(count>length) { count-=1; memraw.destroy<T>(&storage[count]); }
     }
     pub func iter<'a>()->ListIter<'a,T> where T:core.Copy {
         return ListIter<'a,T>{source:&self,index:0};
@@ -119,8 +120,8 @@ func growStorage<T>(storage:&mut *T, slots:&mut usize, count:usize, capacity:usi
         return ListMutIter<'a,T>{source:&mut self.storage,count:count,index:0};
     }
     destructor {
-        while(count>0) { count-=1; core.destroy<T>(&storage[count]); }
-        core.core_release(storage.(*u8));
+        while(count>0) { count-=1; memraw.destroy<T>(&storage[count]); }
+        memraw.core_release(storage.(*u8));
     }
 }
 
@@ -161,10 +162,10 @@ pub struct ListMutIter<'a,T> {
     pub func length()->usize { return count; }
     pub func view()->T[] where T:core.Copy { return slice(self.storage,count); }
     pub func get(index:usize)->&T {
-        if(index>=count) { core.core_trap(); } return &self.storage[index];
+        if(index>=count) { memraw.core_trap(); } return &self.storage[index];
     }
     pub func getMut(index:usize)->&mut T {
-        if(index>=count) { core.core_trap(); } return &mut self.storage[index];
+        if(index>=count) { memraw.core_trap(); } return &mut self.storage[index];
     }
     pub func iter<'a>()->BufferIter<'a,T> where T:core.Copy {
         return BufferIter<'a,T>{source:&self,index:0};
@@ -176,8 +177,8 @@ pub struct ListMutIter<'a,T> {
         return BufferMutIter<'a,T>{source:&mut self,index:0};
     }
     destructor {
-        while(count>0) { count-=1; core.destroy<T>(&storage[count]); }
-        core.core_release(storage.(*u8));
+        while(count>0) { count-=1; memraw.destroy<T>(&storage[count]); }
+        memraw.core_release(storage.(*u8));
     }
 }
 pub func buffer<T:core.Copy>(count:usize,initial:T)->core.Result<Buffer<T>,core.AllocError> {
@@ -186,13 +187,13 @@ pub func buffer<T:core.Copy>(count:usize,initial:T)->core.Result<Buffer<T>,core.
     }
     var result:Buffer<T>;
     if(count>0) {
-        result.storage=core.core_alloc(count*sizeof(T)).(*T);
-        if(result.storage==core.null<T>()) {
+        result.storage=memraw.core_alloc(count*sizeof(T)).(*T);
+        if(result.storage==memraw.null<T>()) {
             return core.Result<Buffer<T>,core.AllocError>.Err(core.AllocError.OutOfMemory);
         }
     }
     for(var i:usize=0;i<count;i+=1) {
-        core.initialize<T>(&result.storage[i],initial); result.count+=1;
+        memraw.initialize<T>(&result.storage[i],initial); result.count+=1;
     }
     return core.Result<Buffer<T>,core.AllocError>.Ok(result);
 }
@@ -202,13 +203,13 @@ pub func bufferWith<T>(count:usize,init:mut func(usize)->T)->core.Result<Buffer<
     }
     var result:Buffer<T>;
     if(count>0) {
-        result.storage=core.core_alloc(count*sizeof(T)).(*T);
-        if(result.storage==core.null<T>()) {
+        result.storage=memraw.core_alloc(count*sizeof(T)).(*T);
+        if(result.storage==memraw.null<T>()) {
             return core.Result<Buffer<T>,core.AllocError>.Err(core.AllocError.OutOfMemory);
         }
     }
     for(var i:usize=0;i<count;i+=1) {
-        core.initialize<T>(&result.storage[i],init(i)); result.count+=1;
+        memraw.initialize<T>(&result.storage[i],init(i)); result.count+=1;
     }
     return core.Result<Buffer<T>,core.AllocError>.Ok(result);
 }

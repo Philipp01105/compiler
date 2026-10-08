@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 func write(p: *int, value: int) -> void {
     *p = value;
@@ -11,11 +12,11 @@ func main() -> void {
     var second: *int = first;
     write(first, 41);
     *second += 1;
-    stdlib.println(value);
-    stdlib.println(*first == * second);
+    io.println(value);
+    io.println(*first == * second);
 
     var values: int[2];
     values[1] = 77;
     var element: *int = (&values[1]).(*int);
-    stdlib.println(*element);
+    io.println(*element);
 }

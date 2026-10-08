@@ -1,0 +1,139 @@
+package env;
+import (
+    "stdlib/core"
+    "stdlib/collections"
+    "stdlib/text/utf16"
+    raw "stdlib/memory/raw"
+);
+extern "system" from "kernel32" {
+    func GetEnvironmentVariableW(name: *u16, value: *u16, size: u32) -> u32;
+    func SetEnvironmentVariableW(name: *u16, value: *u16) -> i32;
+    func GetLastError() -> u32;
+    func SetLastError(error: u32) -> void;
+}
+
+func codecError(error:utf16.Error)->Error {
+    var kind:ErrorKind=ErrorKind.InvalidEncoding;
+    if(error.kind==utf16.ErrorKind.OutOfMemory) {kind=ErrorKind.OutOfMemory;}
+    if(error.kind==utf16.ErrorKind.CapacityOverflow) {kind=ErrorKind.CapacityOverflow;}
+    return failure(kind,0);
+}
+
+func wide(value: u8[]) -> core.Result<collections.List<u16>, Error> {
+    var converted = utf16.fromUtf8(&value);
+    match (converted) {
+        Err(error) => {
+            return core.Result<collections.List<u16>, Error>.Err(codecError(error));
+        }
+        Ok(output) => {
+            output.append(0)?;
+            return core.Result<collections.List<u16>, Error>.Ok(output);
+        }
+    }
+}
+
+func decodeWide(value: *u16, length: usize) -> core.Result<collections.List<u8>, Error> {
+    var input=slice(value,length);
+    var decoded = utf16.toUtf8(&input);
+    match (decoded) {
+        Err(error) => return core.Result<collections.List<u8>, Error>.Err(
+            codecError(error)
+        );
+        Ok(output) => return core.Result<collections.List<u8>, Error>.Ok(output);
+    }
+}
+
+func nativeGet(name: u8[]) -> core.Result<collections.List<u8>, Error> {
+    if (!validName(name)) {
+        return core.Result<collections.List<u8>, Error>.Err(failure(ErrorKind.InvalidName, 0));
+    }
+    var converted = wide(name);
+    match (converted) {
+        Err(error) => return core.Result<collections.List<u8>, Error>.Err(error);
+        Ok(key) => {
+            var view: u16[] = key.view();
+            for (var attempt: usize = 0; attempt < 8; attempt += 1) {
+                SetLastError(0);
+                var count: u32 = GetEnvironmentVariableW(view.data, raw.null<u16>(), 0);
+                if (count == 0) {
+                    var code: u32 = GetLastError();
+                    if (code == 203) {
+                        return core.Result<collections.List<u8>, Error>.Err(
+                            failure(ErrorKind.Missing, 203)
+                        );
+                    }
+                    if (code != 0) {
+                        return core.Result<collections.List<u8>, Error>.Err(
+                            failure(ErrorKind.System, code.(isize))
+                        );
+                    }
+                    return core.Result<collections.List<u8>, Error>.Ok(collections.list<u8>());
+                }
+                var storage=collections.buffer<u16>(count.(usize),0)?;
+                var data=storage.view();
+                SetLastError(0);
+                var read: u32 = GetEnvironmentVariableW(view.data, data.data, count);
+                if (read >= count) {
+                    continue;
+                }
+                if (read == 0 && GetLastError() != 0) {
+                    var code: u32 = GetLastError();
+                    return core.Result<collections.List<u8>, Error>.Err(
+                        failure(ErrorKind.System, code.(isize))
+                    );
+                }
+                var output = decodeWide(data.data, read.(usize));
+                return output;
+            }
+            return core.Result<collections.List<u8>, Error>.Err(failure(ErrorKind.System, 0));
+        }
+    }
+}
+
+func nativeSet(name: u8[], value: u8[]) -> core.Result<void, Error> {
+    if (!validName(name)) {
+        return core.Result<void, Error>.Err(failure(ErrorKind.InvalidName, 0));
+    }
+    if (!validValue(value)) {
+        return core.Result<void, Error>.Err(failure(ErrorKind.InvalidValue, 0));
+    }
+    var a = wide(name);
+    match (a) {
+        Err(error) => return core.Result<void, Error>.Err(error);
+        Ok(key) => {
+            var b = wide(value);
+            match (b) {
+                Err(error) => return core.Result<void, Error>.Err(error);
+                Ok(data) => {
+                    var av: u16[] = key.view();
+                    var bv: u16[] = data.view();
+                    if (SetEnvironmentVariableW(av.data, bv.data) == 0) {
+                        return core.Result<void, Error>.Err(
+                            failure(ErrorKind.System, GetLastError().(isize))
+                        );
+                    }
+                    return core.Result<void, Error>.Ok;
+                }
+            }
+        }
+    }
+}
+
+func nativeRemove(name: u8[]) -> core.Result<void, Error> {
+    if (!validName(name)) {
+        return core.Result<void, Error>.Err(failure(ErrorKind.InvalidName, 0));
+    }
+    var converted = wide(name);
+    match (converted) {
+        Err(error) => return core.Result<void, Error>.Err(error);
+        Ok(key) => {
+            var view: u16[] = key.view();
+            if (SetEnvironmentVariableW(view.data, raw.null<u16>()) == 0) {
+                return core.Result<void, Error>.Err(
+                    failure(ErrorKind.System, GetLastError().(isize))
+                );
+            }
+            return core.Result<void, Error>.Ok;
+        }
+    }
+}

@@ -345,7 +345,7 @@ int main(int argc, char **argv) {
         }
         if (program == NULL || !program->structured_ast_complete ||
             !ast_validate_program(program) || semantics == NULL ||
-            module == NULL || !ir_verify_module(module) || module->function_count == 0) {
+            module == NULL || !ir_verify_module(module)) {
             fprintf(stderr, "typed frontend pipeline failed for %s\n", argv[i]);
             failed = 1;
         }

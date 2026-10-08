@@ -1,15 +1,16 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 struct Owner {
     var label: string;
     destructor {
-        stdlib.println(label);
+        io.println(label);
     }
 }
 
 func initialize() -> Owner {
-    stdlib.println("init");
+    io.println("init");
     var value: Owner;
     value.label = "package";
     return value;
@@ -17,7 +18,7 @@ func initialize() -> Owner {
 
 var owner: Owner = initialize();
 async func worker() -> int {
-    stdlib.println("worker");
+    io.println("worker");
     return 7;
 }
 
@@ -30,7 +31,7 @@ async func join(handle: JoinHandle<int>) -> int {
 }
 
 func main() -> int {
-    stdlib.println("main");
+    io.println("main");
     var local: Owner;
     local.label = "local";
     if (block_on(join(spawn(worker()))) != 7) {

@@ -1,7 +1,7 @@
 # Raw native bindings
 
 The [language specification](../../LANGUAGE_SPEC.md#native-ffi) defines the native type/call contract;
-the [FFI migration plan](../../plans/ffi.md) records implementation status.
+the [architecture documentation](../../ARCHITECTURE.md) describes the runtime implementation.
 
 These packages describe x86-64 glibc and MinGW-w64 UCRT64 APIs. Import the relevant
 package, for example `import "stdlib/native/pthreads";`. `_linux.dmm` and
@@ -34,7 +34,7 @@ An initialized, zero-valued native function-pointer variable supplies a null
 completion routine. Strings require an explicit pointer to terminated byte storage,
 for example `core.core_string_data("0")`; there is no implicit marshaling.
 
-The threading package now uses these bindings in `stdlib/native/threading/*.dmm`.
+The threading package now uses these bindings in `stdlib/internal/threading/*.dmm`.
 The compiler compiles DMM platform, executor and network packages together with applications; installation contains
-stdlib source instead of runtime bundles. `stdlib/core/net/internal` calls epoll/eventfd, IOCP/Overlapped, Winsock and
+stdlib source instead of runtime bundles. `stdlib/internal/net` calls epoll/eventfd, IOCP/Overlapped, Winsock and
 system DNS directly through these bindings. There is no installed platform or network C shim.

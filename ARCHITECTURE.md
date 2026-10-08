@@ -98,8 +98,8 @@ in [LANGUAGE_SPEC.md](LANGUAGE_SPEC.md).
   import/base-relocation tables.
 - `src/runtime/native_runtime.c` supplies executable startup and native runtime shims; system imports have private names
   to prevent source-symbol collisions. See [ARCHITECTURE.md](ARCHITECTURE.md#native-x86-64-backend) for image layout and limits.
-- `stdlib/core/executor/*.dmm` implements scheduling and Future adapters. `stdlib/native/threading/*.dmm`
-  supplies pthread/UCRT64 threads, events and exit through native exports. `stdlib/core/net/internal`
+- `stdlib/internal/executor/*.dmm` implements scheduling and Future adapters. `stdlib/internal/threading/*.dmm`
+  supplies pthread/UCRT64 threads, events and exit through native exports. `stdlib/internal/net`
   provides epoll/IOCP and bounded DNS. These normal stdlib packages are compiled with the application.
   The compiler emits the platform `main` bridge. C schedulers and native thread/event generators under
   `tests/fixtures` remain independent references for native ABI tests; they are excluded from production.
@@ -270,7 +270,7 @@ Runtime requirements, runtime profile and link strategy are separate decisions. 
 and imply `PLATFORM_RUNTIME`; executable output then uses an external driver and the combined network shim. An unused
 network import does not select that profile. `--link=external` can also select the smaller platform shim without
 networking. Object/assembly output selects the same ABI without starting a linker. See
-[stdlib/core/net/README.md](stdlib/core/net/README.md) for completion and startup/shutdown ordering.
+[stdlib/net/raw/README.md](stdlib/net/raw/README.md) for completion and startup/shutdown ordering.
 `src/backend/runtime_calls.c` maps typed builtin calls to reserved runtime link symbols. The emitter performs ordinary
 ABI argument/result lowering and contains no syscall-number selection, Windows file-flag mapping or input
 implementations. The low-level core signatures in `src/common/core_intrinsics.h` are shared by semantic analysis, typed
@@ -320,7 +320,7 @@ copies for indirect aggregates. Struct returns use registers or hidden result po
 Scalar return normalization ignores undefined upper register bits. Native copies and
 field accesses use exact byte widths; native field arrays have C strides and native
 values in ordinary DMM arrays retain rounded DMM slots. No DMM aggregate ABI rule is
-used to classify a C call. Milestones are specified in [plans/ffi.md](plans/ffi.md).
+used to classify a C call. The native ABI contract is specified in [LANGUAGE_SPEC.md](LANGUAGE_SPEC.md#native-ffi).
 
 Native callbacks use the same classifier and argument-placement routine for native indirect
 calls and incoming exports. An export has a stable native symbol and a private
@@ -369,7 +369,7 @@ link strategy: required IR operations determine a `standalone` or `platform` pro
 supported linker for that profile. Emitted async bodies and executor operations require `EXECUTOR`; used network
 FFI imports require `NETWORK`, which implies `EXECUTOR` and `PLATFORM_RUNTIME`; neither an
 unused import nor the `async` manifest feature requires a platform runtime. The networking ABI, source provider and
-typed Core API are specified in [stdlib/core/net/README.md](stdlib/core/net/README.md).
+typed Core API are specified in [stdlib/net/raw/README.md](stdlib/net/raw/README.md).
 
 Explicit `--link=external` requests `PLATFORM_RUNTIME`. `auto` selects the
 internal linker for standalone output and the external driver for platform output. `internal` cannot satisfy a
@@ -399,7 +399,7 @@ The DMM platform component has no package-cleanup or scheduler-lifecycle knowled
 `src/runtime/platform_shim.h` and `ARCHITECTURE.md`.
 
 The external executable path defaults to `gcc` from PATH. `--linker-driver PATH` selects a GCC-compatible driver;
-The compiler loads `stdlib/system` as a source provider for applications. It imports the executor and platform
+The compiler loads `stdlib/internal/system` as a source provider for applications. It imports the executor and platform
 packages; network API calls import their DMM implementation directly. Package calls share the same runtime globals.
 Generated frame/startup ABI entries are retained according to emitted requirements and compiled into the program's
 object. There is no installed runtime bundle lookup or required bootstrap build. Installed compilers use
@@ -526,8 +526,8 @@ and [Intel instruction manuals](https://www.intel.com/content/www/us/en/develope
 
 ### Private platform ABI v1
 
-The platform profile compiles the scheduler from `stdlib/core/executor` and thread/event functions from
-`stdlib/native/threading`. The compatibility declarations in `platform_shim.h` use the x86-64 System V or Microsoft x64 C ABI. Thread
+The platform profile compiles the scheduler from `stdlib/internal/executor` and thread/event functions from
+`stdlib/internal/threading`. The compatibility declarations in `platform_shim.h` use the x86-64 System V or Microsoft x64 C ABI. Thread
 creation takes `void (*callback)(void *)` and its argument and returns a non-null opaque handle. The callback returns
 normally. Join waits for confirmed thread termination, then consumes the handle. Allocations never cross runtime
 ownership boundaries. Resource/API failures are fatal, with no recoverable partial startup contract.
@@ -549,10 +549,10 @@ process from any thread. This private ABI is not a source-language foreign-funct
 With NETWORK, source packages provide reactor/DNS operations and call the DMM executor acknowledgement functions directly.
 Networking remains RUNNING throughout executor Drain; it enters DRAINING immediately before package cleanup and
 shuts down after cleanup. The core ownership contract and platform implementations are in
-[stdlib/core/net/README.md](stdlib/core/net/README.md).
+[stdlib/net/raw/README.md](stdlib/net/raw/README.md).
 
 `executor.h` defines the independent C scheduler test contract used by
-`executor_runtime_unit`. Production scheduling is implemented in `stdlib/core/executor`;
+`executor_runtime_unit`. Production scheduling is implemented in `stdlib/internal/executor`;
 compiler-generated frames retain their private native ABI. The former emitted scheduler and C scheduler
 live under `tests/fixtures` and are excluded from production builds and the installed stdlib.
 The frontend enforces the public API and ownership; IR and native callbacks

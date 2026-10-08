@@ -1,0 +1,82 @@
+package env;
+import ("stdlib/core" "stdlib/collections" "stdlib/text" "stdlib/text/utf16" "stdlib/sync" raw "stdlib/memory/raw");
+extern "system" from "dmm_runtime" {func commandLine()->*u16="__dmm_process_command_line";}
+extern "system" from "shell32" {func CommandLineToArgvW(line:*u16,count:*i32)->**u16;}
+extern "system" from "kernel32" {
+    struct StartupInfo {
+        var size:u32;var reserved:*u16;var desktop:*u16;var title:*u16;
+        var x:u32;var y:u32;var xSize:u32;var ySize:u32;var xChars:u32;var yChars:u32;var fill:u32;var flags:u32;
+        var show:u16;var reservedSize:u16;var reservedBytes:*u8;
+        var input:*void;var output:*void;var error:*void;
+    }
+    struct ProcessInfo {var process:*void;var thread:*void;var processId:u32;var threadId:u32;}
+    func LocalFree(address:*void)->*void;
+    func GetCurrentDirectoryW(size:u32,data:*u16)->u32;
+    func SetCurrentDirectoryW(path:*u16)->i32;
+    func CreateProcessW(application:*u16,line:*u16,processSecurity:*void,threadSecurity:*void,inherit:i32,flags:u32,environment:*void,directory:*u16,start:*StartupInfo,process:*ProcessInfo)->i32;
+    func WaitForSingleObject(handle:*void,milliseconds:u32)->u32;
+    func GetExitCodeProcess(handle:*void,code:*u32)->i32;
+    func CloseHandle(handle:*void)->i32;
+}
+struct ArgvOwner {var value:**u16;destructor{LocalFree(value.(*void));}}
+struct ProcessOwner {var value:ProcessInfo;destructor{CloseHandle(value.thread);CloseHandle(value.process);}}
+pub func args()->core.Result<collections.List<collections.List<u8>>,Error> {
+    var count:i32;var pointer=CommandLineToArgvW(commandLine(),(&count).(*i32));
+    if(pointer==raw.core_null().(**u16)){return core.Result<collections.List<collections.List<u8>>,Error>.Err(failure(ErrorKind.System,GetLastError().(isize)));}
+    var owner=ArgvOwner{value:pointer};var output=collections.list<collections.List<u8>>();
+    for(var i:i32=1;i<count;i+=1){
+        var value=pointer[i];var length:usize=0;while(value[length]!=0){length+=1;}
+        output.append(decodeWide(value,length)?)?;
+    }
+    return core.Result<collections.List<collections.List<u8>>,Error>.Ok(output);
+}
+pub func cwd()->core.Result<collections.List<u8>,Error> {
+    var guard=sync.lock(&stateLock);
+    for(var attempt:usize=0;attempt<8;attempt+=1){
+        var count=GetCurrentDirectoryW(0,raw.null<u16>());
+        if(count==0){return core.Result<collections.List<u8>,Error>.Err(failure(ErrorKind.System,GetLastError().(isize)));}
+        var storage=collections.buffer<u16>(count.(usize),0)?;var bytes=storage.view();
+        var read=GetCurrentDirectoryW(count,bytes.data);
+        if(read>=count){continue;}
+        if(read==0){return core.Result<collections.List<u8>,Error>.Err(failure(ErrorKind.System,GetLastError().(isize)));}
+        return decodeWide(bytes.data,read.(usize));
+    }
+    return core.Result<collections.List<u8>,Error>.Err(failure(ErrorKind.System,0));
+}
+pub func setCwd(path:u8[])->core.Result<void,Error> {
+    if(!validValue(path)||path.length==0){return core.Result<void,Error>.Err(failure(ErrorKind.InvalidValue,0));}
+    var value=wide(path)?;var bytes=value.view();var guard=sync.lock(&stateLock);
+    if(SetCurrentDirectoryW(bytes.data)==0){return core.Result<void,Error>.Err(failure(ErrorKind.System,GetLastError().(isize)));}
+    return core.Result<void,Error>.Ok;
+}
+// Quote each argument with the CRT backslash/quote rules. Trailing slashes
+// are doubled before the closing quote; an empty argument is still present.
+func quoted(output:&mut collections.List<u16>,input:u8[])->core.Result<void,Error> {
+    if(!validValue(input)){return core.Result<void,Error>.Err(failure(ErrorKind.InvalidValue,0));}
+    var value=wide(input)?;var bytes=value.view();output.append(34)?;
+    var slashes:usize=0;
+    for(var i:usize=0;i+1<bytes.length;i+=1){
+        var unit=bytes[i];if(unit==92){slashes+=1;continue;}
+        var count=slashes;if(unit==34){count=count*2+1;}
+        for(var j:usize=0;j<count;j+=1){output.append(92)?;}
+        slashes=0;output.append(unit)?;
+    }
+    for(var i:usize=0;i<slashes*2;i+=1){output.append(92)?;}output.append(34)?;
+    return core.Result<void,Error>.Ok;
+}
+pub func run(input:u8[],args:&Argument[])->core.Result<ExitStatus,Error> {
+    if(!validValue(input)||input.length==0){return core.Result<ExitStatus,Error>.Err(failure(ErrorKind.InvalidValue,0));}
+    var file=wide(input)?;var application=file.view();var command=collections.list<u16>();quoted(&mut command,input)?;
+    for(var i:usize=0;i<args.length;i+=1){command.append(32)?;quoted(&mut command,args[i].bytes)?;}
+    if(command.length()>=32767){return core.Result<ExitStatus,Error>.Err(failure(ErrorKind.CapacityOverflow,0));}
+    command.append(0)?;var line=command.view();var startup:StartupInfo;startup.size=sizeof(StartupInfo).(u32);var info:ProcessInfo;
+    {
+        var guard=sync.lock(&stateLock);
+        if(CreateProcessW(application.data,line.data,raw.core_null().(*void),raw.core_null().(*void),0.(i32),0.(u32),raw.core_null().(*void),raw.null<u16>(),(&startup).(*StartupInfo),(&info).(*ProcessInfo))==0){var code=GetLastError();var kind=ErrorKind.System;if(code==2||code==3){kind=ErrorKind.NotFound;}if(code==5){kind=ErrorKind.AccessDenied;}return core.Result<ExitStatus,Error>.Err(failure(kind,code.(isize)));}
+    }
+    var owner=ProcessOwner{value:info};
+    if(WaitForSingleObject(info.process,4294967295.(u32))!=0){return core.Result<ExitStatus,Error>.Err(failure(ErrorKind.System,GetLastError().(isize)));}
+    var code:u32;
+    if(GetExitCodeProcess(info.process,(&code).(*u32))==0){return core.Result<ExitStatus,Error>.Err(failure(ErrorKind.System,GetLastError().(isize)));}
+    return core.Result<ExitStatus,Error>.Ok(ExitStatus.Code(code.(i32)));
+}

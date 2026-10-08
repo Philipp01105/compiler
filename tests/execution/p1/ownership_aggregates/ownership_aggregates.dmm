@@ -1,10 +1,11 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 struct Resource {
     var value: int;
     destructor {
-        stdlib.println(value);
+        io.println(value);
     }
 }
 

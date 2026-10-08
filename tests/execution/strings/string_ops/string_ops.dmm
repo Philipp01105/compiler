@@ -1,15 +1,16 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 // String operations test
 func main() -> void {
     var name: string = "Alice";
     if (name == "Alice") {
-        stdlib.println("Name is Alice");
+        io.println("Name is Alice");
     }
     if (name != "Bob") {
-        stdlib.println("Name is not Bob");
+        io.println("Name is not Bob");
     }
-    stdlib.println("Test complete");
+    io.println("Test complete");
 }
 
 // Category: execution/strings

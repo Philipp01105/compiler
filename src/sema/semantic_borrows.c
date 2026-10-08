@@ -4874,6 +4874,12 @@ static BorrowCallSummary *summarize_call_borrows(BorrowChecker *checker, const A
     }
     if (!needed && semantic_expression_is_move_only(checker->analyzer, call)) {
         for (const AstExpression *arg = call->arguments; arg && !needed; arg = arg->next) {
+            /* Owned results can copy from checked input without retaining it.
+               Summarize that body before falling back to argument capture;
+               an address expression need not itself have a storage place. */
+            if (arg->resolved_borrow_kind != AST_BORROW_NONE || arg->resolved_is_slice) {
+                needed = 1; break;
+            }
             if (semantic_expression_is_move_only(checker->analyzer, arg)) { needed = 1; break; }
             BorrowPlace storage;
             if (!expression_place(checker, arg, &storage)) continue;
@@ -5090,6 +5096,12 @@ static BorrowCallSummary *summarize_call_borrows(BorrowChecker *checker, const A
                 }
         }
         int effect = !loan->summary_foreign && summary_written(&nested, loan) && loan->summary_exit_active;
+        /* The implicit receiver is a call-local alias, even when a nested
+           mutation records a write through it. Only storage mapped back to
+           the caller and returned loans may survive this invocation. */
+        const AstParameter *receiver_parameter = function->declaration->as.function.receiver_parameter;
+        if (receiver_parameter && loan->borrower_symbol == receiver_parameter->resolved_symbol_id)
+            effect = 0;
         if(effect) { loan->heap_min=loan->heap_exit_min; loan->heap_max=loan->heap_exit_max; }
         loan->active = effect;
         if (effect && loan->borrower_symbol < analyzer.model->symbol_count)

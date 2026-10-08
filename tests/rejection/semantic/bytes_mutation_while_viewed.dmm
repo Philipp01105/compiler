@@ -1,10 +1,10 @@
 package main;
-import "stdlib";
+import "stdlib/collections";
 
 func main() -> void {
-    var bytes: stdlib.Bytes = stdlib.bytes(1);
-    bytes.push(1);
+    var bytes = collections.list<u8>();
+    bytes.append(1);
     var view: u8[] = bytes.view();
-    bytes.push(2);
+    bytes.append(2);
     var value: u8 = view[0];
 }

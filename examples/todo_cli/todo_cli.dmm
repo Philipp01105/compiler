@@ -1,0 +1,101 @@
+package main;
+import ("stdlib/core" "stdlib/collections" "stdlib/text" "stdlib/bytes" "stdlib/numeric" "stdlib/io");
+
+struct Task { var id: usize; var title: text.String; var done: bit; }
+struct Error {
+    var message: string;
+    static func fromResidual(error: core.AllocError) -> Self { return Error{message: "Out of memory"}; }
+    static func fromResidual(error: text.Error) -> Self { return Error{message: "Invalid UTF-8 or out of memory"}; }
+    static func fromResidual(error: io.Error) -> Self { return Error{message: "I/O failed"}; }
+    static func fromResidual(error: numeric.Error) -> Self { return Error{message: "Expected a positive task ID"}; }
+}
+
+func equal(value: u8[], expected: string) -> bit {
+    var needle = text.bytes(expected);
+    return value.length == needle.length && bytes.startsWith(value, needle);
+}
+
+// Any Reader can supply commands. The caller owns both the reader and each line.
+func readLine<R: io.Reader>(input: &mut R) -> core.Result<core.Option<collections.List<u8>>, Error> {
+    var line = collections.list<u8>();
+    var character: u8[1]; var destination = character[:];
+    while (true) {
+        if (input.read(&mut destination)? == 0) {
+            if (line.length() == 0) { return core.Result<core.Option<collections.List<u8>>, Error>.Ok(core.Option<collections.List<u8>>.None); }
+            break;
+        }
+        if (character[0] == 10) { break; }
+        if (line.length() == 4096) { return core.Result<core.Option<collections.List<u8>>, Error>.Err(Error{message: "Command exceeds 4096 bytes"}); }
+        line.append(character[0])?;
+    }
+    return core.Result<core.Option<collections.List<u8>>, Error>.Ok(core.Option<collections.List<u8>>.Some(line));
+}
+
+func findTask(tasks: &collections.List<Task>, id: usize) -> core.Option<usize> {
+    for (var i: usize = 0; i < tasks.length(); i += 1) {
+        if (tasks.get(i).id == id) { return core.Option<usize>.Some(i); }
+    }
+    return core.Option<usize>.None;
+}
+
+func command(line: u8[], tasks: &mut collections.List<Task>, nextId: &mut usize) -> core.Result<bit, Error> {
+    var input = bytes.trimAscii(line);
+    if (equal(input, "quit")) { return core.Result<bit, Error>.Ok(false); }
+    if (equal(input, "help")) {
+        io.println("add TEXT | list | done ID | remove ID | help | quit")?;
+    } else if (equal(input, "list")) {
+        if (tasks.length() == 0) { io.println("No tasks")?; }
+        for (var i: usize = 0; i < tasks.length(); i += 1) {
+            var task = tasks.get(i);
+            io.print(task.id)?;
+            var mark: string = if (task.done) { " [x] " } else { " [ ] " };
+            io.print(mark)?;
+            io.println(task.title.view())?;
+        }
+    } else if (bytes.startsWith(input, text.bytes("add "))) {
+        var title = bytes.trimAscii(input[4:]);
+        if (title.length == 0) { return core.Result<bit, Error>.Err(Error{message: "A task needs a title"}); }
+        if (tasks.length() == 1000) { return core.Result<bit, Error>.Err(Error{message: "Session limit: 1000 tasks"}); }
+        tasks.append(Task{id: *nextId, title: text.fromUtf8(&title)?, done: false})?;
+        io.print("Added ")?; io.println(*nextId)?;
+        *nextId += 1;
+    } else if (bytes.startsWith(input, text.bytes("done ")) || bytes.startsWith(input, text.bytes("remove "))) {
+        var remove = bytes.startsWith(input, text.bytes("remove "));
+        var number = bytes.trimAscii(input[if (remove) { 7 } else { 5 }:]);
+        var id = numeric.parseUint(number, 10)?;
+        if (id == 0 || id > 9223372036854775807.(u64)) { return core.Result<bit, Error>.Err(Error{message: "Invalid task ID"}); }
+        match (findTask(tasks, id.(usize))) {
+            None => io.println("Task not found")?;
+            Some(index) => {
+                if (remove) { var removed = tasks.remove(index); io.println("Removed")?; }
+                else { tasks.getMut(index).done = true; io.println("Done")?; }
+            }
+        }
+    } else if (input.length != 0) {
+        return core.Result<bit, Error>.Err(Error{message: "Unknown command; type help"});
+    }
+    return core.Result<bit, Error>.Ok(true);
+}
+
+func run() -> core.Result<void, Error> {
+    var tasks = collections.list<Task>();
+    var nextId: usize = 1;
+    var input = io.stdin();
+    io.println("Todo — tasks exist only during this session. Type help.")?;
+    while (true) {
+        match (readLine(&mut input)?) {
+            None => break;
+            Some(line) => {
+                match (command(line.view(), &mut tasks, &mut nextId)) {
+                    Ok(keepGoing) => { if (!keepGoing) { break; } }
+                    Err(error) => io.println(error.message)?;
+                }
+            }
+        }
+    }
+    return core.Result<void, Error>.Ok;
+}
+
+func main() -> int {
+    match (run()) { Ok => return 0; Err(error) => { io.println(error.message); return 1; } }
+}

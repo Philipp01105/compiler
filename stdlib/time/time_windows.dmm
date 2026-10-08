@@ -1,6 +1,6 @@
 package time;
 import (
-    "stdlib"
+    stdlib "stdlib/core"
 );
 extern "system" from "kernel32" {
     struct FileTime {
@@ -14,7 +14,7 @@ extern "system" from "kernel32" {
     func Sleep(milliseconds: u32) -> void;
 }
 
-func nativeNow() -> stdlib.Result<Instant, TimeError> {
+func nativeNow() -> stdlib.Result<Instant, Error> {
     var counter: i64;
     var frequency: i64;
     if (
@@ -23,26 +23,26 @@ func nativeNow() -> stdlib.Result<Instant, TimeError> {
         counter < 0 ||
         frequency <= 0
     ) {
-        return stdlib.Result<Instant, TimeError>.Err(TimeError.ClockFailure);
+        return stdlib.Result<Instant, Error>.Err(Error.ClockFailure);
     }
     var whole: u64 = counter.(u64) / frequency.(u64);
     var fraction: u64 = counter.(u64) % frequency.(u64);
     if (whole > 18446744073.(u64) || fraction > 18446744073709551615.(u64) / 1000000000) {
-        return stdlib.Result<Instant, TimeError>.Err(TimeError.Overflow);
+        return stdlib.Result<Instant, Error>.Err(Error.Overflow);
     }
     var nanos: u64 = whole * 1000000000;
     var partial: u64 = fraction * 1000000000 / frequency.(u64);
     if (partial > 18446744073709551615.(u64) - nanos) {
-        return stdlib.Result<Instant, TimeError>.Err(TimeError.Overflow);
+        return stdlib.Result<Instant, Error>.Err(Error.Overflow);
     }
-    return stdlib.Result<Instant, TimeError>.Ok(Instant{ nanoseconds: nanos + partial });
+    return stdlib.Result<Instant, Error>.Ok(Instant{ nanoseconds: nanos + partial });
 }
 
-func nativeSystemNow() -> stdlib.Result<SystemTime, TimeError> {
+func nativeSystemNow() -> stdlib.Result<SystemTime, Error> {
     var value: FileTime;
     GetSystemTimePreciseAsFileTime((&value).(*FileTime));
     var ticks: u64 = value.high.(u64) * 4294967296 + value.low.(u64);
-    return stdlib.Result<SystemTime, TimeError>.Ok(
+    return stdlib.Result<SystemTime, Error>.Ok(
         SystemTime{
             seconds:(ticks / 10000000).(i64) - 11644473600,
             nanoseconds:((ticks % 10000000) * 100).(u32)
@@ -50,7 +50,7 @@ func nativeSystemNow() -> stdlib.Result<SystemTime, TimeError> {
     );
 }
 
-func nativeSleep(duration: Duration) -> stdlib.Result<void, TimeError> {
+func nativeSleep(duration: Duration) -> stdlib.Result<void, Error> {
     var milliseconds: u64 = duration.nanoseconds / 1000000;
     if (duration.nanoseconds % 1000000 != 0) {
         milliseconds += 1;
@@ -60,5 +60,5 @@ func nativeSleep(duration: Duration) -> stdlib.Result<void, TimeError> {
         milliseconds -= 4294967294.(u64);
     }
     Sleep(milliseconds.(u32));
-    return stdlib.Result<void, TimeError>.Ok;
+    return stdlib.Result<void, Error>.Ok;
 }

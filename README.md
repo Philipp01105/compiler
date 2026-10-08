@@ -28,8 +28,8 @@ ctest --test-dir build --output-on-failure
 Compile and run an example on Linux:
 
 ```sh
-./build/compiler examples/language_tour/language_tour.dmm -o language_tour
-./language_tour
+./build/compiler examples/todo_cli/todo_cli.dmm -o build/todo_cli
+./build/todo_cli
 ```
 
 On Windows, use `build/compiler.exe` and an `.exe` output name. Multi-configuration generators may place the compiler
@@ -44,7 +44,7 @@ dmm 2026-09-22-dev
 
 ```dmm
 package main;
-import "stdlib";
+import "stdlib/io";
 
 enum Lookup<T> {
     Found(T),
@@ -73,7 +73,7 @@ func main() -> int {
 
     var result:Lookup<int> = Lookup<int>.Found(counter.value);
     match (result) {
-        Found(value) => stdlib.println(value);
+        Found(value) => { match(io.println(value)){Ok=>{} Err(error)=>return 1;} }
         Missing => return 1;
     }
     return 0;
@@ -81,8 +81,8 @@ func main() -> int {
 ```
 
 The example shows a generic sum type, a method, a contextually typed slice literal, an exhaustive match and ordinary
-control flow. The [example catalog](examples/README.md) covers ownership, checked borrows, `defer`, interfaces, package
-cleanup, raw memory and stream I/O in focused programs.
+control flow. The [example catalog](examples/README.md) combines ownership, checked borrows, generics, packages,
+stream I/O, async networking and native interop in five small applications.
 
 ## Implemented language areas
 
@@ -95,7 +95,7 @@ cleanup, raw memory and stream I/O in focused programs.
 - LIFO `defer`, including eager call capture and anonymous deferred bodies
 - expression-valued `if`, blocks and exhaustive `match`, plus `Option`/`Result` propagation with `?`
 - sequentially consistent `AtomicBit`/`AtomicUsize` and experimental async futures, executors and confirmed cancellation
-- typed asynchronous TCP/UDP and DNS through `stdlib/core/net`, with an automatic external-linker handoff
+- typed asynchronous TCP/UDP and DNS through `stdlib/net/raw`, with an automatic external-linker handoff
 - packages, explicit exports, local vendored dependencies and deterministic manifest synchronization
 - verified typed IR, `-O0`/`-O1`, native ELF/COFF object emission and internal ELF/PE linking
 - native `extern "system"` FFI for x86-64 Linux and MinGW-w64 UCRT64, including C-layout structs by value, symbol aliases and logical library overrides
@@ -142,11 +142,11 @@ The optional `--link=external` profile uses regular platform startup and a DMM p
 gain libc/UCRT and documented OS dependencies. Emitted async bodies and executor operations select this profile.
 Programs without async or FFI retain the standalone runtime and internal
 linker. For object/assembly emission this option selects the future link ABI and starts no external process.
-Used operations from `stdlib/core/net` select that profile automatically and choose the network archive containing
+Used operations from `stdlib/net/raw` select that profile automatically and choose the network archive containing
 DMM platform, executor and networking code. OS calls use ordinary FFI bindings; C runtime implementations are
 kept only as independent test references.
 TCP/UDP, IPv4/IPv6, deadlines, cancellation and bounded DNS are documented in
-[stdlib/core/net/README.md](stdlib/core/net/README.md); an unused import introduces no networking dependency.
+[stdlib/net/raw/README.md](stdlib/net/raw/README.md); an unused import introduces no networking dependency.
 
 ## Tests and CI
 
@@ -203,11 +203,10 @@ Each topic has one canonical document; other documents link to it instead of rep
 | [Architecture](ARCHITECTURE.md) | Pipeline, optimization, backend, runtime contracts, dumps and diagnostics |
 | [Standard library](stdlib/README.md) | Package index, common value types, collections and compatibility I/O |
 | [Core](stdlib/core/README.md) | Memory, allocation, atomics, descriptors and process primitives |
-| [Streams](stdlib/stdio/README.md) | Synchronous streams, buffers and transfer/error contracts |
-| [Networking](stdlib/core/net/README.md) | TCP/UDP/DNS, ownership, deadlines, cancellation and lifecycle |
+| [Streams](stdlib/io/README.md) | Synchronous streams, buffers and transfer/error contracts |
+| [Networking](stdlib/net/raw/README.md) | TCP/UDP/DNS, ownership, deadlines, cancellation and lifecycle |
 | [Native bindings](stdlib/native/README.md) | Raw OS/CRT bindings and caller responsibilities |
-| [Examples](examples/README.md) | Runnable feature-oriented programs |
-| [FFI and runtime migration](plans/ffi.md) | Completed stages 1–4 and remaining network migration |
+| [Examples](examples/README.md) | Five small applications using the current language and stdlib |
 | [Roadmap](TODO.md) | Planned work and priorities |
 
 ## License

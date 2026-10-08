@@ -1,10 +1,11 @@
 package main;
+import atomic "stdlib/sync/atomic";
 import "stdlib/core"; import "stdlib/memory";
-import "stdlib";
+import stdlib "stdlib/core";
 
 struct State {
-    var processed: core.AtomicUsize;
-    var errors: core.AtomicUsize;
+    var processed: atomic.AtomicUsize;
+    var errors: atomic.AtomicUsize;
 }
 
 async func worker(owner: memory.Shared<State>, rounds: int) -> stdlib.Result<int, int> {
@@ -37,8 +38,8 @@ func main() -> int {
     match (
         memory.shared(
             State{
-                processed: core.atomicUsize(0.(usize)),
-                errors: core.atomicUsize(0.(usize))
+                processed: atomic.atomicUsize(0.(usize)),
+                errors: atomic.atomicUsize(0.(usize))
             }
         )
     ) {

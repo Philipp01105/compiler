@@ -1,8 +1,9 @@
 package main;
+import atomic "stdlib/sync/atomic";
 import "stdlib/core";
 
 func main() -> int {
-    var count = core.atomicUsize(4.(usize));
+    var count = atomic.atomicUsize(4.(usize));
     if (count.load() != 4.(usize)) {
         return 1;
     }
@@ -23,7 +24,7 @@ func main() -> int {
         return 6;
     }
 
-    var flag = core.atomicBit(false);
+    var flag = atomic.atomicBit(false);
     if (flag.load()) {
         return 7;
     }

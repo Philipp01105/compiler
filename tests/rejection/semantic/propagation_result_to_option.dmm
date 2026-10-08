@@ -1,5 +1,5 @@
 package main;
-import "stdlib";
+import stdlib "stdlib/core";
 
 func convert(value: stdlib.Result<int, int>) -> stdlib.Option<int> {
     var output: int = value?;

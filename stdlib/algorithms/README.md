@@ -1,7 +1,7 @@
 # stdlib/algorithms
 
 Ordinary DMM slice algorithms; no allocation, OS imports or compiler intrinsics.
-Monomorphic callbacks participate in inference, e.g. `algorithms.sort(values,less)`.
+Monomorphic callbacks participate in inference, e.g. `algorithms.sort(&mut values,less)`.
 Ambiguous callback overloads require explicit type arguments.
 Callbacks accept ordinary function values and explicit capturing closures. Repeatedly
 called callbacks use `mut func`, including mutable comparator and predicate captures.
@@ -11,12 +11,11 @@ Borrowed traversal instead accepts `&T` elements and supports move-only owners.
 
 | API | Contract |
 |---|---|
-| find / count / all / any | Predicate-based traversal; find returns Option<usize>. All of an empty slice is true; any is false. |
-| findBorrowed / countBorrowed / allBorrowed / anyBorrowed | Take `&T[]` and a `mut func(&T)->bit`; visit owners without copying or consuming them. find returns the first matching index. find/any/all short-circuit; count visits every element. Empty-input behavior matches the value variants. |
+| find / count / all / any | Take &T[] and a mut func(&T)->bit, including move-only elements; find yields the first Option<usize>. find/any/all short-circuit. all(empty) is true; any(empty) is false. |
 | forEachMut | Takes `&mut T[]` and a `mut func(&mut T)->void`; mutates each element in place, including move-only owners, in index order. |
 | equal | Length and element equality through the supplied comparator. |
-| reverse | In-place reversal, including empty and singleton slices. |
-| sort | In-place heapsort, O(n log n), constant storage, not stable. Comparator must be a strict weak ordering. |
+| reverse | Checked &mut slice; in-place reversal, including empty and singleton slices. |
+| sort | Checked &mut slice; in-place heapsort, O(n log n), constant storage, not stable. Comparator must be a strict weak ordering. |
 | lowerBound / binarySearch | Sorted input required, same comparator as sort; first equivalent position on duplicates. |
 | copy / transform | Checked source/destination descriptor borrows; destination must fit the complete source. Too-small output remains unchanged. Source and destination storage must be disjoint. |
 | fill | Assign a copyable value to every output element. |

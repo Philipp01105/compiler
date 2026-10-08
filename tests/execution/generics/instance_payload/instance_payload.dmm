@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 struct Payload<T> {
     var value: T;
@@ -11,17 +12,17 @@ func make() -> stdlib.Result<int, string> {
 
 func main() -> void {
     var p: stdlib.Result<int, string> = make();
-    stdlib.println(p.Ok());
-    stdlib.println(make().Ok());
+    io.println(p.Ok());
+    io.println(make().Ok());
     p = stdlib.Result<int, string>.Err("failure");
-    stdlib.println(p.Err());
+    io.println(p.Err());
     var item: Payload<u64>;
     item.value = 18446744073709551615;
     var nested: stdlib.Result<Payload<u64>, int> = stdlib.Result<Payload<u64>, int>.Ok(item);
     var extracted: Payload<u64> = nested.Ok();
     extracted.value = 7;
-    stdlib.println(nested.Ok().value);
-    stdlib.println(extracted.value);
+    io.println(nested.Ok().value);
+    io.println(extracted.value);
     var opt: stdlib.Option<int> = stdlib.Option<int>.Some(9);
-    stdlib.println(opt.Some());
+    io.println(opt.Some());
 }

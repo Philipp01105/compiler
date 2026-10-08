@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 func choose(value: int) -> int {
     if (value > 0 && value < 10) {
@@ -11,7 +12,7 @@ func choose(value: int) -> int {
 func main() -> void {
     var index: int = 0;
     while (index < 4) {
-        stdlib.println(choose(index));
+        io.println(choose(index));
         index++;
     }
 }

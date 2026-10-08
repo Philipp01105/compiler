@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 struct Counter {
     var value: int;
@@ -25,6 +26,6 @@ func main() -> void {
     var counter: Counter;
     counter.init(10);
     counter.add(7);
-    stdlib.println(counter.get());
-    stdlib.println(Counter.twice(counter.get()));
+    io.println(counter.get());
+    io.println(Counter.twice(counter.get()));
 }

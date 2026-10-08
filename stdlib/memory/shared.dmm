@@ -1,8 +1,10 @@
 package memory;
+import memraw "stdlib/memory/raw";
+import atomic "stdlib/sync/atomic";
 import "stdlib/core";
 
 struct SharedStorage<T> {
-    var references: core.AtomicUsize;
+    var references: atomic.AtomicUsize;
     var value: T;
 }
 
@@ -13,7 +15,7 @@ struct SharedStorage<T> {
         var count: usize = (*storage).references.load();
         while (true) {
             if (count == 18446744073709551615.(usize)) {
-                core.core_trap();
+                memraw.core_trap();
             }
             var previous: usize = (*storage).references.compareExchange(count, count + 1.(usize));
             if (previous == count) {
@@ -21,7 +23,7 @@ struct SharedStorage<T> {
             }
             count = previous;
         }
-        core.core_trap();
+        memraw.core_trap();
     }
 
     pub func get() -> &T {
@@ -38,20 +40,20 @@ struct SharedStorage<T> {
             count = previous;
         }
         if (count == 1.(usize)) {
-            core.destroy<T>(&(*storage).value);
-            core.core_release(storage.(*u8));
+            memraw.destroy<T>(&(*storage).value);
+            memraw.core_release(storage.(*u8));
         }
     }
 }
 
 pub func shared<T>(value: T) -> core.Result<Shared<T>, core.AllocError> {
-    var block: *SharedStorage < T >= core.core_alloc(sizeof(SharedStorage<T>)).(*SharedStorage<T>);
-    if (block == core.null<SharedStorage<T>>()) {
+    var block: *SharedStorage < T >= memraw.core_alloc(sizeof(SharedStorage<T>)).(*SharedStorage<T>);
+    if (block == memraw.null<SharedStorage<T>>()) {
         return core.Result<Shared<T>, core.AllocError>.Err(core.AllocError.OutOfMemory);
     }
-    core.initialize<SharedStorage<T>>(
+    memraw.initialize<SharedStorage<T>>(
         block,
-        SharedStorage<T>{ references: core.atomicUsize(1.(usize)), value: value }
+        SharedStorage<T>{ references: atomic.atomicUsize(1.(usize)), value: value }
     );
     return core.Result<Shared<T>, core.AllocError>.Ok(Shared<T>{ storage: block });
 }

@@ -1,6 +1,0 @@
-/* main
-Type-derived ownership, generic moves, reinitialization, disjoint borrows and reverse-order destruction.
-*/
-
-module dmm.example/ownership_and_borrows
-dmm 2026-09-22-dev

@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 // Test pointer assignment bug fix
 // This test ensures that pointer-to-pointer assignments work correctly
 func main() -> void {
@@ -7,7 +8,7 @@ func main() -> void {
     var x: *int;
     var y: *int = (&a).(*int);
     x = y;
-    stdlib.println(*x);
+    io.println(*x);
 }
 
 // Regression: pointer-to-pointer assignment must preserve the address.

@@ -1,4 +1,5 @@
 package text;
+import memraw "stdlib/memory/raw";
 import ("stdlib/core" "stdlib/collections" "stdlib/collections/hash" "stdlib/text/utf8");
 
 pub enum ErrorKind {
@@ -27,7 +28,7 @@ pub struct Text<'a> {
     var source:TextSource<'a>; var start:usize; var end:usize;
     pub func length()->usize { return end-start; }
     pub func byteAt(index:usize)->u8 {
-        if(index>=end-start) { core.core_trap(); }
+        if(index>=end-start) { memraw.core_trap(); }
         match(source) {
             Buffer(input)=>return input[start+index];
             Owned(input)=>return *input.data.data.get(start+index);
@@ -107,7 +108,7 @@ pub struct Text<'a> {
         return Codepoints<'a>{source:Text<'a>{source:source,start:start,end:end},offset:0};
     }
     pub func split(separator:u32)->TextSplit<'a> {
-        if(!utf8.isScalar(separator)) { core.core_trap(); }
+        if(!utf8.isScalar(separator)) { memraw.core_trap(); }
         return TextSplit<'a>{source:Text<'a>{source:source,start:start,end:end},separator:separator,offset:0,finished:false};
     }
 }

@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 enum State(code: int) {
     Ready(1),
@@ -7,7 +8,7 @@ enum State(code: int) {
 }
 
 func main() -> void {
-    stdlib.print(State.Missing.code);
+    io.print(State.Missing.code);
     var state: State = State.Ready;
     state.code;
 }

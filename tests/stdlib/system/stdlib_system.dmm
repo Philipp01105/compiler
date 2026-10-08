@@ -1,11 +1,11 @@
 package main;
 import (
-    "stdlib"
+    stdlib "stdlib/core"
     "stdlib/text"
     "stdlib/path"
     "stdlib/fs"
     "stdlib/io"
-    "stdlib/env"
+    env "stdlib/process/native"
     "stdlib/time"
     "stdlib/random"
     "stdlib/math"
@@ -18,7 +18,7 @@ func fsOk(value: stdlib.Result<void, fs.Error>) -> bit {
     }
 }
 
-func envOk(value: stdlib.Result<void, env.EnvError>) -> bit {
+func envOk(value: stdlib.Result<void, env.Error>) -> bit {
     match (value) {
         Ok => return true;
         Err(error) => return false;
@@ -30,6 +30,10 @@ func ioOk(value:stdlib.Result<void,io.Error>)->bit {
 }
 
 func main() -> int {
+    match(time.milliseconds(2)){Ok(value)=>{if(value.nanoseconds!=2000000){return 100;}}Err(error)=>return 101;}
+    match(time.milliseconds(18446744073710)){Err(error)=>{if(error!=time.Error.Overflow){return 102;}}Ok(value)=>return 103;}
+    match(time.after(time.nanoseconds(18446744073709551615))){Err(error)=>{if(error!=time.Error.Overflow){return 104;}}Ok(value)=>return 105;}
+
     var normalized = path.normalize(text.bytes("/a/b/../c/./"), path.Style.Posix);
     match (normalized) {
         Err(error) => return 1;
@@ -67,7 +71,7 @@ func main() -> int {
     match (overflow) {
         Ok(value) => return 35;
         Err(error) => {
-            if (error != time.TimeError.Overflow) {
+            if (error != time.Error.Overflow) {
                 return 36;
             }
         }
@@ -111,6 +115,20 @@ func main() -> int {
     if (!envOk(env.remove(text.bytes("DMM_STDLIB_TEST_VALUE")))) {
         return 42;
     }
+    // A retrieved value owns its bytes across later environment mutations.
+    if (!envOk(env.set(text.bytes("DMM_STDLIB_TEST_VALUE"), text.bytes("snapshot")))) { return 43; }
+    match(env.get(text.bytes("DMM_STDLIB_TEST_VALUE"))) {
+        Err(error)=>return 44;
+        Ok(snapshot)=>{
+            if (!envOk(env.set(text.bytes("DMM_STDLIB_TEST_VALUE"), text.bytes("changed")))) { return 45; }
+            if (!envOk(env.remove(text.bytes("DMM_STDLIB_TEST_VALUE")))) { return 46; }
+            if(snapshot.view()!=text.bytes("snapshot")) { return 47; }
+        }
+    }
+    match(env.get(text.bytes(""))) { Ok(value)=>return 48; Err(error)=>{if(error.kind!=env.ErrorKind.InvalidName){return 49;}} }
+    match(env.set(text.bytes("bad=name"),text.bytes("value"))) { Ok=>return 50; Err(error)=>{if(error.kind!=env.ErrorKind.InvalidName){return 51;}} }
+    var invalid:u8[3]=[65,0,66];
+    match(env.set(text.bytes("DMM_STDLIB_TEST_VALUE"),invalid[:])) { Ok=>return 52; Err(error)=>{if(error.kind!=env.ErrorKind.InvalidValue){return 53;}} }
     var first = time.now();
     var second = time.now();
     match (first) {

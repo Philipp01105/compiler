@@ -1,6 +1,0 @@
-/* main
-Typed early-return propagation for Option, Result and a custom propagation type.
-*/
-
-module dmm.example/error_propagation
-dmm 2026-09-22-dev

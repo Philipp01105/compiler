@@ -1,9 +1,10 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 // Test reserve keyword for heap allocation
 func main() -> void {
     var p: *int = reserve(int); // Allocate memory for int
-    stdlib.println("Memory reserved successfully");
+    io.println("Memory reserved successfully");
     free(p);
 }
 

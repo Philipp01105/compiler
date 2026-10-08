@@ -1,28 +1,4 @@
 package stdlib;
-pub import (
-    "stdlib/core"
-    "stdlib/types"
-);
-
-pub struct Cell<T> {
-    pub var value: T;
-    pub func get() -> T where T: core.Copy {
-        return value;
-    }
-
-    pub func set(newValue: T) -> void {
-        value = newValue;
-    }
-}
-
-pub interface Printable {
-    pub func toString() -> string;
-}
-
-pub interface Equal {
-    pub func equal(other: Self) -> bit;
-}
-
-pub func printValue<T: Printable>(value: T) -> void {
-    print(value.toString());
-}
+// The root forwards only canonical language contracts. Resource APIs have
+// explicit package imports; ownership and I/O have no root compatibility API.
+pub import "stdlib/core";

@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 func main() -> void {
-    stdlib.println( "unterminated); }
+    io.println( "unterminated); }

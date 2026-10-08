@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 var packageFixed: int[5] = [3, 4;
 5];
@@ -26,37 +27,37 @@ func numbers() -> int[] {
 }
 
 func main() -> void {
-    stdlib.println(packageFixed[4]);
-    stdlib.println(packageSlice[1]);
+    io.println(packageFixed[4]);
+    io.println(packageSlice[1]);
     var fixedValues: int[4] = [0, 1;
     4];
-    stdlib.println(fixedValues[0]);
-    stdlib.println(fixedValues[3]);
+    io.println(fixedValues[0]);
+    io.println(fixedValues[3]);
     fixedValues = [4, 5, 6, 7];
-    stdlib.println(fixedValues[2]);
+    io.println(fixedValues[2]);
 
     var sliceValues: int[] = [1, 2;
     6];
     var copied: int[] = sliceValues;
     copied[1] = 9;
-    stdlib.println(sliceValues[1]);
-    stdlib.println(sum([1, 2, 3;
+    io.println(sliceValues[1]);
+    io.println(sum([1, 2, 3;
     6]));
 
     var returnedFixed: int[4] = fixed();
-    stdlib.println(returnedFixed[3]);
+    io.println(returnedFixed[3]);
     var returnedSlice: int[] = numbers();
-    stdlib.println(returnedSlice[2]);
+    io.println(returnedSlice[2]);
     var forwardedSlice: int[] = forwarded();
-    stdlib.println(forwardedSlice[0]);
+    io.println(forwardedSlice[0]);
 
     var reassigned: int[] = [1, 2];
     reassigned = [5, 6, 7];
-    stdlib.println(reassigned[2]);
+    io.println(reassigned[2]);
 
     var ownerAfterView: int[] = [8, 9];
     var finishedView: int[] = ownerAfterView;
-    stdlib.println(finishedView[0]);
+    io.println(finishedView[0]);
     ownerAfterView = [2, 4];
-    stdlib.println(ownerAfterView[1]);
+    io.println(ownerAfterView[1]);
 }

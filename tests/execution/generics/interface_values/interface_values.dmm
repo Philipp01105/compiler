@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 interface Reading {
     func value() -> i32;
@@ -68,14 +69,14 @@ func main() -> void {
     adjusted.correction = 5;
     var nested: Reading = adjusted;
     last = pressure;
-    stdlib.println(
+    io.println(
         read(current) + sensor.latest.value() + sample.Present().value() + selected.value()
     );
-    stdlib.println(batch[0].value() + batch[1].value());
-    stdlib.println(last.value());
-    stdlib.println(nested.value());
-    stdlib.println(sizeof(Reading));
+    io.println(batch[0].value() + batch[1].value());
+    io.println(last.value());
+    io.println(nested.value());
+    io.println(sizeof(Reading));
 
     current = pressure;
-    stdlib.println(current.value());
+    io.println(current.value());
 }

@@ -3,7 +3,7 @@ import (
     "stdlib/core"
     "stdlib/collections"
     "stdlib/time"
-    raw "stdlib/core/raw"
+    raw "stdlib/memory/raw"
 );
 extern "system" from "c" {
     struct Stamp {

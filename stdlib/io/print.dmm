@@ -53,7 +53,7 @@ pub func print(value:u32)->core.Result<void,Error> { return printUnsigned(value.
 pub func print(value:u64)->core.Result<void,Error> { return printUnsigned(value.(u64)); }
 pub func print(value:usize)->core.Result<void,Error> { return printUnsigned(value.(u64)); }
 pub func print(value:bit)->core.Result<void,Error> {
-    if(value) { return print("true"); } return print("false");
+    if(value) { return printUnsigned(1); } return printUnsigned(0);
 }
 pub func print(value:char)->core.Result<void,Error> {
     var encoded:string="" + value;

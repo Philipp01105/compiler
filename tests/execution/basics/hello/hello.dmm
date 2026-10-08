@@ -1,8 +1,9 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 // Simple hello world test
 func main() -> void {
-    stdlib.println("Hello, World!");
+    io.println("Hello, World!");
 }
 
 // Category: execution/basics

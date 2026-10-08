@@ -1,5 +1,5 @@
 package collections;
-import (raw "stdlib/core/raw" "stdlib/collections/hash");
+import (raw "stdlib/memory/raw" "stdlib/collections/hash");
 func scalarHash(value:u64,key0:u64,key1:u64)->u64 {
     var input:u8[8];
     for(var i:usize=0;i<8;i+=1) {input[i]=(value%256).(u8);value/=256;}

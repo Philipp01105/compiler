@@ -85,9 +85,9 @@ void add_global(Analyzer *analyzer, AstDeclarationNode *declaration,
                        ERR_SEM_INVALID_DECLARATION, "Future is a compiler-owned type name");
     const DmmPackage *package=analyzer->program->package;
     int runtime_source=package &&
-        (!strcmp(package->path,"stdlib/core/executor") ||
-         !strcmp(package->path,"stdlib/native/threading") ||
-         !strcmp(package->path,"stdlib/core/net/internal"));
+        (!strcmp(package->path,"stdlib/internal/executor") ||
+         !strcmp(package->path,"stdlib/internal/threading") ||
+         !strcmp(package->path,"stdlib/internal/net"));
     if (owner_token == AST_TOKEN_NONE && kind == SEMANTIC_SYMBOL_FUNCTION &&
         reserved_link_name(name) &&
         !((analyzer->model->program->runtime_component || runtime_source) && declaration->is_native_export))

@@ -1,0 +1,22 @@
+cmake_minimum_required(VERSION 3.21)
+file(MAKE_DIRECTORY "${OUTPUT_DIR}")
+foreach(level 0 1)
+    set(program "${OUTPUT_DIR}/process_test.exe")
+    execute_process(COMMAND "${COMPILER}" "-O${level}" "${SOURCE_DIR}/tests/stdlib/process/process.dmm" -o "${program}"
+        RESULT_VARIABLE status ERROR_VARIABLE errors TIMEOUT 90)
+    if(NOT status EQUAL 0)
+        message(FATAL_ERROR "Process O${level}: ${errors}")
+    endif()
+    execute_process(COMMAND "${program}" WORKING_DIRECTORY "${OUTPUT_DIR}" RESULT_VARIABLE status TIMEOUT 30)
+    if(NOT status EQUAL 0)
+        message(FATAL_ERROR "Process execution O${level}: ${status}")
+    endif()
+    foreach(target elf coff)
+        execute_process(COMMAND "${COMPILER}" "-O${level}" "--target=${target}" --emit=obj
+            "${SOURCE_DIR}/tests/stdlib/process/process.dmm" -o "${OUTPUT_DIR}/process_${level}_${target}.o"
+            RESULT_VARIABLE status ERROR_VARIABLE errors TIMEOUT 90)
+        if(NOT status EQUAL 0)
+            message(FATAL_ERROR "Process ${target}/O${level}: ${errors}")
+        endif()
+    endforeach()
+endforeach()

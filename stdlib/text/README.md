@@ -22,5 +22,5 @@ free functions; there is no untracked primitive-string-to-Text overload.
 text.map<V>() and text.set() provide collections with owned String keys,
 borrowed equality and per-owner keyed hashing. Use stdlib/text/utf8 and
 stdlib/text/utf16 for compact codecs, stdlib/bytes for unvalidated byte search,
-ASCII trimming, splitting, cloning and replacement. Existing stdlib/unicode
-classification, casing and normalization remain pending consolidation.
+ASCII trimming, splitting, cloning and replacement. Unicode classification,
+casing and normalization live in stdlib/unicode and reuse these small codecs.

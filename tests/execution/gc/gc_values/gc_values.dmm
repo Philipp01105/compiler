@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 func allocate(value: int) -> int {
     var p: *int = reserve(int);
@@ -15,9 +16,9 @@ func main() -> void {
     for (var i: int = 0; i < 10; i++) {
         total += allocate(i);
     }
-    stdlib.println(total);
+    io.println(total);
     var manual: *int = reserve(int);
     *manual = 7;
-    stdlib.println(*manual);
+    io.println(*manual);
     free(manual);
 }

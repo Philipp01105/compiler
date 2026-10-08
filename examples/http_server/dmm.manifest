@@ -1,0 +1,3 @@
+module examples/http_server
+dmm 2026-10-04-dev
+features = ["async"]

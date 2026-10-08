@@ -1,0 +1,57 @@
+package main;
+import ("stdlib/core" "stdlib/text" "stdlib/collections" "examples/json_parser/json");
+
+func document() -> core.Result<json.Document, json.Error> {
+    var storage = collections.list<u8>();
+    var source = text.bytes("{\"service\":\"old\",\"\\u0073ervice\":\"Hello\\n\\u0000\\uD83D\\uDE80\",\"ports\":[8080,-2,[true,{}]],\"ready\":false,\"nothing\":null,\"ratio\":1.25e-2,\"max\":18446744073709551615,\"min\":-9223372036854775808,\"overflow\":18446744073709551616,\"a\\u0000b\":42,\"nested\":{\"service\":\"inner\"}}");
+    storage.appendSlice(&source)?;
+    var input = storage.view();
+    // All input storage disappears before the caller uses the returned document.
+    return json.parse(&input);
+}
+
+func localKey<'a>(value: json.Value<'a>) -> core.Result<json.Value<'a>, json.AccessError> {
+    var buffer: u8[7] = [115,101,114,118,105,99,101];
+    var input = buffer[:];
+    match (text.view(&input)) {
+        Ok(key) => return value.get(key);
+        Err(error) => return core.Result<json.Value<'a>, json.AccessError>.Err(json.AccessError.InvalidKey);
+    }
+}
+
+func exercise() -> core.Result<int, json.AccessError> {
+    match (document()) {
+        Err(error) => return core.Result<int, json.AccessError>.Ok(1);
+        Ok(owner) => {
+            var root = owner.root();
+            var service = localKey(root)?.asString()?;
+            if (service.length() != 11 || service.byteAt(5) != 10 || service.byteAt(6) != 0 || service.byteAt(7) != 240) { return core.Result<int, json.AccessError>.Ok(2); }
+            if (root.get("ports")?.at(1)?.asInt()? != -2) { return core.Result<int, json.AccessError>.Ok(3); }
+            if (!root.get("ports")?.at(2)?.at(0)?.asBool()?) { return core.Result<int, json.AccessError>.Ok(4); }
+            if (root.get("ready")?.asBool()?) { return core.Result<int, json.AccessError>.Ok(5); }
+            if (root.get("nothing")?.kind() != json.Kind.Null) { return core.Result<int, json.AccessError>.Ok(6); }
+            if (!root.get("nested")?.get("service")?.asString()?.startsWith("inner")) { return core.Result<int, json.AccessError>.Ok(7); }
+            if (root.get("ports")?.length()? != 3 || root.entry(0)?.key.length() != 7) { return core.Result<int, json.AccessError>.Ok(8); }
+            if (root.get("max")?.asUint()? != 18446744073709551615.(u64)) { return core.Result<int, json.AccessError>.Ok(9); }
+            if (root.get("min")?.asInt()? != -9223372036854775807.(i64) - 1) { return core.Result<int, json.AccessError>.Ok(10); }
+            if (!root.get("ratio")?.asNumber()?.startsWith("1.25e-2")) { return core.Result<int, json.AccessError>.Ok(11); }
+            var keyBytes: u8[3] = [97,0,98]; var keyInput = keyBytes[:];
+            match (text.view(&keyInput)) {
+                Err(error) => return core.Result<int, json.AccessError>.Ok(12);
+                Ok(key) => { if (root.get(key)?.asInt()? != 42) { return core.Result<int, json.AccessError>.Ok(13); } }
+            }
+            match (root.get("missing")) { Ok(value) => return core.Result<int, json.AccessError>.Ok(14); Err(error) => { if (error != json.AccessError.MissingKey) { return core.Result<int, json.AccessError>.Ok(15); } } }
+            match (root.at(0)) { Ok(value) => return core.Result<int, json.AccessError>.Ok(16); Err(error) => { if (error != json.AccessError.WrongType) { return core.Result<int, json.AccessError>.Ok(17); } } }
+            var ports = root.get("ports")?;
+            match (ports.at(3)) { Ok(value) => return core.Result<int, json.AccessError>.Ok(18); Err(error) => { if (error != json.AccessError.OutOfBounds) { return core.Result<int, json.AccessError>.Ok(19); } } }
+            var ratio = root.get("ratio")?;
+            match (ratio.asInt()) { Ok(value) => return core.Result<int, json.AccessError>.Ok(20); Err(error) => { if (error != json.AccessError.InvalidNumber) { return core.Result<int, json.AccessError>.Ok(21); } } }
+            var overflow = root.get("overflow")?;
+            match (overflow.asUint()) { Ok(value) => return core.Result<int, json.AccessError>.Ok(22); Err(error) => { if (error != json.AccessError.Overflow) { return core.Result<int, json.AccessError>.Ok(23); } } }
+            match (root.asString()) { Ok(value) => return core.Result<int, json.AccessError>.Ok(24); Err(error) => { if (error != json.AccessError.WrongType) { return core.Result<int, json.AccessError>.Ok(25); } } }
+            return core.Result<int, json.AccessError>.Ok(0);
+        }
+    }
+}
+
+func main() -> int { match (exercise()) { Ok(code) => return code; Err(error) => return 99; } }

@@ -1,4 +1,5 @@
 package main;
+import memraw "stdlib/memory/raw";
 import "stdlib/core";
 import "stdlib/native/glibc";
 import "stdlib/native/pthreads";
@@ -35,7 +36,7 @@ func main() -> int {
     if (
         pthreads.create(
             (&thread).(*usize),
-            core.null<pthreads.Attributes>(),
+            memraw.null<pthreads.Attributes>(),
             worker,
             (&value).(*void)
         ) != 0
@@ -53,7 +54,7 @@ func main() -> int {
     if (
         pthreads.mutexInit(
             (&mutex).(*pthreads.Mutex),
-            core.null<pthreads.MutexAttributes>()
+            memraw.null<pthreads.MutexAttributes>()
         ) != 0
     ) {
         return 4;
@@ -94,8 +95,8 @@ func main() -> int {
     var addresses: *glibc.Addrinfo;
     if (
         glibc.getaddrinfo(
-            core.null<u8>(),
-            core.core_string_data("0"),
+            memraw.null<u8>(),
+            memraw.core_string_data("0"),
             (&hints).(*glibc.Addrinfo),
             (&addresses).(**glibc.Addrinfo)
         ) != 0

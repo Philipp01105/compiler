@@ -1,6 +1,0 @@
-/* main
-Move-only standard collections: Bytes, Buffer<T>, List<T> and String.
-*/
-
-module dmm.example/owning_collections
-dmm 2026-09-22-dev

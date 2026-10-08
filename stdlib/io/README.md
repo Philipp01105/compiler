@@ -21,6 +21,6 @@ be retried. pending reports unsent bytes. Flush explicitly before destruction:
 the destructor releases storage and does not conceal a fallible output operation.
 
 Files implement the same protocols. Standard native operations handle EINTR on
-Linux and chunk native transfers on Windows. These APIs are synchronous. Numeric
-printing still uses existing runtime formatting; remaining formatting migration
-is tracked in plans/stdlib-redesign-implementation.md.
+Linux and chunk native transfers on Windows. These APIs are synchronous. Numeric printing uses the existing runtime formatter. Raw descriptor operations require stdlib/io/raw.
+
+Bounded reads probe one byte beyond the limit to distinguish exact EOF from excess input. readToEnd appends the permitted prefix before reporting LimitExceeded; Error.transferred counts consumed source bytes, including the probe. Failed readAll destroys its unpublished owner. Retrying must account for the already advanced source.

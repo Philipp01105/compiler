@@ -1,0 +1,3 @@
+package contracts;
+pub interface Printable{pub func toString()->string;}
+pub interface Equal{pub func equal(other:Self)->bit;}

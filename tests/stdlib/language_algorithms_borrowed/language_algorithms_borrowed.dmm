@@ -1,5 +1,5 @@
 package main;
-import ("stdlib" "stdlib/algorithms");
+import (stdlib "stdlib/core" "stdlib/algorithms");
 var destroyed:i32=0;
 struct Resource { var value:i32; destructor { destroyed+=1; } }
 func positive(value:&Resource)->bit { return (*value).value>0; }
@@ -30,22 +30,22 @@ func main()->int {
         var equal=func [move wanted,&mut calls](value:&Resource)->bit {
             calls+=1; return (*value).value==wanted;
         };
-        match(algorithms.findBorrowed(&view,equal)) { Some(index)=>{ if(index!=1) { return 7; } } None=>return 8; }
+        match(algorithms.find(&view,equal)) { Some(index)=>{ if(index!=1) { return 7; } } None=>return 8; }
         if(calls!=2) { return 9; }
         calls=0;
-        if(algorithms.countBorrowed(&view,func [move wanted,&mut calls](value:&Resource)->bit { calls+=1; return (*value).value==wanted; })!=1 || calls!=3) { return 10; }
+        if(algorithms.count(&view,func [move wanted,&mut calls](value:&Resource)->bit { calls+=1; return (*value).value==wanted; })!=1 || calls!=3) { return 10; }
         calls=0;
-        if(algorithms.allBorrowed(&view,func [move wanted,&mut calls](value:&Resource)->bit { calls+=1; return (*value).value==wanted; }) || calls!=1) { return 11; }
+        if(algorithms.all(&view,func [move wanted,&mut calls](value:&Resource)->bit { calls+=1; return (*value).value==wanted; }) || calls!=1) { return 11; }
         calls=0;
-        if(!algorithms.anyBorrowed(&view,func [move wanted,&mut calls](value:&Resource)->bit { calls+=1; return (*value).value==wanted; }) || calls!=2) { return 12; }
+        if(!algorithms.any(&view,func [move wanted,&mut calls](value:&Resource)->bit { calls+=1; return (*value).value==wanted; }) || calls!=2) { return 12; }
         calls=0;
-        match(algorithms.findBorrowed(&view,func [&mut calls](value:&Resource)->bit { calls+=1; return false; })) { Some(index)=>return 18; None=>{} }
+        match(algorithms.find(&view,func [&mut calls](value:&Resource)->bit { calls+=1; return false; })) { Some(index)=>return 18; None=>{} }
         if(calls!=3) { return 19; }
         calls=0;
-        if(algorithms.anyBorrowed(&view,func [&mut calls](value:&Resource)->bit { calls+=1; return false; }) || calls!=3) { return 20; }
-        if(!algorithms.allBorrowed(&view,positive)) { return 1; }
-        if(algorithms.countBorrowed(&view,positive)!=3) { return 2; }
-        match(algorithms.findBorrowed(&view,positive)) { Some(index)=>{ if(index!=0) { return 3; } } None=>return 4; }
+        if(algorithms.any(&view,func [&mut calls](value:&Resource)->bit { calls+=1; return false; }) || calls!=3) { return 20; }
+        if(!algorithms.all(&view,positive)) { return 1; }
+        if(algorithms.count(&view,positive)!=3) { return 2; }
+        match(algorithms.find(&view,positive)) { Some(index)=>{ if(index!=0) { return 3; } } None=>return 4; }
         var visits:i32=0;
         algorithms.forEachMut(&mut view,func [&mut visits](value:&mut Resource)->void { visits+=1; increment(value); });
         if(visits!=3) { return 21; }
@@ -56,7 +56,7 @@ func main()->int {
         var storage:Resource[1]=[Resource{value:1}]; var view:Resource[]=storage;
         var captured=Resource{value:2};
         var predicate=func [move captured](value:&Resource)->bit { captured.value+=1; return (*value).value<captured.value; };
-        if(algorithms.countBorrowed(&view,predicate)!=1 || destroyed!=4) { return 22; }
+        if(algorithms.count(&view,predicate)!=1 || destroyed!=4) { return 22; }
     }
     if(destroyed!=5) { return 23; }
     if(!namedArrayView()) { return 17; }
@@ -65,10 +65,10 @@ func main()->int {
         var empty:Resource[];
         var calls:i32=0;
         var observe=func [&mut calls](value:&Resource)->bit { calls+=1; return true; };
-        match(algorithms.findBorrowed(&empty,observe)) { Some(index)=>return 14; None=>{} }
-        if(algorithms.countBorrowed(&empty,func [&mut calls](value:&Resource)->bit { calls+=1; return true; })!=0 ||
-            !algorithms.allBorrowed(&empty,func [&mut calls](value:&Resource)->bit { calls+=1; return true; }) ||
-            algorithms.anyBorrowed(&empty,func [&mut calls](value:&Resource)->bit { calls+=1; return true; }) || calls!=0) { return 15; }
+        match(algorithms.find(&empty,observe)) { Some(index)=>return 14; None=>{} }
+        if(algorithms.count(&empty,func [&mut calls](value:&Resource)->bit { calls+=1; return true; })!=0 ||
+            !algorithms.all(&empty,func [&mut calls](value:&Resource)->bit { calls+=1; return true; }) ||
+            algorithms.any(&empty,func [&mut calls](value:&Resource)->bit { calls+=1; return true; }) || calls!=0) { return 15; }
         var visit=func [&mut calls](value:&mut Resource)->void { calls+=1; (*value).value+=1; };
         algorithms.forEachMut(&mut empty,visit);
         if(calls!=0 || destroyed!=7) { return 16; }

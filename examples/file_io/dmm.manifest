@@ -1,7 +1,0 @@
-/* main
-Deterministic file round-trip with explicit stream and byte-buffer cleanup.
-Creates dmm-example-output.txt in the current working directory when run.
-*/
-
-module dmm.example/file_io
-dmm 2026-09-22-dev

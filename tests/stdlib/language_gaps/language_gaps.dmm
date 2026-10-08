@@ -1,6 +1,6 @@
 package main;
 import (
-    "stdlib"
+    stdlib "stdlib/core"
     "stdlib/core"
     "stdlib/algorithms"
     "stdlib/memory"
@@ -45,8 +45,8 @@ func unpack(value: Owner) -> i32 {
 func main() -> int {
     var values: i32[3] = [3, 1, 2];
     var view: i32[] = values;
-    algorithms.sort(view, less);
-    algorithms.sort(view, overloaded);
+    algorithms.sort(&mut view, less);
+    algorithms.sort(&mut view, overloaded);
     if (values[0] != 1 || values[2] != 3) { return 1; }
     var outputs: i64[3];
     var outputView: i64[] = outputs;
@@ -99,7 +99,7 @@ func main() -> int {
         var result = memory.box(Resource{value: 50});
         match (result) {
             Ok(box) => {
-                var resource = box.intoInner();
+                var resource = memory.intoInner(box);
                 if (resource.value != 50) { return 19; }
             }
             Err(error) => return 20;

@@ -1,10 +1,11 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 func main() -> int {
-    stdlib.print("value=");
-    stdlib.println(42);
-    stdlib.println((65).(char));
-    stdlib.println((1).(double));
+    io.print("value=");
+    io.println(42);
+    io.println((65).(char));
+    io.println((1).(double));
     return 0;
 }

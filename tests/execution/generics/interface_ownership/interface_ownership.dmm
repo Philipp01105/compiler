@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 var drops: int = 0;
 
@@ -65,8 +66,8 @@ func run() -> void {
     values[0] = fifth;
     values[0] = make(6);
 
-    stdlib.println(take(current));
-    stdlib.println(box.item.get() + selection.Chosen().get() + values[0].get());
+    io.println(take(current));
+    io.println(box.item.get() + selection.Chosen().get() + values[0].get());
 }
 
 func runSlice() -> void {
@@ -76,7 +77,7 @@ func runSlice() -> void {
     eighth.value = 8;
     var items: Value[] = [seventh];
     items = [eighth];
-    stdlib.println(items[0].get());
+    io.println(items[0].get());
 }
 
 func runWrapped() -> void {
@@ -85,12 +86,12 @@ func runWrapped() -> void {
     var wrapper: Wrapped;
     wrapper.child = ninth;
     var erased: Value = wrapper;
-    stdlib.println(erased.get());
+    io.println(erased.get());
 }
 
 func main() -> void {
     run();
     runSlice();
     runWrapped();
-    stdlib.println(drops);
+    io.println(drops);
 }

@@ -125,6 +125,25 @@ int main(void) {
     ir_module_free(module);
     semantic_model_free(model);
     ast_program_free(program);
+    const char *owned_from_borrow[] = {
+        "struct Owner { var value:int; destructor {} } "
+        "func copy(value:&int)->Owner { return Owner{value:*value}; } "
+        "func make()->Owner { var local:int=42; return copy(&local); } "
+        "func main()->int { var owner=make(); return owner.value; }",
+        "struct Owner<'a> { var value:&'a int; destructor {} } "
+        "func retain<'a>(value:&'a int)->Owner<'a> { return Owner<'a>{value:value}; } "
+        "func make<'a>()->Owner<'a> { var local:int=42; return retain(&local); } "
+        "func main()->int { return 0; }"
+    };
+    for (size_t i=0; i<2; i++) {
+        program=test_parse_source(owned_from_borrow[i],strlen(owned_from_borrow[i]),
+                                  "owned_from_borrow.dmm",NULL);
+        CHECK(program && ast_validate_program(program));
+        model=semantic_analyze(program);
+        CHECK(model && (i==0 ? model->error_count==0 : model->error_count>0));
+        semantic_model_free(model);
+        ast_program_free(program);
+    }
     error_handler_free(handler);
     error_handler_set_global(NULL);
     fclose(capture);

@@ -294,6 +294,9 @@ int driver_external_link(const IrModule *module, const BackendOptions *options,
     arguments[argument_count++] = image;
     arguments[argument_count++] = options->target_format == TARGET_ELF ? "-no-pie" : "-Wl,--subsystem,console";
     arguments[argument_count++] = options->target_format == TARGET_ELF ? "-pthread" : "-lkernel32";
+    if (options->deterministic)
+        arguments[argument_count++] = options->target_format == TARGET_COFF
+            ? "-Wl,--no-insert-timestamp" : "-Wl,--build-id=none";
     if (network && options->target_format == TARGET_COFF) arguments[argument_count++] = "-lws2_32";
     int libraries_ok = 1;
     for (size_t i = 0; i < native->directory_count; ++i) {

@@ -54,10 +54,6 @@ pub const BYTE_MIN: byte = 0.(byte);
 
 pub const BYTE_MAX: byte = 255.(byte);
 
-pub const BIT_MIN: bit = false;
-
-pub const BIT_MAX: bit = true;
-
 // MIN/MAX are finite bounds, not the smallest positive magnitude.
 pub const FLOAT_MAX: float = 3.4028234663852886e38.(float);
 

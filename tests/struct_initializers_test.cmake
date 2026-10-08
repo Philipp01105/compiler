@@ -89,7 +89,7 @@ endif()
 
 file(APPEND "${work}/dmm.manifest" "features = [\"async\"]\n")
 dmm_test_write("${work}/main.dmm"
-    "import \"stdlib\"; struct R { var n:int; destructor { stdlib.println(n); } } struct H { var r:R; var n:int; }\n"
+    "import \"stdlib/io\"; struct R { var n:int; destructor { io.println(n); } } struct H { var r:R; var n:int; }\n"
     "async func number() -> int { return 5; } async func run() -> int { var h = H{r: R{n: 101}, n: number().await()}; return h.n - 5; }\n"
     "func main() -> int { return block_on(run()); }\n")
 foreach(level 0 1)

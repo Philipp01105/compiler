@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 struct Pair<A, B> {
     var first: A;
@@ -30,10 +31,10 @@ func main() -> void {
     p.first = 42;
     p.second = "hello";
     var q: Pair<int, string> = copy(identity(p));
-    stdlib.println(get(q));
-    stdlib.println(q.getFirst());
-    stdlib.println(q.second);
+    io.println(get(q));
+    io.println(q.getFirst());
+    io.println(q.second);
     var nested: Wrap<double>;
     nested.pair.first = 2.5;
-    stdlib.println(nested.pair.first);
+    io.println(nested.pair.first);
 }

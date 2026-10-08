@@ -1,5 +1,7 @@
 package main;
-import "stdlib";
+import memraw "stdlib/memory/raw";
+import "stdlib/io";
+import stdlib "stdlib/core";
 import "stdlib/core";
 
 var configured: i32 = if (true) {
@@ -57,15 +59,15 @@ func nonnegative(value: i32) -> i32 {
     return if (value >= 0) {
         value
     } else {
-        core.core_trap();
+        memraw.core_trap();
     };
 }
 
 func unreachableValue(flag: bit) -> i32 {
     return if (flag) {
-        core.core_trap();
+        memraw.core_trap();
     } else {
-        core.core_trap();
+        memraw.core_trap();
     };
 }
 
@@ -235,6 +237,6 @@ func main() -> int {
     if (promoted != 3) {
         return 13;
     }
-    stdlib.println("value expressions ok");
+    io.println("value expressions ok");
     return 0;
 }

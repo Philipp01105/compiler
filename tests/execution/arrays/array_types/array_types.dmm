@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 func main() -> void {
     var chars: char[2];
@@ -17,9 +18,9 @@ func main() -> void {
     var flag: bit = bits[1];
     var f: float = floats[1];
     var d: double = doubles[1];
-    stdlib.println(c);
-    stdlib.println(b);
-    stdlib.println(flag);
-    stdlib.println(f);
-    stdlib.println(d);
+    io.println(c);
+    io.println(b);
+    io.println(flag);
+    io.println(f);
+    io.println(d);
 }

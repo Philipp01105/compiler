@@ -1,13 +1,15 @@
 package main;
 import (
-    "stdlib"
+    stdlib "stdlib/core"
+    "stdlib/collections"
     "stdlib/unicode"
 );
 
 func main() -> int {
-    var owner = stdlib.bytes(8);
-    owner.push(65);
-    var iterator = unicode.iterate(owner.view());
+    var owner = collections.list<u8>();
+    owner.append(65);
+    var data=owner.view();
+    var iterator = unicode.iterate(&data);
     owner.clear();
     var next = iterator.next();
     return 0;

@@ -1,0 +1,42 @@
+package main;
+import ("stdlib/core" raw "stdlib/memory/raw" env "stdlib/process/native" "stdlib/process" "stdlib/text");
+func failedValue<T>(result:core.Result<T,env.Error>)->bit {
+    match(result) {Ok(value)=>return false;Err(error)=>return error.kind==env.ErrorKind.OutOfMemory;}
+}
+func failed(result:core.Result<void,env.Error>)->bit {
+    match(result) {Ok=>return false;Err(error)=>return error.kind==env.ErrorKind.OutOfMemory;}
+}
+func main()->int {
+    var name=text.bytes("DMM_ENV");
+    match(env.set(name,text.bytes("original"))) {Ok=>{}Err(error)=>return 1;}
+    var baseline=raw.testOutstandingAllocations();
+    raw.testFailNextAllocation();
+    match(process.args()){Ok(value)=>return 20;Err(error)=>{if(error.kind!=process.ErrorKind.OutOfMemory){return 21;}}}
+    if(raw.testOutstandingAllocations()!=baseline){return 22;}
+    raw.testFailNextAllocation();
+    match(process.cwd()){Ok(value)=>return 23;Err(error)=>{if(error.kind!=process.ErrorKind.OutOfMemory){return 24;}}}
+    if(raw.testOutstandingAllocations()!=baseline){return 25;}
+    var args:string[1]=["argument"];var arguments:string[]=args[:];
+    raw.testFailNextAllocation();
+    match(process.run("missing-program",&arguments)){Ok(value)=>return 26;Err(error)=>{if(error.kind!=process.ErrorKind.OutOfMemory){return 27;}}}
+    if(raw.testOutstandingAllocations()!=baseline){return 28;}
+    raw.testFailNextAllocation();
+    if(!failedValue(env.get(name)) || raw.testOutstandingAllocations()!=baseline) {return 2;}
+    raw.testFailNextAllocation();
+    if(!failed(env.set(name,text.bytes("replacement"))) || raw.testOutstandingAllocations()!=baseline) {return 3;}
+    raw.testFailNextAllocation();
+    if(!failed(env.remove(name)) || raw.testOutstandingAllocations()!=baseline) {return 4;}
+    // Fail after the converted key has been allocated: temporary owners must
+    // also clean up when a later value/native buffer allocation fails.
+    raw.testFailAllocationAfter(1);
+    if(!failedValue(env.get(name)) || raw.testOutstandingAllocations()!=baseline) {return 10;}
+    raw.testFailAllocationAfter(1);
+    if(!failed(env.set(name,text.bytes("replacement"))) || raw.testOutstandingAllocations()!=baseline) {return 11;}
+    {
+        match(env.get(name)) {Ok(value)=>{if(value.view()!=text.bytes("original")){return 5;}}Err(error)=>return 6;}
+    }
+    if(raw.testOutstandingAllocations()!=baseline) {return 7;}
+    match(env.remove(name)) {Ok=>{}Err(error)=>return 8;}
+    if(raw.testOutstandingAllocations()!=baseline) {return 9;}
+    return 0;
+}

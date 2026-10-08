@@ -1,21 +1,21 @@
-# Additional acceptance cases for plans/stdlib-language-gaps-next.md.
+# Additional acceptance cases for ownership, closures and async composition.
 set(growing_ring [=[
 struct Reader<'a> { var source:&'a i32; }
 struct Ring<'a> {
  var storage:*Reader<'a>; var head:usize; var slots:usize; var count:usize;
- func push(value:Reader<'a>)->void { core.initialize(&storage[(head+count)%slots],value); count+=1; }
+ func push(value:Reader<'a>)->void { memraw.initialize(&storage[(head+count)%slots],value); count+=1; }
  func grow(size:usize)->void {
-  var fresh=core.core_alloc(size*sizeof(Reader)).(*Reader<'a>);
-  if(fresh==core.null<Reader<'a>>()) { return; }
-  for(var cursor:usize=0;cursor<count;cursor+=1) { core.initialize(&fresh[cursor],take(storage[(head+cursor)%slots])); }
-  core.core_release(storage.(*u8)); storage=fresh; slots=size; head=0;
+  var fresh=memraw.core_alloc(size*sizeof(Reader)).(*Reader<'a>);
+  if(fresh==memraw.null<Reader<'a>>()) { return; }
+  for(var cursor:usize=0;cursor<count;cursor+=1) { memraw.initialize(&fresh[cursor],take(storage[(head+cursor)%slots])); }
+  memraw.core_release(storage.(*u8)); storage=fresh; slots=size; head=0;
  }
  func pop()->Reader<'a> { count-=1; return take(storage[(head+count)%slots]); }
- func clear()->void { while(count>0) { core.destroy(&storage[head]); head=(head+1)%slots; count-=1; } }
- destructor { core.core_release(storage.(*u8)); }
+ func clear()->void { while(count>0) { memraw.destroy(&storage[head]); head=(head+1)%slots; count-=1; } }
+ destructor { memraw.core_release(storage.(*u8)); }
 }
 ]=])
-set(growing_ring_setup "var left:i32=1; var right:i32=2; var ring=Ring{storage:core.core_alloc(3*sizeof(Reader)).(*Reader),head:2,slots:3,count:0}; ring.push(Reader{source:&left}); ring.push(Reader{source:&right}); if(ring.count!=2) { return; } ring.grow(4);")
+set(growing_ring_setup "var left:i32=1; var right:i32=2; var ring=Ring{storage:memraw.core_alloc(3*sizeof(Reader)).(*Reader),head:2,slots:3,count:0}; ring.push(Reader{source:&left}); ring.push(Reader{source:&right}); if(ring.count!=2) { return; } ring.grow(4);")
 reject(ring_growth_remaining "${growing_ring} func main()->void { ${growing_ring_setup} { var removed=ring.pop(); } left=3; ring.clear(); }" "borrow")
 reject(ring_growth_result "${growing_ring} func main()->void { ${growing_ring_setup} var removed=ring.pop(); ring.clear(); right=3; var read=*removed.source; }" "borrow")
 string(REPLACE "cursor+=1" "cursor+=2" growing_ring_skip "${growing_ring}")
@@ -26,7 +26,7 @@ string(REPLACE "(head+cursor)%slots" "(head+cursor)%size" growing_ring_mod "${gr
 reject(ring_growth_modulus "${growing_ring_mod} func main()->void { ${growing_ring_setup} ring.clear(); left=3; }" "borrow")
 string(REPLACE "head=0;" "head=1;" growing_ring_head "${growing_ring}")
 reject(ring_growth_head "${growing_ring_head} func main()->void { ${growing_ring_setup} ring.clear(); left=3; }" "borrow")
-reject(deque_growth_slot "struct Reader<'a> { var source:&'a i32; } func main()->void { var source:i32=1; match(collections.deque<Reader>(3)) { Ok(ring)=>{ ring.pushBack(Reader{source:&source}); var slot=ring.getRef(0); ring.ensureCapacity(8); var read=*(*slot).source; } Err(error)=>{} } }" "borrow")
+reject(deque_growth_slot "struct Reader<'a> { var source:&'a i32; } func main()->void { var source:i32=1; var ring=testList<Reader>(3); ring.append(Reader{source:&source}); var slot=ring.get(0); ring.ensureCapacity(8); var read=*(*slot).source; }" "borrow")
 
 set(rehash_table [=[
 struct Reader<'a> { var source:&'a i32; }
@@ -36,26 +36,26 @@ struct Table<'a> {
  func put(key:Reader<'a>,value:Reader<'a>)->void {
   var index:usize=(*key.source).(usize)%limit;
   while(storage[index].tag==7) { index=(index+1)%limit; }
-  core.initialize(&storage[index],Entry{tag:7,key:key,value:value});
+  memraw.initialize(&storage[index],Entry{tag:7,key:key,value:value});
  }
  func grow(size:usize)->void {
-  var fresh=core.core_alloc(size*sizeof(Entry)).(*Entry<'a>);
-  if(fresh==core.null<Entry<'a>>()) { return; }
+  var fresh=memraw.core_alloc(size*sizeof(Entry)).(*Entry<'a>);
+  if(fresh==memraw.null<Entry<'a>>()) { return; }
   for(var cursor:usize=0;cursor<size;cursor+=1) { fresh[cursor].tag=0; }
   for(var cursor:usize=0;cursor<limit;cursor+=1) {
    if(storage[cursor].tag==7) {
     var index:usize=(*storage[cursor].key.source).(usize)%size;
     while(fresh[index].tag==7) { index=(index+1)%size; }
-    core.initialize(&fresh[index],take(storage[cursor]));
+    memraw.initialize(&fresh[index],take(storage[cursor]));
    }
   }
-  core.core_release(storage.(*u8)); storage=fresh; limit=size;
+  memraw.core_release(storage.(*u8)); storage=fresh; limit=size;
  }
- func clear()->void { for(var index:usize=0;index<limit;index+=1) { if(storage[index].tag==7) { core.destroy(&storage[index]); } storage[index].tag=0; } }
- destructor { core.core_release(storage.(*u8)); }
+ func clear()->void { for(var index:usize=0;index<limit;index+=1) { if(storage[index].tag==7) { memraw.destroy(&storage[index]); } storage[index].tag=0; } }
+ destructor { memraw.core_release(storage.(*u8)); }
 }
 ]=])
-set(rehash_setup "var key:i32=1; var source:i32=2; var table=Table{storage:core.core_alloc(3*sizeof(Entry)).(*Entry),limit:3}; for(var index:usize=0;index<3;index+=1) { table.storage[index].tag=0; } table.put(Reader{source:&key},Reader{source:&source}); table.grow(4);")
+set(rehash_setup "var key:i32=1; var source:i32=2; var table=Table{storage:memraw.core_alloc(3*sizeof(Entry)).(*Entry),limit:3}; for(var index:usize=0;index<3;index+=1) { table.storage[index].tag=0; } table.put(Reader{source:&key},Reader{source:&source}); table.grow(4);")
 reject(rehash_live_value "${rehash_table} func main()->void { ${rehash_setup} source=3; var read=*table.storage[1].value.source; table.clear(); }" "borrow")
 reject(rehash_live_key "${rehash_table} func main()->void { ${rehash_setup} key=3; var read=*table.storage[1].key.source; table.clear(); }" "borrow")
 reject(rehash_copied_value "${rehash_table} func main()->void { ${rehash_setup} var copy=table.storage[1].value; table.clear(); source=3; var read=*copy.source; }" "borrow")
@@ -82,4 +82,4 @@ reject(void_selection_discard "import (\"stdlib/async\"); async func nothing()->
 
 # Deliberately conservative limits: arbitrary key equality/index relationships
 # are not established merely by running opaque comparison callbacks.
-reject(limit_hash_key_release "struct Reader<'a> { var source:&'a i32; } func hash(key:i32)->u64 { return key.(u64); } func same(a:i32,b:i32)->bit { return a==b; } func main()->void { var left:i32=1; var right:i32=2; var values=collections.hashMap<i32,Reader>(hash,same); values.insert(1,Reader{source:&left}); values.insert(2,Reader{source:&right}); { var removed=values.remove(1); } left=3; var read=values.get(2); values.clear(); }" "borrow")
+reject(limit_hash_key_release "struct Reader<'a> { var source:&'a i32; } func hash(key:&i32)->u64 { return (*key).(u64); } func same(a:&i32,b:&i32)->bit { return *a==*b; } func main()->void { var left:i32=1; var right:i32=2; var values=testMap<i32,Reader>(hash,same); values.insert(1,Reader{source:&left}); values.insert(2,Reader{source:&right}); { var key:i32=1;var removed=values.remove(&key); } left=3; var query:i32=2;var read=values.get(&query); values.clear(); }" "borrow")

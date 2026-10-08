@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 // Function call test
 func add(x: int, y: int) -> int {
     return x + y;
@@ -9,7 +10,7 @@ func main() -> void {
     var result: int = add(7, 3);
     {
         var _output0: string = "7 + 3 = " + result;
-        stdlib.println(_output0);
+        io.println(_output0);
         free(_output0);
     }
 }

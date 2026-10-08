@@ -1,11 +1,12 @@
 package main;
 import (
-    "stdlib"
+    stdlib "stdlib/core"
+    "stdlib/collections"
 );
 
 func main() -> int {
-    var owner = stdlib.bytes(4);
-    owner.push(7);
+    var owner = collections.list<u8>();
+    owner.append(7);
     var wrapped = stdlib.Option<u8[]>.Some(owner.view());
     match (wrapped) {
         None => return 0;

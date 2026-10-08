@@ -16,7 +16,7 @@ foreach(target elf coff)
         set(object "${OUTPUT_DIR}/platform_${target}_${level}.o")
         compile_ok(--runtime-component "--target=${target}" "-O${level}"
             --dump-native-link "${object}.link" -o "${object}"
-            "${SOURCE_DIR}/stdlib/native/threading/threading.dmm")
+            "${SOURCE_DIR}/stdlib/internal/threading/threading.dmm")
         file(READ "${object}.link" inventory)
         if(NOT inventory MATCHES "dmm-native-link-v2" OR NOT inventory MATCHES "runtime-profile=component")
             message(FATAL_ERROR "Wrong bootstrap dependency inventory: ${inventory}")
@@ -47,7 +47,7 @@ foreach(target elf coff)
         foreach(syntax intel att)
             set(assembly "${OUTPUT_DIR}/platform_${target}_${level}_${syntax}.s")
             compile_ok(--runtime-component -S "--target=${target}" "--syntax=${syntax}" "-O${level}"
-                -o "${assembly}" "${SOURCE_DIR}/stdlib/native/threading/threading.dmm")
+                -o "${assembly}" "${SOURCE_DIR}/stdlib/internal/threading/threading.dmm")
             file(READ "${assembly}" text)
             if(text MATCHES "__dmm_runtime_main|__dmm_package_init|__dmm_async_default_drain|[.]globl main")
                 message(FATAL_ERROR "Runtime component acquired application startup/runtime")
@@ -102,9 +102,9 @@ reject(linker "package component;" "without linker or runtime overrides" --runti
 reject(startup "package main; func main() -> int { return 0; }" "requires a library package" --runtime-component)
 reject(initializer "package component; func initialize() -> i32 { return 1; } var value:i32=initialize();"
     "global initialization or cleanup" --runtime-component)
-reject(implicit "package component; import \"stdlib/core\"; export \"system\" func __dmm_async_wait_create() -> *void { return core.core_alloc(8).(*void); }"
+reject(implicit "package component; import (\"stdlib/core\" memraw \"stdlib/memory/raw\" atomic \"stdlib/sync/atomic\"); export \"system\" func __dmm_async_wait_create() -> *void { return memraw.core_alloc(8).(*void); }"
     "explicit native declaration" --runtime-component)
-reject(masked "package component; import \"stdlib/core\"; extern \"system\" from \"dmm_basis\" { func basisNull() -> *void = \"__dmm_core_null\"; } export \"system\" func __dmm_async_wait_create() -> *void { return core.core_alloc(8).(*void); }"
+reject(masked "package component; import (\"stdlib/core\" memraw \"stdlib/memory/raw\" atomic \"stdlib/sync/atomic\"); extern \"system\" from \"dmm_basis\" { func basisNull() -> *void = \"__dmm_core_null\"; } export \"system\" func __dmm_async_wait_create() -> *void { return memraw.core_alloc(8).(*void); }"
     "explicit native declaration" --runtime-component)
 file(MAKE_DIRECTORY "${OUTPUT_DIR}/explicit")
 file(WRITE "${OUTPUT_DIR}/explicit/dmm.manifest" "module component.test/explicit\ndmm 2026-09-22-dev\n")

@@ -40,7 +40,3 @@ Conditional Send/Sync depends on element/key/value types. Checked borrows block
 owner destruction, relocation and conflicting access. Dynamic key/index
 relationships remain conservative. Allocation-fault and ownership contracts
 cover failed growth, replacement, cleanup, rehash and transferred payload loans.
-
-Legacy Deque, HashMap, HashSet and root stdlib containers still coexist during
-migration; they are not the target API. Remaining removals are tracked in
-[the implementation status](../../plans/stdlib-redesign-implementation.md).

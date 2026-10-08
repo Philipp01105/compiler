@@ -1,0 +1,198 @@
+package json;
+import ("stdlib/core" "stdlib/collections" "stdlib/bytes" "stdlib/text" "stdlib/text/utf8" "stdlib/numeric");
+
+pub enum Kind { pub Object, pub Array, pub String, pub Number, pub Boolean, pub Null }
+// The document owns values; child links remain stable when its storage grows.
+struct Node {
+    var kind: Kind;
+    var start: usize;
+    var end: usize;
+    var parent: core.Option<usize>;
+    var key: bit;
+    var payload: usize;
+    var boolean: bit;
+    var first: core.Option<usize>;
+    var last: core.Option<usize>;
+    var next: core.Option<usize>;
+    var children: usize;
+}
+pub struct Error {
+    pub var offset: usize;
+    pub var message: string;
+    pub static func fromResidual(error: core.AllocError) -> Self { return Error{offset: 0, message: "Allocation failed"}; }
+    pub static func fromResidual(error: utf8.Error) -> Self { return Error{offset: error.offset, message: "Invalid UTF-8"}; }
+    pub static func fromResidual(error: text.Error) -> Self { return Error{offset: error.offset, message: "String allocation or decoding failed"}; }
+}
+
+struct Cursor<'a> {
+    var input: &'a u8[];
+    var position: usize;
+    func whitespace() -> void {
+        while (position < input.length) {
+            var value = input[position];
+            if (value != 32 && value != 9 && value != 10 && value != 13) { break; }
+            position += 1;
+        }
+    }
+    func consume(value: u8) -> bit {
+        if (position == input.length || input[position] != value) { return false; }
+        position += 1; return true;
+    }
+    func failure(message: string) -> Error { return Error{offset: position, message: message}; }
+    func hex() -> core.Result<u32, Error> {
+        var result: u32 = 0;
+        for (var i = 0; i < 4; i += 1) {
+            if (position == input.length) { return core.Result<u32, Error>.Err(self.failure("Incomplete Unicode escape")); }
+            var value = input[position]; position += 1;
+            var digit: u32;
+            if (value >= 48 && value <= 57) { digit = (value - 48).(u32); }
+            else if (value >= 65 && value <= 70) { digit = (value - 55).(u32); }
+            else if (value >= 97 && value <= 102) { digit = (value - 87).(u32); }
+            else { return core.Result<u32, Error>.Err(self.failure("Invalid hexadecimal escape")); }
+            result = result * 16 + digit;
+        }
+        return core.Result<u32, Error>.Ok(result);
+    }
+    func quoted() -> core.Result<void, Error> {
+        if (!self.consume(34)) { return core.Result<void, Error>.Err(self.failure("Expected a quoted string")); }
+        while (position < input.length) {
+            var value = input[position]; position += 1;
+            if (value == 34) { return core.Result<void, Error>.Ok; }
+            if (value < 32) { return core.Result<void, Error>.Err(self.failure("Control byte in string")); }
+            if (value == 92) {
+                if (position == input.length) { break; }
+                var escape = input[position]; position += 1;
+                if (escape == 117) {
+                    var scalar = self.hex()?;
+                    if (scalar >= 55296 && scalar <= 56319) {
+                        if (!self.consume(92) || !self.consume(117)) { return core.Result<void, Error>.Err(self.failure("Expected low surrogate escape")); }
+                        var low = self.hex()?;
+                        if (low < 56320 || low > 57343) { return core.Result<void, Error>.Err(self.failure("Invalid surrogate pair")); }
+                    } else if (scalar >= 56320 && scalar <= 57343) {
+                        return core.Result<void, Error>.Err(self.failure("Unpaired low surrogate"));
+                    }
+                } else if (escape != 34 && escape != 92 && escape != 47 && escape != 98 && escape != 102 && escape != 110 && escape != 114 && escape != 116) {
+                    return core.Result<void, Error>.Err(self.failure("Unknown string escape"));
+                }
+            }
+        }
+        return core.Result<void, Error>.Err(self.failure("Unterminated string"));
+    }
+    func digits() -> usize {
+        var start = position;
+        while (position < input.length && input[position] >= 48 && input[position] <= 57) { position += 1; }
+        return position - start;
+    }
+    func number() -> core.Result<void, Error> {
+        var negative = self.consume(45);
+        if (!self.consume(48) && self.digits() == 0) { return core.Result<void, Error>.Err(self.failure("Expected a number")); }
+        if (self.consume(46) && self.digits() == 0) { return core.Result<void, Error>.Err(self.failure("Expected fraction digits")); }
+        if (self.consume(101) || self.consume(69)) {
+            if (!self.consume(43)) { var minus = self.consume(45); }
+            if (self.digits() == 0) { return core.Result<void, Error>.Err(self.failure("Expected exponent digits")); }
+        }
+        return core.Result<void, Error>.Ok;
+    }
+    func literal(value: string) -> bit {
+        var remaining = (*input)[position:];
+        var expected = text.bytes(value);
+        if (!bytes.startsWith(remaining, expected)) { return false; }
+        position += expected.length; return true;
+    }
+}
+
+func node(nodes: &mut collections.List<Node>, kind: Kind, start: usize, parent: core.Option<usize>, key: bit)
+    -> core.Result<usize, Error> {
+    var index = nodes.length();
+    nodes.append(Node{kind: kind, start: start, end: start, parent: parent, key: key,
+        payload: 0, boolean: false, first: core.Option<usize>.None,
+        last: core.Option<usize>.None, next: core.Option<usize>.None, children: 0})?;
+    return core.Result<usize, Error>.Ok(index);
+}
+
+struct Frame { var index: usize; var phase: u8; }
+
+func begin(cursor: &mut Cursor, nodes: &mut collections.List<Node>, stack: &mut collections.List<Frame>, parent: core.Option<usize>)
+    -> core.Result<void, Error> {
+    cursor.whitespace();
+    if (cursor.position == cursor.input.length) { return core.Result<void, Error>.Err(cursor.failure("Expected a value")); }
+    var start = cursor.position;
+    var first = cursor.input[start];
+    var kind = Kind.Null;
+    if (first == 123) { kind = Kind.Object; }
+    else if (first == 91) { kind = Kind.Array; }
+    else if (first == 34) { kind = Kind.String; }
+    else if (first == 45 || (first >= 48 && first <= 57)) { kind = Kind.Number; }
+    else if (first == 116 || first == 102) { kind = Kind.Boolean; }
+    var index = node(nodes, kind, start, parent, false)?;
+    match (kind) {
+        String => cursor.quoted()?;
+        Number => cursor.number()?;
+        Boolean => {
+            if (!cursor.literal("true") && !cursor.literal("false")) { return core.Result<void, Error>.Err(cursor.failure("Expected true or false")); }
+        }
+        Null => {
+            if (!cursor.literal("null")) { return core.Result<void, Error>.Err(cursor.failure("Expected a value")); }
+        }
+        Object => {
+            if (stack.length() == 64) { return core.Result<void, Error>.Err(cursor.failure("Nesting exceeds 64 levels")); }
+            cursor.position += 1; stack.append(Frame{index: index, phase: 0})?;
+        }
+        Array => {
+            if (stack.length() == 64) { return core.Result<void, Error>.Err(cursor.failure("Nesting exceeds 64 levels")); }
+            cursor.position += 1; stack.append(Frame{index: index, phase: 0})?;
+        }
+    }
+    nodes.getMut(index).end = cursor.position;
+    return core.Result<void, Error>.Ok;
+}
+
+func syntax(input: &u8[]) -> core.Result<collections.List<Node>, Error> {
+    utf8.validate(input)?;
+    var cursor = Cursor{input: input, position: 0};
+    var nodes = collections.list<Node>();
+    var stack = collections.list<Frame>();
+    begin(&mut cursor, &mut nodes, &mut stack, core.Option<usize>.None)?;
+    // Parent frames remember grammar state while child containers are parsed.
+    while (stack.length() > 0) {
+        cursor.whitespace();
+        var top = stack.length() - 1;
+        var frame = *stack.get(top);
+        var parent = core.Option<usize>.Some(frame.index);
+        if (nodes.get(frame.index).kind == Kind.Object) {
+            if (frame.phase == 0 || frame.phase == 1) {
+                if (frame.phase == 0 && cursor.consume(125)) {
+                    nodes.getMut(frame.index).end = cursor.position; var popped = stack.pop(); continue;
+                }
+                var key = node(&mut nodes, Kind.String, cursor.position, parent, true)?;
+                cursor.quoted()?; nodes.getMut(key).end = cursor.position;
+                stack.getMut(top).phase = 2;
+            } else if (frame.phase == 2) {
+                if (!cursor.consume(58)) { return core.Result<collections.List<Node>, Error>.Err(cursor.failure("Expected colon after object key")); }
+                stack.getMut(top).phase = 3;
+            } else if (frame.phase == 3) {
+                stack.getMut(top).phase = 4;
+                begin(&mut cursor, &mut nodes, &mut stack, parent)?;
+            } else {
+                if (cursor.consume(125)) { nodes.getMut(frame.index).end = cursor.position; var popped = stack.pop(); }
+                else if (cursor.consume(44)) { stack.getMut(top).phase = 1; }
+                else { return core.Result<collections.List<Node>, Error>.Err(cursor.failure("Expected comma or closing brace")); }
+            }
+        } else {
+            if (frame.phase == 0 || frame.phase == 1) {
+                if (frame.phase == 0 && cursor.consume(93)) {
+                    nodes.getMut(frame.index).end = cursor.position; var popped = stack.pop(); continue;
+                }
+                stack.getMut(top).phase = 2;
+                begin(&mut cursor, &mut nodes, &mut stack, parent)?;
+            } else {
+                if (cursor.consume(93)) { nodes.getMut(frame.index).end = cursor.position; var popped = stack.pop(); }
+                else if (cursor.consume(44)) { stack.getMut(top).phase = 1; }
+                else { return core.Result<collections.List<Node>, Error>.Err(cursor.failure("Expected comma or closing bracket")); }
+            }
+        }
+    }
+    cursor.whitespace();
+    if (cursor.position != input.length) { return core.Result<collections.List<Node>, Error>.Err(cursor.failure("Trailing data")); }
+    return core.Result<collections.List<Node>, Error>.Ok(nodes);
+}

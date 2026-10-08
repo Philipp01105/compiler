@@ -1,7 +1,7 @@
 package main;
 import (
-    "stdlib"
-    "stdlib/core/raw"
+    stdlib "stdlib/core"
+    "stdlib/memory/raw"
     "stdlib/collections"
 );
 var created:i32=0;
@@ -9,8 +9,8 @@ var destroyed:i32=0;
 struct Resource { var value:i32; destructor { destroyed+=1; } }
 struct Reader<'a> { var source:&'a i32; }
 func resource(value:i32)->Resource { created+=1; return Resource{value:value}; }
-func hash(key:i32)->u64 { return key.(u64)%3; }
-func same(left:i32,right:i32)->bit { return left==right; }
+func hash(key:&i32)->u64 { return (*key).(u64)%3; }
+func same(left:&i32,right:&i32)->bit { return *left==*right; }
 func hashOwner(key:&Resource)->u64 { return (*key).value.(u64); }
 func sameOwner(left:&Resource,right:&Resource)->bit { return (*left).value==(*right).value; }
 func hashReader(key:&Reader)->u64 { return (*(*key).source).(u64)%3; }
@@ -18,7 +18,7 @@ func sameReader(left:&Reader,right:&Reader)->bit { return *(*left).source==*(*ri
 func main()->int {
     {
         var left:i32=11; var right:i32=12;
-        var allocatedReaders=collections.deque<Reader>(3);
+        var allocatedReaders=testRing<Reader>(3);
         match(allocatedReaders) {
             Ok(values)=>{
                 values.pushBack(Reader{source:&right});
@@ -26,10 +26,10 @@ func main()->int {
                 values.pushFront(Reader{source:&left});
                 if(values.length()!=2) { return 37; }
                 raw.testFailNextAllocation();
-                if(values.ensureCapacity(8)!=stdlib.AllocationError.OutOfMemory) { return 38; }
+                if(status(values.ensureCapacity(8))!=TestStatus.OutOfMemory) { return 38; }
                 { if(*values.get(0).source!=11 || *values.get(1).source!=12) { return 39; } }
                 if(values.length()!=2) { return 40; }
-                if(values.ensureCapacity(8)!=stdlib.AllocationError.None) { return 41; }
+                if(status(values.ensureCapacity(8))!=TestStatus.None) { return 41; }
                 if(values.length()!=2) { return 53; }
                 { var removed=values.popFront(); match(removed) { Some(value)=>{ if(*value.source!=11) { return 42; } } None=>return 43; } }
                 left=13;
@@ -42,48 +42,48 @@ func main()->int {
     {
         var a:i32=1; var b:i32=4; var c:i32=7; var d:i32=10; var e:i32=13;
         var first:i32=21; var second:i32=22; var third:i32=23; var fourth:i32=24; var fifth:i32=25;
-        var values=collections.hashMapBorrowed<Reader,Reader>(hashReader,sameReader);
+        var values=testMap<Reader,Reader>(hashReader,sameReader);
         values.insert(Reader{source:&a},Reader{source:&first});
         values.insert(Reader{source:&b},Reader{source:&second});
         values.insert(Reader{source:&c},Reader{source:&third});
         values.insert(Reader{source:&d},Reader{source:&fourth});
         raw.testFailNextAllocation();
-        if(values.insert(Reader{source:&e},Reader{source:&fifth})!=stdlib.AllocationError.OutOfMemory) { return 46; }
+        if(status(values.insert(Reader{source:&e},Reader{source:&fifth}))!=TestStatus.OutOfMemory) { return 46; }
         if(values.length()!=4) { return 47; }
-        { var key=Reader{source:&d}; match(values.getRef(&key)) { Some(value)=>{ if(*(*value).source!=24) { return 48; } } None=>return 49; } }
-        if(values.insert(Reader{source:&e},Reader{source:&fifth})!=stdlib.AllocationError.None) { return 50; }
-        { var key=Reader{source:&e}; match(values.getRef(&key)) { Some(value)=>{ if(*(*value).source!=25) { return 51; } } None=>return 52; } }
+        { var key=Reader{source:&d}; match(values.get(&key)) { Some(value)=>{ if(*(*value).source!=24) { return 48; } } None=>return 49; } }
+        if(status(values.insert(Reader{source:&e},Reader{source:&fifth}))!=TestStatus.None) { return 50; }
+        { var key=Reader{source:&e}; match(values.get(&key)) { Some(value)=>{ if(*(*value).source!=25) { return 51; } } None=>return 52; } }
         values.clear();
         a=2; b=5; c=8; d=11; e=14;
         first=31; second=32; third=33; fourth=34; fifth=35;
     }
     {
         var left:i32=1; var right:i32=2;
-        var values=stdlib.list<Reader>(2);
-        values.push(Reader{source:&left}); values.push(Reader{source:&right});
+        var values=testList<Reader>(2);
+        values.append(Reader{source:&left}); values.append(Reader{source:&right});
         if(values.length()!=2) { return 31; }
         raw.testFailNextAllocation();
-        if(values.ensureCapacity(4)!=stdlib.AllocationError.OutOfMemory) { return 32; }
+        if(status(values.ensureCapacity(4))!=TestStatus.OutOfMemory) { return 32; }
         if(*values.get(0).source!=1 || *values.get(1).source!=2) { return 33; }
-        if(values.ensureCapacity(4)!=stdlib.AllocationError.None) { return 34; }
+        if(status(values.ensureCapacity(4))!=TestStatus.None) { return 34; }
         { var removed=values.pop(); match(removed) { Some(value)=>{ if(*value.source!=2) { return 35; } } None=>return 36; } }
         right=3; values.clear(); left=4;
     }
     {
-        var values=stdlib.list<Resource>(2);
-        values.push(resource(1)); values.push(resource(2));
+        var values=testList<Resource>(2);
+        values.append(resource(1)); values.append(resource(2));
         raw.testFailNextAllocation();
-        if(values.push(resource(3))!=stdlib.AllocationError.OutOfMemory) { return 1; }
+        if(status(values.append(resource(3)))!=TestStatus.OutOfMemory) { return 1; }
         if(destroyed!=1 || values.length()!=2 || values.capacity()!=2) { return 2; }
         raw.testFailNextAllocation();
-        if(values.insert(1,resource(5))!=stdlib.AllocationError.OutOfMemory) { return 25; }
+        if(status(values.insert(1,resource(5)))!=TestStatus.OutOfMemory) { return 25; }
         raw.testFailNextAllocation();
-        if(values.ensureCapacity(8)!=stdlib.AllocationError.OutOfMemory) { return 3; }
-        if(destroyed!=2 || (*values.getRef(0)).value!=1 || (*values.getRef(1)).value!=2) { return 4; }
-        if(values.push(resource(4))!=stdlib.AllocationError.None || values.length()!=3) { return 5; }
+        if(status(values.ensureCapacity(8))!=TestStatus.OutOfMemory) { return 3; }
+        if(destroyed!=2 || (*values.get(0)).value!=1 || (*values.get(1)).value!=2) { return 4; }
+        if(status(values.append(resource(4)))!=TestStatus.None || values.length()!=3) { return 5; }
     }
     if(destroyed!=created) { return 6; }
-    var allocated=collections.deque<Resource>(2);
+    var allocated=testRing<Resource>(2);
     match(allocated) {
         Ok(values)=>{
             values.pushBack(resource(1)); values.pushBack(resource(2));
@@ -91,32 +91,32 @@ func main()->int {
             values.pushBack(resource(3));
             var prior=destroyed;
             raw.testFailNextAllocation();
-            if(values.pushFront(resource(4))!=stdlib.AllocationError.OutOfMemory) { return 8; }
+            if(status(values.pushFront(resource(4)))!=TestStatus.OutOfMemory) { return 8; }
             raw.testFailNextAllocation();
-            if(values.pushBack(resource(5))!=stdlib.AllocationError.OutOfMemory) { return 9; }
+            if(status(values.pushBack(resource(5)))!=TestStatus.OutOfMemory) { return 9; }
             raw.testFailNextAllocation();
-            if(values.ensureCapacity(8)!=stdlib.AllocationError.OutOfMemory) { return 10; }
+            if(status(values.ensureCapacity(8))!=TestStatus.OutOfMemory) { return 10; }
             if(destroyed!=prior+2 || values.length()!=2 || values.capacity()!=2) { return 11; }
             if((*values.getRef(0)).value!=2 || (*values.getRef(1)).value!=3) { return 12; }
-            if(values.pushBack(resource(6))!=stdlib.AllocationError.None) { return 13; }
+            if(status(values.pushBack(resource(6)))!=TestStatus.None) { return 13; }
         }
         Err(error)=>return 14;
     }
     if(destroyed!=created) { return 15; }
     {
-        var values=collections.hashMapBorrowed<Resource,Resource>(hashOwner,sameOwner);
+        var values=testMap<Resource,Resource>(hashOwner,sameOwner);
         var prior=destroyed;
         raw.testFailNextAllocation();
-        if(values.insert(resource(1),resource(2))!=stdlib.AllocationError.OutOfMemory) { return 16; }
+        if(status(values.insert(resource(1),resource(2)))!=TestStatus.OutOfMemory) { return 16; }
         if(values.length()!=0 || destroyed!=prior+2) { return 17; }
         for(var i:i32=0;i<4;i+=1) { values.insert(resource(i),resource(i+10)); }
         prior=destroyed;
         raw.testFailNextAllocation();
-        if(values.insert(resource(4),resource(14))!=stdlib.AllocationError.OutOfMemory) { return 26; }
+        if(status(values.insert(resource(4),resource(14)))!=TestStatus.OutOfMemory) { return 26; }
         if(values.length()!=4 || destroyed!=prior+2) { return 27; }
         for(var i:i32=0;i<4;i+=1) {
             var key=resource(i);
-            match(values.getRef(&key)) {
+            match(values.get(&key)) {
                 Some(value)=>{ if((*value).value!=i+10) { return 28; } }
                 None=>return 29;
             }
@@ -124,19 +124,19 @@ func main()->int {
     }
     if(destroyed!=created) { return 18; }
     {
-        var values=collections.hashMap<i32,Resource>(hash,same);
+        var values=testMap<i32,Resource>(hash,same);
         for(var i:i32=0;i<4;i+=1) { values.insert(i,resource(i+10)); }
         var prior=destroyed;
         raw.testFailNextAllocation();
-        if(values.insert(4,resource(14))!=stdlib.AllocationError.OutOfMemory) { return 19; }
+        if(status(values.insert(4,resource(14)))!=TestStatus.OutOfMemory) { return 19; }
         if(values.length()!=4 || destroyed!=prior+1) { return 20; }
         for(var i:i32=0;i<4;i+=1) {
-            match(values.getRef(&i)) {
+            match(values.get(&i)) {
                 Some(value)=>{ if((*value).value!=i+10) { return 21; } }
                 None=>return 22;
             }
         }
-        if(values.insert(4,resource(14))!=stdlib.AllocationError.None || values.length()!=5) { return 23; }
+        if(status(values.insert(4,resource(14)))!=TestStatus.None || values.length()!=5) { return 23; }
     }
     if(destroyed!=created) { return 24; }
     if(raw.testOutstandingAllocations()!=0) { return 30; }

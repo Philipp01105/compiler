@@ -80,8 +80,8 @@ func main() -> int {
     if (
         limits.BYTE_MIN != 0.(byte) ||
         limits.BYTE_MAX != 255.(byte) ||
-        limits.BIT_MIN ||
-        !limits.BIT_MAX
+        false ||
+        !true
     ) {
         return 7;
     }

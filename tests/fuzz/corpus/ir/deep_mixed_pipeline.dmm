@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 enum Phase(index: int, text: string, multiplier: int, enabled: bit) {
     warmup(0, "warmup", 1, true),
@@ -93,7 +94,7 @@ func main() -> void {
     *manual = (converted).(int);
     var final_phase: Phase = phase_for(4);
     var output: string = "phase=" + final_phase.text + ",index=" + final_phase.index + ",writes=" + matrix.writes + ",total=" + * aggregate + ",cast=" + * manual + ",enabled=" + final_phase.enabled;
-    stdlib.println(output);
+    io.println(output);
     free(output);
     free(manual);
 }

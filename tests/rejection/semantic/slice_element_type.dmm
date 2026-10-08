@@ -1,7 +1,8 @@
 package main;
+import memraw "stdlib/memory/raw";
 import "stdlib/core";
 
 func main() -> int {
-    var values: i32[] = core.alloc<u8>(4);
+    var values: i32[] = memraw.alloc<u8>(4);
     return 0;
 }

@@ -1,40 +1,41 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 func main() -> void {
     {
         var _output0: string = "nested=" + add(1, multiply(2, add(3, 4)));
-        stdlib.println(_output0);
+        io.println(_output0);
         free(_output0);
     }
     {
         var _output1: string = "factorial=" + factorial(6);
-        stdlib.println(_output1);
+        io.println(_output1);
         free(_output1);
     }
     {
         var _output2: string = "mutual=" + even(12);
-        stdlib.println(_output2);
+        io.println(_output2);
         free(_output2);
     }
     {
         var _output3: string = "ten=" + sum10(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
-        stdlib.println(_output3);
+        io.println(_output3);
         free(_output3);
     }
     {
         var _output4: string = "mixed=" + mixed(1, 2.5, 3, 4.5, 5, 6.5, 7, 8.5, 9, 10.5);
-        stdlib.println(_output4);
+        io.println(_output4);
         free(_output4);
     }
     {
         var _output5: string = "float=" + float_add(1.25, 2.5);
-        stdlib.println(_output5);
+        io.println(_output5);
         free(_output5);
     }
     {
         var _output6: string = "order=" + add(mark(1), mark(2));
-        stdlib.println(_output6);
+        io.println(_output6);
         free(_output6);
     }
 }
@@ -106,7 +107,7 @@ func float_add(a: float, b: float) -> float {
 }
 
 func mark(x: int) -> int {
-    stdlib.println(x);
+    io.println(x);
     return x;
 }
 

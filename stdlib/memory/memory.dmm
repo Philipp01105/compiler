@@ -1,6 +1,6 @@
 package memory;
+import memraw "stdlib/memory/raw";
 import (
-    "stdlib"
     "stdlib/core"
 );
 
@@ -11,95 +11,35 @@ struct BoxStorage<T> {
 @[no_default] @[core.Send where T:core.Send] @[core.Sync where T:core.Sync] pub struct Box<T> {
     var storage: *BoxStorage<T>;
     pub func get() -> &T {
-        if (storage == core.null<BoxStorage<T>>()) { core.core_trap(); }
+        if (storage == memraw.null<BoxStorage<T>>()) { memraw.core_trap(); }
         return &(*self.storage).value;
     }
 
     pub func getMut() -> &mut T {
-        if (storage == core.null<BoxStorage<T>>()) { core.core_trap(); }
+        if (storage == memraw.null<BoxStorage<T>>()) { memraw.core_trap(); }
         return &mut (*self.storage).value;
     }
 
-    // Transfer the payload and release its allocation. This box becomes empty.
-    pub func intoInner() -> T {
-        if (storage == core.null<BoxStorage<T>>()) { core.core_trap(); }
-        var value: T = take((*storage).value);
-        core.core_release(storage.(*u8));
-        storage = core.null<BoxStorage<T>>();
-        return value;
-    }
-
     destructor {
-        if (storage != core.null<BoxStorage<T>>()) {
-            core.destroy<BoxStorage<T>>(storage);
-            core.core_release(storage.(*u8));
+        if (storage != memraw.null<BoxStorage<T>>()) {
+            memraw.destroy<BoxStorage<T>>(storage);
+            memraw.core_release(storage.(*u8));
         }
     }
+}
+
+pub func intoInner<T>(owner:Box<T>)->T {
+    var value:T=take((*owner.storage).value);
+    memraw.core_release(owner.storage.(*u8));
+    owner.storage=memraw.null<BoxStorage<T>>();
+    return value;
 }
 
 pub func box<T>(value: T) -> core.Result<Box<T>,core.AllocError> {
-    var storage: *BoxStorage < T >= core.core_alloc(sizeof(BoxStorage<T>)).(*BoxStorage<T>);
-    if (storage == core.null<BoxStorage<T>>()) {
+    var storage: *BoxStorage < T >= memraw.core_alloc(sizeof(BoxStorage<T>)).(*BoxStorage<T>);
+    if (storage == memraw.null<BoxStorage<T>>()) {
         return core.Result<Box<T>,core.AllocError>.Err(core.AllocError.OutOfMemory);
     }
-    core.initialize<BoxStorage<T>>(storage, BoxStorage<T>{ value: value });
+    memraw.initialize<BoxStorage<T>>(storage, BoxStorage<T>{ value: value });
     return core.Result<Box<T>,core.AllocError>.Ok(Box<T>{ storage: storage });
-}
-
-pub struct Arena {
-    var storage: u8[];
-    var used: usize;
-    pub func capacity() -> usize {
-        return storage.length;
-    }
-
-    pub func length() -> usize {
-        return used;
-    }
-
-    pub func view() -> u8[] {
-        return storage[: used];
-    }
-
-    pub func allocate(bytes: usize) -> stdlib.Result<usize, stdlib.AllocationError> {
-        if (bytes > storage.length - used) {
-            return stdlib.Result<usize, stdlib.AllocationError>.Err(
-                stdlib.AllocationError.CapacityOverflow
-            );
-        }
-        var start: usize = used;
-        used += bytes;
-        return stdlib.Result<usize, stdlib.AllocationError>.Ok(start);
-    }
-
-    pub func region(offset: usize, length: usize) -> u8[] {
-        if (offset > used || length > used - offset) {
-            core.core_trap();
-        }
-        return storage[offset: offset + length];
-    }
-
-    pub func reset() -> void {
-        used = 0;
-    }
-
-    destructor {
-        core.release(storage);
-    }
-}
-
-pub func arena(capacity: usize) -> stdlib.Result<Arena, stdlib.AllocationError> {
-    if (capacity > 9223372036854775807.(usize)) {
-        return stdlib.Result<Arena, stdlib.AllocationError>.Err(
-            stdlib.AllocationError.CapacityOverflow
-        );
-    }
-    var value: Arena;
-    if (capacity > 0) {
-        value.storage = core.alloc<u8>(capacity);
-        if (value.storage.length == 0) {
-            return stdlib.Result<Arena, stdlib.AllocationError>.Err(stdlib.AllocationError.OutOfMemory);
-        }
-    }
-    return stdlib.Result<Arena, stdlib.AllocationError>.Ok(value);
 }

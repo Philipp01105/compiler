@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 interface Value {
     func get(multiplier: int) -> int;
@@ -38,5 +39,5 @@ func main() -> void {
     values[0] = first;
     values[1] = second;
     first.number = 99;
-    stdlib.println(sum(values) + read(first) - 99);
+    io.println(sum(values) + read(first) - 99);
 }

@@ -1,3 +1,0 @@
-module examples/shared_async
-dmm 2026-09-22-dev
-features = ["async"]

@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 enum IOError {
     Read,
@@ -53,42 +54,42 @@ func contractScore<P: stdlib.Propagate<int, int>>(value: P) -> int {
 func main() -> void {
     var optionOk: stdlib.Option<int> = optionStep(stdlib.Option<int>.Some(20));
     match (optionOk) {
-        Some(value) => stdlib.println(value);
-        None => stdlib.println(0);
+        Some(value) => io.println(value);
+        None => io.println(0);
     }
     var optionNone: stdlib.Option<int> = optionStep(stdlib.Option<int>.None);
     match (optionNone) {
-        Some(value) => stdlib.println(value);
-        None => stdlib.println(7);
+        Some(value) => io.println(value);
+        None => io.println(7);
     }
     var resultOk: stdlib.Result<int, int> = resultStep(stdlib.Result<int, int>.Ok(6));
     match (resultOk) {
-        Ok(value) => stdlib.println(value);
-        Err(error) => stdlib.println(error);
+        Ok(value) => io.println(value);
+        Err(error) => io.println(error);
     }
     var resultError: stdlib.Result<int, int> = resultStep(stdlib.Result<int, int>.Err(9));
     match (resultError) {
-        Ok(value) => stdlib.println(value);
-        Err(error) => stdlib.println(error);
+        Ok(value) => io.println(value);
+        Err(error) => io.println(error);
     }
     var converted: stdlib.Result<int, AppError> = convertedResult(
         stdlib.Result<int, IOError>.Err(IOError.Read)
     );
     match (converted) {
-        Ok(value) => stdlib.println(value);
+        Ok(value) => io.println(value);
         Err(error) => match (error) {
-            Io => stdlib.println(17);
+            Io => io.println(17);
         }
     }
     var custom: Validation = validationStep(Validation.Valid(4));
     match (custom) {
-        Valid(value) => stdlib.println(value);
-        Invalid(error) => stdlib.println(error);
+        Valid(value) => io.println(value);
+        Invalid(error) => io.println(error);
     }
     custom = validationStep(Validation.Invalid(23));
     match (custom) {
-        Valid(value) => stdlib.println(value);
-        Invalid(error) => stdlib.println(error);
+        Valid(value) => io.println(value);
+        Invalid(error) => io.println(error);
     }
-    stdlib.println(contractScore<Validation>(Validation.Valid(1)));
+    io.println(contractScore<Validation>(Validation.Valid(1)));
 }

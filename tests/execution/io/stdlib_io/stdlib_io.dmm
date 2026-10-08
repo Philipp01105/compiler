@@ -1,14 +1,20 @@
 package main;
-import "stdlib";
+import memraw "stdlib/memory/raw";
+import ("stdlib/core" "stdlib/io" "stdlib/fs" "stdlib/text");
 
 func main() -> void {
-    stdlib.println(stdlib.System.in.fd);
-    stdlib.println(stdlib.System.out.fd);
-    var result: int = stdlib.write_file("stdlib_io.tmp", "ok");
-    stdlib.println(result);
-    var buffer: char[8];
-    var count: int = stdlib.read_file("stdlib_io.tmp", buffer, 7);
-    stdlib.println(count);
-    sys_write(stdlib.System.out.fd, buffer, count);
-    stdlib.println("");
+    io.println(0);io.println(1);
+    var bytes=text.bytes("ok");
+    match(fs.writeFile("stdlib_io.tmp",&bytes)){
+        Err(error)=>{memraw.core_trap();}
+        Ok=>io.println(0);
+    }
+    match(fs.readFile("stdlib_io.tmp",7)){
+        Err(error)=>{memraw.core_trap();}
+        Ok(data)=>{
+            io.println(data.length());
+            var source=data.view();var output=io.stdout();output.writeAll(&source);
+            io.println("");
+        }
+    }
 }

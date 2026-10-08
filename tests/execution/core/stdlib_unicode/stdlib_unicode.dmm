@@ -1,12 +1,13 @@
 package main;
+import ("stdlib/core" "stdlib/collections" codec16 "stdlib/text/utf16" "stdlib/text/utf8");
 import (
-    "stdlib"
+    stdlib "stdlib/core"
     "stdlib/text"
     byteops "stdlib/bytes"
     "stdlib/unicode"
 );
 
-func equal(result: stdlib.Result<stdlib.Bytes, unicode.UnicodeError>, expected: u8[]) -> bit {
+func equal(result: core.Result<collections.List<u8>, unicode.Error>, expected: u8[]) -> bit {
     match (result) {
         Err(error) => return false;
         Ok(value) => {
@@ -72,16 +73,14 @@ func main() -> int {
     ) {
         return 7;
     }
-    var utf16 = unicode.toUtf16(text.bytes("A😀"));
-    match (utf16) {
+    var encodedInput=text.bytes("A😀");
+    var wide = codec16.fromUtf8(&encodedInput);
+    match (wide) {
         Err(error) => return 8;
         Ok(value) => {
-            if (
-                value.length() != 3 ||
-                !equal(unicode.fromUtf16(value.view()), text.bytes("A😀"))
-            ) {
-                return 9;
-            }
+            if(value.length()!=3) {return 9;}
+            var units=value.view();
+            match(codec16.toUtf8(&units)){Ok(bytes)=>{if(bytes.view()!=encodedInput){return 9;}}Err(error)=>return 9;}
         }
     }
     var invalid: u8[2] = [192, 128];
@@ -108,23 +107,24 @@ func main() -> int {
     var built=text.finish(builder);
     if(!built.contains("abc") || built.length()!=3){return 15;}
     var surrogate: u16[1] = [55296];
-    var rejected = unicode.fromUtf16(surrogate);
+    var surrogateView=surrogate[:];
+    var rejected = codec16.toUtf8(&surrogateView);
     match (rejected) {
         Ok(value) => return 16;
         Err(error) => {
-            if (error.kind != unicode.ErrorKind.InvalidUtf16) {
+            if (error.kind != codec16.ErrorKind.InvalidUtf16) {
                 return 17;
             }
         }
     }
     var storage: u8[2] = [7, 8];
     var output: u8[] = storage;
-    var encoded = unicode.encodeUtf8(128512, &mut output, 0);
+    var encoded = utf8.encode(128512, &mut output, 0);
     match (encoded) {
         Ok(value) => return 18;
         Err(error) => {
             if (
-                error.kind != unicode.ErrorKind.BufferTooSmall ||
+                error.kind != utf8.ErrorKind.BufferTooSmall ||
                 storage[0] != 7 ||
                 storage[1] != 8
             ) {

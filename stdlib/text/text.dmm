@@ -1,5 +1,5 @@
 package text;
-import ("stdlib/core" raw "stdlib/core/raw" byteops "stdlib/bytes");
+import ("stdlib/core" raw "stdlib/memory/raw" byteops "stdlib/bytes");
 pub func bytes(value:string)->u8[] {return slice(raw.core_string_data(value),raw.core_string_length(value));}
 pub func length(value:string)->usize {return raw.core_string_length(value);}
 pub func startsWith(value:string,prefix:string)->bit {return byteops.startsWith(bytes(value),bytes(prefix));}

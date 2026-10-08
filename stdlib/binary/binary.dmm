@@ -1,6 +1,6 @@
 package binary;
 import (
-    "stdlib"
+    stdlib "stdlib/core"
 );
 
 pub enum Endian {
@@ -8,7 +8,7 @@ pub enum Endian {
     pub Big,
 }
 
-pub enum BinaryError {
+pub enum Error {
     pub UnexpectedEnd,
     pub BufferTooSmall,
     pub InvalidWidth,
@@ -16,7 +16,7 @@ pub enum BinaryError {
 }
 
 // Cursors own only their position. Each operation borrows its buffer explicitly.
-pub struct Reader {
+struct ReadCursor {
     var position: usize;
     pub func offset() -> usize {
         return position;
@@ -29,20 +29,20 @@ pub struct Reader {
         return (*source).length - position;
     }
 
-    pub func skip(source: &u8[], count: usize) -> stdlib.Result<void, BinaryError> {
+    pub func skip(source: &u8[], count: usize) -> stdlib.Result<void, Error> {
         if (position > (*source).length || count > (*source).length - position) {
-            return stdlib.Result<void, BinaryError>.Err(BinaryError.UnexpectedEnd);
+            return stdlib.Result<void, Error>.Err(Error.UnexpectedEnd);
         }
         position += count;
-        return stdlib.Result<void, BinaryError>.Ok;
+        return stdlib.Result<void, Error>.Ok;
     }
 
-    pub func readUint(source: &u8[], width: usize, endian: Endian) -> stdlib.Result<u64, BinaryError> {
+    pub func readUint(source: &u8[], width: usize, endian: Endian) -> stdlib.Result<u64, Error> {
         if (width != 1 && width != 2 && width != 4 && width != 8) {
-            return stdlib.Result<u64, BinaryError>.Err(BinaryError.InvalidWidth);
+            return stdlib.Result<u64, Error>.Err(Error.InvalidWidth);
         }
         if (position > (*source).length || width > (*source).length - position) {
-            return stdlib.Result<u64, BinaryError>.Err(BinaryError.UnexpectedEnd);
+            return stdlib.Result<u64, Error>.Err(Error.UnexpectedEnd);
         }
         var value: u64 = 0;
         for (var i: usize = 0; i < width; i += 1) {
@@ -53,29 +53,29 @@ pub struct Reader {
             value = value * 256 + (*source)[index].(u64);
         }
         position += width;
-        return stdlib.Result<u64, BinaryError>.Ok(value);
+        return stdlib.Result<u64, Error>.Ok(value);
     }
 
-    pub func readBytes(source: &u8[], destination: &mut u8[]) -> stdlib.Result<void, BinaryError> {
+    pub func readBytes(source: &u8[], destination: &mut u8[]) -> stdlib.Result<void, Error> {
         if (
             position > (*source).length ||
             (*destination).length > (*source).length - position
         ) {
-            return stdlib.Result<void, BinaryError>.Err(BinaryError.UnexpectedEnd);
+            return stdlib.Result<void, Error>.Err(Error.UnexpectedEnd);
         }
         for (var i: usize = 0; i < (*destination).length; i += 1) {
             (*destination)[i] = (*source)[position + i];
         }
         position += (*destination).length;
-        return stdlib.Result<void, BinaryError>.Ok;
+        return stdlib.Result<void, Error>.Ok;
     }
 }
 
-pub func reader() -> Reader {
-    return Reader{ position: 0 };
+func readCursor() -> ReadCursor {
+    return ReadCursor{ position: 0 };
 }
 
-pub struct Writer {
+struct WriteCursor {
     var position: usize;
     pub func offset() -> usize {
         return position;
@@ -88,9 +88,9 @@ pub struct Writer {
         return (*destination).length - position;
     }
 
-    pub func writeUint(destination: &mut u8[], value: u64, width: usize, endian: Endian) -> stdlib.Result<void, BinaryError> {
+    pub func writeUint(destination: &mut u8[], value: u64, width: usize, endian: Endian) -> stdlib.Result<void, Error> {
         if (width != 1 && width != 2 && width != 4 && width != 8) {
-            return stdlib.Result<void, BinaryError>.Err(BinaryError.InvalidWidth);
+            return stdlib.Result<void, Error>.Err(Error.InvalidWidth);
         }
         var limit: u64 = 1;
         if (width < 8) {
@@ -98,11 +98,11 @@ pub struct Writer {
                 limit *= 256;
             }
             if (value >= limit) {
-                return stdlib.Result<void, BinaryError>.Err(BinaryError.ValueOverflow);
+                return stdlib.Result<void, Error>.Err(Error.ValueOverflow);
             }
         }
         if (position > (*destination).length || width > (*destination).length - position) {
-            return stdlib.Result<void, BinaryError>.Err(BinaryError.BufferTooSmall);
+            return stdlib.Result<void, Error>.Err(Error.BufferTooSmall);
         }
         for (var i: usize = 0; i < width; i += 1) {
             var index: usize = position + i;
@@ -112,25 +112,25 @@ pub struct Writer {
             value /= 256;
         }
         position += width;
-        return stdlib.Result<void, BinaryError>.Ok;
+        return stdlib.Result<void, Error>.Ok;
     }
 
-    pub func writeBytes(destination: &mut u8[], source: &u8[]) -> stdlib.Result<void, BinaryError> {
+    pub func writeBytes(destination: &mut u8[], source: &u8[]) -> stdlib.Result<void, Error> {
         if (
             position > (*destination).length ||
             (*source).length > (*destination).length - position
         ) {
-            return stdlib.Result<void, BinaryError>.Err(BinaryError.BufferTooSmall);
+            return stdlib.Result<void, Error>.Err(Error.BufferTooSmall);
         }
         // The destination is exclusively borrowed; input must not alias it.
         for (var i: usize = 0; i < (*source).length; i += 1) {
             (*destination)[position + i] = (*source)[i];
         }
         position += (*source).length;
-        return stdlib.Result<void, BinaryError>.Ok;
+        return stdlib.Result<void, Error>.Ok;
     }
 }
 
-pub func writer() -> Writer {
-    return Writer{ position: 0 };
+func writeCursor() -> WriteCursor {
+    return WriteCursor{ position: 0 };
 }

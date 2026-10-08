@@ -4,7 +4,7 @@ Checked `u64` and `i64` add/subtract/multiply/divide, strict integer parsing and
 allocation-free formatting. All functions are normal DMM code. Narrow integers can be
 widened explicitly; callers check the target range before narrowing a result.
 
-`checkedAdd`, `checkedSub`, `checkedMul`, `checkedDiv` return `Result<integer,NumberError>`.
+`checkedAdd`, `checkedSub`, `checkedMul`, `checkedDiv` return `Result<integer,Error>`.
 Signed minimum times/divided by -1 reports Overflow, division by zero DivisionByZero.
 
 `parseUint(bytes,base)` and `parseInt(bytes,base)` accept bases 2–36 with ASCII digits

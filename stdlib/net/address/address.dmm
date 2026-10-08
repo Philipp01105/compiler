@@ -1,0 +1,94 @@
+package address;
+import "stdlib/core";
+pub enum AddressFamily {
+    pub Any,
+    pub IPv4,
+    pub IPv6,
+}
+
+pub enum Transport {
+    pub TCP,
+    pub UDP,
+}
+
+pub enum Shutdown {
+    pub Read,
+    pub Write,
+    pub Both,
+}
+
+pub enum ErrorKind {
+    pub Busy,
+    pub TimedOut,
+    pub Closed,
+    pub InvalidState,
+    pub InvalidInput,
+    pub Refused,
+    pub Reset,
+    pub Unreachable,
+    pub AddressInUse,
+    pub OutOfMemory,
+    pub CapacityOverflow,
+    pub WriteZero,
+    pub System,
+}
+
+pub enum ErrorDomain {
+    pub Runtime,
+    pub Posix,
+    pub Winsock,
+    pub Resolver,
+    pub Win32,
+}
+
+pub struct Error {
+    pub var kind: ErrorKind;
+    pub var domain: ErrorDomain;
+    pub var code: isize;
+    pub var transferred:usize;
+    pub static func fromResidual(error:core.AllocError)->Self {
+        var kind=ErrorKind.OutOfMemory;if(error==core.AllocError.CapacityOverflow){kind=ErrorKind.CapacityOverflow;}
+        return Error{kind:kind,domain:ErrorDomain.Runtime,code:0,transferred:0};
+    }
+}
+
+pub struct IPv4 {
+    pub var octets: u32;
+}
+
+pub struct IPv6 {
+    pub var high: u64;
+    pub var low: u64;
+    pub var scope: u32;
+}
+
+pub enum Address {
+    pub V4(IPv4),
+    pub V6(IPv6),
+}
+
+pub struct Endpoint {
+    pub var address: Address;
+    pub var port: u16;
+}
+
+pub func ipv4(octets: u32, port: u16) -> Endpoint {
+    var a: IPv4;
+    a.octets = octets;
+    var e: Endpoint;
+    e.address = Address.V4(a);
+    e.port = port;
+    return e;
+}
+
+pub func ipv6(high: u64, low: u64, scope: u32, port: u16) -> Endpoint {
+    var a: IPv6;
+    a.high = high;
+    a.low = low;
+    a.scope = scope;
+    var e: Endpoint;
+    e.address = Address.V6(a);
+    e.port = port;
+    return e;
+}
+

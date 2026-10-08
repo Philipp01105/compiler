@@ -1,7 +1,9 @@
 package main;
 import (
-    "stdlib"
-    "stdlib/stdio"
+    stdlib "stdlib/core"
+    "stdlib/fs"
+    "stdlib/collections"
+    "stdlib/io"
     "stdlib/unicode"
 );
 
@@ -13,17 +15,11 @@ func checked(input: u8[], form: unicode.Normalization, expected: u8[]) -> bit {
     }
 }
 
-func main() -> int {
-    var source = stdio.openRead("tests/unicode/normalization.bin");
-    if (!source.isOpen()) {
-        return 1;
-    }
-    var data = stdio.readToEnd((&source).(*stdio.Stream), 8000000);
-    source.close();
-    if (data.status != stdio.Status.EndOfStream || data.length < 4) {
-        data.release();
-        return 2;
-    }
+func main()->int {
+ match(fs.readFile("tests/unicode/normalization.bin",8000000)){Ok(data)=>return run(&data);Err(error)=>return 1;}
+}
+func run(data:&collections.List<u8>)->int {
+ if(data.length()<4){return 2;}
     var view: u8[] = data.view();
     var rows: usize = view[0].(usize) + view[1].(usize) * 256 + view[2].(usize) * 65536 + view[3].(usize) * 16777216;
     var offset: usize = 4;
@@ -54,16 +50,16 @@ func main() -> int {
                 !checked(columns[column], unicode.Normalization.NFKC, columns[3]) ||
                 !checked(columns[column], unicode.Normalization.NFKD, columns[4])
             ) {
-                stdlib.println(row);
-                data.release();
+                io.println(row);
+
                 return 5;
             }
         }
     }
     if (offset != view.length || rows < 20000) {
-        data.release();
+
         return 6;
     }
-    data.release();
+
     return 0;
 }

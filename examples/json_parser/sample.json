@@ -1,0 +1,8 @@
+{
+  "service": "dmm-example",
+  "ready": true,
+  "ports": [8080, 9000],
+  "message": "Hello \uD83D\uDE80",
+  "ratio": 1.25e-2,
+  "optional": null
+}

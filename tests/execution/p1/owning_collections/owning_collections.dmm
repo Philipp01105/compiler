@@ -1,34 +1,29 @@
 package main;
-import "stdlib";
+import ("stdlib/core" "stdlib/collections" "stdlib/text" "stdlib/io");
 
-func main() -> int {
-    var buffer: stdlib.Buffer < int >= stdlib.buffer<int>(3);
-    if (!buffer.ok()) {
-        return 3;
-    }
-    buffer.set(0, 7);
+func check() -> core.Result<int,io.Error> {
+    var buffer=collections.buffer<int>(3,0)?;
+    *buffer.getMut(0)=7;
     var view: int[] = buffer.view();
     if (buffer.length() != 3 || view[0] != 7) {
-        return 1;
+        return core.Result<int,io.Error>.Ok(1);
     }
 
-    var bytes: stdlib.Bytes = stdlib.bytes(0);
-    if (bytes.push(65) != stdlib.AllocationError.None || bytes.view()[0] != 65) {
-        return 5;
+    var bytes=collections.list<u8>();bytes.append(65)?;
+    if (bytes.view()[0] != 65) {
+        return core.Result<int,io.Error>.Ok(5);
     }
 
-    var list: stdlib.List < int >= stdlib.list<int>(0);
-    if (list.push(11) != stdlib.AllocationError.None || list.get(0) != 11) {
-        return 6;
+    var list=collections.list<int>();list.append(11)?;
+    if (*list.get(0) != 11) {
+        return core.Result<int,io.Error>.Ok(6);
     }
 
-    var text: stdlib.String = stdlib.cloneString("hello");
-    if (!text.ok()) {
-        return 4;
+    match(text.fromString("hello")){
+      Err(error)=>return core.Result<int,io.Error>.Ok(4);
+      Ok(value)=>{if(!value.startsWith("hello")||value.length()!=5){return core.Result<int,io.Error>.Ok(2);}}
     }
-    if (text.view() != "hello" || text.length() != 5) {
-        return 2;
-    }
-    stdlib.println(0);
-    return 0;
+    io.println(0)?;
+    return core.Result<int,io.Error>.Ok(0);
 }
+func main()->int{match(check()){Ok(code)=>return code;Err(error)=>return 99;}}

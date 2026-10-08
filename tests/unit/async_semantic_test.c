@@ -107,6 +107,9 @@ static int check_case(const char *source, const char *diagnostic, int enabled) {
 
 int main(void) {
     static const struct { const char *source; const char *diagnostic; } cases[] = {
+        {"struct Owner {var value:int;async func read()->int{return self.value;}} async func send_parent()->int{var owner=Owner{value:7};return owner.read().await();} func main()->int{var handle=spawn(send_parent());block_on(cancel(handle));return 0;}",NULL},
+        {"struct Owner {var value:int;async func read()->int{return self.value;}} func main()->int{var owner=Owner{value:7};var handle=spawn(owner.read());block_on(cancel(handle));return 0;}","spawn requires a Send Future frame"},
+        {"struct Owner {var value:int;async func read()->int{return self.value;}} async func parent(owner:&Owner)->int{return owner.read().await();} func main()->int{var owner=Owner{value:7};var handle=spawn(parent(&owner));block_on(cancel(handle));return 0;}","spawn requires a Send Future frame"},
         {"async func work(x:&int) -> int { return *x; } async func wrap(x:&int) -> Result<Future<int>,TaskError> { return Result<Future<int>,TaskError>.Ok(work(x)); } func main() -> int { var x=7; var r=block_on(wrap(&x)); match(r) { Ok(f) => { var c=cancel(f); x=8; block_on(c); } Err(e) => {} } return x; }","while it is borrowed"},
         {"async func work(x:&int) -> int { return *x; } async func wrap(x:&int) -> Result<Future<int>,TaskError> { return Result<Future<int>,TaskError>.Ok(work(x)); } func main() -> int { var x=7; var r=block_on(wrap(&x)); match(r) { Ok(f) => { block_on(cancel(f)); } Err(e) => {} } x=8; return x; }",NULL},
         {"async func work(x:&int) -> int { return *x; } func wrap(x:&int) -> Result<Future<int>,TaskError> { return Result<Future<int>,TaskError>.Ok(work(x)); } func main() -> int { var x=7; var r=wrap(&x); match(r) { Ok(f) => { var c=cancel(f); x=8; block_on(c); } Err(e) => {} } return x; }","while it is borrowed"},

@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 struct Point {
     var x: int;
@@ -14,7 +15,7 @@ func main() -> void {
     var label: string = "area";
     {
         var _output0: string = label + "=" + area;
-        stdlib.println(_output0);
+        io.println(_output0);
         free(_output0);
     }
 }

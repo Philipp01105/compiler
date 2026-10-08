@@ -1,13 +1,14 @@
 package main;
 import (
-    "stdlib"
+    stdlib "stdlib/core"
+    "stdlib/collections"
     "stdlib/text"
     byteops "stdlib/bytes"
 );
 
 func dangling() -> u8[] {
-    var owner = stdlib.bytes(8);
-    owner.push(65);
+    var owner = collections.list<u8>();
+    owner.append(65);
     var data = owner.view();
     var iterator = byteops.split(&data, 44);
     var next = iterator.next();

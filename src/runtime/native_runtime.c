@@ -65,6 +65,12 @@ static void data_address(Runtime *r, const char *dst, const char *symbol) {
     op2(r, X64_OP_LEA, X64_WIDTH_QWORD, x64_register(dst), mem);
 }
 
+static X64Operand process_memory(const char *symbol) {
+    X64Operand value=x64_rip_memory(X64_WIDTH_QWORD,symbol,0);
+    value.has_symbol_suffix=0;
+    return value;
+}
+
 static void call(Runtime *r, const char *symbol) {
     char import[128];
     if (strncmp(symbol, "__dmm_", 6)) {
@@ -461,7 +467,7 @@ static void read_value(Runtime *r) {
 const char *native_runtime_import(const char *name, TargetFormat target) {
     static const char *const imports[] = {
         "VirtualAlloc", "VirtualFree", "GetStdHandle", "ReadFile",
-        "WriteFile", "CreateFileA", "CloseHandle", "GetLastError", "ExitProcess",
+        "WriteFile", "CreateFileA", "CloseHandle", "GetLastError", "ExitProcess", "GetCommandLineW",
         "CreateThread", "WaitForSingleObject", "CreateEventA", "SetEvent", "ResetEvent"
     };
     if (target != TARGET_COFF || strncmp(name, "__dmm_os_", 9)) return NULL;
@@ -499,6 +505,27 @@ int native_runtime_emit_requirements(NativeObject *object, TargetFormat target,
         (void) native_bytes(object, NULL, 256 * 8);
     }
     object->section = NATIVE_TEXT;
+    /* Capture the real startup argument storage before package initialization.
+       Windows keeps its native UTF-16 command line rather than CRT code-page
+       converted argv. Linux retains the CRT/kernel argument vector. */
+    object->section = NATIVE_DATA;
+    (void) native_buffer_align(&object->sections[NATIVE_DATA], 8);
+    (void) native_define(object, ".Lprocess_argc", 0, 0);
+    (void) native_uint(object, 0, 8);
+    (void) native_define(object, ".Lprocess_argv", 0, 0);
+    (void) native_uint(object, 0, 8);
+    (void) native_define(object, ".Lprocess_command_line", 0, 0);
+    (void) native_uint(object, 0, 8);
+    object->section = NATIVE_TEXT;
+    begin(&r, "__dmm_process_argc", 0);
+    op2(&r, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rax"), process_memory(".Lprocess_argc"));
+    end(&r);
+    begin(&r, "__dmm_process_argv", 0);
+    op2(&r, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rax"), process_memory(".Lprocess_argv"));
+    end(&r);
+    begin(&r, "__dmm_process_command_line", 0);
+    op2(&r, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rax"), process_memory(".Lprocess_command_line"));
+    end(&r);
     own_strlen(&r);
     own_strcmp(&r);
     own_copy(&r, 0);
@@ -560,6 +587,13 @@ int native_runtime_emit_requirements(NativeObject *object, TargetFormat target,
         end(&r);
         /* The C driver supplies regular CRT startup; the compiler owns main. */
         begin(&r, "main", 0);
+        op2(&r, X64_OP_MOV, X64_WIDTH_DWORD, x64_register("eax"), x64_register(target == TARGET_COFF ? "ecx" : "edi"));
+        op2(&r, X64_OP_MOV, X64_WIDTH_QWORD, process_memory(".Lprocess_argc"), x64_register("rax"));
+        op2(&r, X64_OP_MOV, X64_WIDTH_QWORD, process_memory(".Lprocess_argv"), x64_register(arg(&r, 1)));
+        if (target == TARGET_COFF) {
+            call(&r, "__dmm_os_GetCommandLineW");
+            op2(&r, X64_OP_MOV, X64_WIDTH_QWORD, process_memory(".Lprocess_command_line"), x64_register("rax"));
+        }
         call(&r, "__dmm_runtime_main");
         end(&r);
         return !object->failed;
@@ -567,6 +601,8 @@ int native_runtime_emit_requirements(NativeObject *object, TargetFormat target,
     (void) native_define(object, "__dmm_entry", 1, 1);
     if (target == TARGET_COFF) {
         stack(&r, X64_OP_SUB, 40);
+        op1(&r, X64_OP_CALL, x64_label("__dmm_os_GetCommandLineW"));
+        op2(&r, X64_OP_MOV, X64_WIDTH_QWORD, process_memory(".Lprocess_command_line"), x64_register("rax"));
         op1(&r, X64_OP_CALL, x64_label("__dmm_package_init"));
         op1(&r, X64_OP_CALL, x64_label("main"));
         op2(&r, X64_OP_MOV, X64_WIDTH_QWORD,
@@ -579,6 +615,10 @@ int native_runtime_emit_requirements(NativeObject *object, TargetFormat target,
         op1(&r, X64_OP_CALL, x64_label("__dmm_os_ExitProcess"));
         op0(&r, X64_OP_UD2);
     } else {
+        op2(&r, X64_OP_MOV, X64_WIDTH_QWORD, x64_register("rax"), x64_memory(X64_WIDTH_QWORD, "rsp", 0));
+        op2(&r, X64_OP_MOV, X64_WIDTH_QWORD, process_memory(".Lprocess_argc"), x64_register("rax"));
+        op2(&r, X64_OP_LEA, X64_WIDTH_QWORD, x64_register("rax"), x64_memory(X64_WIDTH_NONE, "rsp", 8));
+        op2(&r, X64_OP_MOV, X64_WIDTH_QWORD, process_memory(".Lprocess_argv"), x64_register("rax"));
         constant(&r, X64_OP_AND, "rsp", -16);
         op1(&r, X64_OP_CALL, x64_label("__dmm_package_init"));
         op1(&r, X64_OP_CALL, x64_label("main"));

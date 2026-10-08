@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 var global_values: int[2][2] = [[6, 7],[8, 9]];
 
@@ -47,25 +48,25 @@ func main() -> void {
     middle_view[0] = 20;
     var same_middle: int[] = [20, 3, 4];
 
-    stdlib.println(global_values[1][0]);
-    stdlib.println(values[1][0]);
-    stdlib.println(row[1]);
-    stdlib.println(sum(grid.values));
-    stdlib.println(copied[0][1]);
-    stdlib.println(view.length);
-    stdlib.println(view[2][0]);
-    stdlib.println(raw[2][1]);
-    stdlib.println(data[1][0]);
-    stdlib.println(literal_view[1][1]);
-    stdlib.println(grouped[0][0]);
-    stdlib.println(ragged[1][2]);
-    stdlib.println(fixed_views[1][1]);
-    stdlib.println(singleton_rows[0][0]);
-    stdlib.println(sizeof(int[2][3]));
-    stdlib.println(middle_view.length);
-    stdlib.println(prefix_view[1]);
-    stdlib.println(suffix_view[1]);
-    stdlib.println(full_view[1]);
-    stdlib.println(middle_view == same_middle);
-    stdlib.println(middle_view != prefix_view);
+    io.println(global_values[1][0]);
+    io.println(values[1][0]);
+    io.println(row[1]);
+    io.println(sum(grid.values));
+    io.println(copied[0][1]);
+    io.println(view.length);
+    io.println(view[2][0]);
+    io.println(raw[2][1]);
+    io.println(data[1][0]);
+    io.println(literal_view[1][1]);
+    io.println(grouped[0][0]);
+    io.println(ragged[1][2]);
+    io.println(fixed_views[1][1]);
+    io.println(singleton_rows[0][0]);
+    io.println(sizeof(int[2][3]));
+    io.println(middle_view.length);
+    io.println(prefix_view[1]);
+    io.println(suffix_view[1]);
+    io.println(full_view[1]);
+    io.println(middle_view == same_middle);
+    io.println(middle_view != prefix_view);
 }

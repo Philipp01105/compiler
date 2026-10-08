@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 enum Result(message: string, code: int) {
     Ok("ok", 0),
@@ -13,6 +14,6 @@ struct Box {
 func main() -> void {
     var box: Box;
     box.values[2] = 7;
-    stdlib.println(box.values[2]);
-    stdlib.println(Result.Error.code);
+    io.println(box.values[2]);
+    io.println(Result.Error.code);
 }

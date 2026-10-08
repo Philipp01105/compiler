@@ -53,11 +53,12 @@ int main(void) {
     if (abi_i64(-INT64_C(5000000000)) != -INT64_C(5000000001)) return 32;
     if (abi_u16(UINT16_MAX) != 0 || abi_i8(-127) != INT8_MIN) return 33;
     uint64_t cell[1] = {42};
-    uint64_t option[2] = {0, 42};
+    /* core.Option declares None first, then Some(T). */
+    uint64_t option[2] = {1, 42};
     if (abi_generic_cell(cell) != 43 || cell[0] != 42) return 20;
-    if (abi_generic_option(option) != 42 || option[0] != 0 || option[1] != 42) return 21;
+    if (abi_generic_option(option) != 42 || option[0] != 1 || option[1] != 42) return 21;
     if (abi_generic_sum_value(option) != 42) return 22;
-    option[0] = 1;
+    option[0] = 0;
     if (abi_generic_sum_value(option) != -1) return 23;
     if (abi_zero() != 42) return 10;
     if (abi_one(41) != 42) return 11;

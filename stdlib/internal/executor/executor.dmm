@@ -1,0 +1,711 @@
+package executor;
+import (
+    "stdlib/internal/threading"
+);
+// Native Future header and scheduler ABI shared with emitted async frames.
+// Callbacks always run outside scheduler/I/O locks. Context low bit suppresses
+// cancellation while generated defer cleanup is being polled.
+extern "system" {
+    union PointerBits {
+        pub var bits: usize;
+        pub var pointer: *void;
+    }
+
+    union PollBits {
+        pub var bits: usize;
+        pub var callback: extern "system" func(*void, *void) -> i32;
+    }
+
+    union DropBits {
+        pub var bits: usize;
+        pub var callback: extern "system" func(*void) -> void;
+    }
+
+    struct Frame {
+        pub var poll: extern "system" func(*void, *void) -> i32;
+        pub var destroy: extern "system" func(*void, i32) -> void;
+        pub var state: i64;
+        pub var cancelPoll: extern "system" func(*void, *void) -> i32;
+        pub var resultDestroy: extern "system" func(*void) -> void;
+        pub var resultSize: usize;
+        pub var resultPresent: usize;
+        pub var cancelState: usize;
+        pub var context: *void;
+        pub var resultCancel: extern "system" func(*void, *void) -> i32;
+    }
+
+    struct Scheduler {
+        pub var lock: usize;
+        pub var event: *void;
+        pub var head: *Task;
+        pub var tail: *Task;
+        pub var active: usize;
+        pub var closed: usize;
+        pub var count: usize;
+        pub var exited: usize;
+        pub var tasks: *Task;
+        pub var refs: usize;
+        pub var threads: **void;
+        pub var waiter: *void;
+    }
+
+    struct Task {
+        pub var executor: *Scheduler;
+        pub var frame: *Frame;
+        pub var status: usize;
+        pub var next: *Task;
+        pub var queued: usize;
+        pub var running: usize;
+        pub var notified: usize;
+        pub var cancel: usize;
+        pub var waiter: *void;
+        pub var refs: usize;
+        pub var activeNext: *Task;
+    }
+
+    struct Io {
+        pub var lock: usize;
+        pub var refs: usize;
+        pub var cancel: usize;
+        pub var confirmed: usize;
+        pub var waiter: *void;
+        pub var data: *void;
+        pub var drop: extern "system" func(*void) -> void;
+    }
+}
+
+extern "system" from "dmm_runtime" {
+    func atomicLoad(address: *usize) -> usize = "__dmm_core_atomic_load";
+    func atomicStore(address: *usize, value: usize) -> void = "__dmm_core_atomic_store";
+    func atomicSwap(address: *usize, value: usize) -> usize = "__dmm_core_atomic_swap";
+    func atomicCompare(address: *usize, expected: usize, value: usize) -> usize = "__dmm_core_atomic_compare_exchange";
+    func runtimeFree(address: *void) -> void = "__dmm_core_free";
+    func runtimeCopy(out: *void, input: *void, size: usize) -> void = "__dmm_core_copy";
+}
+
+var defaultLock: usize;
+var defaultExecutor: *Scheduler;
+
+func nullPointer() -> *void {
+    var value: PointerBits;
+    return value.pointer;
+}
+
+func bits(address: *void) -> usize {
+    var value: PointerBits;
+    value.pointer = address;
+    return value.bits;
+}
+
+func pointer(value: usize) -> *void {
+    var result: PointerBits;
+    result.bits = value;
+    return result.pointer;
+}
+
+func at(address: *void, offset: usize) -> *void {
+    return pointer(bits(address) + offset);
+}
+
+func require(ok: bit) -> void {
+    if (!ok) {
+        abort();
+    }
+}
+
+func allocate(size: usize) -> *void {
+    var result: *void = calloc(1, size);
+    require(result != nullPointer());
+    return result;
+}
+
+func lock(address: *usize) -> void {
+    while (atomicSwap(address, 1) != 0) {}
+}
+
+func unlock(address: *usize) -> void {
+    atomicStore(address, 0);
+}
+
+func retain(address: *usize) -> void {
+    while (true) {
+        var old: usize = atomicLoad(address);
+        if (atomicCompare(address, old, old + 1) == old) {
+            return;
+        }
+    }
+}
+
+func decrement(address: *usize) -> usize {
+    while (true) {
+        var old: usize = atomicLoad(address);
+        require(old != 0);
+        if (atomicCompare(address, old, old - 1) == old) {
+            return old - 1;
+        }
+    }
+    return 0;
+}
+
+func executorRelease(e: *Scheduler) -> void {
+    if (decrement((&(*e).refs).(*usize)) != 0) {
+        return;
+    }
+    threading.__dmm_async_wait_destroy((*e).event);
+    release((*e).threads.(*void));
+    release(e.(*void));
+}
+
+func contextTask(context: *void) -> *Task {
+    var value: usize = bits(context);
+    return pointer(value - value % 2).(*Task);
+}
+
+pub export "system" func __dmm_async_context_retain(context: *void) -> void {
+    var task: *Task = contextTask(context);
+    if (task != nullPointer().(*Task)) {
+        retain((&(*task).refs).(*usize));
+    }
+}
+
+pub export "system" func __dmm_async_context_release(context: *void) -> void {
+    var task: *Task = contextTask(context);
+    if (task != nullPointer().(*Task) && decrement((&(*task).refs).(*usize)) == 0) {
+        var e: *Scheduler = (*task).executor;
+        release(task.(*void));
+        executorRelease(e);
+    }
+}
+
+pub export "system" func __dmm_async_cancel_requested(context: *void) -> i32 {
+    if (context == nullPointer() || bits(context) % 2 != 0) {
+        return 0;
+    }
+    var task: *Task = context.(*Task);
+    return atomicLoad((&(*task).cancel).(*usize)).(i32);
+}
+
+func enqueue(e: *Scheduler, task: *Task) -> void {
+    if ((*task).status != 0) {
+        return;
+    }
+    (*task).notified = 1;
+    if ((*task).running != 0 || (*task).queued != 0) {
+        return;
+    }
+    (*task).queued = 1;
+    (*task).next = nullPointer().(*Task);
+    if ((*e).tail != nullPointer().(*Task)) {
+        (*(*e).tail).next = task;
+    } else {
+        (*e).head = task;
+    }
+    (*e).tail = task;
+    threading.__dmm_async_wake((*e).event);
+}
+
+pub export "system" func __dmm_async_context_wake(context: *void) -> void {
+    var task: *Task = contextTask(context);
+    if (task == nullPointer().(*Task)) {
+        return;
+    }
+    var e: *Scheduler = (*task).executor;
+    lock((&(*e).lock).(*usize));
+    enqueue(e, task);
+    threading.__dmm_async_wake((*e).event);
+    unlock((&(*e).lock).(*usize));
+}
+
+func requestCancel(task: *Task) -> void {
+    var e: *Scheduler = (*task).executor;
+    lock((&(*e).lock).(*usize));
+    if ((*task).status == 0) {
+        atomicStore((&(*task).cancel).(*usize), 1);
+        enqueue(e, task);
+    }
+    unlock((&(*e).lock).(*usize));
+}
+
+func frameResult(frame: *Frame) -> *void {
+    return at(frame.(*void), 80);
+}
+
+pub export "system" func __dmm_async_frame_destroy(address: *void, discard: i32) -> void {
+    var frame: *Frame = address.(*Frame);
+    var drop: DropBits;
+    drop.callback = (*frame).resultDestroy;
+    if (discard != 0 && (*frame).resultPresent != 0 && drop.bits != 0) {
+        (*frame).resultPresent = 0;
+        drop.callback(frameResult(frame));
+    }
+    // Generated frames use the compiler allocator; scheduler objects use libc.
+    runtimeFree(address);
+}
+
+func discardPoll(frame: *Frame, context: *void) -> i32 {
+    var callback: PollBits;
+    callback.callback = (*frame).resultCancel;
+    if ((*frame).resultPresent == 0 || callback.bits == 0) {
+        return 1;
+    }
+    var poll: PollBits;
+    poll.callback = (*frame).poll;
+    var join: PollBits;
+    join.callback = __dmm_async_join_poll;
+    if (poll.bits == join.bits) {
+        var words: *usize = frameResult(frame).(*usize);
+        if (words[0] != 0) {
+            return 1;
+        }
+        (*frame).context = at(frame.(*void), 88);
+    } else {
+        (*frame).context = frameResult(frame);
+    }
+    return callback.callback(frame.(*void), context);
+}
+
+pub export "system" func __dmm_async_discard_poll(address: *void, context: *void) -> i32 {
+    return discardPoll(address.(*Frame), context);
+}
+
+func destroy(frame: *Frame, discard: i32) -> void {
+    (*frame).destroy(frame.(*void), discard);
+}
+
+func finishTask(e: *Scheduler, task: *Task, status: usize) -> void {
+    (*task).status = status;
+    (*task).running = 0;
+    var waiter: *void = (*task).waiter;
+    (*task).waiter = nullPointer();
+    (*e).active = (*e).active - 1;
+    var previous: *Task = nullPointer().(*Task);
+    var current: *Task = (*e).tasks;
+    while (current != task) {
+        require(current != nullPointer().(*Task));
+        previous = current;
+        current = (*current).activeNext;
+    }
+    if (previous == nullPointer().(*Task)) {
+        (*e).tasks = (*task).activeNext;
+    } else {
+        (*previous).activeNext = (*task).activeNext;
+    }
+    threading.__dmm_async_wake((*e).event);
+    unlock((&(*e).lock).(*usize));
+    __dmm_async_context_wake(waiter);
+    __dmm_async_context_release(waiter);
+    __dmm_async_context_release(task.(*void));
+}
+
+pub export "system" func __dmm_async_worker(address: *void) -> void {
+    var e: *Scheduler = address.(*Scheduler);
+    while (true) {
+        lock((&(*e).lock).(*usize));
+        var task: *Task = (*e).head;
+        if (task == nullPointer().(*Task)) {
+            if ((*e).closed != 0 && (*e).active == 0) {
+                (*e).exited = (*e).exited + 1;
+                var waiter: *void = nullPointer();
+                if ((*e).exited == (*e).count) {
+                    waiter = (*e).waiter;
+                    (*e).waiter = nullPointer();
+                }
+                unlock((&(*e).lock).(*usize));
+                __dmm_async_context_wake(waiter);
+                __dmm_async_context_release(waiter);
+                return;
+            }
+            threading.__dmm_async_wait_reset((*e).event);
+            unlock((&(*e).lock).(*usize));
+            threading.__dmm_async_wait((*e).event);
+            continue;
+        }
+        (*e).head = (*task).next;
+        if ((*e).head == nullPointer().(*Task)) {
+            (*e).tail = nullPointer().(*Task);
+        }
+        (*task).queued = 0;
+        (*task).running = 1;
+        (*task).notified = 0;
+        var cancelling: usize = atomicLoad((&(*task).cancel).(*usize));
+        var frame: *Frame = (*task).frame;
+        unlock((&(*e).lock).(*usize));
+        var ready: i32;
+        if (cancelling != 0) {
+            ready = (*frame).cancelPoll(frame.(*void), task.(*void));
+        } else {
+            ready = (*frame).poll(frame.(*void), task.(*void));
+        }
+        lock((&(*e).lock).(*usize));
+        if (ready == 0) {
+            (*task).running = 0;
+            if ((*task).notified != 0 || (cancelling == 0 && (*task).cancel != 0)) {
+                enqueue(e, task);
+            }
+            unlock((&(*e).lock).(*usize));
+            continue;
+        }
+        if ((*task).cancel != 0) {
+            unlock((&(*e).lock).(*usize));
+            if (discardPoll(frame, task.(*void)) == 0) {
+                lock((&(*e).lock).(*usize));
+                (*task).running = 0;
+                if ((*task).notified != 0) {
+                    enqueue(e, task);
+                }
+                unlock((&(*e).lock).(*usize));
+                continue;
+            }
+            destroy(frame, 1);
+            lock((&(*e).lock).(*usize));
+            (*task).frame = nullPointer().(*Frame);
+            finishTask(e, task, 2);
+        } else {
+            finishTask(e, task, 1);
+        }
+    }
+}
+
+pub export "system" func __dmm_async_executor_create(count: usize) -> *void {
+    require(count > 0 && count <= 18446744073709551615 / 8);
+    var e: *Scheduler = allocate(Scheduler.size).(*Scheduler);
+    (*e).count = count;
+    (*e).refs = 1;
+    (*e).event = threading.__dmm_async_wait_create();
+    (*e).threads = allocate(count * 8).(**void);
+    var i: usize = 0;
+    while (i < count) {
+        (*e).threads[i] = threading.__dmm_async_thread_create(__dmm_async_worker, e.(*void));
+        i = i + 1;
+    }
+    return e.(*void);
+}
+
+func getDefault() -> *Scheduler {
+    lock((&defaultLock).(*usize));
+    if (defaultExecutor == nullPointer().(*Scheduler)) {
+        defaultExecutor = __dmm_async_executor_create(2).(*Scheduler);
+    }
+    var e: *Scheduler = defaultExecutor;
+    unlock((&defaultLock).(*usize));
+    return e;
+}
+
+pub export "system" func __dmm_async_default() -> *void {
+    return getDefault().(*void);
+}
+
+pub export "system" func __dmm_async_spawn(address: *void, child: *void, size: usize) -> *void {
+    var e: *Scheduler = address.(*Scheduler);
+    if (e == nullPointer().(*Scheduler)) {
+        e = getDefault();
+    }
+    var task: *Task = allocate(Task.size).(*Task);
+    (*task).executor = e;
+    (*task).frame = child.(*Frame);
+    (*task).refs = 2;
+    retain((&(*e).refs).(*usize));
+    require(size <= 18446744073709551615 - 104);
+    var frame: *Frame = allocate(size + 104).(*Frame);
+    (*frame).poll = __dmm_async_join_poll;
+    (*frame).destroy = __dmm_async_join_destroy;
+    (*frame).cancelPoll = __dmm_async_join_cancel;
+    (*frame).context = task.(*void);
+    (*frame).cancelState = size;
+    (*frame).resultCancel = (*(*task).frame).resultCancel;
+    (*frame).resultDestroy = (*(*task).frame).resultDestroy;
+    lock((&(*e).lock).(*usize));
+    require((*e).closed == 0);
+    (*e).active = (*e).active + 1;
+    (*task).activeNext = (*e).tasks;
+    (*e).tasks = task;
+    enqueue(e, task);
+    unlock((&(*e).lock).(*usize));
+    return frame.(*void);
+}
+
+func pollJoin(frame: *Frame, context: *void, cancel: bit) -> i32 {
+    if (cancel && (*frame).resultPresent != 0) {
+        return discardPoll(frame, context);
+    }
+    var task: *Task = (*frame).context.(*Task);
+    if (cancel) {
+        requestCancel(task);
+    }
+    var e: *Scheduler = (*task).executor;
+    lock((&(*e).lock).(*usize));
+    var status: usize = (*task).status;
+    if (status == 0) {
+        if ((*task).waiter == nullPointer()) {
+            __dmm_async_context_retain(context);
+            (*task).waiter = context;
+        }
+        unlock((&(*e).lock).(*usize));
+        return 0;
+    }
+    var child: *Frame = (*task).frame;
+    unlock((&(*e).lock).(*usize));
+    if (cancel) {
+        if (child != nullPointer().(*Frame)) {
+            if (discardPoll(child, context) == 0) {
+                return 0;
+            }
+            destroy(child, 1);
+        }
+    } else {
+        var words: *usize = frameResult(frame).(*usize);
+        if (status == 1) {
+            runtimeCopy(at(frame.(*void), 88), frameResult(child), (*frame).cancelState);
+            destroy(child, 0);
+            words[0] = 0;
+        } else {
+            words[0] = 1;
+            words[1] = 0;
+        }
+    }
+    __dmm_async_context_release(task.(*void));
+    (*frame).context = nullPointer();
+    if (cancel) {
+        (*frame).state = -2;
+        (*frame).resultPresent = 0;
+    } else {
+        (*frame).state = -1;
+        (*frame).resultPresent = 1;
+    }
+    return 1;
+}
+
+pub export "system" func __dmm_async_join_poll(address: *void, context: *void) -> i32 {
+    return pollJoin(address.(*Frame), context, false);
+}
+
+pub export "system" func __dmm_async_join_cancel(address: *void, context: *void) -> i32 {
+    return pollJoin(address.(*Frame), context, true);
+}
+
+pub export "system" func __dmm_async_join_destroy(address: *void, discard: i32) -> void {
+    var frame: *Frame = address.(*Frame);
+    var words: *usize = frameResult(frame).(*usize);
+    var drop: DropBits;
+    drop.callback = (*frame).resultDestroy;
+    if (discard != 0 && (*frame).resultPresent != 0 && words[0] == 0 && drop.bits != 0) {
+        drop.callback(at(address, 88));
+    }
+    release(address);
+}
+
+pub export "system" func __dmm_async_cancel(child: *void) -> *void {
+    var frame: *Frame = allocate(88).(*Frame);
+    (*frame).poll = __dmm_async_cancel_poll;
+    (*frame).destroy = __dmm_async_adapter_destroy;
+    (*frame).cancelPoll = __dmm_async_cancel_poll;
+    (*frame).context = child;
+    return frame.(*void);
+}
+
+pub export "system" func __dmm_async_adapter_destroy(address: *void, discard: i32) -> void {
+    release(address);
+}
+
+pub export "system" func __dmm_async_cancel_poll(address: *void, context: *void) -> i32 {
+    var frame: *Frame = address.(*Frame);
+    var child: *Frame = (*frame).context.(*Frame);
+    var ready: i32 = 1;
+    if ((*child).state == - 1) {
+        ready = discardPoll(child, context);
+    } else if ((*child).state != - 2) {
+        ready = (*child).cancelPoll(child.(*void), context);
+    }
+    if (ready == 0) {
+        return 0;
+    }
+    destroy(child, 1);
+    (*frame).context = nullPointer();
+    (*frame).state = -1;
+    return 1;
+}
+
+pub export "system" func __dmm_async_shutdown(address: *void, mode: usize) -> *void {
+    var e: *Scheduler = address.(*Scheduler);
+    var frame: *Frame = allocate(88).(*Frame);
+    (*frame).poll = __dmm_async_shutdown_poll;
+    (*frame).destroy = __dmm_async_adapter_destroy;
+    (*frame).cancelPoll = __dmm_async_shutdown_poll;
+    (*frame).context = address;
+    lock((&(*e).lock).(*usize));
+    (*e).closed = 1;
+    if (mode != 0) {
+        var task: *Task = (*e).tasks;
+        while (task != nullPointer().(*Task)) {
+            atomicStore((&(*task).cancel).(*usize), 1);
+            enqueue(e, task);
+            task = (*task).activeNext;
+        }
+    }
+    threading.__dmm_async_wake((*e).event);
+    unlock((&(*e).lock).(*usize));
+    return frame.(*void);
+}
+
+pub export "system" func __dmm_async_shutdown_poll(address: *void, context: *void) -> i32 {
+    var frame: *Frame = address.(*Frame);
+    var e: *Scheduler = (*frame).context.(*Scheduler);
+    lock((&(*e).lock).(*usize));
+    if ((*e).exited != (*e).count) {
+        if ((*e).waiter == nullPointer()) {
+            __dmm_async_context_retain(context);
+            (*e).waiter = context;
+        }
+        unlock((&(*e).lock).(*usize));
+        return 0;
+    }
+    unlock((&(*e).lock).(*usize));
+    var i: usize = 0;
+    while (i < (*e).count) {
+        threading.__dmm_async_thread_join((*e).threads[i]);
+        i = i + 1;
+    }
+    executorRelease(e);
+    (*frame).context = nullPointer();
+    (*frame).state = -1;
+    return 1;
+}
+
+pub export "system" func __dmm_async_block_on(address: *void) -> *void {
+    if((*address.(*Frame)).state == -1) { return address; }
+    var frame: *Frame = address.(*Frame);
+    var e: *Scheduler = allocate(Scheduler.size).(*Scheduler);
+    (*e).refs = 1;
+    (*e).event = threading.__dmm_async_wait_create();
+    var task: *Task = allocate(Task.size).(*Task);
+    (*task).executor = e;
+    (*task).refs = 1;
+    (*task).running = 1;
+    while (true) {
+        lock((&(*e).lock).(*usize));
+        (*task).notified = 0;
+        threading.__dmm_async_wait_reset((*e).event);
+        unlock((&(*e).lock).(*usize));
+        if ((*frame).poll(address, task.(*void)) != 0) {
+            break;
+        }
+        lock((&(*e).lock).(*usize));
+        var notified: usize = (*task).notified;
+        unlock((&(*e).lock).(*usize));
+        if (notified == 0) {
+            threading.__dmm_async_wait((*e).event);
+        }
+    }
+    lock((&(*e).lock).(*usize));
+    (*task).status = 1;
+    unlock((&(*e).lock).(*usize));
+    __dmm_async_context_release(task.(*void));
+    return address;
+}
+
+pub export "system" func __dmm_async_default_drain() -> void {
+    if (defaultExecutor == nullPointer().(*Scheduler)) {
+        return;
+    }
+    var frame: *void = __dmm_async_shutdown(defaultExecutor.(*void), 0);
+    __dmm_async_block_on(frame);
+    __dmm_async_adapter_destroy(frame, 0);
+    defaultExecutor = nullPointer().(*Scheduler);
+}
+
+func ioRelease(io: *Io) -> void {
+    if (decrement((&(*io).refs).(*usize)) != 0) {
+        return;
+    }
+    var drop: DropBits;
+    drop.callback = (*io).drop;
+    if (drop.bits != 0) {
+        drop.callback((*io).data);
+    }
+    release(io.(*void));
+}
+
+pub export "system" func __dmm_async_io_create(
+    data: *void,
+    drop: extern "system" func(*void) -> void
+) -> *void {
+    var io: *Io = allocate(Io.size).(*Io);
+    (*io).refs = 2;
+    (*io).data = data;
+    (*io).drop = drop;
+    return io.(*void);
+}
+
+pub export "system" func __dmm_async_io_poll(address: *void, context: *void) -> i32 {
+    var io: *Io = address.(*Io);
+    lock((&(*io).lock).(*usize));
+    if ((*io).confirmed != 0) {
+        unlock((&(*io).lock).(*usize));
+        return 1;
+    }
+    if ((*io).waiter == nullPointer()) {
+        __dmm_async_context_retain(context);
+        (*io).waiter = context;
+    }
+    unlock((&(*io).lock).(*usize));
+    return 0;
+}
+
+pub export "system" func __dmm_async_io_request_cancel(address: *void) -> void {
+    var io: *Io = address.(*Io);
+    lock((&(*io).lock).(*usize));
+    atomicStore((&(*io).cancel).(*usize), 1);
+    unlock((&(*io).lock).(*usize));
+}
+
+pub export "system" func __dmm_async_io_cancel_requested(address: *void) -> i32 {
+    var io: *Io = address.(*Io);
+    return atomicLoad((&(*io).cancel).(*usize)).(i32);
+}
+
+pub export "system" func __dmm_async_io_confirm(address: *void) -> void {
+    var io: *Io = address.(*Io);
+    lock((&(*io).lock).(*usize));
+    require((*io).confirmed == 0);
+    (*io).confirmed = 1;
+    var waiter: *void = (*io).waiter;
+    (*io).waiter = nullPointer();
+    unlock((&(*io).lock).(*usize));
+    __dmm_async_context_wake(waiter);
+    __dmm_async_context_release(waiter);
+    ioRelease(io);
+}
+
+pub export "system" func __dmm_async_io_destroy(address: *void) -> void {
+    var io: *Io = address.(*Io);
+    lock((&(*io).lock).(*usize));
+    require((*io).confirmed != 0);
+    unlock((&(*io).lock).(*usize));
+    ioRelease(io);
+}
+
+// This frame parks the adapter until its poller wakes the retained context.
+// The next scheduler visit completes the park; no executor thread blocks.
+export "system" func dmm_async_park_poll(address: *void, context: *void) -> i32 {
+    var frame=address.(*Frame);
+    if ((*frame).state==0) { (*frame).state=1; return 0; }
+    (*frame).state=-1;
+    return 1;
+}
+
+export "system" func dmm_async_park_cancel(address: *void, context: *void) -> i32 {
+    (*address.(*Frame)).state=-2;
+    return 1;
+}
+
+export "system" func dmm_async_park_destroy(address: *void, discard: i32) -> void {
+    runtimeFree(address);
+}
+
+pub func parkFrame() -> *void {
+    var frame=reserve(Frame);
+    (*frame).poll=dmm_async_park_poll;
+    (*frame).cancelPoll=dmm_async_park_cancel;
+    (*frame).destroy=dmm_async_park_destroy;
+    return frame.(*void);
+}

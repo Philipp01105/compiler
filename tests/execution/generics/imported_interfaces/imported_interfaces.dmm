@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import "dmm.test/imported_interfaces/contracts";
 
 struct Person {
     var name: string;
@@ -12,20 +13,20 @@ struct Person {
     }
 }
 
-func output<T: stdlib.Printable>(value: T) -> string {
+func output<T: contracts.Printable>(value: T) -> string {
     return value.toString();
 }
 
-func compare<T: stdlib.Printable + stdlib.Equal>(a: T, b: T) -> bit {
+func compare<T: contracts.Printable + contracts.Equal>(a: T, b: T) -> bit {
     return a.equal(b);
 }
 
 func main() -> void {
     var p: Person;
     p.name = "Ada";
-    stdlib.println(output(p));
-    stdlib.println(compare(p, p));
-    var items: stdlib.Printable[1];
+    io.println(output(p));
+    io.println(compare(p, p));
+    var items: contracts.Printable[1];
     items[0] = p;
-    stdlib.println(items[0].toString());
+    io.println(items[0].toString());
 }

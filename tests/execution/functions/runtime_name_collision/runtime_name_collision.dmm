@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 func printf(value: int) -> int {
     return value + 1;
@@ -38,18 +39,18 @@ func VirtualAlloc(value: int) -> int {
 }
 
 func main() -> void {
-    stdlib.println(printf(4));
-    stdlib.println(strlen(5));
-    stdlib.println(write(5));
-    stdlib.println(open(5));
-    stdlib.println(close(5));
-    stdlib.println(__errno_location());
-    stdlib.println(exit(5));
-    stdlib.println(WriteFile(5));
-    stdlib.println(VirtualAlloc(5));
+    io.println(printf(4));
+    io.println(strlen(5));
+    io.println(write(5));
+    io.println(open(5));
+    io.println(close(5));
+    io.println(__errno_location());
+    io.println(exit(5));
+    io.println(WriteFile(5));
+    io.println(VirtualAlloc(5));
     var fd: int = sys_open("runtime_collision.tmp", 577, 384);
-    stdlib.println(fd >= 0);
-    stdlib.println(sys_write(fd, "x", 1));
-    stdlib.println(sys_close(fd));
-    stdlib.println(sys_close(-1) < 0);
+    io.println(fd >= 0);
+    io.println(sys_write(fd, "x", 1));
+    io.println(sys_close(fd));
+    io.println(sys_close(-1) < 0);
 }

@@ -18,23 +18,23 @@ dependencies. Implemented semantics belong in the language and subsystem documen
 ## P1 execution order
 
 1. [x] Complete language-edition rules.
-    - Current and only supported edition: `2026-09-22-dev`.
+    - Current edition: `2026-10-04-dev`; `2026-09-22-dev` remains accepted for existing source.
     - Calendar editions and their development-state suffixes are validated.
     - No backwards-compatibility guarantee exists before the first stable release.
     - `dmm.manifest` is authoritative for project-wide experimental feature gates.
 2. [ ] Finish resource-safety and self-hosting foundations.
     - Implemented: derived move-only ownership, checked borrows, deterministic destruction, LIFO `defer`, and typed
-      allocation failures in high-level APIs with nullable failures in `stdlib/core`.
+      allocation failures in high-level APIs with nullable failures in `stdlib/memory/raw`.
     - Implemented: dependency-ordered runtime package initialization, cycle diagnostics and reverse-order cleanup.
-    - Remaining: allocator interfaces and broader self-hostable collection APIs listed below.
+    - Remaining: allocator interfaces, bounded allocators and ordered collections listed below.
 
 The second P1 goal begins only after the first is complete. Other language-feature work remains outside P1 unless it is
 required to implement these resource-safety foundations.
 
 ## Language definition and compatibility
 
-- [x] Use calendar edition `2026-09-22-dev`, require an exact manifest match, and document the current absence of
-  backwards-compatibility guarantees.
+- [x] Use calendar editions with `2026-10-04-dev` current and `2026-09-22-dev` accepted, validate manifest editions,
+  and document the current absence of backwards-compatibility guarantees.
 - [ ] Maintain a conformance index mapping each syntax form and semantic rule to parser, semantic, IR, backend, and test
   coverage.
 - [ ] Specify integer overflow, shift, cast, comparison, evaluation-order, aliasing, alignment, and padding behavior
@@ -56,7 +56,7 @@ required to implement these resource-safety foundations.
 - [x] Add subslicing and a deliberate rule for slice equality and ordering.
 - [x] Add monomorphic function types and non-capturing callable values, plus compile-time polymorphic callable
   identities, contextual specialization, indirect calls, storage, equality, and null-call traps.
-- [ ] Add closures only after capture lifetime and ownership rules are specified.
+- [x] Add closures with explicit move/shared/mutable captures and specified lifetime, ownership and once-call rules.
 - [x] Add a never type so terminating operations such as `exit` and `trap` participate correctly in control-flow typing.
 - [ ] Support aggregate constants and compile-time construction of arrays, structs, enums, and tagged variants.
 - [x] Support runtime initialization of package variables with deterministic cross-package ordering and cycle
@@ -120,17 +120,21 @@ model. The normative rules and current restrictions are maintained in [LANGUAGE_
 
 ## Standard library and runtime
 
-- [ ] Add self-hostable byte buffers, vectors, string builders, hash maps, sets, deques, and ordered collections.
-- [ ] Add iterator protocols after function values and ownership semantics are stable.
-- [ ] Add UTF-8 validation, code-point iteration, searching, splitting, joining, and conversion APIs.
-- [ ] Add portable path and filesystem APIs with typed errors.
-- [ ] Expose command-line arguments and environment variables.
-- [ ] Complete integer and floating-point parsing and formatting for every width, base, sign, precision, and error case.
+- [ ] Complete self-hostable collections: List/Buffer, StringBuilder and Map/Set are implemented; ordered collections
+  remain open. Public deques were removed in the stdlib redesign.
+- [x] Add iterator protocols after function values and ownership semantics are stable.
+- [x] Add UTF-8 validation, code-point iteration, searching, splitting, joining, and conversion APIs.
+- [x] Add portable path and filesystem APIs with typed errors.
+- [x] Expose command-line arguments and environment variables with owned snapshots and typed errors.
+- [ ] Complete integer and floating-point parsing and formatting for every width, base, sign, precision, and error case;
+  checked i64/u64 parsing and formatting in bases 2–36 are implemented.
 - [ ] Move compatibility runtime operations such as scanning, concatenation, and floating conversion into DMM code where
   practical.
-- [ ] Add allocator interfaces, arenas, bounded allocators, and allocation-failure injection.
+- [ ] Add allocator interfaces and bounded allocators; allocation-failure injection is implemented, and public arenas
+  were removed in the stdlib redesign.
 - [ ] Link only the runtime routines reachable from the program.
-- [ ] Extend I/O with seeking, file sizes, directories, terminal detection, pipes, and process execution.
+- [ ] Extend I/O with terminal detection and pipes; seeking, file sizes, directories and direct process execution
+  are implemented.
 - [x] Provide sequentially consistent `AtomicBit`/`AtomicUsize` and experimental manifest-gated `async func`,
   consuming `future.await()`, pinned frames, suspend/resume IR and conservative Send/Sync checks.
 - [x] Provide multi-thread executors, Send-checked spawn, caller-thread blocking, consuming joins, Drain/Cancel
@@ -144,8 +148,9 @@ model. The normative rules and current restrictions are maintained in [LANGUAGE_
   Sync/Send requirements, and mandatory completion on every exit, including errors and cancellation, so local
   storage cannot be moved, freed, or dropped while a worker still borrows it. Cover both accepted scoped borrows
   and rejected escaping tasks with compiler and runtime tests.
-- [ ] Build the public `stdlib/net` API on the implemented private TCP/UDP/DNS foundation; TLS, HTTP and socket
-  convenience options remain separate work. See [stdlib/core/net/README.md](stdlib/core/net/README.md).
+- [x] Build the public `stdlib/net` API on the implemented private TCP/UDP/DNS foundation, including DNS, dial,
+  complete writes and deadline overloads. TLS, a complete HTTP library and additional socket options remain separate
+  work; the HTTP server example implements basic request-line routing. See [stdlib/net/README.md](stdlib/net/README.md).
 - [ ] Provide a DMM-native test and assertion library.
 
 ## Modules, dependencies, and builds
@@ -169,8 +174,9 @@ model. The normative rules and current restrictions are maintained in [LANGUAGE_
 - [ ] Emit and consume static libraries.
 - [x] Provide a documented external-linker handoff for the private platform runtime, with separate runtime requirements,
   profiles and link strategies; preserve standalone internal linking.
-- [x] Provide private epoll/IOCP TCP/UDP, monotonic deadlines, bounded DNS and typed `stdlib/core/net`, with
-  frame-internal loan proofs and confirmed cancellation. See `stdlib/core/net/README.md`; public `stdlib/net` remains future work.
+- [x] Provide private epoll/IOCP TCP/UDP, monotonic deadlines, bounded DNS and typed `stdlib/net/raw`, with
+  frame-internal loan proofs and confirmed cancellation. See [stdlib/net/raw/README.md](stdlib/net/raw/README.md);
+  the portable facade is implemented in `stdlib/net`.
 - [ ] Extend object/archive interoperability beyond the private platform-runtime handoff.
 - [ ] Add position-independent code and shared libraries after symbol visibility and relocation rules are specified.
 - [ ] Emit source-level debug information: DWARF on ELF/COFF-compatible paths and PDB integration where applicable.

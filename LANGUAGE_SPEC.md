@@ -63,24 +63,24 @@ suspends on Pending, and resumes at its unique verified state. On Ready it moves
 exactly once. Normal return and error propagation run the existing defer/destructor paths exactly once. Invalid
 resume states, polling a completed frame, and cleanup of an incomplete frame trap in the private ABI.
 Both ELF and COFF native backends support this at O0 and O1. A private deterministic test driver exercises polling.
-`main` remains synchronous. Typed asynchronous TCP/UDP/DNS is available through `stdlib/core/net`; public `stdlib/net`
-and asynchronous file APIs remain future work. See [stdlib/core/net/README.md](stdlib/core/net/README.md).
+`main` remains synchronous. Typed asynchronous TCP/UDP/DNS is available through `stdlib/net`; explicit low-level sockets use `stdlib/net/raw`.
+Asynchronous file APIs remain future work. See [networking](stdlib/net/README.md).
 
-`core.Poll<T>` is an ordinary `Pending`/`Ready(T)` sum type. `stdlib/async` supplies
-the `asynchronous` package with retained `Waker`, owned `Context`, and a structural
+`polling.Poll<T>` is an ordinary `Pending`/`Ready(T)` sum type. `stdlib/async/poll` supplies
+the advanced `polling` package with retained `Waker`, owned `Context`, and a structural
 `Poller<T>` interface whose `cancelPoll` returns `Poll<CancelAck>`. `fromPoller<T,P>` owns
 the poller in a pinned frame and parks on Pending. After body execution begins, deferred
 cancellation waits for acknowledgement before cleanup. Cancellation before the first body
 poll only cleans up captured parameters; initial native poller state must be safe to destroy.
 `poll` returns `FuturePoll<T>.Pending(Future<T>)` or `Ready(T)`; `pollVoid` handles void.
-`select2` polls both inputs and returns a value plus the remaining owned handle; `race2`
-confirms cancellation of the loser, and `join2` returns both values. The timers package
-provides sleep and timeout; started Timer cleanup requires completion/cancellation acknowledgement.
+`select` polls both inputs and returns a value plus the remaining owned handle; `race`
+confirms cancellation of the loser, and `join` returns both values. The normal `stdlib/async` package
+provides sleep and timeout with time.Deadline; advanced Timer cleanup requires completion/cancellation acknowledgement.
 Generic value composition uses a Unit payload for void results.
 `asUnit` adapts Future<void> to Future<Unit>. `selectVoid` returns Selected<Unit,Unit>
 with an owned remaining handle; `raceVoid` and `joinVoid` return Future<void>.
 `timeoutVoid` returns TimedVoid.Completed or Elapsed after cancellation acknowledgement.
-fromPoller and select2 refresh their context on every poll, including cancellation polls,
+fromPoller and select refresh their context on every poll, including cancellation polls,
 so a pending handle can be driven with a new waker context.
 
 `futurePoll(&mut Future<T>, context:*void)->bit` and `futureCancelPoll` poll exclusively
@@ -103,7 +103,7 @@ ordinary Send/Sync and exclusive-access rules still apply. Checked slice views t
 conditional graph proof does not make a borrowed child independently Send; extracting/spawning it, externally
 borrowed parameters and caller-stack origins remain excluded. Owned sockets and fixed arrays can therefore be lent
 to an embedded I/O future inside a spawnable parent. Move, destruction and conflicting accesses remain forbidden
-until confirmed completion or cancellation. See [stdlib/core/net/README.md](stdlib/core/net/README.md).
+until confirmed completion or cancellation. See [stdlib/net/raw/README.md](stdlib/net/raw/README.md).
 There are no explicit unsafe Send/Sync implementations.
 
 The executor exposes the following operations with the `async` feature enabled:
@@ -153,7 +153,7 @@ until completion, including an action already suspended when cancellation arrive
 a cancellation or shutdown Future still completes its operation. IR validation checks pinned storage,
 unique suspend states, cancellation edges, cleanup effects and consuming transitions.
 
-Scheduling and the private I/O handshake live in `stdlib/core/executor` as DMM libraries.
+Scheduling and the private I/O handshake live in `stdlib/internal/executor` as DMM libraries.
 Threads and events use DMM platform libraries with OS FFI. Emitted async bodies and executor operations
 select external platform linking for ELF and COFF. Independent C test references implement
 the private contract for deterministic concurrency tests. I/O request and confirmed termination are
@@ -168,11 +168,11 @@ select their source runtime implementations automatically; `--link=external` als
 without requiring networking. `nativeFuture(frame)` adopts a native `Future<void>` frame from `*void`;
 the binding promises valid stable Send-safe storage and native callbacks, destruction and confirmed cancellation.
 This general FFI bridge requires async and performs no runtime call or by-value Future marshaling. See
-[stdlib/core/executor/README.md](stdlib/core/executor/README.md),
+[stdlib/internal/executor/README.md](stdlib/internal/executor/README.md),
 [ARCHITECTURE.md](ARCHITECTURE.md#native-x86-64-backend) and [ARCHITECTURE.md](ARCHITECTURE.md#executor-runtime-and-native-abi).
 
-The `core.AtomicBit` and `core.AtomicUsize` types are available independently of `async`. Construct them with
-`core.atomicBit(initial)` and `core.atomicUsize(initial)`. Their `load`, `store`, `swap`, and
+The `atomic.AtomicBit` and `atomic.AtomicUsize` types in `stdlib/sync/atomic` are available independently of `async`. Construct them with
+`atomic.atomicBit(initial)` and `atomic.atomicUsize(initial)`. Their `load`, `store`, `swap`, and
 `compareExchange(expected, next)` methods all use sequentially consistent ordering. `compareExchange` returns the
 previous value, whether or not the exchange succeeded; compare that value with `expected` to determine success.
 On x86-64, an aligned word load is atomic, while stores and swaps use the implicitly locked memory `xchg` and
@@ -225,7 +225,7 @@ lowercase letters, digits, or underscores. Unknown and duplicate features are re
 source files and normal command-line builds cannot override it.
 
 The currently supported experimental feature is `async`. Set `features = ["async"]` in the root manifest to use
-`async func`, `Future<T>`, `JoinHandle<T>`, `Executor` and `stdlib/core/net`. Imported source uses the root feature
+`async func`, `Future<T>`, `JoinHandle<T>`, `Executor` and `stdlib/net/raw`. Imported source uses the root feature
 configuration. See [Source and declarations](#source-and-declarations) for the async source contract.
 
 Dependency versions currently use `vMAJOR.MINOR.PATCH`. Duplicate requirements and malformed directives are rejected.
@@ -518,6 +518,11 @@ access through its parent until the reborrow ends. Borrows owned by an aggregate
 cleanup. Branches and loops conservatively retain every possible source. Sources must outlive their borrowers;
 self-referential aggregate assignments and escaping local sources are rejected.
 
+Synchronous calls returning owners analyze checked reference and slice inputs
+through the callee body. Copying input data into independent owned storage does
+not retain an input loan; actually stored references retain their source loans.
+Unmodeled calls still conservatively preserve possible captures.
+
 A borrowed return with omitted lifetimes requires one statically provable origin in a borrowed parameter, an owning
 receiver, or package storage. An explicit result lifetime may relate several input origins; all corresponding loans
 remain live in the caller. A mismatched declared result lifetime is rejected. `'static` denotes permanently live
@@ -555,7 +560,7 @@ A full unit-step traversal destroys stored loans when its guard matches the pres
 its destroy operation covers the whole slot. Moves and enum payloads preserve this proof.
 Tag, index or extent mutations invalidate the corresponding facts; effectful conditions require
 a fresh tag observation. Copies of indexed heap members retain their own referent loans after
-the container is cleared. This supports HashMap.clear for proved stored slots, including borrowed keys and values.
+the container is cleared. This supports Map.clear for proved stored slots, including borrowed keys and values.
 Whole-slot `initialize(new[i], take(old[i]))` loops with a zero-based, unit-step
 traversal of a proved occupied prefix preserve individual slot origins in local scratch storage.
 Assigning that storage through a synchronous checked parameter or owner field transfers its loans;
@@ -568,8 +573,7 @@ and precise hash-key removal remain unfinished. Whole-slot ring transfers from
 pointer/capacity/head=0 commit sequence. A full tagged scan with modulo-bounded
 probing transfers whole rehash entries, preserving independent key/value origins.
 Callback effects are checked before trusting the source occupancy proof.
-Partial slot transfers and differing commit/control-flow shapes remain conservative. See
-[implementation and acceptance status](plans/stdlib-language-gaps.md).
+Partial slot transfers and differing commit/control-flow shapes remain conservative.
 Explicit enum payload lifetimes are also checked independently at return boundaries and preserved on value-pattern
 bindings from aggregate parameters. Constructing an explicitly static enum payload requires permanent storage.
 Function calls, struct and enum constructors check
@@ -1181,7 +1185,7 @@ suffix is rejected. `manifest sync` discovers dependencies from both target vari
 Raw platform bindings live in `stdlib/native/{glibc,pthreads,kernel32,ucrt,winsock}`.
 Their layouts target x86-64 glibc or MinGW-w64 UCRT64 specifically; the binding caller
 must not copy initialized native synchronization objects or free active operations.
-The staged contract is in [plans/ffi.md](plans/ffi.md).
+The runtime implementation is described in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Implementation limits
 
@@ -1192,7 +1196,7 @@ Explicit runtime-component exports may use the reserved `__dmm_` prefix; ordinar
 cannot define runtime-reserved function names. Components use scalar/POD values, raw pointers and
 native calls. Compiler base helpers must be declared as explicit native imports if used. Implicit runtime
 dependencies, reachable async/drop bodies and runtime global initializers are rejected. This mode supplies
-the DMM platform runtime described in [plans/ffi.md](plans/ffi.md).
+the DMM platform runtime described in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 Tokens are at most 511 bytes, an expression is at most 512 tokens, and a local object or function stack frame is at most
 8 MiB. Exceeding a limit is a compilation error, never silent truncation.
@@ -1487,3 +1491,9 @@ types have no generic parameters. Native signature and layout restrictions are d
 The grammar describes structure only. A valid DMM program must also satisfy the rules above, including
 declaration-before-use and scope rules, type compatibility, valid return paths, argument matching, loop-only `break`/
 `continue`, object-size limits, and array-bounds requirements.
+
+## Standard-library package boundary
+
+Canonical core contains value/propagation/type-property and iterator contracts. The root forwards core only. Owning sequences, text, resource I/O and process operations use explicit collections/text/io/fs/process imports. Allocation and initialize/destroy are in memory/raw, descriptors in io/raw, atomics in sync/atomic and manual polling in async/poll. Compiler-facing internal packages reject application imports; the compiler alone implicitly loads internal/system. See [the package and allocation table](stdlib/README.md).
+
+Startup captures argc/argv for CRT and standalone Linux entry and the Windows command line before package initialization. process snapshots own their copied storage. Environment/cwd operations and child creation serialize under the library mutex; process.run marshals native argv directly and waits/reaps the child. time.Deadline is the shared absolute monotonic deadline for networking and async timeout. Future and runtime-resource allocations retain their documented fatal contract.

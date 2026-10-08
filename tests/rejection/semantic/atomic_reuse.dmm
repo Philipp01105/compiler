@@ -1,8 +1,9 @@
 package main;
+import atomic "stdlib/sync/atomic";
 import "stdlib/core";
 
 func main() -> int {
-    var counter = core.atomicUsize(1.(usize));
+    var counter = atomic.atomicUsize(1.(usize));
     var moved = counter;
     return counter.load().(int) + moved.load().(int);
 }

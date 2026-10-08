@@ -1,4 +1,5 @@
 package collections;
+import memraw "stdlib/memory/raw";
 import ("stdlib/core" "stdlib/random");
 
 pub enum ErrorKind { pub OutOfMemory, pub CapacityOverflow, pub Entropy }
@@ -42,8 +43,8 @@ pub struct Map<K,V> {
         }
         var required=capacity*2;
         if(required<8) {required=8;}
-        var grown:*Bucket<K,V>=core.core_alloc(required*sizeof(Bucket<K,V>)).(*Bucket<K,V>);
-        if(grown==core.null<Bucket<K,V>>()) {
+        var grown:*Bucket<K,V>=memraw.core_alloc(required*sizeof(Bucket<K,V>)).(*Bucket<K,V>);
+        if(grown==memraw.null<Bucket<K,V>>()) {
             return core.Result<void,Error>.Err(Error{kind:ErrorKind.OutOfMemory});
         }
         for(var i:usize=0;i<required;i+=1) {grown[i].state=0;}
@@ -51,10 +52,10 @@ pub struct Map<K,V> {
             if(entries[i].state==1) {
                 var index=hashKey<K>(policy,&entries[i].key).(usize)%required;
                 while(grown[index].state==1) {index=(index+1)%required;}
-                core.initialize<Bucket<K,V>>(&grown[index],take(entries[i]));
+                memraw.initialize<Bucket<K,V>>(&grown[index],take(entries[i]));
             }
         }
-        core.core_release(entries.(*u8)); entries=grown; slots=required;
+        memraw.core_release(entries.(*u8)); entries=grown; slots=required;
         return core.Result<void,Error>.Ok;
     }
     pub func insert(key:K,value:V)->core.Result<void,Error> {
@@ -63,8 +64,8 @@ pub struct Map<K,V> {
                 if(slots>0){
                     var slot=index%slots;
                     if(entries[slot].state==1){
-                        core.destroy<V>(&entries[slot].value);
-                        core.initialize<V>(&entries[slot].value,value);
+                        memraw.destroy<V>(&entries[slot].value);
+                        memraw.initialize<V>(&entries[slot].value,value);
                         return core.Result<void,Error>.Ok;
                     }
                 }
@@ -83,7 +84,7 @@ pub struct Map<K,V> {
         }
         var index=hashKey<K>(policy,&key).(usize)%slots;
         while(entries[index].state==1) {index=(index+1)%slots;}
-        core.initialize<Bucket<K,V>>(&entries[index],Bucket<K,V>{state:1,key:key,value:value});
+        memraw.initialize<Bucket<K,V>>(&entries[index],Bucket<K,V>{state:1,key:key,value:value});
         count+=1;
         return core.Result<void,Error>.Ok;
     }
@@ -106,7 +107,7 @@ pub struct Map<K,V> {
         match(self.find(key)) {
             Some(index)=>{
                 var value=take(entries[index].value);
-                core.destroy<K>(&entries[index].key);
+                memraw.destroy<K>(&entries[index].key);
                 entries[index].state=2; count-=1;
                 return core.Option<V>.Some(value);
             }
@@ -117,7 +118,7 @@ pub struct Map<K,V> {
         match(self.find(key)) {
             Some(index)=>{
                 var value=take(entries[index].key);
-                core.destroy<V>(&entries[index].value);
+                memraw.destroy<V>(&entries[index].value);
                 entries[index].state=2; count-=1;
                 return core.Option<K>.Some(value);
             }
@@ -126,7 +127,7 @@ pub struct Map<K,V> {
     }
     pub func clear()->void {
         for(var i:usize=0;i<slots;i+=1) {
-            if(entries[i].state==1) {core.destroy<Bucket<K,V>>(&entries[i]);}
+            if(entries[i].state==1) {memraw.destroy<Bucket<K,V>>(&entries[i]);}
             entries[i].state=0;
         }
         count=0;
@@ -135,9 +136,9 @@ pub struct Map<K,V> {
     pub func entriesMut<'a>()->MapEntriesMut<'a,K,V> {return MapEntriesMut<'a,K,V>{source:&mut self,index:0};}
     destructor {
         for(var i:usize=0;i<slots;i+=1) {
-            if(entries[i].state==1) {core.destroy<Bucket<K,V>>(&entries[i]);}
+            if(entries[i].state==1) {memraw.destroy<Bucket<K,V>>(&entries[i]);}
         }
-        core.core_release(entries.(*u8));
+        memraw.core_release(entries.(*u8));
     }
 }
 pub struct EntryRef<'a,K,V> {pub var key:&'a K;pub var value:&'a V;}
@@ -172,7 +173,7 @@ pub struct MapEntriesMut<'a,K,V> {
 }
 pub func map<K,V>(hash:func(&K)->u64,equal:func(&K,&K)->bit)->core.Result<Map<K,V>,Error> {
     return core.Result<Map<K,V>,Error>.Ok(Map<K,V>{
-        entries:core.null<Bucket<K,V>>(),slots:0,count:0,policy:HashPolicy<K>.Plain(hash),
+        entries:memraw.null<Bucket<K,V>>(),slots:0,count:0,policy:HashPolicy<K>.Plain(hash),
         equal:equal
     });
 }
@@ -189,7 +190,7 @@ pub func seededMap<K,V>(hash:func(&K,u64,u64)->u64,equal:func(&K,&K)->bit)->core
         left+=entropy[i].(u64)*power;right+=entropy[i+8].(u64)*power;power*=256;
     }
     return core.Result<Map<K,V>,Error>.Ok(Map<K,V>{
-        entries:core.null<Bucket<K,V>>(),slots:0,count:0,policy:HashPolicy<K>.Keyed(hash,left,right),
+        entries:memraw.null<Bucket<K,V>>(),slots:0,count:0,policy:HashPolicy<K>.Keyed(hash,left,right),
         equal:equal
     });
 }

@@ -1,0 +1,38 @@
+package main;
+import ("stdlib/core" "stdlib/net" "stdlib/time");
+async func exercise()->core.Result<int,net.Error> {
+    var addresses=net.resolve("localhost",80).await()?;
+    if(addresses.length()==0){return core.Result<int,net.Error>.Ok(7);}
+    if(addresses.get(0).port!=80){return core.Result<int,net.Error>.Ok(8);}
+    var receiver=net.udpBind(net.ipv4(2130706433,0))?;
+    var sender=net.udpBind(net.ipv4(2130706433,0))?;
+    var address=receiver.localAddress()?;
+    var bytes:u8[4]=[1,2,3,4];var source=bytes[:];
+    if(sender.send(&source,address).await()?!=4){return core.Result<int,net.Error>.Ok(1);}
+    var input:u8[2];var destination=input[:];
+    var packet=receiver.receive(&mut destination,time.Deadline.after(2000000000)).await()?;
+    if(packet.bytes!=2||!packet.truncated||input[1]!=2){return core.Result<int,net.Error>.Ok(2);}
+    cancel(receiver.receive(&mut destination,time.Deadline.noTimeout())).await();
+    input[0]=0;
+    var listener=net.listen(net.ipv4(2130706433,0),4)?;
+    var endpoint=listener.localAddress()?;
+    var client=net.dial("127.0.0.1",endpoint.port,time.Deadline.after(2000000000)).await()?;
+    var accepted=listener.accept().await()?;
+    client.writeAll(&source).await()?;
+    if(accepted.stream.read(&mut destination,time.Deadline.after(2000000000)).await()?!=2||input[0]!=1){return core.Result<int,net.Error>.Ok(4);}
+    client.shutdownWrite()?;
+    if(accepted.stream.read(&mut destination,time.Deadline.after(2000000000)).await()?!=2){return core.Result<int,net.Error>.Ok(5);}
+    if(accepted.stream.read(&mut destination,time.Deadline.after(2000000000)).await()?!=0){return core.Result<int,net.Error>.Ok(6);}
+    match(client.writeAll(&source,time.Deadline.after(2000000000)).await()){
+        Ok=>return core.Result<int,net.Error>.Ok(10);
+        Err(error)=>{if(error.transferred!=0){return core.Result<int,net.Error>.Ok(11);}}
+    }
+    return core.Result<int,net.Error>.Ok(0);
+}
+async func joined(handle:JoinHandle<core.Result<int,net.Error>>)->int {
+    match(handle.await()){
+        Ok(result)=>match(result){Ok(code)=>return code;Err(error)=>return 99;}
+        Err(error)=>return 98;
+    }
+}
+func main()->int {return block_on(joined(spawn(exercise())));}

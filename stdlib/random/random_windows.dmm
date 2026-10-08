@@ -1,6 +1,6 @@
 package random;
 import (
-    "stdlib"
+    stdlib "stdlib/core"
 );
 extern "system" from "bcrypt" {
     func BCryptGenRandom(provider: *void, buffer: *u8, length: u32, flags: u32) -> i32;
@@ -10,7 +10,7 @@ extern "system" from "bcrypt" {
     }
 }
 
-func nativeSystemFill(output: &mut u8[]) -> stdlib.Result<void, RandomError> {
+func nativeSystemFill(output: &mut u8[]) -> stdlib.Result<void, Error> {
     var nil: Pointer;
     var offset: usize = 0;
     while (offset < (*output).length) {
@@ -21,9 +21,9 @@ func nativeSystemFill(output: &mut u8[]) -> stdlib.Result<void, RandomError> {
         if (
             BCryptGenRandom(nil.address, (&(*output)[offset]).(*u8), count.(u32), 2) != 0
         ) {
-            return stdlib.Result<void, RandomError>.Err(RandomError.SystemFailure);
+            return stdlib.Result<void, Error>.Err(Error.SystemFailure);
         }
         offset += count;
     }
-    return stdlib.Result<void, RandomError>.Ok;
+    return stdlib.Result<void, Error>.Ok;
 }

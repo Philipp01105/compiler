@@ -1,10 +1,10 @@
 # Mutex and guards
 
 Import `"stdlib/sync"`. `sync.mutex(value)` takes ownership and returns
-`stdlib.Result<sync.Mutex<T>,stdlib.AllocationError>`, requiring `T:core.Send`.
+`core.Result<sync.Mutex<T>,core.AllocError>`, requiring `T:core.Send`.
 The mutex is Send and Sync. `sync.lock(&mutex)` blocks until it can return an owning
 `MutexGuard<'a,T>`. The guard keeps the mutex borrowed until its destructor unlocks.
-`guard.getRef()` and `guard.getMut()` return checked references tied to the guard;
+`guard.get()` and `guard.getMut()` return checked references tied to the guard;
 they cannot outlive it. Moving a guard transfers its single unlock responsibility.
 Guards are not Send. Locks are nonrecursive: acquiring the same mutex again on the
 same thread while holding its guard blocks.

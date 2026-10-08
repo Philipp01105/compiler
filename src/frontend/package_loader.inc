@@ -475,8 +475,13 @@ static DmmPackage *resolve_package(PackageLoader *loader, AstProgram *file, cons
     }
     free(nearest);
     /* Every internal segment restricts access to its enclosing canonical subtree. */
+    /* The compiler injects its own provider; explicit user imports still obey
+       the normal internal-package boundary. */
+    int implicit_system = file == loader->root && token == AST_TOKEN_NONE &&
+        loader->options && loader->options->system_packages &&
+        !strcmp(path, "stdlib/internal/system");
     const char *part = path;
-    while ((part = strstr(part, "/internal")) != NULL) {
+    while (!implicit_system && (part = strstr(part, "/internal")) != NULL) {
         const char *end = part + 9;
         if (*end == '/' || !*end) {
             size_t parent = (size_t) (part - path);
@@ -670,7 +675,7 @@ static int load_module_packages(AstProgram *root, const FrontendOptions *options
     if (!package) return 0;
     if (options && options->system_packages && root->package_name &&
         !strcmp(root->package_name,"main")) {
-        root->system_package = resolve_package(&loader, root, "stdlib/system", AST_TOKEN_NONE);
+        root->system_package = resolve_package(&loader, root, "stdlib/internal/system", AST_TOKEN_NONE);
         if (!root->system_package) return 0;
     }
     return 1;

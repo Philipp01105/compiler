@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 func main() -> void {
     var path: string = "formatted_read.tmp";
@@ -8,6 +9,6 @@ func main() -> void {
     sys_write(output, text, 2);
     sys_close(output);
     var input: int = sys_open(path, 0, 0);
-    stdlib.println(read(input, "%i"));
+    io.println(read(input, "%i"));
     sys_close(input);
 }

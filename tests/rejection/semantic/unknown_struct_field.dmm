@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 struct Point {
     var x: int;
@@ -7,5 +8,5 @@ struct Point {
 
 func main() -> void {
     var p: Point;
-    stdlib.println(p.y);
+    io.println(p.y);
 }

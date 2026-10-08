@@ -1,4 +1,6 @@
 package main;
+import memraw "stdlib/memory/raw";
+import polling "stdlib/async/poll";
 import ("stdlib/core" "stdlib/async" "stdlib/time");
 var destroyed: i32 = 0;
 var cancelPolls:i32=0;
@@ -6,55 +8,55 @@ var pollerDrops:i32=0;
 struct Payload { var value: i32; destructor { destroyed += 1; } }
 struct Immediate {
     var result: i32;
-    pub func poll(context: &mut asynchronous.Context) -> core.Poll<i32> {
-        return core.Poll<i32>.Ready(result);
+    pub func poll(context: &mut polling.Context) -> polling.Poll<i32> {
+        return polling.Poll<i32>.Ready(result);
     }
-    pub func cancelPoll(context: &mut asynchronous.Context) -> core.Poll<asynchronous.CancelAck> {
-        return core.Poll<asynchronous.CancelAck>.Ready(asynchronous.CancelAck.Confirmed);
+    pub func cancelPoll(context: &mut polling.Context) -> polling.Poll<polling.CancelAck> {
+        return polling.Poll<polling.CancelAck>.Ready(polling.CancelAck.Confirmed);
     }
 }
 struct WakeOnce {
     var ready:bit;
-    pub func poll(context:&mut asynchronous.Context)->core.Poll<i32> {
-        if (ready) { return core.Poll<i32>.Ready(43); }
+    pub func poll(context:&mut polling.Context)->polling.Poll<i32> {
+        if (ready) { return polling.Poll<i32>.Ready(43); }
         ready=true;
         var wake=context.retainWaker();
         wake.wake();
-        return core.Poll<i32>.Pending;
+        return polling.Poll<i32>.Pending;
     }
-    pub func cancelPoll(context:&mut asynchronous.Context)->core.Poll<asynchronous.CancelAck> {
-        return core.Poll<asynchronous.CancelAck>.Ready(asynchronous.CancelAck.Confirmed);
+    pub func cancelPoll(context:&mut polling.Context)->polling.Poll<polling.CancelAck> {
+        return polling.Poll<polling.CancelAck>.Ready(polling.CancelAck.Confirmed);
     }
 }
 struct UntilCancelled {
     var remaining:i32;
     var address:*i32;
-    pub func poll(context:&mut asynchronous.Context)->core.Poll<i32> {
-        if(address==core.core_null().(*i32)) { address=(&remaining).(*i32); }
-        if(address!=(&remaining).(*i32)) { core.core_trap(); }
-        return core.Poll<i32>.Pending;
+    pub func poll(context:&mut polling.Context)->polling.Poll<i32> {
+        if(address==memraw.core_null().(*i32)) { address=(&remaining).(*i32); }
+        if(address!=(&remaining).(*i32)) { memraw.core_trap(); }
+        return polling.Poll<i32>.Pending;
     }
-    pub func cancelPoll(context:&mut asynchronous.Context)->core.Poll<asynchronous.CancelAck> {
-        if(address!=(&remaining).(*i32)) { core.core_trap(); }
+    pub func cancelPoll(context:&mut polling.Context)->polling.Poll<polling.CancelAck> {
+        if(address!=(&remaining).(*i32)) { memraw.core_trap(); }
         cancelPolls+=1;
         if(remaining!=0) {
             remaining-=1;
             var wake=context.retainWaker(); wake.wake();
-            return core.Poll<asynchronous.CancelAck>.Pending;
+            return polling.Poll<polling.CancelAck>.Pending;
         }
-        return core.Poll<asynchronous.CancelAck>.Ready(asynchronous.CancelAck.Confirmed);
+        return polling.Poll<polling.CancelAck>.Ready(polling.CancelAck.Confirmed);
     }
     destructor { pollerDrops+=1; }
 }
 struct WakeTwice {
     var remaining:i32;
-    pub func poll(context:&mut asynchronous.Context)->core.Poll<i32> {
-        if(remaining==0) { return core.Poll<i32>.Ready(101); }
+    pub func poll(context:&mut polling.Context)->polling.Poll<i32> {
+        if(remaining==0) { return polling.Poll<i32>.Ready(101); }
         remaining-=1; var wake=context.retainWaker(); wake.wake();
-        return core.Poll<i32>.Pending;
+        return polling.Poll<i32>.Pending;
     }
-    pub func cancelPoll(context:&mut asynchronous.Context)->core.Poll<asynchronous.CancelAck> {
-        return core.Poll<asynchronous.CancelAck>.Ready(asynchronous.CancelAck.Confirmed);
+    pub func cancelPoll(context:&mut polling.Context)->polling.Poll<polling.CancelAck> {
+        return polling.Poll<polling.CancelAck>.Ready(polling.CancelAck.Confirmed);
     }
 }
 async func nothing()->void {}
@@ -96,7 +98,7 @@ async func forwardBorrowedResult<'a>(source:&'a i32)->NestedResult<'a> {
     return task.await();
 }
 func acceptSend<T: core.Send>(value: T) -> void {}
-func drive<P: asynchronous.Poller<i32>>(poller: &mut P, context: &mut asynchronous.Context) -> i32 {
+func drive<P: polling.Poller<i32>>(poller: &mut P, context: &mut polling.Context) -> i32 {
     match (poller.poll(context)) {
         Ready(value) => return value;
         Pending => return -1;
@@ -106,41 +108,41 @@ func main() -> int {
     {
         var left=ownedNothing(CompositionOwner{value:7});
         var right=ownedNothing(CompositionOwner{value:8});
-        var joined=asynchronous.join2(asynchronous.asUnit(left),asynchronous.asUnit(right));
+        var joined=asynchronous.join(asynchronous.asUnit(left),asynchronous.asUnit(right));
         var result=block_on(joined);
         if(compositionDrops!=2) { return 77; }
         compositionDrops=0;
     }
     {
         var prior=cancelPolls; var dropped=pollerDrops;
-        var outer=asynchronous.select2(
-            asynchronous.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:core.core_null().(*i32)}),
-            asynchronous.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:core.core_null().(*i32)}));
-        var ready=futurePoll(&mut outer,core.core_null().(*void));
+        var outer=asynchronous.select(
+            polling.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:memraw.core_null().(*i32)}),
+            polling.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:memraw.core_null().(*i32)}));
+        var ready=futurePoll(&mut outer,memraw.core_null().(*void));
         block_on(cancel(outer));
         if(ready || cancelPolls!=prior+6 || pollerDrops!=dropped+2) { return 71; }
         prior=cancelPolls; dropped=pollerDrops;
-        var joined=asynchronous.join2(
-            asynchronous.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:core.core_null().(*i32)}),
-            asynchronous.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:core.core_null().(*i32)}));
-        ready=futurePoll(&mut joined,core.core_null().(*void)); block_on(cancel(joined));
+        var joined=asynchronous.join(
+            polling.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:memraw.core_null().(*i32)}),
+            polling.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:memraw.core_null().(*i32)}));
+        ready=futurePoll(&mut joined,memraw.core_null().(*void)); block_on(cancel(joined));
         if(ready || cancelPolls!=prior+6 || pollerDrops!=dropped+2) { return 72; }
         prior=cancelPolls; dropped=pollerDrops;
-        var raced=asynchronous.race2(
-            asynchronous.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:core.core_null().(*i32)}),
-            asynchronous.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:core.core_null().(*i32)}));
-        ready=futurePoll(&mut raced,core.core_null().(*void)); block_on(cancel(raced));
+        var raced=asynchronous.race(
+            polling.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:memraw.core_null().(*i32)}),
+            polling.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:memraw.core_null().(*i32)}));
+        ready=futurePoll(&mut raced,memraw.core_null().(*void)); block_on(cancel(raced));
         if(ready || cancelPolls!=prior+6 || pollerDrops!=dropped+2) { return 73; }
         prior=cancelPolls; dropped=pollerDrops;
         var timed=asynchronous.timeout(
-            asynchronous.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:core.core_null().(*i32)}),
-            time.nanoseconds(1000000000));
-        ready=futurePoll(&mut timed,core.core_null().(*void)); block_on(cancel(timed));
+            polling.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:memraw.core_null().(*i32)}),
+            time.Deadline.after(1000000000));
+        ready=futurePoll(&mut timed,memraw.core_null().(*void)); block_on(cancel(timed));
         if(ready || cancelPolls!=prior+3 || pollerDrops!=dropped+1) { return 74; }
         dropped=pollerDrops;
-        block_on(cancel(asynchronous.select2(
-            asynchronous.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:core.core_null().(*i32)}),
-            asynchronous.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:core.core_null().(*i32)}))));
+        block_on(cancel(asynchronous.select(
+            polling.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:memraw.core_null().(*i32)}),
+            polling.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:memraw.core_null().(*i32)}))));
         if(pollerDrops!=dropped+2) { return 75; }
         cancelPolls=0; pollerDrops=0;
         block_on(asynchronous.joinVoid(ownedNothing(CompositionOwner{value:1}),ownedNothing(CompositionOwner{value:2})));
@@ -149,20 +151,20 @@ func main() -> int {
         if(compositionDrops!=6) { return 76; }
     }
     {
-        var task=asynchronous.fromPoller<i32,WakeTwice>(WakeTwice{remaining:2});
-        if(futurePoll(&mut task,core.core_null().(*void))) { block_on(cancel(task)); return 61; }
+        var task=polling.fromPoller<i32,WakeTwice>(WakeTwice{remaining:2});
+        if(futurePoll(&mut task,memraw.core_null().(*void))) { block_on(cancel(task)); return 61; }
         if(block_on(task)!=101) { return 62; }
-        var selected=asynchronous.select2(
-            asynchronous.fromPoller<i32,WakeTwice>(WakeTwice{remaining:2}),
-            asynchronous.fromPoller<i32,WakeTwice>(WakeTwice{remaining:2}));
-        if(futurePoll(&mut selected,core.core_null().(*void))) { block_on(cancel(selected)); return 63; }
+        var selected=asynchronous.select(
+            polling.fromPoller<i32,WakeTwice>(WakeTwice{remaining:2}),
+            polling.fromPoller<i32,WakeTwice>(WakeTwice{remaining:2}));
+        if(futurePoll(&mut selected,memraw.core_null().(*void))) { block_on(cancel(selected)); return 63; }
         match(block_on(selected)) {
             Left(value,other)=>{ if(value!=101 || block_on(other)!=101) { return 64; } }
             Right(other,value)=>{ if(value!=101 || block_on(other)!=101) { return 65; } }
         }
         var prior=cancelPolls;
-        var pending=asynchronous.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:core.core_null().(*i32)});
-        if(futurePoll(&mut pending,core.core_null().(*void))) { block_on(cancel(pending)); return 66; }
+        var pending=polling.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:memraw.core_null().(*i32)});
+        if(futurePoll(&mut pending,memraw.core_null().(*void))) { block_on(cancel(pending)); return 66; }
         block_on(cancel(pending));
         if(cancelPolls!=prior+3) { return 67; }
         cancelPolls=0; pollerDrops=0;
@@ -172,11 +174,11 @@ func main() -> int {
             Left(unit,other)=>{ block_on(other); }
             Right(other,unit)=>{ block_on(other); }
         }
-        match(block_on(asynchronous.timeoutVoid(nothing(),time.nanoseconds(1000000000)))) {
+        match(block_on(asynchronous.timeoutVoid(nothing(),time.Deadline.after(1000000000)))) {
             Completed=>{} Elapsed=>return 68;
         }
         var number:i32=69;
-        var joined=block_on(asynchronous.join2(asynchronous.asUnit(nothing()),work(&number)));
+        var joined=block_on(asynchronous.join(asynchronous.asUnit(nothing()),work(&number)));
         if(joined.right!=69) { return 69; }
         number=70;
     }
@@ -204,7 +206,7 @@ func main() -> int {
         source=83;
         {
             var task=borrowedResult(&source);
-            while(!futurePoll(&mut task,core.core_null().(*void))) {}
+            while(!futurePoll(&mut task,memraw.core_null().(*void))) {}
             var result=futureComplete(task);
             if(*result.reader.source!=83) { return 48; }
         }
@@ -248,47 +250,47 @@ func main() -> int {
     block_on(asynchronous.sleep(time.nanoseconds(1000000)));
     {
         var number:i32=51;
-        match(block_on(asynchronous.timeout(work(&number),time.nanoseconds(1000000000)))) {
+        match(block_on(asynchronous.timeout(work(&number),time.Deadline.after(1000000000)))) {
             Completed(value)=>{ if(value!=51) { return 37; } }
             Elapsed=>return 38;
         }
         number=52;
     }
     match(block_on(asynchronous.timeout(
-        asynchronous.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:core.core_null().(*i32)}),
-        time.nanoseconds(1000000)))) {
+        polling.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:memraw.core_null().(*i32)}),
+        time.Deadline.after(1000000)))) {
         Completed(value)=>return 39;
         Elapsed=>{}
     }
     if(cancelPolls!=3 || pollerDrops!=1) { return 40; }
-    if (block_on(asynchronous.fromPoller<i32,Immediate>(Immediate{result:37}))!=37) { return 30; }
-    if (block_on(asynchronous.fromPoller<i32,WakeOnce>(WakeOnce{ready:false}))!=43) { return 34; }
+    if (block_on(polling.fromPoller<i32,Immediate>(Immediate{result:37}))!=37) { return 30; }
+    if (block_on(polling.fromPoller<i32,WakeOnce>(WakeOnce{ready:false}))!=43) { return 34; }
     {
         var left:i32=44;
         var right:i32=45;
-        var joined=block_on(asynchronous.join2(work(&left),work(&right)));
+        var joined=block_on(asynchronous.join(work(&left),work(&right)));
         if(joined.left!=44 || joined.right!=45) { return 35; }
         left=46; right=47;
-        if(block_on(asynchronous.race2(work(&left),work(&right)))!=46) { return 36; }
+        if(block_on(asynchronous.race(work(&left),work(&right)))!=46) { return 36; }
         left=48; right=49;
     }
     {
-        var context=asynchronous.context(asynchronous.noopWaker());
+        var context=polling.context(polling.noopWaker());
         var source:i32=39;
-        match (asynchronous.poll(work(&source),&mut context)) {
+        match (polling.poll(work(&source),&mut context)) {
             Ready(value)=>{ source=40; if(value!=39) { return 31; } }
             Pending(child)=>{ if(block_on(child)!=39) { return 32; } }
         }
         source=41;
         var child=work(&source);
-        var acknowledged=futureCancelPoll(&mut child,core.core_null().(*void));
+        var acknowledged=futureCancelPoll(&mut child,memraw.core_null().(*void));
         futureCancelComplete(child);
         if(!acknowledged) { return 33; }
         source=42;
     }
     {
-        var idle = asynchronous.noopWaker();
-        var polling = asynchronous.context(idle);
+        var idle = polling.noopWaker();
+        var polling = polling.context(idle);
         var clone = polling.retainWaker();
         clone.wake();
         acceptSend(polling.retainWaker());
@@ -299,13 +301,13 @@ func main() -> int {
             Pending => return 10;
         }
     }
-    var polled = core.Poll<i32>.Ready(23);
+    var polled = polling.Poll<i32>.Ready(23);
     match (polled) {
         Ready(value) => { if (value != 23) { return 4; } }
         Pending => return 5;
     }
     {
-        var owner = core.Poll<Payload>.Ready(Payload{value:29});
+        var owner = polling.Poll<Payload>.Ready(Payload{value:29});
         match (owner) {
             Ready(value) => { if (value.value != 29) { return 6; } }
             Pending => return 7;

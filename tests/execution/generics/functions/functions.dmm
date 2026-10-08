@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 func identity<T>(value: T) -> T {
     return value;
@@ -25,17 +26,17 @@ func factorial<T>(value: T) -> T {
 }
 
 func main() -> void {
-    stdlib.println(identity(42));
-    stdlib.println(identity("hello"));
-    stdlib.println(identity('Z'));
-    stdlib.println(identity(2.5));
-    stdlib.println(identity(43));
-    stdlib.println(choose(2, 3));
+    io.println(identity(42));
+    io.println(identity("hello"));
+    io.println(identity('Z'));
+    io.println(identity(2.5));
+    io.println(identity(43));
+    io.println(choose(2, 3));
     var numbers: int[3];
     numbers[0] = 7;
-    stdlib.println(first(numbers));
-    stdlib.println(factorial(5));
+    io.println(first(numbers));
+    io.println(factorial(5));
     var x: int = 8;
     var p: *int = identity((&x).(*int));
-    stdlib.println(*p);
+    io.println(*p);
 }

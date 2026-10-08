@@ -1,4 +1,5 @@
 package io;
+import memraw "stdlib/memory/raw";
 import ("stdlib/core" "stdlib/collections");
 
 pub struct BufferedReader<'a,R:Reader> {
@@ -11,7 +12,7 @@ pub struct BufferedReader<'a,R:Reader> {
             if(eof) { return core.Result<usize,Error>.Ok(0); }
             var destination=buffer.view();
             var count=source.read(&mut destination)?;
-            if(count>destination.length) { core.core_trap(); }
+            if(count>destination.length) { memraw.core_trap(); }
             start=0; end=count;
             if(count==0) { eof=true; return core.Result<usize,Error>.Ok(0); }
         }
@@ -69,13 +70,13 @@ pub struct BufferedWriter<'a,W:Writer> {
             match(target.write(&pending)) {
                 Err(error)=>{
                     sent+=error.transferred;
-                    if(sent>data.length()) { core.core_trap(); }
+                    if(sent>data.length()) { memraw.core_trap(); }
                     error.transferred=sent-beginning;
                     return core.Result<void,Error>.Err(error);
                 }
                 Ok(count)=>{
                     if(count==0) { return core.Result<void,Error>.Err(failure(ErrorKind.WriteZero,sent-beginning)); }
-                    if(count>pending.length) { core.core_trap(); }
+                    if(count>pending.length) { memraw.core_trap(); }
                     sent+=count;
                 }
             }

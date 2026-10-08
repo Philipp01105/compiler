@@ -1,7 +1,0 @@
-package core;
-
-// A pending computation retains its state; Ready transfers its result.
-pub enum Poll<T> {
-    pub Pending,
-    pub Ready(T)
-}

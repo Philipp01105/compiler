@@ -42,6 +42,10 @@ static int async_graph_future(Analyzer *a,const AstExpression *e,size_t depth) {
     if(e->kind!=AST_EXPR_CALL||e->resolved_symbol_id>=a->model->symbol_count) return 0;
     const SemanticSymbol *callee=&a->model->symbols[e->resolved_symbol_id];
     if(!(callee->async_graph_properties&SEMANTIC_TYPE_SEND)||!callee->declaration) return 0;
+    if(callee->declaration->as.function.receiver_parameter) {
+        if(!e->left || e->left->kind!=AST_EXPR_MEMBER ||
+           !async_graph_origin(a,e->left->left,depth+1)) return 0;
+    }
     const AstParameter *p=callee->declaration->as.function.parameters;
     for(const AstExpression *arg=e->arguments;arg;arg=arg->next) {
         if(!p) return 0;
@@ -192,7 +196,7 @@ static int async_expression_send(Analyzer *analyzer, const AstExpression *expres
         if(expression->kind==AST_EXPR_CALL && expression->resolved_symbol_id<analyzer->model->symbol_count) {
             const SemanticSymbol *s=&analyzer->model->symbols[expression->resolved_symbol_id];
             if(s->kind==SEMANTIC_SYMBOL_FUNCTION && s->source_program->module_identity &&
-               !strcmp(s->source_program->module_identity,"stdlib/core") &&
+               !strcmp(s->source_program->module_identity,"stdlib/memory/raw") &&
                !strcmp(ast_program_lexeme(s->source_program,s->name_token),"core_null")) return 1;
         }
         const AstProgram *source = expression->resolved_type_program != NULL
@@ -227,9 +231,19 @@ static void derive_async_properties(Analyzer *analyzer) {
             analyzer->program = (AstProgram *) symbol->source_program;
             analyzer->current_function_symbol_id=symbol->id;
             analyzer->async_graph_analysis=1;
-            int send = symbol->owner_symbol_id == AST_SYMBOL_NONE;
+            int send = 1;
             int external_loans=0;
             const AstDeclarationNode *function = symbol->declaration;
+            const AstParameter *receiver=function->as.function.receiver_parameter;
+            if(receiver) {
+                external_loans=1;
+                AstType referent=receiver->type; referent.borrow_kind=AST_BORROW_NONE;
+                unsigned properties=semantic_declared_type_properties(analyzer,symbol->source_program,&referent);
+                /* The receiver remains a borrowed child. Its graph can move
+                   only when the caller owns the receiver in the pinned graph. */
+                if((properties&(SEMANTIC_TYPE_SEND|SEMANTIC_TYPE_SYNC))!=
+                   (SEMANTIC_TYPE_SEND|SEMANTIC_TYPE_SYNC)) send=0;
+            }
             for (const AstParameter *p = function->as.function.parameters; p; p = p->next)
                 if(p->type.borrow_kind!=AST_BORROW_NONE) {
                     external_loans=1;

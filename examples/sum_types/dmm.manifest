@@ -1,6 +1,0 @@
-/* main
-Generic sum enums, all variant paths, payload bindings, exhaustive match, Option and Result.
-*/
-
-module dmm.example/sum_types
-dmm 2026-09-22-dev

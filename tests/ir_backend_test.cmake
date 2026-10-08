@@ -75,7 +75,7 @@ foreach (target elf coff)
         set(output "${OUTPUT_DIR}/integer_call_${target}_${syntax}.s")
         set(executable "${OUTPUT_DIR}/integer_call_${target}_${syntax}.exe")
         execute_process(
-                COMMAND "${COMPILER}" --emit=asm --deterministic "--target=${target}" "--syntax=${syntax}"
+                COMMAND "${COMPILER}" --emit=asm --deterministic --dump-native-link "${output}.link" "--target=${target}" "--syntax=${syntax}"
                 -o "${output}" "${ROOT}/tests/unit/frontend_ast_fixture/frontend_ast_fixture.dmm"
                 RESULT_VARIABLE result ERROR_VARIABLE errors)
         if (NOT result STREQUAL "0")
@@ -86,8 +86,9 @@ foreach (target elf coff)
             message(FATAL_ERROR "integer function call did not use typed IR (${target}/${syntax})")
         endif ()
         if (target STREQUAL "${HOST_TARGET}")
+            dmm_test_link_profile("${output}.link")
             execute_process(
-                    COMMAND "${ASSEMBLER}" ${STANDALONE_FLAGS} "${output}" ${SYSTEM_LIBRARIES} -o "${executable}"
+                    COMMAND "${ASSEMBLER}" ${CASE_LINK_FLAGS} "${output}" ${CASE_SYSTEM_LIBRARIES} -o "${executable}"
                     RESULT_VARIABLE result OUTPUT_VARIABLE output_text ERROR_VARIABLE errors)
             if (NOT result STREQUAL "0")
                 message(FATAL_ERROR "IR-native integer call assembly failed: ${errors}")
@@ -138,7 +139,7 @@ foreach (target elf coff)
         set(output "${OUTPUT_DIR}/scalar_${target}_${syntax}.s")
         set(executable "${OUTPUT_DIR}/scalar_${target}_${syntax}.exe")
         execute_process(
-                COMMAND "${COMPILER}" --emit=asm --deterministic "--target=${target}" "--syntax=${syntax}"
+                COMMAND "${COMPILER}" --emit=asm --deterministic --dump-native-link "${output}.link" "--target=${target}" "--syntax=${syntax}"
                 -o "${output}" "${ROOT}/tests/unit/ir_scalar_fixture/ir_scalar_fixture.dmm"
                 RESULT_VARIABLE result ERROR_VARIABLE errors)
         if (NOT result STREQUAL "0")
@@ -149,8 +150,9 @@ foreach (target elf coff)
             message(FATAL_ERROR "scalar program did not use typed IR (${target}/${syntax})")
         endif ()
         if (target STREQUAL "${HOST_TARGET}")
+            dmm_test_link_profile("${output}.link")
             execute_process(
-                    COMMAND "${ASSEMBLER}" ${STANDALONE_FLAGS} "${output}" ${SYSTEM_LIBRARIES} -o "${executable}"
+                    COMMAND "${ASSEMBLER}" ${CASE_LINK_FLAGS} "${output}" ${CASE_SYSTEM_LIBRARIES} -o "${executable}"
                     RESULT_VARIABLE result ERROR_VARIABLE errors)
             if (NOT result STREQUAL "0")
                 message(FATAL_ERROR "IR-native scalar assembly failed: ${errors}")

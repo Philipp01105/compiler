@@ -1,5 +1,5 @@
 package main;
-import ("stdlib/core" raw "stdlib/core/raw" "stdlib/collections");
+import ("stdlib/core" raw "stdlib/memory/raw" "stdlib/collections");
 var created:int=0;var dropped:int=0;
 struct Resource {var value:int;destructor{dropped+=1;}}
 struct Reader<'a>{var source:&'a int;}

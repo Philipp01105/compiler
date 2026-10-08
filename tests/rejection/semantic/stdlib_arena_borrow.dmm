@@ -1,17 +1,15 @@
 package main;
 import (
-    "stdlib"
-    "stdlib/memory"
+    "stdlib/collections"
 );
 
 func main() -> int {
-    var created = memory.arena(4);
+    var created = collections.buffer<u8>(4,0);
     match (created) {
         Err(error) => return 1;
         Ok(owner) => {
-            owner.allocate(4);
             var view = owner.view();
-            owner.reset();
+            *owner.getMut(0)=1;
             return view[0].(int);
         }
     }

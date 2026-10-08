@@ -1,6 +1,0 @@
-/* main
-Generic functions and structs, multiple structural interface bounds, dynamic dispatch and compile-time type matches.
-*/
-
-module dmm.example/generics_and_interfaces
-dmm 2026-09-22-dev

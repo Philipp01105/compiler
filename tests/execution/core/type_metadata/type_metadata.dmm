@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 import "stdlib/core";
 
 struct Node {
@@ -168,6 +169,6 @@ func main() -> int {
     if (buffer_case(view) != 3 || buffer_case(1) != sizeof(int[2])) {
         return 24;
     }
-    stdlib.println("type metadata");
+    io.println("type metadata");
     return 0;
 }

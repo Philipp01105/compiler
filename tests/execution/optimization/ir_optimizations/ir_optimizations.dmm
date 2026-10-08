@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 func choose(c: bit) -> int {
     var x = 1;
@@ -37,23 +38,23 @@ func reads(p: *int) -> int {
 }
 
 func effect() -> bit {
-    stdlib.println("unexpected");
+    io.println("unexpected");
     return true;
 }
 
 func main() -> void {
-    stdlib.println((2 + 3) * 8 + 2);
-    stdlib.println(choose(true));
-    stdlib.println(choose(false));
-    stdlib.println(loop(5));
+    io.println((2 + 3) * 8 + 2);
+    io.println(choose(true));
+    io.println(choose(false));
+    io.println(loop(5));
     var value = 7;
-    stdlib.println(change((&value).(*int)));
-    stdlib.println(value);
-    stdlib.println(reads((&value).(*int)));
-    stdlib.println(address());
-    stdlib.println(false && effect());
-    stdlib.println(true || effect());
+    io.println(change((&value).(*int)));
+    io.println(value);
+    io.println(reads((&value).(*int)));
+    io.println(address());
+    io.println(false && effect());
+    io.println(true || effect());
     var dead = 1;
     dead = 2;
-    stdlib.println(-0.0 + 0.0);
+    io.println(-0.0 + 0.0);
 }

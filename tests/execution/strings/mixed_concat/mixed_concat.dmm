@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 func main() -> void {
     var empty: string;
@@ -8,6 +9,6 @@ func main() -> void {
     var letter: char = 'Q';
     var enabled: bit = true;
     var value: string = empty + "n=" + count + ",r=" + ratio + ",c=" + letter + ",b=" + enabled;
-    stdlib.println(value);
+    io.println(value);
     free(value);
 }

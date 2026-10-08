@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/limits";
+import stdlib "stdlib/core";
 import "stdlib/algorithms";
 import "stdlib/numeric";
 import "stdlib/binary";
@@ -12,8 +13,8 @@ func same(a: i32, b: i32) -> bit {
     return a == b;
 }
 
-func positive(a: i32) -> bit {
-    return a > 0;
+func positive(a: &i32) -> bit {
+    return *a > 0;
 }
 
 func twice(a: i32) -> i32 {
@@ -39,14 +40,14 @@ func fallback() -> i32 {
     return 9;
 }
 
-func unsignedOk(result: stdlib.Result<u64, numeric.NumberError>, expected: u64) -> bit {
+func unsignedOk(result: stdlib.Result<u64, numeric.Error>, expected: u64) -> bit {
     match (result) {
         Ok(value) => return value == expected;
         Err(error) => return false;
     }
 }
 
-func signedOk(result: stdlib.Result<i64, numeric.NumberError>, expected: i64) -> bit {
+func signedOk(result: stdlib.Result<i64, numeric.Error>, expected: i64) -> bit {
     match (result) {
         Ok(value) => return value == expected;
         Err(error) => return false;
@@ -54,8 +55,8 @@ func signedOk(result: stdlib.Result<i64, numeric.NumberError>, expected: i64) ->
 }
 
 func unsignedError(
-    result: stdlib.Result<u64, numeric.NumberError>,
-    expected: numeric.NumberError
+    result: stdlib.Result<u64, numeric.Error>,
+    expected: numeric.Error
 ) -> bit {
     match (result) {
         Ok(value) => return false;
@@ -64,8 +65,8 @@ func unsignedError(
 }
 
 func signedError(
-    result: stdlib.Result<i64, numeric.NumberError>,
-    expected: numeric.NumberError
+    result: stdlib.Result<i64, numeric.Error>,
+    expected: numeric.Error
 ) -> bit {
     match (result) {
         Ok(value) => return false;
@@ -73,7 +74,7 @@ func signedError(
     }
 }
 
-func binaryOk(result: stdlib.Result<void, binary.BinaryError>) -> bit {
+func binaryOk(result: stdlib.Result<void, binary.Error>) -> bit {
     match (result) {
         Ok => return true;
         Err(error) => return false;
@@ -82,12 +83,12 @@ func binaryOk(result: stdlib.Result<void, binary.BinaryError>) -> bit {
 
 func main() -> int {
     if (
-        stdlib.optionOr<i32>(stdlib.Option<i32>.Some(4), fallback) != 4 ||
+        stdlib.unwrapOrElse<i32>(stdlib.Option<i32>.Some(4), fallback) != 4 ||
         fallbackCalls != 0
     ) {
         return 1;
     }
-    if (stdlib.optionOr<i32>(stdlib.Option<i32>.None, fallback) != 9 || fallbackCalls != 1) {
+    if (stdlib.unwrapOrElse<i32>(stdlib.Option<i32>.None, fallback) != 9 || fallbackCalls != 1) {
         return 2;
     }
     var mapped = stdlib.mapOption<i32, i32>(stdlib.Option<i32>.Some(3), twice);
@@ -100,7 +101,8 @@ func main() -> int {
         None => return 4;
     }
     var values: i32[7] = [5, -2, 5, 0, 99, -9, 3];
-    algorithms.sort<i32>(values, less);
+    var valuesView=values[:];
+    algorithms.sort<i32>(&mut valuesView, less);
     var expected: i32[7] = [-9, -2, 0, 3, 5, 5, 99];
     if (!algorithms.equal<i32>(values, expected, same)) {
         return 5;
@@ -112,67 +114,68 @@ func main() -> int {
         return 6;
     }
     if (
-        algorithms.count<i32>(values, positive) != 4 ||
-        algorithms.all<i32>(values, positive) ||
-        !algorithms.any<i32>(values, positive)
+        algorithms.count<i32>(&valuesView, positive) != 4 ||
+        algorithms.all<i32>(&valuesView, positive) ||
+        !algorithms.any<i32>(&valuesView, positive)
     ) {
         return 7;
     }
-    algorithms.reverse<i32>(values);
+    algorithms.reverse<i32>(&mut valuesView);
     if (values[0] != 99 || values[6] != - 9) {
         return 8;
     }
     var one: i32[1] = [1];
-    algorithms.sort<i32>(one, less);
-    algorithms.reverse<i32>(one);
+    var oneView=one[:];
+    algorithms.sort<i32>(&mut oneView, less);
+    algorithms.reverse<i32>(&mut oneView);
     var empty: i32[] = one[: 0];
-    algorithms.sort<i32>(empty, less);
-    algorithms.reverse<i32>(empty);
-    if (!algorithms.all<i32>(empty, positive) || algorithms.any<i32>(empty, positive)) {
+    algorithms.sort<i32>(&mut empty, less);
+    algorithms.reverse<i32>(&mut empty);
+    if (!algorithms.all<i32>(&empty, positive) || algorithms.any<i32>(&empty, positive)) {
         return 9;
     }
     if (
         !unsignedError(
-            numeric.checkedAdd(numeric.U64_MAX, 1.(u64)),
-            numeric.NumberError.Overflow
+            numeric.checkedAdd(limits.U64_MAX, 1.(u64)),
+            numeric.Error.Overflow
         )
     ) {
         return 10;
     }
-    if (!unsignedOk(numeric.checkedMul(numeric.U64_MAX, 1.(u64)), numeric.U64_MAX)) {
+    if (!unsignedOk(numeric.checkedMul(limits.U64_MAX, 1.(u64)), limits.U64_MAX)) {
         return 11;
     }
     if (
         !unsignedError(
-            numeric.checkedMul(numeric.U64_MAX, 2.(u64)),
-            numeric.NumberError.Overflow
+            numeric.checkedMul(limits.U64_MAX, 2.(u64)),
+            numeric.Error.Overflow
         )
     ) {
         return 12;
     }
     if (
         !signedError(
-            numeric.checkedAdd(numeric.I64_MAX, 1.(i64)),
-            numeric.NumberError.Overflow
+            numeric.checkedAdd(limits.I64_MAX, 1.(i64)),
+            numeric.Error.Overflow
         )
     ) {
         return 13;
     }
-    if (!signedOk(numeric.checkedMul(numeric.I64_MIN, 1.(i64)), numeric.I64_MIN)) {
+    if (!signedOk(numeric.checkedMul(limits.I64_MIN, 1.(i64)), limits.I64_MIN)) {
         return 14;
     }
     if (
         !signedError(
-            numeric.checkedMul(numeric.I64_MIN, -1.(i64)),
-            numeric.NumberError.Overflow
+            numeric.checkedMul(limits.I64_MIN, -1.(i64)),
+            numeric.Error.Overflow
         )
     ) {
         return 15;
     }
     if (
         !signedError(
-            numeric.checkedDiv(numeric.I64_MIN, -1.(i64)),
-            numeric.NumberError.Overflow
+            numeric.checkedDiv(limits.I64_MIN, -1.(i64)),
+            numeric.Error.Overflow
         )
     ) {
         return 16;
@@ -180,38 +183,38 @@ func main() -> int {
     if (
         !signedError(
             numeric.checkedDiv(1.(i64), 0.(i64)),
-            numeric.NumberError.DivisionByZero
+            numeric.Error.DivisionByZero
         )
     ) {
         return 17;
     }
     var digits: u8[65];
-    var formatted = numeric.formatInt(numeric.I64_MIN, 10, digits);
+    var formatted = numeric.formatInt(limits.I64_MIN, 10, digits);
     match (formatted) {
         Err(error) => return 18;
         Ok(count) => {
             if (
                 count != 20 ||
-                !signedOk(numeric.parseInt(digits[: count], 10), numeric.I64_MIN)
+                !signedOk(numeric.parseInt(digits[: count], 10), limits.I64_MIN)
             ) {
                 return 19;
             }
         }
     }
-    var formattedUnsigned = numeric.formatUint(numeric.U64_MAX, 16, digits);
+    var formattedUnsigned = numeric.formatUint(limits.U64_MAX, 16, digits);
     match (formattedUnsigned) {
         Err(error) => return 20;
         Ok(count) => {
             if (
                 count != 16 ||
-                !unsignedOk(numeric.parseUint(digits[: count], 16), numeric.U64_MAX)
+                !unsignedOk(numeric.parseUint(digits[: count], 16), limits.U64_MAX)
             ) {
                 return 21;
             }
         }
     }
     var invalid: u8[1] = [33];
-    if (!unsignedError(numeric.parseUint(invalid, 10), numeric.NumberError.InvalidDigit)) {
+    if (!unsignedError(numeric.parseUint(invalid, 10), numeric.Error.InvalidDigit)) {
         return 22;
     }
     var small: u8[1] = [77];
@@ -219,7 +222,7 @@ func main() -> int {
     match (failed) {
         Ok(count) => return 23;
         Err(error) => {
-            if (error != numeric.NumberError.BufferTooSmall || small[0] != 77) {
+            if (error != numeric.Error.BufferTooSmall || small[0] != 77) {
                 return 24;
             }
         }
@@ -227,23 +230,23 @@ func main() -> int {
     var bytes: u8[12];
     var view: u8[] = bytes;
     {
-        var writer = binary.writer();
-        if (!binaryOk(writer.writeUint(&mut view, 16909060, 4, binary.Endian.Big))) {
+        var writer = binary.writer(&mut view);
+        if (!binaryOk(writer.writeUint(16909060, 4, binary.Endian.Big))) {
             return 25;
         }
         if (
-            !binaryOk(writer.writeUint(&mut view, numeric.U64_MAX, 8, binary.Endian.Little))
+            !binaryOk(writer.writeUint(limits.U64_MAX, 8, binary.Endian.Little))
         ) {
             return 26;
         }
-        if (writer.remaining(&view) != 0 || writer.offset() != 12) {
+        if (writer.remaining() != 0 || writer.offset() != 12) {
             return 27;
         }
-        var failedWrite = writer.writeUint(&mut view, 1, 1, binary.Endian.Big);
+        var failedWrite = writer.writeUint(1, 1, binary.Endian.Big);
         match (failedWrite) {
             Ok => return 28;
             Err(error) => {
-                if (error != binary.BinaryError.BufferTooSmall || writer.offset() != 12) {
+                if (error != binary.Error.BufferTooSmall || writer.offset() != 12) {
                     return 29;
                 }
             }
@@ -253,8 +256,8 @@ func main() -> int {
         return 30;
     }
     {
-        var reader = binary.reader();
-        var first = reader.readUint(&view, 4, binary.Endian.Big);
+        var reader = binary.reader(&view);
+        var first = reader.readUint(4, binary.Endian.Big);
         match (first) {
             Ok(value) => {
                 if (value != 16909060) {
@@ -263,20 +266,20 @@ func main() -> int {
             }
             Err(error) => return 32;
         }
-        var last = reader.readUint(&view, 8, binary.Endian.Little);
+        var last = reader.readUint(8, binary.Endian.Little);
         match (last) {
             Ok(value) => {
-                if (value != numeric.U64_MAX) {
+                if (value != limits.U64_MAX) {
                     return 33;
                 }
             }
             Err(error) => return 34;
         }
-        var failedRead = reader.readUint(&view, 1, binary.Endian.Big);
+        var failedRead = reader.readUint(1, binary.Endian.Big);
         match (failedRead) {
             Ok(value) => return 35;
             Err(error) => {
-                if (error != binary.BinaryError.UnexpectedEnd || reader.offset() != 12) {
+                if (error != binary.Error.UnexpectedEnd || reader.offset() != 12) {
                     return 36;
                 }
             }
@@ -345,35 +348,35 @@ func main() -> int {
         return 49;
     }
     for (var base: u32 = 2; base <= 36; base += 1) {
-        var roundtrip = numeric.formatUint(numeric.U64_MAX, base, digits);
+        var roundtrip = numeric.formatUint(limits.U64_MAX, base, digits);
         match (roundtrip) {
             Err(error) => return 50;
             Ok(count) => {
-                if (!unsignedOk(numeric.parseUint(digits[: count], base), numeric.U64_MAX)) {
+                if (!unsignedOk(numeric.parseUint(digits[: count], base), limits.U64_MAX)) {
                     return 51;
                 }
             }
         }
     }
     var sign: u8[1] = [45];
-    if (!signedError(numeric.parseInt(sign, 10), numeric.NumberError.Empty)) {
+    if (!signedError(numeric.parseInt(sign, 10), numeric.Error.Empty)) {
         return 52;
     }
-    if (!unsignedError(numeric.parseUint(invalid, 1), numeric.NumberError.InvalidBase)) {
+    if (!unsignedError(numeric.parseUint(invalid, 1), numeric.Error.InvalidBase)) {
         return 53;
     }
     if (
         !unsignedError(
             numeric.checkedSub(0.(u64), 1.(u64)),
-            numeric.NumberError.Overflow
+            numeric.Error.Overflow
         )
     ) {
         return 54;
     }
     if (
         !signedError(
-            numeric.checkedSub(numeric.I64_MIN, 1.(i64)),
-            numeric.NumberError.Overflow
+            numeric.checkedSub(limits.I64_MIN, 1.(i64)),
+            numeric.Error.Overflow
         )
     ) {
         return 55;
@@ -384,49 +387,51 @@ func main() -> int {
             scratch[i] = ((i * 17 + length * 13) % 23).(i32);
         }
         var prefix: i32[] = scratch[: length];
-        algorithms.sort<i32>(prefix, less);
+        algorithms.sort<i32>(&mut prefix, less);
         for (var i: usize = 1; i < length; i += 1) {
             if (scratch[i - 1] > scratch[i]) {
                 return 56;
             }
         }
     }
-    var cursor = binary.writer();
-    var overflowWrite = cursor.writeUint(&mut view, 256, 1, binary.Endian.Big);
+    {
+    var cursor = binary.writer(&mut view);
+    var overflowWrite = cursor.writeUint(256, 1, binary.Endian.Big);
     match (overflowWrite) {
         Ok => return 61;
         Err(error) => {
             if (
-                error != binary.BinaryError.ValueOverflow ||
-                cursor.offset() != 0 ||
-                bytes[0] != 1
+                error != binary.Error.ValueOverflow ||
+                cursor.offset() != 0
             ) {
                 return 62;
             }
         }
     }
-    var invalidWidth = cursor.writeUint(&mut view, 0, 3, binary.Endian.Big);
+    var invalidWidth = cursor.writeUint(0, 3, binary.Endian.Big);
     match (invalidWidth) {
         Ok => return 63;
         Err(error) => {
-            if (error != binary.BinaryError.InvalidWidth || cursor.offset() != 0) {
+            if (error != binary.Error.InvalidWidth || cursor.offset() != 0) {
                 return 64;
             }
         }
     }
     var payload: u8[2] = [8, 9];
     var payloadView: u8[] = payload;
-    if (!binaryOk(cursor.writeBytes(&mut view, &payloadView))) {
+    if (!binaryOk(cursor.writeBytes(&payloadView))) {
         return 65;
     }
-    var readCursor = binary.reader();
-    if (!binaryOk(readCursor.skip(&view, 1))) {
+    }
+    if(bytes[0]!=8 || bytes[1]!=9) {return 62;}
+    var readCursor = binary.reader(&view);
+    if (!binaryOk(readCursor.skip(1))) {
         return 66;
     }
     var output: u8[2];
     var outputView: u8[] = output;
     if (
-        !binaryOk(readCursor.readBytes(&view, &mut outputView)) ||
+        !binaryOk(readCursor.readBytes(&mut outputView)) ||
         output[0] != 9 ||
         output[1] != 3 ||
         readCursor.offset() != 3

@@ -34,12 +34,24 @@ function(run_case source expected syntax)
     file(MAKE_DIRECTORY "${work}")
     file(COPY_FILE "${source}" "${work}/input.dmm")
     get_filename_component(source_directory "${source}" DIRECTORY)
+    file(GLOB siblings "${source_directory}/*.dmm")
+    foreach(sibling IN LISTS siblings)
+        if(NOT sibling STREQUAL source)
+            file(COPY "${sibling}" DESTINATION "${work}")
+        endif()
+    endforeach()
+    file(GLOB children LIST_DIRECTORIES TRUE "${source_directory}/*")
+    foreach(child IN LISTS children)
+        if(IS_DIRECTORY "${child}")
+            file(COPY "${child}" DESTINATION "${work}")
+        endif()
+    endforeach()
     if (EXISTS "${source_directory}/dmm.manifest")
         file(COPY_FILE "${source_directory}/dmm.manifest" "${work}/dmm.manifest")
     endif ()
 
     execute_process(
-            COMMAND "${COMPILER}" --emit=asm "--syntax=${syntax}" "${work}/input.dmm"
+            COMMAND "${COMPILER}" --emit=asm --dump-native-link "${work}/native.link" "--syntax=${syntax}" "${work}/input.dmm"
             RESULT_VARIABLE result
             OUTPUT_VARIABLE output
             ERROR_VARIABLE errors
@@ -52,10 +64,11 @@ function(run_case source expected syntax)
         )
     endif ()
 
+    dmm_test_link_profile("${work}/native.link")
     execute_process(
-            COMMAND "${ASSEMBLER}" ${STANDALONE_FLAGS}
+            COMMAND "${ASSEMBLER}" ${CASE_LINK_FLAGS}
             "${work}/input.dmm.s"
-            ${SYSTEM_LIBRARIES} -o "${work}/program.exe"
+            ${CASE_SYSTEM_LIBRARIES} -o "${work}/program.exe"
             RESULT_VARIABLE result
             OUTPUT_VARIABLE output
             ERROR_VARIABLE errors
@@ -67,7 +80,7 @@ function(run_case source expected syntax)
                 "${name}/${syntax}: assembly failed (${result})\n${output}${errors}"
         )
     endif ()
-    if (name STREQUAL "hello")
+    if (name STREQUAL "hello" AND CASE_STANDALONE)
         check_standalone_dependencies("${work}/program.exe")
     endif ()
 
@@ -138,6 +151,11 @@ if (TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "positive")
     endif ()
 
     foreach (source IN LISTS TEST_FILES)
+        file(READ "${source}" package_source)
+        if(NOT package_source MATCHES "^[ \t\r\n]*package[ \t]+main[ \t]*;" OR
+           NOT package_source MATCHES "func[ \t]+main[ \t]*[(]")
+            continue()
+        endif()
         get_filename_component(name "${source}" NAME_WE)
         get_filename_component(source_dir "${source}" DIRECTORY)
 
@@ -181,7 +199,7 @@ if (TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "abi")
         )
 
         execute_process(
-                COMMAND "${COMPILER}" --emit=asm "--syntax=${syntax}" "${work}/input.dmm"
+                COMMAND "${COMPILER}" --emit=asm --dump-native-link "${work}/native.link" "--syntax=${syntax}" "${work}/input.dmm"
                 RESULT_VARIABLE result
                 ERROR_VARIABLE errors
                 TIMEOUT 30
@@ -249,7 +267,7 @@ function(reject_case name source diagnostic)
     dmm_test_write("${work}/input.dmm.s" "stale output")
 
     execute_process(
-            COMMAND "${COMPILER}" --emit=asm "${work}/input.dmm"
+            COMMAND "${COMPILER}" --emit=asm --dump-native-link "${work}/native.link" "${work}/input.dmm"
             RESULT_VARIABLE result
             OUTPUT_VARIABLE output
             ERROR_VARIABLE errors
@@ -520,11 +538,11 @@ if (TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
 
         dmm_test_write(
                 "${OUTPUT_DIR}/target/target.dmm"
-                "import <stdlib>\nfunc main() -> void { println(7); }"
+                "import <stdlib>\nfunc main() -> void { println(\"\" + 7); }"
         )
 
         execute_process(
-                COMMAND "${COMPILER}" --emit=asm
+                COMMAND "${COMPILER}" --emit=asm --dump-native-link "${OUTPUT_DIR}/target/native.link"
                 "--target=${target}"
                 --syntax=att
                 "${OUTPUT_DIR}/target/target.dmm"
@@ -609,7 +627,7 @@ if (TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
             )
 
             execute_process(
-                    COMMAND "${COMPILER}" --emit=asm
+                    COMMAND "${COMPILER}" --emit=asm --dump-native-link "${work}/native.link"
                     "--syntax=${syntax}"
                     "${work}/input.dmm"
                     RESULT_VARIABLE result
@@ -624,11 +642,12 @@ if (TEST_STAGE STREQUAL "all" OR TEST_STAGE STREQUAL "backend")
                 )
             endif ()
 
+            dmm_test_link_profile("${work}/native.link")
             execute_process(
                     COMMAND "${ASSEMBLER}"
-                    ${STANDALONE_FLAGS}
+                    ${CASE_LINK_FLAGS}
                     "${work}/input.dmm.s"
-                    ${SYSTEM_LIBRARIES} -o "${work}/program.exe"
+                    ${CASE_SYSTEM_LIBRARIES} -o "${work}/program.exe"
                     RESULT_VARIABLE result
                     ERROR_VARIABLE errors
                     TIMEOUT 30

@@ -1,6 +1,7 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 func main() -> void {
-    stdlib.println("bad\q");
+    io.println("bad\q");
 }

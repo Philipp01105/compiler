@@ -1,0 +1,112 @@
+package main;
+import ("stdlib/core" "stdlib/process" "stdlib/collections" "stdlib/text" "stdlib/numeric" "stdlib/fs" "stdlib/io" "examples/json_parser/json");
+
+struct DisplayError {
+    static func fromResidual(error: io.Error) -> Self { return DisplayError{}; }
+    static func fromResidual(error: json.AccessError) -> Self { return DisplayError{}; }
+}
+
+func indent(depth: usize) -> core.Result<void, io.Error> {
+    for (var i: usize = 0; i < depth; i += 1) { io.print("  ")?; }
+    return core.Result<void, io.Error>.Ok;
+}
+
+// Display decoded strings with JSON quoting, preserving NUL and other control bytes.
+func quoted(value: text.Text) -> core.Result<void, io.Error> {
+    var output = io.stdout();
+    io.print("\"")?;
+    var buffer: u8[512]; var used: usize = 0;
+    var hex = text.bytes("0123456789abcdef");
+    for (var i: usize = 0; i < value.length(); i += 1) {
+        var character = value.byteAt(i);
+        if (character < 32 || character == 34 || character == 92) {
+            if (used > 0) { var plain = buffer[:used]; output.writeAll(&plain)?; used = 0; }
+            var escape = "";
+            if (character == 34) { escape = "\\\""; }
+            else if (character == 92) { escape = "\\\\"; }
+            else if (character == 8) { escape = "\\b"; }
+            else if (character == 12) { escape = "\\f"; }
+            else if (character == 10) { escape = "\\n"; }
+            else if (character == 13) { escape = "\\r"; }
+            else if (character == 9) { escape = "\\t"; }
+            if (escape != "") { io.print(escape)?; }
+            else {
+                var unicode: u8[6] = [92,117,48,48,hex[character / 16],hex[character % 16]];
+                var encoded = unicode[:]; output.writeAll(&encoded)?;
+            }
+        } else {
+            buffer[used] = character; used += 1;
+            if (used == 512) { var plain = buffer[:used]; output.writeAll(&plain)?; used = 0; }
+        }
+    }
+    if (used > 0) { var plain = buffer[:used]; output.writeAll(&plain)?; }
+    io.print("\"")?;
+    return core.Result<void, io.Error>.Ok;
+}
+
+func display(value: json.Value, depth: usize) -> core.Result<void, DisplayError> {
+    indent(depth)?;
+    match (value.kind()) {
+        Object => {
+            io.println("object")?;
+            var count = value.length()?;
+            for (var i: usize = 0; i < count; i += 1) {
+                var member = value.entry(i)?;
+                indent(depth + 1)?; io.print("key ")?; quoted(member.key)?; io.println("")?;
+                display(member.value, depth + 1)?;
+            }
+        }
+        Array => {
+            io.println("array")?;
+            var count = value.length()?;
+            for (var i: usize = 0; i < count; i += 1) { display(value.at(i)?, depth + 1)?; }
+        }
+        String => { quoted(value.asString()?)?; io.println("")?; }
+        Number => io.println(value.asNumber()?)?;
+        Boolean => { var label: string = if (value.asBool()?) { "true" } else { "false" }; io.println(label)?; }
+        Null => io.println("null")?;
+    }
+    return core.Result<void, DisplayError>.Ok;
+}
+
+func select<'a>(root: json.Value<'a>, arguments: &collections.List<text.String>) -> core.Result<json.Value<'a>, json.AccessError> {
+    var selected = root;
+    for (var i: usize = 1; i < arguments.length(); i += 1) {
+        var segment = arguments.get(i).view();
+        if (selected.kind() == json.Kind.Array) {
+            var digits: u8[20]; var storage = digits[:];
+            var length = segment.copyBytes(&mut storage)?;
+            var index = numeric.parseUint(digits[:length], 10)?;
+            selected = selected.at(index.(usize))?;
+        } else { selected = selected.get(segment)?; }
+    }
+    return core.Result<json.Value<'a>, json.AccessError>.Ok(selected);
+}
+
+func run() -> int {
+    match (process.args()) {
+        Err(error) => { io.println("Could not read arguments"); return 2; }
+        Ok(arguments) => {
+            if (arguments.length() == 0) { io.println("Usage: json_parser FILE [KEY_OR_INDEX ...] (maximum 1 MiB)"); return 2; }
+            var path: u8[4096]; var storage = path[:];
+            match (arguments.get(0).copyBytes(&mut storage)) {
+                Err(error) => { io.println("Path exceeds 4096 bytes"); return 2; }
+                Ok(length) => match (fs.readFile(path[:length], 1048576)) {
+                    Err(error) => { io.println("Could not read file (maximum 1 MiB)"); return 2; }
+                    Ok(file) => {
+                        var input = file.view();
+                        match (json.parse(&input)) {
+                            Err(error) => { io.print("JSON error at byte "); io.print(error.offset); io.print(": "); io.println(error.message); return 1; }
+                            Ok(document) => match (select(document.root(), &arguments)) {
+                                Err(error) => { io.println("Lookup failed: missing key, wrong type or invalid index"); return 3; }
+                                Ok(value) => match (display(value, 0)) { Ok => return 0; Err(error) => { io.println("Could not display JSON value"); return 2; } }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+func main() -> int { return run(); }

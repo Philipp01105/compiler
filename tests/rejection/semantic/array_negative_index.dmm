@@ -1,7 +1,8 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 func main() -> void {
     var values: int[5];
-    stdlib.println(values[-1]);
+    io.println(values[-1]);
 }

@@ -1,6 +1,7 @@
 package sync;
+import memraw "stdlib/memory/raw";
 import (
-    "stdlib"
+    stdlib "stdlib/core"
     "stdlib/core"
     "stdlib/sync/internal"
 );
@@ -14,9 +15,9 @@ struct MutexStorage<T> {
     var storage: *MutexStorage<T>;
 
     destructor {
-        core.destroy<T>(&(*storage).value);
+        memraw.destroy<T>(&(*storage).value);
         internal.release((*storage).platform);
-        core.core_release(storage.(*u8));
+        memraw.core_release(storage.(*u8));
     }
 }
 
@@ -26,24 +27,24 @@ struct MutexStorage<T> {
     var owner: &'a Mutex<T>;
     var storage: *MutexStorage<T>;
 
-    pub func getRef() -> &T { return &(*storage).value; }
+    pub func get() -> &T { return &(*storage).value; }
     pub func getMut() -> &mut T { return &mut (*storage).value; }
 
     destructor { internal.unlock((*storage).platform); }
 }
 
-pub func mutex<T: core.Send>(value: T) -> stdlib.Result<Mutex<T>, stdlib.AllocationError> {
+pub func mutex<T: core.Send>(value: T) -> stdlib.Result<Mutex<T>, core.AllocError> {
     var platform: *void = internal.create();
-    if (platform == core.core_null().(*void)) {
-        return stdlib.Result<Mutex<T>, stdlib.AllocationError>.Err(stdlib.AllocationError.OutOfMemory);
+    if (platform == memraw.core_null().(*void)) {
+        return stdlib.Result<Mutex<T>, core.AllocError>.Err(core.AllocError.OutOfMemory);
     }
-    var storage: *MutexStorage<T> = core.core_alloc(sizeof(MutexStorage<T>)).(*MutexStorage<T>);
-    if (storage == core.null<MutexStorage<T>>()) {
+    var storage: *MutexStorage<T> = memraw.core_alloc(sizeof(MutexStorage<T>)).(*MutexStorage<T>);
+    if (storage == memraw.null<MutexStorage<T>>()) {
         internal.release(platform);
-        return stdlib.Result<Mutex<T>, stdlib.AllocationError>.Err(stdlib.AllocationError.OutOfMemory);
+        return stdlib.Result<Mutex<T>, core.AllocError>.Err(core.AllocError.OutOfMemory);
     }
-    core.initialize<MutexStorage<T>>(storage, MutexStorage<T>{platform: platform, value: value});
-    return stdlib.Result<Mutex<T>, stdlib.AllocationError>.Ok(Mutex<T>{storage: storage});
+    memraw.initialize<MutexStorage<T>>(storage, MutexStorage<T>{platform: platform, value: value});
+    return stdlib.Result<Mutex<T>, core.AllocError>.Ok(Mutex<T>{storage: storage});
 }
 
 pub func lock<'a, T: core.Send>(mutex: &'a Mutex<T>) -> MutexGuard<'a, T> {

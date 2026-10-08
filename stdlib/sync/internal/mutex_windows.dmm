@@ -1,4 +1,5 @@
 package internal;
+import memraw "stdlib/memory/raw";
 import (
     "stdlib/core"
 );
@@ -12,12 +13,12 @@ extern "system" from "kernel32" {
 }
 
 pub func create() -> *void {
-    var address: *usize = core.core_alloc(sizeof(usize)).(*usize);
-    if (address == core.null<usize>()) { return address.(*void); }
+    var address: *usize = memraw.core_alloc(sizeof(usize)).(*usize);
+    if (address == memraw.null<usize>()) { return address.(*void); }
     initializeLock(address);
     return address.(*void);
 }
 
 pub func lock(address: *void) -> void { acquireLock(address.(*usize)); }
 pub func unlock(address: *void) -> void { releaseLock(address.(*usize)); }
-pub func release(address: *void) -> void { core.core_release(address.(*u8)); }
+pub func release(address: *void) -> void { memraw.core_release(address.(*u8)); }

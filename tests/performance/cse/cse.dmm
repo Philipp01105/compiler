@@ -1,5 +1,6 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 func work(n: int, factor: int) -> int {
     var i = 0;
@@ -14,5 +15,5 @@ func work(n: int, factor: int) -> int {
 }
 
 func main() -> void {
-    stdlib.println(work(9000000, 2));
+    io.println(work(9000000, 2));
 }

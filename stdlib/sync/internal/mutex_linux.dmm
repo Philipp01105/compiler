@@ -1,26 +1,27 @@
 package internal;
+import memraw "stdlib/memory/raw";
 import (
     "stdlib/core"
     "stdlib/native/pthreads"
 );
 
 pub func create() -> *void {
-    var address: *pthreads.Mutex = core.core_alloc(pthreads.Mutex.size).(*pthreads.Mutex);
-    if (address == core.null<pthreads.Mutex>()) { return address.(*void); }
-    if (pthreads.mutexInit(address, core.null<pthreads.MutexAttributes>()) != 0) {
-        core.core_release(address.(*u8));
-        return core.core_null().(*void);
+    var address: *pthreads.Mutex = memraw.core_alloc(pthreads.Mutex.size).(*pthreads.Mutex);
+    if (address == memraw.null<pthreads.Mutex>()) { return address.(*void); }
+    if (pthreads.mutexInit(address, memraw.null<pthreads.MutexAttributes>()) != 0) {
+        memraw.core_release(address.(*u8));
+        return memraw.core_null().(*void);
     }
     return address.(*void);
 }
 
 pub func lock(address: *void) -> void {
-    if (pthreads.mutexLock(address.(*pthreads.Mutex)) != 0) { core.core_trap(); }
+    if (pthreads.mutexLock(address.(*pthreads.Mutex)) != 0) { memraw.core_trap(); }
 }
 pub func unlock(address: *void) -> void {
-    if (pthreads.mutexUnlock(address.(*pthreads.Mutex)) != 0) { core.core_trap(); }
+    if (pthreads.mutexUnlock(address.(*pthreads.Mutex)) != 0) { memraw.core_trap(); }
 }
 pub func release(address: *void) -> void {
-    if (pthreads.mutexDestroy(address.(*pthreads.Mutex)) != 0) { core.core_trap(); }
-    core.core_release(address.(*u8));
+    if (pthreads.mutexDestroy(address.(*pthreads.Mutex)) != 0) { memraw.core_trap(); }
+    memraw.core_release(address.(*u8));
 }

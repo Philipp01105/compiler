@@ -1,27 +1,28 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 func rhs() -> bit {
-    stdlib.println("RIGHT OPERAND EXECUTED");
+    io.println("RIGHT OPERAND EXECUTED");
     return true;
 }
 
 func main() -> void {
     if (true || rhs()) {
-        stdlib.println("OR PASS");
+        io.println("OR PASS");
     }
     if (false && rhs()) {
-        stdlib.println("unreachable");
+        io.println("unreachable");
     } else {
-        stdlib.println("AND PASS");
+        io.println("AND PASS");
     }
     if (true && (false || rhs())) {
-        stdlib.println("NESTED AND PASS");
+        io.println("NESTED AND PASS");
     }
     if (false || (true && rhs())) {
-        stdlib.println("NESTED OR PASS");
+        io.println("NESTED OR PASS");
     }
     if (true || (false && rhs())) {
-        stdlib.println("NESTED SKIP PASS");
+        io.println("NESTED SKIP PASS");
     }
 }

@@ -1,9 +1,14 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import ("stdlib/core" "stdlib/text");
 
 func main() -> void {
-    var text: stdlib.String = stdlib.cloneString("old");
-    var view: string = text.view();
-    text = stdlib.cloneString("new");
-    stdlib.println(view);
+    match(text.fromString("old")){
+        Err(error)=>{}
+        Ok(owner)=>{
+            var view=owner.view();
+            match(text.fromString("new")){Ok(value)=>owner=value;Err(error)=>{}}
+            io.println(view);
+        }
+    }
 }

@@ -1,6 +1,7 @@
 package main;
+import memraw "stdlib/memory/raw";
 import "stdlib/core";
 
 func main() -> void {
-    core.core_copy(core.core_null(), core.core_null(), 1);
+    memraw.core_copy(memraw.core_null(), memraw.core_null(), 1);
 }

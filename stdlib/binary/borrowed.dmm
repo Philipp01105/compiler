@@ -1,44 +1,44 @@
 package binary;
 import (
-    "stdlib"
+    stdlib "stdlib/core"
 );
 
 // Stored checked borrows keep their descriptors and backing storage live.
-pub struct BorrowedReader<'a> {
+pub struct Reader<'a> {
     var source: &'a u8[];
-    var cursor: Reader;
+    var cursor: ReadCursor;
 
     pub func offset() -> usize { return cursor.offset(); }
     pub func remaining() -> usize { return cursor.remaining(source); }
-    pub func skip(count: usize) -> stdlib.Result<void, BinaryError> {
+    pub func skip(count: usize) -> stdlib.Result<void, Error> {
         return cursor.skip(source, count);
     }
-    pub func readUint(width: usize, endian: Endian) -> stdlib.Result<u64, BinaryError> {
+    pub func readUint(width: usize, endian: Endian) -> stdlib.Result<u64, Error> {
         return cursor.readUint(source, width, endian);
     }
-    pub func readBytes(destination: &mut u8[]) -> stdlib.Result<void, BinaryError> {
+    pub func readBytes(destination: &mut u8[]) -> stdlib.Result<void, Error> {
         return cursor.readBytes(source, destination);
     }
 }
 
-pub func borrowedReader<'a>(source: &'a u8[]) -> BorrowedReader<'a> {
-    return BorrowedReader<'a>{ source: source, cursor: reader() };
+pub func reader<'a>(source: &'a u8[]) -> Reader<'a> {
+    return Reader<'a>{ source: source, cursor: readCursor() };
 }
 
-pub struct BorrowedWriter<'a> {
+pub struct Writer<'a> {
     var destination: &'a mut u8[];
-    var cursor: Writer;
+    var cursor: WriteCursor;
 
     pub func offset() -> usize { return cursor.offset(); }
     pub func remaining() -> usize { return cursor.remaining(destination); }
-    pub func writeUint(value: u64, width: usize, endian: Endian) -> stdlib.Result<void, BinaryError> {
+    pub func writeUint(value: u64, width: usize, endian: Endian) -> stdlib.Result<void, Error> {
         return cursor.writeUint(destination, value, width, endian);
     }
-    pub func writeBytes(source: &u8[]) -> stdlib.Result<void, BinaryError> {
+    pub func writeBytes(source: &u8[]) -> stdlib.Result<void, Error> {
         return cursor.writeBytes(destination, source);
     }
 }
 
-pub func borrowedWriter<'a>(destination: &'a mut u8[]) -> BorrowedWriter<'a> {
-    return BorrowedWriter<'a>{ destination: destination, cursor: writer() };
+pub func writer<'a>(destination: &'a mut u8[]) -> Writer<'a> {
+    return Writer<'a>{ destination: destination, cursor: writeCursor() };
 }

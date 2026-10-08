@@ -1,17 +1,18 @@
 package main;
-import "stdlib";
+import "stdlib/io";
+import stdlib "stdlib/core";
 
 func main() -> void {
     var x: int = 10;
     {
         var x: int = 20;
-        stdlib.println(x);
+        io.println(x);
     }
     {
         var x: int = 30;
-        stdlib.println(x);
+        io.println(x);
     }
-    stdlib.println(x);
+    io.println(x);
     var total: int = 0;
     for (var i: int = 0; i < 4; i++) {
         if (i == 1) {
@@ -26,26 +27,26 @@ func main() -> void {
             total += i;
         }
     }
-    stdlib.println(total);
+    io.println(total);
     var zero: int;
-    stdlib.println(zero);
+    io.println(zero);
     var values: int[3000];
     values[2999] = 42;
     var p: *int = (&x).(*int);
     *p = 7;
     modify(p);
-    stdlib.println(x);
-    stdlib.println(values[2999]);
-    stdlib.println(values[0]);
+    io.println(x);
+    io.println(values[2999]);
+    io.println(values[0]);
     values[1] = 5;
-    stdlib.println(first(values));
+    io.println(first(values));
     var empty: string;
     var names: string[2];
-    stdlib.println(empty == names[1]);
+    io.println(empty == names[1]);
     var cursor: int = 0;
     values[index((&cursor).(*int))] += 3;
-    stdlib.println(cursor);
-    stdlib.println(values[0]);
+    io.println(cursor);
+    io.println(values[0]);
 }
 
 func modify(p: *int) -> void {

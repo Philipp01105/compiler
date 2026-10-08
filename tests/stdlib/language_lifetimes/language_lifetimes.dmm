@@ -1,6 +1,7 @@
 package main;
+import memraw "stdlib/memory/raw";
 import (
-    "stdlib"
+    stdlib "stdlib/core"
     "stdlib/core"
     "stdlib/binary"
     "stdlib/sync"
@@ -12,45 +13,45 @@ struct Reader<'a> {
  func getRef()->&'a i32 { return source; }
 }
 struct Writer<'a> { var source: &'a mut i32; func write(value:i32)->void { *source=value; } }
-func readerHash(key:i32)->u64 { return key.(u64); }
-func readerSame(left:i32,right:i32)->bit { return left==right; }
+func readerHash(key:&i32)->u64 { return (*key).(u64); }
+func readerSame(left:&i32,right:&i32)->bit { return *left==*right; }
 func borrowedReaderHash(key:&Reader)->u64 { return (*(*key).source).(u64); }
 func borrowedReaderSame(left:&Reader,right:&Reader)->bit { return *(*left).source==*(*right).source; }
 struct TaggedReader<'a> { var occupied:u8; var reader:Reader<'a>; }
 struct BorrowTable<'a> {
  var memory:*TaggedReader<'a>; var limit:usize;
  func grow(size:usize)->void {
-  var fresh=core.core_alloc(size*sizeof(TaggedReader)).(*TaggedReader<'a>);
-  if(fresh==core.null<TaggedReader<'a>>()) { return; }
+  var fresh=memraw.core_alloc(size*sizeof(TaggedReader)).(*TaggedReader<'a>);
+  if(fresh==memraw.null<TaggedReader<'a>>()) { return; }
   for(var cursor:usize=0;cursor<size;cursor+=1) { fresh[cursor].occupied=0; }
   for(var cursor:usize=0;cursor<limit;cursor+=1) {
    if(memory[cursor].occupied==7) {
     var index:usize=(*memory[cursor].reader.source).(usize)%size;
     while(fresh[index].occupied==7) { index=(index+1)%size; }
-    core.initialize(&fresh[index],take(memory[cursor]));
+    memraw.initialize(&fresh[index],take(memory[cursor]));
    }
   }
-  core.core_release(memory.(*u8)); memory=fresh; limit=size;
+  memraw.core_release(memory.(*u8)); memory=fresh; limit=size;
  }
  func put(key:usize,value:Reader<'a>)->void {
   var cursor:usize=key%limit;
   while(memory[cursor].occupied==7) { cursor=(cursor+1)%limit; }
-  core.initialize(&memory[cursor],TaggedReader{occupied:7,reader:value});
+  memraw.initialize(&memory[cursor],TaggedReader{occupied:7,reader:value});
  }
  func update(key:usize,value:Reader<'a>)->void {
   var cursor:usize=key%limit;
   if(memory[cursor].occupied==7) {
-   core.destroy(&memory[cursor].reader);
-   core.initialize(&memory[cursor].reader,value);
+   memraw.destroy(&memory[cursor].reader);
+   memraw.initialize(&memory[cursor].reader,value);
   }
  }
  func clear()->void {
   for(var cursor:usize=0;cursor<limit;cursor+=1) {
-   if(memory[cursor].occupied==7) { core.destroy(&memory[cursor]); }
+   if(memory[cursor].occupied==7) { memraw.destroy(&memory[cursor]); }
    memory[cursor].occupied=0;
   }
  }
- destructor { core.core_release(memory.(*u8)); }
+ destructor { memraw.core_release(memory.(*u8)); }
 }
 enum WrappedTable<'a> { Table(BorrowTable<'a>), Empty }
 var borrowOwnerDrops:i32=0;
@@ -72,7 +73,7 @@ struct BorrowStack<'a> {
  var storage:*Reader<'a>;
  var count:usize;
  func push(value:Reader<'a>)->void {
-  core.initialize(&storage[count],value); count+=1;
+  memraw.initialize(&storage[count],value); count+=1;
  }
  func exchange(value:Reader<'a>)->Reader<'a> {
   count-=1;
@@ -87,13 +88,13 @@ struct BorrowStack<'a> {
  func erase(index:usize)->Reader<'a> {
   var result=take(storage[index]);
   for(var cursor:usize=index+1;cursor<count;cursor+=1) {
-   core.initialize(&storage[cursor-1],take(storage[cursor]));
+   memraw.initialize(&storage[cursor-1],take(storage[cursor]));
   }
   count-=1; return result;
  }
  destructor {
-  while(count>0) { count-=1; core.destroy(&storage[count]); }
-  core.core_release(storage.(*u8));
+  while(count>0) { count-=1; memraw.destroy(&storage[count]); }
+  memraw.core_release(storage.(*u8));
  }
 }
 struct BorrowRing<'a> {
@@ -101,25 +102,25 @@ struct BorrowRing<'a> {
  func length()->usize { return used; }
  func slots()->usize { return capacity; }
  func grow(size:usize)->void {
-  var fresh=core.core_alloc(size*sizeof(Reader)).(*Reader<'a>);
-  if(fresh==core.null<Reader<'a>>()) { return; }
-  for(var cursor:usize=0;cursor<used;cursor+=1) { core.initialize(&fresh[cursor],take(storage[(start+cursor)%capacity])); }
-  core.core_release(storage.(*u8)); storage=fresh; capacity=size; start=0;
+  var fresh=memraw.core_alloc(size*sizeof(Reader)).(*Reader<'a>);
+  if(fresh==memraw.null<Reader<'a>>()) { return; }
+  for(var cursor:usize=0;cursor<used;cursor+=1) { memraw.initialize(&fresh[cursor],take(storage[(start+cursor)%capacity])); }
+  memraw.core_release(storage.(*u8)); storage=fresh; capacity=size; start=0;
  }
  func push(value:Reader<'a>)->void {
-  core.initialize(&storage[(start+used)%capacity],value); used+=1;
+  memraw.initialize(&storage[(start+used)%capacity],value); used+=1;
  }
  func tail()->Reader<'a> { used-=1; return take(storage[(start+used)%capacity]); }
  func front()->Reader<'a> {
   var value=take(storage[start]); start=(start+1)%capacity; used-=1; return value;
  }
  func empty()->void {
-  while(used>0) { core.destroy(&storage[start]); start=(start+1)%capacity; used-=1; }
+  while(used>0) { memraw.destroy(&storage[start]); start=(start+1)%capacity; used-=1; }
   start=0;
  }
  destructor {
-  while(used>0) { core.destroy(&storage[start]); start=(start+1)%capacity; used-=1; }
-  core.core_release(storage.(*u8));
+  while(used>0) { memraw.destroy(&storage[start]); start=(start+1)%capacity; used-=1; }
+  memraw.core_release(storage.(*u8));
  }
 }
 struct BorrowSlots<'a> {
@@ -127,7 +128,7 @@ struct BorrowSlots<'a> {
  var leftLive:bit;
  var rightLive:bit;
  func put(index:usize,value:Reader<'a>)->void {
-  core.initialize(&storage[index],value);
+  memraw.initialize(&storage[index],value);
   if(index==0) { leftLive=true; } else { rightLive=true; }
  }
  func remove(index:usize)->Reader<'a> {
@@ -136,24 +137,24 @@ struct BorrowSlots<'a> {
   return result;
  }
  destructor {
-  if(leftLive) { core.destroy(&storage[0]); }
-  if(rightLive) { core.destroy(&storage[1]); }
-  core.core_release(storage.(*u8));
+  if(leftLive) { memraw.destroy(&storage[0]); }
+  if(rightLive) { memraw.destroy(&storage[1]); }
+  memraw.core_release(storage.(*u8));
  }
 }
 struct GrowingReaders<'a> {
  var memory:*Reader<'a>; var used:usize;
- func append(value:Reader<'a>)->void { core.initialize(&memory[used],value); used+=1; }
+ func append(value:Reader<'a>)->void { memraw.initialize(&memory[used],value); used+=1; }
  func relocate(fail:bit)->void {
   if(fail) { return; }
-  var fresh=core.core_alloc(4*sizeof(Reader)).(*Reader<'a>);
-  if(fresh==core.null<Reader<'a>>()) { return; }
-  for(var cursor:usize=0;cursor<used;cursor+=1) { core.initialize(&fresh[cursor],take(memory[cursor])); }
-  core.core_release(memory.(*u8)); memory=fresh;
+  var fresh=memraw.core_alloc(4*sizeof(Reader)).(*Reader<'a>);
+  if(fresh==memraw.null<Reader<'a>>()) { return; }
+  for(var cursor:usize=0;cursor<used;cursor+=1) { memraw.initialize(&fresh[cursor],take(memory[cursor])); }
+  memraw.core_release(memory.(*u8)); memory=fresh;
  }
  func tail()->Reader<'a> { used-=1; return take(memory[used]); }
- func clear()->void { while(used>0) { used-=1; core.destroy(&memory[used]); } }
- destructor { while(used>0) { used-=1; core.destroy(&memory[used]); } core.core_release(memory.(*u8)); }
+ func clear()->void { while(used>0) { used-=1; memraw.destroy(&memory[used]); } }
+ destructor { while(used>0) { used-=1; memraw.destroy(&memory[used]); } memraw.core_release(memory.(*u8)); }
 }
 func removeSnapshot<'a>(slots:&mut BorrowSlots<'a>,index:usize)->Reader<'a> {
  var snapshot=index; return (*slots).remove(snapshot);
@@ -163,13 +164,13 @@ enum RelocatedReaders<'a> { Held(GrowingReaders<'a>), Empty }
 struct HeapReaders<'a,'b> { var left:Reader<'a>; var right:Reader<'b>; }
 struct HeapFields<'a,'b> {
  var storage:*HeapReaders<'a,'b>;
- func put(left:Reader<'a>,right:Reader<'b>)->void { core.initialize(&storage[0],HeapReaders<'a,'b>{left:left,right:right}); }
+ func put(left:Reader<'a>,right:Reader<'b>)->void { memraw.initialize(&storage[0],HeapReaders<'a,'b>{left:left,right:right}); }
  func detach()->Reader<'b> { return take(storage[0].right); }
- func releaseLeft()->void { core.destroy(&storage[0].left); }
- destructor { core.core_release(storage.(*u8)); }
+ func releaseLeft()->void { memraw.destroy(&storage[0].left); }
+ destructor { memraw.core_release(storage.(*u8)); }
 }
 enum WrappedRing<'a> { Held(BorrowRing<'a>), Empty }
-func truncateReaders(values:&mut stdlib.List<Reader>,length:usize)->void {
+func truncateReaders(values:&mut collections.List<Reader>,length:usize)->void {
  (*values).truncate(length);
 }
 struct SharedPair<'a> { var left:&'a i32; var right:&'a i32; }
@@ -294,20 +295,23 @@ var drops:i32=0;
 struct Resource { var value:i32; destructor { drops+=1; } }
 func main()->int {
  { var left:i32=1; var right:i32=2;
- var table=BorrowTable{memory:core.core_alloc(3*sizeof(TaggedReader)).(*TaggedReader),limit:3};
+ var table=BorrowTable{memory:memraw.core_alloc(3*sizeof(TaggedReader)).(*TaggedReader),limit:3};
  for(var cursor:usize=0;cursor<3;cursor+=1) { table.memory[cursor].occupied=0; }
  table.put(2,Reader{source:&left}); table.put(2,Reader{source:&right});
  table.grow(4); table.grow(8); table.clear(); left=3; right=4;
  }
  { var a:i32=1; var b:i32=2; var c:i32=3; var d:i32=4; var e:i32=5;
- var values=collections.hashMap<i32,Reader>(readerHash,readerSame);
- values.insert(1,Reader{source:&a}); values.insert(9,Reader{source:&b});
- values.insert(17,Reader{source:&c}); values.insert(25,Reader{source:&d}); values.insert(33,Reader{source:&e});
- match(values.get(33)) { Some(value)=>{ if(value.read()!=5) { return 163; } } None=>return 164; }
+ var values=testMap<i32,Reader>(readerHash,readerSame);
+ match(values.insert(1,Reader{source:&a})){Ok=>{}Err(error)=>return 165;}
+ match(values.insert(9,Reader{source:&b})){Ok=>{}Err(error)=>return 165;}
+ match(values.insert(17,Reader{source:&c})){Ok=>{}Err(error)=>return 165;}
+ match(values.insert(25,Reader{source:&d})){Ok=>{}Err(error)=>return 165;}
+ match(values.insert(33,Reader{source:&e})){Ok=>{}Err(error)=>return 165;}
+ {var query:i32=33;match(values.get(&query)) { Some(value)=>{ if(value.read()!=5) { return 163; } } None=>return 164; }}
  values.clear(); a=6; b=7; c=8; d=9; e=10;
  }
  { var left:i32=1; var right:i32=2;
- var ring=BorrowRing{storage:core.core_alloc(3*sizeof(Reader)).(*Reader),start:2,capacity:3,used:0};
+ var ring=BorrowRing{storage:memraw.core_alloc(3*sizeof(Reader)).(*Reader),start:2,capacity:3,used:0};
  ring.push(Reader{source:&left}); ring.push(Reader{source:&right});
  if(ring.length()!=2) { return 151; }
  ring.grow(4); if(ring.length()!=2) { return 160; } ring.grow(8);
@@ -315,7 +319,7 @@ func main()->int {
  right=3; if(ring.length()!=1) { return 153; } ring.empty(); left=4;
  }
  { var left:i32=1; var right:i32=2;
- match(collections.deque<Reader>(3)) { Ok(ring)=>{
+ match(testRing<Reader>(3)) { Ok(ring)=>{
   ring.pushBack(Reader{source:&right}); if(ring.length()!=1) { return 154; }
   ring.pushFront(Reader{source:&left}); if(ring.length()!=2) { return 155; }
   ring.ensureCapacity(5); if(ring.length()!=2) { return 161; } ring.ensureCapacity(8);
@@ -325,8 +329,8 @@ func main()->int {
  } Err(error)=>return 159; }
  }
  { var left:i32=1; var right:i32=2; var prior=relocationDrops;
- var values=stdlib.list<RelocationOwner>(2);
- values.push(RelocationOwner{source:&left,tag:1}); values.push(RelocationOwner{source:&right,tag:2});
+ var values=testList<RelocationOwner>(2);
+ values.append(RelocationOwner{source:&left,tag:1}); values.append(RelocationOwner{source:&right,tag:2});
  if(values.length()!=2) { return 129; }
  values.ensureCapacity(4);
  if(relocationDrops!=prior) { return 130; }
@@ -335,7 +339,7 @@ func main()->int {
  if(relocationDrops!=prior+3) { return 133; }
  }
  { var left:i32=1; var right:i32=2;
- var values=GrowingReaders{memory:core.core_alloc(2*sizeof(Reader)).(*Reader),used:0};
+ var values=GrowingReaders{memory:memraw.core_alloc(2*sizeof(Reader)).(*Reader),used:0};
  values.append(Reader{source:&left}); values.append(Reader{source:&right});
  if(values.used!=2) { return 124; }
  forwardRelocation(&mut values,false);
@@ -346,7 +350,7 @@ func main()->int {
  } Empty=>return 126; }
  }
  { var source:i32=1;
- var values=GrowingReaders{memory:core.core_alloc(sizeof(Reader)).(*Reader),used:0};
+ var values=GrowingReaders{memory:memraw.core_alloc(sizeof(Reader)).(*Reader),used:0};
  values.append(Reader{source:&source});
  if(values.used!=1) { return 127; }
  forwardRelocation(&mut values,true);
@@ -354,8 +358,8 @@ func main()->int {
  values.clear(); source=2;
  }
  { var left:i32=1; var right:i32=2;
- var values=stdlib.list<Reader>(2);
- values.push(Reader{source:&left}); values.push(Reader{source:&right});
+ var values=testList<Reader>(2);
+ values.append(Reader{source:&left}); values.append(Reader{source:&right});
  if(values.length()!=2) { return 120; }
  values.ensureCapacity(4);
  { var removed=values.pop(); match(removed) { Some(value)=>{ if(value.read()!=2) { return 121; } } None=>return 122; } }
@@ -364,27 +368,27 @@ func main()->int {
  if(left+right!=7) { return 123; }
  }
  { var source:i32=1;
- var values=collections.hashMap<i32,Reader>(readerHash,readerSame);
+ var values=testMap<i32,Reader>(readerHash,readerSame);
  values.insert(1,Reader{source:&source});
- { var copied=values.get(1); match(copied) { Some(value)=>{ if(*value.source!=1) { return 145; } } None=>return 146; } }
+ { var query:i32=1;var copied=values.get(&query); match(copied) { Some(value)=>{ if(*value.source!=1) { return 145; } } None=>return 146; } }
  values.clear(); source=2; }
  { var key:i32=1; var value:i32=2;
- var values=collections.hashMapBorrowed<Reader,Reader>(borrowedReaderHash,borrowedReaderSame);
+ var values=testMap<Reader,Reader>(borrowedReaderHash,borrowedReaderSame);
  values.insert(Reader{source:&key},Reader{source:&value});
  values.clear(); key=3; value=4; }
  { var left:i32=1; var right:i32=2;
- var table=BorrowTable{memory:core.core_alloc(3*sizeof(TaggedReader)).(*TaggedReader),limit:3};
+ var table=BorrowTable{memory:memraw.core_alloc(3*sizeof(TaggedReader)).(*TaggedReader),limit:3};
  for(var i:usize=0;i<3;i+=1) { table.memory[i].occupied=0; }
  table.put(2,Reader{source:&left}); table.update(2,Reader{source:&right});
  table.clear(); left=3; right=4; }
  { var left:i32=1; var right:i32=2;
- var table=BorrowTable{memory:core.core_alloc(3*sizeof(TaggedReader)).(*TaggedReader),limit:3};
+ var table=BorrowTable{memory:memraw.core_alloc(3*sizeof(TaggedReader)).(*TaggedReader),limit:3};
  for(var i:usize=0;i<3;i+=1) { table.memory[i].occupied=0; }
  table.put(2,Reader{source:&left}); table.put(2,Reader{source:&right});
  var wrapped=WrappedTable.Table(table);
  match(wrapped) { Table(moved)=>{ moved.clear(); left=3; right=4; } Empty=>return 144; } }
  { var left:i32=1; var right:i32=2;
- var result=collections.deque<Reader>(3);
+ var result=testRing<Reader>(3);
  match(result) { Ok(ring)=>{
   if(ring.length()!=0) { return 129; } if(ring.capacity()!=3) { return 130; }
   ring.pushFront(Reader{source:&left});
@@ -395,22 +399,22 @@ func main()->int {
   left=3; if(ring.length()!=1) { return 143; } ring.clear(); right=4;
  } Err(error)=>return 137; } }
  { var left:i32=1; var right:i32=2;
- var fields=HeapFields{storage:core.core_alloc(sizeof(HeapReaders)).(*HeapReaders)};
+ var fields=HeapFields{storage:memraw.core_alloc(sizeof(HeapReaders)).(*HeapReaders)};
  fields.put(Reader{source:&left},Reader{source:&right});
  { var removed=fields.detach(); if(*removed.source!=2) { return 127; } }
  right=3; fields.releaseLeft(); left=4; }
  { var source:i32=1;
- var ring=BorrowRing{storage:core.core_alloc(3*sizeof(Reader)).(*Reader),start:2,capacity:3,used:0};
+ var ring=BorrowRing{storage:memraw.core_alloc(3*sizeof(Reader)).(*Reader),start:2,capacity:3,used:0};
  ring.push(Reader{source:&source}); var moved=ring;
  if(moved.length()!=1) { return 138; }
  moved.empty(); source=2; }
  { var source:i32=1;
- var ring=BorrowRing{storage:core.core_alloc(3*sizeof(Reader)).(*Reader),start:2,capacity:3,used:0};
+ var ring=BorrowRing{storage:memraw.core_alloc(3*sizeof(Reader)).(*Reader),start:2,capacity:3,used:0};
  ring.push(Reader{source:&source}); var wrapped=WrappedRing.Held(ring);
  match(wrapped) { Held(moved)=>{ if(moved.length()!=1) { return 139; } moved.empty(); } Empty=>return 128; }
  source=2; }
  { var left:i32=1; var right:i32=2;
- var ring=BorrowRing{storage:core.core_alloc(3*sizeof(Reader)).(*Reader),start:2,capacity:3,used:0};
+ var ring=BorrowRing{storage:memraw.core_alloc(3*sizeof(Reader)).(*Reader),start:2,capacity:3,used:0};
  ring.push(Reader{source:&left}); ring.push(Reader{source:&right});
  if(ring.length()!=2) { return 121; }
  if(ring.slots()!=3) { return 122; }
@@ -420,15 +424,15 @@ func main()->int {
  if(ring.length()!=1) { return 140; }
  ring.empty(); right=4; }
  { var left:i32=1; var right:i32=2;
- var ring=BorrowRing{storage:core.core_alloc(3*sizeof(Reader)).(*Reader),start:2,capacity:3,used:0};
+ var ring=BorrowRing{storage:memraw.core_alloc(3*sizeof(Reader)).(*Reader),start:2,capacity:3,used:0};
  ring.push(Reader{source:&left}); ring.push(Reader{source:&right});
  { var removed=ring.tail(); if(*removed.source!=2) { return 125; } }
  right=3; if(ring.length()!=1) { return 141; } ring.empty(); left=4; }
  { var source:i32=1;
- var result=collections.deque<Reader>(3);
+ var result=testRing<Reader>(3);
  match(result) { Ok(ring)=>{ ring.pushBack(Reader{source:&source}); if(ring.length()!=1) { return 142; } ring.clear(); source=2; } Err(error)=>return 126; } }
  { var left:i32=1; var middle:i32=2; var right:i32=3;
- var stack=BorrowStack{storage:core.core_alloc(3*sizeof(Reader)).(*Reader),count:0};
+ var stack=BorrowStack{storage:memraw.core_alloc(3*sizeof(Reader)).(*Reader),count:0};
  stack.push(Reader{source:&left}); stack.push(Reader{source:&middle}); stack.push(Reader{source:&right});
  if(stack.length()<3) { return 118; }
  { var removed=stack.erase(stack.length()-2); if(*removed.source!=2) { return 119; } }
@@ -437,27 +441,27 @@ func main()->int {
  { var removed=stack.removeLast(); }
  right=5; }
  { var left:i32=1; var right:i32=2;
- var values=stdlib.list<Reader>(2);
- values.push(Reader{source:&left}); values.push(Reader{source:&right});
+ var values=testList<Reader>(2);
+ values.append(Reader{source:&left}); values.append(Reader{source:&right});
  if(values.length()<2) { return 116; }
  values.truncate(1); right=3;
  if(values.length()!=1 || *values.get(0).source!=1) { return 117; }
  values.clear(); left=4; }
  { var left:i32=1; var middle:i32=2; var right:i32=3;
- var values=stdlib.list<Reader>(3);
- values.push(Reader{source:&left}); values.push(Reader{source:&middle}); values.push(Reader{source:&right});
+ var values=testList<Reader>(3);
+ values.append(Reader{source:&left}); values.append(Reader{source:&middle}); values.append(Reader{source:&right});
  if(values.length()<3) { return 114; }
  values.truncate(values.length()-2); middle=4; right=5;
  if(values.length()!=1 || *values.get(0).source!=1) { return 115; }
  values.clear(); left=6; }
  { var left:i32=1; var middle:i32=2; var right:i32=3;
- var values=stdlib.list<Reader>(3);
- values.push(Reader{source:&left});
+ var values=testList<Reader>(3);
+ values.append(Reader{source:&left});
  if(values.length()!=1 || values.capacity()!=3) { return 111; }
- values.push(Reader{source:&middle});
+ values.append(Reader{source:&middle});
  if(values.length()!=2) { return 112; }
  if(values.capacity()!=3) { return 113; }
- values.push(Reader{source:&right});
+ values.append(Reader{source:&right});
  if(values.length()!=3) { return 107; }
  { var removed=values.remove(1);
  match(removed) { Some(value)=>{ if(*value.source!=2) { return 108; } } None=>return 109; } }
@@ -466,65 +470,65 @@ func main()->int {
  { var removed=values.pop(); }
  right=5; values.clear(); left=6; }
  { var left:i32=1; var right:i32=2;
- var values=stdlib.list<Reader>(2);
- values.push(Reader{source:&left}); values.push(Reader{source:&right});
+ var values=testList<Reader>(2);
+ values.append(Reader{source:&left}); values.append(Reader{source:&right});
  if(values.length()!=2) { return 105; }
  values.truncate(1); right=3;
  if(values.length()!=1 || *values.get(0).source!=1) { return 106; }
  values.clear(); left=4; }
  { var left:i32=1; var right:i32=2;
- var values=stdlib.list<Reader>(2);
- values.push(Reader{source:&left}); values.push(Reader{source:&right});
+ var values=testList<Reader>(2);
+ values.append(Reader{source:&left}); values.append(Reader{source:&right});
  values.truncate(values.length()-1); right=3;
  if(values.length()!=1 || *values.get(0).source!=1) { return 101; }
  values.clear(); left=4; }
  { var left:i32=1; var right:i32=2;
- var values=stdlib.list<Reader>(2);
- values.push(Reader{source:&left}); values.push(Reader{source:&right});
+ var values=testList<Reader>(2);
+ values.append(Reader{source:&left}); values.append(Reader{source:&right});
  { var removed=values.remove(values.length()-1);
  match(removed) { Some(value)=>{ if(*value.source!=2) { return 102; } } None=>return 103; } }
  right=3;
  if(*values.get(0).source!=1) { return 104; }
  values.clear(); left=4; }
  { var left:i32=1; var right:i32=2;
- var stack=BorrowStack{storage:core.core_alloc(2*sizeof(Reader)).(*Reader),count:0};
+ var stack=BorrowStack{storage:memraw.core_alloc(2*sizeof(Reader)).(*Reader),count:0};
  stack.push(Reader{source:&left}); stack.push(Reader{source:&right});
  { var removed=stack.removeLast(); if(*removed.source!=2) { return 99; } }
  right=3;
  if(*stack.storage[0].source!=1) { return 100; } }
  { var left:i32=1; var right:i32=2;
- var first=stdlib.list<Reader>(2); var second=stdlib.list<Reader>(2);
- first.push(Reader{source:&left}); second.push(Reader{source:&right});
+ var first=testList<Reader>(2); var second=testList<Reader>(2);
+ first.append(Reader{source:&left}); second.append(Reader{source:&right});
  var iterations:usize=0;
  while(iterations<2) { iterations+=1; }
  first.clear(); left=3;
  if(*second.get(0).source!=2) { return 98; }
  second.truncate(0); right=4; }
  { var left:i32=1; var right:i32=2;
- var slots=BorrowSlots{storage:core.core_alloc(2*sizeof(Reader)).(*Reader),leftLive:false,rightLive:false};
+ var slots=BorrowSlots{storage:memraw.core_alloc(2*sizeof(Reader)).(*Reader),leftLive:false,rightLive:false};
  slots.put(0,Reader{source:&left}); slots.put(1,Reader{source:&right});
  { var removed=removeSnapshot(&mut slots,1); if(*removed.source!=2) { return 95; } }
  right=3;
  if(*slots.storage[0].source!=1) { return 96; } }
  { var source:i32=1;
- var values=stdlib.list<Reader>(2); values.push(Reader{source:&source});
+ var values=testList<Reader>(2); values.append(Reader{source:&source});
  truncateReaders(&mut values,0); source=2;
- values.push(Reader{source:&source});
+ values.append(Reader{source:&source});
  if(*values.get(0).source!=2) { return 97; } }
  { var left:i32=1; var right:i32=2;
  var pair=reorderOwners(BorrowOwners.Pair(BorrowOwner{source:&left,tag:1},BorrowOwner{source:&right,tag:2}));
  match(pair) {
   Pair(first,second)=>{
    if(*first.source!=2 || *second.source!=1) { return 91; }
-   core.destroy(&first); right=3;
+   memraw.destroy(&first); right=3;
    if(*second.source!=1) { return 92; }
-   core.destroy(&second); left=4;
+   memraw.destroy(&second); left=4;
   }
   Empty=>return 93;
  }
  if(borrowOwnerDrops!=3) { return 94; } }
  { var left:i32=1; var right:i32=2;
- var stack=BorrowStack{storage:core.core_alloc(sizeof(Reader)).(*Reader),count:0};
+ var stack=BorrowStack{storage:memraw.core_alloc(sizeof(Reader)).(*Reader),count:0};
  stack.push(Reader{source:&left});
  { var prior=stack.exchange(Reader{source:&right}); if(*prior.source!=1) { return 89; } }
  left=3;
@@ -534,14 +538,14 @@ func main()->int {
  left=3;
  if(*reference!=2) { return 88; } }
  { var source:i32=1;
- var values=stdlib.list<Reader>(2);
- values.push(Reader{source:&source});
+ var values=testList<Reader>(2);
+ values.append(Reader{source:&source});
  values.clear(); source=2;
- values.push(Reader{source:&source});
+ values.append(Reader{source:&source});
  if(values.length()!=1 || *values.get(0).source!=2) { return 80; } }
  { var left:i32=1; var right:i32=2;
- var values=stdlib.list<Reader>(2);
- values.push(Reader{source:&left}); values.push(Reader{source:&right});
+ var values=testList<Reader>(2);
+ values.append(Reader{source:&left}); values.append(Reader{source:&right});
  { var removed=values.pop(); match(removed) {
    Some(value)=>{ if(*value.source!=2) { return 81; } }
    None=>return 82;
@@ -550,13 +554,13 @@ func main()->int {
  if(*values.get(0).source!=1) { return 83; }
  values.clear(); left=4; }
  { var source:i32=1;
- var values=stdlib.list<Reader>(2); values.push(Reader{source:&source});
+ var values=testList<Reader>(2); values.append(Reader{source:&source});
  var moved=values; moved.clear(); source=2;
- moved.push(Reader{source:&source});
+ moved.append(Reader{source:&source});
  if(*moved.get(0).source!=2) { return 84; } }
  { var source:i32=1;
- var values=stdlib.list<Reader>(2); values.push(Reader{source:&source});
- var wrapped=stdlib.Option<stdlib.List<Reader>>.Some(values);
+ var values=testList<Reader>(2); values.append(Reader{source:&source});
+ var wrapped=stdlib.Option<collections.List<Reader>>.Some(values);
  match(wrapped) {
    Some(moved)=>{ moved.clear(); source=2; if(moved.length()!=0) { return 85; } }
    None=>return 86;
@@ -775,13 +779,13 @@ func main()->int {
  var storage:u8[4];
  var bytes:u8[]=storage;
  {
-  var output=binary.borrowedWriter(&mut bytes);
+  var output=binary.writer(&mut bytes);
   var result=output.writeUint(16909060,4,binary.Endian.Big);
   match(result) { Ok=>{} Err(error)=>return 4; }
   if(output.offset()!=4 || output.remaining()!=0) { return 5; }
  }
  {
-  var input=binary.borrowedReader(&bytes);
+  var input=binary.reader(&bytes);
   var copy=input;
   var result=copy.readUint(4,binary.Endian.Big);
   match(result) { Ok(value)=>{ if(value!=16909060) { return 6; } } Err(error)=>return 7; }
@@ -795,11 +799,11 @@ func main()->int {
     var moved=guard;
     var value=moved.getMut();
     (*value).value=52;
-    if((*moved.getRef()).value!=52) { return 9; }
+    if((*moved.get()).value!=52) { return 9; }
    }
    {
     var guard=sync.lock(&mutex);
-    if((*guard.getRef()).value!=52) { return 10; }
+    if((*guard.get()).value!=52) { return 10; }
    }
   }
   Err(error)=>return 11;
