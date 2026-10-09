@@ -8,7 +8,13 @@
 
 #define CHECK(x) do { if (!(x)) { fprintf(stderr, "platform check failed at %d\n", __LINE__); return 1; } } while (0)
 static _Thread_local int thread_value;
-typedef struct { void *ready, *release; int value; atomic_int *completed; } Worker;
+
+typedef struct {
+    void *ready, *release;
+    int value;
+    atomic_int *completed;
+} Worker;
+
 static void worker(void *pointer) {
     Worker *work = pointer;
     thread_value = work->value;
@@ -18,6 +24,7 @@ static void worker(void *pointer) {
     if (thread_value != work->value || errno != work->value) abort();
     atomic_fetch_add(work->completed, 1);
 }
+
 int main(void) {
     for (unsigned requirements = 0; requirements < 8; ++requirements) {
         RuntimeProfile profile = runtime_profile_for(requirements);
@@ -26,7 +33,8 @@ int main(void) {
             LinkMode resolved = LINK_AUTO;
             int supported = runtime_resolve_link(mode, profile, &resolved);
             CHECK(supported == !(mode == LINK_INTERNAL && profile == RUNTIME_PLATFORM));
-            if (supported) CHECK(resolved == (mode == LINK_AUTO
+            if (supported)
+                CHECK(resolved == (mode == LINK_AUTO
                 ? (profile == RUNTIME_PLATFORM ? LINK_EXTERNAL : LINK_INTERNAL) : mode));
         }
     }
@@ -36,7 +44,8 @@ int main(void) {
     IrModule module = {.functions = &function, .function_count = 1};
     CHECK(ir_runtime_requirements(&module) == 0);
     operations[1].runtime_requirements = RUNTIME_REQUIRE_NETWORK;
-    CHECK(ir_runtime_requirements(&module) == (RUNTIME_REQUIRE_PLATFORM | RUNTIME_REQUIRE_NETWORK | RUNTIME_REQUIRE_EXECUTOR));
+    CHECK(ir_runtime_requirements(&module) == (RUNTIME_REQUIRE_PLATFORM | RUNTIME_REQUIRE_NETWORK |
+        RUNTIME_REQUIRE_EXECUTOR));
     function.instruction_count = 1;
     CHECK(ir_runtime_requirements(&module) == 0);
     void *event = __dmm_async_wait_create();

@@ -4,7 +4,7 @@
 #include <stdio.h>
 
 void load_floating_value(Emitter *emitter, size_t value, DataType target,
-                                unsigned xmm) {
+                         unsigned xmm) {
     const IrInstruction *source = producer(emitter->function, value);
     write_value_load(emitter, "rax", value);
     convert_rax(emitter, source->type, target);
@@ -91,7 +91,7 @@ static int emit_slice_compare(Emitter *emitter,
         instruction->operator_type > TOKEN_BANG_EQUAL)
         return 0;
     IrTypeId element_type =
-        emitter->module->types[left->type_id].element_type;
+            emitter->module->types[left->type_id].element_type;
     if (element_type !=
         emitter->module->types[right->type_id].element_type)
         return 0;

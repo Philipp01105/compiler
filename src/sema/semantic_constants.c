@@ -7,14 +7,14 @@
 #include <string.h>
 
 int expression_is_constant_symbol(const Analyzer *analyzer,
-                                         const AstExpression *expression) {
+                                  const AstExpression *expression) {
     return expression != NULL && expression->resolved_symbol_id < analyzer->model->symbol_count &&
            analyzer->model->symbols[expression->resolved_symbol_id].kind ==
            SEMANTIC_SYMBOL_CONSTANT;
 }
 
 int constant_expression_allowed(const Analyzer *analyzer,
-                                       const AstExpression *expression) {
+                                const AstExpression *expression) {
     if (expression == NULL) return 0;
     if (expression->kind == AST_EXPR_LITERAL) return 1;
     if (expression->kind == AST_EXPR_SIZEOF || expression->kind == AST_EXPR_ALIGNOF || expression->kind ==
@@ -198,13 +198,14 @@ int fold_constant(Analyzer *analyzer, AstExpression *expression, DataType target
          expression->operator_type == TOKEN_BANG_EQUAL)) {
         int equal = expression->left->resolved_callable == expression->right->resolved_callable &&
                     expression->left->resolved_callable_program ==
-                        expression->right->resolved_callable_program;
+                    expression->right->resolved_callable_program;
         if (expression->operator_type == TOKEN_BANG_EQUAL) equal = !equal;
-        expression->folded_constant = (AstToken) {
+        expression->folded_constant = (AstToken)
+        {
             .type = TOKEN_IDENTIFIER,
             .span = expression->span,
             .lexeme = string_interner_intern(analyzer->program->strings,
-                                              equal ? "true" : "false")
+                                             equal ? "true" : "false")
         };
         expression->resolved_type = TYPE_BIT;
         return expression->folded_constant.lexeme != NULL;

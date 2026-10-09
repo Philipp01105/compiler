@@ -58,7 +58,10 @@ struct DmmTask {
     DmmWaker waiter;
 };
 
-struct DmmShutdown { DmmExecutor *executor; int joined; };
+struct DmmShutdown {
+    DmmExecutor *executor;
+    int joined;
+};
 
 struct DmmIoOperation {
     atomic_size_t refs;
@@ -167,8 +170,9 @@ static void poll_next(DmmExecutor *e) {
     int cancelling = t->cancel_requested;
     DmmPollContext context = {{t}, cancelling};
     unlock(&e->mutex);
-    int ready = cancelling ? t->future.cancel_poll(t->future.frame, &context)
-                           : t->future.poll(t->future.frame, &context);
+    int ready = cancelling
+                    ? t->future.cancel_poll(t->future.frame, &context)
+                    : t->future.poll(t->future.frame, &context);
     require(ready == 0 || ready == 1);
     lock(&e->mutex);
     if (!ready) {
@@ -209,6 +213,7 @@ static void poll_next(DmmExecutor *e) {
 
 #ifdef _WIN32
 static DWORD WINAPI worker(void *pointer) {
+
 #else
 static void *worker(void *pointer) {
 #endif
@@ -252,7 +257,10 @@ DmmExecutor *dmm_executor_create(size_t workers) {
 DmmTask *dmm_executor_spawn(DmmExecutor *e, DmmRuntimeFuture f) {
     require(e && f.frame && f.poll && f.cancel_poll && f.destroy);
     lock(&e->mutex);
-    if (e->closed) { unlock(&e->mutex); return NULL; }
+    if (e->closed) {
+        unlock(&e->mutex);
+        return NULL;
+    }
     DmmTask *t = allocate(1, sizeof(*t));
     atomic_init(&t->refs, 2); /* scheduler + consuming handle */
     atomic_fetch_add_explicit(&e->refs, 1, memory_order_relaxed);
@@ -408,14 +416,19 @@ static void block_future(DmmRuntimeFuture f, void *output, int cancel) {
     e->closed = 1;
     unlock(&e->mutex);
     if (cancel) dmm_cancel_finish(t);
-    else { require(t->status == DMM_READY); dmm_join_take(t, output); }
+    else {
+        require(t->status == DMM_READY);
+        dmm_join_take(t, output);
+    }
     executor_release(e);
 }
 
 void dmm_future_block_on(DmmRuntimeFuture f, void *out) { block_future(f, out, 0); }
 void dmm_future_cancel_block_on(DmmRuntimeFuture f) { block_future(f, NULL, 1); }
 
-typedef struct { DmmRuntimeFuture child; } CancelFuture;
+typedef struct {
+    DmmRuntimeFuture child;
+} CancelFuture;
 
 static int poll_cancel_future(void *pointer, const DmmPollContext *context) {
     CancelFuture *f = pointer;
@@ -432,7 +445,7 @@ static int poll_cancel_future(void *pointer, const DmmPollContext *context) {
 
 static void destroy_cancel_future(void *pointer, int discard) {
     CancelFuture *f = pointer;
-    (void)discard; /* Future<void> has no output destructor */
+    (void) discard; /* Future<void> has no output destructor */
     require(!f->child.frame);
     free(f);
 }
@@ -442,10 +455,16 @@ DmmRuntimeFuture dmm_future_cancel(DmmRuntimeFuture child) {
     CancelFuture *f = allocate(1, sizeof(*f));
     f->child = child;
     /* Cancelling cancellation must still finish the original cleanup. */
-    return (DmmRuntimeFuture){f, poll_cancel_future, poll_cancel_future, NULL, destroy_cancel_future};
+    return (DmmRuntimeFuture)
+    {
+        f, poll_cancel_future, poll_cancel_future, NULL, destroy_cancel_future
+    };
 }
 
-typedef struct { DmmTask *task; int cancelling; } JoinFuture;
+typedef struct {
+    DmmTask *task;
+    int cancelling;
+} JoinFuture;
 
 static int poll_join_future(void *pointer, const DmmPollContext *context) {
     JoinFuture *f = pointer;
@@ -456,7 +475,10 @@ static int poll_join_future(void *pointer, const DmmPollContext *context) {
 static int cancel_join_future(void *pointer, const DmmPollContext *context) {
     JoinFuture *f = pointer;
     require(f->task != NULL);
-    if (!f->cancelling) { dmm_join_cancel(f->task); f->cancelling = 1; }
+    if (!f->cancelling) {
+        dmm_join_cancel(f->task);
+        f->cancelling = 1;
+    }
     if (dmm_cancel_poll(f->task, context) == DMM_PENDING) return 0;
     dmm_cancel_finish(f->task);
     f->task = NULL;
@@ -484,10 +506,15 @@ DmmRuntimeFuture dmm_join_as_future(DmmTask *task) {
     require(task != NULL);
     JoinFuture *f = allocate(1, sizeof(*f));
     f->task = task;
-    return (DmmRuntimeFuture){f, poll_join_future, cancel_join_future, take_join_future, destroy_join_future};
+    return (DmmRuntimeFuture)
+    {
+        f, poll_join_future, cancel_join_future, take_join_future, destroy_join_future
+    };
 }
 
-typedef struct { DmmShutdown *shutdown; } ShutdownFuture;
+typedef struct {
+    DmmShutdown *shutdown;
+} ShutdownFuture;
 
 static int poll_shutdown_future(void *pointer, const DmmPollContext *context) {
     ShutdownFuture *f = pointer;
@@ -500,7 +527,7 @@ static int poll_shutdown_future(void *pointer, const DmmPollContext *context) {
 
 static void destroy_shutdown_future(void *pointer, int discard) {
     ShutdownFuture *f = pointer;
-    (void)discard;
+    (void) discard;
     require(!f->shutdown);
     free(f);
 }
@@ -510,13 +537,18 @@ DmmRuntimeFuture dmm_shutdown_as_future(DmmShutdown *shutdown) {
     ShutdownFuture *f = allocate(1, sizeof(*f));
     f->shutdown = shutdown;
     /* A shutdown operation owns the executor and cannot abandon its workers. */
-    return (DmmRuntimeFuture){f, poll_shutdown_future, poll_shutdown_future, NULL, destroy_shutdown_future};
+    return (DmmRuntimeFuture)
+    {
+        f, poll_shutdown_future, poll_shutdown_future, NULL, destroy_shutdown_future
+    };
 }
 
 static DmmExecutor *default_executor;
+
 static void drain_default(void) {
     dmm_shutdown_block_on(dmm_executor_shutdown(default_executor, DMM_DRAIN));
 }
+
 static void create_default(void) {
     default_executor = dmm_executor_create(2);
     if (atexit(drain_default)) abort();
@@ -524,7 +556,9 @@ static void create_default(void) {
 #ifdef _WIN32
 static INIT_ONCE default_once = INIT_ONCE_STATIC_INIT;
 static BOOL CALLBACK default_init(PINIT_ONCE once, PVOID parameter, PVOID *context) {
-    (void)once; (void)parameter; (void)context;
+    (void) once;
+    (void) parameter;
+    (void) context;
     create_default();
     return TRUE;
 }

@@ -24,8 +24,11 @@ typedef struct {
 } IrControlFlowGraph;
 
 int ir_cfg_build(const IrFunction *function, IrControlFlowGraph *graph);
+
 void ir_cfg_free(IrControlFlowGraph *graph);
+
 int ir_opcode_is_terminator(IrOpcode opcode);
+
 int ir_cfg_dump(FILE *output, const IrModule *module);
 
 int ir_verify_control_flow(const IrModule *module, const IrFunction *function, int implicit_void_return);

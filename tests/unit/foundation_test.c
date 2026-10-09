@@ -135,11 +135,11 @@ int main(void) {
         "func make<'a>()->Owner<'a> { var local:int=42; return retain(&local); } "
         "func main()->int { return 0; }"
     };
-    for (size_t i=0; i<2; i++) {
-        program=test_parse_source(owned_from_borrow[i],strlen(owned_from_borrow[i]),
-                                  "owned_from_borrow.dmm",NULL);
+    for (size_t i = 0; i < 2; i++) {
+        program = test_parse_source(owned_from_borrow[i], strlen(owned_from_borrow[i]),
+                                    "owned_from_borrow.dmm", NULL);
         CHECK(program && ast_validate_program(program));
-        model=semantic_analyze(program);
+        model = semantic_analyze(program);
         CHECK(model && (i==0 ? model->error_count==0 : model->error_count>0));
         semantic_model_free(model);
         ast_program_free(program);

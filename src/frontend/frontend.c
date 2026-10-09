@@ -29,7 +29,9 @@
 #endif
 
 #ifdef _MSC_VER
-struct dirent { char d_name[MAX_PATH]; };
+struct dirent {
+    char d_name[MAX_PATH];
+};
 typedef struct {
     HANDLE handle;
     WIN32_FIND_DATAA data;
@@ -103,7 +105,8 @@ static AstDeclarationKind declaration_kind(TokenType first, TokenType second) {
     if (first == TOKEN_KEYWORD_STRUCT) return AST_DECL_STRUCT;
     if (first == TOKEN_KEYWORD_ENUM) return AST_DECL_ENUM;
     if (first == TOKEN_KEYWORD_INTERFACE) return AST_DECL_INTERFACE;
-    if (first == TOKEN_KEYWORD_FUNC || first == TOKEN_KEYWORD_ASYNC || first == TOKEN_KEYWORD_EXPORT) return AST_DECL_FUNCTION;
+    if (first == TOKEN_KEYWORD_FUNC || first == TOKEN_KEYWORD_ASYNC || first == TOKEN_KEYWORD_EXPORT) return
+            AST_DECL_FUNCTION;
     if (first == TOKEN_KEYWORD_CONST) return AST_DECL_CONSTANT;
     if (first == TOKEN_KEYWORD_VAR) return AST_DECL_VARIABLE;
     return AST_DECL_INVALID;
@@ -127,7 +130,7 @@ static AstDeclarationKind declaration_kind_at(const AstProgram *program, size_t 
     if (!strcmp(program->tokens[index].lexeme, "auto")) return AST_DECL_INTERFACE;
     if (!strcmp(program->tokens[index].lexeme, "type")) return AST_DECL_TYPE_RULE;
     return declaration_kind(program->tokens[index].type,
-        index + 1 < program->token_count ? program->tokens[index + 1].type : TOKEN_EOF);
+                            index + 1 < program->token_count ? program->tokens[index + 1].type : TOKEN_EOF);
 }
 
 static size_t declaration_end(const AstProgram *program, size_t first) {

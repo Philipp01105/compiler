@@ -8,13 +8,21 @@
    reset; the scheduler resets under its predicate lock. Destroy requires no
    waiters. Each allocation is released by its own runtime, never across ABI. */
 typedef void (*DmmPlatformThreadCallback)(void *argument);
+
 void *__dmm_async_thread_create(DmmPlatformThreadCallback callback, void *argument);
+
 void __dmm_async_thread_join(void *thread);
+
 void *__dmm_async_wait_create(void);
+
 void __dmm_async_wait(void *event);
+
 void __dmm_async_wake(void *event);
+
 void __dmm_async_wait_reset(void *event);
+
 void __dmm_async_wait_destroy(void *event);
+
 _Noreturn void __dmm_platform_exit(int code);
 
 /* Generated object owns initialization, DMM main, drain and cleanup. Call once

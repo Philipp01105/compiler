@@ -162,7 +162,8 @@ static int resolve_local(NativeObject *object) {
             native_error(object, "Undefined native local label");
             return 0;
         }
-        if (relocation.kind != NATIVE_ADDR64 && relocation.kind != NATIVE_ADDR32NB && symbol->defined && symbol->section == (int) relocation.section) {
+        if (relocation.kind != NATIVE_ADDR64 && relocation.kind != NATIVE_ADDR32NB && symbol->defined && symbol->section
+            == (int) relocation.section) {
             if (symbol->offset > INT64_MAX || relocation.offset > INT64_MAX) return 0;
             int64_t value = (int64_t) symbol->offset - (int64_t) relocation.offset + relocation.addend;
             if (value < INT32_MIN || value > INT32_MAX) {
@@ -305,7 +306,9 @@ static int write_coff(NativeObject *object, NativeBuffer *output) {
             const NativeRelocation *r = &object->relocations[i];
             if ((size_t) r->section != s) continue;
             native_buffer_patch(output, raw[s] + r->offset,
-                                (uint64_t)(r->addend + (r->kind == NATIVE_ADDR64 || r->kind == NATIVE_ADDR32NB ? 0 : 4)),
+                                (uint64_t)(r->addend + (r->kind == NATIVE_ADDR64 || r->kind == NATIVE_ADDR32NB
+                                                            ? 0
+                                                            : 4)),
                                 r->kind == NATIVE_ADDR64 ? 8 : 4);
             PUT(output, r->offset, 4);
             PUT(output, r->symbol, 4);
@@ -345,8 +348,15 @@ static int write_coff(NativeObject *object, NativeBuffer *output) {
         native_buffer_patch(output, h + 20, raw[s], 4);
         native_buffer_patch(output, h + 24, counts[s] == 0 ? 0 : reloc[s], 4);
         native_buffer_patch(output, h + 32, counts[s] >= 65535 ? 65535 : counts[s], 2);
-        native_buffer_patch(output, h + 36, (s == 0 ? 0x60500020U : s >= NATIVE_PDATA ? 0x40300040U : s != NATIVE_DATA ? 0x40500040U : 0xc0500040U) |
-                                            (counts[s] >= 65535 ? 0x01000000U : 0), 4);
+        native_buffer_patch(output, h + 36,
+                            (s == 0
+                                 ? 0x60500020U
+                                 : s >= NATIVE_PDATA
+                                       ? 0x40300040U
+                                       : s != NATIVE_DATA
+                                             ? 0x40500040U
+                                             : 0xc0500040U) |
+                            (counts[s] >= 65535 ? 0x01000000U : 0), 4);
     }
     free(strings.data);
     return 1;

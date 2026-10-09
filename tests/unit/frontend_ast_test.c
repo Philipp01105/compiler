@@ -60,19 +60,19 @@ int main(int argc, char **argv) {
     ast_program_free(program);
 
     static const char resource_source[] =
-        "package main;\n"
-        "struct File {\n"
-        "  var handle:int;\n"
-        "  destructor { handle=0; }\n"
-        "}\n"
-        "func inspect(value:&File)->void {}\n"
-        "func modify(value:&mut File)->void {}\n"
-        "func main()->void {\n"
-        "  var value:File;\n"
-        "  var reference:&mut File=&mut value;\n"
-        "  defer inspect(&value);\n"
-        "  defer func() { inspect(&value); }\n"
-        "}\n";
+            "package main;\n"
+            "struct File {\n"
+            "  var handle:int;\n"
+            "  destructor { handle=0; }\n"
+            "}\n"
+            "func inspect(value:&File)->void {}\n"
+            "func modify(value:&mut File)->void {}\n"
+            "func main()->void {\n"
+            "  var value:File;\n"
+            "  var reference:&mut File=&mut value;\n"
+            "  defer inspect(&value);\n"
+            "  defer func() { inspect(&value); }\n"
+            "}\n";
     program = frontend_parse_source(resource_source, strlen(resource_source),
                                     "<resource-syntax>", &options);
     const AstDeclarationNode *resource = program == NULL ? NULL : program->root;
@@ -105,16 +105,17 @@ int main(int argc, char **argv) {
     ast_program_free(program);
 
     static const char async_source[] =
-        "package main;\n"
-        "async func pending() -> int { return 4; }\n"
-        "async func main() -> int { return pending().await(); }\n";
+            "package main;\n"
+            "async func pending() -> int { return 4; }\n"
+            "async func main() -> int { return pending().await(); }\n";
     program = frontend_parse_source(async_source, strlen(async_source),
                                     "<async-syntax>", &options);
     const AstDeclarationNode *pending = program == NULL ? NULL : program->root;
     const AstDeclarationNode *async_main = pending == NULL ? NULL : pending->next;
     const AstStatement *returned = async_main == NULL ||
                                    async_main->as.function.body == NULL
-                                       ? NULL : async_main->as.function.body->body;
+                                       ? NULL
+                                       : async_main->as.function.body->body;
     if (program == NULL || !ast_validate_program(program) ||
         pending == NULL || !pending->as.function.is_async ||
         async_main == NULL || !async_main->as.function.is_async ||

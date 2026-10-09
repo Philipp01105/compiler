@@ -29,10 +29,12 @@ static int component_dependencies(const IrModule *module, NativeObject *object) 
         int declared = 0;
         for (size_t n = 0; n < module->native_import_count; ++n)
             if (!strcmp(symbol->name, module->native_imports[n].native_name) &&
-                ir_native_import_used(module, module->native_imports[n].symbol_id)) declared = 1;
+                ir_native_import_used(module, module->native_imports[n].symbol_id))
+                declared = 1;
         if (!declared) {
             char message[256];
-            snprintf(message, sizeof(message), "Runtime component dependency requires an explicit native declaration: %s", symbol->name);
+            snprintf(message, sizeof(message),
+                     "Runtime component dependency requires an explicit native declaration: %s", symbol->name);
             native_error(object, message);
             return 0;
         }
@@ -47,12 +49,14 @@ static int component_contract(const IrModule *module, const char *path) {
     for (size_t g = 0; g < module->global_count; ++g)
         if (module->globals[g].runtime_initializer ||
             (ir_type_properties(module, module->globals[g].type_id) & SEMANTIC_TYPE_NEEDS_DROP))
-            return output_error(module->program, "Runtime component cannot require global initialization or cleanup: '%s'", path);
+            return output_error(module->program,
+                                "Runtime component cannot require global initialization or cleanup: '%s'", path);
     for (size_t f = 0; f < module->function_count; ++f) {
         const IrFunction *fn = &module->functions[f];
         if (module->emission_selected && !fn->emission_reachable) continue;
         if (fn->is_async || fn->is_package_init || fn->is_package_cleanup || fn->is_drop_glue)
-            return output_error(module->program, "Runtime component cannot require async, package lifecycle or drop glue: '%s'", path);
+            return output_error(module->program,
+                                "Runtime component cannot require async, package lifecycle or drop glue: '%s'", path);
     }
     return 1;
 }
@@ -93,7 +97,8 @@ static int emit_native(const IrModule *module, const BackendOptions *options, co
     if (success && !module->program->runtime_component && options->emission == BACKEND_OBJECT &&
         (!module->program->package_name || !strcmp(module->program->package_name, "main")))
         success = native_runtime_emit_requirements(&object, options->target_format,
-                                               options->runtime_profile, ir_main_returns_void(module), ir_runtime_requirements(module));
+                                                   options->runtime_profile, ir_main_returns_void(module),
+                                                   ir_runtime_requirements(module));
     if (success && !module->program->runtime_component && options->emission == BACKEND_OBJECT)
         success = native_runtime_object_imports_profile(&object, options->target_format, options->runtime_profile);
     if (success)

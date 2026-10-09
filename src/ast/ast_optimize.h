@@ -11,6 +11,6 @@ typedef struct {
 } AstOptimizationStats;
 
 /* Requires completed semantic analysis. Mutates only typed function bodies. */
-void ast_optimize_program(AstProgram *program, AstOptimizationStats *stats);
+void ast_optimize_program(AstProgram * program, AstOptimizationStats * stats);
 
 #endif

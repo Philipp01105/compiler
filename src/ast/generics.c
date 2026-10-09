@@ -44,7 +44,8 @@ static int alpha_parameter_index(const AstProgram *program, const AstType *type,
     for (const AstGenericParameter *parameter = parameters; parameter;
          parameter = parameter->next, index++)
         if (!strcmp(ast_program_lexeme(program, type->name_token),
-                    ast_program_lexeme(program, parameter->name_token))) return index;
+                    ast_program_lexeme(program, parameter->name_token)))
+            return index;
     return -1;
 }
 
@@ -66,17 +67,21 @@ static int alpha_type_equal(const AstProgram *a, const AstType *x,
         x->pointer_depth != y->pointer_depth ||
         x->outer_pointer_depth != y->outer_pointer_depth ||
         x->is_array != y->is_array || x->is_slice != y->is_slice ||
-        x->resolved_array_length != y->resolved_array_length) return 0;
-    if (x->kind != AST_TYPE_FUNCTION && x->kind != AST_TYPE_FUTURE && x->kind!=AST_TYPE_JOIN && x->kind!=AST_TYPE_EXECUTOR) {
+        x->resolved_array_length != y->resolved_array_length)
+        return 0;
+    if (x->kind != AST_TYPE_FUNCTION && x->kind != AST_TYPE_FUTURE && x->kind != AST_TYPE_JOIN && x->kind !=
+        AST_TYPE_EXECUTOR) {
         char x_name[2048], y_name[2048];
         if (strcmp(canonical_type_name(a, x->name_token, x_name,
                                        sizeof(x_name)),
                    canonical_type_name(b, y->name_token, y_name,
-                                       sizeof(y_name)))) return 0;
+                                       sizeof(y_name))))
+            return 0;
     }
     if ((x->element_type == NULL) != (y->element_type == NULL)) return 0;
     if (x->element_type && !alpha_type_equal(a, x->element_type, gx,
-                                             b, y->element_type, gy)) return 0;
+                                             b, y->element_type, gy))
+        return 0;
     const AstTypeArgument *xa = x->arguments, *ya = y->arguments;
     for (; xa && ya; xa = xa->next, ya = ya->next)
         if (!alpha_type_equal(a, &xa->type, gx, b, &ya->type, gy)) return 0;
@@ -96,7 +101,7 @@ static int alpha_type_equal(const AstProgram *a, const AstType *x,
 }
 
 int ast_concrete_type_equal(const AstProgram *a, const AstType *x,
-                              const AstProgram *b, const AstType *y) {
+                            const AstProgram *b, const AstType *y) {
     if ((x->reference_type != NULL) != (y->reference_type != NULL)) return 0;
     if (x->reference_type && !ast_concrete_type_equal(a, x->reference_type, b, y->reference_type)) return 0;
     if (x->kind != y->kind || x->is_native_function != y->is_native_function || x->borrow_kind != y->borrow_kind ||
@@ -112,7 +117,8 @@ int ast_concrete_type_equal(const AstProgram *a, const AstType *x,
             const AstInterfaceBound *bx = gx->bounds, *by = gy->bounds;
             for (; bx && by; bx = bx->next, by = by->next)
                 if (strcmp(ast_program_lexeme(a, bx->name_token),
-                           ast_program_lexeme(b, by->name_token))) return 0;
+                           ast_program_lexeme(b, by->name_token)))
+                    return 0;
             if (bx || by) return 0;
         }
         if (gx || gy) return 0;
@@ -120,16 +126,19 @@ int ast_concrete_type_equal(const AstProgram *a, const AstType *x,
         const AstTypeArgument *py = y->function_parameters;
         for (; px && py; px = px->next, py = py->next)
             if (!alpha_type_equal(a, &px->type, x->function_generic_parameters,
-                                  b, &py->type, y->function_generic_parameters)) return 0;
+                                  b, &py->type, y->function_generic_parameters))
+                return 0;
         return px == NULL && py == NULL && x->function_return_type && y->function_return_type &&
                alpha_type_equal(a, x->function_return_type, x->function_generic_parameters,
                                 b, y->function_return_type, y->function_generic_parameters);
     }
     char x_name[2048], y_name[2048];
-    if (x->kind != AST_TYPE_FUTURE && x->kind!=AST_TYPE_JOIN && x->kind!=AST_TYPE_EXECUTOR && strcmp(canonical_type_name(a, x->name_token, x_name,
-                                   sizeof(x_name)),
-               canonical_type_name(b, y->name_token, y_name,
-                                   sizeof(y_name)))) return 0;
+    if (x->kind != AST_TYPE_FUTURE && x->kind != AST_TYPE_JOIN && x->kind != AST_TYPE_EXECUTOR && strcmp(
+            canonical_type_name(a, x->name_token, x_name,
+                                sizeof(x_name)),
+            canonical_type_name(b, y->name_token, y_name,
+                                sizeof(y_name))))
+        return 0;
     if ((x->element_type == NULL) != (y->element_type == NULL)) return 0;
     if (x->element_type != NULL &&
         !ast_concrete_type_equal(a, x->element_type, b, y->element_type))
@@ -147,6 +156,7 @@ typedef struct {
     const AstProgram *argument_program;
     size_t count;
     int failed;
+
     struct {
         size_t source;
         size_t target;
@@ -212,7 +222,8 @@ static int concrete_lifetime_bound(Substitution *s, size_t token,
     for (; scope; scope = scope->parent)
         for (const AstLifetimeParameter *p = scope->parameters; p; p = p->next)
             if (!strcmp(source->lexeme,
-                        ast_program_lexeme(s->argument_program, p->name_token))) return 1;
+                        ast_program_lexeme(s->argument_program, p->name_token)))
+                return 1;
     return 0;
 }
 
@@ -230,10 +241,14 @@ static AstType concrete_copy_scoped(Substitution *s, AstType type,
        Origins remain on expressions/loans; only callable-local binders are
        part of the concrete type's own contract. */
     type.lifetime_token = concrete_lifetime_bound(s, type.lifetime_token, scope)
-        ? transplant_token(s, type.lifetime_token) : AST_TOKEN_NONE;
+                              ? transplant_token(s, type.lifetime_token)
+                              : AST_TOKEN_NONE;
     AstLifetimeParameter *lifetimes = NULL, **lifetime_tail = &lifetimes;
     for (const AstLifetimeParameter *p = type.lifetime_arguments; p; p = p->next) {
-        if (!concrete_lifetime_bound(s, p->name_token, scope)) { lifetimes = NULL; break; }
+        if (!concrete_lifetime_bound(s, p->name_token, scope)) {
+            lifetimes = NULL;
+            break;
+        }
         AstLifetimeParameter *copy = owned(s, sizeof(*copy));
         if (!copy) break;
         copy->name_token = transplant_token(s, p->name_token);
@@ -326,7 +341,11 @@ static AstType substitute_type(Substitution *s, AstType type) {
             if (type.borrow_kind != AST_BORROW_NONE) {
                 if (result.borrow_kind != AST_BORROW_NONE) {
                     AstType *reference = owned(s, sizeof(*reference));
-                    if (reference) { *reference = result; result.reference_type = reference; result.pointer_depth++; }
+                    if (reference) {
+                        *reference = result;
+                        result.reference_type = reference;
+                        result.pointer_depth++;
+                    }
                 }
                 result.borrow_kind = type.borrow_kind;
                 result.lifetime_token = type.lifetime_token;
@@ -390,8 +409,9 @@ static AstDeclarationNode *clone_closure_environment(Substitution *s,
     environment->closure_consuming_invoke = NULL;
     environment->as.struct_decl.fields = NULL;
     AstField **field_tail = &environment->as.struct_decl.fields;
-    for (const AstField *field = original->closure_captures ? original->closure_captures :
-         original->as.struct_decl.fields; field; field = field->next) {
+    for (const AstField *field = original->closure_captures
+                                     ? original->closure_captures
+                                     : original->as.struct_decl.fields; field; field = field->next) {
         AstField *copy = owned(s, sizeof(*copy));
         if (!copy) return environment;
         *copy = *field;
@@ -403,20 +423,23 @@ static AstDeclarationNode *clone_closure_environment(Substitution *s,
     }
     AstDeclarationNode *invoke = owned(s, sizeof(*invoke));
     if (!invoke) return environment;
-    const AstDeclarationNode *source_invoke = original->closure_consuming_invoke ?
-        original->closure_consuming_invoke : original->as.struct_decl.methods;
+    const AstDeclarationNode *source_invoke = original->closure_consuming_invoke
+                                                  ? original->closure_consuming_invoke
+                                                  : original->as.struct_decl.methods;
     *invoke = *source_invoke;
     invoke->name_token = AST_TOKEN_NONE;
     invoke->resolved_symbol_id = AST_SYMBOL_NONE;
     invoke->semantic_body_checked = 0;
     invoke->as.function.owner_token = AST_TOKEN_NONE;
     invoke->as.function.return_type = substitute_type(s, invoke->as.function.return_type);
-    invoke->as.function.body = clone_statement(s, original->closure_consuming_invoke ?
-        source_invoke->as.function.body->match_arms->body : source_invoke->as.function.body);
+    invoke->as.function.body = clone_statement(s, original->closure_consuming_invoke
+                                                      ? source_invoke->as.function.body->match_arms->body
+                                                      : source_invoke->as.function.body);
     invoke->as.function.parameters = NULL;
     AstParameter **parameter_tail = &invoke->as.function.parameters;
-    for (const AstParameter *parameter = original->closure_consuming_invoke ?
-         source_invoke->as.function.parameters->next : source_invoke->as.function.parameters;
+    for (const AstParameter *parameter = original->closure_consuming_invoke
+                                             ? source_invoke->as.function.parameters->next
+                                             : source_invoke->as.function.parameters;
          parameter; parameter = parameter->next) {
         AstParameter *copy = owned(s, sizeof(*copy));
         if (!copy) return environment;
@@ -441,19 +464,22 @@ static AstExpression *clone_expression(Substitution *s, const AstExpression *ori
     e->arguments = clone_expression(s, original->arguments);
     if (original->closure_consuming_call) {
         e->left = clone_expression(s, original->arguments);
-        if(e->left) e->left->next=NULL;
-        e->arguments=clone_expression(s,original->arguments ? original->arguments->next : NULL);
-        e->closure_consuming_call=0;
+        if (e->left) e->left->next = NULL;
+        e->arguments = clone_expression(s, original->arguments ? original->arguments->next : NULL);
+        e->closure_consuming_call = 0;
     }
     e->control = clone_statement(s, original->control);
     e->next = clone_expression(s, original->next);
     e->allocated_type = substitute_type(s, original->allocated_type);
     if (original->closure_environment) {
         e->closure_environment = clone_closure_environment(s, original->closure_environment);
-        e->kind=AST_EXPR_STRUCT_LITERAL;
-        e->left=NULL;
-        e->allocated_type=(AstType){.kind=AST_TYPE_INFERRED,.name_token=AST_TOKEN_NONE,
-            .array_length_token=AST_TOKEN_NONE};
+        e->kind = AST_EXPR_STRUCT_LITERAL;
+        e->left = NULL;
+        e->allocated_type = (AstType)
+        {
+            .kind = AST_TYPE_INFERRED,.name_token = AST_TOKEN_NONE,
+            .array_length_token = AST_TOKEN_NONE
+        };
     }
     return e;
 }
@@ -463,8 +489,9 @@ static AstStatement *clone_statement(Substitution *s, const AstStatement *origin
     AstStatement *v = owned(s, sizeof(*v));
     if (!v) return NULL;
     *v = *original;
-    v->type = substitute_type(s, original->closure_callable_annotation ?
-        *original->closure_callable_annotation : original->type);
+    v->type = substitute_type(s, original->closure_callable_annotation
+                                     ? *original->closure_callable_annotation
+                                     : original->type);
     v->closure_callable_annotation = NULL;
     v->expression = clone_expression(s, original->expression);
     v->value = clone_expression(s, original->value);
@@ -532,12 +559,12 @@ int ast_polymorphic_callable_compatible(const AstProgram *target_program,
         target->is_slice != source->is_slice)
         return 0;
     const AstGenericParameter *target_generic =
-        target->function_generic_parameters;
+            target->function_generic_parameters;
     const AstGenericParameter *source_generic =
-        source->function_generic_parameters;
+            source->function_generic_parameters;
     for (; target_generic != NULL && source_generic != NULL;
-         target_generic = target_generic->next,
-         source_generic = source_generic->next) {
+           target_generic = target_generic->next,
+           source_generic = source_generic->next) {
         for (const AstInterfaceBound *required = source_generic->bounds;
              required != NULL; required = required->next) {
             int guaranteed = 0;
@@ -557,8 +584,8 @@ int ast_polymorphic_callable_compatible(const AstProgram *target_program,
     const AstTypeArgument *target_parameter = target->function_parameters;
     const AstTypeArgument *source_parameter = source->function_parameters;
     for (; target_parameter != NULL && source_parameter != NULL;
-         target_parameter = target_parameter->next,
-         source_parameter = source_parameter->next)
+           target_parameter = target_parameter->next,
+           source_parameter = source_parameter->next)
         if (!alpha_type_equal(target_program, &target_parameter->type,
                               target->function_generic_parameters,
                               source_program, &source_parameter->type,
@@ -598,7 +625,8 @@ static int identity_type(char *key, size_t *used, const AstProgram *program, con
              type->borrow_kind, type->callable_mode);
     if (!identity_text(key, used, number)) return 0;
     if (type->reference_type && (!identity_text(key, used, "reference") ||
-        !identity_type(key, used, program, type->reference_type))) return 0;
+                                 !identity_type(key, used, program, type->reference_type)))
+        return 0;
     for (const AstTypeArgument *a = type->arguments; a; a = a->next)
         if (!identity_type(key, used, program, &a->type)) return 0;
     for (const AstTypeArgument *a = type->function_parameters; a; a = a->next)
@@ -724,7 +752,7 @@ AstDeclarationNode *ast_specialize_function(AstProgram *program,
         }
         result->as.struct_decl.fields = head;
         result->as.struct_decl.destructor =
-            clone_statement(&s, origin->as.struct_decl.destructor);
+                clone_statement(&s, origin->as.struct_decl.destructor);
         result->as.struct_decl.methods = NULL;
         /* Method specialization follows the aggregate's substitution. */
         AstDeclarationNode **methods = &result->as.struct_decl.methods;
@@ -859,9 +887,11 @@ static const char *callable_consumer_identity(AstProgram *program,
     char key[4096] = "__dmm_callable_";
     size_t used = strlen(key);
     if (!identity_text(key, &used, program->module_identity != NULL
-                                       ? program->module_identity : ".") ||
-        !identity_text(key, &used, origin->specialization_identity != NULL ?
-            origin->specialization_identity : ast_program_lexeme(program,origin->name_token)))
+                                       ? program->module_identity
+                                       : ".") ||
+        !identity_text(key, &used, origin->specialization_identity != NULL
+                                       ? origin->specialization_identity
+                                       : ast_program_lexeme(program, origin->name_token)))
         return NULL;
     const AstExpression *argument = arguments;
     for (const AstParameter *parameter = origin->as.function.parameters;
@@ -869,23 +899,26 @@ static const char *callable_consumer_identity(AstProgram *program,
          parameter = parameter->next, argument = argument->next) {
         if (parameter->type.kind != AST_TYPE_FUNCTION ||
             (parameter->type.function_generic_parameters == NULL &&
-             !(argument->has_resolved_ast_type && argument->resolved_ast_type.kind==AST_TYPE_NAMED &&
-               argument->resolved_callable))) continue;
-        if(argument->has_resolved_ast_type && argument->resolved_ast_type.kind==AST_TYPE_NAMED) {
-            const AstProgram *unit=argument->resolved_type_program ? argument->resolved_type_program : program;
-            if(!identity_text(key,&used,unit->module_identity ? unit->module_identity : ".") ||
-               !identity_text(key,&used,ast_program_lexeme(unit,argument->resolved_ast_type.name_token))) return NULL;
+             !(argument->has_resolved_ast_type && argument->resolved_ast_type.kind == AST_TYPE_NAMED &&
+               argument->resolved_callable)))
+            continue;
+        if (argument->has_resolved_ast_type && argument->resolved_ast_type.kind == AST_TYPE_NAMED) {
+            const AstProgram *unit = argument->resolved_type_program ? argument->resolved_type_program : program;
+            if (!identity_text(key, &used, unit->module_identity ? unit->module_identity : ".") ||
+                !identity_text(key, &used, ast_program_lexeme(unit, argument->resolved_ast_type.name_token)))
+                return NULL;
             continue;
         }
         if (argument->resolved_callable == NULL ||
             argument->resolved_callable_program == NULL)
             return NULL;
         const AstProgram *callable_program =
-            argument->resolved_callable_program;
+                argument->resolved_callable_program;
         const AstDeclarationNode *callable = argument->resolved_callable;
         if (!identity_text(key, &used,
                            callable_program->module_identity != NULL
-                               ? callable_program->module_identity : ".") ||
+                               ? callable_program->module_identity
+                               : ".") ||
             !identity_text(key, &used,
                            callable->specialization_identity != NULL
                                ? callable->specialization_identity
@@ -897,10 +930,10 @@ static const char *callable_consumer_identity(AstProgram *program,
 }
 
 AstDeclarationNode *ast_specialize_callable_consumer(
-        AstProgram *program, const AstDeclarationNode *origin,
-        const AstExpression *arguments) {
+    AstProgram *program, const AstDeclarationNode *origin,
+    const AstExpression *arguments) {
     const char *identity = callable_consumer_identity(program, origin,
-                                                       arguments);
+                                                      arguments);
     if (identity == NULL) return NULL;
     size_t instances = 0;
     for (AstDeclarationNode *declaration = program->root; declaration;
@@ -939,20 +972,20 @@ AstDeclarationNode *ast_specialize_callable_consumer(
         copy->resolved_symbol_id = AST_SYMBOL_NONE;
         copy->type = concrete_copy(&substitution, parameter->type);
         copy->compile_time_value = NULL;
-        if(parameter->type.kind==AST_TYPE_FUNCTION && argument &&
-           argument->has_resolved_ast_type && argument->resolved_ast_type.kind==AST_TYPE_NAMED &&
-           argument->resolved_callable) {
-            const AstProgram *saved=substitution.argument_program;
-            substitution.argument_program=argument->resolved_type_program ? argument->resolved_type_program : program;
-            copy->type=concrete_copy(&substitution,argument->resolved_ast_type);
+        if (parameter->type.kind == AST_TYPE_FUNCTION && argument &&
+            argument->has_resolved_ast_type && argument->resolved_ast_type.kind == AST_TYPE_NAMED &&
+            argument->resolved_callable) {
+            const AstProgram *saved = substitution.argument_program;
+            substitution.argument_program = argument->resolved_type_program ? argument->resolved_type_program : program;
+            copy->type = concrete_copy(&substitution, argument->resolved_ast_type);
             /* The concrete environment keeps the invocation contract of the
                abstract callback parameter after specialization. */
-            copy->type.callable_mode=parameter->type.callable_mode;
-            substitution.argument_program=saved;
+            copy->type.callable_mode = parameter->type.callable_mode;
+            substitution.argument_program = saved;
         }
         if (parameter->type.kind == AST_TYPE_FUNCTION &&
             parameter->type.function_generic_parameters != NULL &&
-            !(argument && argument->has_resolved_ast_type && argument->resolved_ast_type.kind==AST_TYPE_NAMED)) {
+            !(argument && argument->has_resolved_ast_type && argument->resolved_ast_type.kind == AST_TYPE_NAMED)) {
             if (argument == NULL || argument->resolved_callable == NULL) {
                 substitution.failed = 1;
                 break;
@@ -968,7 +1001,7 @@ AstDeclarationNode *ast_specialize_callable_consumer(
     result->as.function.return_type = concrete_copy(
         &substitution, origin->as.function.return_type);
     result->as.function.body = clone_statement(&substitution,
-                                                origin->as.function.body);
+                                               origin->as.function.body);
     if (substitution.failed) return NULL;
     AstDeclarationNode **end = &program->root;
     while (*end != NULL) end = &(*end)->next;

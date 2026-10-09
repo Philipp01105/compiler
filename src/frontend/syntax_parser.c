@@ -206,8 +206,8 @@ static int is_type_token(TokenType type) {
            (type >= TOKEN_TYPE_INT && type <= TOKEN_TYPE_NEVER);
 }
 
-static AstGenericParameter *parse_generic_parameters(SyntaxParser *parser,
-                                                      AstLifetimeParameter **lifetimes);
+static AstGenericParameter *parse_generic_parameters(SyntaxParser * parser,
+                                                     AstLifetimeParameter * *lifetimes);
 
 static void require_lifetime_edition(SyntaxParser *parser) {
     if (parser->program->module && strcmp(parser->program->module->edition, "2026-10-04-dev"))
@@ -234,15 +234,16 @@ static AstType parse_type(SyntaxParser *parser) {
     }
     unsigned leading_pointers = 0;
     while (match(parser, TOKEN_STAR)) leading_pointers++;
-    unsigned callable_mode=0;
-    if(check(parser,TOKEN_KEYWORD_MUT) && parser->current+1<parser->program->token_count &&
-       parser->program->tokens[parser->current+1].type==TOKEN_KEYWORD_FUNC) {
-        callable_mode=1; parser->current++;
-    }
-    else if(!strcmp(ast_program_lexeme(parser->program,parser->current),"once") &&
-            parser->current+1<parser->program->token_count &&
-            parser->program->tokens[parser->current+1].type==TOKEN_KEYWORD_FUNC) {
-        callable_mode=2; parser->current++;
+    unsigned callable_mode = 0;
+    if (check(parser, TOKEN_KEYWORD_MUT) && parser->current + 1 < parser->program->token_count &&
+        parser->program->tokens[parser->current + 1].type == TOKEN_KEYWORD_FUNC) {
+        callable_mode = 1;
+        parser->current++;
+    } else if (!strcmp(ast_program_lexeme(parser->program, parser->current), "once") &&
+               parser->current + 1 < parser->program->token_count &&
+               parser->program->tokens[parser->current + 1].type == TOKEN_KEYWORD_FUNC) {
+        callable_mode = 2;
+        parser->current++;
     }
     int native_function = match(parser, TOKEN_KEYWORD_EXTERN);
     if (native_function) {
@@ -260,7 +261,7 @@ static AstType parse_type(SyntaxParser *parser) {
     } else if (match(parser, TOKEN_KEYWORD_FUNC)) {
         type.kind = AST_TYPE_FUNCTION;
         type.is_native_function = native_function;
-        type.callable_mode=callable_mode;
+        type.callable_mode = callable_mode;
         type.name_token = first;
         type.pointer_depth = leading_pointers;
         type.function_generic_parameters = parse_generic_parameters(parser, &type.function_lifetime_parameters);
@@ -352,8 +353,9 @@ static AstType parse_type(SyntaxParser *parser) {
         }
         if (!strcmp(async_name, "Executor")) {
             type.kind = AST_TYPE_EXECUTOR;
-            if (type.arguments) parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
-                                               "Executor takes no type arguments");
+            if (type.arguments)
+                parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
+                               "Executor takes no type arguments");
         }
     }
     while (match(parser, TOKEN_LBRACKET)) {
@@ -409,12 +411,15 @@ static AstType parse_type(SyntaxParser *parser) {
 static AstExpression *parse_expression(SyntaxParser *parser);
 
 static AstStatement *parse_statement(SyntaxParser *parser);
+
 static AstStatement *parse_statement_impl(SyntaxParser *parser);
+
 static AstStatement *parse_value_block(SyntaxParser *parser);
+
 static AstStatement *parse_expression_statement(SyntaxParser *parser, int consume_semicolon);
 
 static AstGenericParameter *parse_generic_parameters(SyntaxParser *parser,
-                                                      AstLifetimeParameter **lifetimes) {
+                                                     AstLifetimeParameter **lifetimes) {
     AstGenericParameter *head = NULL, **tail = &head;
     AstLifetimeParameter *lifetime_head = NULL, **lifetime_tail = &lifetime_head;
     if (!match(parser, TOKEN_LESS)) return NULL;
@@ -564,72 +569,78 @@ static int type_metadata_ahead(const SyntaxParser *parser) {
 }
 
 static AstParameter *parse_parameter(SyntaxParser *parser);
+
 static AstStatement *parse_block(SyntaxParser *parser);
+
 static AstDeclarationNode *new_declaration(SyntaxParser *parser, AstDeclarationKind kind, size_t first);
 
 static AstExpression *parse_closure(SyntaxParser *parser) {
-    size_t first=parser->current;
-    (void)consume(parser,TOKEN_KEYWORD_FUNC);
-    (void)consume(parser,TOKEN_LBRACKET);
-    AstExpression *expression=new_expression(parser,AST_EXPR_STRUCT_LITERAL,first);
-    AstDeclarationNode *environment=new_declaration(parser,AST_DECL_STRUCT,first);
-    if(!expression || !environment) return expression;
-    AstExpression **captures=&expression->arguments;
-    AstField **fields=&environment->as.struct_decl.fields;
-    while(!parser->failed && !check(parser,TOKEN_RBRACKET)) {
-        size_t capture_first=parser->current;
-        int borrowed=match(parser,TOKEN_AMPERSAND);
-        int mutable=borrowed && match(parser,TOKEN_KEYWORD_MUT);
-        if(!borrowed) {
-            if(strcmp(ast_program_lexeme(parser->program,parser->current),"move"))
-                parser_failure(parser,ERR_PARSE_INVALID_DECLARATION,"Captures require move, & or &mut");
+    size_t first = parser->current;
+    (void) consume(parser, TOKEN_KEYWORD_FUNC);
+    (void) consume(parser, TOKEN_LBRACKET);
+    AstExpression *expression = new_expression(parser, AST_EXPR_STRUCT_LITERAL, first);
+    AstDeclarationNode *environment = new_declaration(parser, AST_DECL_STRUCT, first);
+    if (!expression || !environment) return expression;
+    AstExpression **captures = &expression->arguments;
+    AstField **fields = &environment->as.struct_decl.fields;
+    while (!parser->failed && !check(parser, TOKEN_RBRACKET)) {
+        size_t capture_first = parser->current;
+        int borrowed = match(parser, TOKEN_AMPERSAND);
+        int mutable=borrowed && match(parser, TOKEN_KEYWORD_MUT);
+        if (!borrowed) {
+            if (strcmp(ast_program_lexeme(parser->program, parser->current), "move"))
+                parser_failure(parser, ERR_PARSE_INVALID_DECLARATION, "Captures require move, & or &mut");
             else parser->current++;
         }
-        size_t name=consume(parser,TOKEN_IDENTIFIER);
-        AstExpression *value=new_expression(parser,AST_EXPR_NAME,capture_first);
-        AstField *field=allocate(parser,sizeof(*field));
-        if(!value || !field) break;
-        value->value_token=name;
-        if(borrowed) {
-            AstExpression *reference=new_expression(parser,AST_EXPR_UNARY,capture_first);
-            if(!reference) break;
-            reference->operator_type=TOKEN_AMPERSAND;
-            reference->mutable_borrow=mutable;
-            reference->right=value;
-            value=reference;
+        size_t name = consume(parser, TOKEN_IDENTIFIER);
+        AstExpression *value = new_expression(parser, AST_EXPR_NAME, capture_first);
+        AstField *field = allocate(parser, sizeof(*field));
+        if (!value || !field) break;
+        value->value_token = name;
+        if (borrowed) {
+            AstExpression *reference = new_expression(parser, AST_EXPR_UNARY, capture_first);
+            if (!reference) break;
+            reference->operator_type = TOKEN_AMPERSAND;
+            reference->mutable_borrow =
+            mutable;
+            reference->right = value;
+            value = reference;
         }
-        value->initializer_name_token=name;
-        finish_expression(parser,value);
-        field->name_token=name;
-        field->closure_capture_by_reference=borrowed;
-        field->span=value->span;
-        field->type=inferred_type();
-        field->resolved_symbol_id=AST_SYMBOL_NONE;
-        *fields=field; fields=&field->next;
-        *captures=value; captures=&value->next;
-        if(!match(parser,TOKEN_COMMA)) break;
+        value->initializer_name_token = name;
+        finish_expression(parser, value);
+        field->name_token = name;
+        field->closure_capture_by_reference = borrowed;
+        field->span = value->span;
+        field->type = inferred_type();
+        field->resolved_symbol_id = AST_SYMBOL_NONE;
+        *fields = field;
+        fields = &field->next;
+        *captures = value;
+        captures = &value->next;
+        if (!match(parser, TOKEN_COMMA)) break;
     }
-    (void)consume(parser,TOKEN_RBRACKET);
-    AstDeclarationNode *invoke=new_declaration(parser,AST_DECL_FUNCTION,first);
-    if(!invoke) return expression;
-    (void)consume(parser,TOKEN_LPAREN);
-    AstParameter **parameters=&invoke->as.function.parameters;
-    if(!check(parser,TOKEN_RPAREN)) do {
-        AstParameter *parameter=parse_parameter(parser);
-        *parameters=parameter;
-        if(parameter) parameters=&parameter->next;
-    } while(match(parser,TOKEN_COMMA));
-    (void)consume(parser,TOKEN_RPAREN);
-    (void)consume(parser,TOKEN_ARROW);
-    invoke->as.function.return_type=parse_type(parser);
-    invoke->as.function.body=parse_block(parser);
-    invoke->is_public=1;
-    environment->is_closure_environment=1;
-    environment->no_default=1;
-    environment->as.struct_decl.methods=invoke;
-    expression->closure_environment=environment;
-    expression->allocated_type=inferred_type();
-    finish_expression(parser,expression);
+    (void) consume(parser, TOKEN_RBRACKET);
+    AstDeclarationNode *invoke = new_declaration(parser, AST_DECL_FUNCTION, first);
+    if (!invoke) return expression;
+    (void) consume(parser, TOKEN_LPAREN);
+    AstParameter **parameters = &invoke->as.function.parameters;
+    if (!check(parser, TOKEN_RPAREN))
+        do {
+            AstParameter *parameter = parse_parameter(parser);
+            *parameters = parameter;
+            if (parameter) parameters = &parameter->next;
+        } while (match(parser, TOKEN_COMMA));
+    (void) consume(parser, TOKEN_RPAREN);
+    (void) consume(parser, TOKEN_ARROW);
+    invoke->as.function.return_type = parse_type(parser);
+    invoke->as.function.body = parse_block(parser);
+    invoke->is_public = 1;
+    environment->is_closure_environment = 1;
+    environment->no_default = 1;
+    environment->as.struct_decl.methods = invoke;
+    expression->closure_environment = environment;
+    expression->allocated_type = inferred_type();
+    finish_expression(parser, expression);
     return expression;
 }
 
@@ -639,14 +650,14 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
     AstExpression *expression = NULL;
     size_t literal_type_end = parser->current;
     int struct_literal = type == TOKEN_IDENTIFIER &&
-        look_type(parser, &literal_type_end, 0) &&
-        literal_type_end + 1 < parser->program->token_count &&
-        parser->program->tokens[literal_type_end].type == TOKEN_LBRACE &&
-        (parser->program->tokens[literal_type_end + 1].type == TOKEN_RBRACE ||
-         (literal_type_end + 2 < parser->program->token_count &&
-          parser->program->tokens[literal_type_end + 1].type == TOKEN_IDENTIFIER &&
-          parser->program->tokens[literal_type_end + 2].type == TOKEN_COLON));
-    if(type==TOKEN_KEYWORD_FUNC) return parse_closure(parser);
+                         look_type(parser, &literal_type_end, 0) &&
+                         literal_type_end + 1 < parser->program->token_count &&
+                         parser->program->tokens[literal_type_end].type == TOKEN_LBRACE &&
+                         (parser->program->tokens[literal_type_end + 1].type == TOKEN_RBRACE ||
+                          (literal_type_end + 2 < parser->program->token_count &&
+                           parser->program->tokens[literal_type_end + 1].type == TOKEN_IDENTIFIER &&
+                           parser->program->tokens[literal_type_end + 2].type == TOKEN_COLON));
+    if (type == TOKEN_KEYWORD_FUNC) return parse_closure(parser);
     if (struct_literal) {
         expression = new_expression(parser, AST_EXPR_STRUCT_LITERAL, first);
         AstType literal_type = parse_type(parser);
@@ -785,10 +796,10 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
             parser->current = expression->value_token;
             expression->allocated_type = parse_type(parser);
             expression->explicit_type_arguments =
-                parser->program->tokens[look].type == TOKEN_LPAREN;
+                    parser->program->tokens[look].type == TOKEN_LPAREN;
             expression->explicit_generic_reference =
-                parser->program->tokens[look].type != TOKEN_LPAREN &&
-                parser->program->tokens[look].type != TOKEN_DOT;
+                    parser->program->tokens[look].type != TOKEN_LPAREN &&
+                    parser->program->tokens[look].type != TOKEN_DOT;
             if (parser->current <= saved) parser->failed = 1;
         }
     }
@@ -831,10 +842,11 @@ static AstExpression *parse_primary(SyntaxParser *parser) {
             expression = call;
         } else if (match(parser, TOKEN_LBRACKET)) {
             AstExpression *start = check(parser, TOKEN_COLON)
-                                       ? NULL : parse_expression(parser);
+                                       ? NULL
+                                       : parse_expression(parser);
             if (match(parser, TOKEN_COLON)) {
                 AstExpression *subslice =
-                    new_expression(parser, AST_EXPR_SUBSLICE, first);
+                        new_expression(parser, AST_EXPR_SUBSLICE, first);
                 if (subslice != NULL) {
                     subslice->left = expression;
                     subslice->right = start;
@@ -1350,10 +1362,13 @@ static AstStatement *parse_statement_impl(SyntaxParser *parser) {
             size_t name = consume(parser, TOKEN_IDENTIFIER);
             (void) consume(parser, TOKEN_EQUAL);
             AstExpression *source = parse_expression(parser);
-            if (initializer) { initializer->name_token = name; initializer->type = inferred_type(); initializer->value = source; }
+            if (initializer) {
+                initializer->name_token = name;
+                initializer->type = inferred_type();
+                initializer->value = source;
+            }
             finish_statement(parser, initializer);
-        } else
-        if (!check(parser, TOKEN_SEMICOLON)) {
+        } else if (!check(parser, TOKEN_SEMICOLON)) {
             initializer = (check(parser, TOKEN_KEYWORD_VAR) ||
                            check(parser, TOKEN_KEYWORD_CONST))
                               ? parse_variable(parser, parser->current, 0)
@@ -1362,10 +1377,15 @@ static AstStatement *parse_statement_impl(SyntaxParser *parser) {
         if (check(parser, TOKEN_RPAREN) || iterator_mode) {
             if (!initializer || initializer->kind != AST_STMT_VARIABLE || initializer->is_const ||
                 !initializer->value || initializer->type.kind != AST_TYPE_INFERRED)
-                parser_failure(parser, ERR_PARSE_INVALID_DECLARATION, "Iterator for requires var [&, &mut] name = source");
+                parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
+                               "Iterator for requires var [&, &mut] name = source");
             (void) consume(parser, TOKEN_RPAREN);
             AstStatement *body = parse_statement(parser);
-            if (statement) { statement->initializer = initializer; statement->body = body; statement->iterator_mode = iterator_mode ? iterator_mode : 1; }
+            if (statement) {
+                statement->initializer = initializer;
+                statement->body = body;
+                statement->iterator_mode = iterator_mode ? iterator_mode : 1;
+            }
             finish_statement(parser, statement);
             return statement;
         }
@@ -1480,7 +1500,10 @@ static AstDeclarationNode *parse_function(SyntaxParser *parser, int is_static,
     size_t name = consume_callable_name(parser);
     AstLifetimeParameter *lifetimes = NULL;
     AstGenericParameter *generics = parse_generic_parameters(parser, &lifetimes);
-    if (declaration != NULL) { declaration->generic_parameters = generics; declaration->lifetime_parameters = lifetimes; }
+    if (declaration != NULL) {
+        declaration->generic_parameters = generics;
+        declaration->lifetime_parameters = lifetimes;
+    }
     (void) consume(parser, TOKEN_LPAREN);
     AstParameter *parameters = NULL;
     AstParameter **tail = &parameters;
@@ -1506,7 +1529,7 @@ static AstDeclarationNode *parse_function(SyntaxParser *parser, int is_static,
         do {
             AstAutoCondition *condition = allocate(parser, sizeof(*condition));
             AstType subject = parse_type(parser);
-            (void)consume(parser, TOKEN_COLON);
+            (void) consume(parser, TOKEN_COLON);
             AstInterfaceBound *bounds = NULL, **bound_tail = &bounds;
             do {
                 AstInterfaceBound *bound = allocate(parser, sizeof(*bound));
@@ -1583,7 +1606,10 @@ static AstDeclarationNode *parse_struct(SyntaxParser *parser) {
     size_t name = consume(parser, TOKEN_IDENTIFIER);
     AstLifetimeParameter *lifetimes = NULL;
     AstGenericParameter *generics = parse_generic_parameters(parser, &lifetimes);
-    if (declaration != NULL) { declaration->generic_parameters = generics; declaration->lifetime_parameters = lifetimes; }
+    if (declaration != NULL) {
+        declaration->generic_parameters = generics;
+        declaration->lifetime_parameters = lifetimes;
+    }
     if (parser->native_declaration && generics != NULL)
         parser_failure(parser, ERR_PARSE_INVALID_DECLARATION, "Native structs cannot be generic");
     if (parser->native_declaration && match(parser, TOKEN_SEMICOLON)) {
@@ -1621,7 +1647,7 @@ static AstDeclarationNode *parse_struct(SyntaxParser *parser) {
         int is_public = match(parser, TOKEN_KEYWORD_PUB);
         int is_static = match(parser, TOKEN_KEYWORD_STATIC);
         if (parser->native_declaration && (is_static ||
-            check(parser, TOKEN_KEYWORD_FUNC) || check(parser, TOKEN_KEYWORD_ASYNC))) {
+                                           check(parser, TOKEN_KEYWORD_FUNC) || check(parser, TOKEN_KEYWORD_ASYNC))) {
             parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
                            "Native structs permit only var fields");
             break;
@@ -1659,7 +1685,10 @@ static AstDeclarationNode *parse_enum(SyntaxParser *parser) {
     size_t name = consume(parser, TOKEN_IDENTIFIER);
     AstLifetimeParameter *lifetimes = NULL;
     AstGenericParameter *generics = parse_generic_parameters(parser, &lifetimes);
-    if (declaration) { declaration->generic_parameters = generics; declaration->lifetime_parameters = lifetimes; }
+    if (declaration) {
+        declaration->generic_parameters = generics;
+        declaration->lifetime_parameters = lifetimes;
+    }
     AstField *fields = NULL;
     AstField **field_tail = &fields;
     if (match(parser, TOKEN_LPAREN)) {
@@ -1812,9 +1841,15 @@ static AstDeclarationNode *parse_interface(SyntaxParser *parser) {
         int is_static = match(parser, TOKEN_KEYWORD_STATIC);
         unsigned mode = 0;
         if (match(parser, TOKEN_KEYWORD_MUT)) mode = 1;
-        else if (!strcmp(ast_program_lexeme(parser->program, parser->current), "once")) { mode = 2; parser->current++; }
+        else if (!strcmp(ast_program_lexeme(parser->program, parser->current), "once")) {
+            mode = 2;
+            parser->current++;
+        }
         AstDeclarationNode *method = parse_function(parser, is_static, interface);
-        if (method) { method->is_public = is_public; method->as.function.receiver_mode = mode; }
+        if (method) {
+            method->is_public = is_public;
+            method->as.function.receiver_mode = mode;
+        }
         *tail = method;
         if (method) tail = &method->next;
     }
@@ -1862,7 +1897,7 @@ static AstDeclarationNode *parse_extern(SyntaxParser *parser) {
     size_t library = AST_TOKEN_NONE;
     if (match(parser, TOKEN_KEYWORD_FROM)) {
         library = consume(parser, TOKEN_STRING_LITERAL);
-        const unsigned char *id = (const unsigned char *)ast_program_lexeme(parser->program, library);
+        const unsigned char *id = (const unsigned char *) ast_program_lexeme(parser->program, library);
         int valid = (*id >= 'A' && *id <= 'Z') || (*id >= 'a' && *id <= 'z') || *id == '_';
         for (size_t i = 1; valid && id[i]; i++)
             valid = (id[i] >= 'A' && id[i] <= 'Z') || (id[i] >= 'a' && id[i] <= 'z') ||
@@ -1892,24 +1927,29 @@ static AstDeclarationNode *parse_extern(SyntaxParser *parser) {
                 parser_failure(parser, ERR_PARSE_INVALID_DECLARATION, "Native pack/align requires 1, 2, 4, 8 or 16");
             if ((packing && pack) || (!packing && alignment))
                 parser_failure(parser, ERR_PARSE_INVALID_DECLARATION, "Duplicate native layout modifier");
-            if (packing) pack = (size_t)value; else alignment = (size_t)value;
+            if (packing) pack = (size_t) value;
+            else alignment = (size_t) value;
             (void) consume(parser, TOKEN_RPAREN);
         }
         if (check(parser, TOKEN_KEYWORD_FUNC)) {
-            if (pack || alignment) parser_failure(parser, ERR_PARSE_INVALID_DECLARATION, "Layout modifiers require native struct or union");
+            if (pack || alignment) parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
+                                                  "Layout modifiers require native struct or union");
             if (library == AST_TOKEN_NONE)
                 parser_failure(parser, ERR_PARSE_INVALID_DECLARATION, "Native imports require from library");
             else declaration = parse_function(parser, 0, AST_TOKEN_NONE);
-        } else if (check(parser, TOKEN_KEYWORD_STRUCT) || check(parser, TOKEN_KEYWORD_UNION)) declaration = parse_struct(parser);
-        else parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
-                            "Extern blocks permit only functions and native structs");
+        } else if (check(parser, TOKEN_KEYWORD_STRUCT) || check(parser, TOKEN_KEYWORD_UNION))
+            declaration = parse_struct(parser);
+        else
+            parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
+                           "Extern blocks permit only functions and native structs");
         if (declaration != NULL) {
             declaration->is_public = is_public;
             declaration->is_native = 1;
             declaration->native_pack = pack;
             declaration->native_alignment = alignment;
             if (declaration->is_opaque && (pack || alignment || declaration->is_native_union))
-                parser_failure(parser, ERR_PARSE_INVALID_DECLARATION, "Opaque native types require an unmodified struct declaration");
+                parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
+                               "Opaque native types require an unmodified struct declaration");
             declaration->native_abi_token = abi;
             declaration->native_library_token = declaration->kind == AST_DECL_FUNCTION ? library : AST_TOKEN_NONE;
             *tail = declaration;
@@ -1943,15 +1983,17 @@ static AstInterfaceBound *parse_auto_bounds(SyntaxParser *parser) {
 static AstAutoRule *parse_attributes(SyntaxParser *parser, int *no_default, int *must_consume) {
     AstAutoRule *head = NULL, **tail = &head;
     while (match(parser, TOKEN_AT)) {
-        (void)consume(parser, TOKEN_LBRACKET);
+        (void) consume(parser, TOKEN_LBRACKET);
         if (spelling(parser, "no_default")) {
-            if (*no_default) parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
-                                            "Duplicate no_default attribute");
+            if (*no_default)
+                parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
+                               "Duplicate no_default attribute");
             *no_default = 1;
             parser->current++;
-        } else if(spelling(parser,"must_consume")) {
-            if(*must_consume) parser_failure(parser,ERR_PARSE_INVALID_DECLARATION,"Duplicate must_consume attribute");
-            *must_consume=1;
+        } else if (spelling(parser, "must_consume")) {
+            if (*must_consume) parser_failure(parser, ERR_PARSE_INVALID_DECLARATION,
+                                              "Duplicate must_consume attribute");
+            *must_consume = 1;
             parser->current++;
         } else {
             AstAutoRule *rule = allocate(parser, sizeof(*rule));
@@ -1962,7 +2004,7 @@ static AstAutoRule *parse_attributes(SyntaxParser *parser, int *no_default, int 
                 do {
                     AstAutoCondition *condition = allocate(parser, sizeof(*condition));
                     AstType type = parse_type(parser);
-                    (void)consume(parser, TOKEN_COLON);
+                    (void) consume(parser, TOKEN_COLON);
                     AstInterfaceBound *bounds = parse_auto_bounds(parser);
                     if (condition) {
                         condition->type = type;
@@ -1979,7 +2021,7 @@ static AstAutoRule *parse_attributes(SyntaxParser *parser, int *no_default, int 
                 tail = &rule->next;
             }
         }
-        (void)consume(parser, TOKEN_RBRACKET);
+        (void) consume(parser, TOKEN_RBRACKET);
     }
     return head;
 }
@@ -2009,11 +2051,11 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
         AstAutoRule *rules = parse_attributes(&parser, &no_default, &must_consume);
         int is_public = match(&parser, TOKEN_KEYWORD_PUB);
         if (check(&parser, TOKEN_KEYWORD_EXTERN)) {
-            if (is_public) parser_failure(&parser, ERR_PARSE_INVALID_DECLARATION,
-                                         "Place pub on declarations inside the extern block");
+            if (is_public)
+                parser_failure(&parser, ERR_PARSE_INVALID_DECLARATION,
+                               "Place pub on declarations inside the extern block");
             declaration = parse_extern(&parser);
-        }
-        else if (check(&parser, TOKEN_KEYWORD_IMPORT)) declaration = parse_import(&parser);
+        } else if (check(&parser, TOKEN_KEYWORD_IMPORT)) declaration = parse_import(&parser);
         else if (check(&parser, TOKEN_KEYWORD_CONST)) declaration = parse_constant(&parser);
         else if (check(&parser, TOKEN_KEYWORD_VAR)) declaration = parse_constant(&parser);
         else if (check(&parser, TOKEN_KEYWORD_FUNC) || check(&parser, TOKEN_KEYWORD_ASYNC))
@@ -2027,8 +2069,7 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
                 declaration->is_native_export = 1;
                 declaration->native_abi_token = abi;
             }
-        }
-        else if (check(&parser, TOKEN_KEYWORD_STRUCT)) declaration = parse_struct(&parser);
+        } else if (check(&parser, TOKEN_KEYWORD_STRUCT)) declaration = parse_struct(&parser);
         else if (check(&parser, TOKEN_KEYWORD_ENUM)) declaration = parse_enum(&parser);
         else if (check(&parser, TOKEN_KEYWORD_INTERFACE)) declaration = parse_interface(&parser);
         else if (spelling(&parser, "auto")) {
@@ -2044,12 +2085,11 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
                                        "Auto interfaces cannot have members or type parameters");
                 }
             }
-        }
-        else if (spelling(&parser, "type")) {
+        } else if (spelling(&parser, "type")) {
             parser.current++;
             declaration = new_declaration(&parser, AST_DECL_TYPE_RULE, first);
             AstType target = parse_type(&parser);
-            (void)consume(&parser, TOKEN_SEMICOLON);
+            (void) consume(&parser, TOKEN_SEMICOLON);
             if (declaration) {
                 declaration->rule_target = target;
                 declaration->name_token = target.name_token;
@@ -2058,8 +2098,7 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
                                    "External type rules require auto attributes and a concrete target");
                 finish_declaration(&parser, declaration);
             }
-        }
-        else if (check(&parser, TOKEN_KEYWORD_PACKAGE))
+        } else if (check(&parser, TOKEN_KEYWORD_PACKAGE))
             parser_failure(&parser, ERR_PACKAGE_DECLARATION,
                            "Package declaration must appear exactly once, before all declarations");
         else if (check(&parser, TOKEN_HASH))
@@ -2071,7 +2110,7 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
         if (declaration && (rules || no_default || must_consume)) {
             if (declaration->kind != AST_DECL_STRUCT && declaration->kind != AST_DECL_ENUM &&
                 declaration->kind != AST_DECL_TYPE_RULE &&
-                !(declaration->kind==AST_DECL_INTERFACE && must_consume && !rules && !no_default))
+                !(declaration->kind == AST_DECL_INTERFACE && must_consume && !rules && !no_default))
                 parser_failure(&parser, ERR_PARSE_INVALID_DECLARATION,
                                "Type attributes require a struct, enum or external type rule");
             declaration->no_default = no_default;
@@ -2087,7 +2126,8 @@ int frontend_build_structured_ast_recover(AstProgram *program, int recover_synta
             while (!check(&parser, TOKEN_EOF)) {
                 TokenType token = current_type(&parser);
                 if (braces <= 0 && parser.current > first &&
-                    (token == TOKEN_KEYWORD_EXTERN || token == TOKEN_KEYWORD_EXPORT || token == TOKEN_KEYWORD_FUNC || token == TOKEN_KEYWORD_ASYNC ||
+                    (token == TOKEN_KEYWORD_EXTERN || token == TOKEN_KEYWORD_EXPORT || token == TOKEN_KEYWORD_FUNC ||
+                     token == TOKEN_KEYWORD_ASYNC ||
                      token == TOKEN_KEYWORD_STRUCT ||
                      token == TOKEN_KEYWORD_ENUM || token == TOKEN_KEYWORD_INTERFACE ||
                      token == TOKEN_KEYWORD_IMPORT || token == TOKEN_KEYWORD_CONST))

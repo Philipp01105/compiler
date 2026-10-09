@@ -35,14 +35,14 @@ static void semantic_error_at(Analyzer *analyzer, size_t token, size_t last_toke
 }
 
 void semantic_error(Analyzer *analyzer, size_t token, char category, int code,
-                           const char *message) {
+                    const char *message) {
     semantic_error_at(analyzer, token, token, category, code, message);
 }
 
 
 void semantic_duplicate(Analyzer *analyzer, size_t token,
-                               const AstProgram *previous_program, size_t previous_token,
-                               const char *message) {
+                        const AstProgram *previous_program, size_t previous_token,
+                        const char *message) {
     const AstToken *location = ast_program_token(analyzer->program, token);
     const AstToken *previous = ast_program_token(previous_program, previous_token);
     char detail[1024];
@@ -88,8 +88,8 @@ void diagnostic_append(DiagnosticText *text, const char *format, ...) {
 }
 
 void diagnostic_type(DiagnosticText *text, const Analyzer *analyzer,
-                            DataType primitive, size_t nominal, unsigned pointers,
-                            unsigned outer, int array, int slice, const char *length) {
+                     DataType primitive, size_t nominal, unsigned pointers,
+                     unsigned outer, int array, int slice, const char *length) {
     static const char *names[] = {DMM_TYPE_NAMES};
     for (unsigned i = 0; i < outer; i++) diagnostic_append(text, "*");
     if (outer != 0 && (array || slice)) diagnostic_append(text, "(");
@@ -125,7 +125,7 @@ static void diagnostic_ast_type(DiagnosticText *text, const Analyzer *analyzer,
     if (type->element_type != NULL) {
         for (unsigned i = 0;
              i < type->pointer_depth + type->outer_pointer_depth +
-                     (type->borrow_kind != AST_BORROW_NONE);
+             (type->borrow_kind != AST_BORROW_NONE);
              i++)
             diagnostic_append(text, "*");
         diagnostic_ast_type(text, analyzer, program, type->element_type);
@@ -185,14 +185,14 @@ static void diagnostic_ast_type(DiagnosticText *text, const Analyzer *analyzer,
                     resolve_named_symbol_id(
                         analyzer, program, named_type_token(program, type)),
                     type->pointer_depth +
-                        (type->borrow_kind != AST_BORROW_NONE),
+                    (type->borrow_kind != AST_BORROW_NONE),
                     type->outer_pointer_depth, type->is_array,
                     type->is_slice, length);
 }
 
 /* Preserve the rule text while showing every supplied operand's complete shape. */
 void operand_error(Analyzer *analyzer, const AstExpression *expression,
-                          char category, int code, const char *reason) {
+                   char category, int code, const char *reason) {
     DiagnosticText message = {0};
     diagnostic_append(&message, "%s; supplied types:", reason);
     const AstExpression *operands[2] = {expression->left, expression->right};
@@ -220,12 +220,13 @@ void operand_error(Analyzer *analyzer, const AstExpression *expression,
 }
 
 void conversion_error(Analyzer *analyzer, const AstExpression *value,
-                             const AstProgram *expected_program, const AstType *expected,
-                             const AstExpression *expected_value, const char *reason) {
+                      const AstProgram *expected_program, const AstType *expected,
+                      const AstExpression *expected_value, const char *reason) {
     // An unresolved value already has a name/type diagnostic; avoid a follow-up conversion error.
     if (value->resolved_type == TYPE_UNKNOWN && value->resolved_named_symbol_id == AST_SYMBOL_NONE &&
-          !(value->has_resolved_ast_type && (value->resolved_ast_type.kind == AST_TYPE_FUNCTION ||
-                                           value->resolved_ast_type.kind == AST_TYPE_FUTURE))) return;
+        !(value->has_resolved_ast_type && (value->resolved_ast_type.kind == AST_TYPE_FUNCTION ||
+                                           value->resolved_ast_type.kind == AST_TYPE_FUTURE)))
+        return;
     DiagnosticText message = {0};
     diagnostic_append(&message, "%s; got '", reason);
     const char *length = NULL;
@@ -235,12 +236,13 @@ void conversion_error(Analyzer *analyzer, const AstExpression *value,
     }
     if (value->has_resolved_ast_type &&
         (value->resolved_ast_type.element_type != NULL ||
-           value->resolved_ast_type.kind == AST_TYPE_FUNCTION ||
-           value->resolved_ast_type.kind == AST_TYPE_FUTURE))
+         value->resolved_ast_type.kind == AST_TYPE_FUNCTION ||
+         value->resolved_ast_type.kind == AST_TYPE_FUTURE))
         diagnostic_ast_type(
             &message, analyzer,
             value->resolved_type_program != NULL
-                ? value->resolved_type_program : analyzer->program,
+                ? value->resolved_type_program
+                : analyzer->program,
             &value->resolved_ast_type);
     else
         diagnostic_type(&message, analyzer, value->resolved_type,
@@ -291,7 +293,7 @@ void conversion_error(Analyzer *analyzer, const AstExpression *value,
 }
 
 void overload_error(Analyzer *analyzer, const AstExpression *call,
-                           const char *name, size_t owner, int is_static, int ambiguous) {
+                    const char *name, size_t owner, int is_static, int ambiguous) {
     DiagnosticText message = {0};
     diagnostic_append(&message, owner == AST_SYMBOL_NONE
                                     ? (ambiguous
@@ -315,7 +317,8 @@ void overload_error(Analyzer *analyzer, const AstExpression *call,
             diagnostic_ast_type(
                 &message, analyzer,
                 argument->resolved_type_program != NULL
-                    ? argument->resolved_type_program : analyzer->program,
+                    ? argument->resolved_type_program
+                    : analyzer->program,
                 &argument->resolved_ast_type);
         else
             diagnostic_type(&message, analyzer, argument->resolved_type,

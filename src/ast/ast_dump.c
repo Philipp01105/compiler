@@ -152,7 +152,8 @@ static int dump_type(FILE *output, const AstProgram *program, const AstType *typ
             if (parameter->next && fputc(',', output) == EOF) return 0;
         }
         if (fputs(") -> ", output) == EOF || type->function_return_type == NULL ||
-            !dump_type(output, program, type->function_return_type)) return 0;
+            !dump_type(output, program, type->function_return_type))
+            return 0;
     } else if (fputs(ast_program_lexeme(program, type->name_token), output) == EOF) return 0;
     if (type->arguments) {
         if (fputc('<', output) == EOF) return 0;
@@ -174,6 +175,7 @@ static int dump_type(FILE *output, const AstProgram *program, const AstType *typ
 
 static int dump_statement(FILE *, const AstProgram *, const AstStatement *, unsigned,
                           const char *);
+
 static int dump_expression(FILE *, const AstProgram *, const AstExpression *, unsigned,
                            const char *);
 
@@ -261,7 +263,7 @@ static int dump_statement(FILE *output, const AstProgram *program,
         (fputs(" operator=", output) == EOF ||
          !quoted(output, operator_name(statement->assignment_operator))))
         return 0;
-    if (statement->iterator_mode && fprintf(output," iterator=%u",statement->iterator_mode)<0) return 0;
+    if (statement->iterator_mode && fprintf(output, " iterator=%u", statement->iterator_mode) < 0) return 0;
     if (fputc('\n', output) == EOF) return 0;
     for (const AstMatchArm *a = statement->match_arms; a; a = a->next) {
         if (!indent(output, depth + 1) || fputs("pattern=", output) == EOF ||
@@ -312,23 +314,28 @@ static int dump_declaration(FILE *output, const AstProgram *program,
             output, declaration->span) ||
         !symbol_field(output, declaration->resolved_symbol_id))
         return 0;
-      if (declaration->name_token != AST_TOKEN_NONE &&
-          !token_field(output, program, "name", declaration->name_token))
-          return 0;
-      if (declaration->no_default && fputs(" no-default=1", output) == EOF) return 0;
-      if (declaration->is_auto_interface && fputs(" interface-kind=auto", output) == EOF) return 0;
+    if (declaration->name_token != AST_TOKEN_NONE &&
+        !token_field(output, program, "name", declaration->name_token))
+        return 0;
+    if (declaration->no_default && fputs(" no-default=1", output) == EOF) return 0;
+    if (declaration->is_auto_interface && fputs(" interface-kind=auto", output) == EOF) return 0;
     if (declaration->is_native_export &&
         (fputs(" native-export=1", output) == EOF ||
-         !token_field(output, program, "abi", declaration->native_abi_token))) return 0;
+         !token_field(output, program, "abi", declaration->native_abi_token)))
+        return 0;
     if (declaration->is_native) {
         if (fprintf(output, " union=%d pack=%zu align=%zu", declaration->is_native_union,
-                    declaration->native_pack, declaration->native_alignment) < 0) return 0;
+                    declaration->native_pack, declaration->native_alignment) < 0)
+            return 0;
         if (fprintf(output, " native=1 opaque=%d", declaration->is_opaque) < 0 ||
-            !token_field(output, program, "abi", declaration->native_abi_token)) return 0;
+            !token_field(output, program, "abi", declaration->native_abi_token))
+            return 0;
         if (declaration->native_library_token != AST_TOKEN_NONE &&
-            !token_field(output, program, "library", declaration->native_library_token)) return 0;
+            !token_field(output, program, "library", declaration->native_library_token))
+            return 0;
         if (declaration->kind == AST_DECL_FUNCTION &&
-            !token_field(output, program, "native-name", declaration->native_name_token)) return 0;
+            !token_field(output, program, "native-name", declaration->native_name_token))
+            return 0;
     }
     if (declaration->kind == AST_DECL_FUNCTION &&
         fprintf(output, " static=%d", declaration->as.function.is_static) < 0)
@@ -372,7 +379,8 @@ static int dump_declaration(FILE *output, const AstProgram *program,
     if (fputc('\n', output) == EOF) return 0;
     if (declaration->kind == AST_DECL_TYPE_RULE &&
         (!indent(output, depth + 1) || fputs("rule-target type=", output) == EOF ||
-         !dump_type(output, program, &declaration->rule_target) || fputc('\n', output) == EOF)) return 0;
+         !dump_type(output, program, &declaration->rule_target) || fputc('\n', output) == EOF))
+        return 0;
     for (const AstAutoRule *rule = declaration->auto_rules; rule; rule = rule->next) {
         if (!indent(output, depth + 1) || fputs("auto-rule interfaces=[", output) == EOF) return 0;
         for (const AstInterfaceBound *bound = rule->interfaces; bound; bound = bound->next) {
@@ -382,7 +390,8 @@ static int dump_declaration(FILE *output, const AstProgram *program,
         if (fputs("]\n", output) == EOF) return 0;
         for (const AstAutoCondition *condition = rule->conditions; condition; condition = condition->next) {
             if (!indent(output, depth + 2) || fputs("condition type=", output) == EOF ||
-                !dump_type(output, program, &condition->type)) return 0;
+                !dump_type(output, program, &condition->type))
+                return 0;
             for (const AstInterfaceBound *bound = condition->bounds; bound; bound = bound->next)
                 if (fputs(" bound=", output) == EOF || !dump_type(output, program, &bound->type)) return 0;
             if (fputc('\n', output) == EOF) return 0;
@@ -422,7 +431,8 @@ static int dump_declaration(FILE *output, const AstProgram *program,
                                        : NULL;
     for (const AstField *field = fields; field != NULL; field = field->next) {
         if (!indent(output, depth + 1) || fprintf(output, "member-visibility=%s\n",
-                                                  field->is_public ? "public" : "private") < 0) return 0;
+                                                  field->is_public ? "public" : "private") < 0)
+            return 0;
         if (!indent(output, depth + 1) || fputs("field name=", output) == EOF ||
             !quoted(output, ast_program_lexeme(program, field->name_token)) ||
             fputs(" type=", output) == EOF || !dump_type(output, program, &field->type) ||
@@ -450,7 +460,7 @@ static int dump_declaration(FILE *output, const AstProgram *program,
             for (const AstTypeArgument *p = value->payload_types; p; p = p->next)
                 if (!indent(output, depth + 2) || fputs("payload=", output) == EOF ||
                     !dump_type(output, program, &p->type) || fputc('\n', output) == EOF)
-                return 0;
+                    return 0;
         }
     if (declaration->kind == AST_DECL_ENUM)
         for (const AstDeclarationNode *method = declaration->as.enum_decl.methods;

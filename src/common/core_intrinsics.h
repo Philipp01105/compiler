@@ -40,16 +40,16 @@ static inline DataType core_value_type(CoreValueKind kind) {
     return kind == CORE_NEVER
                ? TYPE_NEVER
                : kind == CORE_BYTES
-               ? TYPE_U8
-               : kind == CORE_STRING
-                     ? TYPE_STRING
-                     : kind == CORE_SIZE
-                           ? TYPE_USIZE
-                           : kind == CORE_OFFSET
-                                 ? TYPE_ISIZE
-                                 : kind == CORE_INT
-                                       ? TYPE_INT
-                                       : TYPE_VOID;
+                     ? TYPE_U8
+                     : kind == CORE_STRING
+                           ? TYPE_STRING
+                           : kind == CORE_SIZE
+                                 ? TYPE_USIZE
+                                 : kind == CORE_OFFSET
+                                       ? TYPE_ISIZE
+                                       : kind == CORE_INT
+                                             ? TYPE_INT
+                                             : TYPE_VOID;
 }
 
 #endif

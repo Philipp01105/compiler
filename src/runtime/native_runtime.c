@@ -66,8 +66,8 @@ static void data_address(Runtime *r, const char *dst, const char *symbol) {
 }
 
 static X64Operand process_memory(const char *symbol) {
-    X64Operand value=x64_rip_memory(X64_WIDTH_QWORD,symbol,0);
-    value.has_symbol_suffix=0;
+    X64Operand value = x64_rip_memory(X64_WIDTH_QWORD, symbol, 0);
+    value.has_symbol_suffix = 0;
     return value;
 }
 
@@ -189,16 +189,20 @@ static void own_atomics(Runtime *r) {
     (void) native_define(r->object, r->function, 1, 1);
     mov(r, "r10", arg(r, 0));
     mov(r, "rax", arg(r, 1));
-    { const unsigned char xchg[] = {0x49, 0x87, 0x02};
-      (void) native_bytes(r->object, xchg, sizeof(xchg)); }
+    {
+        const unsigned char xchg[] = {0x49, 0x87, 0x02};
+        (void) native_bytes(r->object, xchg, sizeof(xchg));
+    }
     op0(r, X64_OP_RET);
 
     r->function = "__dmm_core_atomic_swap";
     (void) native_define(r->object, r->function, 1, 1);
     mov(r, "r10", arg(r, 0));
     mov(r, "rax", arg(r, 1));
-    { const unsigned char xchg[] = {0x49, 0x87, 0x02};
-      (void) native_bytes(r->object, xchg, sizeof(xchg)); }
+    {
+        const unsigned char xchg[] = {0x49, 0x87, 0x02};
+        (void) native_bytes(r->object, xchg, sizeof(xchg));
+    }
     op0(r, X64_OP_RET);
 
     r->function = "__dmm_core_atomic_compare_exchange";
@@ -206,8 +210,10 @@ static void own_atomics(Runtime *r) {
     mov(r, "r10", arg(r, 0));
     mov(r, "rax", arg(r, 1));
     mov(r, "r11", arg(r, 2));
-    { const unsigned char cmpxchg[] = {0xf0, 0x4d, 0x0f, 0xb1, 0x1a};
-      (void) native_bytes(r->object, cmpxchg, sizeof(cmpxchg)); }
+    {
+        const unsigned char cmpxchg[] = {0xf0, 0x4d, 0x0f, 0xb1, 0x1a};
+        (void) native_bytes(r->object, cmpxchg, sizeof(cmpxchg));
+    }
     op0(r, X64_OP_RET);
 }
 
@@ -482,10 +488,11 @@ int native_runtime_emit(NativeObject *object, TargetFormat target) {
 
 int native_runtime_emit_profile(NativeObject *object, TargetFormat target,
                                 RuntimeProfile profile, int main_returns_void) {
-    return native_runtime_emit_requirements(object,target,profile,main_returns_void,0);
+    return native_runtime_emit_requirements(object, target, profile, main_returns_void, 0);
 }
+
 int native_runtime_emit_requirements(NativeObject *object, TargetFormat target,
-                                RuntimeProfile profile, int main_returns_void, RuntimeRequirements requirements) {
+                                     RuntimeProfile profile, int main_returns_void, RuntimeRequirements requirements) {
     Runtime r = {object, target, NULL, profile};
     object->section = NATIVE_RODATA;
     const char *const names[] = {".Lnative_empty", ".Lnative_integer", ".Lnative_char"};
@@ -580,9 +587,9 @@ int native_runtime_emit_requirements(NativeObject *object, TargetFormat target,
         if (main_returns_void) imm(&r, "rax", 0);
         store(&r, "rax", 8);
         if (requirements & RUNTIME_REQUIRE_EXECUTOR) call(&r, "__dmm_async_default_drain");
-        if (requirements&RUNTIME_REQUIRE_NETWORK) call(&r,"__dmm_net_begin_draining");
+        if (requirements & RUNTIME_REQUIRE_NETWORK) call(&r, "__dmm_net_begin_draining");
         call(&r, "__dmm_package_cleanup");
-        if (requirements&RUNTIME_REQUIRE_NETWORK) call(&r,"__dmm_net_finish");
+        if (requirements & RUNTIME_REQUIRE_NETWORK) call(&r, "__dmm_net_finish");
         load(&r, "rax", 8);
         end(&r);
         /* The C driver supplies regular CRT startup; the compiler owns main. */
@@ -639,8 +646,8 @@ int native_runtime_emit_requirements(NativeObject *object, TargetFormat target,
 }
 
 static int platform_symbol(const char *name) {
-    if (!strncmp(name,"__dmm_net_",10)) return 1;
-    if (!strncmp(name,"__dmm_async_",12)) return 1;
+    if (!strncmp(name, "__dmm_net_", 10)) return 1;
+    if (!strncmp(name, "__dmm_async_", 12)) return 1;
     static const char *const symbols[] = {
         "__dmm_async_thread_create", "__dmm_async_thread_join",
         "__dmm_async_wait_create", "__dmm_async_wait", "__dmm_async_wake",
@@ -688,12 +695,15 @@ int native_runtime_assembly(FILE *output, TargetFormat target) {
 
 int native_runtime_assembly_profile(FILE *output, TargetFormat target,
                                     RuntimeProfile profile, int main_returns_void) {
-    return native_runtime_assembly_requirements(output,target,profile,main_returns_void,0);
+    return native_runtime_assembly_requirements(output, target, profile, main_returns_void, 0);
 }
+
 int native_runtime_assembly_requirements(FILE *output, TargetFormat target,
-                                    RuntimeProfile profile, int main_returns_void, RuntimeRequirements requirements) {
+                                         RuntimeProfile profile, int main_returns_void,
+                                         RuntimeRequirements requirements) {
     NativeObject object = {0};
-    if (!native_runtime_emit_requirements(&object, target, profile, main_returns_void, requirements) || !native_validate(&object)) {
+    if (!native_runtime_emit_requirements(&object, target, profile, main_returns_void, requirements) || !
+        native_validate(&object)) {
         native_object_free(&object);
         return 0;
     }

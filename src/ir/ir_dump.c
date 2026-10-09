@@ -31,7 +31,8 @@ static const char *opcode_name(IrOpcode opcode) {
         "binary", "call", "index", "subslice", "member", "slice-length", "cast", "alloc", "free",
         "return", "branch", "jump", "label", "phi", "enum-construct", "enum-is", "enum-payload", "trap", "slice",
         "slice-data", "array-literal", "drop", "move", "reinit", "free-slice-backing", "await", "executor",
-        "cancel-check", "cancel-await", "cancel-drop", "cancel-return", "native-copy", "struct-literal", "init", "destroy", "value-snapshot"
+        "cancel-check", "cancel-await", "cancel-drop", "cancel-return", "native-copy", "struct-literal", "init",
+        "destroy", "value-snapshot"
     };
     return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_VALUE_SNAPSHOT ? names[opcode] : "invalid";
 }
@@ -103,10 +104,11 @@ static int dump_types(FILE *output, const IrModule *module) {
                 break;
             case IR_TYPE_FUTURE:
             case IR_TYPE_JOIN:
-                if (fprintf(output, "%s output=@%zu pinned=1",type->kind==IR_TYPE_JOIN ? "join":"future", type->element_type) < 0) return 0;
+                if (fprintf(output, "%s output=@%zu pinned=1", type->kind == IR_TYPE_JOIN ? "join" : "future",
+                            type->element_type) < 0) return 0;
                 break;
             case IR_TYPE_EXECUTOR:
-                if (fputs("Executor",output)==EOF) return 0;
+                if (fputs("Executor", output) == EOF) return 0;
                 break;
             case IR_TYPE_FUNCTION: {
                 if (type->signature_id >= module->signature_count) return 0;
@@ -200,14 +202,17 @@ static int dump_aggregates(FILE *output, const IrModule *module) {
                 return 0;
         if (aggregate->is_native) {
             if (fprintf(output, "  native-layout union=%d pack=%zu explicit-align=%zu\n",
-                        aggregate->is_native_union, aggregate->native_pack, aggregate->native_alignment) < 0) return 0;
+                        aggregate->is_native_union, aggregate->native_pack, aggregate->native_alignment) < 0)
+                return 0;
             if (fprintf(output, "  native opaque=%d size=%zu alignment=%zu\n",
                         aggregate->is_opaque, aggregate->native_layout.size,
-                        aggregate->native_layout.alignment) < 0) return 0;
+                        aggregate->native_layout.alignment) < 0)
+                return 0;
             for (size_t f = 0; f < aggregate->field_count; f++)
                 if (fprintf(output, "  native-field #%zu offset=%zu array-stride=%zu\n", f,
                             aggregate->fields[f].native_offset,
-                            aggregate->fields[f].native_array_stride) < 0) return 0;
+                            aggregate->fields[f].native_array_stride) < 0)
+                    return 0;
         }
     }
     for (size_t i = 0; i < module->enum_count; i++) {
@@ -261,7 +266,8 @@ int ir_dump(FILE *output, const IrModule *module) {
     if (output == NULL || module == NULL || !ir_verify_module(module)) return 0;
     if (fputs("dmm-ir-v6\nmodule path=", output) == EOF ||
         !quoted(output, module->program->source_path) ||
-        fprintf(output, " verified=%d types=%zu functions=%zu structs=%zu enums=%zu imports=%zu native-imports=%zu target=%s\n",
+        fprintf(output,
+                " verified=%d types=%zu functions=%zu structs=%zu enums=%zu imports=%zu native-imports=%zu target=%s\n",
                 module->verified, module->type_count, module->function_count,
                 module->structure_count, module->enum_count, module->import_count,
                 module->native_import_count, module->target_format == TARGET_ELF ? "elf" : "coff") < 0 ||
@@ -277,11 +283,13 @@ int ir_dump(FILE *output, const IrModule *module) {
             !quoted(output, import->abi) || fputs(" library=", output) == EOF ||
             !quoted(output, import->library) || fputs(" name=", output) == EOF ||
             !quoted(output, import->native_name) ||
-            fprintf(output, " return=@%zu parameters=[", import->return_type_id) < 0) return 0;
+            fprintf(output, " return=@%zu parameters=[", import->return_type_id) < 0)
+            return 0;
         for (size_t p = 0; p < import->parameter_count; p++)
             if (fprintf(output, "%s@%zu", p ? "," : "", import->parameter_types[p]) < 0) return 0;
         if (fprintf(output, "] span=%d:%d-%d:%d\n", import->span.begin.line, import->span.begin.column,
-                    import->span.end.line, import->span.end.column) < 0) return 0;
+                    import->span.end.line, import->span.end.column) < 0)
+            return 0;
     }
     for (size_t g = 0; g < module->global_count; g++) {
         if (fprintf(output, "global #%zu symbol=%zu type=@%zu bits=%llu\n", g, module->globals[g].symbol_id,
@@ -308,9 +316,11 @@ int ir_dump_function(FILE *output, const IrModule *module, size_t function_index
                 function->instruction_count) < 0)
         return 0;
     if (function->is_async && fprintf(output,
-        "  async constructor=1 poll=1 cleanup=1 pinned=%d states=%zu future=@%zu send=%d sync=0\n",
-        function->async_frame_pinned, function->async_state_count, function->future_type_id,
-        (function->async_frame_properties & SEMANTIC_TYPE_SEND) != 0) < 0) return 0;
+                                      "  async constructor=1 poll=1 cleanup=1 pinned=%d states=%zu future=@%zu send=%d sync=0\n",
+                                      function->async_frame_pinned, function->async_state_count,
+                                      function->future_type_id,
+                                      (function->async_frame_properties & SEMANTIC_TYPE_SEND) != 0) < 0)
+        return 0;
 
     for (size_t p = 0; p < function->parameter_count; p++) {
         const IrParameter *parameter = &function->parameters[p];

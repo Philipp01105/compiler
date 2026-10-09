@@ -17,23 +17,28 @@ static size_t count_binary(const IrFunction *f, TokenType operator_type) {
     size_t result = 0;
     for (size_t i = 0; i < f->instruction_count; i++)
         if (f->instructions[i].opcode == IR_OP_BINARY &&
-            f->instructions[i].operator_type == operator_type) result++;
+            f->instructions[i].operator_type == operator_type)
+            result++;
     return result;
 }
 
 static IrFunction *named(IrModule *m, const char *name) {
     for (size_t i = 0; i < m->function_count; ++i)
-        if (!strcmp(ast_program_lexeme(m->functions[i].source_program, m->functions[i].name_token), name)) return &m->
-                functions[i];
+        if (!strcmp(ast_program_lexeme(m->functions[i].source_program, m->functions[i].name_token), name))
+            return &m->
+                    functions[i];
     return NULL;
 }
 
 static const IrInstruction *returned(IrFunction *f) {
     size_t value = IR_VALUE_NONE;
-    for (size_t i = 0; i < f->instruction_count; ++i) if (f->instructions[i].opcode == IR_OP_RETURN)
-        value = f->instructions[i].operand_a;
-    for (size_t i = 0; i < f->instruction_count; ++i) if (f->instructions[i].result == value) return &f->instructions[
-        i];
+    for (size_t i = 0; i < f->instruction_count; ++i)
+        if (f->instructions[i].opcode == IR_OP_RETURN)
+            value = f->instructions[i].operand_a;
+    for (size_t i = 0; i < f->instruction_count; ++i)
+        if (f->instructions[i].result == value)
+            return &f->instructions[
+                i];
     return NULL;
 }
 
@@ -81,7 +86,7 @@ int main(void) {
     AstOptimizationStats ast_stats = {0};
     ast_optimize_program(program, &ast_stats);
     CHECK(ast_stats.constant_branches >= 3 && ast_stats.constant_loops >= 1 && ast_stats.short_circuits >= 1 &&
-          ast_stats.unreachable_statements >= 1);
+        ast_stats.unreachable_statements >= 1);
     IrModule *m = ir_lower_program(program, semantics);
     CHECK(m && ir_verify_module(m));
     /* Exercise qword wraparound and the x86 signed division overflow trap
@@ -119,8 +124,8 @@ int main(void) {
     f = named(m, "shorted");
     CHECK(!count(f,IR_OP_CALL) && !count(f,IR_OP_PHI) && !count(f,IR_OP_BRANCH));
     CHECK(returned(f) && returned(f)->opcode == IR_OP_CONSTANT &&
-          (returned(f)->has_immediate ? returned(f)->immediate == 0 :
-           !strcmp(ast_program_lexeme(program, returned(f)->auxiliary_token), "false")));
+        (returned(f)->has_immediate ? returned(f)->immediate == 0 :
+            !strcmp(ast_program_lexeme(program, returned(f)->auxiliary_token), "false")));
     f = named(m, "address");
     CHECK(returned(f) && returned(f)->has_immediate);
     double value = 0;
@@ -140,20 +145,20 @@ int main(void) {
         stats.dead_instructions && stats.dead_stores && stats.branches_folded && stats.blocks_removed && stats.
         addresses_simplified);
     CHECK(stats.common_expressions && stats.loop_invariants_hoisted && stats.dead_functions &&
-          stats.bounds_checks_reused && stats.jumps_threaded);
+        stats.bounds_checks_reused && stats.jumps_threaded);
     CHECK(named(m,"unused_private") == NULL);
     CHECK(count_binary(named(m,"across"), TOKEN_STAR) == 1);
     CHECK(!count(named(m,"ast_branch"),IR_OP_BRANCH));
     CHECK(!count(named(m,"ast_loop"),IR_OP_BRANCH));
     CHECK(!count(named(m,"counted"),IR_OP_BRANCH));
     CHECK(returned(named(m,"counted")) && returned(named(m,"counted"))->has_immediate &&
-          returned(named(m,"counted"))->immediate == 4000);
+        returned(named(m,"counted"))->immediate == 4000);
     CHECK(ir_optimize_module(m,&stats));
     CHECK(!stats.constants_folded && !stats.constants_propagated && !stats.copies_propagated &&
         !stats.dead_instructions && !stats.dead_stores && !stats.branches_folded && !stats.blocks_removed && !stats.
         addresses_simplified);
     CHECK(!stats.common_expressions && !stats.bounds_checks_reused && !stats.jumps_threaded &&
-          !stats.loop_invariants_hoisted && !stats.dead_functions);
+        !stats.loop_invariants_hoisted && !stats.dead_functions);
     IrFunction *twice = named(m, "twice");
     CHECK(twice && count(twice, IR_OP_INDEX) >= 1);
     size_t checked_index = IR_VALUE_NONE;

@@ -426,8 +426,9 @@ static int analyze(Pass *p) {
                 if (block)
                     for (size_t e = g->blocks[block].predecessor; e != IR_VALUE_NONE; e = g->edges[e].next)
                         if (g->blocks[g->edges[e].block].reachable)
-                            for (size_t l = 0; l < locals; ++l) p->scratch[l] = meet(p->scratch[l],
-                                                                    p->outgoing[g->edges[e].block * locals + l]);
+                            for (size_t l = 0; l < locals; ++l)
+                                p->scratch[l] = meet(p->scratch[l],
+                                                     p->outgoing[g->edges[e].block * locals + l]);
                 for (size_t l = 0; l < locals; ++l) p->incoming[block * locals + l] = p->scratch[l];
                 for (size_t i = g->blocks[block].begin; i < g->blocks[block].end; ++i) {
                     const IrInstruction *in = &f->instructions[i];
@@ -549,7 +550,8 @@ static int pure(Pass *p, const IrInstruction *in) {
 }
 
 static int memory_effect(const IrInstruction *in) {
-    return in->opcode == IR_OP_STORE || in->opcode == IR_OP_INIT || in->opcode == IR_OP_DESTROY || in->opcode == IR_OP_DECLARE ||
+    return in->opcode == IR_OP_STORE || in->opcode == IR_OP_INIT || in->opcode == IR_OP_DESTROY || in->opcode ==
+           IR_OP_DECLARE ||
            in->opcode == IR_OP_DROP || in->opcode == IR_OP_MOVE ||
            in->opcode == IR_OP_REINIT || in->opcode == IR_OP_FREE_SLICE_BACKING ||
            in->opcode == IR_OP_AWAIT || in->opcode == IR_OP_EXECUTOR || in->opcode == IR_OP_CANCEL_CHECK ||
@@ -572,12 +574,14 @@ static size_t forwarded_label(const Pass *p, size_t label) {
     if (through->end != through->begin + 2) return label;
     const IrInstruction *jump = &p->function->instructions[through->begin + 1];
     if (jump->opcode != IR_OP_JUMP || jump->target_a == label ||
-        jump->target_a >= p->function->next_label) return label;
+        jump->target_a >= p->function->next_label)
+        return label;
     size_t destination = p->graph.labels[jump->target_a];
     if (destination == IR_VALUE_NONE) return label;
     const IrCfgBlock *target = &p->graph.blocks[destination];
     if (target->begin + 1 < target->end &&
-        p->function->instructions[target->begin + 1].opcode == IR_OP_PHI) return label;
+        p->function->instructions[target->begin + 1].opcode == IR_OP_PHI)
+        return label;
     return jump->target_a;
 }
 
@@ -681,48 +685,49 @@ static int rewrite(Pass *p, OptimizationPass pass) {
         }
     }
     /* Repeated address/read operations within a block and memory epoch. */
-    if (pass == PASS_ADDRESS_SIMPLIFICATION) for (size_t block = 0; block < p->graph.count; ++block) {
-        size_t begin = p->graph.blocks[block].begin;
-        if (!p->graph.blocks[block].reachable) continue;
-        for (size_t i = begin; i < p->graph.blocks[block].end; ++i) {
-            IrInstruction *in = &f->instructions[i];
-            if (p->remove[i]) continue;
-            if (memory_effect(in)) {
-                begin = i + 1;
-                continue;
-            }
-            if (in->result == IR_VALUE_NONE || p->protected_values[in->result]) continue;
-            if (in->opcode == IR_OP_UNARY && in->operator_type == TOKEN_STAR) {
-                const IrInstruction *address = definition(p, in->operand_b);
-                const IrInstruction *to = address && address->opcode == IR_OP_UNARY && address->operator_type ==
-                                          TOKEN_AMPERSAND
-                                              ? definition(p, address->operand_b)
-                                              : NULL;
-                if (to && to->opcode == IR_OP_LOAD && scalar(p->module, to->type_id) &&
-                    (to->type == TYPE_DOUBLE || to->type == TYPE_STRING || p->module->types[to->type_id].kind ==
-                     IR_TYPE_POINTER)) {
-                    in->opcode = IR_OP_LOAD;
-                    in->symbol_id = to->symbol_id;
-                    in->auxiliary_token = to->auxiliary_token;
-                    in->operand_b = IR_VALUE_NONE;
-                    p->stats->addresses_simplified++;
-                    changed = 1;
+    if (pass == PASS_ADDRESS_SIMPLIFICATION)
+        for (size_t block = 0; block < p->graph.count; ++block) {
+            size_t begin = p->graph.blocks[block].begin;
+            if (!p->graph.blocks[block].reachable) continue;
+            for (size_t i = begin; i < p->graph.blocks[block].end; ++i) {
+                IrInstruction *in = &f->instructions[i];
+                if (p->remove[i]) continue;
+                if (memory_effect(in)) {
+                    begin = i + 1;
+                    continue;
                 }
-            }
-            if (in->opcode != IR_OP_INDEX && in->opcode != IR_OP_MEMBER &&
-                !(in->opcode == IR_OP_UNARY && (in->operator_type == TOKEN_STAR || in->operator_type ==
-                                                TOKEN_AMPERSAND)))
-                continue;
-            for (size_t j = begin; j < i; ++j)
-                if (!p->remove[j] && same_read(in, &f->instructions[j])) {
-                    p->aliases[in->result] = resolve(p, f->instructions[j].result);
-                    p->remove[i] = 1;
-                    p->stats->addresses_simplified++;
-                    changed = 1;
-                    break;
+                if (in->result == IR_VALUE_NONE || p->protected_values[in->result]) continue;
+                if (in->opcode == IR_OP_UNARY && in->operator_type == TOKEN_STAR) {
+                    const IrInstruction *address = definition(p, in->operand_b);
+                    const IrInstruction *to = address && address->opcode == IR_OP_UNARY && address->operator_type ==
+                                              TOKEN_AMPERSAND
+                                                  ? definition(p, address->operand_b)
+                                                  : NULL;
+                    if (to && to->opcode == IR_OP_LOAD && scalar(p->module, to->type_id) &&
+                        (to->type == TYPE_DOUBLE || to->type == TYPE_STRING || p->module->types[to->type_id].kind ==
+                         IR_TYPE_POINTER)) {
+                        in->opcode = IR_OP_LOAD;
+                        in->symbol_id = to->symbol_id;
+                        in->auxiliary_token = to->auxiliary_token;
+                        in->operand_b = IR_VALUE_NONE;
+                        p->stats->addresses_simplified++;
+                        changed = 1;
+                    }
                 }
+                if (in->opcode != IR_OP_INDEX && in->opcode != IR_OP_MEMBER &&
+                    !(in->opcode == IR_OP_UNARY && (in->operator_type == TOKEN_STAR || in->operator_type ==
+                                                    TOKEN_AMPERSAND)))
+                    continue;
+                for (size_t j = begin; j < i; ++j)
+                    if (!p->remove[j] && same_read(in, &f->instructions[j])) {
+                        p->aliases[in->result] = resolve(p, f->instructions[j].result);
+                        p->remove[i] = 1;
+                        p->stats->addresses_simplified++;
+                        changed = 1;
+                        break;
+                    }
+            }
         }
-    }
     for (size_t i = 0; i < f->instruction_count; ++i)
         if (!p->remove[i]) {
             IrInstruction *in = &f->instructions[i];
@@ -830,10 +835,11 @@ static int dead_stores(Pass *p) {
             }
             if (locals) memcpy(output + b * locals, scratch, locals);
             transfer_live(p, b, scratch, 0);
-            for (size_t l = 0; l < locals; ++l) if (scratch[l] != input[b * locals + l]) {
-                input[b * locals + l] = scratch[l];
-                changed = 1;
-            }
+            for (size_t l = 0; l < locals; ++l)
+                if (scratch[l] != input[b * locals + l]) {
+                    input[b * locals + l] = scratch[l];
+                    changed = 1;
+                }
         }
     } while (changed);
     size_t before = p->stats->dead_stores;
@@ -876,7 +882,8 @@ static int compact(Pass *p) {
         if (f->instructions[i].opcode == IR_OP_LABEL) {
             size_t end = i + 1;
             while (end < n && (f->instructions[end].opcode == IR_OP_PHI || f->instructions[end].opcode ==
-                               IR_OP_CONSTANT)) ++end;
+                               IR_OP_CONSTANT))
+                ++end;
             size_t insertion = i + 1;
             for (size_t j = i + 1; j < end; ++j)
                 if (f->instructions[j].opcode == IR_OP_PHI) {
@@ -911,12 +918,13 @@ static int compact_ids(IrFunction *f) {
         if (in->result != IR_VALUE_NONE) in->result = values[in->result];
         if (in->operand_a != IR_VALUE_NONE) in->operand_a = values[in->operand_a];
         if (in->operand_b != IR_VALUE_NONE) in->operand_b = values[in->operand_b];
-        if (in->opcode == IR_OP_LABEL || in->opcode == IR_OP_JUMP || in->opcode == IR_OP_BRANCH || in->opcode==IR_OP_CANCEL_CHECK || in->opcode ==
+        if (in->opcode == IR_OP_LABEL || in->opcode == IR_OP_JUMP || in->opcode == IR_OP_BRANCH || in->opcode ==
+            IR_OP_CANCEL_CHECK || in->opcode ==
             IR_OP_PHI || in->opcode == IR_OP_ENUM_PAYLOAD) {
             in->target_a = labels[in->target_a];
             if (in->target_b != IR_VALUE_NONE) in->target_b = labels[in->target_b];
         }
-        if(in->opcode==IR_OP_AWAIT && in->target_b!=IR_VALUE_NONE) in->target_b=labels[in->target_b];
+        if (in->opcode == IR_OP_AWAIT && in->target_b != IR_VALUE_NONE) in->target_b = labels[in->target_b];
         if ((in->opcode == IR_OP_CALL || in->opcode == IR_OP_ENUM_CONSTRUCT ||
              in->opcode == IR_OP_ARRAY_LITERAL ||
              in->opcode == IR_OP_SUBSLICE) &&
@@ -924,13 +932,13 @@ static int compact_ids(IrFunction *f) {
             size_t old = in->first_argument;
             in->first_argument = na;
             for (size_t a = 0; a < in->argument_count; ++a) arguments[na++] = values[f->arguments[old + a]];
-        } else if (in->opcode==IR_OP_CALL || in->opcode==IR_OP_ENUM_CONSTRUCT ||
-                   in->opcode==IR_OP_ARRAY_LITERAL || in->opcode==IR_OP_SUBSLICE) {
-            in->first_argument=0;
+        } else if (in->opcode == IR_OP_CALL || in->opcode == IR_OP_ENUM_CONSTRUCT ||
+                   in->opcode == IR_OP_ARRAY_LITERAL || in->opcode == IR_OP_SUBSLICE) {
+            in->first_argument = 0;
         }
     }
     f->next_value = nv;
-    if(f->is_async) f->async_cancel_entry=labels[f->async_cancel_entry];
+    if (f->is_async) f->async_cancel_entry = labels[f->async_cancel_entry];
     f->next_label = nl;
     free(f->arguments);
     f->arguments = arguments;
@@ -994,13 +1002,18 @@ static uint64_t *block_dominators(const Pass *p) {
     if (words && count > SIZE_MAX / words / sizeof(uint64_t)) return NULL;
     uint64_t *dominators = calloc(count * words, sizeof(*dominators));
     uint64_t *scratch = malloc(words * sizeof(*scratch));
-    if (!dominators || !scratch) { free(dominators); free(scratch); return NULL; }
+    if (!dominators || !scratch) {
+        free(dominators);
+        free(scratch);
+        return NULL;
+    }
     for (size_t b = 0; b < count; b++) {
         if (!p->graph.blocks[b].reachable) continue;
         if (b == 0) dominators[0] = 1;
-        else for (size_t predecessor = 0; predecessor < count; predecessor++)
-            if (p->graph.blocks[predecessor].reachable)
-                dominators[b * words + predecessor / 64] |= UINT64_C(1) << (predecessor % 64);
+        else
+            for (size_t predecessor = 0; predecessor < count; predecessor++)
+                if (p->graph.blocks[predecessor].reachable)
+                    dominators[b * words + predecessor / 64] |= UINT64_C(1) << (predecessor % 64);
     }
     int updated;
     do {
@@ -1040,7 +1053,9 @@ static int common_expressions(Pass *p) {
     size_t *heads = malloc(n * sizeof(*heads));
     size_t *previous = malloc(n * sizeof(*previous));
     if (!dominators || !heads || !previous) {
-        free(dominators); free(heads); free(previous);
+        free(dominators);
+        free(heads);
+        free(previous);
         return -1;
     }
     for (size_t i = 0; i < n; i++) heads[i] = IR_VALUE_NONE;
@@ -1078,17 +1093,20 @@ static int common_expressions(Pass *p) {
             heads[bucket] = i;
         }
     }
-    if (changed) for (size_t i = 0; i < n; i++) {
-        if (p->remove[i]) continue;
-        IrInstruction *in = &function->instructions[i];
-        in->operand_a = resolve(p, in->operand_a);
-        in->operand_b = resolve(p, in->operand_b);
-        for (size_t a = 0; a < in->argument_count; a++) {
-            size_t *value = &function->arguments[in->first_argument + a];
-            *value = resolve(p, *value);
+    if (changed)
+        for (size_t i = 0; i < n; i++) {
+            if (p->remove[i]) continue;
+            IrInstruction *in = &function->instructions[i];
+            in->operand_a = resolve(p, in->operand_a);
+            in->operand_b = resolve(p, in->operand_b);
+            for (size_t a = 0; a < in->argument_count; a++) {
+                size_t *value = &function->arguments[in->first_argument + a];
+                *value = resolve(p, *value);
+            }
         }
-    }
-    free(dominators); free(heads); free(previous);
+    free(dominators);
+    free(heads);
+    free(previous);
     return changed;
 }
 
@@ -1110,7 +1128,8 @@ static int invariant_candidate(Pass *p, const IrInstruction *in) {
     if (in->opcode == IR_OP_LOAD) {
         if (in->symbol_id >= p->module->semantics->symbol_count ||
             p->module->semantics->symbols[in->symbol_id].kind != SEMANTIC_SYMBOL_PARAMETER ||
-            p->local_index[in->symbol_id] == IR_VALUE_NONE) return 0;
+            p->local_index[in->symbol_id] == IR_VALUE_NONE)
+            return 0;
         return !p->written_symbols[in->symbol_id];
     }
     if (in->opcode == IR_OP_UNARY)
@@ -1132,7 +1151,10 @@ static int hoist_loop_invariants(Pass *p) {
     unsigned char *members = calloc(blocks, 1), *hoist = calloc(n, 1);
     size_t *queue = malloc(blocks * sizeof(*queue));
     if (!dominators || !members || !hoist || !queue) {
-        free(dominators); free(members); free(hoist); free(queue);
+        free(dominators);
+        free(members);
+        free(hoist);
+        free(queue);
         return -1;
     }
     int changed = 0;
@@ -1141,12 +1163,16 @@ static int hoist_loop_invariants(Pass *p) {
         for (size_t edge_index = 0; edge_index < 2 && !changed; edge_index++) {
             size_t header = p->graph.blocks[latch].successor[edge_index];
             if (header == IR_VALUE_NONE || header > latch ||
-                !block_dominates(dominators, words, header, latch)) continue;
+                !block_dominates(dominators, words, header, latch))
+                continue;
             memset(members, 0, blocks);
             memset(hoist, 0, n);
             size_t end = 0;
             members[header] = 1;
-            if (header != latch) { members[latch] = 1; queue[end++] = latch; }
+            if (header != latch) {
+                members[latch] = 1;
+                queue[end++] = latch;
+            }
             for (size_t head = 0; head < end; head++) {
                 size_t block = queue[head];
                 for (size_t edge = p->graph.blocks[block].predecessor; edge != IR_VALUE_NONE;
@@ -1180,17 +1206,22 @@ static int hoist_loop_invariants(Pass *p) {
                     !loop_value_available(p, in->operand_a, members, hoist, dominators,
                                           words, preheader, insertion) ||
                     !loop_value_available(p, in->operand_b, members, hoist, dominators,
-                                          words, preheader, insertion)) continue;
+                                          words, preheader, insertion))
+                    continue;
                 hoist[i] = 1;
                 selected++;
             }
             if (!selected) continue;
             IrInstruction *ordered = malloc(n * sizeof(*ordered));
-            if (!ordered) { changed = -1; break; }
+            if (!ordered) {
+                changed = -1;
+                break;
+            }
             size_t output = 0;
             for (size_t i = 0; i <= n; i++) {
-                if (i == insertion) for (size_t j = 0; j < n; j++)
-                    if (hoist[j]) ordered[output++] = function->instructions[j];
+                if (i == insertion)
+                    for (size_t j = 0; j < n; j++)
+                        if (hoist[j]) ordered[output++] = function->instructions[j];
                 if (i < n && !hoist[i]) ordered[output++] = function->instructions[i];
             }
             free(function->instructions);
@@ -1200,7 +1231,10 @@ static int hoist_loop_invariants(Pass *p) {
             changed = 1;
         }
     }
-    free(dominators); free(members); free(hoist); free(queue);
+    free(dominators);
+    free(members);
+    free(hoist);
+    free(queue);
     return changed;
 }
 
@@ -1254,7 +1288,9 @@ static int remove_dead_functions(IrModule *module, IrOptimizationStats *stats) {
     size_t *queue = malloc(count * sizeof(*queue));
     unsigned char *live = calloc(count, 1);
     if ((symbols && !by_symbol) || (count && (!queue || !live))) {
-        free(by_symbol); free(queue); free(live);
+        free(by_symbol);
+        free(queue);
+        free(live);
         return 0;
     }
     for (size_t i = 0; i < symbols; i++) by_symbol[i] = IR_VALUE_NONE;
@@ -1268,19 +1304,21 @@ static int remove_dead_functions(IrModule *module, IrOptimizationStats *stats) {
                                            ? &module->semantics->symbols[function->symbol_id]
                                            : NULL;
         const AstDeclarationNode *declaration = symbol == NULL ? NULL : symbol->declaration;
-        int interface_closure_entry=0;
-        for(size_t owner=0;owner<symbols && !interface_closure_entry;owner++) {
-            const AstDeclarationNode *environment=module->semantics->symbols[owner].declaration;
-            if(environment && environment->closure_consuming_invoke &&
-               environment->closure_consuming_invoke==declaration) interface_closure_entry=1;
+        int interface_closure_entry = 0;
+        for (size_t owner = 0; owner < symbols && !interface_closure_entry; owner++) {
+            const AstDeclarationNode *environment = module->semantics->symbols[owner].declaration;
+            if (environment && environment->closure_consuming_invoke &&
+                environment->closure_consuming_invoke == declaration)
+                interface_closure_entry = 1;
         }
         const char *name = function->is_package_init
                                ? "__dmm_package_init"
                                : function->is_package_cleanup
                                      ? "__dmm_package_cleanup"
-                               : ast_program_lexeme(function->source_program,
-                                                    function->name_token);
-        if (function->is_package_init || function->is_package_cleanup || function->is_native_export || interface_closure_entry ||
+                                     : ast_program_lexeme(function->source_program,
+                                                          function->name_token);
+        if (function->is_package_init || function->is_package_cleanup || function->is_native_export ||
+            interface_closure_entry ||
             function->owner_symbol_id != AST_SYMBOL_NONE || !declaration || declaration->is_public ||
             !strcmp(name, "main")) {
             live[i] = 1;
@@ -1302,7 +1340,8 @@ static int remove_dead_functions(IrModule *module, IrOptimizationStats *stats) {
             const IrInstruction *in = &function->instructions[j];
             if ((in->opcode != IR_OP_CALL &&
                  in->opcode != IR_OP_FUNCTION_ADDRESS) ||
-                in->symbol_id >= symbols) continue;
+                in->symbol_id >= symbols)
+                continue;
             size_t callee = by_symbol[in->symbol_id];
             if (callee != IR_VALUE_NONE && !live[callee]) {
                 live[callee] = 1;
@@ -1322,7 +1361,9 @@ static int remove_dead_functions(IrModule *module, IrOptimizationStats *stats) {
         }
     }
     module->function_count = kept;
-    free(by_symbol); free(queue); free(live);
+    free(by_symbol);
+    free(queue);
+    free(live);
     return 1;
 }
 
@@ -1353,7 +1394,8 @@ int ir_optimize_module_traced(IrModule *module, IrOptimizationStats *stats, FILE
         if (module->functions[f].interface_thunk_symbol_id != AST_SYMBOL_NONE) {
             if (!compact_ids(&module->functions[f])) return 0;
             if (!trace_snapshot(trace, module, sequence++, f, iteration,
-                                "id-compaction", 1)) return 0;
+                                "id-compaction", 1))
+                return 0;
             continue;
         }
         int changed;

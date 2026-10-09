@@ -98,13 +98,13 @@ static int control_flow_regressions(void) {
 
 static int ownership_property_regressions(void) {
     const char *source =
-        "struct File { var handle:int; destructor {} }"
-        "struct Wrapper { var file:File; }"
-        "struct Box<T> { var value:T; }"
-        "var package_file:File;"
-        "var package_wrapper:Wrapper;"
-        "func main()->int { var copyable:Box<int>; var owned:Box<File>; "
-        "var moved=owned; owned=moved; return 0; }";
+            "struct File { var handle:int; destructor {} }"
+            "struct Wrapper { var file:File; }"
+            "struct Box<T> { var value:T; }"
+            "var package_file:File;"
+            "var package_wrapper:Wrapper;"
+            "func main()->int { var copyable:Box<int>; var owned:Box<File>; "
+            "var moved=owned; owned=moved; return 0; }";
     const FrontendOptions options = {0};
     AstProgram *program = test_parse_source(source, strlen(source),
                                             "ownership-properties.dmm", &options);
@@ -127,8 +127,9 @@ static int ownership_property_regressions(void) {
         } else if (origin != NULL && !strcmp(ast_program_lexeme(symbol->source_program,
                                                                 origin->name_token), "Box")) {
             if (properties & SEMANTIC_TYPE_MOVE_ONLY) saw_owned_box = properties & SEMANTIC_TYPE_NEEDS_DROP;
-            else saw_copyable_box = (properties & SEMANTIC_TYPE_COPYABLE) != 0 &&
-                                    (properties & SEMANTIC_TYPE_NEEDS_DROP) == 0;
+            else
+                saw_copyable_box = (properties & SEMANTIC_TYPE_COPYABLE) != 0 &&
+                                   (properties & SEMANTIC_TYPE_NEEDS_DROP) == 0;
         }
     }
     if (!saw_file || !saw_wrapper || !saw_copyable_box || !saw_owned_box)
@@ -139,7 +140,7 @@ static int ownership_property_regressions(void) {
         if (module->structures[i].has_explicit_destructor &&
             (module->structures[i].type_properties &
              (SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP)) ==
-                (SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP))
+            (SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP))
             saw_ir_drop_metadata = 1;
     int saw_drop_glue = 0, saw_package_init = 0, saw_package_cleanup = 0;
     int saw_drop = 0, saw_move = 0, saw_reinit = 0;
@@ -152,9 +153,9 @@ static int ownership_property_regressions(void) {
                                   function->instructions[0].opcode == IR_OP_DROP &&
                                   function->instructions[1].opcode == IR_OP_DROP &&
                                   function->instructions[0].symbol_id ==
-                                      module->globals[1].symbol_id &&
+                                  module->globals[1].symbol_id &&
                                   function->instructions[1].symbol_id ==
-                                      module->globals[0].symbol_id;
+                                  module->globals[0].symbol_id;
         }
         for (size_t i = 0; i < function->instruction_count; i++) {
             saw_drop |= function->instructions[i].opcode == IR_OP_DROP;
@@ -218,13 +219,13 @@ static int instruction_growth_regression(void) {
     char *source = malloc(65536);
     if (source == NULL) return 1;
     size_t used = (size_t) snprintf(source, 65536,
-        "enum Propagation<T,R> { Continue(T), Break(R) } "
-        "enum Outcome { Ok(int), Err(int); "
-        "static func branch(value:Self)->Propagation<int,int> { match(value) { "
-        "Ok(output)=>return Propagation<int,int>.Continue(output); "
-        "Err(error)=>return Propagation<int,int>.Break(error); } } "
-        "static func fromResidual(error:int)->Self { return Outcome.Err(error); } } "
-        "struct File { var handle:int; destructor {} } enum Files { ");
+                                    "enum Propagation<T,R> { Continue(T), Break(R) } "
+                                    "enum Outcome { Ok(int), Err(int); "
+                                    "static func branch(value:Self)->Propagation<int,int> { match(value) { "
+                                    "Ok(output)=>return Propagation<int,int>.Continue(output); "
+                                    "Err(error)=>return Propagation<int,int>.Break(error); } } "
+                                    "static func fromResidual(error:int)->Self { return Outcome.Err(error); } } "
+                                    "struct File { var handle:int; destructor {} } enum Files { ");
     /* Drop glue keeps its receiver across many emissions and growth boundaries. */
     for (int i = 0; i < 20; i++)
         used += (size_t) snprintf(source + used, 65536 - used, "V%d(File),", i);
@@ -233,22 +234,23 @@ static int instruction_growth_regression(void) {
        32-instruction allocation, then several larger allocations. */
     for (int i = 0; i < 64; i++) {
         used += (size_t) snprintf(source + used, 65536 - used,
-            "func step%d(input:Outcome)->Outcome { var padding:int=0;", i);
+                                  "func step%d(input:Outcome)->Outcome { var padding:int=0;", i);
         for (int j = 0; j < i; j++)
             used += (size_t) snprintf(source + used, 65536 - used, "padding+=1;");
         used += (size_t) snprintf(source + used, 65536 - used,
-            "var value=input?; var chosen=match(Outcome.Ok(value)) { "
-            "Ok(output)=>{output} Err(error)=>{error} }; return Outcome.Ok(chosen); }");
+                                  "var value=input?; var chosen=match(Outcome.Ok(value)) { "
+                                  "Ok(output)=>{output} Err(error)=>{error} }; return Outcome.Ok(chosen); }");
     }
     used += (size_t) snprintf(source + used, 65536 - used,
-        "func main()->int { var file:File; var files=Files.V0(file); "
-        "var moved=files; return 0; }");
+                              "func main()->int { var file:File; var files=Files.V0(file); "
+                              "var moved=files; return 0; }");
     const FrontendOptions options = {0};
     AstProgram *program = test_parse_source(source, used, "instruction-growth.dmm", &options);
     free(source);
     SemanticModel *semantics = program == NULL ? NULL : semantic_analyze(program);
     IrModule *module = semantics == NULL || semantics->error_count != 0
-        ? NULL : ir_lower_program(program, semantics);
+                           ? NULL
+                           : ir_lower_program(program, semantics);
     int failed = module == NULL || !ir_verify_module(module);
     size_t large_functions = 0;
     for (size_t i = 0; module != NULL && i < module->function_count; i++)
@@ -263,19 +265,22 @@ static int instruction_growth_regression(void) {
 
 static int generic_async_callee_regression(void) {
     const char *source =
-        "struct Box<T> { var value:T; } "
-        "func make<T>(value:T)->Box<T> { return Box<T>{value:value}; } "
-        "async func one()->int { return 1; } "
-        "async func invoke(callback:func()->Future<int>)->int { return callback().await(); } "
-        "async func build()->int { var box=make<int>(42); return box.value+invoke(one).await(); } "
-        "func main()->int { return block_on(build()); }";
+            "struct Box<T> { var value:T; } "
+            "func make<T>(value:T)->Box<T> { return Box<T>{value:value}; } "
+            "async func one()->int { return 1; } "
+            "async func invoke(callback:func()->Future<int>)->int { return callback().await(); } "
+            "async func build()->int { var box=make<int>(42); return box.value+invoke(one).await(); } "
+            "func main()->int { return block_on(build()); }";
     const FrontendOptions options = {0};
     AstProgram *program = test_parse_source(source, strlen(source),
                                             "generic-async-callee.dmm", &options);
     if (program != NULL) {
         DmmModule *module = ast_program_alloc(program, sizeof(*module));
         DmmFeature *feature = ast_program_alloc(program, sizeof(*feature));
-        if (module == NULL || feature == NULL) { ast_program_free(program); return 1; }
+        if (module == NULL || feature == NULL) {
+            ast_program_free(program);
+            return 1;
+        }
         feature->name = "async";
         module->features = feature;
         program->module = module;
@@ -307,20 +312,21 @@ static int unresolved_call_regression(void) {
 
 static int thread_type_property_regression(void) {
     const char *source =
-        "struct Safe { var value:int; }"
-        "struct Raw { var pointer:*int; }"
-        "struct Nested { var values:Safe[2]; }"
-        "struct NestedRaw { var value:Raw; }"
-        "interface Reading { func read() -> int; }"
-        "struct Dynamic { var value:Reading; }"
-        "func main() -> void { var a:Safe; var b:Raw; var c:Nested;"
-        "var d:NestedRaw; var e:Dynamic; }";
+            "struct Safe { var value:int; }"
+            "struct Raw { var pointer:*int; }"
+            "struct Nested { var values:Safe[2]; }"
+            "struct NestedRaw { var value:Raw; }"
+            "interface Reading { func read() -> int; }"
+            "struct Dynamic { var value:Reading; }"
+            "func main() -> void { var a:Safe; var b:Raw; var c:Nested;"
+            "var d:NestedRaw; var e:Dynamic; }";
     const FrontendOptions options = {0};
     AstProgram *program = test_parse_source(source, strlen(source),
                                             "thread-type-test.dmm", &options);
     SemanticModel *semantics = program == NULL ? NULL : semantic_analyze(program);
     IrModule *module = semantics != NULL && semantics->error_count == 0
-                           ? ir_lower_program(program, semantics) : NULL;
+                           ? ir_lower_program(program, semantics)
+                           : NULL;
     const char *names[] = {"Safe", "Raw", "Nested", "NestedRaw", "Dynamic"};
     int expected[] = {1, 0, 1, 0, 0};
     int failed = semantics == NULL || semantics->error_count != 0 ||
@@ -328,8 +334,7 @@ static int thread_type_property_regression(void) {
     for (size_t i = 0; !failed && i < sizeof(names) / sizeof(names[0]); i++) {
         const SemanticSymbol *symbol = semantic_find_global(
             semantics, names[i], SEMANTIC_SYMBOL_STRUCT);
-        unsigned properties = symbol == NULL ? 0 :
-            semantic_symbol_type_properties(semantics, symbol->id);
+        unsigned properties = symbol == NULL ? 0 : semantic_symbol_type_properties(semantics, symbol->id);
         int thread_safe = (properties & (SEMANTIC_TYPE_SEND | SEMANTIC_TYPE_SYNC)) ==
                           (SEMANTIC_TYPE_SEND | SEMANTIC_TYPE_SYNC);
         int ir_thread_safe = 0;

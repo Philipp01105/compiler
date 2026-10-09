@@ -43,7 +43,7 @@ const DmmPackage *lookup_package(const AstProgram *file, const char **name) {
 }
 
 static uintptr_t scope_identity(const AstProgram *program) {
-    return (uintptr_t) (program->package ? (const void *) program->package : (const void *) program);
+    return (uintptr_t)(program->package ? (const void *) program->package : (const void *) program);
 }
 
 static uint64_t symbol_hash(const char *name, SemanticSymbolKind kind, uintptr_t scope) {
@@ -65,7 +65,8 @@ const char *symbol_name(const SemanticSymbol *symbol) {
 
 int symbol_matches_scope(const AstProgram *file, const SemanticSymbol *symbol, const char *name) {
     if (symbol->declaration && symbol->declaration->is_async_builtin &&
-        symbol->owner_symbol_id == AST_SYMBOL_NONE && !strcmp(name, symbol_name(symbol))) return 1;
+        symbol->owner_symbol_id == AST_SYMBOL_NONE && !strcmp(name, symbol_name(symbol)))
+        return 1;
     const char *plain = name;
     const DmmPackage *package = lookup_package(file, &plain);
     if ((package != NULL
@@ -113,8 +114,8 @@ static int grow_symbol_index(SemanticModel *model) {
 
 void semantic_reindex_symbols(SemanticModel *model) {
     if (!model->symbol_index_capacity) return;
-    memset(model->symbol_index,0,model->symbol_index_capacity*sizeof(*model->symbol_index));
-    for(size_t i=0;i<model->symbol_count;i++) (void)index_symbol(model,i);
+    memset(model->symbol_index, 0, model->symbol_index_capacity * sizeof(*model->symbol_index));
+    for (size_t i = 0; i < model->symbol_count; i++) (void) index_symbol(model, i);
 }
 
 int semantic_append_symbol(SemanticModel *model, SemanticSymbol symbol) {
@@ -140,7 +141,7 @@ unsigned semantic_symbol_type_properties(const SemanticModel *model,
     const SemanticSymbol *symbol = &model->symbols[type_symbol_id];
     if (symbol->kind == SEMANTIC_SYMBOL_INTERFACE)
         return SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP |
-            ((symbol->declaration && symbol->declaration->must_consume) ? SEMANTIC_TYPE_MUST_CONSUME : 0u);
+               ((symbol->declaration && symbol->declaration->must_consume) ? SEMANTIC_TYPE_MUST_CONSUME : 0u);
     if (symbol->kind != SEMANTIC_SYMBOL_STRUCT &&
         symbol->kind != SEMANTIC_SYMBOL_ENUM)
         return SEMANTIC_TYPE_COPYABLE;
@@ -151,12 +152,13 @@ static const SemanticSymbol *indexed_find(const SemanticModel *model, const AstP
                                           const DmmPackage *package, const char *name, SemanticSymbolKind kind) {
     if (model->symbol_index_capacity == 0) return NULL;
     size_t mask = model->symbol_index_capacity - 1U;
-    uintptr_t scope = (uintptr_t) (package != NULL ? (const void *) package : (const void *) file);
+    uintptr_t scope = (uintptr_t)(package != NULL ? (const void *) package : (const void *) file);
     size_t slot = (size_t) symbol_hash(name, kind, scope) & mask;
     while (model->symbol_index[slot] != 0) {
         const SemanticSymbol *symbol = &model->symbols[model->symbol_index[slot] - 1U];
-        int same_scope = package != NULL ? symbol->source_program->package == package
-                                         : same_package(file, symbol->source_program);
+        int same_scope = package != NULL
+                             ? symbol->source_program->package == package
+                             : same_package(file, symbol->source_program);
         if (symbol->kind == kind && same_scope &&
             same_name(symbol->source_program, symbol->name_token, name))
             return symbol;
@@ -214,20 +216,23 @@ void validate_package_reexports(Analyzer *analyzer) {
             if (exported->owner_symbol_id != AST_SYMBOL_NONE || !exported->declaration ||
                 exported->declaration->generic_origin || !exported->declaration->is_public ||
                 exported->source_program->package == package ||
-                !ast_package_reexports(package, exported->source_program->package)) continue;
+                !ast_package_reexports(package, exported->source_program->package))
+                continue;
             for (size_t j = 0; j < analyzer->model->symbol_count; j++) {
                 const SemanticSymbol *other = &analyzer->model->symbols[j];
                 if (other->owner_symbol_id != AST_SYMBOL_NONE || !other->declaration ||
                     other->declaration->generic_origin ||
                     other->source_program->package == exported->source_program->package ||
-                    strcmp(symbol_name(other), symbol_name(exported))) continue;
+                    strcmp(symbol_name(other), symbol_name(exported)))
+                    continue;
                 if (other->source_program->package != package &&
                     (!other->declaration->is_public || !ast_package_reexports(package, other->source_program->package)))
                     continue;
                 char message[640];
                 snprintf(message, sizeof(message), "Public reexport name '%s' conflicts with another declaration",
                          symbol_name(exported));
-                semantic_error(analyzer, AST_TOKEN_NONE, ERROR_CATEGORY_SEMANTIC, ERR_SEM_DUPLICATE_DEFINITION, message);
+                semantic_error(analyzer, AST_TOKEN_NONE, ERROR_CATEGORY_SEMANTIC, ERR_SEM_DUPLICATE_DEFINITION,
+                               message);
                 break;
             }
         }
@@ -303,9 +308,11 @@ int semantic_dump(FILE *output, const SemanticModel *model) {
                     symbol->resolved_is_array, symbol->resolved_is_slice,
                     symbol->declaration != NULL,
                     (symbol->type_properties & SEMANTIC_TYPE_MOVE_ONLY)
-                        ? "MOVE_ONLY" : "COPYABLE",
+                        ? "MOVE_ONLY"
+                        : "COPYABLE",
                     (symbol->type_properties & SEMANTIC_TYPE_NEEDS_DROP)
-                        ? "|NEEDS_DROP" : "") < 0)
+                        ? "|NEEDS_DROP"
+                        : "") < 0)
             return 0;
     }
     return !ferror(output);

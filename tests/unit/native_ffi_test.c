@@ -6,27 +6,35 @@
 #include <stdio.h>
 #include <string.h>
 
-typedef struct { unsigned char tag; unsigned int count; unsigned char bytes[3]; } Reference;
-typedef struct { Reference values[2]; double weight; } NestedReference;
+typedef struct {
+    unsigned char tag;
+    unsigned int count;
+    unsigned char bytes[3];
+} Reference;
+
+typedef struct {
+    Reference values[2];
+    double weight;
+} NestedReference;
 
 static int check_target(TargetFormat target) {
     const char *source =
-        "const byteCount:usize = 3;"
-        "extern \"system\" {"
-        "pub struct Handle;"
-        "pub struct Record { pub var tag:u8; pub var count:u32; pub var bytes:u8[byteCount]; }"
-        "pub struct Nested { pub var values:Record[2]; pub var weight:double; }"
-        "struct Recursive { var next:*Recursive; }"
-        "}"
-        "extern \"system\" from \"ffi_test\" {"
-        "pub func transform(value:Nested, handle:*Handle) -> Nested = \"native_transform\";"
-        "func close(handle:*Handle) -> void;"
-        "}"
-        "const recordSize:usize = sizeof(Record);"
-        "const recordAlign:usize = alignof(Record);"
-        "const nestedSize:usize = sizeof(Nested);"
-        "func main() -> int { var value:Nested; var handle:*Handle;"
-        "var result = transform(value, handle); close(handle); return 0; }";
+            "const byteCount:usize = 3;"
+            "extern \"system\" {"
+            "pub struct Handle;"
+            "pub struct Record { pub var tag:u8; pub var count:u32; pub var bytes:u8[byteCount]; }"
+            "pub struct Nested { pub var values:Record[2]; pub var weight:double; }"
+            "struct Recursive { var next:*Recursive; }"
+            "}"
+            "extern \"system\" from \"ffi_test\" {"
+            "pub func transform(value:Nested, handle:*Handle) -> Nested = \"native_transform\";"
+            "func close(handle:*Handle) -> void;"
+            "}"
+            "const recordSize:usize = sizeof(Record);"
+            "const recordAlign:usize = alignof(Record);"
+            "const nestedSize:usize = sizeof(Nested);"
+            "func main() -> int { var value:Nested; var handle:*Handle;"
+            "var result = transform(value, handle); close(handle); return 0; }";
     FrontendOptions options = {0};
     AstProgram *program = test_parse_source(source, strlen(source), "ffi-test.dmm", &options);
     SemanticModel *semantics = semantic_analyze_target(program, target);
@@ -34,21 +42,21 @@ static int check_target(TargetFormat target) {
     int failed = !module || !ast_validate_program(program);
     if (module) {
         failed |= module->native_import_count != 2 || module->function_count != 3 ||
-                  module->structure_count != 4 || module->target_format != target;
+                module->structure_count != 4 || module->target_format != target;
         for (size_t f = 0; f < module->function_count; f++)
             if (ir_native_import(module, module->functions[f].symbol_id)) failed = 1;
         IrAggregate *record = &module->structures[1];
         IrAggregate *nested = &module->structures[2];
         failed |= record->native_layout.size != sizeof(Reference) ||
-                  record->native_layout.alignment != _Alignof(Reference) ||
-                  record->fields[1].native_offset != offsetof(Reference, count) ||
-                  record->fields[2].native_offset != offsetof(Reference, bytes) ||
-                  record->fields[2].native_array_stride != 1 ||
-                  nested->native_layout.size != sizeof(NestedReference) ||
-                  nested->fields[0].native_array_stride != sizeof(Reference) ||
-                  nested->fields[1].native_offset != offsetof(NestedReference, weight) ||
-                  !(record->type_properties & SEMANTIC_TYPE_COPYABLE) ||
-                  (record->type_properties & SEMANTIC_TYPE_NEEDS_DROP);
+                record->native_layout.alignment != _Alignof(Reference) ||
+                record->fields[1].native_offset != offsetof(Reference, count) ||
+                record->fields[2].native_offset != offsetof(Reference, bytes) ||
+                record->fields[2].native_array_stride != 1 ||
+                nested->native_layout.size != sizeof(NestedReference) ||
+                nested->fields[0].native_array_stride != sizeof(Reference) ||
+                nested->fields[1].native_offset != offsetof(NestedReference, weight) ||
+                !(record->type_properties & SEMANTIC_TYPE_COPYABLE) ||
+                (record->type_properties & SEMANTIC_TYPE_NEEDS_DROP);
         for (const AstDeclarationNode *d = program->root; d; d = d->next) {
             if (d->kind == AST_DECL_STRUCT && d->native_library_token != AST_TOKEN_NONE) failed = 1;
             if (d->kind == AST_DECL_FUNCTION && d->is_native && d->as.function.body) failed = 1;
@@ -98,10 +106,10 @@ static int check_target(TargetFormat target) {
     }
     if (failed) {
         fprintf(stderr, "Native frontend/layout/IR test failed for target %d (parsed=%d errors=%zu module=%d)\n",
-                (int)target, program ? program->structured_ast_complete : 0,
+                (int) target, program ? program->structured_ast_complete : 0,
                 semantics ? semantics->error_count : 0, module != NULL);
         error_handler_flush(global_error_handler);
-        if (module) (void)ir_dump(stderr, module);
+        if (module) (void) ir_dump(stderr, module);
     }
     ir_module_free(module);
     semantic_model_free(semantics);

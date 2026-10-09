@@ -1,4 +1,5 @@
 #include "sensor.h"
+
 int sensor_analyze(const double *samples, size_t count, SensorStats *output) {
     if (!samples || !output || count == 0) return -1;
     double first = sensor_calibrate(samples[0]);
@@ -9,7 +10,7 @@ int sensor_analyze(const double *samples, size_t count, SensorStats *output) {
         if (value > result.maximum) result.maximum = value;
         result.mean += value;
     }
-    result.mean /= (double)count;
+    result.mean /= (double) count;
     *output = result;
     return 0;
 }

@@ -16,5 +16,5 @@ typedef struct {
 int ir_optimize_module(IrModule * module, IrOptimizationStats * stats);
 
 /* Writes a validated snapshot after every pass type and fixed-point iteration. */
-int ir_optimize_module_traced(IrModule *module, IrOptimizationStats *stats, FILE *trace);
+int ir_optimize_module_traced(IrModule * module, IrOptimizationStats * stats, FILE * trace);
 #endif

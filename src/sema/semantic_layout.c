@@ -11,19 +11,24 @@
 static int native_layout_depth(const SemanticModel *model, const AstProgram *program,
                                const AstType *type, NativeTypeLayout *layout, size_t depth) {
     if (!model || !program || !type || depth > model->symbol_count + 64 ||
-        type->borrow_kind != AST_BORROW_NONE) return 0;
+        type->borrow_kind != AST_BORROW_NONE)
+        return 0;
     if (type->outer_pointer_depth ||
         (type->pointer_depth && !type->is_array && !type->is_slice)) {
-        *layout = (NativeTypeLayout){8, 8};
+        *layout = (NativeTypeLayout)
+        {
+            8, 8
+        };
         return 1;
     }
     if (type->is_array && type->kind == AST_TYPE_FUNCTION) {
         AstType element = ast_type_element(type);
         size_t length = type->resolved_array_length;
         if (!length && type->array_length_token < program->token_count)
-            length = (size_t)strtoull(ast_program_lexeme(program, type->array_length_token), NULL, 10);
+            length = (size_t) strtoull(ast_program_lexeme(program, type->array_length_token), NULL, 10);
         if (!length || !native_layout_depth(model, program, &element, layout, depth + 1) ||
-            length > SIZE_MAX / layout->size) return 0;
+            length > SIZE_MAX / layout->size)
+            return 0;
         layout->size *= length;
         return 1;
     }
@@ -32,14 +37,20 @@ static int native_layout_depth(const SemanticModel *model, const AstProgram *pro
         for (const AstTypeArgument *p = type->function_parameters; p; p = p->next) {
             NativeTypeLayout ignored;
             if (p->type.borrow_kind != AST_BORROW_NONE || p->type.is_array || p->type.is_slice ||
-                !native_layout_depth(model, program, &p->type, &ignored, depth + 1)) return 0;
+                !native_layout_depth(model, program, &p->type, &ignored, depth + 1))
+                return 0;
         }
         const AstType *result = type->function_return_type;
         NativeTypeLayout ignored;
         if (!result || result->borrow_kind != AST_BORROW_NONE || result->is_array || result->is_slice ||
             (!native_layout_depth(model, program, result, &ignored, depth + 1) &&
-             !(result->kind == AST_TYPE_NAMED && !result->pointer_depth && primitive_type(program, result) == TYPE_VOID))) return 0;
-        *layout = (NativeTypeLayout){8, 8};
+             !(result->kind == AST_TYPE_NAMED && !result->pointer_depth && primitive_type(program, result) ==
+               TYPE_VOID)))
+            return 0;
+        *layout = (NativeTypeLayout)
+        {
+            8, 8
+        };
         return 1;
     }
     if (type->is_slice || type->kind != AST_TYPE_NAMED || type->arguments) return 0;
@@ -48,9 +59,10 @@ static int native_layout_depth(const SemanticModel *model, const AstProgram *pro
         size_t length = type->resolved_array_length;
         if (!length && type->array_length_token < program->token_count &&
             program->tokens[type->array_length_token].type == TOKEN_NUMBER)
-            length = (size_t)strtoull(ast_program_lexeme(program, type->array_length_token), NULL, 10);
+            length = (size_t) strtoull(ast_program_lexeme(program, type->array_length_token), NULL, 10);
         if (!length || !native_layout_depth(model, program, &element, layout, depth + 1) ||
-            length > SIZE_MAX / layout->size) return 0;
+            length > SIZE_MAX / layout->size)
+            return 0;
         layout->size *= length;
         return 1;
     }
@@ -58,11 +70,14 @@ static int native_layout_depth(const SemanticModel *model, const AstProgram *pro
     if (data_type_fixed_integer(primitive) || primitive == TYPE_BIT ||
         primitive == TYPE_FLOAT || primitive == TYPE_DOUBLE) {
         size_t size = data_type_bytes(primitive);
-        *layout = (NativeTypeLayout){size, size};
+        *layout = (NativeTypeLayout)
+        {
+            size, size
+        };
         return 1;
     }
     if (primitive != TYPE_UNKNOWN) return 0;
-    Analyzer lookup = {.model = (SemanticModel *)model, .program = (AstProgram *)program};
+    Analyzer lookup = {.model = (SemanticModel *) model, .program = (AstProgram *) program};
     size_t id = resolve_named_symbol_id(&lookup, program, type->name_token);
     if (id >= model->symbol_count) return 0;
     const SemanticSymbol *symbol = &model->symbols[id];
@@ -73,18 +88,21 @@ static int native_layout_depth(const SemanticModel *model, const AstProgram *pro
     for (const AstField *field = decl->as.struct_decl.fields; field; field = field->next) {
         NativeTypeLayout child;
         if (!native_layout_depth(model, symbol->source_program, &field->type, &child, depth + 1) ||
-            size > SIZE_MAX - (child.alignment - 1)) return 0;
+            size > SIZE_MAX - (child.alignment - 1))
+            return 0;
         if (decl->native_pack && child.alignment > decl->native_pack) child.alignment = decl->native_pack;
         if (!decl->is_native_union) size = (size + child.alignment - 1) & ~(child.alignment - 1);
         if (child.size > SIZE_MAX - size) return 0;
-        if (decl->is_native_union) { if (child.size > size) size = child.size; }
-        else size += child.size;
+        if (decl->is_native_union) { if (child.size > size) size = child.size; } else size += child.size;
         if (child.alignment > alignment) alignment = child.alignment;
     }
     if (decl->native_alignment > alignment) alignment = decl->native_alignment;
     /* Empty C structs are an extension with incompatible compiler layouts. */
     if (!size || size > SIZE_MAX - (alignment - 1)) return 0;
-    *layout = (NativeTypeLayout){(size + alignment - 1) & ~(alignment - 1), alignment};
+    *layout = (NativeTypeLayout)
+    {
+        (size + alignment - 1) & ~(alignment - 1), alignment
+    };
     return 1;
 }
 
@@ -104,10 +122,14 @@ int semantic_native_field_offset(const SemanticModel *model, size_t symbol_id,
     for (const AstField *field = decl->as.struct_decl.fields; field; field = field->next, index++) {
         NativeTypeLayout child;
         if (!semantic_native_layout(model, symbol->source_program, &field->type, &child) ||
-            size > SIZE_MAX - (child.alignment - 1)) return 0;
+            size > SIZE_MAX - (child.alignment - 1))
+            return 0;
         if (decl->native_pack && child.alignment > decl->native_pack) child.alignment = decl->native_pack;
         size = (size + child.alignment - 1) & ~(child.alignment - 1);
-        if (index == field_index) { *offset = decl->is_native_union ? 0 : size; return 1; }
+        if (index == field_index) {
+            *offset = decl->is_native_union ? 0 : size;
+            return 1;
+        }
         if (child.size > SIZE_MAX - size) return 0;
         size += child.size;
     }
@@ -121,15 +143,16 @@ static int native_signature_type(Analyzer *analyzer, const AstType *type, int re
     if (type->is_array || type->is_slice) return 0;
     if (type->pointer_depth) return 1;
     if (result && type->kind == AST_TYPE_NAMED && !type->arguments &&
-        primitive_type(analyzer->program, type) == TYPE_VOID) return 1;
+        primitive_type(analyzer->program, type) == TYPE_VOID)
+        return 1;
     NativeTypeLayout layout;
     return semantic_native_layout(analyzer->model, analyzer->program, type, &layout);
 }
 
 static int native_identifier(const char *name, int library) {
-    if (!name || (!isalpha((unsigned char)*name) && *name != '_')) return 0;
+    if (!name || (!isalpha((unsigned char) *name) && *name != '_')) return 0;
     for (name++; *name; name++)
-        if (!isalnum((unsigned char)*name) && *name != '_' && !(library && *name == '-')) return 0;
+        if (!isalnum((unsigned char) *name) && *name != '_' && !(library && *name == '-')) return 0;
     return 1;
 }
 
@@ -159,8 +182,9 @@ void validate_native_declarations(Analyzer *analyzer) {
         const SemanticSymbol *symbol = &analyzer->model->symbols[i];
         const AstDeclarationNode *decl = symbol->declaration;
         if (!decl || (!decl->is_native && !decl->is_native_export) ||
-            (symbol->kind != SEMANTIC_SYMBOL_STRUCT && symbol->kind != SEMANTIC_SYMBOL_FUNCTION)) continue;
-        analyzer->program = (AstProgram *)symbol->source_program;
+            (symbol->kind != SEMANTIC_SYMBOL_STRUCT && symbol->kind != SEMANTIC_SYMBOL_FUNCTION))
+            continue;
+        analyzer->program = (AstProgram *) symbol->source_program;
         if (symbol->kind == SEMANTIC_SYMBOL_STRUCT) {
             if (decl->is_opaque) continue;
             for (const AstField *field = decl->as.struct_decl.fields; field; field = field->next) {
@@ -174,9 +198,12 @@ void validate_native_declarations(Analyzer *analyzer) {
             NativeTypeLayout layout;
             if (!semantic_native_layout(analyzer->model, analyzer->program, &type, &layout))
                 semantic_error(analyzer, decl->name_token, ERROR_CATEGORY_TYPE,
-                               ERR_TYPE_INVALID_OPERATION, "Native struct layout is empty, incomplete, recursive or too large");
+                               ERR_TYPE_INVALID_OPERATION,
+                               "Native struct layout is empty, incomplete, recursive or too large");
         } else {
-            const char *library = decl->is_native_export ? "" : ast_program_lexeme(analyzer->program, decl->native_library_token);
+            const char *library = decl->is_native_export
+                                      ? ""
+                                      : ast_program_lexeme(analyzer->program, decl->native_library_token);
             size_t name_token = decl->is_native_export ? decl->name_token : decl->native_name_token;
             const char *name = ast_program_lexeme(analyzer->program, name_token);
             if (decl->is_native_export && (decl->as.function.is_async || decl->generic_parameters))
@@ -192,19 +219,27 @@ void validate_native_declarations(Analyzer *analyzer) {
             for (size_t j = 0; j < i; j++) {
                 const SemanticSymbol *other = &analyzer->model->symbols[j];
                 const AstDeclarationNode *previous = other->declaration;
-                size_t previous_name = previous && previous->is_native_export ? previous->name_token :
-                                       previous ? previous->native_name_token : AST_TOKEN_NONE;
+                size_t previous_name = previous && previous->is_native_export
+                                           ? previous->name_token
+                                           : previous
+                                                 ? previous->native_name_token
+                                                 : AST_TOKEN_NONE;
                 if (other->kind != SEMANTIC_SYMBOL_FUNCTION || !previous ||
                     (!previous->is_native && !previous->is_native_export) ||
-                    strcmp(name, ast_program_lexeme(other->source_program, previous_name))) continue;
-                const char *previous_library = previous->is_native_export ? "" :
-                    ast_program_lexeme(other->source_program, previous->native_library_token);
-                int conflict = decl->is_native_export || previous->is_native_export || strcmp(library, previous_library) != 0 ||
-                    !same_native_source_type(analyzer, analyzer->program, &decl->as.function.return_type,
-                                              other->source_program, &previous->as.function.return_type);
+                    strcmp(name, ast_program_lexeme(other->source_program, previous_name)))
+                    continue;
+                const char *previous_library = previous->is_native_export
+                                                   ? ""
+                                                   : ast_program_lexeme(
+                                                       other->source_program, previous->native_library_token);
+                int conflict = decl->is_native_export || previous->is_native_export || strcmp(library, previous_library)
+                               != 0 ||
+                               !same_native_source_type(analyzer, analyzer->program, &decl->as.function.return_type,
+                                                        other->source_program, &previous->as.function.return_type);
                 const AstParameter *a = decl->as.function.parameters, *b = previous->as.function.parameters;
                 for (; a && b; a = a->next, b = b->next)
-                    if (!same_native_source_type(analyzer, analyzer->program, &a->type, other->source_program, &b->type)) conflict = 1;
+                    if (!same_native_source_type(analyzer, analyzer->program, &a->type, other->source_program,
+                                                 &b->type)) conflict = 1;
                 if (a || b) conflict = 1;
                 if (conflict)
                     semantic_duplicate(analyzer, name_token, other->source_program,
@@ -213,11 +248,13 @@ void validate_native_declarations(Analyzer *analyzer) {
             }
             if (!native_signature_type(analyzer, &decl->as.function.return_type, 1))
                 semantic_error(analyzer, decl->as.function.return_type.name_token, ERROR_CATEGORY_TYPE,
-                               ERR_TYPE_INVALID_OPERATION, "Native result must be an FFI-safe value, raw pointer or void");
+                               ERR_TYPE_INVALID_OPERATION,
+                               "Native result must be an FFI-safe value, raw pointer or void");
             for (const AstParameter *p = decl->as.function.parameters; p; p = p->next)
                 if (!native_signature_type(analyzer, &p->type, 0))
                     semantic_error(analyzer, p->type.name_token, ERROR_CATEGORY_TYPE,
-                                   ERR_TYPE_INVALID_OPERATION, "Native parameter must be an FFI-safe value or raw pointer");
+                                   ERR_TYPE_INVALID_OPERATION,
+                                   "Native parameter must be an FFI-safe value or raw pointer");
         }
     }
     analyzer->program = saved;
@@ -231,7 +268,8 @@ static size_t layout_alignment_depth(const Analyzer *analyzer, const AstProgram 
         if (semantic_native_layout(analyzer->model, program, type, &native)) return native.alignment;
     }
     if (type->outer_pointer_depth || type->borrow_kind != AST_BORROW_NONE || type->is_slice ||
-        (!type->is_array && type->pointer_depth) || type->kind != AST_TYPE_NAMED) return 8;
+        (!type->is_array && type->pointer_depth) || type->kind != AST_TYPE_NAMED)
+        return 8;
     if (type->is_array) {
         AstType element = ast_type_element(type);
         size_t alignment = layout_alignment_depth(analyzer, program, &element, depth + 1);
@@ -274,7 +312,7 @@ static int type_directly_embeds_value(const AstType *type) {
 }
 
 int aggregate_reaches(const Analyzer *analyzer, size_t current_symbol,
-                              size_t target_symbol, size_t depth) {
+                      size_t target_symbol, size_t depth) {
     if (current_symbol >= analyzer->model->symbol_count ||
         depth > analyzer->model->symbol_count)
         return 1;
@@ -286,7 +324,8 @@ int aggregate_reaches(const Analyzer *analyzer, size_t current_symbol,
                 size_t child = resolve_named_symbol_id(analyzer, current->source_program,
                                                        named_type_token(current->source_program, &p->type));
                 if (child == target_symbol || (child != AST_SYMBOL_NONE && aggregate_reaches(
-                                                   analyzer, child, target_symbol, depth + 1))) return 1;
+                                                   analyzer, child, target_symbol, depth + 1)))
+                    return 1;
             }
         return 0;
     }
@@ -374,7 +413,8 @@ static size_t semantic_symbol_slots(const Analyzer *analyzer, size_t symbol_id,
         AstType type = {.kind = AST_TYPE_NAMED, .name_token = symbol->name_token};
         NativeTypeLayout layout;
         if (!semantic_native_layout(analyzer->model, symbol->source_program, &type, &layout) ||
-            layout.size > SIZE_MAX - 7) return SIZE_MAX;
+            layout.size > SIZE_MAX - 7)
+            return SIZE_MAX;
         return (layout.size + 7) / 8;
     }
     size_t slots = 0;
@@ -397,17 +437,19 @@ static size_t semantic_symbol_slots(const Analyzer *analyzer, size_t symbol_id,
 }
 
 size_t semantic_type_slots(const Analyzer *analyzer, const AstProgram *program,
-                                   const AstType *type,
-                                   const AstExpression *inferred) {
+                           const AstType *type,
+                           const AstExpression *inferred) {
     if (type->kind == AST_TYPE_INFERRED && inferred != NULL &&
         inferred->has_resolved_ast_type)
         return declared_type_slots(
             analyzer,
             inferred->resolved_type_program != NULL
-                ? inferred->resolved_type_program : program,
+                ? inferred->resolved_type_program
+                : program,
             &inferred->resolved_ast_type, 0);
     if (type->kind == AST_TYPE_INFERRED && inferred && inferred->resolved_is_slice && !inferred->
-        resolved_outer_pointer_depth) return 2;
+        resolved_outer_pointer_depth)
+        return 2;
     if (type->outer_pointer_depth != 0 ||
         (type->pointer_depth != 0 && !type->is_array && !type->is_slice) || type->is_slice ||
         (type->kind == AST_TYPE_INFERRED && inferred != NULL &&
@@ -418,7 +460,7 @@ size_t semantic_type_slots(const Analyzer *analyzer, const AstProgram *program,
 }
 
 int assignable_expression(const Analyzer *analyzer,
-                                 const AstExpression *expression) {
+                          const AstExpression *expression) {
     if (expression != NULL && expression->kind == AST_EXPR_MEMBER &&
         expression->left != NULL && expression->left->resolved_is_slice &&
         same_name(analyzer->program, expression->value_token, "length"))
@@ -484,7 +526,7 @@ static void prepare_native_shapes(Analyzer *analyzer, size_t symbol_id, size_t d
     const AstDeclarationNode *decl = symbol->declaration;
     if (!decl || symbol->kind != SEMANTIC_SYMBOL_STRUCT || !decl->is_native || decl->is_opaque) return;
     AstProgram *saved = analyzer->program;
-    analyzer->program = (AstProgram *)symbol->source_program;
+    analyzer->program = (AstProgram *) symbol->source_program;
     for (AstField *field = decl->as.struct_decl.fields; field; field = field->next) {
         validate_array_shape(analyzer, &field->type);
         AstType element = field->type;
@@ -525,7 +567,8 @@ size_t layout_size(Analyzer *analyzer, AstType *type, size_t depth) {
         NativeTypeLayout native;
         return semantic_native_layout(analyzer->model, analyzer->program, type, &native) ? native.size : 0;
     }
-    if (symbol->kind == SEMANTIC_SYMBOL_INTERFACE || symbol->kind == SEMANTIC_SYMBOL_STRUCT || symbol->kind == SEMANTIC_SYMBOL_ENUM) {
+    if (symbol->kind == SEMANTIC_SYMBOL_INTERFACE || symbol->kind == SEMANTIC_SYMBOL_STRUCT || symbol->kind ==
+        SEMANTIC_SYMBOL_ENUM) {
         size_t slots = semantic_symbol_slots(analyzer, id, depth + 1);
         return slots == SIZE_MAX || slots > SIZE_MAX / 8 ? 0 : slots * 8;
     }

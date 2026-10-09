@@ -48,7 +48,8 @@ extern double abi_double_nine(double, double, double, double, double, double, do
 
 int main(void) {
     if (!abi_fixed(-1, 255, INT16_MIN, UINT16_MAX, -123, UINT32_MAX, -INT64_C(5000000000), UINT64_MAX, -9,
-                   UINT64_C(5000000000))) return 30;
+                   UINT64_C(5000000000)))
+        return 30;
     if (abi_u64(UINT64_MAX) != UINT64_C(6148914691236517205)) return 31;
     if (abi_i64(-INT64_C(5000000000)) != -INT64_C(5000000001)) return 32;
     if (abi_u16(UINT16_MAX) != 0 || abi_i8(-127) != INT8_MIN) return 33;

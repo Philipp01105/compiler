@@ -15,21 +15,36 @@ static int native_ir_layout(const IrModule *module, IrTypeId id,
                             NativeTypeLayout *layout, size_t depth) {
     if (id >= module->type_count || depth > module->type_count) return 0;
     const IrType *type = &module->types[id];
-    if (type->kind == IR_TYPE_POINTER) { *layout = (NativeTypeLayout){8, 8}; return 1; }
+    if (type->kind == IR_TYPE_POINTER) {
+        *layout = (NativeTypeLayout)
+        {
+            8, 8
+        };
+        return 1;
+    }
     if (type->kind == IR_TYPE_FUNCTION && type->signature_id < module->signature_count &&
         module->signatures[type->signature_id].is_native) {
-        *layout = (NativeTypeLayout){8, 8}; return 1;
+        *layout = (NativeTypeLayout)
+        {
+            8, 8
+        };
+        return 1;
     }
     if (type->kind == IR_TYPE_PRIMITIVE) {
         if (!data_type_fixed_integer(type->primitive) && type->primitive != TYPE_BIT &&
-            type->primitive != TYPE_FLOAT && type->primitive != TYPE_DOUBLE) return 0;
+            type->primitive != TYPE_FLOAT && type->primitive != TYPE_DOUBLE)
+            return 0;
         size_t size = data_type_bytes(type->primitive);
-        *layout = (NativeTypeLayout){size, size};
+        *layout = (NativeTypeLayout)
+        {
+            size, size
+        };
         return 1;
     }
     if (type->kind == IR_TYPE_ARRAY) {
         if (!type->array_length || !native_ir_layout(module, type->element_type, layout, depth + 1) ||
-            type->array_length > SIZE_MAX / layout->size) return 0;
+            type->array_length > SIZE_MAX / layout->size)
+            return 0;
         layout->size *= type->array_length;
         return 1;
     }
@@ -43,13 +58,14 @@ static int native_ir_layout(const IrModule *module, IrTypeId id,
             const IrFieldDefinition *field = &structure->fields[f];
             NativeTypeLayout child;
             if (!native_ir_layout(module, field->type_id, &child, depth + 1) ||
-                size > SIZE_MAX - (child.alignment - 1)) return 0;
+                size > SIZE_MAX - (child.alignment - 1))
+                return 0;
             if (structure->native_pack && child.alignment > structure->native_pack)
                 child.alignment = structure->native_pack;
             if (!structure->is_native_union) size = (size + child.alignment - 1) & ~(child.alignment - 1);
-            if (field->native_offset != (structure->is_native_union ? 0 : size) || child.size > SIZE_MAX - size) return 0;
-            if (structure->is_native_union) { if (child.size > size) size = child.size; }
-            else size += child.size;
+            if (field->native_offset != (structure->is_native_union ? 0 : size) || child.size > SIZE_MAX - size) return
+                    0;
+            if (structure->is_native_union) { if (child.size > size) size = child.size; } else size += child.size;
             if (child.alignment > alignment) alignment = child.alignment;
             const IrType *field_type = &module->types[field->type_id];
             size_t stride = field_type->kind == IR_TYPE_ARRAY ? child.size / field_type->array_length : 0;
@@ -57,7 +73,10 @@ static int native_ir_layout(const IrModule *module, IrTypeId id,
         }
         if (structure->native_alignment > alignment) alignment = structure->native_alignment;
         if (size > SIZE_MAX - (alignment - 1)) return 0;
-        *layout = (NativeTypeLayout){(size + alignment - 1) & ~(alignment - 1), alignment};
+        *layout = (NativeTypeLayout)
+        {
+            (size + alignment - 1) & ~(alignment - 1), alignment
+        };
         return layout->size == structure->native_layout.size &&
                layout->alignment == structure->native_layout.alignment;
     }
@@ -78,7 +97,10 @@ static int native_type_matches_source(const IrModule *module, IrTypeId id,
     if (!source || id >= module->type_count || depth > module->type_count + 64) return 0;
     AstType expected = *source;
     unsigned outer = expected.outer_pointer_depth;
-    if (expected.element_type) { outer += expected.pointer_depth; expected.pointer_depth = 0; }
+    if (expected.element_type) {
+        outer += expected.pointer_depth;
+        expected.pointer_depth = 0;
+    }
     if (expected.borrow_kind != AST_BORROW_NONE) outer++;
     expected.outer_pointer_depth = 0;
     expected.borrow_kind = AST_BORROW_NONE;
@@ -93,7 +115,7 @@ static int native_type_matches_source(const IrModule *module, IrTypeId id,
         if (type->kind != kind) return 0;
         size_t length = expected.resolved_array_length;
         if (!length && expected.array_length_token < program->token_count)
-            length = (size_t)strtoull(ast_program_lexeme(program, expected.array_length_token), NULL, 10);
+            length = (size_t) strtoull(ast_program_lexeme(program, expected.array_length_token), NULL, 10);
         if (expected.is_array && type->array_length != length) return 0;
         AstType element = ast_type_element(&expected);
         return native_type_matches_source(module, type->element_type, program, &element, depth + 1);
@@ -109,11 +131,13 @@ static int native_type_matches_source(const IrModule *module, IrTypeId id,
         const IrFunctionSignature *signature = &module->signatures[type->signature_id];
         if (signature->is_native != expected.is_native_function) return 0;
         if (!native_type_matches_source(module, signature->return_type, program,
-                                        expected.function_return_type, depth + 1)) return 0;
+                                        expected.function_return_type, depth + 1))
+            return 0;
         size_t count = 0;
         for (const AstTypeArgument *p = expected.function_parameters; p; p = p->next, count++)
             if (count >= signature->parameter_count || !native_type_matches_source(module,
-                signature->parameter_types[count], program, &p->type, depth + 1)) return 0;
+                    signature->parameter_types[count], program, &p->type, depth + 1))
+                return 0;
         return count == signature->parameter_count;
     }
     if (expected.kind == AST_TYPE_FUTURE || expected.kind == AST_TYPE_JOIN) {
@@ -128,9 +152,10 @@ static int native_type_matches_source(const IrModule *module, IrTypeId id,
     if (primitive != TYPE_UNKNOWN)
         return type->kind == IR_TYPE_PRIMITIVE && type->primitive == primitive;
     const SemanticSymbol *symbol = semantic_find_in_package(module->semantics, program,
-        token->lexeme, SEMANTIC_SYMBOL_STRUCT);
+                                                            token->lexeme, SEMANTIC_SYMBOL_STRUCT);
     if (!symbol) symbol = semantic_find_in_package(module->semantics, program, token->lexeme, SEMANTIC_SYMBOL_ENUM);
-    if (!symbol) symbol = semantic_find_in_package(module->semantics, program, token->lexeme, SEMANTIC_SYMBOL_INTERFACE);
+    if (!symbol)
+        symbol = semantic_find_in_package(module->semantics, program, token->lexeme, SEMANTIC_SYMBOL_INTERFACE);
     return symbol && type->kind == IR_TYPE_NAMED && type->symbol_id == symbol->id;
 }
 
@@ -143,7 +168,8 @@ static int instruction_produces_value(const IrInstruction *instruction) {
            opcode == IR_OP_INDEX || opcode == IR_OP_SUBSLICE ||
            opcode == IR_OP_MEMBER || opcode == IR_OP_SLICE_LENGTH ||
            opcode == IR_OP_SLICE || opcode == IR_OP_SLICE_DATA ||
-           opcode == IR_OP_ARRAY_LITERAL || opcode == IR_OP_STRUCT_LITERAL || opcode == IR_OP_INTERFACE_PACK || opcode == IR_OP_NATIVE_COPY || opcode == IR_OP_VALUE_SNAPSHOT ||
+           opcode == IR_OP_ARRAY_LITERAL || opcode == IR_OP_STRUCT_LITERAL || opcode == IR_OP_INTERFACE_PACK || opcode
+           == IR_OP_NATIVE_COPY || opcode == IR_OP_VALUE_SNAPSHOT ||
            opcode == IR_OP_CAST || opcode == IR_OP_ALLOC ||
            opcode == IR_OP_PHI || opcode == IR_OP_ENUM_CONSTRUCT || opcode == IR_OP_ENUM_IS || opcode ==
            IR_OP_ENUM_PAYLOAD;
@@ -286,72 +312,94 @@ static int verify_instruction_types(const IrModule *module,
     if (instruction->opcode == IR_OP_AWAIT) {
         if (!function->is_async || a == NULL ||
             (module->types[a->type_id].kind != IR_TYPE_FUTURE && module->types[a->type_id].kind != IR_TYPE_JOIN) ||
-            (module->types[a->type_id].kind == IR_TYPE_FUTURE && module->types[a->type_id].element_type != instruction->type_id) ||
+            (module->types[a->type_id].kind == IR_TYPE_FUTURE && module->types[a->type_id].element_type != instruction->
+             type_id) ||
             instruction->target_a == 0 ||
-            instruction->target_a > function->async_state_count) return 0;
+            instruction->target_a > function->async_state_count)
+            return 0;
         for (size_t previous = 0; previous < index; previous++)
             if (function->instructions[previous].opcode == IR_OP_AWAIT &&
-                function->instructions[previous].target_a == instruction->target_a) return 0;
-        if(module->types[a->type_id].kind==IR_TYPE_JOIN) {
-            const IrType *result=&module->types[instruction->type_id];
-            const IrEnum *enumeration=NULL;
-            for(size_t e=0;e<module->enum_count;e++)
-                if(result->kind==IR_TYPE_NAMED && module->enums[e].symbol_id==result->symbol_id) enumeration=&module->enums[e];
-            if(!enumeration || !enumeration->is_sum || enumeration->variant_count!=2) return 0;
-            IrTypeId output=module->types[a->type_id].element_type;
-            const IrEnumVariant *ok=&enumeration->variants[0],*error=&enumeration->variants[1];
-            if(ir_void_type(module,output) ? ok->payload_count!=0 :
-               (ok->payload_count!=1 || ok->payload_types[0]!=output)) return 0;
-            if(error->payload_count!=1 || module->types[error->payload_types[0]].kind!=IR_TYPE_NAMED) return 0;
-            size_t error_symbol=module->types[error->payload_types[0]].symbol_id;
-            const SemanticSymbol *s=&module->semantics->symbols[error_symbol];
-            if(!s->declaration || !s->declaration->is_async_builtin ||
-               strcmp(ast_program_lexeme(s->source_program,s->name_token),"TaskError")) return 0;
+                function->instructions[previous].target_a == instruction->target_a)
+                return 0;
+        if (module->types[a->type_id].kind == IR_TYPE_JOIN) {
+            const IrType *result = &module->types[instruction->type_id];
+            const IrEnum *enumeration = NULL;
+            for (size_t e = 0; e < module->enum_count; e++)
+                if (result->kind == IR_TYPE_NAMED && module->enums[e].symbol_id == result->symbol_id)
+                    enumeration = &module->enums[e];
+            if (!enumeration || !enumeration->is_sum || enumeration->variant_count != 2) return 0;
+            IrTypeId output = module->types[a->type_id].element_type;
+            const IrEnumVariant *ok = &enumeration->variants[0], *error = &enumeration->variants[1];
+            if (ir_void_type(module, output)
+                    ? ok->payload_count != 0
+                    : (ok->payload_count != 1 || ok->payload_types[0] != output)) return 0;
+            if (error->payload_count != 1 || module->types[error->payload_types[0]].kind != IR_TYPE_NAMED) return 0;
+            size_t error_symbol = module->types[error->payload_types[0]].symbol_id;
+            const SemanticSymbol *s = &module->semantics->symbols[error_symbol];
+            if (!s->declaration || !s->declaration->is_async_builtin ||
+                strcmp(ast_program_lexeme(s->source_program, s->name_token), "TaskError"))
+                return 0;
         }
         return 1;
     }
     switch (instruction->opcode) {
-        case IR_OP_CANCEL_CHECK: return function->is_async && !instruction->async_cleanup && ir_void_type(module,instruction->type_id) &&
-                                            instruction->target_a!=instruction->target_b;
-        case IR_OP_CANCEL_RETURN: return function->is_async && instruction->async_cleanup && ir_void_type(module,instruction->type_id);
+        case IR_OP_CANCEL_CHECK: return function->is_async && !instruction->async_cleanup && ir_void_type(
+                                            module, instruction->type_id) &&
+                                        instruction->target_a != instruction->target_b;
+        case IR_OP_CANCEL_RETURN: return function->is_async && instruction->async_cleanup && ir_void_type(
+                                             module, instruction->type_id);
         case IR_OP_CANCEL_AWAIT: return function->is_async && instruction->async_cleanup && a &&
-            (module->types[a->type_id].kind==IR_TYPE_FUTURE || module->types[a->type_id].kind==IR_TYPE_JOIN) &&
-            ir_void_type(module,instruction->type_id) && instruction->target_a>0 && instruction->target_a<=function->async_state_count;
+                                        (module->types[a->type_id].kind == IR_TYPE_FUTURE || module->types[a->type_id].
+                                         kind == IR_TYPE_JOIN) &&
+                                        ir_void_type(module, instruction->type_id) && instruction->target_a > 0 &&
+                                        instruction->target_a <= function->async_state_count;
         case IR_OP_CANCEL_DROP: return function->is_async && instruction->async_cleanup &&
-            instruction->symbol_id<module->semantics->symbol_count &&
-            (ir_type_properties(module,instruction->type_id)&SEMANTIC_TYPE_NEEDS_DROP) &&
-            instruction->target_a>0 && instruction->target_a<=function->async_state_count;
+                                       instruction->symbol_id < module->semantics->symbol_count &&
+                                       (ir_type_properties(module, instruction->type_id) & SEMANTIC_TYPE_NEEDS_DROP) &&
+                                       instruction->target_a > 0 && instruction->target_a <= function->
+                                       async_state_count;
         case IR_OP_EXECUTOR:
-            if (instruction->async_operation==ASYNC_CONTEXT)
-                return function->is_async && !a && !b && instruction->type==TYPE_VOID && instruction->pointer_depth==1;
-            if (!a || instruction->async_operation<ASYNC_CREATE || instruction->async_operation>ASYNC_CONTEXT) return 0;
-            if (b && instruction->async_operation!=ASYNC_POLL && instruction->async_operation!=ASYNC_CANCEL_POLL &&
-                module->types[b->type_id].kind!=IR_TYPE_EXECUTOR) return 0;
+            if (instruction->async_operation == ASYNC_CONTEXT)
+                return function->is_async && !a && !b && instruction->type == TYPE_VOID && instruction->pointer_depth ==
+                       1;
+            if (!a || instruction->async_operation < ASYNC_CREATE || instruction->async_operation > ASYNC_CONTEXT)
+                return 0;
+            if (b && instruction->async_operation != ASYNC_POLL && instruction->async_operation != ASYNC_CANCEL_POLL &&
+                module->types[b->type_id].kind != IR_TYPE_EXECUTOR)
+                return 0;
             switch (instruction->async_operation) {
                 case ASYNC_POLL:
                 case ASYNC_CANCEL_POLL:
-                    return module->types[a->type_id].kind==IR_TYPE_POINTER &&
-                        module->types[module->types[a->type_id].element_type].kind==IR_TYPE_FUTURE &&
-                        b && b->type==TYPE_VOID && b->pointer_depth==1 && instruction->type==TYPE_BIT;
+                    return module->types[a->type_id].kind == IR_TYPE_POINTER &&
+                           module->types[module->types[a->type_id].element_type].kind == IR_TYPE_FUTURE &&
+                           b && b->type == TYPE_VOID && b->pointer_depth == 1 && instruction->type == TYPE_BIT;
                 case ASYNC_COMPLETE:
-                    return !b && module->types[a->type_id].kind==IR_TYPE_FUTURE &&
-                        module->types[a->type_id].element_type==instruction->type_id;
+                    return !b && module->types[a->type_id].kind == IR_TYPE_FUTURE &&
+                           module->types[a->type_id].element_type == instruction->type_id;
                 case ASYNC_CANCEL_COMPLETE:
-                    return !b && module->types[a->type_id].kind==IR_TYPE_FUTURE && ir_void_type(module,instruction->type_id);
+                    return !b && module->types[a->type_id].kind == IR_TYPE_FUTURE && ir_void_type(
+                               module, instruction->type_id);
                 case ASYNC_CONTEXT: return 0;
-                case ASYNC_NATIVE_FUTURE: return a->type==TYPE_VOID && a->pointer_depth==1 &&
-                    module->types[instruction->type_id].kind==IR_TYPE_FUTURE &&
-                    module->types[module->types[instruction->type_id].element_type].kind==IR_TYPE_PRIMITIVE &&
-                    module->types[module->types[instruction->type_id].element_type].primitive==TYPE_VOID;
-                case ASYNC_CREATE: return !b && ir_integral_type(module,a->type_id) && module->types[instruction->type_id].kind==IR_TYPE_EXECUTOR;
-                case ASYNC_SPAWN: return module->types[a->type_id].kind==IR_TYPE_FUTURE && module->types[instruction->type_id].kind==IR_TYPE_JOIN &&
-                                        module->types[a->type_id].element_type==module->types[instruction->type_id].element_type;
-                case ASYNC_BLOCK_ON: return !function->is_async && module->types[a->type_id].kind==IR_TYPE_FUTURE &&
-                                           module->types[a->type_id].element_type==instruction->type_id;
-                case ASYNC_SHUTDOWN: return b && module->types[instruction->type_id].kind==IR_TYPE_FUTURE &&
-                                           ir_void_type(module,module->types[instruction->type_id].element_type);
-                case ASYNC_CANCEL: return (module->types[a->type_id].kind==IR_TYPE_FUTURE || module->types[a->type_id].kind==IR_TYPE_JOIN) &&
-                                         module->types[instruction->type_id].kind==IR_TYPE_FUTURE && ir_void_type(module,module->types[instruction->type_id].element_type);
+                case ASYNC_NATIVE_FUTURE: return a->type == TYPE_VOID && a->pointer_depth == 1 &&
+                                                 module->types[instruction->type_id].kind == IR_TYPE_FUTURE &&
+                                                 module->types[module->types[instruction->type_id].element_type].kind ==
+                                                 IR_TYPE_PRIMITIVE &&
+                                                 module->types[module->types[instruction->type_id].element_type].
+                                                 primitive == TYPE_VOID;
+                case ASYNC_CREATE: return !b && ir_integral_type(module, a->type_id) && module->types[instruction->
+                                              type_id].kind == IR_TYPE_EXECUTOR;
+                case ASYNC_SPAWN: return module->types[a->type_id].kind == IR_TYPE_FUTURE && module->types[instruction->
+                                             type_id].kind == IR_TYPE_JOIN &&
+                                         module->types[a->type_id].element_type == module->types[instruction->type_id].
+                                         element_type;
+                case ASYNC_BLOCK_ON: return !function->is_async && module->types[a->type_id].kind == IR_TYPE_FUTURE &&
+                                            module->types[a->type_id].element_type == instruction->type_id;
+                case ASYNC_SHUTDOWN: return b && module->types[instruction->type_id].kind == IR_TYPE_FUTURE &&
+                                            ir_void_type(module, module->types[instruction->type_id].element_type);
+                case ASYNC_CANCEL: return (module->types[a->type_id].kind == IR_TYPE_FUTURE || module->types[a->type_id]
+                                           .kind == IR_TYPE_JOIN) &&
+                                          module->types[instruction->type_id].kind == IR_TYPE_FUTURE && ir_void_type(
+                                              module, module->types[instruction->type_id].element_type);
                 case ASYNC_NONE: return 0;
             }
             return 0;
@@ -402,7 +450,7 @@ static int verify_instruction_types(const IrModule *module,
                         ? ir_numeric_type(module, instruction->type_id)
                         : instruction->auxiliary_token < function->source_program->token_count) &&
                    (ir_numeric_type(module, instruction->type_id) ||
-                   ir_string_type(module, instruction->type_id));
+                    ir_string_type(module, instruction->type_id));
         case IR_OP_FUNCTION_ADDRESS:
             return instruction->symbol_id < module->semantics->symbol_count &&
                    module->semantics->symbols[instruction->symbol_id].kind == SEMANTIC_SYMBOL_FUNCTION &&
@@ -413,12 +461,14 @@ static int verify_instruction_types(const IrModule *module,
         case IR_OP_DECLARE:
             if (instruction->uninitialized_storage && a) return 0;
             if (!a && ir_type_requires_explicit_init(module, instruction->type_id) &&
-                !instruction->uninitialized_storage) return 0;
+                !instruction->uninitialized_storage)
+                return 0;
             return a == NULL || ir_types_assignable(module, a->type_id,
                                                     instruction->type_id, a->opcode);
         case IR_OP_NATIVE_COPY: {
             if (!a || a->type_id != instruction->type_id ||
-                module->types[instruction->type_id].kind != IR_TYPE_NAMED) return 0;
+                module->types[instruction->type_id].kind != IR_TYPE_NAMED)
+                return 0;
             for (size_t s = 0; s < module->structure_count; ++s)
                 if (module->structures[s].symbol_id == module->types[instruction->type_id].symbol_id)
                     return module->structures[s].is_native && !module->structures[s].is_opaque;
@@ -426,12 +476,12 @@ static int verify_instruction_types(const IrModule *module,
         }
         case IR_OP_VALUE_SNAPSHOT:
             return a && a->type_id == instruction->type_id &&
-                (module->types[instruction->type_id].kind == IR_TYPE_NAMED ||
-                 module->types[instruction->type_id].kind == IR_TYPE_ARRAY ||
-                 module->types[instruction->type_id].kind == IR_TYPE_SLICE ||
-                 module->types[instruction->type_id].kind == IR_TYPE_FUTURE ||
-                 module->types[instruction->type_id].kind == IR_TYPE_JOIN ||
-                 module->types[instruction->type_id].kind == IR_TYPE_EXECUTOR);
+                   (module->types[instruction->type_id].kind == IR_TYPE_NAMED ||
+                    module->types[instruction->type_id].kind == IR_TYPE_ARRAY ||
+                    module->types[instruction->type_id].kind == IR_TYPE_SLICE ||
+                    module->types[instruction->type_id].kind == IR_TYPE_FUTURE ||
+                    module->types[instruction->type_id].kind == IR_TYPE_JOIN ||
+                    module->types[instruction->type_id].kind == IR_TYPE_EXECUTOR);
         case IR_OP_INTERFACE_PACK:
             return a != NULL && a->type_id < module->type_count &&
                    instruction->type_id < module->type_count &&
@@ -439,18 +489,19 @@ static int verify_instruction_types(const IrModule *module,
                    module->types[instruction->type_id].kind == IR_TYPE_NAMED &&
                    module->types[a->type_id].symbol_id < module->semantics->symbol_count &&
                    (module->semantics->symbols[module->types[a->type_id].symbol_id].kind ==
-                       SEMANTIC_SYMBOL_STRUCT || module->semantics->symbols[module->types[a->type_id].symbol_id].kind == SEMANTIC_SYMBOL_ENUM) &&
+                    SEMANTIC_SYMBOL_STRUCT || module->semantics->symbols[module->types[a->type_id].symbol_id].kind ==
+                    SEMANTIC_SYMBOL_ENUM) &&
                    semantic_implements_interface(module->semantics,
-                       module->types[instruction->type_id].symbol_id,
-                       module->types[a->type_id].symbol_id);
+                                                 module->types[instruction->type_id].symbol_id,
+                                                 module->types[a->type_id].symbol_id);
         case IR_OP_INIT:
             if (instruction->operator_type != TOKEN_EQUAL) return 0;
             if (instruction->lifetime_pointer)
                 return a && b && a->type_id < module->type_count &&
-                    module->types[a->type_id].kind == IR_TYPE_POINTER &&
-                    module->types[a->type_id].element_type == instruction->type_id &&
-                    ir_types_assignable(module, b->type_id, instruction->type_id, b->opcode);
-            /* fall through */
+                       module->types[a->type_id].kind == IR_TYPE_POINTER &&
+                       module->types[a->type_id].element_type == instruction->type_id &&
+                       ir_types_assignable(module, b->type_id, instruction->type_id, b->opcode);
+        /* fall through */
         case IR_OP_STORE:
             if (a == NULL || a->type_id != instruction->type_id) return 0;
             if (a->opcode != IR_OP_LOAD && a->opcode != IR_OP_INDEX &&
@@ -514,12 +565,15 @@ static int verify_instruction_types(const IrModule *module,
             const IrNativeImport *native = ir_native_import(module, instruction->symbol_id);
             if (native) {
                 if (instruction->argument_count != native->parameter_count ||
-                    instruction->type_id != native->return_type_id) return 0;
+                    instruction->type_id != native->return_type_id)
+                    return 0;
                 for (size_t argument = 0; argument < native->parameter_count; argument++) {
                     const IrInstruction *value = verified_producer(function, producers,
-                        function->arguments[instruction->first_argument + argument], index);
+                                                                   function->arguments[
+                                                                       instruction->first_argument + argument], index);
                     if (!value || !ir_types_assignable(module, value->type_id,
-                            native->parameter_types[argument], value->opcode)) return 0;
+                                                       native->parameter_types[argument], value->opcode))
+                        return 0;
                 }
                 return 1;
             }
@@ -529,12 +583,15 @@ static int verify_instruction_types(const IrModule *module,
                 if (callable->signature_id >= module->signature_count) return 0;
                 const IrFunctionSignature *signature = &module->signatures[callable->signature_id];
                 if (instruction->argument_count != signature->parameter_count ||
-                    instruction->type_id != signature->return_type) return 0;
+                    instruction->type_id != signature->return_type)
+                    return 0;
                 for (size_t argument = 0; argument < signature->parameter_count; argument++) {
                     const IrInstruction *value = verified_producer(function, producers,
-                        function->arguments[instruction->first_argument + argument], index);
+                                                                   function->arguments[
+                                                                       instruction->first_argument + argument], index);
                     if (value == NULL || !ir_types_assignable(module, value->type_id,
-                            signature->parameter_types[argument], value->opcode)) return 0;
+                                                              signature->parameter_types[argument], value->opcode))
+                        return 0;
                 }
                 return 1;
             }
@@ -570,12 +627,14 @@ static int verify_instruction_types(const IrModule *module,
                     SEMANTIC_SYMBOL_INTERFACE) {
                     size_t count = 1;
                     for (const AstParameter *p = method->declaration->as.function.parameters;
-                         p; p = p->next) count++;
+                         p; p = p->next)
+                        count++;
                     if (instruction->argument_count != count ||
                         instruction->first_argument >= function->argument_count)
                         return 0;
                     const IrInstruction *receiver = verified_producer(function, producers,
-                        function->arguments[instruction->first_argument], index);
+                                                                      function->arguments[instruction->first_argument],
+                                                                      index);
                     if (receiver == NULL || receiver->type_id >= module->type_count)
                         return 0;
                     const IrType *receiver_type = &module->types[receiver->type_id];
@@ -611,12 +670,12 @@ static int verify_instruction_types(const IrModule *module,
         case IR_OP_DESTROY:
             if (instruction->operand_a != IR_VALUE_NONE)
                 return a && a->type_id < module->type_count && instruction->lifetime_pointer &&
-                    module->types[a->type_id].kind == IR_TYPE_POINTER &&
-                    module->types[a->type_id].element_type == instruction->type_id;
+                       module->types[a->type_id].kind == IR_TYPE_POINTER &&
+                       module->types[a->type_id].element_type == instruction->type_id;
             return instruction->symbol_id < module->semantics->symbol_count &&
-                (module->semantics->symbols[instruction->symbol_id].kind == SEMANTIC_SYMBOL_LOCAL ||
-                 module->semantics->symbols[instruction->symbol_id].kind == SEMANTIC_SYMBOL_PARAMETER ||
-                 module->semantics->symbols[instruction->symbol_id].kind == SEMANTIC_SYMBOL_VARIABLE);
+                   (module->semantics->symbols[instruction->symbol_id].kind == SEMANTIC_SYMBOL_LOCAL ||
+                    module->semantics->symbols[instruction->symbol_id].kind == SEMANTIC_SYMBOL_PARAMETER ||
+                    module->semantics->symbols[instruction->symbol_id].kind == SEMANTIC_SYMBOL_VARIABLE);
         case IR_OP_DROP:
             if ((ir_type_properties(module, instruction->type_id) &
                  SEMANTIC_TYPE_NEEDS_DROP) == 0)
@@ -645,9 +704,9 @@ static int verify_instruction_types(const IrModule *module,
             if (a != NULL) return a->type_id == instruction->type_id;
             return instruction->symbol_id < module->semantics->symbol_count &&
                    (module->semantics->symbols[instruction->symbol_id].kind ==
-                        SEMANTIC_SYMBOL_LOCAL ||
+                    SEMANTIC_SYMBOL_LOCAL ||
                     module->semantics->symbols[instruction->symbol_id].kind ==
-                        SEMANTIC_SYMBOL_VARIABLE);
+                    SEMANTIC_SYMBOL_VARIABLE);
         case IR_OP_INDEX:
             return a != NULL && b != NULL && ir_pointer_type(module, a->type_id) &&
                    ir_integral_type(module, b->type_id) &&
@@ -659,7 +718,7 @@ static int verify_instruction_types(const IrModule *module,
                  module->types[a->type_id].kind != IR_TYPE_SLICE) ||
                 module->types[instruction->type_id].kind != IR_TYPE_SLICE ||
                 module->types[a->type_id].element_type !=
-                    module->types[instruction->type_id].element_type ||
+                module->types[instruction->type_id].element_type ||
                 (b != NULL && !ir_integral_type(module, b->type_id)) ||
                 instruction->argument_count > 1)
                 return 0;
@@ -706,14 +765,15 @@ static int verify_instruction_types(const IrModule *module,
             if (instruction->type_id >= module->type_count ||
                 module->types[instruction->type_id].kind != IR_TYPE_NAMED ||
                 instruction->operand_a != IR_VALUE_NONE || instruction->operand_b != IR_VALUE_NONE ||
-                instruction->argument_count != 0) return 0;
+                instruction->argument_count != 0)
+                return 0;
             size_t symbol = module->types[instruction->type_id].symbol_id;
             IrTypeLayout layout;
             return symbol < module->semantics->symbol_count &&
-                module->semantics->symbols[symbol].kind == SEMANTIC_SYMBOL_STRUCT &&
-                module->semantics->symbols[symbol].declaration != NULL &&
-                !module->semantics->symbols[symbol].declaration->is_opaque &&
-                ir_type_layout(module, instruction->type_id, &layout) && layout.size != 0;
+                   module->semantics->symbols[symbol].kind == SEMANTIC_SYMBOL_STRUCT &&
+                   module->semantics->symbols[symbol].declaration != NULL &&
+                   !module->semantics->symbols[symbol].declaration->is_opaque &&
+                   ir_type_layout(module, instruction->type_id, &layout) && layout.size != 0;
         }
         case IR_OP_ARRAY_LITERAL:
             if (instruction->type_id >= module->type_count ||
@@ -760,7 +820,8 @@ int ir_verify_module_report(const IrModule *module) { return ir_verify_module_in
 static int ir_verify_module_internal(const IrModule *module, int report) {
     if (module == NULL || module->program == NULL || module->semantics == NULL ||
         module->target_format != module->semantics->target_format ||
-        (module->native_import_count && !module->native_imports)) return 0;
+        (module->native_import_count && !module->native_imports))
+        return 0;
     for (size_t i = 0; i < module->structure_count; i++) {
         uint64_t tag = ir_interface_type_tag(module,
                                              module->structures[i].symbol_id);
@@ -812,7 +873,8 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
             if (type->signature_id >= module->signature_count) return 0;
             const IrFunctionSignature *signature = &module->signatures[type->signature_id];
             if (signature->return_type >= t ||
-                (signature->parameter_count && signature->parameter_types == NULL)) return 0;
+                (signature->parameter_count && signature->parameter_types == NULL))
+                return 0;
             for (size_t p = 0; p < signature->parameter_count; p++)
                 if (signature->parameter_types[p] >= t) return 0;
             if (signature->is_native) {
@@ -828,19 +890,23 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
             !import->native_name || !*import->native_name ||
             import->symbol_id >= module->semantics->symbol_count ||
             import->return_type_id >= module->type_count ||
-            (import->parameter_count && !import->parameter_types)) return 0;
+            (import->parameter_count && !import->parameter_types))
+            return 0;
         const SemanticSymbol *symbol = &module->semantics->symbols[import->symbol_id];
         const AstDeclarationNode *decl = symbol->declaration;
         if (symbol->kind != SEMANTIC_SYMBOL_FUNCTION || !decl || !decl->is_native ||
             decl->as.function.body || decl->as.function.is_async || decl->generic_parameters ||
-            import->source_program != symbol->source_program) return 0;
+            import->source_program != symbol->source_program)
+            return 0;
         if (import->span.begin.line != decl->span.begin.line || import->span.begin.column != decl->span.begin.column ||
-            import->span.end.line != decl->span.end.line || import->span.end.column != decl->span.end.column) return 0;
+            import->span.end.line != decl->span.end.line || import->span.end.column != decl->span.end.column)
+            return 0;
         if (strcmp(import->library, ast_program_lexeme(symbol->source_program, decl->native_library_token)) ||
             strcmp(import->native_name, ast_program_lexeme(symbol->source_program, decl->native_name_token)) ||
             !native_ir_signature_type(module, import->return_type_id, 1) ||
             !native_type_matches_source(module, import->return_type_id, symbol->source_program,
-                                         &decl->as.function.return_type, 0)) return 0;
+                                        &decl->as.function.return_type, 0))
+            return 0;
         for (size_t f = 0; f < module->function_count; f++)
             if (module->functions[f].symbol_id == import->symbol_id) return 0;
         for (size_t p = 0; p < import->parameter_count; p++)
@@ -848,14 +914,16 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
         size_t parameter_count = 0;
         for (const AstParameter *p = decl->as.function.parameters; p; p = p->next, parameter_count++)
             if (parameter_count >= import->parameter_count || !native_type_matches_source(module,
-                import->parameter_types[parameter_count], symbol->source_program, &p->type, 0)) return 0;
+                    import->parameter_types[parameter_count], symbol->source_program, &p->type, 0))
+                return 0;
         if (import->parameter_count != parameter_count) return 0;
         for (size_t previous = 0; previous < n; previous++) {
             const IrNativeImport *other = &module->native_imports[previous];
             if (other->symbol_id == import->symbol_id) return 0;
             if (strcmp(other->native_name, import->native_name)) continue;
             if (strcmp(other->library, import->library) || other->return_type_id != import->return_type_id ||
-                other->parameter_count != import->parameter_count) return 0;
+                other->parameter_count != import->parameter_count)
+                return 0;
             for (size_t p = 0; p < import->parameter_count; p++)
                 if (other->parameter_types[p] != import->parameter_types[p]) return 0;
         }
@@ -872,18 +940,20 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
         if (structure->has_explicit_destructor &&
             (structure->type_properties &
              (SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP)) !=
-                (SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP))
+            (SEMANTIC_TYPE_MOVE_ONLY | SEMANTIC_TYPE_NEEDS_DROP))
             return 0;
         const AstDeclarationNode *source_declaration = module->semantics->symbols[structure->symbol_id].declaration;
         if (!source_declaration || source_declaration->is_native != structure->is_native ||
             source_declaration->is_native_union != structure->is_native_union ||
             source_declaration->native_pack != structure->native_pack ||
             source_declaration->native_alignment != structure->native_alignment ||
-            source_declaration->is_opaque != structure->is_opaque) return 0;
+            source_declaration->is_opaque != structure->is_opaque)
+            return 0;
         if (structure->is_native) {
             if (structure->has_explicit_destructor ||
                 (structure->type_properties & SEMANTIC_TYPE_NEEDS_DROP) ||
-                !(structure->type_properties & SEMANTIC_TYPE_COPYABLE)) return 0;
+                !(structure->type_properties & SEMANTIC_TYPE_COPYABLE))
+                return 0;
             const SemanticSymbol *symbol = &module->semantics->symbols[structure->symbol_id];
             const AstDeclarationNode *decl = symbol->declaration;
             if (!decl || !decl->is_native || decl->is_opaque != structure->is_opaque) return 0;
@@ -895,10 +965,14 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                 NativeTypeLayout expected;
                 if (!semantic_native_layout(module->semantics, structure->source_program, &type, &expected) ||
                     expected.size != structure->native_layout.size ||
-                    expected.alignment != structure->native_layout.alignment) return 0;
+                    expected.alignment != structure->native_layout.alignment)
+                    return 0;
                 IrTypeId id = IR_TYPE_NONE;
                 for (size_t t = 0; t < module->type_count; t++)
-                    if (module->types[t].kind == IR_TYPE_NAMED && module->types[t].symbol_id == structure->symbol_id) { id = t; break; }
+                    if (module->types[t].kind == IR_TYPE_NAMED && module->types[t].symbol_id == structure->symbol_id) {
+                        id = t;
+                        break;
+                    }
                 if (id != IR_TYPE_NONE && !native_ir_layout(module, id, &expected, 0)) return 0;
                 const AstField *field = decl->as.struct_decl.fields;
                 for (size_t f = 0; f < structure->field_count; f++, field = field->next) {
@@ -909,12 +983,14 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                         !semantic_native_field_offset(module->semantics, structure->symbol_id, f, &offset) ||
                         offset != structure->fields[f].native_offset ||
                         !native_type_matches_source(module, structure->fields[f].type_id,
-                                                     structure->source_program, &field->type, 0)) return 0;
+                                                    structure->source_program, &field->type, 0))
+                        return 0;
                     size_t stride = 0;
                     if (field->type.is_array && !field->type.outer_pointer_depth) {
                         AstType element = ast_type_element(&field->type);
                         NativeTypeLayout layout;
-                        if (!semantic_native_layout(module->semantics, structure->source_program, &element, &layout)) return 0;
+                        if (!semantic_native_layout(module->semantics, structure->source_program, &element, &layout))
+                            return 0;
                         stride = layout.size;
                     }
                     if (stride != structure->fields[f].native_array_stride) return 0;
@@ -959,7 +1035,8 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
             (function->is_package_init && function->is_package_cleanup) ||
             (function->interface_thunk_symbol_id != AST_SYMBOL_NONE &&
              (function->is_drop_glue || function->is_package_init ||
-              function->is_package_cleanup))) return 0;
+              function->is_package_cleanup)))
+            return 0;
         if (function->is_package_init || function->is_package_cleanup) {
             if (function->symbol_id != AST_SYMBOL_NONE ||
                 function->owner_symbol_id != AST_SYMBOL_NONE ||
@@ -983,11 +1060,11 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                    (!function->is_drop_glue &&
                     module->semantics->symbols[function->symbol_id].kind !=
                     SEMANTIC_SYMBOL_FUNCTION) ||
-                    (function->is_drop_glue &&
-                     module->semantics->symbols[function->symbol_id].kind !=
-                         SEMANTIC_SYMBOL_STRUCT &&
-                     module->semantics->symbols[function->symbol_id].kind !=
-                         SEMANTIC_SYMBOL_ENUM) ||
+                   (function->is_drop_glue &&
+                    module->semantics->symbols[function->symbol_id].kind !=
+                    SEMANTIC_SYMBOL_STRUCT &&
+                    module->semantics->symbols[function->symbol_id].kind !=
+                    SEMANTIC_SYMBOL_ENUM) ||
                    module->semantics->symbols[function->symbol_id].source_program !=
                    function->source_program ||
                    module->semantics->symbols[function->symbol_id].name_token !=
@@ -1010,12 +1087,12 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
         if (function->owner_symbol_id != AST_SYMBOL_NONE &&
             (function->owner_symbol_id >= module->semantics->symbol_count ||
              (module->semantics->symbols[function->owner_symbol_id].kind !=
-                  SEMANTIC_SYMBOL_STRUCT &&
+              SEMANTIC_SYMBOL_STRUCT &&
               module->semantics->symbols[function->owner_symbol_id].kind !=
-                  SEMANTIC_SYMBOL_ENUM &&
+              SEMANTIC_SYMBOL_ENUM &&
               !(function->interface_thunk_symbol_id != AST_SYMBOL_NONE &&
                 module->semantics->symbols[function->owner_symbol_id].kind ==
-                    SEMANTIC_SYMBOL_INTERFACE)))) {
+                SEMANTIC_SYMBOL_INTERFACE)))) {
             return 0;
         }
         for (size_t p = 0; p < function->parameter_count; p++) {
@@ -1055,8 +1132,8 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                 ir_ast_type_data_type(symbol->source_program, &symbol->declared_type) !=
                 parameter->type ||
                 symbol->declared_type.pointer_depth +
-                    symbol->declared_type.outer_pointer_depth +
-                    (symbol->declared_type.borrow_kind != AST_BORROW_NONE) !=
+                symbol->declared_type.outer_pointer_depth +
+                (symbol->declared_type.borrow_kind != AST_BORROW_NONE) !=
                 parameter->pointer_depth) {
                 return 0;
             }
@@ -1181,11 +1258,11 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                     if (instruction->argument_count > 1 ||
                         (instruction->argument_count == 1 &&
                          instruction->first_argument >=
-                             function->argument_count))
+                         function->argument_count))
                         valid = 0;
                     else if (instruction->argument_count == 1)
                         REQUIRE_VALUE(function->arguments[
-                            instruction->first_argument]);
+                        instruction->first_argument]);
                     break;
                 case IR_OP_PHI:
                     REQUIRE_VALUE(instruction->operand_a);
@@ -1202,8 +1279,10 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                     REQUIRE_VALUE(instruction->operand_a);
                     break;
                 case IR_OP_EXECUTOR:
-                    if(instruction->async_operation!=ASYNC_CONTEXT) REQUIRE_VALUE(instruction->operand_a);
-                    if(instruction->operand_b!=IR_VALUE_NONE) REQUIRE_VALUE(instruction->operand_b);
+                    if (instruction->async_operation != ASYNC_CONTEXT)
+                        REQUIRE_VALUE(instruction->operand_a);
+                    if (instruction->operand_b != IR_VALUE_NONE)
+                        REQUIRE_VALUE(instruction->operand_b);
                     break;
                 case IR_OP_ENUM_IS:
                 case IR_OP_ENUM_PAYLOAD:
@@ -1215,7 +1294,8 @@ static int ir_verify_module_internal(const IrModule *module, int report) {
                 case IR_OP_CANCEL_DROP:
                 case IR_OP_CANCEL_RETURN: break;
                 case IR_OP_CANCEL_CHECK:
-                    REQUIRE_LABEL(instruction->target_a); REQUIRE_LABEL(instruction->target_b);
+                    REQUIRE_LABEL(instruction->target_a);
+                    REQUIRE_LABEL(instruction->target_b);
                     break;
                 case IR_OP_ENUM_CONSTRUCT:
                 case IR_OP_ARRAY_LITERAL:

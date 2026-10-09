@@ -176,8 +176,8 @@ int main(int argc, char *argv[]) {
     BackendEmission emission = BACKEND_EXECUTABLE;
     LinkMode link_mode = LINK_AUTO;
     const char *linker_driver = NULL, *runtime_shim = NULL;
-    const char *native_libraries[argc > 0 ? (size_t)argc : 1];
-    const char *native_directories[argc > 0 ? (size_t)argc : 1];
+    const char *native_libraries[argc > 0 ? (size_t) argc : 1];
+    const char *native_directories[argc > 0 ? (size_t) argc : 1];
     NativeLinkOptions native_options = {.libraries = native_libraries, .directories = native_directories};
     const char *native_link_dump = NULL;
     int emission_requested = 0;
@@ -324,8 +324,9 @@ int main(int argc, char *argv[]) {
             if (!strcmp(mode, "auto")) link_mode = LINK_AUTO;
             else if (!strcmp(mode, "internal")) link_mode = LINK_INTERNAL;
             else if (!strcmp(mode, "external")) link_mode = LINK_EXTERNAL;
-            else error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
-                              ERR_COMP_INVALID_OPTION, NULL, "Invalid link mode: %s", mode);
+            else
+                error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
+                             ERR_COMP_INVALID_OPTION, NULL, "Invalid link mode: %s", mode);
         } else if (!strcmp(argv[i], "--native-library") || !strcmp(argv[i], "--native-library-dir") ||
                    !strcmp(argv[i], "--dump-native-link")) {
             const char *option = argv[i];
@@ -335,11 +336,13 @@ int main(int argc, char *argv[]) {
                 break;
             }
             if (!strcmp(option, "--native-library")) native_libraries[native_options.library_count++] = argv[i];
-            else if (!strcmp(option, "--native-library-dir")) native_directories[native_options.directory_count++] = argv[i];
+            else if (!strcmp(option, "--native-library-dir"))
+                native_directories[native_options.directory_count++] = argv[i];
             else native_link_dump = argv[i];
             if (!driver_native_options_valid(&native_options))
                 error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
-                             ERR_COMP_INVALID_OPTION, NULL, "Native library overrides require unique logical NAME=PATH entries");
+                             ERR_COMP_INVALID_OPTION, NULL,
+                             "Native library overrides require unique logical NAME=PATH entries");
         } else if (!strcmp(argv[i], "--linker-driver") || !strcmp(argv[i], "--runtime-shim")) {
             const char *option = argv[i];
             if (++i >= argc || !argv[i][0]) {
@@ -458,7 +461,8 @@ int main(int argc, char *argv[]) {
     if ((ide_buffer != NULL && !ide_mode) || (
             ide_mode && (ast_dump_path == NULL || requested_output != NULL || token_dump_path != NULL ||
                          symbol_dump_path != NULL || preopt_ir_dump_path != NULL || ir_pass_dump_path != NULL ||
-                         ir_dump_path != NULL || cfg_dump_path != NULL || source_map_path != NULL || native_link_dump != NULL || debug_mode || show_tokens ||
+                         ir_dump_path != NULL || cfg_dump_path != NULL || source_map_path != NULL || native_link_dump !=
+                         NULL || debug_mode || show_tokens ||
                          optimization_requested || (
                              emission_requested && emission != BACKEND_ASSEMBLY) ||
                          output_conflicts_with_source(source_file, ast_dump_path) ||
@@ -743,9 +747,10 @@ int main(int argc, char *argv[]) {
         AstOptimizationStats ast_stats = {0};
         if (optimize) ast_optimize_program(program, &ast_stats);
         if (debug_mode && optimize)
-            printf("  [+] AST optimization: %zu branches, %zu constant loops, %zu short circuits, %zu unreachable statements\n",
-                   ast_stats.constant_branches, ast_stats.constant_loops, ast_stats.short_circuits,
-                   ast_stats.unreachable_statements);
+            printf(
+                "  [+] AST optimization: %zu branches, %zu constant loops, %zu short circuits, %zu unreachable statements\n",
+                ast_stats.constant_branches, ast_stats.constant_loops, ast_stats.short_circuits,
+                ast_stats.unreachable_statements);
         module = ir_lower_program(program, semantics);
         if (module == NULL) {
             if (error_handler_get_error_count(error_handler) == 0)
@@ -856,26 +861,29 @@ int main(int argc, char *argv[]) {
     if (!selection_ok)
         error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
                      ERR_COMP_INVALID_OPTION, source_file, uses_native
-                         ? "Internal linking cannot resolve native imports; use --link=auto or --link=external with GCC/Clang"
-                         : "Internal linking cannot satisfy platform runtime requirements");
+                                                               ? "Internal linking cannot resolve native imports; use --link=auto or --link=external with GCC/Clang"
+                                                               : "Internal linking cannot satisfy platform runtime requirements");
     if (emission == BACKEND_EXECUTABLE && resolved_link != LINK_EXTERNAL && (linker_driver || runtime_shim)) {
         selection_ok = 0;
         error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
-                     ERR_COMP_INVALID_OPTION, source_file, "Linker driver and runtime shim require external executable linking");
+                     ERR_COMP_INVALID_OPTION, source_file,
+                     "Linker driver and runtime shim require external executable linking");
     }
     /* AUTO can acquire platform requirements during IR lowering. Preserve an
        existing external executable until the isolated link publishes success. */
     if (selection_ok && requested_output && emission == BACKEND_EXECUTABLE && resolved_link == LINK_INTERNAL)
-        (void)remove(requested_output);
+        (void) remove(requested_output);
     if (selection_ok && native_link_dump &&
         !driver_dump_native_link(module, &backend_options, &native_options, native_link_dump)) {
         selection_ok = 0;
         error_report(error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_COMPILER,
-                     ERR_COMP_DUMP_FAILED, source_file, "Could not write native link requirements: %s", native_link_dump);
+                     ERR_COMP_DUMP_FAILED, source_file, "Could not write native link requirements: %s",
+                     native_link_dump);
     }
     int emitted = selection_ok && (emission == BACKEND_EXECUTABLE && resolved_link == LINK_EXTERNAL
-        ? driver_external_link(module, &backend_options, output_filename, linker_driver, runtime_shim, &native_options)
-        : backend_emit_file(module, &backend_options, output_filename));
+                                       ? driver_external_link(module, &backend_options, output_filename, linker_driver,
+                                                              runtime_shim, &native_options)
+                                       : backend_emit_file(module, &backend_options, output_filename));
     if (!emitted) {
         error_handler_flush(error_handler);
         if (!format_error) fprintf(stderr, "\n[ERROR] Compilation failed!\n\n");

@@ -29,7 +29,7 @@ static int runtime_link_name(const char *name) {
 }
 
 int mangle_append(char *buffer, size_t buffer_size, size_t *used,
-                         const char *text) {
+                  const char *text) {
     size_t length = strlen(text);
     if (*used > buffer_size || length >= buffer_size - *used) return 0;
     memcpy(buffer + *used, text, length + 1U);
@@ -51,9 +51,9 @@ static int mangle_type(const IrModule *module, IrTypeId type_id, char *buffer,
         if (type->primitive < TYPE_INT || type->primitive > TYPE_NEVER) return 0;
         return mangle_append(buffer, buffer_size, used, codes[type->primitive]);
     }
-    if (type->kind==IR_TYPE_EXECUTOR) return mangle_append(buffer,buffer_size,used,"e");
-    if (type->kind == IR_TYPE_FUTURE || type->kind==IR_TYPE_JOIN)
-        return mangle_append(buffer, buffer_size, used, type->kind==IR_TYPE_JOIN ? "j":"h") &&
+    if (type->kind == IR_TYPE_EXECUTOR) return mangle_append(buffer, buffer_size, used, "e");
+    if (type->kind == IR_TYPE_FUTURE || type->kind == IR_TYPE_JOIN)
+        return mangle_append(buffer, buffer_size, used, type->kind == IR_TYPE_JOIN ? "j" : "h") &&
                mangle_type(module, type->element_type, buffer, buffer_size, used, depth + 1U);
     if (type->kind == IR_TYPE_POINTER)
         return mangle_append(buffer, buffer_size, used, "p") &&
@@ -68,13 +68,15 @@ static int mangle_type(const IrModule *module, IrTypeId type_id, char *buffer,
                mangle_type(module, type->element_type, buffer, buffer_size, used, depth + 1U);
     if (type->kind == IR_TYPE_FUNCTION) {
         if (type->signature_id >= module->signature_count ||
-            !mangle_append(buffer, buffer_size, used, module->signatures[type->signature_id].is_native ? "nq" : "q")) return 0;
+            !mangle_append(buffer, buffer_size, used, module->signatures[type->signature_id].is_native ? "nq" : "q"))
+            return 0;
         const IrFunctionSignature *signature = &module->signatures[type->signature_id];
         (void) snprintf(part, sizeof(part), "%zu_", signature->parameter_count);
         if (!mangle_append(buffer, buffer_size, used, part)) return 0;
         for (size_t i = 0; i < signature->parameter_count; i++)
             if (!mangle_type(module, signature->parameter_types[i], buffer,
-                             buffer_size, used, depth + 1U)) return 0;
+                             buffer_size, used, depth + 1U))
+                return 0;
         return mangle_append(buffer, buffer_size, used, "r") &&
                mangle_type(module, signature->return_type, buffer,
                            buffer_size, used, depth + 1U);
@@ -99,7 +101,8 @@ static int mangle_type(const IrModule *module, IrTypeId type_id, char *buffer,
 
 static int function_is_overloaded(const IrModule *module, const IrFunction *function) {
     if (function->is_drop_glue || function->is_package_init ||
-        function->is_package_cleanup) return 0;
+        function->is_package_cleanup)
+        return 0;
     const char *name = ast_program_lexeme(function->source_program, function->name_token);
     size_t matches = 0;
     for (size_t i = 0; i < module->function_count; i++) {
@@ -120,7 +123,7 @@ static int function_is_overloaded(const IrModule *module, const IrFunction *func
 }
 
 const char *function_link_name(const IrModule *module, const IrFunction *function,
-                                      char *buffer, size_t buffer_size) {
+                               char *buffer, size_t buffer_size) {
     if (function->is_package_init) return "__dmm_package_init";
     if (function->is_native_export) {
         (void) snprintf(buffer, buffer_size, "__dmm_export_body_%zu", function->symbol_id);
@@ -211,7 +214,7 @@ const char *function_link_name(const IrModule *module, const IrFunction *functio
 }
 
 const char *function_address_link_name(const IrModule *module, size_t symbol,
-                                      char *buffer, size_t buffer_size) {
+                                       char *buffer, size_t buffer_size) {
     const IrNativeImport *import = ir_native_import(module, symbol);
     if (import) return import->native_name;
     for (size_t f = 0; f < module->function_count; ++f) {

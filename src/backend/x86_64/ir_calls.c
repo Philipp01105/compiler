@@ -36,13 +36,16 @@ int emit_indirect_typed_call(Emitter *emitter, const IrInstruction *instruction,
     if (callable_type >= emitter->module->type_count) return 0;
     const IrType *type = &emitter->module->types[callable_type];
     if (type->kind != IR_TYPE_FUNCTION ||
-        type->signature_id >= emitter->module->signature_count) return 0;
+        type->signature_id >= emitter->module->signature_count)
+        return 0;
     const IrFunctionSignature *signature =
-        &emitter->module->signatures[type->signature_id];
+            &emitter->module->signatures[type->signature_id];
     if (signature->is_native) {
-        IrNativeImport callee = {.return_type_id = signature->return_type,
+        IrNativeImport callee = {
+            .return_type_id = signature->return_type,
             .parameter_count = signature->parameter_count,
-            .parameter_types = signature->parameter_types};
+            .parameter_types = signature->parameter_types
+        };
         return emit_native_call_target(emitter, instruction, &callee, callable_value);
     }
     IrParameter *parameters = signature->parameter_count
@@ -70,8 +73,8 @@ int emit_indirect_typed_call(Emitter *emitter, const IrInstruction *instruction,
 }
 
 int emit_typed_call(Emitter *emitter, const IrInstruction *instruction,
-                           const IrFunction *callee, int interface_receiver,
-                           size_t indirect_value) {
+                    const IrFunction *callee, int interface_receiver,
+                    size_t indirect_value) {
     const IrFunction *caller = emitter->function;
     size_t stack_count = stack_parameter_count(callee, emitter->target);
     size_t physical_count = physical_parameter_count(callee);
@@ -213,8 +216,9 @@ int emit_interface_call(Emitter *emitter, const IrInstruction *instruction) {
     snprintf(end, sizeof(end), ".LIR_interface_end_%zu_%zu",
              emitter->function_index, sequence);
     for (size_t s = 0; s < emitter->module->structure_count + emitter->module->enum_count; s++) {
-        size_t struct_id = s < emitter->module->structure_count ? emitter->module->structures[s].symbol_id
-            : emitter->module->enums[s - emitter->module->structure_count].symbol_id;
+        size_t struct_id = s < emitter->module->structure_count
+                               ? emitter->module->structures[s].symbol_id
+                               : emitter->module->enums[s - emitter->module->structure_count].symbol_id;
         size_t method_id = semantic_interface_method(emitter->module->semantics,
                                                      instruction->symbol_id, struct_id);
         if (method_id == AST_SYMBOL_NONE) continue;
@@ -234,7 +238,8 @@ int emit_interface_call(Emitter *emitter, const IrInstruction *instruction) {
         const SemanticSymbol *required = &emitter->module->semantics->symbols[instruction->symbol_id];
         if (required->declaration->as.function.receiver_mode == 2) {
             const SemanticSymbol *owner = &emitter->module->semantics->symbols[struct_id];
-            if (!emit_consumed_interface(emitter, receiver, owner->declaration && owner->declaration->closure_consuming_invoke)) return 0;
+            if (!emit_consumed_interface(emitter, receiver,
+                                         owner->declaration && owner->declaration->closure_consuming_invoke)) return 0;
         }
         write_x64_1(emitter, X64_OP_JMP, X64_WIDTH_NONE, x64_label(end));
         write_labelf(emitter, "%s:\n", next);
@@ -260,7 +265,7 @@ void load_nullable_string(Emitter *emitter, const char *reg, size_t value) {
 }
 
 int emit_builtin_call(Emitter *emitter, const IrInstruction *instruction,
-                             const char *name) {
+                      const char *name) {
     const RuntimeCall *runtime = runtime_call_find(name);
     if (runtime == NULL || instruction->argument_count != runtime->argument_count ||
         runtime->argument_count > 3)

@@ -59,7 +59,7 @@ int main(void) {
     if (!render(&branch, SYNTAX_ATT, "    jne .Lnext\n")) return 16;
 
     X64Instruction indirect_call = x64_instruction1(X64_OP_CALL, X64_WIDTH_NONE,
-                                                     x64_register("r11"));
+                                                    x64_register("r11"));
     if (!render(&indirect_call, SYNTAX_INTEL, "    call r11\n")) return 21;
     if (!render(&indirect_call, SYNTAX_ATT, "    call *%r11\n")) return 22;
 

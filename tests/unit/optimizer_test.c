@@ -33,27 +33,35 @@ void native_error(NativeObject *o, const char *s) {
     (void) s;
 }
 
-int ir_main_returns_void(const IrModule *module) { (void)module; return 0; }
+int ir_main_returns_void(const IrModule *module) {
+    (void) module;
+    return 0;
+}
+
 unsigned ir_type_properties(const IrModule *module, IrTypeId type) {
-    (void)module; (void)type; return 0;
+    (void) module;
+    (void) type;
+    return 0;
 }
 
 int native_runtime_emit_profile(NativeObject *o, TargetFormat t, RuntimeProfile p, int v) {
-    (void)p;
-    (void)v;
+    (void) p;
+    (void) v;
     (void) o;
     (void) t;
     return 0;
 }
 
 int native_runtime_object_imports_profile(NativeObject *o, TargetFormat t, RuntimeProfile p) {
-    (void)p;
+    (void) p;
     (void) o;
     (void) t;
     return 0;
 }
-int native_runtime_emit_requirements(NativeObject *o,TargetFormat t,RuntimeProfile p,int v,RuntimeRequirements r) {
-    (void)r; return native_runtime_emit_profile(o,t,p,v);
+
+int native_runtime_emit_requirements(NativeObject *o, TargetFormat t, RuntimeProfile p, int v, RuntimeRequirements r) {
+    (void) r;
+    return native_runtime_emit_profile(o, t, p, v);
 }
 
 #include <stdio.h>

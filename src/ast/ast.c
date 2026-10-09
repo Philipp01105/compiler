@@ -4,7 +4,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef union { long double floating; void *pointer; int64_t integer; } AstArenaAlignment;
+typedef union {
+    long double floating;
+    void *pointer;
+    int64_t integer;
+} AstArenaAlignment;
 
 typedef struct AstArenaBlock {
     struct AstArenaBlock *next;
@@ -120,7 +124,8 @@ static int valid_type_depth(const AstProgram *program, const AstType *type, int 
     if (type->kind == AST_TYPE_INFERRED) return allow_inferred;
     if (type->kind == AST_TYPE_FUNCTION) {
         if (!valid_token(program, type->name_token) || type->function_return_type == NULL ||
-            !valid_type_depth(program, type->function_return_type, 0, depth + 1)) return 0;
+            !valid_type_depth(program, type->function_return_type, 0, depth + 1))
+            return 0;
         unsigned parameter_count = 0, generic_count = 0;
         for (const AstTypeArgument *parameter = type->function_parameters; parameter; parameter = parameter->next)
             if (++parameter_count > 16 || !valid_type_depth(program, &parameter->type, 0, depth + 1)) return 0;
@@ -129,9 +134,11 @@ static int valid_type_depth(const AstProgram *program, const AstType *type, int 
             if (++generic_count > 16 || !valid_token(program, parameter->name_token)) return 0;
     } else if ((type->kind != AST_TYPE_NAMED && type->kind != AST_TYPE_FUTURE &&
                 type->kind != AST_TYPE_JOIN && type->kind != AST_TYPE_EXECUTOR) ||
-               !valid_token(program, type->name_token)) return 0;
+               !valid_token(program, type->name_token))
+        return 0;
     if ((type->kind == AST_TYPE_FUTURE || type->kind == AST_TYPE_JOIN) &&
-        (type->arguments == NULL || type->arguments->next != NULL)) return 0;
+        (type->arguments == NULL || type->arguments->next != NULL))
+        return 0;
     if (type->is_array && !valid_token(program, type->array_length_token)) return 0;
     if (type->element_type != NULL &&
         !valid_type_depth(program, type->element_type, 0, depth + 1))
@@ -157,7 +164,8 @@ static int valid_expression(const AstProgram *program, const AstExpression *expr
     switch (expression->kind) {
         case AST_EXPR_CONTROL:
             if (expression->control == NULL ||
-                !valid_statement(program, expression->control)) return 0;
+                !valid_statement(program, expression->control))
+                return 0;
             break;
         case AST_EXPR_LITERAL:
         case AST_EXPR_NAME:
@@ -169,7 +177,8 @@ static int valid_expression(const AstProgram *program, const AstExpression *expr
             break;
         case AST_EXPR_PROPAGATE:
             if (!valid_expression(program, expression->left) ||
-                !valid_token(program, expression->value_token)) return 0;
+                !valid_token(program, expression->value_token))
+                return 0;
             break;
         case AST_EXPR_BINARY:
         case AST_EXPR_SLICE:
@@ -244,7 +253,8 @@ static int valid_statement(const AstProgram *program, const AstStatement *statem
         switch (statement->kind) {
             case AST_STMT_BLOCK:
                 if ((statement->body != NULL && !valid_statement(program, statement->body)) ||
-                    (statement->result != NULL && !valid_expression(program, statement->result))) return 0;
+                    (statement->result != NULL && !valid_expression(program, statement->result)))
+                    return 0;
                 break;
             case AST_STMT_VARIABLE:
                 if (!valid_token(program, statement->name_token) ||
@@ -352,12 +362,15 @@ static int valid_declarations(const AstProgram *program) {
             return 0;
         if (declaration->is_native &&
             ((declaration->kind != AST_DECL_STRUCT && declaration->kind != AST_DECL_FUNCTION) ||
-             !valid_token(program, declaration->native_abi_token))) return 0;
+             !valid_token(program, declaration->native_abi_token)))
+            return 0;
         if (declaration->is_native_export &&
             (declaration->kind != AST_DECL_FUNCTION || declaration->is_native ||
-             !valid_token(program, declaration->native_abi_token))) return 0;
+             !valid_token(program, declaration->native_abi_token)))
+            return 0;
         if ((declaration->is_native_union || declaration->native_pack || declaration->native_alignment) &&
-            (declaration->kind != AST_DECL_STRUCT || !declaration->is_native)) return 0;
+            (declaration->kind != AST_DECL_STRUCT || !declaration->is_native))
+            return 0;
         if (declaration->kind == AST_DECL_IMPORT) {
             if (declaration->as.import_decl.paths == NULL) return 0;
             for (const AstImportPath *path = declaration->as.import_decl.paths; path != NULL; path = path->next) {
@@ -379,7 +392,8 @@ static int valid_declarations(const AstProgram *program) {
                 (declaration->generic_parameters || declaration->as.struct_decl.methods ||
                  declaration->as.struct_decl.destructor ||
                  declaration->native_library_token != AST_TOKEN_NONE ||
-                 (declaration->is_opaque && declaration->as.struct_decl.fields))) return 0;
+                 (declaration->is_opaque && declaration->as.struct_decl.fields)))
+                return 0;
             if (!valid_token(program, declaration->name_token) ||
                 !valid_fields(program, declaration->as.struct_decl.fields) ||
                 (declaration->as.struct_decl.destructor != NULL &&
@@ -429,7 +443,8 @@ static int package_reexports_depth(const DmmPackage *package, const DmmPackage *
             if (d->kind == AST_DECL_IMPORT && d->is_public)
                 for (const AstImportPath *p = d->as.import_decl.paths; p; p = p->next)
                     if (p->resolved_program && package_reexports_depth(
-                        p->resolved_program->package, target, depth + 1)) return 1;
+                            p->resolved_program->package, target, depth + 1))
+                        return 1;
     return 0;
 }
 
@@ -438,7 +453,7 @@ int ast_package_reexports(const DmmPackage *package, const DmmPackage *target) {
 }
 
 static AstDeclarationNode *package_declaration_depth(const DmmPackage *package, const char *name,
-                                                       AstProgram **source, int public_only, unsigned depth) {
+                                                     AstProgram **source, int public_only, unsigned depth) {
     if (!package || depth > 128) return NULL;
     for (size_t f = 0; f < package->file_count; f++)
         for (AstDeclarationNode *d = package->files[f]->root; d; d = d->next)

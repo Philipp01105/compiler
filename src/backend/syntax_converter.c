@@ -152,14 +152,14 @@ static int convert_addresses(String *result) {
         int ok;
         if (close - open == 4U && memcmp(result->data + open + 1U, "rip", 3U) == 0) {
             while (begin > 0 && (isalnum((unsigned char) result->data[begin - 1U]) ||
-                                  result->data[begin - 1U] == '_' || result->data[begin - 1U] == '.' ||
-                                  result->data[begin - 1U] == '-'))
+                                 result->data[begin - 1U] == '_' || result->data[begin - 1U] == '.' ||
+                                 result->data[begin - 1U] == '-'))
                 begin--;
             ok = append(&replacement, "[rip + ") && append_n(&replacement, result->data + begin, open - begin) &&
                  append(&replacement, "]");
         } else {
             while (begin > 0 && (isdigit((unsigned char) result->data[begin - 1U]) ||
-                                  result->data[begin - 1U] == '-'))
+                                 result->data[begin - 1U] == '-'))
                 begin--;
             ok = append_address(&replacement, result->data + open + 1U, close - open - 1U,
                                 result->data + begin, open - begin);

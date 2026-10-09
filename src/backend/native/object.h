@@ -9,7 +9,9 @@ typedef struct {
     size_t size, capacity;
 } NativeBuffer;
 
-typedef enum { NATIVE_TEXT, NATIVE_RODATA, NATIVE_DATA, NATIVE_PDATA, NATIVE_XDATA, NATIVE_SECTION_COUNT } NativeSection;
+typedef enum {
+    NATIVE_TEXT, NATIVE_RODATA, NATIVE_DATA, NATIVE_PDATA, NATIVE_XDATA, NATIVE_SECTION_COUNT
+} NativeSection;
 
 typedef enum { NATIVE_REL32, NATIVE_CALL32, NATIVE_ADDR64, NATIVE_ADDR32NB } NativeRelocKind;
 

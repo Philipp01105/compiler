@@ -74,7 +74,10 @@ int ir_cfg_build(const IrFunction *function, IrControlFlowGraph *graph) {
         for (size_t s = 0; s < 2; s++) {
             size_t target = block->successor[s];
             if (target == IR_VALUE_NONE) continue;
-            graph->edges[edge_count] = (IrCfgEdge){b, graph->blocks[target].predecessor};
+            graph->edges[edge_count] = (IrCfgEdge)
+            {
+                b, graph->blocks[target].predecessor
+            };
             graph->blocks[target].predecessor = edge_count++;
             graph->blocks[target].predecessor_count++;
         }
@@ -159,18 +162,23 @@ int ir_verify_control_flow(const IrModule *module, const IrFunction *function, i
         if (instruction->bounds_check_elided) {
             size_t base = graph.definitions[instruction->operand_a];
             if (base == IR_VALUE_NONE || function->instructions[base].type_id >= module->type_count ||
-                module->types[function->instructions[base].type_id].kind != IR_TYPE_ARRAY) goto done;
+                module->types[function->instructions[base].type_id].kind != IR_TYPE_ARRAY)
+                goto done;
             int checked = 0;
             for (size_t j = 0; j < i; j++) {
                 const IrInstruction *earlier = &function->instructions[j];
                 if (earlier->opcode != IR_OP_INDEX || earlier->bounds_check_elided ||
                     earlier->operand_a != instruction->operand_a ||
                     earlier->operand_b != instruction->operand_b ||
-                    earlier->type_id != instruction->type_id) continue;
+                    earlier->type_id != instruction->type_id)
+                    continue;
                 size_t previous = graph.owner[j];
                 if ((previous == b ||
                      (dominators[b * words + previous / 64] & (UINT64_C(1) << (previous % 64))) != 0) &&
-                    graph.blocks[previous].reachable) { checked = 1; break; }
+                    graph.blocks[previous].reachable) {
+                    checked = 1;
+                    break;
+                }
             }
             if (!checked) goto done;
         }
@@ -187,8 +195,10 @@ int ir_verify_control_flow(const IrModule *module, const IrFunction *function, i
                     goto done;
             }
         } else {
-            if (instruction->operand_a != IR_VALUE_NONE) AVAILABLE(instruction->operand_a);
-            if (instruction->operand_b != IR_VALUE_NONE) AVAILABLE(instruction->operand_b);
+            if (instruction->operand_a != IR_VALUE_NONE)
+                AVAILABLE(instruction->operand_a);
+            if (instruction->operand_b != IR_VALUE_NONE)
+                AVAILABLE(instruction->operand_b);
             if (instruction->opcode == IR_OP_CALL || instruction->opcode == IR_OP_ENUM_CONSTRUCT ||
                 instruction->opcode == IR_OP_ARRAY_LITERAL)
                 for (size_t a = 0; a < instruction->argument_count; a++)
@@ -206,10 +216,12 @@ done:
 
 static const char *cfg_opcode_name(IrOpcode opcode) {
     static const char *names[] = {
-        "constant", "function-address", "load", "declare", "store", "interface-pack", "unary", "binary", "call", "index", "subslice", "member",
+        "constant", "function-address", "load", "declare", "store", "interface-pack", "unary", "binary", "call",
+        "index", "subslice", "member",
         "slice-length", "cast", "alloc", "free", "return", "branch", "jump", "label", "phi",
         "enum-construct", "enum-is", "enum-payload", "trap", "slice", "slice-data", "array-literal",
-        "drop", "move", "reinit", "free-slice-backing", "await", "executor", "cancel-check", "cancel-await", "cancel-drop", "cancel-return", "native-copy", "struct-literal", "init", "destroy", "value-snapshot"
+        "drop", "move", "reinit", "free-slice-backing", "await", "executor", "cancel-check", "cancel-await",
+        "cancel-drop", "cancel-return", "native-copy", "struct-literal", "init", "destroy", "value-snapshot"
     };
     return opcode >= IR_OP_CONSTANT && opcode <= IR_OP_VALUE_SNAPSHOT ? names[opcode] : "invalid";
 }

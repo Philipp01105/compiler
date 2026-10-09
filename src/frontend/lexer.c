@@ -406,9 +406,9 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
             /* A closing quote keeps ordinary character literals unambiguous. */
             size_t lifetime_end = i + 1;
             if (lifetime_end < length &&
-                (isalpha((unsigned char)source[lifetime_end]) || source[lifetime_end] == '_')) {
+                (isalpha((unsigned char) source[lifetime_end]) || source[lifetime_end] == '_')) {
                 while (lifetime_end < length &&
-                       (isalnum((unsigned char)source[lifetime_end]) || source[lifetime_end] == '_'))
+                       (isalnum((unsigned char) source[lifetime_end]) || source[lifetime_end] == '_'))
                     lifetime_end++;
                 TokenType previous = stream->count ? stream->tokens[stream->count - 1].type : TOKEN_ERROR;
                 if ((previous == TOKEN_AMPERSAND || previous == TOKEN_LESS || previous == TOKEN_COMMA) &&
@@ -423,7 +423,7 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
                         lifetime[lifetime_length] = '\0';
                         add_token(stream, TOKEN_LIFETIME, lifetime, line, column);
                     }
-                    column += (int)lifetime_length;
+                    column += (int) lifetime_length;
                     i = lifetime_end;
                     continue;
                 }

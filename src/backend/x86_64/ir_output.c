@@ -32,8 +32,7 @@ int map_quoted(FILE *output, const char *text) {
 static int write_sized_bits(Emitter *emitter, uint64_t bits, size_t size) {
     if (size != 1 && size != 2 && size != 4 && size != 8) return 0;
     if (emitter->native) return native_uint(emitter->native, bits, size);
-    const char *directive = size == 1 ? ".byte" : size == 2 ? ".short" :
-                            size == 4 ? ".long" : ".quad";
+    const char *directive = size == 1 ? ".byte" : size == 2 ? ".short" : size == 4 ? ".long" : ".quad";
     return fprintf(emitter->output, "    %s 0x%llx\n", directive,
                    (unsigned long long) bits) >= 0;
 }
@@ -59,7 +58,7 @@ static int emit_global_literal_value(Emitter *emitter,
             type->element_type >= emitter->module->type_count)
             return 0;
         const IrType *element_type =
-            &emitter->module->types[type->element_type];
+                &emitter->module->types[type->element_type];
         if (element_type->kind == IR_TYPE_SLICE) return 0;
         IrTypeLayout element_layout;
         if (!ir_type_layout(emitter->module, type->element_type,
@@ -96,10 +95,16 @@ static int emit_global_literal_value(Emitter *emitter,
                            : ast_program_lexeme(program, value->value_token);
     uint64_t bits;
     if (type->primitive == TYPE_DOUBLE) {
-        union { double value; uint64_t bits; } converted = {strtod(text, NULL)};
+        union {
+            double value;
+            uint64_t bits;
+        } converted = {strtod(text, NULL)};
         bits = converted.bits;
     } else if (type->primitive == TYPE_FLOAT) {
-        union { float value; uint32_t bits; } converted = {(float) strtod(text, NULL)};
+        union {
+            float value;
+            uint32_t bits;
+        } converted = {(float) strtod(text, NULL)};
         bits = converted.bits;
     } else if (type->primitive == TYPE_STRING) {
         return 0;
@@ -117,10 +122,12 @@ static int emit_global_literal_value(Emitter *emitter,
 static int emit_global_literal_elements(Emitter *emitter,
                                         const IrGlobal *global) {
     if (global->array_literal == NULL ||
-        global->type_id >= emitter->module->type_count) return 0;
+        global->type_id >= emitter->module->type_count)
+        return 0;
     const IrType *container = &emitter->module->types[global->type_id];
     if ((container->kind != IR_TYPE_ARRAY && container->kind != IR_TYPE_SLICE) ||
-        container->element_type >= emitter->module->type_count) return 0;
+        container->element_type >= emitter->module->type_count)
+        return 0;
     size_t written = 0;
     return emit_global_literal_value(emitter, global->source_program,
                                      global->array_literal, global->type_id,
@@ -283,9 +290,12 @@ static int emit_file(Emitter *emitter, int deterministic) {
             if (!emit_global_literal_elements(emitter, global)) return 0;
         }
         if (emitter->native) {
-            if (!native_define(emitter->native, label, !emitter->module->program->runtime_component && symbol->declaration->is_public, 0)) return 0;
+            if (!native_define(emitter->native, label,
+                               !emitter->module->program->runtime_component && symbol->declaration->is_public,
+                               0)) return 0;
         } else {
-            if (!emitter->module->program->runtime_component && symbol->declaration->is_public) fprintf(output, "    .globl %s\n", label);
+            if (!emitter->module->program->runtime_component && symbol->declaration->is_public) fprintf(
+                output, "    .globl %s\n", label);
             fprintf(output, "%s:\n", label);
         }
         if (global->array_literal != NULL && global_type != NULL &&
@@ -303,7 +313,8 @@ static int emit_file(Emitter *emitter, int deterministic) {
         } else if (global->function_symbol_id != AST_SYMBOL_NONE) {
             char function_buffer[4096];
             const char *function_name = function_address_link_name(emitter->module,
-                global->function_symbol_id, function_buffer, sizeof(function_buffer));
+                                                                   global->function_symbol_id, function_buffer,
+                                                                   sizeof(function_buffer));
             if (function_name == NULL) return 0;
             if (emitter->native) {
                 native_reference(emitter->native, function_name, NATIVE_ADDR64,
@@ -332,8 +343,10 @@ static int emit_file(Emitter *emitter, int deterministic) {
                 if (!native_define(emitter->native, flag, 0, 0)) return 0;
             } else fprintf(output, "%s:\n", flag);
             write_quad(emitter, global->runtime_initializer == NULL &&
-                !semantic_requires_explicit_init(emitter->module->semantics, symbol->source_program,
-                                                 &symbol->declared_type) ? 1 : 0);
+                                !semantic_requires_explicit_init(emitter->module->semantics, symbol->source_program,
+                                                                 &symbol->declared_type)
+                                    ? 1
+                                    : 0);
         }
         if (global_type != NULL && global_type->kind == IR_TYPE_SLICE) {
             char owner[4096];
@@ -348,7 +361,7 @@ static int emit_file(Emitter *emitter, int deterministic) {
     else fputs("    .text\n", output);
     for (size_t f = 0; f < emitter->module->function_count; f++) {
         const IrFunction *function = &emitter->module->functions[f];
-        if(emitter->module->emission_selected && !function->emission_reachable) continue;
+        if (emitter->module->emission_selected && !function->emission_reachable) continue;
         size_t declarations = 0;
         size_t aggregate_results = 0;
         size_t aggregate_parameters = 0;
@@ -362,12 +375,15 @@ static int emit_file(Emitter *emitter, int deterministic) {
                 if (function->instructions[i].is_slice) slots++;
                 if (slots == 0 || declarations > SIZE_MAX - slots) return 0;
                 declarations += slots + 1;
-            } else if ((function->instructions[i].opcode == IR_OP_EXECUTOR || function->instructions[i].opcode == IR_OP_AWAIT || function->instructions[i].opcode == IR_OP_CALL || function->instructions[i].opcode ==
+            } else if ((function->instructions[i].opcode == IR_OP_EXECUTOR || function->instructions[i].opcode ==
+                        IR_OP_AWAIT || function->instructions[i].opcode == IR_OP_CALL || function->instructions[i].
+                        opcode ==
                         IR_OP_ENUM_CONSTRUCT || function->instructions[i].opcode == IR_OP_SLICE ||
                         function->instructions[i].opcode == IR_OP_SUBSLICE ||
                         function->instructions[i].opcode == IR_OP_ARRAY_LITERAL ||
                         function->instructions[i].opcode == IR_OP_INTERFACE_PACK ||
-                        function->instructions[i].opcode == IR_OP_NATIVE_COPY || function->instructions[i].opcode == IR_OP_VALUE_SNAPSHOT ||
+                        function->instructions[i].opcode == IR_OP_NATIVE_COPY || function->instructions[i].opcode ==
+                        IR_OP_VALUE_SNAPSHOT ||
                         function->instructions[i].opcode == IR_OP_STRUCT_LITERAL) &&
                        (is_inline_structure(emitter->module,
                                             &function->instructions[i]) ||
@@ -379,7 +395,8 @@ static int emit_file(Emitter *emitter, int deterministic) {
             }
         for (size_t p = 0; p < function->parameter_count; p++) {
             if (!type_is_structure(emitter->module, function->parameters[p].type_id) &&
-                !(function->is_async && emitter->module->types[function->parameters[p].type_id].kind == IR_TYPE_ARRAY)) continue;
+                !(function->is_async && emitter->module->types[function->parameters[p].type_id].kind == IR_TYPE_ARRAY))
+                continue;
             size_t parameter_slots = type_slots(emitter->module,
                                                 function->parameters[p].type_id);
             if (parameter_slots == 0 || aggregate_parameters > SIZE_MAX - parameter_slots)
@@ -449,9 +466,10 @@ int x86_64_emit_ir_file(const IrModule *module, TargetFormat target,
         .source_map = source_map_path == NULL ? NULL : &map
     };
     int success = emit_file(&emitter, deterministic);
-    if (success && !module->program->runtime_component && (!module->program->package_name || !strcmp(module->program->package_name, "main")))
+    if (success && !module->program->runtime_component && (!module->program->package_name || !strcmp(
+                                                               module->program->package_name, "main")))
         success = native_runtime_assembly_requirements(output, target, module->runtime_profile,
-                                                  ir_main_returns_void(module),ir_runtime_requirements(module));
+                                                       ir_main_returns_void(module), ir_runtime_requirements(module));
     int assembly_io_error = ferror(output);
     if (fclose(output) != 0) assembly_io_error = 1;
     int map_io_error = map.output != NULL && ferror(map.output);

@@ -25,14 +25,23 @@ typedef enum {
     AST_DECL_EXTERN, AST_DECL_TYPE_RULE
 } AstDeclarationKind;
 
-typedef enum { AST_TYPE_INFERRED, AST_TYPE_NAMED, AST_TYPE_FUNCTION, AST_TYPE_FUTURE,
-               AST_TYPE_JOIN, AST_TYPE_EXECUTOR } AstTypeKind;
-typedef enum { ASYNC_NONE, ASYNC_CREATE, ASYNC_SPAWN, ASYNC_BLOCK_ON,
-               ASYNC_SHUTDOWN, ASYNC_CANCEL, ASYNC_NATIVE_FUTURE,
-               ASYNC_POLL, ASYNC_CANCEL_POLL, ASYNC_COMPLETE,
-               ASYNC_CANCEL_COMPLETE, ASYNC_CONTEXT } AstAsyncOperation;
-typedef enum { LIFETIME_NONE, LIFETIME_INITIALIZE, LIFETIME_DESTROY,
-               LIFETIME_TAKE, LIFETIME_REPLACE } AstLifetimeOperation;
+typedef enum {
+    AST_TYPE_INFERRED, AST_TYPE_NAMED, AST_TYPE_FUNCTION, AST_TYPE_FUTURE,
+    AST_TYPE_JOIN, AST_TYPE_EXECUTOR
+} AstTypeKind;
+
+typedef enum {
+    ASYNC_NONE, ASYNC_CREATE, ASYNC_SPAWN, ASYNC_BLOCK_ON,
+    ASYNC_SHUTDOWN, ASYNC_CANCEL, ASYNC_NATIVE_FUTURE,
+    ASYNC_POLL, ASYNC_CANCEL_POLL, ASYNC_COMPLETE,
+    ASYNC_CANCEL_COMPLETE, ASYNC_CONTEXT
+} AstAsyncOperation;
+
+typedef enum {
+    LIFETIME_NONE, LIFETIME_INITIALIZE, LIFETIME_DESTROY,
+    LIFETIME_TAKE, LIFETIME_REPLACE
+} AstLifetimeOperation;
+
 typedef enum { AST_BORROW_NONE, AST_BORROW_IMMUTABLE, AST_BORROW_MUTABLE } AstBorrowKind;
 
 typedef enum {
@@ -59,6 +68,7 @@ typedef struct {
 
 typedef struct AstTypeArgument AstTypeArgument;
 typedef struct AstGenericParameter AstGenericParameter;
+
 typedef struct AstLifetimeParameter {
     size_t name_token;
     struct AstLifetimeParameter *next;
@@ -456,10 +466,13 @@ const char *ast_declaration_kind_name(AstDeclarationKind kind);
 
 /* Returns the type produced by indexing one array/slice layer. */
 AstType ast_type_element(const AstType *type);
+
 int ast_type_contains_polymorphic_callable(const AstType *type);
 
 int ast_validate_program(const AstProgram *program);
+
 int ast_package_reexports(const DmmPackage *package, const DmmPackage *target);
+
 AstDeclarationNode *ast_package_declaration(const DmmPackage *package, const char *name,
                                             AstProgram **source);
 

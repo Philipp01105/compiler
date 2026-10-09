@@ -282,7 +282,9 @@ typedef struct {
 } IrModule;
 
 const IrNativeImport *ir_native_import(const IrModule *module, size_t symbol_id);
+
 static inline int ir_native_import_used(const IrModule *module, size_t symbol_id);
+
 /* Inspect selected IR after optimization; discarded bodies
    and unused imports do not require runtime facilities. */
 static inline RuntimeRequirements ir_runtime_requirements(const IrModule *module) {
@@ -298,6 +300,7 @@ static inline RuntimeRequirements ir_runtime_requirements(const IrModule *module
     }
     return runtime_requirements_normalize(result);
 }
+
 void ir_select_runtime_functions(IrModule *module);
 
 typedef struct IrGlobal {
@@ -318,6 +321,7 @@ IrModule *ir_lower_program(const AstProgram *program, const SemanticModel *seman
 void ir_module_free(IrModule *module);
 
 int ir_verify_module(const IrModule *module);
+
 int ir_main_returns_void(const IrModule *module);
 
 int ir_dump(FILE *output, const IrModule *module);
@@ -327,6 +331,7 @@ int ir_dump_function(FILE *output, const IrModule *module, size_t function_index
 int ir_type_layout(const IrModule *module, IrTypeId type, IrTypeLayout *layout);
 
 unsigned ir_type_properties(const IrModule *module, IrTypeId type);
+
 int ir_type_requires_explicit_init(const IrModule *module, IrTypeId type);
 
 /* Stable, nonzero wire identity for a concrete aggregate in an interface value. */
@@ -345,7 +350,8 @@ static inline int ir_native_import_used(const IrModule *module, size_t symbol_id
         for (size_t i = 0; i < function->instruction_count; ++i) {
             const IrInstruction *in = &function->instructions[i];
             if ((in->opcode == IR_OP_CALL || in->opcode == IR_OP_FUNCTION_ADDRESS) &&
-                in->symbol_id == symbol_id) return 1;
+                in->symbol_id == symbol_id)
+                return 1;
         }
     }
     return 0;
