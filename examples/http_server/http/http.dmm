@@ -1,0 +1,352 @@
+package http;
+import ("stdlib/core" "stdlib/collections" "stdlib/text" "stdlib/bytes" "stdlib/numeric" "stdlib/net");
+
+pub enum Method { pub Get, pub Head, pub Post, pub Put, pub Patch, pub Delete, pub Options, pub Other }
+pub func methodName(method: Method) -> string {
+    match (method) {
+        Get => return "GET"; Head => return "HEAD"; Post => return "POST";
+        Put => return "PUT"; Patch => return "PATCH"; Delete => return "DELETE";
+        Options => return "OPTIONS"; Other => return "";
+    }
+}
+pub enum Status {
+    pub Ok, pub Created, pub Accepted, pub NoContent, pub Found, pub NotModified,
+    pub BadRequest, pub Unauthorized, pub Forbidden, pub NotFound, pub MethodNotAllowed,
+    pub Conflict, pub LengthRequired, pub PayloadTooLarge, pub UnsupportedMediaType,
+    pub ExpectationFailed, pub UnprocessableEntity, pub TooManyRequests, pub HeadersTooLarge,
+    pub InternalServerError, pub NotImplemented, pub ServiceUnavailable,
+}
+pub func statusLine(status: Status) -> string {
+    match (status) {
+        Ok => return "200 OK"; Created => return "201 Created"; Accepted => return "202 Accepted";
+        NoContent => return "204 No Content"; Found => return "302 Found"; NotModified => return "304 Not Modified";
+        BadRequest => return "400 Bad Request"; Unauthorized => return "401 Unauthorized";
+        Forbidden => return "403 Forbidden"; NotFound => return "404 Not Found";
+        MethodNotAllowed => return "405 Method Not Allowed"; Conflict => return "409 Conflict";
+        LengthRequired => return "411 Length Required"; PayloadTooLarge => return "413 Payload Too Large";
+        UnsupportedMediaType => return "415 Unsupported Media Type"; ExpectationFailed => return "417 Expectation Failed";
+        UnprocessableEntity => return "422 Unprocessable Entity"; TooManyRequests => return "429 Too Many Requests";
+        HeadersTooLarge => return "431 Request Header Fields Too Large";
+        InternalServerError => return "500 Internal Server Error"; NotImplemented => return "501 Not Implemented";
+        ServiceUnavailable => return "503 Service Unavailable";
+    }
+}
+pub enum ErrorKind {
+    pub InvalidRequest, pub HeadersTooLarge, pub BodyTooLarge, pub TransferEncoding,
+    pub Expectation, pub InvalidRoute, pub InvalidResponse, pub InvalidConfig,
+    pub OutOfMemory, pub Network, pub Timeout,
+}
+pub struct Error {
+    pub var kind: ErrorKind;
+    pub var message: string;
+    pub static func fromResidual(error: core.AllocError) -> Self {
+        return Error{kind: ErrorKind.OutOfMemory, message: "Allocation failed"};
+    }
+    pub static func fromResidual(error: text.Error) -> Self {
+        if (error.kind == text.ErrorKind.OutOfMemory || error.kind == text.ErrorKind.CapacityOverflow) {
+            return Error{kind: ErrorKind.OutOfMemory, message: "Allocation failed"};
+        }
+        return Error{kind: ErrorKind.InvalidRequest, message: "Invalid UTF-8"};
+    }
+    pub static func fromResidual(error: numeric.Error) -> Self {
+        return Error{kind: ErrorKind.InvalidRequest, message: "Invalid number"};
+    }
+    pub static func fromResidual(error: net.Error) -> Self {
+        return Error{kind: ErrorKind.Network, message: "Network operation failed"};
+    }
+}
+func invalid(kind: ErrorKind, message: string) -> Error { return Error{kind: kind, message: message}; }
+func same(value: u8[], expected: string) -> bit {
+    var other = text.bytes(expected);
+    return value.length == other.length && bytes.startsWith(value, other);
+}
+func lower(value: u8) -> u8 { if (value >= 65 && value <= 90) { return value + 32; } return value; }
+func sameText(value: text.Text, expected: string, ignoreCase: bit) -> bit {
+    var other = text.bytes(expected);
+    if (value.length() != other.length) { return false; }
+    for (var i: usize = 0; i < other.length; i += 1) {
+        var left = value.byteAt(i); var right = other[i];
+        if (ignoreCase) { left = lower(left); right = lower(right); }
+        if (left != right) { return false; }
+    }
+    return true;
+}
+func token(value: u8) -> bit {
+    return (value >= 48 && value <= 57) || (value >= 65 && value <= 90) || (value >= 97 && value <= 122) ||
+        value == 33 || value == 35 || value == 36 || value == 37 || value == 38 || value == 39 ||
+        value == 42 || value == 43 || value == 45 || value == 46 || value == 94 || value == 95 || value == 96 || value == 124 || value == 126;
+}
+func hex(value: u8) -> core.Option<u8> {
+    if (value >= 48 && value <= 57) { return core.Option<u8>.Some(value - 48); }
+    var folded = lower(value);
+    if (folded >= 97 && folded <= 102) { return core.Option<u8>.Some(folded - 87); }
+    return core.Option<u8>.None;
+}
+// Decode into an owner so query/parameter results never retain a temporary key.
+func decode(value: text.Text, plus: bit) -> core.Result<text.String, Error> {
+    var output = collections.list<u8>();
+    for (var i: usize = 0; i < value.length(); i += 1) {
+        var character = value.byteAt(i);
+        if (character == 37) {
+            if (value.length() - i < 3) { return core.Result<text.String, Error>.Err(invalid(ErrorKind.InvalidRequest, "Invalid percent escape")); }
+            var high: u8 = 0; var low: u8 = 0;
+            match (hex(value.byteAt(i + 1))) { None => return core.Result<text.String, Error>.Err(invalid(ErrorKind.InvalidRequest, "Invalid percent escape")); Some(n) => high = n; }
+            match (hex(value.byteAt(i + 2))) { None => return core.Result<text.String, Error>.Err(invalid(ErrorKind.InvalidRequest, "Invalid percent escape")); Some(n) => low = n; }
+            character = high * 16 + low; i += 2;
+        } else if (plus && character == 43) { character = 32; }
+        output.append(character)?;
+    }
+    var input = output.view();
+    return core.Result<text.String, Error>.Ok(text.fromUtf8(&input)?);
+}
+pub func appendUint(output: &mut text.StringBuilder, value: u64) -> core.Result<void, Error> {
+    var buffer: u8[20]; var count = numeric.formatUint(value, 10, buffer[:])?;
+    var input = buffer[:count]; output.appendText(text.view(&input)?)?;
+    return core.Result<void, Error>.Ok;
+}
+// Encode a UTF-8 value as a JSON string, including quotes and control escapes.
+pub func quote(value: text.Text) -> core.Result<text.String, Error> {
+    var output = collections.list<u8>(); var digits = text.bytes("0123456789abcdef");
+    output.append(34)?;
+    for (var i: usize = 0; i < value.length(); i += 1) {
+        var character = value.byteAt(i);
+        if (character == 34 || character == 92) { output.append(92)?; output.append(character)?; }
+        else if (character < 32) {
+            var escaped: u8[6] = [92, 117, 48, 48, digits[character / 16], digits[character % 16]];
+            var input = escaped[:]; output.appendSlice(&input)?;
+        } else { output.append(character)?; }
+    }
+    output.append(34)?; var input = output.view();
+    return core.Result<text.String, Error>.Ok(text.fromUtf8(&input)?);
+}
+
+struct Header { var name: text.String; var value: text.String; }
+@[no_default] pub struct Response {
+    var statusValue: Status;
+    var contentType: string;
+    var payload: collections.List<u8>;
+    var headers: collections.List<Header>;
+    pub static func text(status: Status, body: string) -> core.Result<Self, Error> {
+        return Response.fromBytes(status, "text/plain; charset=utf-8", bytes.clone(text.bytes(body))?);
+    }
+    // The caller supplies JSON; this constructor sets the media type, not a schema.
+    pub static func json(status: Status, body: string) -> core.Result<Self, Error> {
+        return Response.fromBytes(status, "application/json; charset=utf-8", bytes.clone(text.bytes(body))?);
+    }
+    pub static func ownedText(status: Status, body: text.String) -> core.Result<Self, Error> {
+        return ownedResponse(status, "text/plain; charset=utf-8", body);
+    }
+    pub static func ownedJson(status: Status, body: text.String) -> core.Result<Self, Error> {
+        return ownedResponse(status, "application/json; charset=utf-8", body);
+    }
+    pub static func empty(status: Status) -> Self {
+        return Self{statusValue: status, contentType: "", payload: collections.list<u8>(), headers: collections.list<Header>()};
+    }
+    pub static func fromBytes(status: Status, contentType: string, body: collections.List<u8>) -> core.Result<Self, Error> {
+        if (!validHeaderValue(text.bytes(contentType)) || ((status == Status.NoContent || status == Status.NotModified) && body.length() != 0)) {
+            return core.Result<Self, Error>.Err(invalid(ErrorKind.InvalidResponse, "Invalid response body or content type"));
+        }
+        return core.Result<Self, Error>.Ok(Self{statusValue: status, contentType: contentType, payload: body, headers: collections.list<Header>()});
+    }
+    pub func status() -> Status { return statusValue; }
+    pub func setHeader(name: string, value: string) -> core.Result<void, Error> {
+        return self.setHeader(name, text.fromString(value)?);
+    }
+    pub func setHeader(name: string, value: text.String) -> core.Result<void, Error> {
+        var input = text.bytes(name);
+        if (input.length == 0 || input.length > 256 || value.length() > 4096) {
+            return core.Result<void, Error>.Err(invalid(ErrorKind.InvalidResponse, "Invalid header length"));
+        }
+        for (var i: usize = 0; i < input.length; i += 1) {
+            if (!token(input[i])) { return core.Result<void, Error>.Err(invalid(ErrorKind.InvalidResponse, "Invalid header name")); }
+        }
+        var view = value.view();
+        for (var i: usize = 0; i < view.length(); i += 1) {
+            var character = view.byteAt(i);
+            if ((character < 32 && character != 9) || character == 127) {
+                return core.Result<void, Error>.Err(invalid(ErrorKind.InvalidResponse, "Invalid header value"));
+            }
+        }
+        var nameView = text.view(&input)?;
+        if (sameText(nameView, "content-length", true) || sameText(nameView, "transfer-encoding", true) ||
+            sameText(nameView, "connection", true) || sameText(nameView, "content-type", true) || sameText(nameView, "trailer", true)) {
+            return core.Result<void, Error>.Err(invalid(ErrorKind.InvalidResponse, "Framing and content-type headers are managed by HTTP"));
+        }
+        for (var i: usize = 0; i < headers.length(); i += 1) {
+            if (sameText(headers.get(i).name.view(), name, true)) {
+                headers.getMut(i).value = value;
+                return core.Result<void, Error>.Ok;
+            }
+        }
+        if (headers.length() == 64) { return core.Result<void, Error>.Err(invalid(ErrorKind.InvalidResponse, "Too many response headers")); }
+        headers.append(Header{name: text.fromString(name)?, value: value})?;
+        return core.Result<void, Error>.Ok;
+    }
+    pub func encode(head: bit) -> core.Result<collections.List<u8>, Error> {
+        var output = text.builder();
+        output.append("HTTP/1.1 ")?; output.append(statusLine(statusValue))?; output.append("\r\n")?;
+        if (contentType != "") { output.append("Content-Type: ")?; output.append(contentType)?; output.append("\r\n")?; }
+        if (statusValue != Status.NoContent && statusValue != Status.NotModified) {
+            output.append("Content-Length: ")?; appendUint(&mut output, payload.length().(u64))?; output.append("\r\n")?;
+        }
+        output.append("Connection: close\r\n")?;
+        for (var i: usize = 0; i < headers.length(); i += 1) {
+            output.appendText(headers.get(i).name.view())?; output.append(": ")?;
+            output.appendText(headers.get(i).value.view())?; output.append("\r\n")?;
+        }
+        output.append("\r\n")?;
+        var header = text.finish(output); var encoded = collections.list<u8>(); var view = header.view();
+        encoded.ensureCapacity(view.length() + payload.length())?;
+        for (var i: usize = 0; i < view.length(); i += 1) { encoded.append(view.byteAt(i))?; }
+        if (!head) { var body = payload.view(); encoded.appendSlice(&body)?; }
+        return core.Result<collections.List<u8>, Error>.Ok(encoded);
+    }
+}
+func validHeaderValue(value: u8[]) -> bit {
+    for (var i: usize = 0; i < value.length; i += 1) { if ((value[i] < 32 && value[i] != 9) || value[i] == 127) { return false; } }
+    return true;
+}
+func ownedResponse(status: Status, contentType: string, body: text.String) -> core.Result<Response, Error> {
+    var input = body.view(); var output = collections.list<u8>(); output.ensureCapacity(input.length())?;
+    for (var i: usize = 0; i < input.length(); i += 1) { output.append(input.byteAt(i))?; }
+    return Response.fromBytes(status, contentType, output);
+}
+
+
+pub struct Config { pub var maxHeaderBytes: usize; pub var maxBodyBytes: usize; pub var timeoutNanos: u64; }
+pub func config() -> Config { return Config{maxHeaderBytes: 8192, maxBodyBytes: 65536, timeoutNanos: 10000000000}; }
+func validateConfig(options: Config) -> core.Result<void, Error> {
+    if (options.maxHeaderBytes < 64 || options.maxHeaderBytes > 8192 || options.maxBodyBytes > 1048576 || options.timeoutNanos == 0) {
+        return core.Result<void, Error>.Err(invalid(ErrorKind.InvalidConfig, "Headers: 64..8192 bytes, body: 0..1 MiB, timeout: positive"));
+    }
+    return core.Result<void, Error>.Ok;
+}
+@[no_default] pub struct Request {
+    var methodValue: Method;
+    var pathValue: text.String;
+    var queryValue: text.String;
+    var headers: collections.List<Header>;
+    var payload: collections.List<u8>;
+    var contentLength: usize;
+    var routePattern: string;
+    pub func method() -> Method { return methodValue; }
+    pub func path() -> text.Text { return pathValue.view(); }
+    pub func body() -> u8[] { return payload.view(); }
+    pub func bodyText() -> core.Result<text.String, Error> {
+        var input = payload.view(); return core.Result<text.String, Error>.Ok(text.fromUtf8(&input)?);
+    }
+    pub func header<'a>(name: string) -> core.Option<text.Text<'a>> {
+        for (var i: usize = 0; i < headers.length(); i += 1) {
+            if (sameText(headers.get(i).name.view(), name, true)) { return core.Option<text.Text<'a>>.Some(headers.get(i).value.view()); }
+        }
+        return core.Option<text.Text<'a>>.None;
+    }
+    pub func query(name: string) -> core.Result<core.Option<text.String>, Error> {
+        var input = queryValue.view(); var start: usize = 0;
+        while (start < input.length()) {
+            var end = start; while (end < input.length() && input.byteAt(end) != 38) { end += 1; }
+            var split = start; while (split < end && input.byteAt(split) != 61) { split += 1; }
+            var key = decode(input.substring(start, split)?, true)?;
+            if (sameText(key.view(), name, false)) {
+                var valueStart = split; if (split < end) { valueStart += 1; }
+                return core.Result<core.Option<text.String>, Error>.Ok(core.Option<text.String>.Some(decode(input.substring(valueStart, end)?, true)?));
+            }
+            start = end + 1;
+        }
+        return core.Result<core.Option<text.String>, Error>.Ok(core.Option<text.String>.None);
+    }
+    pub func param(name: string) -> core.Result<core.Option<text.String>, Error> {
+        var pattern = text.bytes(routePattern); var path = pathValue.view(); var p: usize = 0; var r: usize = 0;
+        while (p < pattern.length && r < path.length()) {
+            if (pattern[p] == 58) {
+                var key = p + 1; p = key;
+                while (p < pattern.length && pattern[p] != 47) { p += 1; }
+                var start = r; while (r < path.length() && path.byteAt(r) != 47) { r += 1; }
+                if (same(pattern[key:p], name)) {
+                    return core.Result<core.Option<text.String>, Error>.Ok(core.Option<text.String>.Some(decode(path.substring(start, r)?, false)?));
+                }
+            } else { p += 1; r += 1; }
+        }
+        return core.Result<core.Option<text.String>, Error>.Ok(core.Option<text.String>.None);
+    }
+}
+func parseMethod(value: u8[]) -> Method {
+    if (same(value, "GET")) { return Method.Get; } if (same(value, "HEAD")) { return Method.Head; }
+    if (same(value, "POST")) { return Method.Post; } if (same(value, "PUT")) { return Method.Put; }
+    if (same(value, "PATCH")) { return Method.Patch; } if (same(value, "DELETE")) { return Method.Delete; }
+    if (same(value, "OPTIONS")) { return Method.Options; } return Method.Other;
+}
+func parseHead(input: &u8[], options: Config) -> core.Result<Request, Error> {
+    var raw = *input;
+    if (raw.length > options.maxHeaderBytes) { return core.Result<Request, Error>.Err(invalid(ErrorKind.HeadersTooLarge, "Headers too large")); }
+    var lineEnd: usize = 0;
+    match (bytes.find(raw, text.bytes("\r\n"))) { None => return core.Result<Request, Error>.Err(invalid(ErrorKind.InvalidRequest, "Missing request line")); Some(end) => lineEnd = end; }
+    var line = raw[:lineEnd]; var first: usize = 0;
+    match (bytes.find(line, text.bytes(" "))) { None => return core.Result<Request, Error>.Err(invalid(ErrorKind.InvalidRequest, "Invalid request line")); Some(end) => first = end; }
+    var rest = line[first + 1:]; var second: usize = 0;
+    match (bytes.find(rest, text.bytes(" "))) { None => return core.Result<Request, Error>.Err(invalid(ErrorKind.InvalidRequest, "Invalid request line")); Some(end) => second = end; }
+    var method = line[:first]; var target = rest[:second]; var version = rest[second + 1:];
+    if (method.length == 0 || target.length == 0 || target[0] != 47 || (!same(version, "HTTP/1.1") && !same(version, "HTTP/1.0"))) {
+        return core.Result<Request, Error>.Err(invalid(ErrorKind.InvalidRequest, "Invalid request line"));
+    }
+    for (var i: usize = 0; i < method.length; i += 1) { if (!token(method[i])) { return core.Result<Request, Error>.Err(invalid(ErrorKind.InvalidRequest, "Invalid method")); } }
+    var queryStart = target.length;
+    for (var i: usize = 0; i < target.length; i += 1) {
+        if (target[i] < 33 || target[i] > 126 || target[i] == 35) { return core.Result<Request, Error>.Err(invalid(ErrorKind.InvalidRequest, "Invalid request target")); }
+        if (target[i] == 63 && queryStart == target.length) { queryStart = i; }
+        if (target[i] == 37) {
+            if (target.length - i < 3) { return core.Result<Request, Error>.Err(invalid(ErrorKind.InvalidRequest, "Invalid percent escape")); }
+            match (hex(target[i + 1])) { None => return core.Result<Request, Error>.Err(invalid(ErrorKind.InvalidRequest, "Invalid percent escape")); Some(n) => {} }
+            match (hex(target[i + 2])) { None => return core.Result<Request, Error>.Err(invalid(ErrorKind.InvalidRequest, "Invalid percent escape")); Some(n) => {} }
+            i += 2;
+        }
+    }
+    var path = target[:queryStart]; var query = target[target.length:];
+    if (queryStart < target.length) { query = target[queryStart + 1:]; }
+    var request = Request{methodValue: parseMethod(method), pathValue: text.fromUtf8(&path)?, queryValue: text.fromUtf8(&query)?,
+        headers: collections.list<Header>(), payload: collections.list<u8>(), contentLength: 0, routePattern: ""};
+    var cursor = lineEnd + 2; var hasLength = false; var hasHost = false; var transfer = false; var expect = false;
+    while (cursor < raw.length - 2) {
+        var tail = raw[cursor:]; var end: usize = 0;
+        match (bytes.find(tail, text.bytes("\r\n"))) { None => return core.Result<Request, Error>.Err(invalid(ErrorKind.InvalidRequest, "Invalid header line")); Some(n) => end = n; }
+        if (end == 0) { break; }
+        var headerLine = tail[:end]; var colon: usize = 0;
+        match (bytes.find(headerLine, text.bytes(":"))) { None => return core.Result<Request, Error>.Err(invalid(ErrorKind.InvalidRequest, "Missing header colon")); Some(n) => colon = n; }
+        var name = headerLine[:colon]; var rawValue = headerLine[colon + 1:];
+        if (name.length == 0) { return core.Result<Request, Error>.Err(invalid(ErrorKind.InvalidRequest, "Empty header name")); }
+        for (var i: usize = 0; i < name.length; i += 1) { if (!token(name[i])) { return core.Result<Request, Error>.Err(invalid(ErrorKind.InvalidRequest, "Invalid header name")); } }
+        if (!validHeaderValue(rawValue)) { return core.Result<Request, Error>.Err(invalid(ErrorKind.InvalidRequest, "Invalid header value")); }
+        var value = bytes.trimAscii(rawValue); var nameView = text.view(&name)?;
+        if (sameText(nameView, "host", true)) {
+            if (hasHost || value.length == 0) { return core.Result<Request, Error>.Err(invalid(ErrorKind.InvalidRequest, "Invalid Host header")); }
+            hasHost = true;
+        }
+        if (sameText(nameView, "content-length", true)) {
+            if (hasLength || value.length == 0) { return core.Result<Request, Error>.Err(invalid(ErrorKind.InvalidRequest, "Duplicate or empty Content-Length")); }
+            hasLength = true;
+            for (var i: usize = 0; i < value.length; i += 1) { if (value[i] < 48 || value[i] > 57) { return core.Result<Request, Error>.Err(invalid(ErrorKind.InvalidRequest, "Invalid Content-Length")); } }
+            var length = numeric.parseUint(value, 10)?;
+            if (length > options.maxBodyBytes.(u64)) { return core.Result<Request, Error>.Err(invalid(ErrorKind.BodyTooLarge, "Body too large")); }
+            request.contentLength = length.(usize);
+        }
+        if (sameText(nameView, "transfer-encoding", true)) { transfer = true; }
+        if (sameText(nameView, "expect", true)) { expect = true; }
+        if (request.headers.length() == 64) { return core.Result<Request, Error>.Err(invalid(ErrorKind.HeadersTooLarge, "Too many headers")); }
+        request.headers.append(Header{name: text.fromUtf8(&name)?, value: text.fromUtf8(&value)?})?;
+        cursor += end + 2;
+    }
+    if (same(version, "HTTP/1.1") && !hasHost) { return core.Result<Request, Error>.Err(invalid(ErrorKind.InvalidRequest, "HTTP/1.1 requires Host")); }
+    if (transfer && hasLength) { return core.Result<Request, Error>.Err(invalid(ErrorKind.InvalidRequest, "Ambiguous body framing")); }
+    if (transfer) { return core.Result<Request, Error>.Err(invalid(ErrorKind.TransferEncoding, "Transfer-Encoding is unsupported")); }
+    if (expect) { return core.Result<Request, Error>.Err(invalid(ErrorKind.Expectation, "Expect is unsupported")); }
+    return core.Result<Request, Error>.Ok(request);
+}
+// A complete, independently testable parser; the TCP server uses the same head parser.
+pub func parseRequest(input: &u8[], options: Config) -> core.Result<Request, Error> {
+    validateConfig(options)?; var end: usize = 0;
+    match (bytes.find(*input, text.bytes("\r\n\r\n"))) { None => return core.Result<Request, Error>.Err(invalid(ErrorKind.InvalidRequest, "Incomplete headers")); Some(n) => end = n + 4; }
+    var head = (*input)[:end]; var request = parseHead(&head, options)?;
+    if (input.length - end != request.contentLength) { return core.Result<Request, Error>.Err(invalid(ErrorKind.InvalidRequest, "Body length mismatch")); }
+    var body = (*input)[end:]; request.payload.appendSlice(&body)?;
+    return core.Result<Request, Error>.Ok(request);
+}

@@ -20,4 +20,4 @@ Socket and buffer loans survive pending operations until completion or confirmed
 
 Error records kind, domain, native code and transferred bytes. DNS List allocation failures report OutOfMemory/CapacityOverflow and destroy the temporary native answer owner. Raw reactor/native allocation contracts stay unchanged.
 
-[net/raw](raw/README.md) exposes advanced socket operations. Platform layouts and the reactor ABI live under internal. TLS, HTTP and additional socket options are outside the library. See [the HTTP server example](../../examples/http_server/README.md) for a small TCP application.
+[net/raw](raw/README.md) exposes advanced socket operations. Platform layouts and the reactor ABI live under internal. TLS, HTTP and additional socket options are outside this stdlib package. See [the HTTP library and Web API example](../../examples/http_server/README.md) for an importable router built on TCP.

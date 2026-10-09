@@ -772,13 +772,20 @@ if (BUILD_TESTING)
             -P ${CMAKE_SOURCE_DIR}/tests/json_values_test.cmake)
     set_tests_properties(json_values_contract PROPERTIES
             LABELS "integration;examples;json;ownership;execution" TIMEOUT 300)
+    add_test(NAME http_library_contract COMMAND ${CMAKE_COMMAND}
+            -DCOMPILER=$<TARGET_FILE:compiler> -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+            -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/http_library_test
+            -DNODE_EXECUTABLE=${DMM_EXAMPLES_NODE_EXECUTABLE}
+            -P ${CMAKE_SOURCE_DIR}/tests/http_library_test.cmake)
+    set_tests_properties(http_library_contract PROPERTIES
+            LABELS "integration;examples;http;ownership;execution" TIMEOUT 600)
     add_test(NAME application_examples_contract COMMAND ${CMAKE_COMMAND}
             -DCOMPILER=$<TARGET_FILE:compiler> -DC_DRIVER=${CMAKE_C_COMPILER}
             -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/application_examples_test
             -DNODE_EXECUTABLE=${DMM_EXAMPLES_NODE_EXECUTABLE}
             -P ${CMAKE_SOURCE_DIR}/tests/application_examples_test.cmake)
-    # Five applications, two optimization levels and both object formats, plus
-    # execution checks (including two HTTP deadline tests), need a larger budget.
+    # Four applications, two optimization levels and both object formats.
+    # HTTP's external-consumer and protocol checks have their own gate.
     set_tests_properties(application_examples_contract PROPERTIES
             LABELS "integration;examples;stdlib;ffi;execution" TIMEOUT 600)
     file(GLOB_RECURSE DMM_EXAMPLE_CORPUS CONFIGURE_DEPENDS

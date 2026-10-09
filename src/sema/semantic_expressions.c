@@ -1976,6 +1976,13 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
                 }
                 if (function != NULL) {
                     expression->resolved_symbol_id = function->id;
+                    /* Explicit generic package calls must also bind their
+                     * callee. Async graph analysis revisits that name as a
+                     * value after the enclosing call has been resolved. */
+                    expression->left->resolved_symbol_id = function->id;
+                    AstType callable = callable_type(analyzer, function, 0);
+                    set_expression_declared_type(analyzer, expression->left,
+                                                 function->source_program, &callable);
                     set_expression_declared_type(analyzer, expression,
                                                  function->source_program,
                                                  &function->declared_type);
@@ -2312,8 +2319,11 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
           expression->left->kind == AST_EXPR_NAME &&
           is_builtin_name(ast_program_lexeme(analyzer->program,
                                              expression->left->value_token))) &&
-        !(direct_call_callee && expression->kind == AST_EXPR_NAME))
+        !(direct_call_callee && expression->kind == AST_EXPR_NAME)) {
+        if (analyzer->program->source_path && (strstr(analyzer->program->source_path, "http_server") || strstr(analyzer->program->source_path, "generic-async-callee")))
+            fprintf(stderr, "UNRESOLVED %s:%d:%d kind=%d name=%s direct=%d\n", analyzer->program->source_path, expression->span.begin.line, expression->span.begin.column, expression->kind, ast_program_lexeme(analyzer->program, expression->value_token), direct_call_callee);
         analyzer->model->unresolved_expression_count++;
+    }
 }
 
 void analyze_expression(Analyzer *analyzer, AstExpression *expression) {

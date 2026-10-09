@@ -6,7 +6,7 @@ the current stdlib; compiler edge cases belong in `tests/`.
 
 | Application | Run it for |
 |---|---|
-| [HTTP server](http_server/README.md) | Async TCP, request parsing, routing and deadlines |
+| [HTTP server](http_server/README.md) | An importable HTTP router and an in-memory Web API with sync/async handlers |
 | [Todo CLI](todo_cli/README.md) | An interactive session with owned tasks and checked mutation |
 | [JSON parser](json_parser/README.md) | Owned JSON documents, decoded values and checked key/index access |
 | [Mini-Grep](mini_grep/README.md) | Streaming file/stdin processing through generic Reader/Writer contracts |
@@ -33,7 +33,9 @@ state exists only in memory. JSON and Mini-Grep read user-supplied input and do
 not modify it.
 
 `application_examples_contract` checks CLI behavior, valid/invalid JSON, streaming
-boundaries and the native C link with O0/O1 and ELF/COFF object emission. When Node
-is available, it also checks generated JSON trees and real HTTP traffic against an
-automatically selected loopback port. `frontend_pipeline_unit` checks all DMM example sources, including
-the JSON library package.
+boundaries and the native C link with O0/O1 and ELF/COFF object emission.
+`http_library_contract` checks the HTTP package from a separate vendored consumer
+and exercises the Web API against an automatically selected loopback port when
+Node is available. Node also enables generated JSON cases in the application
+contract. `frontend_pipeline_unit` checks all DMM example sources, including
+the JSON and HTTP library packages.

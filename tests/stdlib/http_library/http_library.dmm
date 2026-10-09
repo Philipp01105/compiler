@@ -1,0 +1,98 @@
+package main;
+import ("stdlib/core" "stdlib/text" "stdlib/bytes" "stdlib/time" "stdlib/async" "examples/http_server/http");
+struct State { var calls: usize; }
+func contains(input: u8[], pattern: string) -> bit {
+    match (bytes.find(input, text.bytes(pattern))) { None => return false; Some(index) => return true; }
+}
+func parse(value: string) -> core.Result<http.Request, http.Error> {
+    var input = bytes.clone(text.bytes(value))?; var source = input.view();
+    return http.parseRequest(&source, http.config());
+}
+func bodyEquals(reply: &http.Response, expected: string) -> core.Result<bit, http.Error> {
+    var encoded = reply.encode(false)?; var input = encoded.view();
+    match (bytes.find(input, text.bytes("\r\n\r\n"))) {
+        None => return core.Result<bit, http.Error>.Ok(false);
+        Some(end) => { var body = input[end + 4:]; var other = text.bytes(expected); return core.Result<bit, http.Error>.Ok(body.length == other.length && bytes.startsWith(body, other)); }
+    }
+}
+func dynamic(state: &mut State, request: &http.Request) -> core.Result<http.Response, http.Error> {
+    state.calls += 1;
+    match (request.param("name")?) {
+        Some(value) => return http.Response.ownedText(http.Status.Ok, value);
+        None => return http.Response.text(http.Status.InternalServerError, "Missing parameter");
+    }
+}
+func fixed(state: &mut State, request: &http.Request) -> core.Result<http.Response, http.Error> {
+    state.calls += 1; return http.Response.text(http.Status.Ok, "fixed");
+}
+async func slow(state: &mut State, request: &http.Request) -> core.Result<http.Response, http.Error> {
+    asynchronous.sleep(time.nanoseconds(100000000)).await();
+    state.calls += 1; return http.Response.text(http.Status.Ok, "async");
+}
+async func exercise() -> core.Result<int, http.Error> {
+    var api = http.router<State>(); var state = State{calls: 0};
+    api.get("/things/:name", dynamic)?; api.get("/things/new", fixed)?;
+    api.on(http.Method.Head, "/things/new", dynamic)?;
+    api.onAsync(http.Method.Get, "/async", slow)?;
+    {
+        var request = parse("GET /things/new HTTP/1.1\r\nHost: localhost\r\n\r\n")?;
+        var reply = api.dispatch(&mut request, &mut state).await()?;
+        if (!bodyEquals(&reply, "fixed")? || state.calls != 1) { return core.Result<int, http.Error>.Ok(1); }
+    }
+    {
+        var request = parse("GET /things/Gr%C3%BC%C3%9Fe HTTP/1.1\r\nHost: localhost\r\n\r\n")?;
+        var reply = api.dispatch(&mut request, &mut state).await()?;
+        if (!bodyEquals(&reply, "Grüße")?) { return core.Result<int, http.Error>.Ok(2); }
+    }
+    {
+        var request = parse("OPTIONS /things/new HTTP/1.1\r\nHost: localhost\r\n\r\n")?;
+        var before = state.calls; var reply = api.dispatch(&mut request, &mut state).await()?;
+        var encoded = reply.encode(false)?; var input = encoded.view();
+        if (reply.status() != http.Status.NoContent || state.calls != before || !contains(input, "Allow: GET, HEAD, OPTIONS\r\n")) { return core.Result<int, http.Error>.Ok(4); }
+    }
+    {
+        var request = parse("HEAD /things/new HTTP/1.1\r\nHost: localhost\r\n\r\n")?;
+        // Explicit HEAD takes precedence over GET fallback, even if its handler returns a different body.
+        var reply = api.dispatch(&mut request, &mut state).await()?;
+        if (reply.status() != http.Status.InternalServerError) { return core.Result<int, http.Error>.Ok(5); }
+        var encoded = reply.encode(true)?; var input = encoded.view();
+        if (!bytes.endsWith(input, text.bytes("\r\n\r\n"))) { return core.Result<int, http.Error>.Ok(6); }
+    }
+    {
+        var request = parse("GET /async HTTP/1.1\r\nHost: localhost\r\n\r\n")?;
+        var before = state.calls;
+        match (asynchronous.timeout(api.dispatch(&mut request, &mut state), time.Deadline.after(1000000)).await()) {
+            Completed(value) => return core.Result<int, http.Error>.Ok(7);
+            Elapsed => {}
+        }
+        if (state.calls != before) { return core.Result<int, http.Error>.Ok(8); }
+        var reply = api.dispatch(&mut request, &mut state).await()?;
+        if (!bodyEquals(&reply, "async")? || state.calls != before + 1) { return core.Result<int, http.Error>.Ok(9); }
+    }
+    match (api.get("/things/:other", fixed)) { Ok => return core.Result<int, http.Error>.Ok(10); Err(error) => { if (error.kind != http.ErrorKind.InvalidRoute) { return core.Result<int, http.Error>.Ok(11); } } }
+    match (api.get("/pairs/:id/:id", fixed)) { Ok => return core.Result<int, http.Error>.Ok(12); Err(error) => {} }
+    match (api.get("relative", fixed)) { Ok => return core.Result<int, http.Error>.Ok(13); Err(error) => {} }
+    {
+        var request = parse("POST /echo?empty=&first=one&first=two HTTP/1.1\r\nHost: localhost\r\nContent-Length: 3\r\n\r\nabc")?;
+        var body = request.bodyText()?;
+        if (!body.startsWith("abc") || body.length() != 3) { return core.Result<int, http.Error>.Ok(14); }
+        match (request.query("empty")?) { None => return core.Result<int, http.Error>.Ok(15); Some(value) => { if (value.length() != 0) { return core.Result<int, http.Error>.Ok(16); } } }
+        match (request.query("first")?) { None => return core.Result<int, http.Error>.Ok(17); Some(value) => { if (!value.startsWith("one") || value.length() != 3) { return core.Result<int, http.Error>.Ok(18); } } }
+    }
+    {
+        var reply = http.Response.text(http.Status.Ok, "body")?;
+        match (reply.setHeader("X-Value", "bad\r\nInjected: yes")) { Ok => return core.Result<int, http.Error>.Ok(19); Err(error) => {} }
+        match (reply.setHeader("content-LENGTH", "999")) { Ok => return core.Result<int, http.Error>.Ok(20); Err(error) => {} }
+        reply.setHeader("X-Test", "old")?; reply.setHeader("x-test", "new")?;
+        var encoded = reply.encode(false)?; var input = encoded.view();
+        if (!contains(input, "X-Test: new\r\n") || contains(input, "old")) { return core.Result<int, http.Error>.Ok(21); }
+    }
+    match (http.Response.text(http.Status.NoContent, "body")) { Ok(value) => return core.Result<int, http.Error>.Ok(22); Err(error) => {} }
+    var invalidInput = text.bytes("POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 4\r\n\r\nabc");
+    match (http.parseRequest(&invalidInput, http.config())) { Ok(value) => return core.Result<int, http.Error>.Ok(23); Err(error) => {} }
+    var options = http.config(); options.maxHeaderBytes = 0;
+    var input = text.bytes("GET / HTTP/1.0\r\n\r\n");
+    match (http.parseRequest(&input, options)) { Ok(value) => return core.Result<int, http.Error>.Ok(24); Err(error) => { if (error.kind != http.ErrorKind.InvalidConfig) { return core.Result<int, http.Error>.Ok(25); } } }
+    return core.Result<int, http.Error>.Ok(0);
+}
+func main() -> int { match (block_on(exercise())) { Ok(code) => return code; Err(error) => return 99; } }

@@ -214,6 +214,27 @@ static void report_unresolved(const AstProgram *program) {
     }
 }
 
+static int generic_async_callee_regression(void) {
+    const char *source =
+        "struct Box<T> { var value:T; } "
+        "func make<T>(value:T)->Box<T> { return Box<T>{value:value}; } "
+        "async func build()->int { var box=make<int>(42); return box.value; } "
+        "func main()->int { return block_on(build()); }";
+    const FrontendOptions options = {0};
+    AstProgram *program = test_parse_source(source, strlen(source),
+                                            "generic-async-callee.dmm", &options);
+    SemanticModel *semantics = program == NULL ? NULL : semantic_analyze(program);
+    int failed = semantics == NULL || semantics->error_count != 0 ||
+                 semantics->unresolved_expression_count != 0;
+    IrModule *module = !failed ? ir_lower_program(program, semantics) : NULL;
+    if (module == NULL || !ir_verify_module(module)) failed = 1;
+    ir_module_free(module);
+    semantic_model_free(semantics);
+    ast_program_free(program);
+    if (failed) fprintf(stderr, "generic async callee regression failed\n");
+    return failed;
+}
+
 static int unresolved_call_regression(void) {
     const char *source = "func main() -> void { missing(); }";
     const FrontendOptions options = {0};
@@ -279,7 +300,8 @@ int main(int argc, char **argv) {
     if (errors == NULL) return 1;
     error_handler_set_global(errors);
     int failed = control_flow_regressions() || ownership_property_regressions() ||
-                 unresolved_call_regression() || thread_type_property_regression();
+                 unresolved_call_regression() || generic_async_callee_regression() ||
+                 thread_type_property_regression();
     int saw_cast = 0;
     int saw_alloc = 0;
     int saw_free = 0;

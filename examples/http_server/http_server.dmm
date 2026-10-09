@@ -1,142 +1,122 @@
 package main;
-import (
-    "stdlib/core"
-    "stdlib/net"
-    "stdlib/time"
-    "stdlib/text"
-    "stdlib/bytes"
-    "stdlib/io"
-    "stdlib/process"
-    "stdlib/numeric"
-);
+import ("stdlib/core" "stdlib/collections" "stdlib/text" "stdlib/numeric" "stdlib/process" "stdlib/io"
+    "stdlib/net" "stdlib/time" "stdlib/async" "examples/http_server/http");
 
-enum Reply { Home, Health, BadRequest, NotFound, MethodNotAllowed, HeadersTooLarge }
+struct Item { var id: u64; var title: text.String; }
+struct State { var items: collections.List<Item>; var nextId: u64; }
 
-// Responses have fixed byte lengths, so no allocation or formatting is needed.
-func response(reply: Reply, head: bit) -> string {
-    match (reply) {
-        Home => {
-            if (head) { return "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: 16\r\nConnection: close\r\n\r\n"; }
-            return "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: 16\r\nConnection: close\r\n\r\nHello from DMM!\n";
-        }
-        Health => {
-            if (head) { return "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: 3\r\nConnection: close\r\n\r\n"; }
-            return "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: 3\r\nConnection: close\r\n\r\nok\n";
-        }
-        NotFound => {
-            if (head) { return "HTTP/1.1 404 Not Found\r\nContent-Length: 10\r\nConnection: close\r\n\r\n"; }
-            return "HTTP/1.1 404 Not Found\r\nContent-Length: 10\r\nConnection: close\r\n\r\nNot found\n";
-        }
-        MethodNotAllowed => {
-            return "HTTP/1.1 405 Method Not Allowed\r\nAllow: GET, HEAD\r\nContent-Length: 19\r\nConnection: close\r\n\r\nMethod not allowed\n";
-        }
-        HeadersTooLarge => {
-            return "HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Length: 18\r\nConnection: close\r\n\r\nHeaders too large\n";
-        }
-        BadRequest => return "HTTP/1.1 400 Bad Request\r\nContent-Length: 12\r\nConnection: close\r\n\r\nBad request\n";
+func home(state: &mut State, request: &http.Request) -> core.Result<http.Response, http.Error> {
+    return http.Response.text(http.Status.Ok, "Hello from DMM!\n");
+}
+async func health(state: &mut State, request: &http.Request) -> core.Result<http.Response, http.Error> {
+    // Async handlers can await I/O or timers without calling block_on themselves.
+    asynchronous.sleep(time.nanoseconds(1000000)).await();
+    return http.Response.text(http.Status.Ok, "ok\n");
+}
+func appendItem(output: &mut text.StringBuilder, item: &Item) -> core.Result<void, http.Error> {
+    output.append("{\"id\":")?; http.appendUint(output, item.id)?;
+    output.append(",\"title\":")?; var quoted = http.quote(item.title.view())?;
+    output.appendText(quoted.view())?; output.append("}")?;
+    return core.Result<void, http.Error>.Ok;
+}
+func listItems(state: &mut State, request: &http.Request) -> core.Result<http.Response, http.Error> {
+    var output = text.builder(); output.append("{\"items\":[")?;
+    for (var i: usize = 0; i < state.items.length(); i += 1) {
+        if (i > 0) { output.append(",")?; } appendItem(&mut output, state.items.get(i))?;
     }
+    output.append("]}\n")?;
+    return http.Response.ownedJson(http.Status.Ok, text.finish(output));
 }
-
-// Compare byte slices directly; HTTP parsing does not require UTF-8 decoding.
-func equal(value: u8[], expected: string) -> bit {
-    var other = text.bytes(expected);
-    return value.length == other.length && bytes.startsWith(value, other);
-}
-
-async func serveConnection(connection: net.Accepted) -> core.Result<void, net.Error> {
-    var deadline = time.Deadline.after(10000000000);
-    var buffer: u8[8192];
-    var used: usize = 0;
-    var reply = Reply.BadRequest;
-    var head = false;
-    while (used < 8192) {
-        var destination = buffer[used:];
-        var count = connection.stream.read(&mut destination, deadline).await()?;
-        if (count == 0) {
-            if (used == 0) { return core.Result<void, net.Error>.Ok; }
-            break;
-        }
-        used += count;
-        var request = buffer[:used];
-        match (bytes.find(request, text.bytes("\r\n\r\n"))) {
-            None => {
-                if (used == 8192) { reply = Reply.HeadersTooLarge; }
-                continue;
-            }
-            Some(end) => {}
-        }
-        // Validate the request line before choosing a route.
-        match (bytes.find(request, text.bytes("\r\n"))) {
-            None => break;
-            Some(end) => {
-                var line = request[:end];
-                match (bytes.find(line, text.bytes(" "))) {
-                    None => break;
-                    Some(first) => {
-                        var method = line[:first];
-                        var rest = line[first + 1:];
-                        match (bytes.find(rest, text.bytes(" "))) {
-                            None => break;
-                            Some(second) => {
-                                var path = rest[:second];
-                                var version = rest[second + 1:];
-                                if (!equal(version, "HTTP/1.1") && !equal(version, "HTTP/1.0")) { break; }
-                                if (method.length == 0 || path.length == 0) { break; }
-                                head = equal(method, "HEAD");
-                                if (!head && !equal(method, "GET")) { reply = Reply.MethodNotAllowed; }
-                                else if (equal(path, "/")) { reply = Reply.Home; }
-                                else if (equal(path, "/health")) { reply = Reply.Health; }
-                                else { reply = Reply.NotFound; }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        break;
-    }
-    var output = text.bytes(response(reply, head));
-    connection.stream.writeAll(&output, deadline).await()?;
-    connection.stream.shutdownWrite()?;
-    return core.Result<void, net.Error>.Ok;
-}
-
-async func run(port: u16) -> int {
-    match (net.listen(net.ipv4(2130706433, port))) {
-        Err(error) => { io.println("Could not listen on the requested port"); return 1; }
-        Ok(listener) => {
-            match (listener.localAddress()) {
-                Err(error) => { io.println("Could not query the listening address"); return 1; }
-                Ok(address) => {
-                    io.print("HTTP server listening on http://127.0.0.1:");
-                    io.print(address.port);
-                    io.println(" (Ctrl+C to stop)");
-                }
-            }
-            while (true) {
-                match (listener.accept().await()) {
-                    Err(error) => { io.println("Accept failed"); return 2; }
-                    Ok(connection) => {
-                        // Owning the stream keeps its buffers and pending operations in this frame.
-                        match (serveConnection(connection).await()) {
-                            Ok => {}
-                            Err(error) => { io.println("Connection failed or timed out"); }
-                        }
-                    }
-                }
+func createItem(state: &mut State, request: &http.Request) -> core.Result<http.Response, http.Error> {
+    match (request.header("Content-Type")) {
+        None => return http.Response.text(http.Status.UnsupportedMediaType, "Use Content-Type: text/plain\n");
+        Some(value) => {
+            if (!value.startsWith("text/plain") || (value.length() > 10 && value.byteAt(10) != 59)) {
+                return http.Response.text(http.Status.UnsupportedMediaType, "Use Content-Type: text/plain\n");
             }
         }
     }
-    return 0;
+    var body = request.body();
+    if (body.length == 0 || body.length > 256) { return http.Response.text(http.Status.UnprocessableEntity, "Title must contain 1..256 UTF-8 bytes\n"); }
+    if (state.items.length() == 1000) { return http.Response.text(http.Status.TooManyRequests, "Item limit reached\n"); }
+    var id = state.nextId;
+    state.items.append(Item{id: id, title: request.bodyText()?})?; state.nextId += 1;
+    var output = text.builder(); appendItem(&mut output, state.items.get(state.items.length() - 1))?; output.append("\n")?;
+    var response = http.Response.ownedJson(http.Status.Created, text.finish(output))?;
+    var location = text.builder(); location.append("/api/items/")?; http.appendUint(&mut location, id)?;
+    response.setHeader("Location", text.finish(location))?;
+    return core.Result<http.Response, http.Error>.Ok(response);
 }
-
+func itemId(request: &http.Request) -> core.Result<u64, http.Error> {
+    match (request.param("id")?) {
+        None => return core.Result<u64, http.Error>.Err(http.Error{kind: http.ErrorKind.InvalidRequest, message: "Missing ID"});
+        Some(value) => {
+            var buffer: u8[20]; var storage = buffer[:]; var count = value.copyBytes(&mut storage)?;
+            return core.Result<u64, http.Error>.Ok(numeric.parseUint(buffer[:count], 10)?);
+        }
+    }
+}
+func findItem(state: &State, id: u64) -> core.Option<usize> {
+    for (var i: usize = 0; i < state.items.length(); i += 1) { if (state.items.get(i).id == id) { return core.Option<usize>.Some(i); } }
+    return core.Option<usize>.None;
+}
+func getItem(state: &mut State, request: &http.Request) -> core.Result<http.Response, http.Error> {
+    match (findItem(state, itemId(request)?)) {
+        None => return http.Response.text(http.Status.NotFound, "Not found\n");
+        Some(index) => {
+            var output = text.builder(); appendItem(&mut output, state.items.get(index))?; output.append("\n")?;
+            return http.Response.ownedJson(http.Status.Ok, text.finish(output));
+        }
+    }
+}
+func deleteItem(state: &mut State, request: &http.Request) -> core.Result<http.Response, http.Error> {
+    match (findItem(state, itemId(request)?)) {
+        None => return http.Response.text(http.Status.NotFound, "Not found\n");
+        Some(index) => { var removed = state.items.remove(index); return core.Result<http.Response, http.Error>.Ok(http.Response.empty(http.Status.NoContent)); }
+    }
+}
+func greet(state: &mut State, request: &http.Request) -> core.Result<http.Response, http.Error> {
+    var name = text.fromString("world")?;
+    match (request.query("name")?) { None => {} Some(value) => name = value; }
+    var message = text.builder(); message.append("Hello, ")?; message.appendText(name.view())?; message.append("!")?;
+    var greeting = text.finish(message); var quoted = http.quote(greeting.view())?;
+    var output = text.builder(); output.append("{\"message\":")?; output.appendText(quoted.view())?; output.append("}\n")?;
+    var response = http.Response.ownedJson(http.Status.Ok, text.finish(output))?;
+    match (request.header("X-Request-ID")) {
+        None => {}
+        Some(value) => {
+            var copied = text.builder(); copied.appendText(value)?; response.setHeader("X-Request-ID", text.finish(copied))?;
+        }
+    }
+    return core.Result<http.Response, http.Error>.Ok(response);
+}
+func routes() -> core.Result<http.Router<State>, http.Error> {
+    var api = http.router<State>();
+    api.get("/", home)?;
+    api.onAsync(http.Method.Get, "/health", health)?;
+    api.get("/api/items", listItems)?; api.post("/api/items", createItem)?;
+    api.get("/api/items/:id", getItem)?; api.delete("/api/items/:id", deleteItem)?;
+    api.get("/api/greet", greet)?;
+    return core.Result<http.Router<State>, http.Error>.Ok(api);
+}
+async func run(port: u16, timeoutMillis: u64) -> core.Result<void, http.Error> {
+    var options = http.config(); options.timeoutNanos = timeoutMillis * 1000000;
+    var server = http.listen(net.ipv4(2130706433, port), options)?;
+    var address = server.localAddress()?;
+    io.print("HTTP server listening on http://127.0.0.1:"); io.print(address.port); io.println(" (Ctrl+C to stop)");
+    var state = State{items: collections.list<Item>(), nextId: 1};
+    return http.serve<State>(server, routes()?, state).await();
+}
 func main() -> int {
     match (process.args()) {
         Err(error) => { io.println("Could not read arguments"); return 2; }
         Ok(arguments) => {
-            if (arguments.length() > 1) { io.println("Usage: http_server [PORT] (default 8080; 0 chooses a free port)"); return 2; }
+            if (arguments.length() != 0 && arguments.length() != 1 && arguments.length() != 3) {
+                io.println("Usage: http_server [PORT] [--timeout-ms MILLISECONDS]"); return 2;
+            }
             var port: u16 = 8080;
-            if (arguments.length() == 1) {
+            var timeoutMillis: u64 = 10000;
+            if (arguments.length() > 0) {
                 var digits: u8[5]; var storage = digits[:];
                 match (arguments.get(0).copyBytes(&mut storage)) {
                     Err(error) => { io.println("Invalid port"); return 2; }
@@ -146,7 +126,21 @@ func main() -> int {
                     }
                 }
             }
-            return block_on(run(port));
+            if (arguments.length() == 3) {
+                if (!arguments.get(1).startsWith("--timeout-ms") || arguments.get(1).length() != 12) { io.println("Expected --timeout-ms"); return 2; }
+                var digits: u8[5]; var storage = digits[:];
+                match (arguments.get(2).copyBytes(&mut storage)) {
+                    Err(error) => { io.println("Invalid timeout"); return 2; }
+                    Ok(length) => match (numeric.parseUint(digits[:length], 10)) {
+                        Err(error) => { io.println("Invalid timeout"); return 2; }
+                        Ok(value) => {
+                            if (value == 0 || value > 60000) { io.println("Timeout must be 1..60000 milliseconds"); return 2; }
+                            timeoutMillis = value;
+                        }
+                    }
+                }
+            }
+            match (block_on(run(port, timeoutMillis))) { Ok => return 0; Err(error) => { io.println(error.message); return 1; } }
         }
     }
 }

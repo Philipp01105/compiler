@@ -1,0 +1,4 @@
+module dmm.test/http_library
+dmm 2026-10-04-dev
+features = ["async"]
+require examples/http_server v0.1.0

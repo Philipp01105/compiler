@@ -769,6 +769,7 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
             from_target->source_program,
             &from_target->declaration->as.function.return_type);
         size_t return_value = conversion->result;
+        DataType conversion_type = conversion->type;
         if (expression->propagation_return_variant_symbol_id !=
             AST_SYMBOL_NONE) {
             size_t wrapper_argument = builder->function->argument_count;
@@ -793,7 +794,7 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         if (early_return == NULL) return IR_VALUE_NONE;
         early_return->operand_a = return_value;
         early_return->type_id = builder->function->return_type_id;
-        early_return->type = conversion->type;
+        early_return->type = conversion_type;
 
         emit_label(builder, invalid_label, expression->span);
         IrInstruction *invalid = emit(builder, IR_OP_TRAP,
