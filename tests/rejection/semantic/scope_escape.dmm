@@ -1,10 +1,12 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
 func main() -> void {
     {
-        var x: int = 1;
+        var x:int = 1;
     }
     io.println(x);
 }

@@ -1,5 +1,5 @@
 package main;
 
 func main() -> void {
-    var values: int[2;
+    var values:int[2;
     }

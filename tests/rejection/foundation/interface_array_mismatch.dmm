@@ -11,7 +11,7 @@ struct Wrong {
 }
 
 func main() -> void {
-    var values: Value[1];
-    var wrong: Wrong;
+    var values:Value[1];
+    var wrong:Wrong;
     values[0] = wrong;
 }

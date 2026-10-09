@@ -1,8 +1,8 @@
 package main;
 
 struct Point {
-    var x: int;
-    var y: int;
+    var x:int;
+    var y:int;
 }
 
 enum Direction {
@@ -10,7 +10,7 @@ enum Direction {
     South
 }
 
-func add(a: int, b: int) -> int {
+func add(a:int, b:int) -> int {
     return a + b;
 }
 

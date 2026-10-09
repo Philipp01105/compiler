@@ -1,96 +1,99 @@
 package env;
 import (
-    "stdlib/core"
     "stdlib/collections"
+    "stdlib/core"
     raw "stdlib/memory/raw"
 );
 extern "system" from "c" {
-    func getenv(name: *u8) -> *u8;
-    func setenv(name: *u8, value: *u8, overwrite: i32) -> i32;
-    func unsetenv(name: *u8) -> i32;
+    func getenv(name:*u8) -> *u8;
+
+    func setenv(name:*u8, value:*u8, overwrite:i32) -> i32;
+
+    func unsetenv(name:*u8) -> i32;
+
     func errnoAddress() -> *i32 = "__errno_location";
 }
 
-func terminated(value: u8[]) -> core.Result<collections.List<u8>, Error> {
+func terminated(value:u8[]) -> core.Result<collections.List<u8>,Error> {
     if (value.length >= 9223372036854775807.(usize)) {
-        return core.Result<collections.List<u8>, Error>.Err(failure(ErrorKind.CapacityOverflow, 0));
+        return core.Result<collections.List<u8>,Error>.Err(failure(ErrorKind.CapacityOverflow, 0));
     }
     var output = collections.list<u8>();
     output.ensureCapacity(value.length + 1)?;
     output.appendSlice(&value)?;
     output.append(0)?;
-    return core.Result<collections.List<u8>, Error>.Ok(output);
+    return core.Result<collections.List<u8>,Error>.Ok(output);
 }
 
-func nativeGet(name: u8[]) -> core.Result<collections.List<u8>, Error> {
+func nativeGet(name:u8[]) -> core.Result<collections.List<u8>,Error> {
     if (!validName(name)) {
-        return core.Result<collections.List<u8>, Error>.Err(failure(ErrorKind.InvalidName, 0));
+        return core.Result<collections.List<u8>,Error>.Err(failure(ErrorKind.InvalidName, 0));
     }
     var converted = terminated(name);
     match (converted) {
-        Err(error) => return core.Result<collections.List<u8>, Error>.Err(error);
+        Err(error) => return core.Result<collections.List<u8>,Error>.Err(error);
         Ok(key) => {
-            var view: u8[] = key.view();
-            var pointer: *u8 = getenv(view.data);
+            var view:u8[] = key.view();
+            var pointer:*u8 = getenv(view.data);
             if (pointer == raw.null<u8>()) {
-                return core.Result<collections.List<u8>, Error>.Err(failure(ErrorKind.Missing, 0));
+                return core.Result<collections.List<u8>,Error>.Err(failure(ErrorKind.Missing, 0));
             }
-            var length: usize = 0;
+            var length:usize = 0;
             while (pointer[length] != 0) {
                 length += 1;
             }
             var output = collections.list<u8>();
-            var bytes=slice(pointer,length);
+            var bytes = slice(pointer, length);
             output.appendSlice(&bytes)?;
-            return core.Result<collections.List<u8>, Error>.Ok(output);
+            return core.Result<collections.List<u8>,Error>.Ok(output);
         }
     }
 }
 
-func nativeSet(name: u8[], value: u8[]) -> core.Result<void, Error> {
+func nativeSet(name:u8[], value:u8[]) -> core.Result<void,Error> {
     if (!validName(name)) {
-        return core.Result<void, Error>.Err(failure(ErrorKind.InvalidName, 0));
+        return core.Result<void,Error>.Err(failure(ErrorKind.InvalidName, 0));
     }
     if (!validValue(value)) {
-        return core.Result<void, Error>.Err(failure(ErrorKind.InvalidValue, 0));
+        return core.Result<void,Error>.Err(failure(ErrorKind.InvalidValue, 0));
     }
     var a = terminated(name);
     match (a) {
-        Err(error) => return core.Result<void, Error>.Err(error);
+        Err(error) => return core.Result<void,Error>.Err(error);
         Ok(key) => {
             var b = terminated(value);
             match (b) {
-                Err(error) => return core.Result<void, Error>.Err(error);
+                Err(error) => return core.Result<void,Error>.Err(error);
                 Ok(data) => {
-                    var av: u8[] = key.view();
-                    var bv: u8[] = data.view();
+                    var av:u8[] = key.view();
+                    var bv:u8[] = data.view();
                     if (setenv(av.data, bv.data, 1) != 0) {
-                        return core.Result<void, Error>.Err(
+                        return core.Result<void,Error>.Err(
                             failure(ErrorKind.System, (*errnoAddress()).(isize))
                         );
                     }
-                    return core.Result<void, Error>.Ok;
+                    return core.Result<void,Error>.Ok;
                 }
             }
         }
     }
 }
 
-func nativeRemove(name: u8[]) -> core.Result<void, Error> {
+func nativeRemove(name:u8[]) -> core.Result<void,Error> {
     if (!validName(name)) {
-        return core.Result<void, Error>.Err(failure(ErrorKind.InvalidName, 0));
+        return core.Result<void,Error>.Err(failure(ErrorKind.InvalidName, 0));
     }
     var converted = terminated(name);
     match (converted) {
-        Err(error) => return core.Result<void, Error>.Err(error);
+        Err(error) => return core.Result<void,Error>.Err(error);
         Ok(key) => {
-            var view: u8[] = key.view();
+            var view:u8[] = key.view();
             if (unsetenv(view.data) != 0) {
-                return core.Result<void, Error>.Err(
+                return core.Result<void,Error>.Err(
                     failure(ErrorKind.System, (*errnoAddress()).(isize))
                 );
             }
-            return core.Result<void, Error>.Ok;
+            return core.Result<void,Error>.Ok;
         }
     }
 }

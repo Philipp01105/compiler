@@ -1,80 +1,222 @@
 package main;
-import ("stdlib/core" raw "stdlib/memory/raw" "stdlib/collections");
-var created:int=0;var dropped:int=0;
-struct Resource {var value:int;destructor{dropped+=1;}}
-struct Reader<'a>{var source:&'a int;}
-func owned(value:int)->Resource {created+=1;return Resource{value:value};}
-func hash(key:&Resource)->u64{return key.value.(u64)%2;}
-func equal(left:&Resource,right:&Resource)->bit{return left.value==right.value;}
-func readerHash(key:&Reader)->u64{return (*key.source).(u64)%2;}
-func readerEqual(left:&Reader,right:&Reader)->bit{return *left.source==*right.source;}
-func failed(value:core.Result<void,core.AllocError>)->bit {
-    match(value){Ok=>return false;Err(error)=>return error==core.AllocError.OutOfMemory;}
+import (
+    "stdlib/collections"
+    "stdlib/core"
+    raw "stdlib/memory/raw"
+);
+var created:int = 0;
+var dropped:int = 0;
+
+struct Resource {
+    var value:int;
+    destructor {
+        dropped += 1;
+    }
 }
-func tableFailed(value:core.Result<void,collections.Error>)->bit {
-    match(value){Ok=>return false;Err(error)=>return error.kind==collections.ErrorKind.OutOfMemory;}
+
+struct Reader<'a> {
+    var source:&'a int;
 }
-func lists()->int {
-    var values=collections.list<Resource>();
-    match(values.ensureCapacity(2)){Ok=>{}Err(e)=>return 1;}
-    match(values.append(owned(1))){Ok=>{}Err(e)=>return 2;}
-    match(values.append(owned(2))){Ok=>{}Err(e)=>return 3;}
+
+func owned(value:int) -> Resource {
+    created += 1;
+    return Resource{value:value};
+}
+
+func hash(key:&Resource) -> u64 {
+    return key.value.(u64) % 2;
+}
+
+func equal(left:&Resource, right:&Resource) -> bit {
+    return left.value == right.value;
+}
+
+func readerHash(key:&Reader) -> u64 {
+    return (*key.source).(u64) % 2;
+}
+
+func readerEqual(left:&Reader, right:&Reader) -> bit {
+    return *left.source == *right.source;
+}
+
+func failed(value:core.Result<void,core.AllocError>) -> bit {
+    match (value) {
+        Ok => return false;
+        Err(error) => return error == core.AllocError.OutOfMemory;
+    }
+}
+
+func tableFailed(value:core.Result<void,collections.Error>) -> bit {
+    match (value) {
+        Ok => return false;
+        Err(error) => return error.kind == collections.ErrorKind.OutOfMemory;
+    }
+}
+
+func lists() -> int {
+    var values = collections.list<Resource>();
+    match (values.ensureCapacity(2)) {
+        Ok => {}
+        Err(e) => return 1;
+    }
+    match (values.append(owned(1))) {
+        Ok => {}
+        Err(e) => return 2;
+    }
+    match (values.append(owned(2))) {
+        Ok => {}
+        Err(e) => return 3;
+    }
     raw.testFailNextAllocation();
-    if(!failed(values.append(owned(3))) || dropped!=1 || values.length()!=2 || values.capacity()!=2){return 4;}
+    if (
+        !failed(values.append(owned(3)))
+        || dropped != 1
+        || values.length() != 2
+        || values.capacity() != 2
+    ) {
+        return 4;
+    }
     raw.testFailNextAllocation();
-    if(!failed(values.insert(1,owned(4))) || dropped!=2){return 5;}
+    if (!failed(values.insert(1, owned(4))) || dropped != 2) {
+        return 5;
+    }
     raw.testFailNextAllocation();
-    if(!failed(values.ensureCapacity(8)) || values.get(0).value!=1 || values.get(1).value!=2){return 6;}
-    match(values.append(owned(5))){Ok=>{}Err(e)=>return 7;}
-    if(values.length()!=3){return 8;}
+    if (!failed(values.ensureCapacity(8)) || values.get(0).value != 1 || values.get(1).value != 2) {
+        return 6;
+    }
+    match (values.append(owned(5))) {
+        Ok => {}
+        Err(e) => return 7;
+    }
+    if (values.length() != 3) {
+        return 8;
+    }
     return 0;
 }
-func maps()->int {
-    match(collections.map<Resource,Resource>(hash,equal)){
-        Ok(values)=>{
-            var before=dropped;
+
+func maps() -> int {
+    match (collections.map<Resource,Resource>(hash, equal)) {
+        Ok(values) => {
+            var before = dropped;
             raw.testFailNextAllocation();
-            if(!tableFailed(values.insert(owned(1),owned(11))) || dropped!=before+2 || values.length()!=0){return 10;}
-            for(var i:int=0;i<4;i+=1){match(values.insert(owned(i),owned(i+10))){Ok=>{}Err(e)=>return 11;}}
-            before=dropped;raw.testFailNextAllocation();
-            if(!tableFailed(values.insert(owned(4),owned(14))) || dropped!=before+2 || values.length()!=4){return 12;}
-            for(var i:int=0;i<4;i+=1){
-                var key=owned(i);
-                match(values.get(&key)){Some(value)=>{if(value.value!=i+10){return 13;}}None=>return 14;}
+            if (
+                !tableFailed(values.insert(owned(1), owned(11)))
+                || dropped != before + 2
+                || values.length() != 0
+            ) {
+                return 10;
             }
-            before=dropped;
-            match(values.insert(owned(2),owned(99))){Ok=>{}Err(e)=>return 15;}
-            if(dropped!=before+2 || values.length()!=4){return 16;}
-            var key=owned(2);
-            match(values.remove(&key)){Some(value)=>{if(value.value!=99){return 17;}}None=>return 18;}
-            match(values.insert(owned(4),owned(14))){Ok=>{}Err(e)=>return 19;}
-        }
-        Err(e)=>return 20;
-    }
-    return 0;
-}
-func readers()->int {
-    var key:int=1;var value:int=11;
-    match(collections.map<Reader,Reader>(readerHash,readerEqual)){
-        Ok(values)=>{
-            match(values.insert(Reader{source:&key},Reader{source:&value})){Ok=>{}Err(e)=>return 21;}
+            for (var i:int = 0; i < 4; i += 1) {
+                match (values.insert(owned(i), owned(i + 10))) {
+                    Ok => {}
+                    Err(e) => return 11;
+                }
+            }
+            before = dropped;
             raw.testFailNextAllocation();
-            if(!tableFailed(values.ensureCapacity(32))){return 22;}
-            {var query=Reader{source:&key};
-            match(values.get(&query)){Some(result)=>{if(*result.source!=11){return 23;}}None=>return 24;}}
-            match(values.ensureCapacity(32)){Ok=>{}Err(e)=>return 25;}
-            values.clear();key=2;value=12;
+            if (
+                !tableFailed(values.insert(owned(4), owned(14)))
+                || dropped != before + 2
+                || values.length() != 4
+            ) {
+                return 12;
+            }
+            for (var i:int = 0; i < 4; i += 1) {
+                var key = owned(i);
+                match (values.get(&key)) {
+                    Some(value) => {
+                        if (value.value != i + 10) {
+                            return 13;
+                        }
+                    }
+                    None => return 14;
+                }
+            }
+            before = dropped;
+            match (values.insert(owned(2), owned(99))) {
+                Ok => {}
+                Err(e) => return 15;
+            }
+            if (dropped != before + 2 || values.length() != 4) {
+                return 16;
+            }
+            var key = owned(2);
+            match (values.remove(&key)) {
+                Some(value) => {
+                    if (value.value != 99) {
+                        return 17;
+                    }
+                }
+                None => return 18;
+            }
+            match (values.insert(owned(4), owned(14))) {
+                Ok => {}
+                Err(e) => return 19;
+            }
         }
-        Err(e)=>return 26;
+        Err(e) => return 20;
     }
     return 0;
 }
-func main()->int {
-    var result=lists();if(result!=0){return result;}
-    if(created!=dropped){return 27;}
-    result=maps();if(result!=0){return result;}
-    if(created!=dropped){return 28;}
-    result=readers();if(result!=0){return result;}
-    if(raw.testOutstandingAllocations()!=0){return 29;}
+
+func readers() -> int {
+    var key:int = 1;
+    var value:int = 11;
+    match (collections.map<Reader,Reader>(readerHash, readerEqual)) {
+        Ok(values) => {
+            match (values.insert(Reader{source:&key}, Reader{source:&value})) {
+                Ok => {}
+                Err(e) => return 21;
+            }
+            raw.testFailNextAllocation();
+            if (!tableFailed(values.ensureCapacity(32))) {
+                return 22;
+            }
+            {
+                var query = Reader{source:&key};
+                match (values.get(&query)) {
+                    Some(result) => {
+                        if (*result.source != 11) {
+                            return 23;
+                        }
+                    }
+                    None => return 24;
+                }
+            }
+            match (values.ensureCapacity(32)) {
+                Ok => {}
+                Err(e) => return 25;
+            }
+            values.clear();
+            key = 2;
+            value = 12;
+        }
+        Err(e) => return 26;
+    }
+    return 0;
+}
+
+func main() -> int {
+    var result = lists();
+    if (result != 0) {
+        return result;
+    }
+    if (created != dropped) {
+        return 27;
+    }
+    result = maps();
+    if (result != 0) {
+        return result;
+    }
+    if (created != dropped) {
+        return 28;
+    }
+    result = readers();
+    if (result != 0) {
+        return result;
+    }
+    if (raw.testOutstandingAllocations() != 0) {
+        return 29;
+    }
     return 0;
 }

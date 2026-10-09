@@ -1,6 +1,6 @@
 package main;
 
-func bad<T, T>(value: T) -> T {
+func bad<T,T>(value:T) -> T {
     return value;
 }
 

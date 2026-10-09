@@ -1,23 +1,35 @@
 package asynchronous;
-import memraw "stdlib/memory/raw";
-import polling "stdlib/async/poll";
-import "stdlib/core";
+import (
+    polling "stdlib/async/poll"
+    "stdlib/core"
+    memraw "stdlib/memory/raw"
+);
+
 pub struct Unit {}
 
 // The unselected handle remains owned by the caller, even when already ready.
 pub enum Selected<T,U> {
-    pub Left(T,Future<U>),
-    pub Right(Future<T>,U)
+    pub Left(T, Future<U>),
+    pub Right(Future<T>, U)
 }
 
-pub async func select<T,U>(left:Future<T>,right:Future<U>)->Selected<T,U> {
- match(polling.select(left,right).await()){Left(value,other)=>return Selected<T,U>.Left(value,other);Right(other,value)=>return Selected<T,U>.Right(other,value);}
+pub async func select<T,U>(left:Future<T>, right:Future<U>) -> Selected<T,U> {
+    match (polling.select(left, right).await()) {
+        Left(value, other) => return Selected<T,U>.Left(value, other);
+        Right(other, value) => return Selected<T,U>.Right(other, value);
+    }
 }
 
-pub async func race<T>(left:Future<T>,right:Future<T>) -> T {
-    match (select(left,right).await()) {
-        Left(value,loser) => { cancel(loser).await(); return value; }
-        Right(loser,value) => { cancel(loser).await(); return value; }
+pub async func race<T>(left:Future<T>, right:Future<T>) -> T {
+    match (select(left, right).await()) {
+        Left(value, loser) => {
+            cancel(loser).await();
+            return value;
+        }
+        Right(loser, value) => {
+            cancel(loser).await();
+            return value;
+        }
     }
 }
 
@@ -26,24 +38,39 @@ pub struct Joined<T,U> {
     pub var right:U;
 }
 
-pub async func join<T,U>(left:Future<T>,right:Future<U>) -> Joined<T,U> {
-    match (select(left,right).await()) {
-        Left(value,other) => { var second=other.await(); return Joined<T,U>{left:value,right:second}; }
-        Right(other,value) => { var first=other.await(); return Joined<T,U>{left:first,right:value}; }
+pub async func join<T,U>(left:Future<T>, right:Future<U>) -> Joined<T,U> {
+    match (select(left, right).await()) {
+        Left(value, other) => {
+            var second = other.await();
+            return Joined<T,U>{left:value, right:second};
+        }
+        Right(other, value) => {
+            var first = other.await();
+            return Joined<T,U>{left:first, right:value};
+        }
     }
 }
 
 // Unit adapters keep the ordinary value/ownership rules for void children.
-pub async func asUnit(future:Future<void>)->Unit { future.await(); return Unit{}; }
-pub async func selectVoid(left:Future<void>,right:Future<void>)->Selected<Unit,Unit> {
-    var first=asUnit(left); var second=asUnit(right);
-    return select(first,second).await();
+pub async func asUnit(future:Future<void>) -> Unit {
+    future.await();
+    return Unit{};
 }
-pub async func raceVoid(left:Future<void>,right:Future<void>)->void {
-    var first=asUnit(left); var second=asUnit(right);
-    race(first,second).await();
+
+pub async func selectVoid(left:Future<void>, right:Future<void>) -> Selected<Unit,Unit> {
+    var first = asUnit(left);
+    var second = asUnit(right);
+    return select(first, second).await();
 }
-pub async func joinVoid(left:Future<void>,right:Future<void>)->void {
-    var first=asUnit(left); var second=asUnit(right);
-    join(first,second).await();
+
+pub async func raceVoid(left:Future<void>, right:Future<void>) -> void {
+    var first = asUnit(left);
+    var second = asUnit(right);
+    race(first, second).await();
+}
+
+pub async func joinVoid(left:Future<void>, right:Future<void>) -> void {
+    var first = asUnit(left);
+    var second = asUnit(right);
+    join(first, second).await();
 }

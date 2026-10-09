@@ -1,4 +1,6 @@
 package stdlib;
 // The root forwards only canonical language contracts. Resource APIs have
 // explicit package imports; ownership and I/O have no root compatibility API.
-pub import "stdlib/core";
+pub import (
+    "stdlib/core"
+);

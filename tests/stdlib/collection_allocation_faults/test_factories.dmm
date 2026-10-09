@@ -1,17 +1,54 @@
 package main;
-import memraw "stdlib/memory/raw";
-import ("stdlib/core" "stdlib/collections");
-func testList<T>(capacity:usize)->collections.List<T> {
- var value=collections.list<T>();match(value.ensureCapacity(capacity)){Ok=>{}Err(error)=>{memraw.core_trap();}}return value;
-}
-func testMap<K,V>(hash:func(&K)->u64,equal:func(&K,&K)->bit)->collections.Map<K,V> {
- match(collections.map<K,V>(hash,equal)){Ok(value)=>return value;Err(error)=>{memraw.core_trap();}}
+import (
+    "stdlib/collections"
+    "stdlib/core"
+    memraw "stdlib/memory/raw"
+);
+
+func testList<T>(capacity:usize) -> collections.List<T> {
+    var value = collections.list<T>();
+    match (value.ensureCapacity(capacity)) {
+        Ok => {}
+        Err(error) => {
+            memraw.core_trap();
+        }
+    }
+    return value;
 }
 
-func status(value:TestStatus)->TestStatus{return value;}
-func status(value:core.Result<void,core.AllocError>)->TestStatus{
- match(value){Ok=>return TestStatus.None;Err(error)=>{if(error==core.AllocError.OutOfMemory){return TestStatus.OutOfMemory;}return TestStatus.CapacityOverflow;}}
+func testMap<K,V>(hash:func(&K) -> u64, equal:func(&K,&K) -> bit) -> collections.Map<K,V> {
+    match (collections.map<K,V>(hash, equal)) {
+        Ok(value) => return value;
+        Err(error) => {
+            memraw.core_trap();
+        }
+    }
 }
-func status(value:core.Result<void,collections.Error>)->TestStatus{
- match(value){Ok=>return TestStatus.None;Err(error)=>{if(error.kind==collections.ErrorKind.OutOfMemory){return TestStatus.OutOfMemory;}return TestStatus.CapacityOverflow;}}
+
+func status(value:TestStatus) -> TestStatus {
+    return value;
+}
+
+func status(value:core.Result<void,core.AllocError>) -> TestStatus {
+    match (value) {
+        Ok => return TestStatus.None;
+        Err(error) => {
+            if (error == core.AllocError.OutOfMemory) {
+                return TestStatus.OutOfMemory;
+            }
+            return TestStatus.CapacityOverflow;
+        }
+    }
+}
+
+func status(value:core.Result<void,collections.Error>) -> TestStatus {
+    match (value) {
+        Ok => return TestStatus.None;
+        Err(error) => {
+            if (error.kind == collections.ErrorKind.OutOfMemory) {
+                return TestStatus.OutOfMemory;
+            }
+            return TestStatus.CapacityOverflow;
+        }
+    }
 }

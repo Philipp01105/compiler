@@ -1,4 +1,4 @@
 package main;
-const invalid: int = 3 / 0;
+const invalid:int = 3 / 0;
 
 func main() -> void {}

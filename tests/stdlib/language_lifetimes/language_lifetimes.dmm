@@ -1,813 +1,1900 @@
 package main;
-import memraw "stdlib/memory/raw";
 import (
+    "stdlib/binary"
+    "stdlib/collections"
     stdlib "stdlib/core"
     "stdlib/core"
-    "stdlib/binary"
+    memraw "stdlib/memory/raw"
     "stdlib/sync"
-    "stdlib/collections"
 );
+
 struct Reader<'a> {
- var source: &'a i32;
- func read()->i32 { return *source; }
- func getRef()->&'a i32 { return source; }
+    var source:&'a i32;
+
+    func read() -> i32 {
+        return *source;
+    }
+
+    func getRef() -> &'a i32 {
+        return source;
+    }
 }
-struct Writer<'a> { var source: &'a mut i32; func write(value:i32)->void { *source=value; } }
-func readerHash(key:&i32)->u64 { return (*key).(u64); }
-func readerSame(left:&i32,right:&i32)->bit { return *left==*right; }
-func borrowedReaderHash(key:&Reader)->u64 { return (*(*key).source).(u64); }
-func borrowedReaderSame(left:&Reader,right:&Reader)->bit { return *(*left).source==*(*right).source; }
-struct TaggedReader<'a> { var occupied:u8; var reader:Reader<'a>; }
+
+struct Writer<'a> {
+    var source:&'a mut i32;
+
+    func write(value:i32) -> void {
+        *source = value;
+    }
+}
+
+func readerHash(key:&i32) -> u64 {
+    return (*key).(u64);
+}
+
+func readerSame(left:&i32, right:&i32) -> bit {
+    return *left == *right;
+}
+
+func borrowedReaderHash(key:&Reader) -> u64 {
+    return (*(*key).source).(u64);
+}
+
+func borrowedReaderSame(left:&Reader, right:&Reader) -> bit {
+    return *(*left).source == *(*right).source;
+}
+
+struct TaggedReader<'a> {
+    var occupied:u8;
+    var reader:Reader<'a>;
+}
+
 struct BorrowTable<'a> {
- var memory:*TaggedReader<'a>; var limit:usize;
- func grow(size:usize)->void {
-  var fresh=memraw.core_alloc(size*sizeof(TaggedReader)).(*TaggedReader<'a>);
-  if(fresh==memraw.null<TaggedReader<'a>>()) { return; }
-  for(var cursor:usize=0;cursor<size;cursor+=1) { fresh[cursor].occupied=0; }
-  for(var cursor:usize=0;cursor<limit;cursor+=1) {
-   if(memory[cursor].occupied==7) {
-    var index:usize=(*memory[cursor].reader.source).(usize)%size;
-    while(fresh[index].occupied==7) { index=(index+1)%size; }
-    memraw.initialize(&fresh[index],take(memory[cursor]));
-   }
-  }
-  memraw.core_release(memory.(*u8)); memory=fresh; limit=size;
- }
- func put(key:usize,value:Reader<'a>)->void {
-  var cursor:usize=key%limit;
-  while(memory[cursor].occupied==7) { cursor=(cursor+1)%limit; }
-  memraw.initialize(&memory[cursor],TaggedReader{occupied:7,reader:value});
- }
- func update(key:usize,value:Reader<'a>)->void {
-  var cursor:usize=key%limit;
-  if(memory[cursor].occupied==7) {
-   memraw.destroy(&memory[cursor].reader);
-   memraw.initialize(&memory[cursor].reader,value);
-  }
- }
- func clear()->void {
-  for(var cursor:usize=0;cursor<limit;cursor+=1) {
-   if(memory[cursor].occupied==7) { memraw.destroy(&memory[cursor]); }
-   memory[cursor].occupied=0;
-  }
- }
- destructor { memraw.core_release(memory.(*u8)); }
+    var memory:*TaggedReader<'a>;
+    var limit:usize;
+
+    func grow(size:usize) -> void {
+        var fresh = memraw.core_alloc(size * sizeof(TaggedReader)).(*TaggedReader<'a>);
+        if (fresh == memraw.null<TaggedReader<'a>>()) {
+            return;
+        }
+        for (var cursor:usize = 0; cursor < size; cursor += 1) {
+            fresh[cursor].occupied = 0;
+        }
+        for (var cursor:usize = 0; cursor < limit; cursor += 1) {
+            if (memory[cursor].occupied == 7) {
+                var index:usize = (*memory[cursor].reader.source).(usize) % size;
+                while (fresh[index].occupied == 7) {
+                    index = (index + 1) % size;
+                }
+                memraw.initialize(&fresh[index], take(memory[cursor]));
+            }
+        }
+        memraw.core_release(memory.(*u8));
+        memory = fresh;
+        limit = size;
+    }
+
+    func put(key:usize, value:Reader<'a>) -> void {
+        var cursor:usize = key % limit;
+        while (memory[cursor].occupied == 7) {
+            cursor = (cursor + 1) % limit;
+        }
+        memraw.initialize(&memory[cursor], TaggedReader{occupied:7, reader:value});
+    }
+
+    func update(key:usize, value:Reader<'a>) -> void {
+        var cursor:usize = key % limit;
+        if (memory[cursor].occupied == 7) {
+            memraw.destroy(&memory[cursor].reader);
+            memraw.initialize(&memory[cursor].reader, value);
+        }
+    }
+
+    func clear() -> void {
+        for (var cursor:usize = 0; cursor < limit; cursor += 1) {
+            if (memory[cursor].occupied == 7) {
+                memraw.destroy(&memory[cursor]);
+            }
+            memory[cursor].occupied = 0;
+        }
+    }
+
+    destructor {
+        memraw.core_release(memory.(*u8));
+    }
 }
-enum WrappedTable<'a> { Table(BorrowTable<'a>), Empty }
-var borrowOwnerDrops:i32=0;
-var relocationDrops:i32=0;
-struct RelocationOwner<'a> { var source:&'a i32; var tag:i32; destructor { relocationDrops+=tag; } }
+
+enum WrappedTable<'a> {
+    Table(BorrowTable<'a>),
+    Empty
+}
+
+var borrowOwnerDrops:i32 = 0;
+var relocationDrops:i32 = 0;
+
+struct RelocationOwner<'a> {
+    var source:&'a i32;
+    var tag:i32;
+    destructor {
+        relocationDrops += tag;
+    }
+}
+
 struct BorrowOwner<'a> {
- var source:&'a i32;
- var tag:i32;
- destructor { borrowOwnerDrops+=tag; }
+    var source:&'a i32;
+    var tag:i32;
+    destructor {
+        borrowOwnerDrops += tag;
+    }
 }
-enum BorrowOwners<'a,'b> { Pair(BorrowOwner<'a>,BorrowOwner<'b>), Empty }
-func reorderOwners<'a,'b>(value:BorrowOwners<'a,'b>)->BorrowOwners<'b,'a> {
- match(value) {
-  Pair(left,right)=>return BorrowOwners<'b,'a>.Pair(right,left);
-  Empty=>return BorrowOwners<'b,'a>.Empty;
- }
+
+enum BorrowOwners<'a,'b> {
+    Pair(BorrowOwner<'a>, BorrowOwner<'b>),
+    Empty
 }
+
+func reorderOwners<'a,'b>(value:BorrowOwners<'a,'b>) -> BorrowOwners<'b,'a> {
+    match (value) {
+        Pair(left, right) => return BorrowOwners<'b,'a>.Pair(right, left);
+        Empty => return BorrowOwners<'b,'a>.Empty;
+    }
+}
+
 struct BorrowStack<'a> {
- var storage:*Reader<'a>;
- var count:usize;
- func push(value:Reader<'a>)->void {
-  memraw.initialize(&storage[count],value); count+=1;
- }
- func exchange(value:Reader<'a>)->Reader<'a> {
-  count-=1;
-  var prior=replace(storage[count],value);
-  count+=1;
-  return prior;
- }
- func removeLast()->Reader<'a> {
-  var result=take(storage[count-1]); count-=1; return result;
- }
- func length()->usize { return count; }
- func erase(index:usize)->Reader<'a> {
-  var result=take(storage[index]);
-  for(var cursor:usize=index+1;cursor<count;cursor+=1) {
-   memraw.initialize(&storage[cursor-1],take(storage[cursor]));
-  }
-  count-=1; return result;
- }
- destructor {
-  while(count>0) { count-=1; memraw.destroy(&storage[count]); }
-  memraw.core_release(storage.(*u8));
- }
+    var storage:*Reader<'a>;
+    var count:usize;
+
+    func push(value:Reader<'a>) -> void {
+        memraw.initialize(&storage[count], value);
+        count += 1;
+    }
+
+    func exchange(value:Reader<'a>) -> Reader<'a> {
+        count -= 1;
+        var prior = replace(storage[count], value);
+        count += 1;
+        return prior;
+    }
+
+    func removeLast() -> Reader<'a> {
+        var result = take(storage[count - 1]);
+        count -= 1;
+        return result;
+    }
+
+    func length() -> usize {
+        return count;
+    }
+
+    func erase(index:usize) -> Reader<'a> {
+        var result = take(storage[index]);
+        for (var cursor:usize = index + 1; cursor < count; cursor += 1) {
+            memraw.initialize(&storage[cursor - 1], take(storage[cursor]));
+        }
+        count -= 1;
+        return result;
+    }
+
+    destructor {
+        while (count > 0) {
+            count -= 1;
+            memraw.destroy(&storage[count]);
+        }
+        memraw.core_release(storage.(*u8));
+    }
 }
+
 struct BorrowRing<'a> {
- var storage:*Reader<'a>; var start:usize; var capacity:usize; var used:usize;
- func length()->usize { return used; }
- func slots()->usize { return capacity; }
- func grow(size:usize)->void {
-  var fresh=memraw.core_alloc(size*sizeof(Reader)).(*Reader<'a>);
-  if(fresh==memraw.null<Reader<'a>>()) { return; }
-  for(var cursor:usize=0;cursor<used;cursor+=1) { memraw.initialize(&fresh[cursor],take(storage[(start+cursor)%capacity])); }
-  memraw.core_release(storage.(*u8)); storage=fresh; capacity=size; start=0;
- }
- func push(value:Reader<'a>)->void {
-  memraw.initialize(&storage[(start+used)%capacity],value); used+=1;
- }
- func tail()->Reader<'a> { used-=1; return take(storage[(start+used)%capacity]); }
- func front()->Reader<'a> {
-  var value=take(storage[start]); start=(start+1)%capacity; used-=1; return value;
- }
- func empty()->void {
-  while(used>0) { memraw.destroy(&storage[start]); start=(start+1)%capacity; used-=1; }
-  start=0;
- }
- destructor {
-  while(used>0) { memraw.destroy(&storage[start]); start=(start+1)%capacity; used-=1; }
-  memraw.core_release(storage.(*u8));
- }
+    var storage:*Reader<'a>;
+    var start:usize;
+    var capacity:usize;
+    var used:usize;
+
+    func length() -> usize {
+        return used;
+    }
+
+    func slots() -> usize {
+        return capacity;
+    }
+
+    func grow(size:usize) -> void {
+        var fresh = memraw.core_alloc(size * sizeof(Reader)).(*Reader<'a>);
+        if (fresh == memraw.null<Reader<'a>>()) {
+            return;
+        }
+        for (var cursor:usize = 0; cursor < used; cursor += 1) {
+            memraw.initialize(&fresh[cursor], take(storage[(start + cursor) % capacity]));
+        }
+        memraw.core_release(storage.(*u8));
+        storage = fresh;
+        capacity = size;
+        start = 0;
+    }
+
+    func push(value:Reader<'a>) -> void {
+        memraw.initialize(&storage[(start + used) % capacity], value);
+        used += 1;
+    }
+
+    func tail() -> Reader<'a> {
+        used -= 1;
+        return take(storage[(start + used) % capacity]);
+    }
+
+    func front() -> Reader<'a> {
+        var value = take(storage[start]);
+        start = (start + 1) % capacity;
+        used -= 1;
+        return value;
+    }
+
+    func empty() -> void {
+        while (used > 0) {
+            memraw.destroy(&storage[start]);
+            start = (start + 1) % capacity;
+            used -= 1;
+        }
+        start = 0;
+    }
+
+    destructor {
+        while (used > 0) {
+            memraw.destroy(&storage[start]);
+            start = (start + 1) % capacity;
+            used -= 1;
+        }
+        memraw.core_release(storage.(*u8));
+    }
 }
+
 struct BorrowSlots<'a> {
- var storage:*Reader<'a>;
- var leftLive:bit;
- var rightLive:bit;
- func put(index:usize,value:Reader<'a>)->void {
-  memraw.initialize(&storage[index],value);
-  if(index==0) { leftLive=true; } else { rightLive=true; }
- }
- func remove(index:usize)->Reader<'a> {
-  var result=take(storage[index]);
-  if(index==0) { leftLive=false; } else { rightLive=false; }
-  return result;
- }
- destructor {
-  if(leftLive) { memraw.destroy(&storage[0]); }
-  if(rightLive) { memraw.destroy(&storage[1]); }
-  memraw.core_release(storage.(*u8));
- }
+    var storage:*Reader<'a>;
+    var leftLive:bit;
+    var rightLive:bit;
+
+    func put(index:usize, value:Reader<'a>) -> void {
+        memraw.initialize(&storage[index], value);
+        if (index == 0) {
+            leftLive = true;
+        } else {
+            rightLive = true;
+        }
+    }
+
+    func remove(index:usize) -> Reader<'a> {
+        var result = take(storage[index]);
+        if (index == 0) {
+            leftLive = false;
+        } else {
+            rightLive = false;
+        }
+        return result;
+    }
+
+    destructor {
+        if (leftLive) {
+            memraw.destroy(&storage[0]);
+        }
+        if (rightLive) {
+            memraw.destroy(&storage[1]);
+        }
+        memraw.core_release(storage.(*u8));
+    }
 }
+
 struct GrowingReaders<'a> {
- var memory:*Reader<'a>; var used:usize;
- func append(value:Reader<'a>)->void { memraw.initialize(&memory[used],value); used+=1; }
- func relocate(fail:bit)->void {
-  if(fail) { return; }
-  var fresh=memraw.core_alloc(4*sizeof(Reader)).(*Reader<'a>);
-  if(fresh==memraw.null<Reader<'a>>()) { return; }
-  for(var cursor:usize=0;cursor<used;cursor+=1) { memraw.initialize(&fresh[cursor],take(memory[cursor])); }
-  memraw.core_release(memory.(*u8)); memory=fresh;
- }
- func tail()->Reader<'a> { used-=1; return take(memory[used]); }
- func clear()->void { while(used>0) { used-=1; memraw.destroy(&memory[used]); } }
- destructor { while(used>0) { used-=1; memraw.destroy(&memory[used]); } memraw.core_release(memory.(*u8)); }
+    var memory:*Reader<'a>;
+    var used:usize;
+
+    func append(value:Reader<'a>) -> void {
+        memraw.initialize(&memory[used], value);
+        used += 1;
+    }
+
+    func relocate(fail:bit) -> void {
+        if (fail) {
+            return;
+        }
+        var fresh = memraw.core_alloc(4 * sizeof(Reader)).(*Reader<'a>);
+        if (fresh == memraw.null<Reader<'a>>()) {
+            return;
+        }
+        for (var cursor:usize = 0; cursor < used; cursor += 1) {
+            memraw.initialize(&fresh[cursor], take(memory[cursor]));
+        }
+        memraw.core_release(memory.(*u8));
+        memory = fresh;
+    }
+
+    func tail() -> Reader<'a> {
+        used -= 1;
+        return take(memory[used]);
+    }
+
+    func clear() -> void {
+        while (used > 0) {
+            used -= 1;
+            memraw.destroy(&memory[used]);
+        }
+    }
+
+    destructor {
+        while (used > 0) {
+            used -= 1;
+            memraw.destroy(&memory[used]);
+        }
+        memraw.core_release(memory.(*u8));
+    }
 }
-func removeSnapshot<'a>(slots:&mut BorrowSlots<'a>,index:usize)->Reader<'a> {
- var snapshot=index; return (*slots).remove(snapshot);
+
+func removeSnapshot<'a>(slots:&mut BorrowSlots<'a>, index:usize) -> Reader<'a> {
+    var snapshot = index;
+    return (*slots).remove(snapshot);
 }
-func forwardRelocation(values:&mut GrowingReaders,fail:bit)->void { (*values).relocate(fail); }
-enum RelocatedReaders<'a> { Held(GrowingReaders<'a>), Empty }
-struct HeapReaders<'a,'b> { var left:Reader<'a>; var right:Reader<'b>; }
+
+func forwardRelocation(values:&mut GrowingReaders, fail:bit) -> void {
+    (*values).relocate(fail);
+}
+
+enum RelocatedReaders<'a> {
+    Held(GrowingReaders<'a>),
+    Empty
+}
+
+struct HeapReaders<'a,'b> {
+    var left:Reader<'a>;
+    var right:Reader<'b>;
+}
+
 struct HeapFields<'a,'b> {
- var storage:*HeapReaders<'a,'b>;
- func put(left:Reader<'a>,right:Reader<'b>)->void { memraw.initialize(&storage[0],HeapReaders<'a,'b>{left:left,right:right}); }
- func detach()->Reader<'b> { return take(storage[0].right); }
- func releaseLeft()->void { memraw.destroy(&storage[0].left); }
- destructor { memraw.core_release(storage.(*u8)); }
+    var storage:*HeapReaders<'a,'b>;
+
+    func put(left:Reader<'a>, right:Reader<'b>) -> void {
+        memraw.initialize(&storage[0], HeapReaders<'a,'b>{left:left, right:right});
+    }
+
+    func detach() -> Reader<'b> {
+        return take(storage[0].right);
+    }
+
+    func releaseLeft() -> void {
+        memraw.destroy(&storage[0].left);
+    }
+
+    destructor {
+        memraw.core_release(storage.(*u8));
+    }
 }
-enum WrappedRing<'a> { Held(BorrowRing<'a>), Empty }
-func truncateReaders(values:&mut collections.List<Reader>,length:usize)->void {
- (*values).truncate(length);
+
+enum WrappedRing<'a> {
+    Held(BorrowRing<'a>),
+    Empty
 }
-struct SharedPair<'a> { var left:&'a i32; var right:&'a i32; }
-struct MutablePair<'a> { var left:&'a mut i32; var right:&'a mut i32; }
-struct WriterPair<'a> { var left:Writer<'a>; var right:Writer<'a>; }
-struct SeparatePair<'a,'b> { var left:&'a mut i32; var right:&'b mut i32; }
-struct SeparateReaders<'a,'b> { var left:&'a i32; var right:&'b i32; }
-struct NestedReaders<'a,'b> { var left:Reader<'a>; var right:Reader<'b>; }
-struct DeepReader<'a> { var reader:Reader<'a>; }
-struct DeepReaders<'a,'b> { var left:DeepReader<'a>; var right:DeepReader<'b>; }
-struct ReaderTree<'a,'b> { var readers:SeparateReaders<'a,'b>; }
-func readerTree<'a,'b>(left:&'a i32,right:&'b i32)->ReaderTree<'a,'b> {
- return ReaderTree<'a,'b>{readers:SeparateReaders<'a,'b>{left:left,right:right}};
+
+func truncateReaders(values:&mut collections.List<Reader>, length:usize) -> void {
+    (*values).truncate(length);
 }
-func treeRight<'a,'b>(tree:&ReaderTree<'a,'b>)->&'b i32 { return tree.readers.right; }
-func sameLifetime<'a>(left:&'a i32,right:&'a i32)->SharedPair<'a> {
- return SharedPair<'a>{left:left,right:right};
+
+struct SharedPair<'a> {
+    var left:&'a i32;
+    var right:&'a i32;
 }
-func swapReaders<'a,'b>(value:SeparateReaders<'a,'b>)->SeparateReaders<'b,'a> {
- return SeparateReaders<'b,'a>{left:value.right,right:value.left};
+
+struct MutablePair<'a> {
+    var left:&'a mut i32;
+    var right:&'a mut i32;
 }
-struct NestedWriters<'a,'b> { var left:Writer<'a>; var right:Writer<'b>; }
-func nestedWriters<'a,'b>(left:&'a mut i32,right:&'b mut i32)->NestedWriters<'a,'b> {
- return NestedWriters<'a,'b>{left:Writer<'a>{source:left},right:Writer<'b>{source:right}};
+
+struct WriterPair<'a> {
+    var left:Writer<'a>;
+    var right:Writer<'a>;
 }
-func nestedReaders<'a,'b>(left:&'a i32,right:&'b i32)->NestedReaders<'a,'b> {
- return NestedReaders<'a,'b>{left:Reader<'a>{source:left},right:Reader<'b>{source:right}};
+
+struct SeparatePair<'a,'b> {
+    var left:&'a mut i32;
+    var right:&'b mut i32;
 }
-func deepReaders<'a,'b>(left:&'a i32,right:&'b i32)->DeepReaders<'a,'b> {
- return DeepReaders<'a,'b>{left:DeepReader<'a>{reader:Reader<'a>{source:left}},right:DeepReader<'b>{reader:Reader<'b>{source:right}}};
+
+struct SeparateReaders<'a,'b> {
+    var left:&'a i32;
+    var right:&'b i32;
 }
-func nestedProjection<'a,'b>(value:&NestedReaders<'a,'b>)->Reader<'a> {
- return Reader<'a>{source:value.left.source};
+
+struct NestedReaders<'a,'b> {
+    var left:Reader<'a>;
+    var right:Reader<'b>;
 }
-func forwardNested<'a,'b>(value:NestedReaders<'a,'b>)->NestedReaders<'a,'b> {
- return value;
+
+struct DeepReader<'a> {
+    var reader:Reader<'a>;
 }
-enum ReaderChoice<'a,'b> { Both(&'a i32,&'b i32), Empty }
-enum ReaderBranch<'a,'b> { Pair(SeparateReaders<'a,'b>), Empty }
-struct BranchTree<'a,'b> { var branch:ReaderBranch<'a,'b>; }
-func branchTree<'a,'b>(left:&'a i32,right:&'b i32)->BranchTree<'a,'b> {
- return BranchTree<'a,'b>{branch:ReaderBranch<'a,'b>.Pair(SeparateReaders<'a,'b>{left:left,right:right})};
+
+struct DeepReaders<'a,'b> {
+    var left:DeepReader<'a>;
+    var right:DeepReader<'b>;
 }
-func branchRight<'a,'b>(tree:BranchTree<'a,'b>,fallback:&'b i32)->&'b i32 {
- match(tree.branch) { Pair(pair)=>return pair.right; Empty=>return fallback; }
+
+struct ReaderTree<'a,'b> {
+    var readers:SeparateReaders<'a,'b>;
 }
-func readerChoice<'a,'b>(left:&'a i32,right:&'b i32)->ReaderChoice<'a,'b> {
- return ReaderChoice<'a,'b>.Both(left,right);
+
+func readerTree<'a,'b>(left:&'a i32, right:&'b i32) -> ReaderTree<'a,'b> {
+    return ReaderTree<'a,'b>{readers:SeparateReaders<'a,'b>{left:left, right:right}};
 }
-func choiceLeft<'a,'b>(value:ReaderChoice<'a,'b>,fallback:&'a i32)->&'a i32 {
- match(value) { Both(left,right)=>return left; Empty=>return fallback; }
+
+func treeRight<'a,'b>(tree:&ReaderTree<'a,'b>) -> &'b i32 {
+    return tree.readers.right;
 }
-func forwardOption(value:stdlib.Option<&i32>)->stdlib.Option<&i32> {
- var reference=value?;
- return stdlib.Option<&i32>.Some(reference);
+
+func sameLifetime<'a>(left:&'a i32, right:&'a i32) -> SharedPair<'a> {
+    return SharedPair<'a>{left:left, right:right};
 }
-func forwardResult(value:stdlib.Result<&i32,i32>)->stdlib.Result<&i32,i32> {
- var reference=value?;
- return stdlib.Result<&i32,i32>.Ok(reference);
+
+func swapReaders<'a,'b>(value:SeparateReaders<'a,'b>) -> SeparateReaders<'b,'a> {
+    return SeparateReaders<'b,'a>{left:value.right, right:value.left};
 }
-func forwardResidual(value:stdlib.Result<i32,&i32>)->stdlib.Result<i32,&i32> {
- var number=value?;
- return stdlib.Result<i32,&i32>.Ok(number);
+
+struct NestedWriters<'a,'b> {
+    var left:Writer<'a>;
+    var right:Writer<'b>;
 }
-func forwardMutable(value:stdlib.Option<&mut i32>)->stdlib.Option<&mut i32> {
- var output=value?;
- return stdlib.Option<&mut i32>.Some(output);
+
+func nestedWriters<'a,'b>(left:&'a mut i32, right:&'b mut i32) -> NestedWriters<'a,'b> {
+    return NestedWriters<'a,'b>{left:Writer<'a>{source:left}, right:Writer<'b>{source:right}};
 }
+
+func nestedReaders<'a,'b>(left:&'a i32, right:&'b i32) -> NestedReaders<'a,'b> {
+    return NestedReaders<'a,'b>{left:Reader<'a>{source:left}, right:Reader<'b>{source:right}};
+}
+
+func deepReaders<'a,'b>(left:&'a i32, right:&'b i32) -> DeepReaders<'a,'b> {
+    return DeepReaders<'a,'b>{
+        left:DeepReader<'a>{reader:Reader<'a>{source:left}},
+        right:DeepReader<'b>{reader:Reader<'b>{source:right}}
+    };
+}
+
+func nestedProjection<'a,'b>(value:&NestedReaders<'a,'b>) -> Reader<'a> {
+    return Reader<'a>{source:value.left.source};
+}
+
+func forwardNested<'a,'b>(value:NestedReaders<'a,'b>) -> NestedReaders<'a,'b> {
+    return value;
+}
+
+enum ReaderChoice<'a,'b> {
+    Both(&'a i32, &'b i32),
+    Empty
+}
+
+enum ReaderBranch<'a,'b> {
+    Pair(SeparateReaders<'a,'b>),
+    Empty
+}
+
+struct BranchTree<'a,'b> {
+    var branch:ReaderBranch<'a,'b>;
+}
+
+func branchTree<'a,'b>(left:&'a i32, right:&'b i32) -> BranchTree<'a,'b> {
+    return BranchTree<'a,'b>{
+        branch:ReaderBranch<'a,'b>.Pair(SeparateReaders<'a,'b>{left:left, right:right})
+    };
+}
+
+func branchRight<'a,'b>(tree:BranchTree<'a,'b>, fallback:&'b i32) -> &'b i32 {
+    match (tree.branch) {
+        Pair(pair) => return pair.right;
+        Empty => return fallback;
+    }
+}
+
+func readerChoice<'a,'b>(left:&'a i32, right:&'b i32) -> ReaderChoice<'a,'b> {
+    return ReaderChoice<'a,'b>.Both(left, right);
+}
+
+func choiceLeft<'a,'b>(value:ReaderChoice<'a,'b>, fallback:&'a i32) -> &'a i32 {
+    match (value) {
+        Both(left, right) => return left;
+        Empty => return fallback;
+    }
+}
+
+func forwardOption(value:stdlib.Option<&i32>) -> stdlib.Option<&i32> {
+    var reference = value?;
+    return stdlib.Option<&i32>.Some(reference);
+}
+
+func forwardResult(value:stdlib.Result<&i32,i32>) -> stdlib.Result<&i32,i32> {
+    var reference = value?;
+    return stdlib.Result<&i32,i32>.Ok(reference);
+}
+
+func forwardResidual(value:stdlib.Result<i32,&i32>) -> stdlib.Result<i32,&i32> {
+    var number = value?;
+    return stdlib.Result<i32,&i32>.Ok(number);
+}
+
+func forwardMutable(value:stdlib.Option<&mut i32>) -> stdlib.Option<&mut i32> {
+    var output = value?;
+    return stdlib.Option<&mut i32>.Some(output);
+}
+
 enum BorrowFlow<'a> {
- Valid(&'a i32), Invalid(i32),
- ;
- static func branch(value:Self)->stdlib.Propagation<&'a i32,i32> {
-  match(value) {
-   Valid(reference)=>return stdlib.Propagation<&'a i32,i32>.Continue(reference);
-   Invalid(error)=>return stdlib.Propagation<&'a i32,i32>.Break(error);
-  }
- }
- static func fromResidual(error:i32)->Self { return BorrowFlow<'a>.Invalid(error); }
+    Valid(&'a i32),
+    Invalid(i32),
+    ;
+
+    static func branch(value:Self) -> stdlib.Propagation<&'a i32,i32> {
+        match (value) {
+            Valid(reference) => return stdlib.Propagation<&'a i32,i32>.Continue(reference);
+            Invalid(error) => return stdlib.Propagation<&'a i32,i32>.Break(error);
+        }
+    }
+
+    static func fromResidual(error:i32) -> Self {
+        return BorrowFlow<'a>.Invalid(error);
+    }
 }
-func forwardFlow<'a>(value:BorrowFlow<'a>)->BorrowFlow<'a> {
- var reference=value?;
- return BorrowFlow<'a>.Valid(reference);
+
+func forwardFlow<'a>(value:BorrowFlow<'a>) -> BorrowFlow<'a> {
+    var reference = value?;
+    return BorrowFlow<'a>.Valid(reference);
 }
-func forwardSlice(value:stdlib.Option<i32[]>)->stdlib.Option<i32[]> {
- var view=value?;
- return stdlib.Option<i32[]>.Some(view);
+
+func forwardSlice(value:stdlib.Option<i32[]>) -> stdlib.Option<i32[]> {
+    var view = value?;
+    return stdlib.Option<i32[]>.Some(view);
 }
-func nestedLeft<'a,'b>(value:&NestedReaders<'a,'b>)->&'a i32 { return value.left.source; }
-func leftReader<'a,'b>(value:&SeparateReaders<'a,'b>)->&'a i32 { return value.left; }
-func projectReader<'a,'b>(value:&SeparateReaders<'a,'b>)->Reader<'a> {
- return Reader<'a>{source:value.left};
+
+func nestedLeft<'a,'b>(value:&NestedReaders<'a,'b>) -> &'a i32 {
+    return value.left.source;
 }
-func copyReader<'a,'b>(value:SeparateReaders<'a,'b>)->Reader<'a> {
- return Reader<'a>{source:value.left};
+
+func leftReader<'a,'b>(value:&SeparateReaders<'a,'b>) -> &'a i32 {
+    return value.left;
 }
-func separate<'a,'b>(left:&'a mut i32,right:&'b mut i32)->SeparatePair<'a,'b> {
- return SeparatePair<'a,'b>{left:left,right:right};
+
+func projectReader<'a,'b>(value:&SeparateReaders<'a,'b>) -> Reader<'a> {
+    return Reader<'a>{source:value.left};
 }
-struct GenericPair<'a,'b,T> { var left:&'a mut T; var right:&'b mut T; }
-func genericSeparate<'a,'b,T>(left:&'a mut T,right:&'b mut T)->GenericPair<'a,'b,T> {
- return GenericPair<'a,'b,T>{left:left,right:right};
+
+func copyReader<'a,'b>(value:SeparateReaders<'a,'b>) -> Reader<'a> {
+    return Reader<'a>{source:value.left};
 }
-func reader<'a>(source: &'a i32)->Reader<'a> { return Reader<'a>{ source:source }; }
-func updateReader<'a>(target:&mut Reader<'a>,source:&'a i32)->void { (*target).source=source; }
-func writer<'a>(source: &'a mut i32)->Writer<'a> { return Writer<'a>{ source:source }; }
-func choose<'a>(left:&'a i32,right:&'a i32,first:bit)->&'a i32 {
- if(first) { return left; } return right;
+
+func separate<'a,'b>(left:&'a mut i32, right:&'b mut i32) -> SeparatePair<'a,'b> {
+    return SeparatePair<'a,'b>{left:left, right:right};
 }
-var permanent:i32=61;
-var exclusive:i32=181;
-var exclusiveRef:&'static mut i32=&mut exclusive;
-func updateExclusive(value:i32)->void { *exclusiveRef=value; }
-func readExclusive()->i32 { return *exclusiveRef; }
-var permanentRef:&'static i32=&permanent;
-var permanentReader:Reader<'static>=Reader<'static>{source:&permanent};
-var permanentCopy:Reader<'static>=permanentReader;
-var inferredReader=Reader<'static>{source:&permanent};
-var absent:stdlib.Option<&'static i32>=stdlib.Option<&'static i32>.None;
-var absentCopy:stdlib.Option<&'static i32>=absent;
-func readPermanent()->i32 { return permanentCopy.read()+*permanentRef; }
-var drops:i32=0;
-struct Resource { var value:i32; destructor { drops+=1; } }
-func main()->int {
- { var left:i32=1; var right:i32=2;
- var table=BorrowTable{memory:memraw.core_alloc(3*sizeof(TaggedReader)).(*TaggedReader),limit:3};
- for(var cursor:usize=0;cursor<3;cursor+=1) { table.memory[cursor].occupied=0; }
- table.put(2,Reader{source:&left}); table.put(2,Reader{source:&right});
- table.grow(4); table.grow(8); table.clear(); left=3; right=4;
- }
- { var a:i32=1; var b:i32=2; var c:i32=3; var d:i32=4; var e:i32=5;
- var values=testMap<i32,Reader>(readerHash,readerSame);
- match(values.insert(1,Reader{source:&a})){Ok=>{}Err(error)=>return 165;}
- match(values.insert(9,Reader{source:&b})){Ok=>{}Err(error)=>return 165;}
- match(values.insert(17,Reader{source:&c})){Ok=>{}Err(error)=>return 165;}
- match(values.insert(25,Reader{source:&d})){Ok=>{}Err(error)=>return 165;}
- match(values.insert(33,Reader{source:&e})){Ok=>{}Err(error)=>return 165;}
- {var query:i32=33;match(values.get(&query)) { Some(value)=>{ if(value.read()!=5) { return 163; } } None=>return 164; }}
- values.clear(); a=6; b=7; c=8; d=9; e=10;
- }
- { var left:i32=1; var right:i32=2;
- var ring=BorrowRing{storage:memraw.core_alloc(3*sizeof(Reader)).(*Reader),start:2,capacity:3,used:0};
- ring.push(Reader{source:&left}); ring.push(Reader{source:&right});
- if(ring.length()!=2) { return 151; }
- ring.grow(4); if(ring.length()!=2) { return 160; } ring.grow(8);
- { var removed=ring.tail(); if(removed.read()!=2) { return 152; } }
- right=3; if(ring.length()!=1) { return 153; } ring.empty(); left=4;
- }
- { var left:i32=1; var right:i32=2;
- match(testRing<Reader>(3)) { Ok(ring)=>{
-  ring.pushBack(Reader{source:&right}); if(ring.length()!=1) { return 154; }
-  ring.pushFront(Reader{source:&left}); if(ring.length()!=2) { return 155; }
-  ring.ensureCapacity(5); if(ring.length()!=2) { return 161; } ring.ensureCapacity(8);
-  if(ring.length()!=2) { return 162; }
-  { var removed=ring.popFront(); match(removed) { Some(value)=>{ if(value.read()!=1) { return 156; } } None=>return 157; } }
-  left=3; if(ring.length()!=1) { return 158; } ring.clear(); right=4;
- } Err(error)=>return 159; }
- }
- { var left:i32=1; var right:i32=2; var prior=relocationDrops;
- var values=testList<RelocationOwner>(2);
- values.append(RelocationOwner{source:&left,tag:1}); values.append(RelocationOwner{source:&right,tag:2});
- if(values.length()!=2) { return 129; }
- values.ensureCapacity(4);
- if(relocationDrops!=prior) { return 130; }
- { var removed=values.pop(); match(removed) { Some(value)=>{ if(*value.source!=2) { return 131; } } None=>return 132; } }
- right=3; values.clear(); left=4;
- if(relocationDrops!=prior+3) { return 133; }
- }
- { var left:i32=1; var right:i32=2;
- var values=GrowingReaders{memory:memraw.core_alloc(2*sizeof(Reader)).(*Reader),used:0};
- values.append(Reader{source:&left}); values.append(Reader{source:&right});
- if(values.used!=2) { return 124; }
- forwardRelocation(&mut values,false);
- var wrapped=RelocatedReaders.Held(values);
- match(wrapped) { Held(moved)=>{
-  { var tail=moved.tail(); if(tail.read()!=2) { return 125; } }
-  right=3; moved.clear(); left=4;
- } Empty=>return 126; }
- }
- { var source:i32=1;
- var values=GrowingReaders{memory:memraw.core_alloc(sizeof(Reader)).(*Reader),used:0};
- values.append(Reader{source:&source});
- if(values.used!=1) { return 127; }
- forwardRelocation(&mut values,true);
- if(values.memory[0].read()!=1) { return 128; }
- values.clear(); source=2;
- }
- { var left:i32=1; var right:i32=2;
- var values=testList<Reader>(2);
- values.append(Reader{source:&left}); values.append(Reader{source:&right});
- if(values.length()!=2) { return 120; }
- values.ensureCapacity(4);
- { var removed=values.pop(); match(removed) { Some(value)=>{ if(value.read()!=2) { return 121; } } None=>return 122; } }
- right=3;
- values.clear(); left=4;
- if(left+right!=7) { return 123; }
- }
- { var source:i32=1;
- var values=testMap<i32,Reader>(readerHash,readerSame);
- values.insert(1,Reader{source:&source});
- { var query:i32=1;var copied=values.get(&query); match(copied) { Some(value)=>{ if(*value.source!=1) { return 145; } } None=>return 146; } }
- values.clear(); source=2; }
- { var key:i32=1; var value:i32=2;
- var values=testMap<Reader,Reader>(borrowedReaderHash,borrowedReaderSame);
- values.insert(Reader{source:&key},Reader{source:&value});
- values.clear(); key=3; value=4; }
- { var left:i32=1; var right:i32=2;
- var table=BorrowTable{memory:memraw.core_alloc(3*sizeof(TaggedReader)).(*TaggedReader),limit:3};
- for(var i:usize=0;i<3;i+=1) { table.memory[i].occupied=0; }
- table.put(2,Reader{source:&left}); table.update(2,Reader{source:&right});
- table.clear(); left=3; right=4; }
- { var left:i32=1; var right:i32=2;
- var table=BorrowTable{memory:memraw.core_alloc(3*sizeof(TaggedReader)).(*TaggedReader),limit:3};
- for(var i:usize=0;i<3;i+=1) { table.memory[i].occupied=0; }
- table.put(2,Reader{source:&left}); table.put(2,Reader{source:&right});
- var wrapped=WrappedTable.Table(table);
- match(wrapped) { Table(moved)=>{ moved.clear(); left=3; right=4; } Empty=>return 144; } }
- { var left:i32=1; var right:i32=2;
- var result=testRing<Reader>(3);
- match(result) { Ok(ring)=>{
-  if(ring.length()!=0) { return 129; } if(ring.capacity()!=3) { return 130; }
-  ring.pushFront(Reader{source:&left});
-  if(ring.length()!=1) { return 131; } if(ring.capacity()!=3) { return 132; }
-  ring.pushBack(Reader{source:&right});
-  if(ring.length()!=2) { return 133; } if(ring.capacity()!=3) { return 134; }
-  { var removed=ring.popFront(); match(removed) { Some(value)=>{ if(*value.source!=1) { return 135; } } None=>return 136; } }
-  left=3; if(ring.length()!=1) { return 143; } ring.clear(); right=4;
- } Err(error)=>return 137; } }
- { var left:i32=1; var right:i32=2;
- var fields=HeapFields{storage:memraw.core_alloc(sizeof(HeapReaders)).(*HeapReaders)};
- fields.put(Reader{source:&left},Reader{source:&right});
- { var removed=fields.detach(); if(*removed.source!=2) { return 127; } }
- right=3; fields.releaseLeft(); left=4; }
- { var source:i32=1;
- var ring=BorrowRing{storage:memraw.core_alloc(3*sizeof(Reader)).(*Reader),start:2,capacity:3,used:0};
- ring.push(Reader{source:&source}); var moved=ring;
- if(moved.length()!=1) { return 138; }
- moved.empty(); source=2; }
- { var source:i32=1;
- var ring=BorrowRing{storage:memraw.core_alloc(3*sizeof(Reader)).(*Reader),start:2,capacity:3,used:0};
- ring.push(Reader{source:&source}); var wrapped=WrappedRing.Held(ring);
- match(wrapped) { Held(moved)=>{ if(moved.length()!=1) { return 139; } moved.empty(); } Empty=>return 128; }
- source=2; }
- { var left:i32=1; var right:i32=2;
- var ring=BorrowRing{storage:memraw.core_alloc(3*sizeof(Reader)).(*Reader),start:2,capacity:3,used:0};
- ring.push(Reader{source:&left}); ring.push(Reader{source:&right});
- if(ring.length()!=2) { return 121; }
- if(ring.slots()!=3) { return 122; }
- { var removed=ring.front(); if(*removed.source!=1) { return 123; } }
- left=3;
- if(*ring.storage[0].source!=2) { return 124; }
- if(ring.length()!=1) { return 140; }
- ring.empty(); right=4; }
- { var left:i32=1; var right:i32=2;
- var ring=BorrowRing{storage:memraw.core_alloc(3*sizeof(Reader)).(*Reader),start:2,capacity:3,used:0};
- ring.push(Reader{source:&left}); ring.push(Reader{source:&right});
- { var removed=ring.tail(); if(*removed.source!=2) { return 125; } }
- right=3; if(ring.length()!=1) { return 141; } ring.empty(); left=4; }
- { var source:i32=1;
- var result=testRing<Reader>(3);
- match(result) { Ok(ring)=>{ ring.pushBack(Reader{source:&source}); if(ring.length()!=1) { return 142; } ring.clear(); source=2; } Err(error)=>return 126; } }
- { var left:i32=1; var middle:i32=2; var right:i32=3;
- var stack=BorrowStack{storage:memraw.core_alloc(3*sizeof(Reader)).(*Reader),count:0};
- stack.push(Reader{source:&left}); stack.push(Reader{source:&middle}); stack.push(Reader{source:&right});
- if(stack.length()<3) { return 118; }
- { var removed=stack.erase(stack.length()-2); if(*removed.source!=2) { return 119; } }
- middle=4;
- if(*stack.storage[0].source!=1 || *stack.storage[1].source!=3) { return 120; }
- { var removed=stack.removeLast(); }
- right=5; }
- { var left:i32=1; var right:i32=2;
- var values=testList<Reader>(2);
- values.append(Reader{source:&left}); values.append(Reader{source:&right});
- if(values.length()<2) { return 116; }
- values.truncate(1); right=3;
- if(values.length()!=1 || *values.get(0).source!=1) { return 117; }
- values.clear(); left=4; }
- { var left:i32=1; var middle:i32=2; var right:i32=3;
- var values=testList<Reader>(3);
- values.append(Reader{source:&left}); values.append(Reader{source:&middle}); values.append(Reader{source:&right});
- if(values.length()<3) { return 114; }
- values.truncate(values.length()-2); middle=4; right=5;
- if(values.length()!=1 || *values.get(0).source!=1) { return 115; }
- values.clear(); left=6; }
- { var left:i32=1; var middle:i32=2; var right:i32=3;
- var values=testList<Reader>(3);
- values.append(Reader{source:&left});
- if(values.length()!=1 || values.capacity()!=3) { return 111; }
- values.append(Reader{source:&middle});
- if(values.length()!=2) { return 112; }
- if(values.capacity()!=3) { return 113; }
- values.append(Reader{source:&right});
- if(values.length()!=3) { return 107; }
- { var removed=values.remove(1);
- match(removed) { Some(value)=>{ if(*value.source!=2) { return 108; } } None=>return 109; } }
- middle=4;
- if(values.length()!=2 || *values.get(0).source!=1 || *values.get(1).source!=3) { return 110; }
- { var removed=values.pop(); }
- right=5; values.clear(); left=6; }
- { var left:i32=1; var right:i32=2;
- var values=testList<Reader>(2);
- values.append(Reader{source:&left}); values.append(Reader{source:&right});
- if(values.length()!=2) { return 105; }
- values.truncate(1); right=3;
- if(values.length()!=1 || *values.get(0).source!=1) { return 106; }
- values.clear(); left=4; }
- { var left:i32=1; var right:i32=2;
- var values=testList<Reader>(2);
- values.append(Reader{source:&left}); values.append(Reader{source:&right});
- values.truncate(values.length()-1); right=3;
- if(values.length()!=1 || *values.get(0).source!=1) { return 101; }
- values.clear(); left=4; }
- { var left:i32=1; var right:i32=2;
- var values=testList<Reader>(2);
- values.append(Reader{source:&left}); values.append(Reader{source:&right});
- { var removed=values.remove(values.length()-1);
- match(removed) { Some(value)=>{ if(*value.source!=2) { return 102; } } None=>return 103; } }
- right=3;
- if(*values.get(0).source!=1) { return 104; }
- values.clear(); left=4; }
- { var left:i32=1; var right:i32=2;
- var stack=BorrowStack{storage:memraw.core_alloc(2*sizeof(Reader)).(*Reader),count:0};
- stack.push(Reader{source:&left}); stack.push(Reader{source:&right});
- { var removed=stack.removeLast(); if(*removed.source!=2) { return 99; } }
- right=3;
- if(*stack.storage[0].source!=1) { return 100; } }
- { var left:i32=1; var right:i32=2;
- var first=testList<Reader>(2); var second=testList<Reader>(2);
- first.append(Reader{source:&left}); second.append(Reader{source:&right});
- var iterations:usize=0;
- while(iterations<2) { iterations+=1; }
- first.clear(); left=3;
- if(*second.get(0).source!=2) { return 98; }
- second.truncate(0); right=4; }
- { var left:i32=1; var right:i32=2;
- var slots=BorrowSlots{storage:memraw.core_alloc(2*sizeof(Reader)).(*Reader),leftLive:false,rightLive:false};
- slots.put(0,Reader{source:&left}); slots.put(1,Reader{source:&right});
- { var removed=removeSnapshot(&mut slots,1); if(*removed.source!=2) { return 95; } }
- right=3;
- if(*slots.storage[0].source!=1) { return 96; } }
- { var source:i32=1;
- var values=testList<Reader>(2); values.append(Reader{source:&source});
- truncateReaders(&mut values,0); source=2;
- values.append(Reader{source:&source});
- if(*values.get(0).source!=2) { return 97; } }
- { var left:i32=1; var right:i32=2;
- var pair=reorderOwners(BorrowOwners.Pair(BorrowOwner{source:&left,tag:1},BorrowOwner{source:&right,tag:2}));
- match(pair) {
-  Pair(first,second)=>{
-   if(*first.source!=2 || *second.source!=1) { return 91; }
-   memraw.destroy(&first); right=3;
-   if(*second.source!=1) { return 92; }
-   memraw.destroy(&second); left=4;
-  }
-  Empty=>return 93;
- }
- if(borrowOwnerDrops!=3) { return 94; } }
- { var left:i32=1; var right:i32=2;
- var stack=BorrowStack{storage:memraw.core_alloc(sizeof(Reader)).(*Reader),count:0};
- stack.push(Reader{source:&left});
- { var prior=stack.exchange(Reader{source:&right}); if(*prior.source!=1) { return 89; } }
- left=3;
- if(*stack.storage[0].source!=2) { return 90; } }
- { var left:i32=1; var right:i32=2; var reference=&left;
- { var prior=replace(reference,&right); if(*prior!=1) { return 87; } }
- left=3;
- if(*reference!=2) { return 88; } }
- { var source:i32=1;
- var values=testList<Reader>(2);
- values.append(Reader{source:&source});
- values.clear(); source=2;
- values.append(Reader{source:&source});
- if(values.length()!=1 || *values.get(0).source!=2) { return 80; } }
- { var left:i32=1; var right:i32=2;
- var values=testList<Reader>(2);
- values.append(Reader{source:&left}); values.append(Reader{source:&right});
- { var removed=values.pop(); match(removed) {
-   Some(value)=>{ if(*value.source!=2) { return 81; } }
-   None=>return 82;
- } }
- right=3;
- if(*values.get(0).source!=1) { return 83; }
- values.clear(); left=4; }
- { var source:i32=1;
- var values=testList<Reader>(2); values.append(Reader{source:&source});
- var moved=values; moved.clear(); source=2;
- moved.append(Reader{source:&source});
- if(*moved.get(0).source!=2) { return 84; } }
- { var source:i32=1;
- var values=testList<Reader>(2); values.append(Reader{source:&source});
- var wrapped=stdlib.Option<collections.List<Reader>>.Some(values);
- match(wrapped) {
-   Some(moved)=>{ moved.clear(); source=2; if(moved.length()!=0) { return 85; } }
-   None=>return 86;
- } }
- {
-  var left:i32=201; var right:i32=202;
-  var reference=&left;
-  var previous=replace(reference,&right);
-  if(*previous!=201 || *reference!=202) { return 57; }
-  var transferred=take(reference);
-  if(*transferred!=202) { return 58; }
- }
- {
-  var left:i32=191; var right:i32=192;
-  var reference=&left;
-  { var slot:&(&i32)=&reference; if(**slot!=191) { return 54; } }
-  { var slot:&mut (&i32)=&mut reference; *slot=&right; if(**slot!=192) { return 55; } }
-  left=193;
-  if(*reference!=192 || left!=193) { return 56; }
- }
- updateExclusive(182);
- if(readExclusive()!=182) { return 53; }
- {
-  var left:i32=171; var right:i32=172;
-  var value=reader(&left);
-  updateReader(&mut value,&right);
-  left=173;
-  if(value.read()!=172 || left!=173) { return 52; }
- }
- {
-  var left:i32=161; var right:i32=162;
-  var tree=branchTree(&left,&right);
-  var projected=branchRight(tree,&right);
-  left=163;
-  if(*projected!=162 || left!=163) { return 51; }
- }
- {
-  var left:i32=141; var right:i32=142;
-  var pair=sameLifetime(&left,&right);
-  var projected=pair.left;
-  right=143;
-  if(*projected!=141 || right!=143) { return 47; }
- }
- {
-  var left:i32=151; var right:i32=152;
-  var input=SeparateReaders{left:&left,right:&right};
-  var swapped=swapReaders(input);
-  var projected=swapped.left;
-  left=153;
-  if(*projected!=152 || left!=153) { return 48; }
- }
- {
-  var left:i32=121; var right:i32=122;
-  var tree=readerTree(&left,&right);
-  var projected=treeRight(&tree);
-  left=123;
-  if(*projected!=122 || left!=123) { return 45; }
- }
- {
-  var left:i32=131; var right:i32=132;
-  var tree=ReaderTree{readers:SeparateReaders{left:&left,right:&right}};
-  var projected=tree.readers.left;
-  right=133;
-  if(*projected!=131 || right!=133) { return 46; }
- }
- {
-  var left:i32=101; var right:i32=102;
-  var pair=forwardNested(nestedReaders(&left,&right));
-  var projected=pair.right;
-  left=103;
-  if(projected.read()!=102 || left!=103) { return 43; }
- }
- {
-  var left:i32=111; var right:i32=112;
-  {
-   var pair=nestedWriters(&mut left,&mut right);
-   pair.left.write(113);
-   pair.right.write(114);
-  }
-  if(left!=113 || right!=114) { return 44; }
- }
- {
-  var left:i32=71; var right:i32=72;
-  var pair=nestedReaders(&left,&right);
-  var projected=nestedProjection(&pair);
-  right=73;
-  if(projected.read()!=71 || right!=73) { return 40; }
- }
- {
-  var left:i32=81; var right:i32=82;
-  var pair=deepReaders(&left,&right);
-  var projected=pair.left.reader;
-  right=83;
-  if(projected.read()!=81 || right!=83) { return 41; }
- }
- {
-  var left:i32=91; var right:i32=92;
-  var pair=NestedReaders{left:Reader{source:&left},right:Reader{source:&right}};
-  var projected=pair.left;
-  right=93;
-  if(projected.read()!=91 || right!=93) { return 42; }
- }
- match(absent) { Some(value)=>return 18; None=>{} }
- match(absentCopy) { Some(value)=>return 19; None=>{} }
- if(readPermanent()!=122 || permanentReader.read()!=61 || inferredReader.read()!=61) { return 13; }
- match(ReaderChoice<'static,'static>.Both(&permanent,&permanent)) {
-  Both(left,right)=>{ if(*left+*right!=122) { return 26; } }
-  Empty=>return 27;
- }
- var source:i32=42;
- match(forwardOption(stdlib.Option<&i32>.Some(&source))) {
-  Some(reference)=>{ if(*reference!=42) { return 32; } }
-  None=>return 33;
- }
- match(forwardOption(stdlib.Option<&i32>.None)) {
-  Some(reference)=>return 34;
-  None=>{}
- }
- match(forwardResult(stdlib.Result<&i32,i32>.Ok(&source))) {
-  Ok(reference)=>{ if(*reference!=42) { return 35; } }
-  Err(error)=>return 36;
- }
- match(forwardResult(stdlib.Result<&i32,i32>.Err(47))) {
-  Ok(reference)=>return 37;
-  Err(error)=>{ if(error!=47) { return 38; } }
- }
- match(forwardResidual(stdlib.Result<i32,&i32>.Err(&source))) {
-  Ok(number)=>return 47;
-  Err(reference)=>{ if(*reference!=42) { return 48; } }
- }
- match(forwardResidual(stdlib.Result<i32,&i32>.Ok(59))) {
-  Ok(number)=>{ if(number!=59) { return 49; } }
-  Err(reference)=>return 50;
- }
- match(forwardMutable(stdlib.Option<&mut i32>.Some(&mut source))) {
-  Some(output)=>{ *output=43; }
-  None=>return 39;
- }
- if(source!=43) { return 40; }
- source=42;
- match(forwardFlow(BorrowFlow.Valid(&source))) {
-  Valid(reference)=>{ if(*reference!=42) { return 41; } }
-  Invalid(error)=>return 42;
- }
- match(forwardFlow(BorrowFlow.Invalid(53))) {
-  Valid(reference)=>return 43;
-  Invalid(error)=>{ if(error!=53) { return 44; } }
- }
- { var items:i32[2]; items[0]=57;
- match(forwardSlice(stdlib.Option<i32[]>.Some(items))) {
-  Some(view)=>{ if(view.length!=2 || view[0]!=57) { return 45; } }
-  None=>return 46;
- } }
- match(stdlib.Option<&i32>.branch(stdlib.Option<&i32>.Some(&source))) {
-  Continue(reference)=>{ if(*reference!=42) { return 29; } }
-  Break(residual)=>return 30;
- }
- match(stdlib.Option<&i32>.branch(stdlib.Option<&i32>.None)) {
-  Continue(reference)=>return 31;
-  Break(residual)=>{}
- }
- { var left:i32=3; var right:i32=2;
- var pair=readerChoice(&left,&right);
- var reference=choiceLeft(pair,&left);
- if(*reference!=3) { return 25; } }
- { var left:i32=3; var right:i32=2;
- var pair=NestedReaders{left:Reader{source:&left},right:Reader{source:&right}};
- var reference=nestedLeft(&pair);
- if(*reference!=3) { return 24; } }
- { var left:i32=3; var right:i32=2;
- var pair=SeparateReaders{left:&left,right:&right};
- var reference=leftReader(&pair);
- right=4;
- if(*reference+right!=7) { return 21; } }
- { var left:i32=3; var right:i32=2;
- var pair=SeparateReaders{left:&left,right:&right};
- var projected=projectReader(&pair);
- right=4;
- if(projected.read()+right!=7) { return 22; } }
- { var left:i32=3; var right:i32=2;
- var pair=SeparateReaders{left:&left,right:&right};
- var projected=copyReader(pair);
- right=4;
- if(projected.read()+right!=7) { return 23; } }
- { var left:i32=1; var right:i32=2;
- var pair=WriterPair{left:writer(&mut left),right:writer(&mut right)};
- pair.left.write(3); pair.right.write(4);
- if(*pair.left.source+*pair.right.source!=7) { return 20; } }
- { var pair=SharedPair{left:&source,right:&source};
- if(*pair.left+*pair.right!=84) { return 14; } }
- { var left:i32=1; var right:i32=2;
- var pair=MutablePair{left:&mut left,right:&mut right};
- *pair.left=3; *pair.right=4;
- if(*pair.left+*pair.right!=7) { return 15; } }
- { var left:i32=3; var right:i32=2;
- var pair=separate(&mut left,&mut right);
- var reference=&*pair.left;
- *pair.right=4;
- if(*reference+*pair.right!=7) { return 16; } }
- { var left:i32=3; var right:i32=2;
- var pair=genericSeparate<i32>(&mut left,&mut right);
- var reference=&*pair.left;
- *pair.right=4;
- if(*reference+*pair.right!=7) { return 17; } }
- { var r=reader(&source); var copy=r; if(copy.read()!=42 || r.read()!=42) { return 1; } }
- { var w=writer(&mut source); var moved=w; moved.write(43); }
- if(source!=43) { return 2; }
- var other:i32=44;
- var selected=choose(&source,&other,false);
- if(*selected!=44) { return 3; }
- { var left:i32=3; var right:i32=2; var unrelated:i32=1;
- var selected=choose(&left,&right,false);
- var copied=selected; var child=&*copied;
- unrelated=4;
- if(*child+unrelated!=6) { return 28; } }
- var storage:u8[4];
- var bytes:u8[]=storage;
- {
-  var output=binary.writer(&mut bytes);
-  var result=output.writeUint(16909060,4,binary.Endian.Big);
-  match(result) { Ok=>{} Err(error)=>return 4; }
-  if(output.offset()!=4 || output.remaining()!=0) { return 5; }
- }
- {
-  var input=binary.reader(&bytes);
-  var copy=input;
-  var result=copy.readUint(4,binary.Endian.Big);
-  match(result) { Ok(value)=>{ if(value!=16909060) { return 6; } } Err(error)=>return 7; }
-  if(input.offset()!=0 || input.remaining()!=4) { return 8; }
- }
- var allocated=sync.mutex(Resource{value:51});
- match(allocated) {
-  Ok(mutex)=>{
-   {
-    var guard=sync.lock(&mutex);
-    var moved=guard;
-    var value=moved.getMut();
-    (*value).value=52;
-    if((*moved.get()).value!=52) { return 9; }
-   }
-   {
-    var guard=sync.lock(&mutex);
-    if((*guard.get()).value!=52) { return 10; }
-   }
-  }
-  Err(error)=>return 11;
- }
- if(drops!=1) { return 12; }
- return 0;
+
+struct GenericPair<'a,'b,T> {
+    var left:&'a mut T;
+    var right:&'b mut T;
+}
+
+func genericSeparate<'a,'b,T>(left:&'a mut T, right:&'b mut T) -> GenericPair<'a,'b,T> {
+    return GenericPair<'a,'b,T>{left:left, right:right};
+}
+
+func reader<'a>(source:&'a i32) -> Reader<'a> {
+    return Reader<'a>{source:source};
+}
+
+func updateReader<'a>(target:&mut Reader<'a>, source:&'a i32) -> void {
+    (*target).source = source;
+}
+
+func writer<'a>(source:&'a mut i32) -> Writer<'a> {
+    return Writer<'a>{source:source};
+}
+
+func choose<'a>(left:&'a i32, right:&'a i32, first:bit) -> &'a i32 {
+    if (first) {
+        return left;
+    }
+    return right;
+}
+
+var permanent:i32 = 61;
+var exclusive:i32 = 181;
+var exclusiveRef:&'static mut i32 = &mut exclusive;
+
+func updateExclusive(value:i32) -> void {
+    *exclusiveRef = value;
+}
+
+func readExclusive() -> i32 {
+    return *exclusiveRef;
+}
+
+var permanentRef:&'static i32 = &permanent;
+var permanentReader:Reader<'static>= Reader<'static>{source:&permanent};
+var permanentCopy:Reader<'static>= permanentReader;
+var inferredReader = Reader<'static>{source:&permanent};
+var absent:stdlib.Option<&'static i32>= stdlib.Option<&'static i32>.None;
+var absentCopy:stdlib.Option<&'static i32>= absent;
+
+func readPermanent() -> i32 {
+    return permanentCopy.read() + *permanentRef;
+}
+
+var drops:i32 = 0;
+
+struct Resource {
+    var value:i32;
+    destructor {
+        drops += 1;
+    }
+}
+
+func main() -> int {
+    {
+        var left:i32 = 1;
+        var right:i32 = 2;
+        var table = BorrowTable{
+            memory:memraw.core_alloc(3 * sizeof(TaggedReader)).(*TaggedReader),
+            limit:3
+        };
+        for (var cursor:usize = 0; cursor < 3; cursor += 1) {
+            table.memory[cursor].occupied = 0;
+        }
+        table.put(2, Reader{source:&left});
+        table.put(2, Reader{source:&right});
+        table.grow(4);
+        table.grow(8);
+        table.clear();
+        left = 3;
+        right = 4;
+    }
+    {
+        var a:i32 = 1;
+        var b:i32 = 2;
+        var c:i32 = 3;
+        var d:i32 = 4;
+        var e:i32 = 5;
+        var values = testMap<i32,Reader>(readerHash, readerSame);
+        match (values.insert(1, Reader{source:&a})) {
+            Ok => {}
+            Err(error) => return 165;
+        }
+        match (values.insert(9, Reader{source:&b})) {
+            Ok => {}
+            Err(error) => return 165;
+        }
+        match (values.insert(17, Reader{source:&c})) {
+            Ok => {}
+            Err(error) => return 165;
+        }
+        match (values.insert(25, Reader{source:&d})) {
+            Ok => {}
+            Err(error) => return 165;
+        }
+        match (values.insert(33, Reader{source:&e})) {
+            Ok => {}
+            Err(error) => return 165;
+        }
+        {
+            var query:i32 = 33;
+            match (values.get(&query)) {
+                Some(value) => {
+                    if (value.read() != 5) {
+                        return 163;
+                    }
+                }
+                None => return 164;
+            }
+        }
+        values.clear();
+        a = 6;
+        b = 7;
+        c = 8;
+        d = 9;
+        e = 10;
+    }
+    {
+        var left:i32 = 1;
+        var right:i32 = 2;
+        var ring = BorrowRing{
+            storage:memraw.core_alloc(3 * sizeof(Reader)).(*Reader),
+            start:2,
+            capacity:3,
+            used:0
+        };
+        ring.push(Reader{source:&left});
+        ring.push(Reader{source:&right});
+        if (ring.length() != 2) {
+            return 151;
+        }
+        ring.grow(4);
+        if (ring.length() != 2) {
+            return 160;
+        }
+        ring.grow(8);
+        {
+            var removed = ring.tail();
+            if (removed.read() != 2) {
+                return 152;
+            }
+        }
+        right = 3;
+        if (ring.length() != 1) {
+            return 153;
+        }
+        ring.empty();
+        left = 4;
+    }
+    {
+        var left:i32 = 1;
+        var right:i32 = 2;
+        match (testRing<Reader>(3)) {
+            Ok(ring) => {
+                ring.pushBack(Reader{source:&right});
+                if (ring.length() != 1) {
+                    return 154;
+                }
+                ring.pushFront(Reader{source:&left});
+                if (ring.length() != 2) {
+                    return 155;
+                }
+                ring.ensureCapacity(5);
+                if (ring.length() != 2) {
+                    return 161;
+                }
+                ring.ensureCapacity(8);
+                if (ring.length() != 2) {
+                    return 162;
+                }
+                {
+                    var removed = ring.popFront();
+                    match (removed) {
+                        Some(value) => {
+                            if (value.read() != 1) {
+                                return 156;
+                            }
+                        }
+                        None => return 157;
+                    }
+                }
+                left = 3;
+                if (ring.length() != 1) {
+                    return 158;
+                }
+                ring.clear();
+                right = 4;
+            }
+            Err(error) => return 159;
+        }
+    }
+    {
+        var left:i32 = 1;
+        var right:i32 = 2;
+        var prior = relocationDrops;
+        var values = testList<RelocationOwner>(2);
+        values.append(RelocationOwner{source:&left, tag:1});
+        values.append(RelocationOwner{source:&right, tag:2});
+        if (values.length() != 2) {
+            return 129;
+        }
+        values.ensureCapacity(4);
+        if (relocationDrops != prior) {
+            return 130;
+        }
+        {
+            var removed = values.pop();
+            match (removed) {
+                Some(value) => {
+                    if (*value.source != 2) {
+                        return 131;
+                    }
+                }
+                None => return 132;
+            }
+        }
+        right = 3;
+        values.clear();
+        left = 4;
+        if (relocationDrops != prior + 3) {
+            return 133;
+        }
+    }
+    {
+        var left:i32 = 1;
+        var right:i32 = 2;
+        var values = GrowingReaders{memory:memraw.core_alloc(2 * sizeof(Reader)).(*Reader), used:0};
+        values.append(Reader{source:&left});
+        values.append(Reader{source:&right});
+        if (values.used != 2) {
+            return 124;
+        }
+        forwardRelocation(&mut values, false);
+        var wrapped = RelocatedReaders.Held(values);
+        match (wrapped) {
+            Held(moved) => {
+                {
+                    var tail = moved.tail();
+                    if (tail.read() != 2) {
+                        return 125;
+                    }
+                }
+                right = 3;
+                moved.clear();
+                left = 4;
+            }
+            Empty => return 126;
+        }
+    }
+    {
+        var source:i32 = 1;
+        var values = GrowingReaders{memory:memraw.core_alloc(sizeof(Reader)).(*Reader), used:0};
+        values.append(Reader{source:&source});
+        if (values.used != 1) {
+            return 127;
+        }
+        forwardRelocation(&mut values, true);
+        if (values.memory[0].read() != 1) {
+            return 128;
+        }
+        values.clear();
+        source = 2;
+    }
+    {
+        var left:i32 = 1;
+        var right:i32 = 2;
+        var values = testList<Reader>(2);
+        values.append(Reader{source:&left});
+        values.append(Reader{source:&right});
+        if (values.length() != 2) {
+            return 120;
+        }
+        values.ensureCapacity(4);
+        {
+            var removed = values.pop();
+            match (removed) {
+                Some(value) => {
+                    if (value.read() != 2) {
+                        return 121;
+                    }
+                }
+                None => return 122;
+            }
+        }
+        right = 3;
+        values.clear();
+        left = 4;
+        if (left + right != 7) {
+            return 123;
+        }
+    }
+    {
+        var source:i32 = 1;
+        var values = testMap<i32,Reader>(readerHash, readerSame);
+        values.insert(1, Reader{source:&source});
+        {
+            var query:i32 = 1;
+            var copied = values.get(&query);
+            match (copied) {
+                Some(value) => {
+                    if (*value.source != 1) {
+                        return 145;
+                    }
+                }
+                None => return 146;
+            }
+        }
+        values.clear();
+        source = 2;
+    }
+    {
+        var key:i32 = 1;
+        var value:i32 = 2;
+        var values = testMap<Reader,Reader>(borrowedReaderHash, borrowedReaderSame);
+        values.insert(Reader{source:&key}, Reader{source:&value});
+        values.clear();
+        key = 3;
+        value = 4;
+    }
+    {
+        var left:i32 = 1;
+        var right:i32 = 2;
+        var table = BorrowTable{
+            memory:memraw.core_alloc(3 * sizeof(TaggedReader)).(*TaggedReader),
+            limit:3
+        };
+        for (var i:usize = 0; i < 3; i += 1) {
+            table.memory[i].occupied = 0;
+        }
+        table.put(2, Reader{source:&left});
+        table.update(2, Reader{source:&right});
+        table.clear();
+        left = 3;
+        right = 4;
+    }
+    {
+        var left:i32 = 1;
+        var right:i32 = 2;
+        var table = BorrowTable{
+            memory:memraw.core_alloc(3 * sizeof(TaggedReader)).(*TaggedReader),
+            limit:3
+        };
+        for (var i:usize = 0; i < 3; i += 1) {
+            table.memory[i].occupied = 0;
+        }
+        table.put(2, Reader{source:&left});
+        table.put(2, Reader{source:&right});
+        var wrapped = WrappedTable.Table(table);
+        match (wrapped) {
+            Table(moved) => {
+                moved.clear();
+                left = 3;
+                right = 4;
+            }
+            Empty => return 144;
+        }
+    }
+    {
+        var left:i32 = 1;
+        var right:i32 = 2;
+        var result = testRing<Reader>(3);
+        match (result) {
+            Ok(ring) => {
+                if (ring.length() != 0) {
+                    return 129;
+                }
+                if (ring.capacity() != 3) {
+                    return 130;
+                }
+                ring.pushFront(Reader{source:&left});
+                if (ring.length() != 1) {
+                    return 131;
+                }
+                if (ring.capacity() != 3) {
+                    return 132;
+                }
+                ring.pushBack(Reader{source:&right});
+                if (ring.length() != 2) {
+                    return 133;
+                }
+                if (ring.capacity() != 3) {
+                    return 134;
+                }
+                {
+                    var removed = ring.popFront();
+                    match (removed) {
+                        Some(value) => {
+                            if (*value.source != 1) {
+                                return 135;
+                            }
+                        }
+                        None => return 136;
+                    }
+                }
+                left = 3;
+                if (ring.length() != 1) {
+                    return 143;
+                }
+                ring.clear();
+                right = 4;
+            }
+            Err(error) => return 137;
+        }
+    }
+    {
+        var left:i32 = 1;
+        var right:i32 = 2;
+        var fields = HeapFields{storage:memraw.core_alloc(sizeof(HeapReaders)).(*HeapReaders)};
+        fields.put(Reader{source:&left}, Reader{source:&right});
+        {
+            var removed = fields.detach();
+            if (*removed.source != 2) {
+                return 127;
+            }
+        }
+        right = 3;
+        fields.releaseLeft();
+        left = 4;
+    }
+    {
+        var source:i32 = 1;
+        var ring = BorrowRing{
+            storage:memraw.core_alloc(3 * sizeof(Reader)).(*Reader),
+            start:2,
+            capacity:3,
+            used:0
+        };
+        ring.push(Reader{source:&source});
+        var moved = ring;
+        if (moved.length() != 1) {
+            return 138;
+        }
+        moved.empty();
+        source = 2;
+    }
+    {
+        var source:i32 = 1;
+        var ring = BorrowRing{
+            storage:memraw.core_alloc(3 * sizeof(Reader)).(*Reader),
+            start:2,
+            capacity:3,
+            used:0
+        };
+        ring.push(Reader{source:&source});
+        var wrapped = WrappedRing.Held(ring);
+        match (wrapped) {
+            Held(moved) => {
+                if (moved.length() != 1) {
+                    return 139;
+                }
+                moved.empty();
+            }
+            Empty => return 128;
+        }
+        source = 2;
+    }
+    {
+        var left:i32 = 1;
+        var right:i32 = 2;
+        var ring = BorrowRing{
+            storage:memraw.core_alloc(3 * sizeof(Reader)).(*Reader),
+            start:2,
+            capacity:3,
+            used:0
+        };
+        ring.push(Reader{source:&left});
+        ring.push(Reader{source:&right});
+        if (ring.length() != 2) {
+            return 121;
+        }
+        if (ring.slots() != 3) {
+            return 122;
+        }
+        {
+            var removed = ring.front();
+            if (*removed.source != 1) {
+                return 123;
+            }
+        }
+        left = 3;
+        if (*ring.storage[0].source != 2) {
+            return 124;
+        }
+        if (ring.length() != 1) {
+            return 140;
+        }
+        ring.empty();
+        right = 4;
+    }
+    {
+        var left:i32 = 1;
+        var right:i32 = 2;
+        var ring = BorrowRing{
+            storage:memraw.core_alloc(3 * sizeof(Reader)).(*Reader),
+            start:2,
+            capacity:3,
+            used:0
+        };
+        ring.push(Reader{source:&left});
+        ring.push(Reader{source:&right});
+        {
+            var removed = ring.tail();
+            if (*removed.source != 2) {
+                return 125;
+            }
+        }
+        right = 3;
+        if (ring.length() != 1) {
+            return 141;
+        }
+        ring.empty();
+        left = 4;
+    }
+    {
+        var source:i32 = 1;
+        var result = testRing<Reader>(3);
+        match (result) {
+            Ok(ring) => {
+                ring.pushBack(Reader{source:&source});
+                if (ring.length() != 1) {
+                    return 142;
+                }
+                ring.clear();
+                source = 2;
+            }
+            Err(error) => return 126;
+        }
+    }
+    {
+        var left:i32 = 1;
+        var middle:i32 = 2;
+        var right:i32 = 3;
+        var stack = BorrowStack{storage:memraw.core_alloc(3 * sizeof(Reader)).(*Reader), count:0};
+        stack.push(Reader{source:&left});
+        stack.push(Reader{source:&middle});
+        stack.push(Reader{source:&right});
+        if (stack.length() < 3) {
+            return 118;
+        }
+        {
+            var removed = stack.erase(stack.length() - 2);
+            if (*removed.source != 2) {
+                return 119;
+            }
+        }
+        middle = 4;
+        if (*stack.storage[0].source != 1 || *stack.storage[1].source != 3) {
+            return 120;
+        }
+        {
+            var removed = stack.removeLast();
+        }
+        right = 5;
+    }
+    {
+        var left:i32 = 1;
+        var right:i32 = 2;
+        var values = testList<Reader>(2);
+        values.append(Reader{source:&left});
+        values.append(Reader{source:&right});
+        if (values.length() < 2) {
+            return 116;
+        }
+        values.truncate(1);
+        right = 3;
+        if (values.length() != 1 || *values.get(0).source != 1) {
+            return 117;
+        }
+        values.clear();
+        left = 4;
+    }
+    {
+        var left:i32 = 1;
+        var middle:i32 = 2;
+        var right:i32 = 3;
+        var values = testList<Reader>(3);
+        values.append(Reader{source:&left});
+        values.append(Reader{source:&middle});
+        values.append(Reader{source:&right});
+        if (values.length() < 3) {
+            return 114;
+        }
+        values.truncate(values.length() - 2);
+        middle = 4;
+        right = 5;
+        if (values.length() != 1 || *values.get(0).source != 1) {
+            return 115;
+        }
+        values.clear();
+        left = 6;
+    }
+    {
+        var left:i32 = 1;
+        var middle:i32 = 2;
+        var right:i32 = 3;
+        var values = testList<Reader>(3);
+        values.append(Reader{source:&left});
+        if (values.length() != 1 || values.capacity() != 3) {
+            return 111;
+        }
+        values.append(Reader{source:&middle});
+        if (values.length() != 2) {
+            return 112;
+        }
+        if (values.capacity() != 3) {
+            return 113;
+        }
+        values.append(Reader{source:&right});
+        if (values.length() != 3) {
+            return 107;
+        }
+        {
+            var removed = values.remove(1);
+            match (removed) {
+                Some(value) => {
+                    if (*value.source != 2) {
+                        return 108;
+                    }
+                }
+                None => return 109;
+            }
+        }
+        middle = 4;
+        if (values.length() != 2 || *values.get(0).source != 1 || *values.get(1).source != 3) {
+            return 110;
+        }
+        {
+            var removed = values.pop();
+        }
+        right = 5;
+        values.clear();
+        left = 6;
+    }
+    {
+        var left:i32 = 1;
+        var right:i32 = 2;
+        var values = testList<Reader>(2);
+        values.append(Reader{source:&left});
+        values.append(Reader{source:&right});
+        if (values.length() != 2) {
+            return 105;
+        }
+        values.truncate(1);
+        right = 3;
+        if (values.length() != 1 || *values.get(0).source != 1) {
+            return 106;
+        }
+        values.clear();
+        left = 4;
+    }
+    {
+        var left:i32 = 1;
+        var right:i32 = 2;
+        var values = testList<Reader>(2);
+        values.append(Reader{source:&left});
+        values.append(Reader{source:&right});
+        values.truncate(values.length() - 1);
+        right = 3;
+        if (values.length() != 1 || *values.get(0).source != 1) {
+            return 101;
+        }
+        values.clear();
+        left = 4;
+    }
+    {
+        var left:i32 = 1;
+        var right:i32 = 2;
+        var values = testList<Reader>(2);
+        values.append(Reader{source:&left});
+        values.append(Reader{source:&right});
+        {
+            var removed = values.remove(values.length() - 1);
+            match (removed) {
+                Some(value) => {
+                    if (*value.source != 2) {
+                        return 102;
+                    }
+                }
+                None => return 103;
+            }
+        }
+        right = 3;
+        if (*values.get(0).source != 1) {
+            return 104;
+        }
+        values.clear();
+        left = 4;
+    }
+    {
+        var left:i32 = 1;
+        var right:i32 = 2;
+        var stack = BorrowStack{storage:memraw.core_alloc(2 * sizeof(Reader)).(*Reader), count:0};
+        stack.push(Reader{source:&left});
+        stack.push(Reader{source:&right});
+        {
+            var removed = stack.removeLast();
+            if (*removed.source != 2) {
+                return 99;
+            }
+        }
+        right = 3;
+        if (*stack.storage[0].source != 1) {
+            return 100;
+        }
+    }
+    {
+        var left:i32 = 1;
+        var right:i32 = 2;
+        var first = testList<Reader>(2);
+        var second = testList<Reader>(2);
+        first.append(Reader{source:&left});
+        second.append(Reader{source:&right});
+        var iterations:usize = 0;
+        while (iterations < 2) {
+            iterations += 1;
+        }
+        first.clear();
+        left = 3;
+        if (*second.get(0).source != 2) {
+            return 98;
+        }
+        second.truncate(0);
+        right = 4;
+    }
+    {
+        var left:i32 = 1;
+        var right:i32 = 2;
+        var slots = BorrowSlots{
+            storage:memraw.core_alloc(2 * sizeof(Reader)).(*Reader),
+            leftLive:false,
+            rightLive:false
+        };
+        slots.put(0, Reader{source:&left});
+        slots.put(1, Reader{source:&right});
+        {
+            var removed = removeSnapshot(&mut slots, 1);
+            if (*removed.source != 2) {
+                return 95;
+            }
+        }
+        right = 3;
+        if (*slots.storage[0].source != 1) {
+            return 96;
+        }
+    }
+    {
+        var source:i32 = 1;
+        var values = testList<Reader>(2);
+        values.append(Reader{source:&source});
+        truncateReaders(&mut values, 0);
+        source = 2;
+        values.append(Reader{source:&source});
+        if (*values.get(0).source != 2) {
+            return 97;
+        }
+    }
+    {
+        var left:i32 = 1;
+        var right:i32 = 2;
+        var pair = reorderOwners(
+            BorrowOwners.Pair(BorrowOwner{source:&left, tag:1}, BorrowOwner{source:&right, tag:2})
+        );
+        match (pair) {
+            Pair(first, second) => {
+                if (*first.source != 2 || *second.source != 1) {
+                    return 91;
+                }
+                memraw.destroy(&first);
+                right = 3;
+                if (*second.source != 1) {
+                    return 92;
+                }
+                memraw.destroy(&second);
+                left = 4;
+            }
+            Empty => return 93;
+        }
+        if (borrowOwnerDrops != 3) {
+            return 94;
+        }
+    }
+    {
+        var left:i32 = 1;
+        var right:i32 = 2;
+        var stack = BorrowStack{storage:memraw.core_alloc(sizeof(Reader)).(*Reader), count:0};
+        stack.push(Reader{source:&left});
+        {
+            var prior = stack.exchange(Reader{source:&right});
+            if (*prior.source != 1) {
+                return 89;
+            }
+        }
+        left = 3;
+        if (*stack.storage[0].source != 2) {
+            return 90;
+        }
+    }
+    {
+        var left:i32 = 1;
+        var right:i32 = 2;
+        var reference = &left;
+        {
+            var prior = replace(reference, &right);
+            if (*prior != 1) {
+                return 87;
+            }
+        }
+        left = 3;
+        if (*reference != 2) {
+            return 88;
+        }
+    }
+    {
+        var source:i32 = 1;
+        var values = testList<Reader>(2);
+        values.append(Reader{source:&source});
+        values.clear();
+        source = 2;
+        values.append(Reader{source:&source});
+        if (values.length() != 1 || *values.get(0).source != 2) {
+            return 80;
+        }
+    }
+    {
+        var left:i32 = 1;
+        var right:i32 = 2;
+        var values = testList<Reader>(2);
+        values.append(Reader{source:&left});
+        values.append(Reader{source:&right});
+        {
+            var removed = values.pop();
+            match (removed) {
+                Some(value) => {
+                    if (*value.source != 2) {
+                        return 81;
+                    }
+                }
+                None => return 82;
+            }
+        }
+        right = 3;
+        if (*values.get(0).source != 1) {
+            return 83;
+        }
+        values.clear();
+        left = 4;
+    }
+    {
+        var source:i32 = 1;
+        var values = testList<Reader>(2);
+        values.append(Reader{source:&source});
+        var moved = values;
+        moved.clear();
+        source = 2;
+        moved.append(Reader{source:&source});
+        if (*moved.get(0).source != 2) {
+            return 84;
+        }
+    }
+    {
+        var source:i32 = 1;
+        var values = testList<Reader>(2);
+        values.append(Reader{source:&source});
+        var wrapped = stdlib.Option<collections.List<Reader>>.Some(values);
+        match (wrapped) {
+            Some(moved) => {
+                moved.clear();
+                source = 2;
+                if (moved.length() != 0) {
+                    return 85;
+                }
+            }
+            None => return 86;
+        }
+    }
+    {
+        var left:i32 = 201;
+        var right:i32 = 202;
+        var reference = &left;
+        var previous = replace(reference, &right);
+        if (*previous != 201 || *reference != 202) {
+            return 57;
+        }
+        var transferred = take(reference);
+        if (*transferred != 202) {
+            return 58;
+        }
+    }
+    {
+        var left:i32 = 191;
+        var right:i32 = 192;
+        var reference = &left;
+        {
+            var slot:&(&i32) = &reference;
+            if (**slot != 191) {
+                return 54;
+            }
+        }
+        {
+            var slot:&mut(&i32) = &mut reference;
+            *slot = &right;
+            if (**slot != 192) {
+                return 55;
+            }
+        }
+        left = 193;
+        if (*reference != 192 || left != 193) {
+            return 56;
+        }
+    }
+    updateExclusive(182);
+    if (readExclusive() != 182) {
+        return 53;
+    }
+    {
+        var left:i32 = 171;
+        var right:i32 = 172;
+        var value = reader(&left);
+        updateReader(&mut value, &right);
+        left = 173;
+        if (value.read() != 172 || left != 173) {
+            return 52;
+        }
+    }
+    {
+        var left:i32 = 161;
+        var right:i32 = 162;
+        var tree = branchTree(&left, &right);
+        var projected = branchRight(tree, &right);
+        left = 163;
+        if (*projected != 162 || left != 163) {
+            return 51;
+        }
+    }
+    {
+        var left:i32 = 141;
+        var right:i32 = 142;
+        var pair = sameLifetime(&left, &right);
+        var projected = pair.left;
+        right = 143;
+        if (*projected != 141 || right != 143) {
+            return 47;
+        }
+    }
+    {
+        var left:i32 = 151;
+        var right:i32 = 152;
+        var input = SeparateReaders{left:&left, right:&right};
+        var swapped = swapReaders(input);
+        var projected = swapped.left;
+        left = 153;
+        if (*projected != 152 || left != 153) {
+            return 48;
+        }
+    }
+    {
+        var left:i32 = 121;
+        var right:i32 = 122;
+        var tree = readerTree(&left, &right);
+        var projected = treeRight(&tree);
+        left = 123;
+        if (*projected != 122 || left != 123) {
+            return 45;
+        }
+    }
+    {
+        var left:i32 = 131;
+        var right:i32 = 132;
+        var tree = ReaderTree{readers:SeparateReaders{left:&left, right:&right}};
+        var projected = tree.readers.left;
+        right = 133;
+        if (*projected != 131 || right != 133) {
+            return 46;
+        }
+    }
+    {
+        var left:i32 = 101;
+        var right:i32 = 102;
+        var pair = forwardNested(nestedReaders(&left, &right));
+        var projected = pair.right;
+        left = 103;
+        if (projected.read() != 102 || left != 103) {
+            return 43;
+        }
+    }
+    {
+        var left:i32 = 111;
+        var right:i32 = 112;
+        {
+            var pair = nestedWriters(&mut left, &mut right);
+            pair.left.write(113);
+            pair.right.write(114);
+        }
+        if (left != 113 || right != 114) {
+            return 44;
+        }
+    }
+    {
+        var left:i32 = 71;
+        var right:i32 = 72;
+        var pair = nestedReaders(&left, &right);
+        var projected = nestedProjection(&pair);
+        right = 73;
+        if (projected.read() != 71 || right != 73) {
+            return 40;
+        }
+    }
+    {
+        var left:i32 = 81;
+        var right:i32 = 82;
+        var pair = deepReaders(&left, &right);
+        var projected = pair.left.reader;
+        right = 83;
+        if (projected.read() != 81 || right != 83) {
+            return 41;
+        }
+    }
+    {
+        var left:i32 = 91;
+        var right:i32 = 92;
+        var pair = NestedReaders{left:Reader{source:&left}, right:Reader{source:&right}};
+        var projected = pair.left;
+        right = 93;
+        if (projected.read() != 91 || right != 93) {
+            return 42;
+        }
+    }
+    match (absent) {
+        Some(value) => return 18;
+        None => {}
+    }
+    match (absentCopy) {
+        Some(value) => return 19;
+        None => {}
+    }
+    if (readPermanent() != 122 || permanentReader.read() != 61 || inferredReader.read() != 61) {
+        return 13;
+    }
+    match (ReaderChoice<'static,'static>.Both(&permanent, &permanent)) {
+        Both(left, right) => {
+            if (*left + *right != 122) {
+                return 26;
+            }
+        }
+        Empty => return 27;
+    }
+    var source:i32 = 42;
+    match (forwardOption(stdlib.Option<&i32>.Some(&source))) {
+        Some(reference) => {
+            if (*reference != 42) {
+                return 32;
+            }
+        }
+        None => return 33;
+    }
+    match (forwardOption(stdlib.Option<&i32>.None)) {
+        Some(reference) => return 34;
+        None => {}
+    }
+    match (forwardResult(stdlib.Result<&i32,i32>.Ok(&source))) {
+        Ok(reference) => {
+            if (*reference != 42) {
+                return 35;
+            }
+        }
+        Err(error) => return 36;
+    }
+    match (forwardResult(stdlib.Result<&i32,i32>.Err(47))) {
+        Ok(reference) => return 37;
+        Err(error) => {
+            if (error != 47) {
+                return 38;
+            }
+        }
+    }
+    match (forwardResidual(stdlib.Result<i32,&i32>.Err(&source))) {
+        Ok(number) => return 47;
+        Err(reference) => {
+            if (*reference != 42) {
+                return 48;
+            }
+        }
+    }
+    match (forwardResidual(stdlib.Result<i32,&i32>.Ok(59))) {
+        Ok(number) => {
+            if (number != 59) {
+                return 49;
+            }
+        }
+        Err(reference) => return 50;
+    }
+    match (forwardMutable(stdlib.Option<&mut i32>.Some(&mut source))) {
+        Some(output) => {
+            *output = 43;
+        }
+        None => return 39;
+    }
+    if (source != 43) {
+        return 40;
+    }
+    source = 42;
+    match (forwardFlow(BorrowFlow.Valid(&source))) {
+        Valid(reference) => {
+            if (*reference != 42) {
+                return 41;
+            }
+        }
+        Invalid(error) => return 42;
+    }
+    match (forwardFlow(BorrowFlow.Invalid(53))) {
+        Valid(reference) => return 43;
+        Invalid(error) => {
+            if (error != 53) {
+                return 44;
+            }
+        }
+    }
+    {
+        var items:i32[2];
+        items[0] = 57;
+        match (forwardSlice(stdlib.Option<i32[]>.Some(items))) {
+            Some(view) => {
+                if (view.length != 2 || view[0] != 57) {
+                    return 45;
+                }
+            }
+            None => return 46;
+        }
+    }
+    match (stdlib.Option<&i32>.branch(stdlib.Option<&i32>.Some(&source))) {
+        Continue(reference) => {
+            if (*reference != 42) {
+                return 29;
+            }
+        }
+        Break(residual) => return 30;
+    }
+    match (stdlib.Option<&i32>.branch(stdlib.Option<&i32>.None)) {
+        Continue(reference) => return 31;
+        Break(residual) => {}
+    }
+    {
+        var left:i32 = 3;
+        var right:i32 = 2;
+        var pair = readerChoice(&left, &right);
+        var reference = choiceLeft(pair, &left);
+        if (*reference != 3) {
+            return 25;
+        }
+    }
+    {
+        var left:i32 = 3;
+        var right:i32 = 2;
+        var pair = NestedReaders{left:Reader{source:&left}, right:Reader{source:&right}};
+        var reference = nestedLeft(&pair);
+        if (*reference != 3) {
+            return 24;
+        }
+    }
+    {
+        var left:i32 = 3;
+        var right:i32 = 2;
+        var pair = SeparateReaders{left:&left, right:&right};
+        var reference = leftReader(&pair);
+        right = 4;
+        if (*reference + right != 7) {
+            return 21;
+        }
+    }
+    {
+        var left:i32 = 3;
+        var right:i32 = 2;
+        var pair = SeparateReaders{left:&left, right:&right};
+        var projected = projectReader(&pair);
+        right = 4;
+        if (projected.read() + right != 7) {
+            return 22;
+        }
+    }
+    {
+        var left:i32 = 3;
+        var right:i32 = 2;
+        var pair = SeparateReaders{left:&left, right:&right};
+        var projected = copyReader(pair);
+        right = 4;
+        if (projected.read() + right != 7) {
+            return 23;
+        }
+    }
+    {
+        var left:i32 = 1;
+        var right:i32 = 2;
+        var pair = WriterPair{left:writer(&mut left), right:writer(&mut right)};
+        pair.left.write(3);
+        pair.right.write(4);
+        if (*pair.left.source + *pair.right.source != 7) {
+            return 20;
+        }
+    }
+    {
+        var pair = SharedPair{left:&source, right:&source};
+        if (*pair.left + *pair.right != 84) {
+            return 14;
+        }
+    }
+    {
+        var left:i32 = 1;
+        var right:i32 = 2;
+        var pair = MutablePair{left:&mut left, right:&mut right};
+        *pair.left = 3;
+        *pair.right = 4;
+        if (*pair.left + *pair.right != 7) {
+            return 15;
+        }
+    }
+    {
+        var left:i32 = 3;
+        var right:i32 = 2;
+        var pair = separate(&mut left, &mut right);
+        var reference = &*pair.left;
+        *pair.right = 4;
+        if (*reference + *pair.right != 7) {
+            return 16;
+        }
+    }
+    {
+        var left:i32 = 3;
+        var right:i32 = 2;
+        var pair = genericSeparate<i32>(&mut left, &mut right);
+        var reference = &*pair.left;
+        *pair.right = 4;
+        if (*reference + *pair.right != 7) {
+            return 17;
+        }
+    }
+    {
+        var r = reader(&source);
+        var copy = r;
+        if (copy.read() != 42 || r.read() != 42) {
+            return 1;
+        }
+    }
+    {
+        var w = writer(&mut source);
+        var moved = w;
+        moved.write(43);
+    }
+    if (source != 43) {
+        return 2;
+    }
+    var other:i32 = 44;
+    var selected = choose(&source, &other, false);
+    if (*selected != 44) {
+        return 3;
+    }
+    {
+        var left:i32 = 3;
+        var right:i32 = 2;
+        var unrelated:i32 = 1;
+        var selected = choose(&left, &right, false);
+        var copied = selected;
+        var child = &*copied;
+        unrelated = 4;
+        if (*child + unrelated != 6) {
+            return 28;
+        }
+    }
+    var storage:u8[4];
+    var bytes:u8[] = storage;
+    {
+        var output = binary.writer(&mut bytes);
+        var result = output.writeUint(16909060, 4, binary.Endian.Big);
+        match (result) {
+            Ok => {}
+            Err(error) => return 4;
+        }
+        if (output.offset() != 4 || output.remaining() != 0) {
+            return 5;
+        }
+    }
+    {
+        var input = binary.reader(&bytes);
+        var copy = input;
+        var result = copy.readUint(4, binary.Endian.Big);
+        match (result) {
+            Ok(value) => {
+                if (value != 16909060) {
+                    return 6;
+                }
+            }
+            Err(error) => return 7;
+        }
+        if (input.offset() != 0 || input.remaining() != 4) {
+            return 8;
+        }
+    }
+    var allocated = sync.mutex(Resource{value:51});
+    match (allocated) {
+        Ok(mutex) => {
+            {
+                var guard = sync.lock(&mutex);
+                var moved = guard;
+                var value = moved.getMut();
+                (*value).value = 52;
+                if ((*moved.get()).value != 52) {
+                    return 9;
+                }
+            }
+            {
+                var guard = sync.lock(&mutex);
+                if ((*guard.get()).value != 52) {
+                    return 10;
+                }
+            }
+        }
+        Err(error) => return 11;
+    }
+    if (drops != 1) {
+        return 12;
+    }
+    return 0;
 }

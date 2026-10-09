@@ -1,11 +1,13 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 // Test pointer type declarations
 func main() -> void {
-    var p: *int;
-    var q: *char;
-    var r: *string;
+    var p:*int;
+    var q:*char;
+    var r:*string;
     io.println("Pointer types declared successfully");
 }
 

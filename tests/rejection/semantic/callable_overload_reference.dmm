@@ -1,10 +1,10 @@
 package main;
 
-func convert(value: int) -> int {
+func convert(value:int) -> int {
     return value;
 }
 
-func convert(value: double) -> double {
+func convert(value:double) -> double {
     return value;
 }
 

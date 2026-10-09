@@ -13,84 +13,90 @@ pub enum Error {
     pub BufferTooSmall,
 }
 
-pub func checkedAdd(left: u64, right: u64) -> stdlib.Result<u64, Error> {
+pub func checkedAdd(left:u64, right:u64) -> stdlib.Result<u64,Error> {
     if (right > limits.U64_MAX - left) {
-        return stdlib.Result<u64, Error>.Err(Error.Overflow);
+        return stdlib.Result<u64,Error>.Err(Error.Overflow);
     }
-    return stdlib.Result<u64, Error>.Ok(left + right);
+    return stdlib.Result<u64,Error>.Ok(left + right);
 }
 
-pub func checkedSub(left: u64, right: u64) -> stdlib.Result<u64, Error> {
+pub func checkedSub(left:u64, right:u64) -> stdlib.Result<u64,Error> {
     if (right > left) {
-        return stdlib.Result<u64, Error>.Err(Error.Overflow);
+        return stdlib.Result<u64,Error>.Err(Error.Overflow);
     }
-    return stdlib.Result<u64, Error>.Ok(left - right);
+    return stdlib.Result<u64,Error>.Ok(left - right);
 }
 
-pub func checkedMul(left: u64, right: u64) -> stdlib.Result<u64, Error> {
+pub func checkedMul(left:u64, right:u64) -> stdlib.Result<u64,Error> {
     if (right != 0 && left > limits.U64_MAX / right) {
-        return stdlib.Result<u64, Error>.Err(Error.Overflow);
+        return stdlib.Result<u64,Error>.Err(Error.Overflow);
     }
-    return stdlib.Result<u64, Error>.Ok(left * right);
+    return stdlib.Result<u64,Error>.Ok(left * right);
 }
 
-pub func checkedDiv(left: u64, right: u64) -> stdlib.Result<u64, Error> {
+pub func checkedDiv(left:u64, right:u64) -> stdlib.Result<u64,Error> {
     if (right == 0) {
-        return stdlib.Result<u64, Error>.Err(Error.DivisionByZero);
+        return stdlib.Result<u64,Error>.Err(Error.DivisionByZero);
     }
-    return stdlib.Result<u64, Error>.Ok(left / right);
+    return stdlib.Result<u64,Error>.Ok(left / right);
 }
 
-pub func checkedAdd(left: i64, right: i64) -> stdlib.Result<i64, Error> {
-    if ((right > 0 && left > limits.I64_MAX - right) || (right < 0 && left < limits.I64_MIN - right)) {
-        return stdlib.Result<i64, Error>.Err(Error.Overflow);
+pub func checkedAdd(left:i64, right:i64) -> stdlib.Result<i64,Error> {
+    if (
+        (right > 0 && left > limits.I64_MAX - right)
+        || (right < 0 && left < limits.I64_MIN - right)
+    ) {
+        return stdlib.Result<i64,Error>.Err(Error.Overflow);
     }
-    return stdlib.Result<i64, Error>.Ok(left + right);
+    return stdlib.Result<i64,Error>.Ok(left + right);
 }
 
-pub func checkedSub(left: i64, right: i64) -> stdlib.Result<i64, Error> {
-    if ((right > 0 && left < limits.I64_MIN + right) || (right < 0 && left > limits.I64_MAX + right)) {
-        return stdlib.Result<i64, Error>.Err(Error.Overflow);
+pub func checkedSub(left:i64, right:i64) -> stdlib.Result<i64,Error> {
+    if (
+        (right > 0 && left < limits.I64_MIN + right)
+        || (right < 0 && left > limits.I64_MAX + right)
+    ) {
+        return stdlib.Result<i64,Error>.Err(Error.Overflow);
     }
-    return stdlib.Result<i64, Error>.Ok(left - right);
+    return stdlib.Result<i64,Error>.Ok(left - right);
 }
 
-func magnitude(value: i64) -> u64 {
+func magnitude(value:i64) -> u64 {
     if (value < 0) {
         return 0.(u64) - value.(u64);
     }
     return value.(u64);
 }
 
-pub func checkedMul(left: i64, right: i64) -> stdlib.Result<i64, Error> {
-    var negative: bit = (left < 0) != (right < 0);
-    var a: u64 = magnitude(left);
-    var b: u64 = magnitude(right);
-    var limit: u64 = limits.I64_MAX.(u64);
+pub func checkedMul(left:i64, right:i64) -> stdlib.Result<i64,Error> {
+    var negative:bit = (left < 0) != (right < 0);
+    var a:u64 = magnitude(left);
+    var b:u64 = magnitude(right);
+    var limit:u64 = limits.I64_MAX.(u64);
     if (negative) {
         limit += 1;
     }
     if (b != 0 && a > limit / b) {
-        return stdlib.Result<i64, Error>.Err(Error.Overflow);
+        return stdlib.Result<i64,Error>.Err(Error.Overflow);
     }
-    var product: u64 = a * b;
+    var product:u64 = a * b;
     if (negative) {
         product = 0.(u64) - product;
     }
-    return stdlib.Result<i64, Error>.Ok(product.(i64));
+    return stdlib.Result<i64,Error>.Ok(product.(i64));
 }
 
-pub func checkedDiv(left: i64, right: i64) -> stdlib.Result<i64, Error> {
+pub func checkedDiv(left:i64, right:i64) -> stdlib.Result<i64,Error> {
     if (right == 0) {
-        return stdlib.Result<i64, Error>.Err(Error.DivisionByZero);
+        return stdlib.Result<i64,Error>.Err(Error.DivisionByZero);
     }
-    if (left == limits.I64_MIN && right == - 1) {
-        return stdlib.Result<i64, Error>.Err(Error.Overflow);
+    if (left == limits.I64_MIN && right == -1) {
+        return stdlib.Result<i64,Error>.Err(Error.Overflow);
     }
-    return stdlib.Result<i64, Error>.Ok(left / right);
+    return stdlib.Result<i64,Error>.Ok(left / right);
 }
 
-func digit(value: u8) -> u64 {
+func digit(value:u8) -> u64 {
     if (value >= 48 && value <= 57) {
         return (value - 48).(u64);
     }
@@ -104,68 +110,68 @@ func digit(value: u8) -> u64 {
 }
 
 // Strict whole-input parsing: no whitespace, separators or implicit prefixes.
-pub func parseUint(text: u8[], base: u32) -> stdlib.Result<u64, Error> {
+pub func parseUint(text:u8[], base:u32) -> stdlib.Result<u64,Error> {
     if (base < 2 || base > 36) {
-        return stdlib.Result<u64, Error>.Err(Error.InvalidBase);
+        return stdlib.Result<u64,Error>.Err(Error.InvalidBase);
     }
     if (text.length == 0) {
-        return stdlib.Result<u64, Error>.Err(Error.Empty);
+        return stdlib.Result<u64,Error>.Err(Error.Empty);
     }
-    var value: u64 = 0;
-    for (var i: usize = 0; i < text.length; i += 1) {
-        var next: u64 = digit(text[i]);
+    var value:u64 = 0;
+    for (var i:usize = 0; i < text.length; i += 1) {
+        var next:u64 = digit(text[i]);
         if (next >= base.(u64)) {
-            return stdlib.Result<u64, Error>.Err(Error.InvalidDigit);
+            return stdlib.Result<u64,Error>.Err(Error.InvalidDigit);
         }
         if (value > (limits.U64_MAX - next) / base.(u64)) {
-            return stdlib.Result<u64, Error>.Err(Error.Overflow);
+            return stdlib.Result<u64,Error>.Err(Error.Overflow);
         }
         value = value * base.(u64) + next;
     }
-    return stdlib.Result<u64, Error>.Ok(value);
+    return stdlib.Result<u64,Error>.Ok(value);
 }
 
-pub func parseInt(text: u8[], base: u32) -> stdlib.Result<i64, Error> {
+pub func parseInt(text:u8[], base:u32) -> stdlib.Result<i64,Error> {
     if (base < 2 || base > 36) {
-        return stdlib.Result<i64, Error>.Err(Error.InvalidBase);
+        return stdlib.Result<i64,Error>.Err(Error.InvalidBase);
     }
     if (text.length == 0) {
-        return stdlib.Result<i64, Error>.Err(Error.Empty);
+        return stdlib.Result<i64,Error>.Err(Error.Empty);
     }
-    var negative: bit = text[0] == 45;
-    var start: usize = 0;
+    var negative:bit = text[0] == 45;
+    var start:usize = 0;
     if (negative || text[0] == 43) {
         start = 1;
     }
     var parsed = parseUint(text[start:], base);
     match (parsed) {
-        Err(error) => return stdlib.Result<i64, Error>.Err(error);
+        Err(error) => return stdlib.Result<i64,Error>.Err(error);
         Ok(value) => {
-            var limit: u64 = limits.I64_MAX.(u64);
+            var limit:u64 = limits.I64_MAX.(u64);
             if (negative) {
                 limit += 1;
             }
             if (value > limit) {
-                return stdlib.Result<i64, Error>.Err(Error.Overflow);
+                return stdlib.Result<i64,Error>.Err(Error.Overflow);
             }
             if (negative) {
                 value = 0.(u64) - value;
             }
-            return stdlib.Result<i64, Error>.Ok(value.(i64));
+            return stdlib.Result<i64,Error>.Ok(value.(i64));
         }
     }
 }
 
 // Writes an unterminated ASCII representation, leaving output untouched on error.
-pub func formatUint(value: u64, base: u32, output: u8[]) -> stdlib.Result<usize, Error> {
+pub func formatUint(value:u64, base:u32, output:u8[]) -> stdlib.Result<usize,Error> {
     if (base < 2 || base > 36) {
-        return stdlib.Result<usize, Error>.Err(Error.InvalidBase);
+        return stdlib.Result<usize,Error>.Err(Error.InvalidBase);
     }
-    var digits: u8[64];
-    var count: usize = 0;
+    var digits:u8[64];
+    var count:usize = 0;
     while (true) {
-        var next: u64 = value % base.(u64);
-        var code: u64 = 48 + next;
+        var next:u64 = value % base.(u64);
+        var code:u64 = 48 + next;
         if (next >= 10) {
             code = 97 + next - 10;
         }
@@ -177,33 +183,33 @@ pub func formatUint(value: u64, base: u32, output: u8[]) -> stdlib.Result<usize,
         }
     }
     if (count > output.length) {
-        return stdlib.Result<usize, Error>.Err(Error.BufferTooSmall);
+        return stdlib.Result<usize,Error>.Err(Error.BufferTooSmall);
     }
-    for (var i: usize = 0; i < count; i += 1) {
+    for (var i:usize = 0; i < count; i += 1) {
         output[i] = digits[count - i - 1];
     }
-    return stdlib.Result<usize, Error>.Ok(count);
+    return stdlib.Result<usize,Error>.Ok(count);
 }
 
-pub func formatInt(value: i64, base: u32, output: u8[]) -> stdlib.Result<usize, Error> {
-    var temporary: u8[65];
-    var start: usize = 0;
+pub func formatInt(value:i64, base:u32, output:u8[]) -> stdlib.Result<usize,Error> {
+    var temporary:u8[65];
+    var start:usize = 0;
     if (value < 0) {
         temporary[0] = 45;
         start = 1;
     }
     var formatted = formatUint(magnitude(value), base, temporary[start:]);
     match (formatted) {
-        Err(error) => return stdlib.Result<usize, Error>.Err(error);
+        Err(error) => return stdlib.Result<usize,Error>.Err(error);
         Ok(count) => {
             count += start;
             if (count > output.length) {
-                return stdlib.Result<usize, Error>.Err(Error.BufferTooSmall);
+                return stdlib.Result<usize,Error>.Err(Error.BufferTooSmall);
             }
-            for (var i: usize = 0; i < count; i += 1) {
+            for (var i:usize = 0; i < count; i += 1) {
                 output[i] = temporary[i];
             }
-            return stdlib.Result<usize, Error>.Ok(count);
+            return stdlib.Result<usize,Error>.Ok(count);
         }
     }
 }

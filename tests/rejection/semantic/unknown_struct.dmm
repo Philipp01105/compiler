@@ -1,5 +1,5 @@
 package main;
 
 func main() -> void {
-    var value: Missing;
+    var value:Missing;
 }

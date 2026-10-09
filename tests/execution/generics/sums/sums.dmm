@@ -1,26 +1,28 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
-struct Pair<A, B> {
-    var first: A;
-    var second: B;
+struct Pair<A,B> {
+    var first:A;
+    var second:B;
 }
 
-func copy(value: stdlib.Result<Pair<int, string>, int>) -> stdlib.Result<Pair<int, string>, int> {
+func copy(value:stdlib.Result<Pair<int,string>,int>) -> stdlib.Result<Pair<int,string>,int> {
     return value;
 }
 
 func main() -> void {
-    var value: stdlib.Option<int> = stdlib.Option<int>.Some(42);
+    var value:stdlib.Option<int> = stdlib.Option<int>.Some(42);
     io.println(stdlib.unwrapOr(value, 7));
     value = stdlib.Option<int>.None;
     io.println(stdlib.unwrapOr(value, 7));
-    var p: Pair<int, string>;
+    var p:Pair<int,string>;
     p.first = 9;
     p.second = "payload";
-    var result: stdlib.Result<Pair<int, string>, int> = stdlib.Result<Pair<int, string>, int>.Ok(p);
-    var other: stdlib.Result<Pair<int, string>, int> = copy(result);
+    var result:stdlib.Result<Pair<int,string>,int> = stdlib.Result<Pair<int,string>,int>.Ok(p);
+    var other:stdlib.Result<Pair<int,string>,int> = copy(result);
     p.first = 20;
     match (other) {
         Ok(pair) => {
@@ -29,7 +31,7 @@ func main() -> void {
         }
         Err(code) => io.println(code);
     }
-    other = stdlib.Result<Pair<int, string>, int>.Err(3);
+    other = stdlib.Result<Pair<int,string>,int>.Err(3);
     match (other) {
         Ok(pair) => io.println(pair.first);
         _ => io.println(100);

@@ -1,9 +1,11 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 // Test free keyword for manual deallocation
 func main() -> void {
-    var p: *int = reserve(int);
+    var p:*int = reserve(int);
     io.println("Memory allocated");
     free(p);
     io.println("Memory freed");

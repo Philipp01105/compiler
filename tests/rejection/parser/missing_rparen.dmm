@@ -1,7 +1,10 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
 func main() -> void {
-    if (true{ io.println(1);
+    if (true{
+        io.println(1);
     }}

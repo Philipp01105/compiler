@@ -1,7 +1,7 @@
 package main;
 
-func change(values: int[]) -> void {
-    var length: *int = &values.length;
+func change(values:int[]) -> void {
+    var length:*int = &values.length;
 }
 
 func main() -> void {}

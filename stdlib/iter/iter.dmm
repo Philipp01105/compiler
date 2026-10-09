@@ -1,57 +1,81 @@
 package iter;
-import ("stdlib/core" "stdlib/collections");
+import (
+    "stdlib/collections"
+    "stdlib/core"
+);
 
-pub struct Indexed<T> { pub var index:usize; pub var value:T; }
+pub struct Indexed<T> {
+    pub var index:usize;
+    pub var value:T;
+}
 
 // Streaming and allocation-free except for effects explicitly performed by step.
-pub func fold<T,A,I:core.Iterator<T>>(iterator:&mut I,initial:A,step:mut func(A,T)->A)->A {
-    var result=initial;
-    while(true) {
-        match(iterator.next()) {
-            Some(item)=>{ result=step(result,item); }
-            None=>break;
+pub func fold<T,A,I:core.Iterator<T>>(iterator:&mut I, initial:A, step:mut func(A,T) -> A) -> A {
+    var result = initial;
+    while (true) {
+        match (iterator.next()) {
+            Some(item) => {
+                result = step(result, item);
+            }
+            None => break;
         }
     }
     return result;
 }
+
 // These operations eagerly collect owned outputs. An error consumes the
 // already-pulled inputs and destroys the unpublished partial output.
-pub func map<T,U,I:core.Iterator<T>>(iterator:&mut I,mapper:mut func(T)->U)
-    ->core.Result<collections.List<U>,core.AllocError> {
-    var result=collections.list<U>();
-    while(true) {
-        match(iterator.next()) {
-            Some(item)=>{ result.append(mapper(item))?; }
-            None=>break;
+pub func map<T,U,I:core.Iterator<T>>(
+    iterator:&mut I,
+    mapper:mut func(T) -> U
+) -> core.Result<collections.List<U>,core.AllocError> {
+    var result = collections.list<U>();
+    while (true) {
+        match (iterator.next()) {
+            Some(item) => {
+                result.append(mapper(item))?;
+            }
+            None => break;
         }
     }
     return core.Result<collections.List<U>,core.AllocError>.Ok(result);
 }
-pub func filter<T,I:core.Iterator<T>>(iterator:&mut I,predicate:mut func(&T)->bit)
-    ->core.Result<collections.List<T>,core.AllocError> {
-    var result=collections.list<T>();
-    while(true) {
-        match(iterator.next()) {
-            Some(item)=>{ if(predicate(&item)) { result.append(item)?; } }
-            None=>break;
+
+pub func filter<T,I:core.Iterator<T>>(
+    iterator:&mut I,
+    predicate:mut func(&T) -> bit
+) -> core.Result<collections.List<T>,core.AllocError> {
+    var result = collections.list<T>();
+    while (true) {
+        match (iterator.next()) {
+            Some(item) => {
+                if (predicate(&item)) {
+                    result.append(item)?;
+                }
+            }
+            None => break;
         }
     }
     return core.Result<collections.List<T>,core.AllocError>.Ok(result);
 }
-pub func enumerate<T,I:core.Iterator<T>>(iterator:&mut I)
-    ->core.Result<collections.List<Indexed<T>>,core.AllocError> {
-    var result=collections.list<Indexed<T>>();
-    var index:usize=0;
-    while(true) {
-        match(iterator.next()) {
-            Some(item)=>{
-                result.append(Indexed<T>{index:index,value:item})?;
-                if(index==18446744073709551615.(usize)) {
-                    return core.Result<collections.List<Indexed<T>>,core.AllocError>.Err(core.AllocError.CapacityOverflow);
+
+pub func enumerate<T,I:core.Iterator<T>>(
+    iterator:&mut I
+) -> core.Result<collections.List<Indexed<T>>,core.AllocError> {
+    var result = collections.list<Indexed<T>>();
+    var index:usize = 0;
+    while (true) {
+        match (iterator.next()) {
+            Some(item) => {
+                result.append(Indexed<T>{index:index, value:item})?;
+                if (index == 18446744073709551615.(usize)) {
+                    return core.Result<collections.List<Indexed<T>>,core.AllocError>.Err(
+                        core.AllocError.CapacityOverflow
+                    );
                 }
-                index+=1;
+                index += 1;
             }
-            None=>break;
+            None => break;
         }
     }
     return core.Result<collections.List<Indexed<T>>,core.AllocError>.Ok(result);

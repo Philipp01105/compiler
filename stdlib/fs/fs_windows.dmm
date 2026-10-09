@@ -1,111 +1,146 @@
 package fs;
 import (
-    "stdlib/core"
     "stdlib/collections"
+    "stdlib/core"
+    raw "stdlib/memory/raw"
     "stdlib/text/utf16"
     "stdlib/time"
-    raw "stdlib/memory/raw"
 );
 extern "system" from "kernel32" {
     union Pointer {
-        var handle: *void;
-        var bits: usize;
+        var handle:*void;
+        var bits:usize;
     }
 
     struct FileTime {
-        var low: u32;
-        var high: u32;
+        var low:u32;
+        var high:u32;
     }
 
     struct FileData {
-        var attributes: u32;
-        var created: FileTime;
-        var accessed: FileTime;
-        var modified: FileTime;
-        var sizeHigh: u32;
-        var sizeLow: u32;
+        var attributes:u32;
+        var created:FileTime;
+        var accessed:FileTime;
+        var modified:FileTime;
+        var sizeHigh:u32;
+        var sizeLow:u32;
     }
 
     struct FindData {
-        var attributes: u32;
-        var created: FileTime;
-        var accessed: FileTime;
-        var modified: FileTime;
-        var sizeHigh: u32;
-        var sizeLow: u32;
-        var reserved0: u32;
-        var reserved1: u32;
-        var fileName: u16[260];
-        var alternate: u16[14];
+        var attributes:u32;
+        var created:FileTime;
+        var accessed:FileTime;
+        var modified:FileTime;
+        var sizeHigh:u32;
+        var sizeLow:u32;
+        var reserved0:u32;
+        var reserved1:u32;
+        var fileName:u16[260];
+        var alternate:u16[14];
     }
 
     func CreateFileW(
-        path: *u16,
-        access: u32,
-        share: u32,
-        security: *void,
-        creation: u32,
-        flags: u32,
-        template: *void
+        path:*u16,
+        access:u32,
+        share:u32,
+        security:*void,
+        creation:u32,
+        flags:u32,
+        template:*void
     ) -> *void;
-    func CloseHandle(handle: *void) -> i32;
-    func ReadFile(handle: *void, data: *u8, length: u32, count: *u32, overlapped: *void) -> i32;
-    func WriteFile(handle: *void, data: *u8, length: u32, count: *u32, overlapped: *void) -> i32;
-    func SetFilePointerEx(handle: *void, distance: i64, newPosition: *i64, origin: u32) -> i32;
+
+    func CloseHandle(handle:*void) -> i32;
+
+    func ReadFile(handle:*void, data:*u8, length:u32, count:*u32, overlapped:*void) -> i32;
+
+    func WriteFile(handle:*void, data:*u8, length:u32, count:*u32, overlapped:*void) -> i32;
+
+    func SetFilePointerEx(handle:*void, distance:i64, newPosition:*i64, origin:u32) -> i32;
+
     func GetLastError() -> u32;
-    func GetFileAttributesExW(path: *u16, level: i32, data: *FileData) -> i32;
-    func DeleteFileW(path: *u16) -> i32;
-    func CreateDirectoryW(path: *u16, security: *void) -> i32;
-    func RemoveDirectoryW(path: *u16) -> i32;
-    func MoveFileExW(oldPath: *u16, newPath: *u16, flags: u32) -> i32;
-    func FindFirstFileW(path: *u16, data: *FindData) -> *void;
-    func FindNextFileW(handle: *void, data: *FindData) -> i32;
-    func FindClose(handle: *void) -> i32;
+
+    func GetFileAttributesExW(path:*u16, level:i32, data:*FileData) -> i32;
+
+    func DeleteFileW(path:*u16) -> i32;
+
+    func CreateDirectoryW(path:*u16, security:*void) -> i32;
+
+    func RemoveDirectoryW(path:*u16) -> i32;
+
+    func MoveFileExW(oldPath:*u16, newPath:*u16, flags:u32) -> i32;
+
+    func FindFirstFileW(path:*u16, data:*FindData) -> *void;
+
+    func FindNextFileW(handle:*void, data:*FindData) -> i32;
+
+    func FindClose(handle:*void) -> i32;
 }
 
 func systemError() -> Error {
-    var code=GetLastError();
-    var kind:ErrorKind=ErrorKind.System;
-    if(code==2 || code==3) {kind=ErrorKind.NotFound;}
-    if(code==80 || code==183) {kind=ErrorKind.AlreadyExists;}
-    if(code==5) {kind=ErrorKind.AccessDenied;}
-    if(code==267) {kind=ErrorKind.NotDirectory;}
-    if(code==206) {kind=ErrorKind.InvalidPath;}
+    var code = GetLastError();
+    var kind:ErrorKind = ErrorKind.System;
+    if (code == 2 || code == 3) {
+        kind = ErrorKind.NotFound;
+    }
+    if (code == 80 || code == 183) {
+        kind = ErrorKind.AlreadyExists;
+    }
+    if (code == 5) {
+        kind = ErrorKind.AccessDenied;
+    }
+    if (code == 267) {
+        kind = ErrorKind.NotDirectory;
+    }
+    if (code == 206) {
+        kind = ErrorKind.InvalidPath;
+    }
     return Error{
-        kind: kind,
-        domain: ErrorDomain.Win32,
-        code: code.(isize), transferred:0
+        kind:kind,
+        domain:ErrorDomain.Win32,
+        code:code.(isize),
+        transferred:0
     };
 }
 
-func handle(bits: usize) -> *void {
-    var p: Pointer;
+func handle(bits:usize) -> *void {
+    var p:Pointer;
     p.bits = bits;
     return p.handle;
 }
 
-func widePath(path:u8[])->core.Result<collections.List<u16>,Error> {
-    for(var i:usize=0;i<path.length;i+=1){if(path[i]==0){return core.Result<collections.List<u16>,Error>.Err(failure(ErrorKind.InvalidPath));}}
-    match(utf16.fromUtf8(&path)){
-        Err(error)=>{
-            var kind:ErrorKind=ErrorKind.InvalidPath;
-            if(error.kind==utf16.ErrorKind.OutOfMemory){kind=ErrorKind.OutOfMemory;}
-            if(error.kind==utf16.ErrorKind.CapacityOverflow){kind=ErrorKind.CapacityOverflow;}
+func widePath(path:u8[]) -> core.Result<collections.List<u16>,Error> {
+    for (var i:usize = 0; i < path.length; i += 1) {
+        if (path[i] == 0) {
+            return core.Result<collections.List<u16>,Error>.Err(failure(ErrorKind.InvalidPath));
+        }
+    }
+    match (utf16.fromUtf8(&path)) {
+        Err(error) => {
+            var kind:ErrorKind = ErrorKind.InvalidPath;
+            if (error.kind == utf16.ErrorKind.OutOfMemory) {
+                kind = ErrorKind.OutOfMemory;
+            }
+            if (error.kind == utf16.ErrorKind.CapacityOverflow) {
+                kind = ErrorKind.CapacityOverflow;
+            }
             return core.Result<collections.List<u16>,Error>.Err(failure(kind));
         }
-        Ok(value)=>{value.append(0)?;return core.Result<collections.List<u16>,Error>.Ok(value);}
+        Ok(value) => {
+            value.append(0)?;
+            return core.Result<collections.List<u16>,Error>.Ok(value);
+        }
     }
 }
 
-func nativeOpen(path: u8[], mode: OpenMode) -> core.Result<File, Error> {
+func nativeOpen(path:u8[], mode:OpenMode) -> core.Result<File,Error> {
     var converted = widePath(path);
     match (converted) {
-        Err(error) => return core.Result<File, Error>.Err(error);
+        Err(error) => return core.Result<File,Error>.Err(error);
         Ok(value) => {
-            var access: u32 = 2147483648;
-            var creation: u32 = 3;
-            var writable: bit = mode != OpenMode.Read;
-            var readable: bit = mode == OpenMode.Read || mode == OpenMode.ReadWrite;
+            var access:u32 = 2147483648;
+            var creation:u32 = 3;
+            var writable:bit = mode != OpenMode.Read;
+            var readable:bit = mode == OpenMode.Read || mode == OpenMode.ReadWrite;
             if (mode == OpenMode.Write) {
                 access = 1073741824;
                 creation = 2;
@@ -119,107 +154,87 @@ func nativeOpen(path: u8[], mode: OpenMode) -> core.Result<File, Error> {
                 access = 4;
                 creation = 4;
             }
-            var nil: Pointer;
-            var p: Pointer;
-            var bytes: u16[] = value.view();
-            p.handle = CreateFileW(
-                bytes.data,
-                access,
-                7,
-                nil.handle,
-                creation,
-                128,
-                nil.handle
-            );
+            var nil:Pointer;
+            var p:Pointer;
+            var bytes:u16[] = value.view();
+            p.handle = CreateFileW(bytes.data, access, 7, nil.handle, creation, 128, nil.handle);
             if (p.bits == 18446744073709551615.(usize)) {
-                return core.Result<File, Error>.Err(systemError());
+                return core.Result<File,Error>.Err(systemError());
             }
-            return core.Result<File, Error>.Ok(
+            return core.Result<File,Error>.Ok(
                 File{
-                    handle: p.bits,
-                    active: true,
-                    readable: readable,
-                    writable: writable
+                    handle:p.bits,
+                    active:true,
+                    readable:readable,
+                    writable:writable
                 }
             );
         }
     }
 }
 
-func nativeClose(bits: usize) -> core.Result<void, Error> {
+func nativeClose(bits:usize) -> core.Result<void,Error> {
     if (CloseHandle(handle(bits)) == 0) {
-        return core.Result<void, Error>.Err(systemError());
+        return core.Result<void,Error>.Err(systemError());
     }
-    return core.Result<void, Error>.Ok;
+    return core.Result<void,Error>.Ok;
 }
 
-func nativeRead(bits: usize, destination: u8[]) -> core.Result<usize, Error> {
+func nativeRead(bits:usize, destination:u8[]) -> core.Result<usize,Error> {
     if (destination.length == 0) {
-        return core.Result<usize, Error>.Ok(0);
+        return core.Result<usize,Error>.Ok(0);
     }
-    var count: usize = destination.length;
+    var count:usize = destination.length;
     if (count > 1073741824) {
         count = 1073741824;
     }
-    var read: u32;
-    var nil: Pointer;
-    if (
-        ReadFile(
-            handle(bits),
-            destination.data,
-            count.(u32),
-            (&read).(*u32),
-            nil.handle
-        ) == 0
-    ) {
-        var error=systemError(); error.transferred=read.(usize);
-        if(error.code==109 || error.code==38) {return core.Result<usize,Error>.Ok(0);}
-        return core.Result<usize, Error>.Err(error);
+    var read:u32;
+    var nil:Pointer;
+    if (ReadFile(handle(bits), destination.data, count.(u32), (&read).(*u32), nil.handle) == 0) {
+        var error = systemError();
+        error.transferred = read.(usize);
+        if (error.code == 109 || error.code == 38) {
+            return core.Result<usize,Error>.Ok(0);
+        }
+        return core.Result<usize,Error>.Err(error);
     }
-    return core.Result<usize, Error>.Ok(read.(usize));
+    return core.Result<usize,Error>.Ok(read.(usize));
 }
 
-func nativeWrite(bits: usize, source: u8[]) -> core.Result<usize, Error> {
+func nativeWrite(bits:usize, source:u8[]) -> core.Result<usize,Error> {
     if (source.length == 0) {
-        return core.Result<usize, Error>.Ok(0);
+        return core.Result<usize,Error>.Ok(0);
     }
-    var count: usize = source.length;
+    var count:usize = source.length;
     if (count > 1073741824) {
         count = 1073741824;
     }
-    var written: u32;
-    var nil: Pointer;
-    if (
-        WriteFile(
-            handle(bits),
-            source.data,
-            count.(u32),
-            (&written).(*u32),
-            nil.handle
-        ) == 0
-    ) {
-        var error=systemError(); error.transferred=written.(usize);
-        return core.Result<usize, Error>.Err(error);
+    var written:u32;
+    var nil:Pointer;
+    if (WriteFile(handle(bits), source.data, count.(u32), (&written).(*u32), nil.handle) == 0) {
+        var error = systemError();
+        error.transferred = written.(usize);
+        return core.Result<usize,Error>.Err(error);
     }
-    return core.Result<usize, Error>.Ok(written.(usize));
+    return core.Result<usize,Error>.Ok(written.(usize));
 }
 
-func nativeSeek(bits: usize, offset: i64, origin: SeekOrigin) -> core.Result<u64, Error> {
-    var method: u32 = 0;
+func nativeSeek(bits:usize, offset:i64, origin:SeekOrigin) -> core.Result<u64,Error> {
+    var method:u32 = 0;
     if (origin == SeekOrigin.Current) {
         method = 1;
     }
     if (origin == SeekOrigin.End) {
         method = 2;
     }
-    var position: i64;
+    var position:i64;
     if (SetFilePointerEx(handle(bits), offset, (&position).(*i64), method) == 0) {
-        return core.Result<u64, Error>.Err(systemError());
+        return core.Result<u64,Error>.Err(systemError());
     }
-    return core.Result<u64, Error>.Ok(position.(u64));
+    return core.Result<u64,Error>.Ok(position.(u64));
 }
 
-func kind(attributes: u32) -> EntryKind {
+func kind(attributes:u32) -> EntryKind {
     if ((attributes / 1024) % 2 == 1) {
         return EntryKind.Symlink;
     }
@@ -229,22 +244,22 @@ func kind(attributes: u32) -> EntryKind {
     return EntryKind.File;
 }
 
-func nativeMetadata(path: u8[]) -> core.Result<Metadata, Error> {
+func nativeMetadata(path:u8[]) -> core.Result<Metadata,Error> {
     var converted = widePath(path);
     match (converted) {
-        Err(error) => return core.Result<Metadata, Error>.Err(error);
+        Err(error) => return core.Result<Metadata,Error>.Err(error);
         Ok(value) => {
-            var view: u16[] = value.view();
-            var data: FileData;
+            var view:u16[] = value.view();
+            var data:FileData;
             if (GetFileAttributesExW(view.data, 0, (&data).(*FileData)) == 0) {
-                return core.Result<Metadata, Error>.Err(systemError());
+                return core.Result<Metadata,Error>.Err(systemError());
             }
-            var ticks: u64 = data.modified.high.(u64) * 4294967296 + data.modified.low.(u64);
-            return core.Result<Metadata, Error>.Ok(
+            var ticks:u64 = data.modified.high.(u64) * 4294967296 + data.modified.low.(u64);
+            return core.Result<Metadata,Error>.Ok(
                 Metadata{
-                    kind: kind(data.attributes),
-                    size: data.sizeHigh.(u64) * 4294967296 + data.sizeLow.(u64),
-                    modified: time.SystemTime{
+                    kind:kind(data.attributes),
+                    size:data.sizeHigh.(u64) * 4294967296 + data.sizeLow.(u64),
+                    modified:time.SystemTime{
                         seconds:(ticks / 10000000).(i64) - 11644473600,
                         nanoseconds:((ticks % 10000000) * 100).(u32)
                     }
@@ -254,64 +269,64 @@ func nativeMetadata(path: u8[]) -> core.Result<Metadata, Error> {
     }
 }
 
-func nativeRemoveFile(path: u8[]) -> core.Result<void, Error> {
+func nativeRemoveFile(path:u8[]) -> core.Result<void,Error> {
     var converted = widePath(path);
     match (converted) {
-        Err(error) => return core.Result<void, Error>.Err(error);
+        Err(error) => return core.Result<void,Error>.Err(error);
         Ok(value) => {
-            var view: u16[] = value.view();
+            var view:u16[] = value.view();
             if (DeleteFileW(view.data) == 0) {
-                return core.Result<void, Error>.Err(systemError());
+                return core.Result<void,Error>.Err(systemError());
             }
-            return core.Result<void, Error>.Ok;
+            return core.Result<void,Error>.Ok;
         }
     }
 }
 
-func nativeCreateDirectory(path: u8[]) -> core.Result<void, Error> {
+func nativeCreateDirectory(path:u8[]) -> core.Result<void,Error> {
     var converted = widePath(path);
     match (converted) {
-        Err(error) => return core.Result<void, Error>.Err(error);
+        Err(error) => return core.Result<void,Error>.Err(error);
         Ok(value) => {
-            var view: u16[] = value.view();
-            var nil: Pointer;
+            var view:u16[] = value.view();
+            var nil:Pointer;
             if (CreateDirectoryW(view.data, nil.handle) == 0) {
-                return core.Result<void, Error>.Err(systemError());
+                return core.Result<void,Error>.Err(systemError());
             }
-            return core.Result<void, Error>.Ok;
+            return core.Result<void,Error>.Ok;
         }
     }
 }
 
-func nativeRemoveDirectory(path: u8[]) -> core.Result<void, Error> {
+func nativeRemoveDirectory(path:u8[]) -> core.Result<void,Error> {
     var converted = widePath(path);
     match (converted) {
-        Err(error) => return core.Result<void, Error>.Err(error);
+        Err(error) => return core.Result<void,Error>.Err(error);
         Ok(value) => {
-            var view: u16[] = value.view();
+            var view:u16[] = value.view();
             if (RemoveDirectoryW(view.data) == 0) {
-                return core.Result<void, Error>.Err(systemError());
+                return core.Result<void,Error>.Err(systemError());
             }
-            return core.Result<void, Error>.Ok;
+            return core.Result<void,Error>.Ok;
         }
     }
 }
 
-func nativeRename(oldPath: u8[], newPath: u8[]) -> core.Result<void, Error> {
+func nativeRename(oldPath:u8[], newPath:u8[]) -> core.Result<void,Error> {
     var first = widePath(oldPath);
     match (first) {
-        Err(error) => return core.Result<void, Error>.Err(error);
+        Err(error) => return core.Result<void,Error>.Err(error);
         Ok(a) => {
             var second = widePath(newPath);
             match (second) {
-                Err(error) => return core.Result<void, Error>.Err(error);
+                Err(error) => return core.Result<void,Error>.Err(error);
                 Ok(b) => {
-                    var av: u16[] = a.view();
-                    var bv: u16[] = b.view();
+                    var av:u16[] = a.view();
+                    var bv:u16[] = b.view();
                     if (MoveFileExW(av.data, bv.data, 1) == 0) {
-                        return core.Result<void, Error>.Err(systemError());
+                        return core.Result<void,Error>.Err(systemError());
                     }
-                    return core.Result<void, Error>.Ok;
+                    return core.Result<void,Error>.Ok;
                 }
             }
         }
@@ -319,56 +334,57 @@ func nativeRename(oldPath: u8[], newPath: u8[]) -> core.Result<void, Error> {
 }
 
 struct DirectoryState {
-    var handle: usize;
-    var active: bit;
-    var first: bit;
-    var data: FindData;
-    pub func close() -> core.Result<void, Error> {
+    var handle:usize;
+    var active:bit;
+    var first:bit;
+    var data:FindData;
+
+    pub func close() -> core.Result<void,Error> {
         if (!active) {
-            return core.Result<void, Error>.Ok;
+            return core.Result<void,Error>.Ok;
         }
         active = false;
         if (FindClose(handleFromBits(handle)) == 0) {
-            return core.Result<void, Error>.Err(systemError());
+            return core.Result<void,Error>.Err(systemError());
         }
-        return core.Result<void, Error>.Ok;
+        return core.Result<void,Error>.Ok;
     }
 
-    pub func next() -> core.Result<core.Option<Entry>, Error> {
+    pub func next() -> core.Result<core.Option<Entry>,Error> {
         while (active) {
             if (first) {
                 first = false;
             } else {
                 if (FindNextFileW(handleFromBits(handle), (&data).(*FindData)) == 0) {
-                    var code: u32 = GetLastError();
+                    var code:u32 = GetLastError();
                     if (code == 18) {
-                        return core.Result<core.Option<Entry>, Error>.Ok(core.Option<Entry>.None);
+                        return core.Result<core.Option<Entry>,Error>.Ok(core.Option<Entry>.None);
                     }
-                    return core.Result<core.Option<Entry>, Error>.Err(systemError());
+                    return core.Result<core.Option<Entry>,Error>.Err(systemError());
                 }
             }
-            var length: usize = 0;
+            var length:usize = 0;
             while (length < 260 && data.fileName[length] != 0) {
                 length += 1;
             }
             if (
-                (length == 1 && data.fileName[0] == 46) ||
-                (length == 2 && data.fileName[0] == 46 && data.fileName[1] == 46)
+                (length == 1 && data.fileName[0] == 46)
+                || (length == 2 && data.fileName[0] == 46 && data.fileName[1] == 46)
             ) {
                 continue;
             }
-            var units=data.fileName[:length];
-            var converted=utf16.toUtf8(&units);
+            var units = data.fileName[:length];
+            var converted = utf16.toUtf8(&units);
             match (converted) {
-                Err(error) => return core.Result<core.Option<Entry>, Error>.Err(
+                Err(error) => return core.Result<core.Option<Entry>,Error>.Err(
                     failure(ErrorKind.OutOfMemory)
                 );
-                Ok(name) => return core.Result<core.Option<Entry>, Error>.Ok(
-                    core.Option<Entry>.Some(Entry{ name: name, kind: kind(data.attributes) })
+                Ok(name) => return core.Result<core.Option<Entry>,Error>.Ok(
+                    core.Option<Entry>.Some(Entry{name:name, kind:kind(data.attributes)})
                 );
             }
         }
-        return core.Result<core.Option<Entry>, Error>.Ok(core.Option<Entry>.None);
+        return core.Result<core.Option<Entry>,Error>.Ok(core.Option<Entry>.None);
     }
 
     destructor {
@@ -378,40 +394,42 @@ struct DirectoryState {
     }
 }
 
-func handleFromBits(bits: usize) -> *void {
+func handleFromBits(bits:usize) -> *void {
     return handle(bits);
 }
 
-func nativeReadDirectory(path: u8[]) -> core.Result<DirectoryState, Error> {
+func nativeReadDirectory(path:u8[]) -> core.Result<DirectoryState,Error> {
     var checked = metadata(path);
     match (checked) {
-        Err(error) => return core.Result<DirectoryState, Error>.Err(error);
+        Err(error) => return core.Result<DirectoryState,Error>.Err(error);
         Ok(data) => {
             if (data.kind != EntryKind.Directory) {
-                return core.Result<DirectoryState, Error>.Err(failure(ErrorKind.NotDirectory));
+                return core.Result<DirectoryState,Error>.Err(failure(ErrorKind.NotDirectory));
             }
         }
     }
-    var pattern=collections.list<u8>();
-    pattern.appendSlice(&path)?;pattern.append(47)?;pattern.append(42)?;
+    var pattern = collections.list<u8>();
+    pattern.appendSlice(&path)?;
+    pattern.append(47)?;
+    pattern.append(42)?;
     var converted = widePath(pattern.view());
     match (converted) {
-        Err(error) => return core.Result<DirectoryState, Error>.Err(error);
+        Err(error) => return core.Result<DirectoryState,Error>.Err(error);
         Ok(value) => {
-            var view: u16[] = value.view();
-            var directory: DirectoryState;
-            var p: Pointer;
+            var view:u16[] = value.view();
+            var directory:DirectoryState;
+            var p:Pointer;
             p.handle = FindFirstFileW(view.data, (&directory.data).(*FindData));
             if (p.bits == 18446744073709551615.(usize)) {
                 if (GetLastError() == 2) {
-                    return core.Result<DirectoryState, Error>.Ok(directory);
+                    return core.Result<DirectoryState,Error>.Ok(directory);
                 }
-                return core.Result<DirectoryState, Error>.Err(systemError());
+                return core.Result<DirectoryState,Error>.Err(systemError());
             }
             directory.handle = p.bits;
             directory.active = true;
             directory.first = true;
-            return core.Result<DirectoryState, Error>.Ok(directory);
+            return core.Result<DirectoryState,Error>.Ok(directory);
         }
     }
 }

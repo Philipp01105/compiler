@@ -1,9 +1,9 @@
 package main;
 
-func identity<T>(value: T) -> T {
+func identity<T>(value:T) -> T {
     return value;
 }
 
 func main() -> int {
-    return identity<int, string>(1);
+    return identity<int,string>(1);
 }

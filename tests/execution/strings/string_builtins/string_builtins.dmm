@@ -1,36 +1,38 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
 func main() -> void {
-    var buffer: char[32];
+    var buffer:char[32];
     strcpy(buffer, "typed");
     strcat(buffer, " IR");
     {
-        var _output0: string = "" + buffer;
+        var _output0:string = "" + buffer;
         io.println(_output0);
         free(_output0);
     }
     io.println(strlen(buffer));
     io.println(strcmp(buffer, "typed IR"));
-    var copy: string = strdup(buffer);
+    var copy:string = strdup(buffer);
     io.println(copy == "typed IR");
     free(copy);
 
-    var number: char[16];
+    var number:char[16];
     io.println(io_int_to_str(-123, number, 16));
     {
-        var _output1: string = "" + number;
+        var _output1:string = "" + number;
         io.println(_output1);
         free(_output1);
     }
     io.println(io_str_to_int(number));
 
-    var joined: string = "native" + " backend";
+    var joined:string = "native" + " backend";
     io.println(joined);
     free(joined);
 
-    var allocation: *int = reserve(int);
+    var allocation:*int = reserve(int);
     *allocation = 77;
     io.println(*allocation);
     free(allocation);

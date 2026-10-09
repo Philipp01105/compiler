@@ -1,13 +1,19 @@
 package main;
-import "stdlib/io";
-import ("stdlib/core" "stdlib/text");
+import (
+    "stdlib/core"
+    "stdlib/io"
+    "stdlib/text"
+);
 
 func main() -> void {
-    match(text.fromString("old")){
-        Err(error)=>{}
-        Ok(owner)=>{
-            var view=owner.view();
-            match(text.fromString("new")){Ok(value)=>owner=value;Err(error)=>{}}
+    match (text.fromString("old")) {
+        Err(error) => {}
+        Ok(owner) => {
+            var view = owner.view();
+            match (text.fromString("new")) {
+                Ok(value) => owner = value;
+                Err(error) => {}
+            }
             io.println(view);
         }
     }

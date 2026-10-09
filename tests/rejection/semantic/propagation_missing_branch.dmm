@@ -4,8 +4,8 @@ enum Plain {
     Value(int),
 }
 
-func unwrap(value: Plain) -> Plain {
-    var output: int = value?;
+func unwrap(value:Plain) -> Plain {
+    var output:int = value?;
     return Plain.Value(output);
 }
 

@@ -1,113 +1,110 @@
 package main;
-import "stdlib/limits";
+import (
+    "stdlib/limits"
+);
 extern "system" {
     union FloatBits {
-        var value: float;
-        var bits: u32;
+        var value:float;
+        var bits:u32;
     }
 
     union DoubleBits {
-        var value: double;
-        var bits: u64;
+        var value:double;
+        var bits:u64;
     }
 }
 
-func floatBits(value: float) -> u32 {
-    var data: FloatBits;
+func floatBits(value:float) -> u32 {
+    var data:FloatBits;
     data.value = value;
     return data.bits;
 }
 
-func doubleBits(value: double) -> u64 {
-    var data: DoubleBits;
+func doubleBits(value:double) -> u64 {
+    var data:DoubleBits;
     data.value = value;
     return data.bits;
 }
 
-func widen(value: char) -> i64 {
+func widen(value:char) -> i64 {
     return value.(i64);
 }
 
 func main() -> int {
     if (
-        limits.I8_MIN != - 128 ||
-        limits.I8_MAX != 127 ||
-        limits.U8_MIN != 0 ||
-        limits.U8_MAX != 255
+        limits.I8_MIN != -128
+        || limits.I8_MAX != 127
+        || limits.U8_MIN != 0
+        || limits.U8_MAX != 255
     ) {
         return 1;
     }
     if (
-        limits.I16_MIN != - 32768 ||
-        limits.I16_MAX != 32767 ||
-        limits.U16_MIN != 0 ||
-        limits.U16_MAX != 65535
+        limits.I16_MIN != -32768
+        || limits.I16_MAX != 32767
+        || limits.U16_MIN != 0
+        || limits.U16_MAX != 65535
     ) {
         return 2;
     }
     if (
-        limits.I32_MIN != (-2147483647 - 1).(i32) ||
-        limits.I32_MAX != 2147483647 ||
-        limits.U32_MIN != 0 ||
-        limits.U32_MAX != 4294967295.(u32)
+        limits.I32_MIN != (-2147483647 - 1).(i32)
+        || limits.I32_MAX != 2147483647
+        || limits.U32_MIN != 0
+        || limits.U32_MAX != 4294967295.(u32)
     ) {
         return 3;
     }
     if (
-        limits.I64_MIN != (-9223372036854775807 - 1).(i64) ||
-        limits.I64_MAX != 9223372036854775807.(i64) ||
-        limits.U64_MIN != 0 ||
-        limits.U64_MAX != (-1).(u64)
+        limits.I64_MIN != (-9223372036854775807 - 1).(i64)
+        || limits.I64_MAX != 9223372036854775807.(i64)
+        || limits.U64_MIN != 0
+        || limits.U64_MAX != (-1).(u64)
     ) {
         return 4;
     }
     if (
-        limits.ISIZE_MIN != limits.I64_MIN.(isize) ||
-        limits.ISIZE_MAX != limits.I64_MAX.(isize) ||
-        limits.USIZE_MIN != 0 ||
-        limits.USIZE_MAX != limits.U64_MAX.(usize)
+        limits.ISIZE_MIN != limits.I64_MIN.(isize)
+        || limits.ISIZE_MAX != limits.I64_MAX.(isize)
+        || limits.USIZE_MIN != 0
+        || limits.USIZE_MAX != limits.U64_MAX.(usize)
     ) {
         return 5;
     }
     if (
-        limits.INT_MIN != (-2147483647 - 1) ||
-        limits.INT_MAX != 2147483647 ||
-        widen(limits.CHAR_MIN) != - 128 ||
-        widen(limits.CHAR_MAX) != 127
+        limits.INT_MIN != (-2147483647 - 1)
+        || limits.INT_MAX != 2147483647
+        || widen(limits.CHAR_MIN) != -128
+        || widen(limits.CHAR_MAX) != 127
     ) {
         return 6;
     }
-    if (
-        limits.BYTE_MIN != 0.(byte) ||
-        limits.BYTE_MAX != 255.(byte) ||
-        false ||
-        !true
-    ) {
+    if (limits.BYTE_MIN != 0.(byte) || limits.BYTE_MAX != 255.(byte) || false || !true) {
         return 7;
     }
     if (
-        floatBits(limits.FLOAT_MAX) != 2139095039.(u32) ||
-        floatBits(limits.FLOAT_MIN) != 4286578687.(u32)
+        floatBits(limits.FLOAT_MAX) != 2139095039.(u32)
+        || floatBits(limits.FLOAT_MIN) != 4286578687.(u32)
     ) {
         return 8;
     }
     if (
-        floatBits(limits.FLOAT_MIN_NORMAL) != 8388608.(u32) ||
-        floatBits(limits.FLOAT_MIN_POSITIVE) != 1.(u32) ||
-        floatBits(limits.FLOAT_EPSILON) != 872415232.(u32)
+        floatBits(limits.FLOAT_MIN_NORMAL) != 8388608.(u32)
+        || floatBits(limits.FLOAT_MIN_POSITIVE) != 1.(u32)
+        || floatBits(limits.FLOAT_EPSILON) != 872415232.(u32)
     ) {
         return 9;
     }
     if (
-        doubleBits(limits.DOUBLE_MAX) != 9218868437227405311.(u64) ||
-        doubleBits(limits.DOUBLE_MIN) != 18442240474082181119.(u64)
+        doubleBits(limits.DOUBLE_MAX) != 9218868437227405311.(u64)
+        || doubleBits(limits.DOUBLE_MIN) != 18442240474082181119.(u64)
     ) {
         return 10;
     }
     if (
-        doubleBits(limits.DOUBLE_MIN_NORMAL) != 4503599627370496.(u64) ||
-        doubleBits(limits.DOUBLE_MIN_POSITIVE) != 1.(u64) ||
-        doubleBits(limits.DOUBLE_EPSILON) != 4372995238176751616.(u64)
+        doubleBits(limits.DOUBLE_MIN_NORMAL) != 4503599627370496.(u64)
+        || doubleBits(limits.DOUBLE_MIN_POSITIVE) != 1.(u64)
+        || doubleBits(limits.DOUBLE_EPSILON) != 4372995238176751616.(u64)
     ) {
         return 11;
     }

@@ -1,10 +1,10 @@
 package main;
 
-func outside(values: int[]) -> int {
+func outside(values:int[]) -> int {
     return values[values.length];
 }
 
 func main() -> int {
-    var values: int[3];
+    var values:int[3];
     return outside(values);
 }

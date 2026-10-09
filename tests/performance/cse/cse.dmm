@@ -1,8 +1,10 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
-func work(n: int, factor: int) -> int {
+func work(n:int, factor:int) -> int {
     var i = 0;
     var total = 0;
     while (i < n) {

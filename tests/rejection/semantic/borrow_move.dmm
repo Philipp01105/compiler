@@ -1,14 +1,14 @@
 package main;
 
 struct Resource {
-    var value: int;
+    var value:int;
     destructor {}
 }
 
-func consume(value: Resource) -> void {}
+func consume(value:Resource) -> void {}
 
 func main() -> int {
-    var value: Resource;
+    var value:Resource;
     var reference = &value.value;
     consume(value);
     return *reference;

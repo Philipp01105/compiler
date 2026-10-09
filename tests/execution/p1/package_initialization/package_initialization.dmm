@@ -1,34 +1,35 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
 struct Resource {
-    var id: int;
-
+    var id:int;
     destructor {
         io.println(id);
     }
 }
 
-func calculate(value: int) -> int {
+func calculate(value:int) -> int {
     io.println(value);
     return value;
 }
 
-func acquire(id: int) -> Resource {
-    var resource: Resource;
+func acquire(id:int) -> Resource {
+    var resource:Resource;
     resource.id = id;
     return resource;
 }
 
-func sequence(first: int) -> int[] {
+func sequence(first:int) -> int[] {
     return [first, first + 1];
 }
 
-var first: int = calculate(1);
-var second: int = calculate(first + 1);
-var resource: Resource = acquire(9);
-var values: int[] = sequence(second);
+var first:int = calculate(1);
+var second:int = calculate(first + 1);
+var resource:Resource = acquire(9);
+var values:int[] = sequence(second);
 
 func main() -> int {
     io.println(values[1]);

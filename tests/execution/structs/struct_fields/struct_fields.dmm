@@ -1,20 +1,22 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
 struct Point {
-    var x: int;
-    var y: int;
+    var x:int;
+    var y:int;
 }
 
 func main() -> void {
-    var point: Point;
+    var point:Point;
     point.x = 6;
     point.y = 7;
-    var area: int = point.x * point.y;
-    var label: string = "area";
+    var area:int = point.x * point.y;
+    var label:string = "area";
     {
-        var _output0: string = label + "=" + area;
+        var _output0:string = label + "=" + area;
         io.println(_output0);
         free(_output0);
     }

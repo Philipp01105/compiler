@@ -1,73 +1,228 @@
 package main;
-import ("stdlib/core" "stdlib/collections" "stdlib/memory");
-var created:i32=0;var drops:i32=0;
-struct Resource {var value:i32;destructor{drops+=1;}}
-func resource(value:i32)->Resource{created+=1;return Resource{value:value};}
-func hashKey(key:&Resource)->u64{return key.value.(u64)%3;}
-func sameKey(left:&Resource,right:&Resource)->bit{return left.value==right.value;}
-func hashInt(key:&i32)->u64{return (*key).(u64)%3;}
-func sameInt(left:&i32,right:&i32)->bit{return *left==*right;}
-func check()->core.Result<int,collections.Error>{
+import (
+    "stdlib/collections"
+    "stdlib/core"
+    "stdlib/memory"
+);
+var created:i32 = 0;
+var drops:i32 = 0;
+
+struct Resource {
+    var value:i32;
+    destructor {
+        drops += 1;
+    }
+}
+
+func resource(value:i32) -> Resource {
+    created += 1;
+    return Resource{value:value};
+}
+
+func hashKey(key:&Resource) -> u64 {
+    return key.value.(u64) % 3;
+}
+
+func sameKey(left:&Resource, right:&Resource) -> bit {
+    return left.value == right.value;
+}
+
+func hashInt(key:&i32) -> u64 {
+    return (*key).(u64) % 3;
+}
+
+func sameInt(left:&i32, right:&i32) -> bit {
+    return *left == *right;
+}
+
+func check() -> core.Result<int,collections.Error> {
     {
-        var values=collections.list<Resource>();values.ensureCapacity(1)?;
-        for(var i:i32=0;i<20;i+=1){values.append(resource(i))?;}
-        if(created!=20||drops!=0||values.length()!=20){return core.Result<int,collections.Error>.Ok(2);}
-        values.insert(3,resource(30))?;
-        if(values.get(3).value!=30){return core.Result<int,collections.Error>.Ok(3);}
-        values.getMut(4).value=40;
-        match(values.remove(3)){Some(value)=>{if(value.value!=30){return core.Result<int,collections.Error>.Ok(4);}}None=>return core.Result<int,collections.Error>.Ok(5);}
-        if(drops!=1||values.get(3).value!=40){return core.Result<int,collections.Error>.Ok(6);}
-        *values.getMut(3)=resource(50);
-        if(drops!=2){return core.Result<int,collections.Error>.Ok(7);}
-        match(values.pop()){Some(value)=>{if(value.value!=19){return core.Result<int,collections.Error>.Ok(8);}}None=>return core.Result<int,collections.Error>.Ok(9);}
-        if(drops!=3){return core.Result<int,collections.Error>.Ok(10);}
+        var values = collections.list<Resource>();
+        values.ensureCapacity(1)?;
+        for (var i:i32 = 0; i < 20; i += 1) {
+            values.append(resource(i))?;
+        }
+        if (created != 20 || drops != 0 || values.length() != 20) {
+            return core.Result<int,collections.Error>.Ok(2);
+        }
+        values.insert(3, resource(30))?;
+        if (values.get(3).value != 30) {
+            return core.Result<int,collections.Error>.Ok(3);
+        }
+        values.getMut(4).value = 40;
+        match (values.remove(3)) {
+            Some(value) => {
+                if (value.value != 30) {
+                    return core.Result<int,collections.Error>.Ok(4);
+                }
+            }
+            None => return core.Result<int,collections.Error>.Ok(5);
+        }
+        if (drops != 1 || values.get(3).value != 40) {
+            return core.Result<int,collections.Error>.Ok(6);
+        }
+        *values.getMut(3) = resource(50);
+        if (drops != 2) {
+            return core.Result<int,collections.Error>.Ok(7);
+        }
+        match (values.pop()) {
+            Some(value) => {
+                if (value.value != 19) {
+                    return core.Result<int,collections.Error>.Ok(8);
+                }
+            }
+            None => return core.Result<int,collections.Error>.Ok(9);
+        }
+        if (drops != 3) {
+            return core.Result<int,collections.Error>.Ok(10);
+        }
         values.truncate(2);
-        if(drops!=20||values.length()!=2){return core.Result<int,collections.Error>.Ok(11);}
-        values.clear();if(drops!=created){return core.Result<int,collections.Error>.Ok(12);}
+        if (drops != 20 || values.length() != 2) {
+            return core.Result<int,collections.Error>.Ok(11);
+        }
+        values.clear();
+        if (drops != created) {
+            return core.Result<int,collections.Error>.Ok(12);
+        }
         values.append(resource(60))?;
-        match(values.ensureCapacity(9223372036854775807.(usize))){Ok=>return core.Result<int,collections.Error>.Ok(35);Err(error)=>{if(error!=core.AllocError.CapacityOverflow){return core.Result<int,collections.Error>.Ok(35);}}}
-        if(values.length()!=1||values.get(0).value!=60){return core.Result<int,collections.Error>.Ok(36);}
-    }
-    if(drops!=created){return core.Result<int,collections.Error>.Ok(13);}
-    match(testRing<Resource>(2)){
-        Ok(values)=>{
-            for(var i:i32=0;i<20;i+=1){values.pushBack(resource(i));}
-            for(var i:i32=0;i<10;i+=1){match(values.popFront()){Some(value)=>{if(value.value!=i){return core.Result<int,collections.Error>.Ok(14);}}None=>return core.Result<int,collections.Error>.Ok(15);}}
-            for(var i:i32=0;i<20;i+=1){values.pushFront(resource(i));}
-            if(values.length()!=30||values.getRef(0).value!=19){return core.Result<int,collections.Error>.Ok(16);}
-            match(values.popBack()){Some(value)=>{if(value.value!=19){return core.Result<int,collections.Error>.Ok(17);}}None=>return core.Result<int,collections.Error>.Ok(18);}
-            values.clear();values.pushBack(resource(100));
+        match (values.ensureCapacity(9223372036854775807.(usize))) {
+            Ok => return core.Result<int,collections.Error>.Ok(35);
+            Err(error) => {
+                if (error != core.AllocError.CapacityOverflow) {
+                    return core.Result<int,collections.Error>.Ok(35);
+                }
+            }
         }
-        Err(error)=>return core.Result<int,collections.Error>.Ok(19);
-    }
-    if(drops!=created){return core.Result<int,collections.Error>.Ok(20);}
-    {
-        var values=collections.map<Resource,Resource>(hashKey,sameKey)?;
-        for(var i:i32=0;i<40;i+=1){values.insert(resource(i),resource(i+100))?;}
-        var key=resource(3);
-        {match(values.get(&key)){Some(value)=>{if(value.value!=103){return core.Result<int,collections.Error>.Ok(22);}}None=>return core.Result<int,collections.Error>.Ok(23);}}
-        {match(values.getMut(&key)){Some(value)=>value.value=203;None=>return core.Result<int,collections.Error>.Ok(24);}}
-        match(values.remove(&key)){Some(value)=>{if(value.value!=203){return core.Result<int,collections.Error>.Ok(25);}}None=>return core.Result<int,collections.Error>.Ok(26);}
-        values.insert(resource(4),resource(304))?;
-        if(values.length()!=39){return core.Result<int,collections.Error>.Ok(27);}
-        values.clear();if(drops!=created-1){return core.Result<int,collections.Error>.Ok(28);}
-        values.insert(resource(50),resource(150))?;
-    }
-    if(drops!=created){return core.Result<int,collections.Error>.Ok(29);}
-    {
-        var values=collections.map<i32,Resource>(hashInt,sameInt)?;
-        values.insert(1,resource(10))?;values.insert(1,resource(20))?;
-        var key:i32=1;match(values.remove(&key)){Some(value)=>{if(value.value!=20){return core.Result<int,collections.Error>.Ok(30);}}None=>return core.Result<int,collections.Error>.Ok(31);}
-    }
-    if(drops!=created){return core.Result<int,collections.Error>.Ok(32);}
-    match(testRing<memory.Box<Resource>>(1)){
-        Ok(values)=>{
-            for(var i:i32=0;i<12;i+=1){values.pushBack(memory.box(resource(i))?);}
-            match(values.popFront()){Some(owner)=>{var inner=memory.intoInner(owner);if(inner.value!=0){return core.Result<int,collections.Error>.Ok(38);}}None=>return core.Result<int,collections.Error>.Ok(39);}
+        if (values.length() != 1 || values.get(0).value != 60) {
+            return core.Result<int,collections.Error>.Ok(36);
         }
-        Err(error)=>return core.Result<int,collections.Error>.Ok(40);
     }
-    if(drops!=created){return core.Result<int,collections.Error>.Ok(41);}
+    if (drops != created) {
+        return core.Result<int,collections.Error>.Ok(13);
+    }
+    match (testRing<Resource>(2)) {
+        Ok(values) => {
+            for (var i:i32 = 0; i < 20; i += 1) {
+                values.pushBack(resource(i));
+            }
+            for (var i:i32 = 0; i < 10; i += 1) {
+                match (values.popFront()) {
+                    Some(value) => {
+                        if (value.value != i) {
+                            return core.Result<int,collections.Error>.Ok(14);
+                        }
+                    }
+                    None => return core.Result<int,collections.Error>.Ok(15);
+                }
+            }
+            for (var i:i32 = 0; i < 20; i += 1) {
+                values.pushFront(resource(i));
+            }
+            if (values.length() != 30 || values.getRef(0).value != 19) {
+                return core.Result<int,collections.Error>.Ok(16);
+            }
+            match (values.popBack()) {
+                Some(value) => {
+                    if (value.value != 19) {
+                        return core.Result<int,collections.Error>.Ok(17);
+                    }
+                }
+                None => return core.Result<int,collections.Error>.Ok(18);
+            }
+            values.clear();
+            values.pushBack(resource(100));
+        }
+        Err(error) => return core.Result<int,collections.Error>.Ok(19);
+    }
+    if (drops != created) {
+        return core.Result<int,collections.Error>.Ok(20);
+    }
+    {
+        var values = collections.map<Resource,Resource>(hashKey, sameKey)?;
+        for (var i:i32 = 0; i < 40; i += 1) {
+            values.insert(resource(i), resource(i + 100))?;
+        }
+        var key = resource(3);
+        {
+            match (values.get(&key)) {
+                Some(value) => {
+                    if (value.value != 103) {
+                        return core.Result<int,collections.Error>.Ok(22);
+                    }
+                }
+                None => return core.Result<int,collections.Error>.Ok(23);
+            }
+        }
+        {
+            match (values.getMut(&key)) {
+                Some(value) => value.value = 203;
+                None => return core.Result<int,collections.Error>.Ok(24);
+            }
+        }
+        match (values.remove(&key)) {
+            Some(value) => {
+                if (value.value != 203) {
+                    return core.Result<int,collections.Error>.Ok(25);
+                }
+            }
+            None => return core.Result<int,collections.Error>.Ok(26);
+        }
+        values.insert(resource(4), resource(304))?;
+        if (values.length() != 39) {
+            return core.Result<int,collections.Error>.Ok(27);
+        }
+        values.clear();
+        if (drops != created - 1) {
+            return core.Result<int,collections.Error>.Ok(28);
+        }
+        values.insert(resource(50), resource(150))?;
+    }
+    if (drops != created) {
+        return core.Result<int,collections.Error>.Ok(29);
+    }
+    {
+        var values = collections.map<i32,Resource>(hashInt, sameInt)?;
+        values.insert(1, resource(10))?;
+        values.insert(1, resource(20))?;
+        var key:i32 = 1;
+        match (values.remove(&key)) {
+            Some(value) => {
+                if (value.value != 20) {
+                    return core.Result<int,collections.Error>.Ok(30);
+                }
+            }
+            None => return core.Result<int,collections.Error>.Ok(31);
+        }
+    }
+    if (drops != created) {
+        return core.Result<int,collections.Error>.Ok(32);
+    }
+    match (testRing<memory.Box<Resource>>(1)) {
+        Ok(values) => {
+            for (var i:i32 = 0; i < 12; i += 1) {
+                values.pushBack(memory.box(resource(i))?);
+            }
+            match (values.popFront()) {
+                Some(owner) => {
+                    var inner = memory.intoInner(owner);
+                    if (inner.value != 0) {
+                        return core.Result<int,collections.Error>.Ok(38);
+                    }
+                }
+                None => return core.Result<int,collections.Error>.Ok(39);
+            }
+        }
+        Err(error) => return core.Result<int,collections.Error>.Ok(40);
+    }
+    if (drops != created) {
+        return core.Result<int,collections.Error>.Ok(41);
+    }
     return core.Result<int,collections.Error>.Ok(0);
 }
-func main()->int{match(check()){Ok(code)=>return code;Err(error)=>return 99;}}
+
+func main() -> int {
+    match (check()) {
+        Ok(code) => return code;
+        Err(error) => return 99;
+    }
+}

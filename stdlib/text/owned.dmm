@@ -1,237 +1,439 @@
 package text;
-import memraw "stdlib/memory/raw";
-import ("stdlib/core" "stdlib/collections" "stdlib/collections/hash" "stdlib/text/utf8");
+import (
+    "stdlib/collections"
+    "stdlib/collections/hash"
+    "stdlib/core"
+    memraw "stdlib/memory/raw"
+    "stdlib/text/utf8"
+);
 
 pub enum ErrorKind {
-    pub InvalidUtf8, pub InvalidScalar, pub InvalidBoundary,
-    pub BufferTooSmall, pub OutOfMemory, pub CapacityOverflow,
+    pub InvalidUtf8,
+    pub InvalidScalar,
+    pub InvalidBoundary,
+    pub BufferTooSmall,
+    pub OutOfMemory,
+    pub CapacityOverflow,
 }
+
 pub struct Error {
-    pub var kind:ErrorKind; pub var offset:usize;
-    pub static func fromResidual(error:core.AllocError)->Self {
-        match(error) {
-            OutOfMemory=>return Error{kind:ErrorKind.OutOfMemory,offset:0};
-            CapacityOverflow=>return Error{kind:ErrorKind.CapacityOverflow,offset:0};
+    pub var kind:ErrorKind;
+    pub var offset:usize;
+
+    pub static func fromResidual(error:core.AllocError) -> Self {
+        match (error) {
+            OutOfMemory => return Error{kind:ErrorKind.OutOfMemory, offset:0};
+            CapacityOverflow => return Error{kind:ErrorKind.CapacityOverflow, offset:0};
         }
     }
-    pub static func fromResidual(error:utf8.Error)->Self {
-        match(error.kind) {
-            InvalidUtf8=>return Error{kind:ErrorKind.InvalidUtf8,offset:error.offset};
-            InvalidScalar=>return Error{kind:ErrorKind.InvalidScalar,offset:error.offset};
-            BufferTooSmall=>return Error{kind:ErrorKind.BufferTooSmall,offset:error.offset};
+
+    pub static func fromResidual(error:utf8.Error) -> Self {
+        match (error.kind) {
+            InvalidUtf8 => return Error{kind:ErrorKind.InvalidUtf8, offset:error.offset};
+            InvalidScalar => return Error{kind:ErrorKind.InvalidScalar, offset:error.offset};
+            BufferTooSmall => return Error{kind:ErrorKind.BufferTooSmall, offset:error.offset};
         }
     }
 }
-enum TextSource<'a> { Buffer(&'a u8[]), Owned(&'a String) }
+
+enum TextSource<'a> {
+    Buffer(&'a u8[]),
+    Owned(&'a String)
+}
 
 pub struct Text<'a> {
-    var source:TextSource<'a>; var start:usize; var end:usize;
-    pub func length()->usize { return end-start; }
-    pub func byteAt(index:usize)->u8 {
-        if(index>=end-start) { memraw.core_trap(); }
-        match(source) {
-            Buffer(input)=>return input[start+index];
-            Owned(input)=>return *input.data.data.get(start+index);
+    var source:TextSource<'a>;
+    var start:usize;
+    var end:usize;
+
+    pub func length() -> usize {
+        return end - start;
+    }
+
+    pub func byteAt(index:usize) -> u8 {
+        if (index >= end - start) {
+            memraw.core_trap();
+        }
+        match (source) {
+            Buffer(input) => return input[start + index];
+            Owned(input) => return *input.data.data.get(start + index);
         }
     }
-    pub func substring(start:usize,end:usize)->core.Result<Text<'a>,Error> {
-        if(start>end || end>self.length()) {
-            return core.Result<Text<'a>,Error>.Err(Error{kind:ErrorKind.InvalidBoundary,offset:start});
+
+    pub func substring(start:usize, end:usize) -> core.Result<Text<'a>,Error> {
+        if (start > end || end > self.length()) {
+            return core.Result<Text<'a>,Error>.Err(
+                Error{kind:ErrorKind.InvalidBoundary, offset:start}
+            );
         }
-        if((start<self.length() && self.byteAt(start)>=128 && self.byteAt(start)<192) ||
-           (end<self.length() && self.byteAt(end)>=128 && self.byteAt(end)<192)) {
-            return core.Result<Text<'a>,Error>.Err(Error{kind:ErrorKind.InvalidBoundary,offset:start});
+        if (
+            (start < self.length() && self.byteAt(start) >= 128 && self.byteAt(start) < 192)
+            || (end < self.length() && self.byteAt(end) >= 128 && self.byteAt(end) < 192)
+        ) {
+            return core.Result<Text<'a>,Error>.Err(
+                Error{kind:ErrorKind.InvalidBoundary, offset:start}
+            );
         }
-        return core.Result<Text<'a>,Error>.Ok(Text<'a>{
-            source:source,start:self.start+start,end:self.start+end
-        });
+        return core.Result<Text<'a>,Error>.Ok(
+            Text<'a>{source:source, start:self.start + start, end:self.start + end}
+        );
     }
-    pub func startsWith(prefix:string)->bit {
-        var needle=bytes(prefix);
-        if(needle.length>self.length()) { return false; }
-        for(var i:usize=0;i<needle.length;i+=1) { if(self.byteAt(i)!=needle[i]) { return false; } }
-        return true;
-    }
-    pub func endsWith(suffix:string)->bit {
-        var needle=bytes(suffix);
-        if(needle.length>self.length()) { return false; }
-        var start=self.length()-needle.length;
-        for(var i:usize=0;i<needle.length;i+=1) { if(self.byteAt(start+i)!=needle[i]) { return false; } }
-        return true;
-    }
-    pub func find(needle:string)->core.Option<usize> {
-        var pattern=bytes(needle);
-        if(pattern.length>self.length()) { return core.Option<usize>.None; }
-        for(var start:usize=0;start<=self.length()-pattern.length;start+=1) {
-            var same:bit=true;
-            for(var i:usize=0;i<pattern.length;i+=1) {
-                if(self.byteAt(start+i)!=pattern[i]) { same=false; break; }
+
+    pub func startsWith(prefix:string) -> bit {
+        var needle = bytes(prefix);
+        if (needle.length > self.length()) {
+            return false;
+        }
+        for (var i:usize = 0; i < needle.length; i += 1) {
+            if (self.byteAt(i) != needle[i]) {
+                return false;
             }
-            if(same) { return core.Option<usize>.Some(start); }
+        }
+        return true;
+    }
+
+    pub func endsWith(suffix:string) -> bit {
+        var needle = bytes(suffix);
+        if (needle.length > self.length()) {
+            return false;
+        }
+        var start = self.length() - needle.length;
+        for (var i:usize = 0; i < needle.length; i += 1) {
+            if (self.byteAt(start + i) != needle[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    pub func find(needle:string) -> core.Option<usize> {
+        var pattern = bytes(needle);
+        if (pattern.length > self.length()) {
+            return core.Option<usize>.None;
+        }
+        for (var start:usize = 0; start <= self.length() - pattern.length; start += 1) {
+            var same:bit = true;
+            for (var i:usize = 0; i < pattern.length; i += 1) {
+                if (self.byteAt(start + i) != pattern[i]) {
+                    same = false;
+                    break;
+                }
+            }
+            if (same) {
+                return core.Option<usize>.Some(start);
+            }
         }
         return core.Option<usize>.None;
     }
-    pub func contains(needle:string)->bit {
-        match(self.find(needle)) { Some(index)=>return true; None=>return false; }
+
+    pub func contains(needle:string) -> bit {
+        match (self.find(needle)) {
+            Some(index) => return true;
+            None => return false;
+        }
     }
-    pub func startsWith<'b>(prefix:Text<'b>)->bit {
-        if(prefix.length()>self.length()){return false;}
-        for(var i:usize=0;i<prefix.length();i+=1){if(self.byteAt(i)!=prefix.byteAt(i)){return false;}}
+
+    pub func startsWith<'b>(prefix:Text<'b>) -> bit {
+        if (prefix.length() > self.length()) {
+            return false;
+        }
+        for (var i:usize = 0; i < prefix.length(); i += 1) {
+            if (self.byteAt(i) != prefix.byteAt(i)) {
+                return false;
+            }
+        }
         return true;
     }
-    pub func endsWith<'b>(suffix:Text<'b>)->bit {
-        if(suffix.length()>self.length()){return false;}
-        var offset=self.length()-suffix.length();
-        for(var i:usize=0;i<suffix.length();i+=1){if(self.byteAt(offset+i)!=suffix.byteAt(i)){return false;}}
+
+    pub func endsWith<'b>(suffix:Text<'b>) -> bit {
+        if (suffix.length() > self.length()) {
+            return false;
+        }
+        var offset = self.length() - suffix.length();
+        for (var i:usize = 0; i < suffix.length(); i += 1) {
+            if (self.byteAt(offset + i) != suffix.byteAt(i)) {
+                return false;
+            }
+        }
         return true;
     }
-    pub func find<'b>(needle:Text<'b>)->core.Option<usize> {
-        if(needle.length()>self.length()){return core.Option<usize>.None;}
-        for(var start:usize=0;start<=self.length()-needle.length();start+=1){
-            var same:bit=true;
-            for(var i:usize=0;i<needle.length();i+=1){if(self.byteAt(start+i)!=needle.byteAt(i)){same=false;break;}}
-            if(same){return core.Option<usize>.Some(start);}
+
+    pub func find<'b>(needle:Text<'b>) -> core.Option<usize> {
+        if (needle.length() > self.length()) {
+            return core.Option<usize>.None;
+        }
+        for (var start:usize = 0; start <= self.length() - needle.length(); start += 1) {
+            var same:bit = true;
+            for (var i:usize = 0; i < needle.length(); i += 1) {
+                if (self.byteAt(start + i) != needle.byteAt(i)) {
+                    same = false;
+                    break;
+                }
+            }
+            if (same) {
+                return core.Option<usize>.Some(start);
+            }
         }
         return core.Option<usize>.None;
     }
-    pub func contains<'b>(needle:Text<'b>)->bit {
-        match(self.find(needle)){Some(index)=>return true;None=>return false;}
-    }
-    pub func copyBytes(output:&mut u8[])->core.Result<usize,Error> {
-        if(output.length<self.length()) {
-            return core.Result<usize,Error>.Err(Error{kind:ErrorKind.BufferTooSmall,offset:0});
+
+    pub func contains<'b>(needle:Text<'b>) -> bit {
+        match (self.find(needle)) {
+            Some(index) => return true;
+            None => return false;
         }
-        for(var i:usize=0;i<self.length();i+=1) { (*output)[i]=self.byteAt(i); }
+    }
+
+    pub func copyBytes(output:&mut u8[]) -> core.Result<usize,Error> {
+        if (output.length < self.length()) {
+            return core.Result<usize,Error>.Err(Error{kind:ErrorKind.BufferTooSmall, offset:0});
+        }
+        for (var i:usize = 0; i < self.length(); i += 1) {
+            (*output)[i] = self.byteAt(i);
+        }
         return core.Result<usize,Error>.Ok(self.length());
     }
-    pub func codepoints()->Codepoints<'a> {
-        return Codepoints<'a>{source:Text<'a>{source:source,start:start,end:end},offset:0};
+
+    pub func codepoints() -> Codepoints<'a> {
+        return Codepoints<'a>{source:Text<'a>{source:source, start:start, end:end}, offset:0};
     }
-    pub func split(separator:u32)->TextSplit<'a> {
-        if(!utf8.isScalar(separator)) { memraw.core_trap(); }
-        return TextSplit<'a>{source:Text<'a>{source:source,start:start,end:end},separator:separator,offset:0,finished:false};
+
+    pub func split(separator:u32) -> TextSplit<'a> {
+        if (!utf8.isScalar(separator)) {
+            memraw.core_trap();
+        }
+        return TextSplit<'a>{
+            source:Text<'a>{source:source, start:start, end:end},
+            separator:separator,
+            offset:0,
+            finished:false
+        };
     }
 }
-pub func view<'a>(input:&'a u8[])->core.Result<Text<'a>,Error> {
+
+pub func view<'a>(input:&'a u8[]) -> core.Result<Text<'a>,Error> {
     utf8.validate(input)?;
-    return core.Result<Text<'a>,Error>.Ok(Text<'a>{source:TextSource<'a>.Buffer(input),start:0,end:input.length});
+    return core.Result<Text<'a>,Error>.Ok(
+        Text<'a>{source:TextSource<'a>.Buffer(input), start:0, end:input.length}
+    );
 }
 
 // String's private builder storage cannot be mutated through a String view.
 // finish transfers this whole storage owner: no partial move or second allocation.
-@[core.Send] @[core.Sync]
+@[core.Send]
+@[core.Sync]
 pub struct String {
     var data:StringBuilder;
-    pub func length()->usize { return data.length(); }
-    pub func view<'a>()->Text<'a> {
-        return Text<'a>{source:TextSource<'a>.Owned(&self),start:0,end:data.length()};
+
+    pub func length() -> usize {
+        return data.length();
     }
-    pub func startsWith(prefix:string)->bit { return self.view().startsWith(prefix); }
-    pub func endsWith(suffix:string)->bit { return self.view().endsWith(suffix); }
-    pub func contains(needle:string)->bit { return self.view().contains(needle); }
-    pub func find(needle:string)->core.Option<usize> { return self.view().find(needle); }
-    pub func copyBytes(output:&mut u8[])->core.Result<usize,Error> { return self.view().copyBytes(output); }
-    pub func startsWith<'a>(prefix:Text<'a>)->bit {return self.view().startsWith(prefix);}
-    pub func endsWith<'a>(suffix:Text<'a>)->bit {return self.view().endsWith(suffix);}
-    pub func contains<'a>(needle:Text<'a>)->bit {return self.view().contains(needle);}
-    pub func find<'a>(needle:Text<'a>)->core.Option<usize> {return self.view().find(needle);}
+
+    pub func view<'a>() -> Text<'a> {
+        return Text<'a>{source:TextSource<'a>.Owned(&self), start:0, end:data.length()};
+    }
+
+    pub func startsWith(prefix:string) -> bit {
+        return self.view().startsWith(prefix);
+    }
+
+    pub func endsWith(suffix:string) -> bit {
+        return self.view().endsWith(suffix);
+    }
+
+    pub func contains(needle:string) -> bit {
+        return self.view().contains(needle);
+    }
+
+    pub func find(needle:string) -> core.Option<usize> {
+        return self.view().find(needle);
+    }
+
+    pub func copyBytes(output:&mut u8[]) -> core.Result<usize,Error> {
+        return self.view().copyBytes(output);
+    }
+
+    pub func startsWith<'a>(prefix:Text<'a>) -> bit {
+        return self.view().startsWith(prefix);
+    }
+
+    pub func endsWith<'a>(suffix:Text<'a>) -> bit {
+        return self.view().endsWith(suffix);
+    }
+
+    pub func contains<'a>(needle:Text<'a>) -> bit {
+        return self.view().contains(needle);
+    }
+
+    pub func find<'a>(needle:Text<'a>) -> core.Option<usize> {
+        return self.view().find(needle);
+    }
 }
-@[core.Send] @[core.Sync]
+
+@[core.Send]
+@[core.Sync]
 pub struct StringBuilder {
     var data:collections.List<u8>;
-    pub func length()->usize { return data.length(); }
-    pub func clear()->void { data.clear(); }
-    pub func append(value:string)->core.Result<void,Error> {
-        var input=bytes(value);
+
+    pub func length() -> usize {
+        return data.length();
+    }
+
+    pub func clear() -> void {
+        data.clear();
+    }
+
+    pub func append(value:string) -> core.Result<void,Error> {
+        var input = bytes(value);
         utf8.validate(&input)?;
         data.appendSlice(&input)?;
         return core.Result<void,Error>.Ok;
     }
-    pub func appendText<'a>(value:Text<'a>)->core.Result<void,Error> {
-        if(value.length()>18446744073709551615.(usize)-data.length()) {
-            return core.Result<void,Error>.Err(Error{kind:ErrorKind.CapacityOverflow,offset:0});
+
+    pub func appendText<'a>(value:Text<'a>) -> core.Result<void,Error> {
+        if (value.length() > 18446744073709551615.(usize) - data.length()) {
+            return core.Result<void,Error>.Err(Error{kind:ErrorKind.CapacityOverflow, offset:0});
         }
-        data.ensureCapacity(data.length()+value.length())?;
-        for(var i:usize=0;i<value.length();i+=1) { data.append(value.byteAt(i))?; }
+        data.ensureCapacity(data.length() + value.length())?;
+        for (var i:usize = 0; i < value.length(); i += 1) {
+            data.append(value.byteAt(i))?;
+        }
         return core.Result<void,Error>.Ok;
     }
-    pub func appendCodepoint(value:u32)->core.Result<void,Error> {
-        var output:u8[4]; var storage:u8[]=output[:];
-        var count=utf8.encode(value,&mut storage,0)?;
-        var input=output[:count]; data.appendSlice(&input)?;
+
+    pub func appendCodepoint(value:u32) -> core.Result<void,Error> {
+        var output:u8[4];
+        var storage:u8[] = output[:];
+        var count = utf8.encode(value, &mut storage, 0)?;
+        var input = output[:count];
+        data.appendSlice(&input)?;
         return core.Result<void,Error>.Ok;
     }
 }
-pub func builder()->StringBuilder { return StringBuilder{data:collections.list<u8>()}; }
-pub func finish(value:StringBuilder)->String { return String{data:value}; }
-pub func fromString(value:string)->core.Result<String,Error> {
-    var output=builder(); output.append(value)?;
-    return core.Result<String,Error>.Ok(finish(output));
+
+pub func builder() -> StringBuilder {
+    return StringBuilder{data:collections.list<u8>()};
 }
-pub func fromUtf8(input:&u8[])->core.Result<String,Error> {
-    utf8.validate(input)?;
-    var output=builder(); output.data.appendSlice(input)?;
+
+pub func finish(value:StringBuilder) -> String {
+    return String{data:value};
+}
+
+pub func fromString(value:string) -> core.Result<String,Error> {
+    var output = builder();
+    output.append(value)?;
     return core.Result<String,Error>.Ok(finish(output));
 }
 
-func hashString(value:&String,key0:u64,key1:u64)->u64 {
-    var input=value.data.data.view();
-    return hash.sipHash(&input,key0,key1);
+pub func fromUtf8(input:&u8[]) -> core.Result<String,Error> {
+    utf8.validate(input)?;
+    var output = builder();
+    output.data.appendSlice(input)?;
+    return core.Result<String,Error>.Ok(finish(output));
 }
-func equalString(left:&String,right:&String)->bit {
-    if(left.length()!=right.length()){return false;}
-    for(var i:usize=0;i<left.length();i+=1) {
-        if(*left.data.data.get(i)!=*right.data.data.get(i)){return false;}
+
+func hashString(value:&String, key0:u64, key1:u64) -> u64 {
+    var input = value.data.data.view();
+    return hash.sipHash(&input, key0, key1);
+}
+
+func equalString(left:&String, right:&String) -> bit {
+    if (left.length() != right.length()) {
+        return false;
+    }
+    for (var i:usize = 0; i < left.length(); i += 1) {
+        if (*left.data.data.get(i) != *right.data.data.get(i)) {
+            return false;
+        }
     }
     return true;
 }
-pub func map<V>()->core.Result<collections.Map<String,V>,collections.Error> {
-    return collections.seededMap<String,V>(hashString,equalString);
+
+pub func map<V>() -> core.Result<collections.Map<String,V>,collections.Error> {
+    return collections.seededMap<String,V>(hashString, equalString);
 }
-pub func set()->core.Result<collections.Set<String>,collections.Error> {
-    return collections.seededSet<String>(hashString,equalString);
+
+pub func set() -> core.Result<collections.Set<String>,collections.Error> {
+    return collections.seededSet<String>(hashString, equalString);
 }
 
 pub struct Codepoints<'a> {
-    var source:Text<'a>; var offset:usize;
-    pub func iter()->Codepoints<'a> { return Codepoints<'a>{source:source,offset:0}; }
-    pub func next()->core.Option<u32> {
-        if(offset>=source.length()) { return core.Option<u32>.None; }
-        var first:u32=source.byteAt(offset).(u32);
-        offset+=1;
-        var remaining:usize=0;
-        var value=first;
-        if(first>=240) { remaining=3; value=first-240; }
-        else if(first>=224) { remaining=2; value=first-224; }
-        else if(first>=192) { remaining=1; value=first-192; }
-        for(var i:usize=0;i<remaining;i+=1) {
-            value=value*64+source.byteAt(offset).(u32)-128; offset+=1;
+    var source:Text<'a>;
+    var offset:usize;
+
+    pub func iter() -> Codepoints<'a> {
+        return Codepoints<'a>{source:source, offset:0};
+    }
+
+    pub func next() -> core.Option<u32> {
+        if (offset >= source.length()) {
+            return core.Option<u32>.None;
+        }
+        var first:u32 = source.byteAt(offset).(u32);
+        offset += 1;
+        var remaining:usize = 0;
+        var value = first;
+        if (first >= 240) {
+            remaining = 3;
+            value = first - 240;
+        } else if (first >= 224) {
+            remaining = 2;
+            value = first - 224;
+        } else if (first >= 192) {
+            remaining = 1;
+            value = first - 192;
+        }
+        for (var i:usize = 0; i < remaining; i += 1) {
+            value = value * 64 + source.byteAt(offset).(u32) - 128;
+            offset += 1;
         }
         return core.Option<u32>.Some(value);
     }
 }
+
 pub struct TextSplit<'a> {
-    var source:Text<'a>; var separator:u32; var offset:usize; var finished:bit;
-    pub func iter()->TextSplit<'a> {
-        return TextSplit<'a>{source:source,separator:separator,offset:0,finished:false};
+    var source:Text<'a>;
+    var separator:u32;
+    var offset:usize;
+    var finished:bit;
+
+    pub func iter() -> TextSplit<'a> {
+        return TextSplit<'a>{
+            source:source,
+            separator:separator,
+            offset:0,
+            finished:false
+        };
     }
-    pub func next()->core.Option<Text<'a>> {
-        if(finished) { return core.Option<Text<'a>>.None; }
-        var start=offset;
-        var points=Codepoints<'a>{source:source,offset:offset};
-        while(points.offset<source.length()) {
-            var position=points.offset;
-            match(points.next()) {
-                Some(value)=>{
-                    if(value==separator) {
-                        offset=points.offset;
-                        return core.Option<Text<'a>>.Some(Text<'a>{source:source.source,start:source.start+start,end:source.start+position});
+
+    pub func next() -> core.Option<Text<'a>> {
+        if (finished) {
+            return core.Option<Text<'a>>.None;
+        }
+        var start = offset;
+        var points = Codepoints<'a>{source:source, offset:offset};
+        while (points.offset < source.length()) {
+            var position = points.offset;
+            match (points.next()) {
+                Some(value) => {
+                    if (value == separator) {
+                        offset = points.offset;
+                        return core.Option<Text<'a>>.Some(
+                            Text<'a>{
+                                source:source.source,
+                                start:source.start + start,
+                                end:source.start + position
+                            }
+                        );
                     }
                 }
-                None=>break;
+                None => break;
             }
         }
-        finished=true; offset=source.length();
-        return core.Option<Text<'a>>.Some(Text<'a>{source:source.source,start:source.start+start,end:source.end});
+        finished = true;
+        offset = source.length();
+        return core.Option<Text<'a>>.Some(
+            Text<'a>{source:source.source, start:source.start + start, end:source.end}
+        );
     }
 }

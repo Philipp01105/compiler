@@ -1,9 +1,9 @@
 package polling;
-import memraw "stdlib/memory/raw";
 import (
     "stdlib/core"
     "stdlib/internal/executor"
     "stdlib/internal/threading"
+    memraw "stdlib/memory/raw"
     "stdlib/time"
 );
 
@@ -17,58 +17,70 @@ extern "system" {
     }
 }
 
-export "system" func dmm_async_timer_drop(address:*void)->void {
+export "system" func dmm_async_timer_drop(address:*void) -> void{
     memraw.core_release(address.(*u8));
 }
-
 // Sleeping happens on the timer worker. Cancellation is checked between short
 // waits and acknowledged only after the worker has stopped touching its state.
-export "system" func dmm_async_timer_worker(address:*void)->void {
-    var state=address.(*TimerState);
-    while (executor.__dmm_async_io_cancel_requested((*state).io)==0) {
-        var current:u64=0;
-        match(time.now()){Ok(value)=>current=value.ticks();Err(error)=>memraw.core_trap();}
-        if(current>=(*state).deadline){break;}
-        var step:u64=(*state).deadline-current;
-        if(step>1000000){step=1000000;}
-        match(time.sleep(time.nanoseconds(step))){Ok=>{}Err(error)=>memraw.core_trap();}
+export "system" func dmm_async_timer_worker(address:*void) -> void{
+    var state = address.(*TimerState);
+    while (executor.__dmm_async_io_cancel_requested((*state).io) == 0) {
+        var current:u64 = 0;
+        match (time.now()) {
+            Ok(value) => current = value.ticks();
+            Err(error) => memraw.core_trap();
+        }
+        if (current >= (*state).deadline) {
+            break;
+        }
+        var step:u64 = (*state).deadline - current;
+        if (step > 1000000) {
+            step = 1000000;
+        }
+        match (time.sleep(time.nanoseconds(step))) {
+            Ok => {}
+            Err(error) => memraw.core_trap();
+        }
     }
     executor.__dmm_async_io_confirm((*state).io);
-}
-
-@[no_default] @[core.Send] pub struct Timer {
+} @[no_default]
+@[core.Send]
+pub struct Timer {
     var deadline:time.Deadline;
     var state:*TimerState;
 
-    pub func poll(context:&mut Context)->Poll<Unit> {
-        if(state==memraw.core_null().(*TimerState)) {
-            state=reserve(TimerState);
-            (*state).deadline=deadline.ticks();
-            (*state).io=executor.__dmm_async_io_create(state.(*void),dmm_async_timer_drop);
-            (*state).thread=threading.__dmm_async_thread_create(dmm_async_timer_worker,state.(*void));
+    pub func poll(context:&mut Context) -> Poll<Unit> {
+        if (state == memraw.core_null().(*TimerState)) {
+            state = reserve(TimerState);
+            (*state).deadline = deadline.ticks();
+            (*state).io = executor.__dmm_async_io_create(state.(*void), dmm_async_timer_drop);
+            (*state).thread = threading.__dmm_async_thread_create(
+                dmm_async_timer_worker,
+                state.(*void)
+            );
         }
-        if(executor.__dmm_async_io_poll((*state).io,context.waker.raw)!=0) {
+        if (executor.__dmm_async_io_poll((*state).io, context.waker.raw) != 0) {
             return Poll<Unit>.Ready(Unit{});
         }
         return Poll<Unit>.Pending;
     }
 
-    pub func cancelPoll(context:&mut Context)->Poll<CancelAck> {
-        if(state==memraw.core_null().(*TimerState)) {
+    pub func cancelPoll(context:&mut Context) -> Poll<CancelAck> {
+        if (state == memraw.core_null().(*TimerState)) {
             return Poll<CancelAck>.Ready(CancelAck.Confirmed);
         }
         executor.__dmm_async_io_request_cancel((*state).io);
-        if(executor.__dmm_async_io_poll((*state).io,context.waker.raw)!=0) {
+        if (executor.__dmm_async_io_poll((*state).io, context.waker.raw) != 0) {
             return Poll<CancelAck>.Ready(CancelAck.Confirmed);
         }
         return Poll<CancelAck>.Pending;
     }
 
     destructor {
-        if(state!=memraw.core_null().(*TimerState)) {
+        if (state != memraw.core_null().(*TimerState)) {
             // A started poller must complete or acknowledge cancellation before
             // destruction. Never turn an unacknowledged drop into a blocking wait.
-            if(executor.__dmm_async_io_poll((*state).io,memraw.core_null().(*void))==0) {
+            if (executor.__dmm_async_io_poll((*state).io, memraw.core_null().(*void)) == 0) {
                 memraw.core_trap();
             }
             threading.__dmm_async_thread_join((*state).thread);
@@ -77,7 +89,6 @@ export "system" func dmm_async_timer_worker(address:*void)->void {
     }
 }
 
-pub func timer(deadline:time.Deadline)->Timer {
-    return Timer{deadline:deadline,state:memraw.core_null().(*TimerState)};
+pub func timer(deadline:time.Deadline) -> Timer {
+    return Timer{deadline:deadline, state:memraw.core_null().(*TimerState)};
 }
-

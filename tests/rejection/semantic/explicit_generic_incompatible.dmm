@@ -1,6 +1,6 @@
 package main;
 
-func identity<T>(value: T) -> T {
+func identity<T>(value:T) -> T {
     return value;
 }
 

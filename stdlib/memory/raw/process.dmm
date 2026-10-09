@@ -1,6 +1,6 @@
 package raw;
 
-pub func core_exit(status: int) -> never {
+pub func core_exit(status:int) -> never {
     __dmm_intrinsic_exit(status);
 }
 

@@ -1,14 +1,12 @@
 package main;
 extern "system" from "callbacks" {
-    pub func threads(f: extern "system" func(*void) -> *void) -> i32 = "callback_threads";
+    pub func threads(f:extern "system" func(*void) -> *void) -> i32 = "callback_threads";
 }
 
-export "system" func threadMain(address: *void) -> *void {
-    var context: *Context = address.(*Context);
+export "system" func threadMain(address:*void) -> *void{
+    var context:*Context = address.(*Context);
     (*context).result = (*context).value * 3;
     return address;
-}
-
-func runThreads() -> i32 {
+} func runThreads() -> i32 {
     return threads(threadMain);
 }

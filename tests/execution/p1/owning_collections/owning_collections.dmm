@@ -1,29 +1,46 @@
 package main;
-import ("stdlib/core" "stdlib/collections" "stdlib/text" "stdlib/io");
+import (
+    "stdlib/collections"
+    "stdlib/core"
+    "stdlib/io"
+    "stdlib/text"
+);
 
 func check() -> core.Result<int,io.Error> {
-    var buffer=collections.buffer<int>(3,0)?;
-    *buffer.getMut(0)=7;
-    var view: int[] = buffer.view();
+    var buffer = collections.buffer<int>(3, 0)?;
+    *buffer.getMut(0) = 7;
+    var view:int[] = buffer.view();
     if (buffer.length() != 3 || view[0] != 7) {
         return core.Result<int,io.Error>.Ok(1);
     }
 
-    var bytes=collections.list<u8>();bytes.append(65)?;
+    var bytes = collections.list<u8>();
+    bytes.append(65)?;
     if (bytes.view()[0] != 65) {
         return core.Result<int,io.Error>.Ok(5);
     }
 
-    var list=collections.list<int>();list.append(11)?;
+    var list = collections.list<int>();
+    list.append(11)?;
     if (*list.get(0) != 11) {
         return core.Result<int,io.Error>.Ok(6);
     }
 
-    match(text.fromString("hello")){
-      Err(error)=>return core.Result<int,io.Error>.Ok(4);
-      Ok(value)=>{if(!value.startsWith("hello")||value.length()!=5){return core.Result<int,io.Error>.Ok(2);}}
+    match (text.fromString("hello")) {
+        Err(error) => return core.Result<int,io.Error>.Ok(4);
+        Ok(value) => {
+            if (!value.startsWith("hello") || value.length() != 5) {
+                return core.Result<int,io.Error>.Ok(2);
+            }
+        }
     }
     io.println(0)?;
     return core.Result<int,io.Error>.Ok(0);
 }
-func main()->int{match(check()){Ok(code)=>return code;Err(error)=>return 99;}}
+
+func main() -> int {
+    match (check()) {
+        Ok(code) => return code;
+        Err(error) => return 99;
+    }
+}

@@ -1,8 +1,10 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
-func one(x: int) -> int {
+func one(x:int) -> int {
     return x;
 }
 

@@ -1,10 +1,10 @@
 package main;
 
-func choose(value: int) -> int {
+func choose(value:int) -> int {
     return 10;
 }
 
-func choose(value: double) -> int {
+func choose(value:double) -> int {
     return 20;
 }
 

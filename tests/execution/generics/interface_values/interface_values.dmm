@@ -1,36 +1,41 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
 interface Reading {
     func value() -> i32;
 }
 
 struct Temperature {
-    var degrees: i32;
+    var degrees:i32;
+
     func value() -> i32 {
         return degrees;
     }
 }
 
 struct Pressure {
-    var kilopascals: i32;
-    var correction: i32;
+    var kilopascals:i32;
+    var correction:i32;
+
     func value() -> i32 {
         return kilopascals + correction;
     }
 }
 
 struct Adjusted {
-    var base: Reading;
-    var correction: i32;
+    var base:Reading;
+    var correction:i32;
+
     func value() -> i32 {
         return base.value() + correction;
     }
 }
 
 struct Sensor {
-    var latest: Reading;
+    var latest:Reading;
 }
 
 enum Sample {
@@ -38,13 +43,13 @@ enum Sample {
     Present(Reading)
 }
 
-var last: Reading;
+var last:Reading;
 
-func read(item: Reading) -> i32 {
+func read(item:Reading) -> i32 {
     return item.value();
 }
 
-func select(usePressure: bit, temperature: Temperature, pressure: Pressure) -> Reading {
+func select(usePressure:bit, temperature:Temperature, pressure:Pressure) -> Reading {
     if (usePressure) {
         return pressure;
     }
@@ -52,26 +57,24 @@ func select(usePressure: bit, temperature: Temperature, pressure: Pressure) -> R
 }
 
 func main() -> void {
-    var temperature: Temperature;
+    var temperature:Temperature;
     temperature.degrees = 21;
-    var pressure: Pressure;
+    var pressure:Pressure;
     pressure.kilopascals = 98;
     pressure.correction = 3;
 
-    var current: Reading = temperature;
-    var sensor: Sensor;
+    var current:Reading = temperature;
+    var sensor:Sensor;
     sensor.latest = pressure;
     var sample = Sample.Present(temperature);
-    var selected: Reading = select(true, temperature, pressure);
-    var batch: Reading[2] = [temperature, pressure];
-    var adjusted: Adjusted;
+    var selected:Reading = select(true, temperature, pressure);
+    var batch:Reading[2] = [temperature, pressure];
+    var adjusted:Adjusted;
     adjusted.base = temperature;
     adjusted.correction = 5;
-    var nested: Reading = adjusted;
+    var nested:Reading = adjusted;
     last = pressure;
-    io.println(
-        read(current) + sensor.latest.value() + sample.Present().value() + selected.value()
-    );
+    io.println(read(current) + sensor.latest.value() + sample.Present().value() + selected.value());
     io.println(batch[0].value() + batch[1].value());
     io.println(last.value());
     io.println(nested.value());

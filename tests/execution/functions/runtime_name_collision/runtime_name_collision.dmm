@@ -1,24 +1,26 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
-func printf(value: int) -> int {
+func printf(value:int) -> int {
     return value + 1;
 }
 
-func strlen(value: int) -> int {
+func strlen(value:int) -> int {
     return value * 2;
 }
 
-func write(value: int) -> int {
+func write(value:int) -> int {
     return value + 3;
 }
 
-func open(value: int) -> int {
+func open(value:int) -> int {
     return value + 4;
 }
 
-func close(value: int) -> int {
+func close(value:int) -> int {
     return value + 5;
 }
 
@@ -26,15 +28,15 @@ func __errno_location() -> int {
     return 123;
 }
 
-func exit(value: int) -> int {
+func exit(value:int) -> int {
     return value + 6;
 }
 
-func WriteFile(value: int) -> int {
+func WriteFile(value:int) -> int {
     return value + 7;
 }
 
-func VirtualAlloc(value: int) -> int {
+func VirtualAlloc(value:int) -> int {
     return value + 8;
 }
 
@@ -48,7 +50,7 @@ func main() -> void {
     io.println(exit(5));
     io.println(WriteFile(5));
     io.println(VirtualAlloc(5));
-    var fd: int = sys_open("runtime_collision.tmp", 577, 384);
+    var fd:int = sys_open("runtime_collision.tmp", 577, 384);
     io.println(fd >= 0);
     io.println(sys_write(fd, "x", 1));
     io.println(sys_close(fd));

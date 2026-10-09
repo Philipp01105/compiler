@@ -4,15 +4,15 @@ import (
 );
 
 struct Resource {
-    var value: int;
+    var value:int;
     destructor {}
 }
 
 func main() -> int {
-    var first: Resource[1];
-    var second: Resource[1];
-    var source: Resource[] = first;
-    var destination: Resource[] = second;
+    var first:Resource[1];
+    var second:Resource[1];
+    var source:Resource[] = first;
+    var destination:Resource[] = second;
     var result = algorithms.copy<Resource>(&source, &mut destination);
     return 0;
 }

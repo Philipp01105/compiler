@@ -1,8 +1,10 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
-func echo(value: string) -> string {
+func echo(value:string) -> string {
     return value;
 }
 

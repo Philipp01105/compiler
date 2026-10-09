@@ -1,6 +1,6 @@
 package main;
 
-async func answer(value: int) -> int {
+async func answer(value:int) -> int {
     return value + 1;
 }
 
@@ -8,7 +8,7 @@ async func nested() -> Future<int> {
     return answer(12);
 }
 
-async func borrowed(value: &int) -> int {
+async func borrowed(value:&int) -> int {
     return *value;
 }
 
@@ -16,20 +16,19 @@ async func nothing() -> void {
     return;
 }
 
-async func executorOwner(executor: Executor) -> void {
+async func executorOwner(executor:Executor) -> void {
     executor.shutdown(ShutdownMode.Drain).await();
 }
 
-async func joinVoid(handle: JoinHandle<void>) -> int {
-    var result: Result < void,
-    TaskError >= handle.await();
+async func joinVoid(handle:JoinHandle<void>) -> int {
+    var result:Result<void,TaskError>= handle.await();
     match (result) {
         Ok => return 1;
         Err(error) => return 0;
     }
 }
 
-async func joinNested(handle: JoinHandle<Future<int>>) -> int {
+async func joinNested(handle:JoinHandle<Future<int>>) -> int {
     var result = handle.await();
     match (result) {
         Ok(future) => {
@@ -41,7 +40,7 @@ async func joinNested(handle: JoinHandle<Future<int>>) -> int {
     }
 }
 
-async func join(handle: JoinHandle<int>) -> int {
+async func join(handle:JoinHandle<int>) -> int {
     var result = handle.await();
     match (result) {
         Ok(value) => {
@@ -78,14 +77,14 @@ func main() -> int {
     block_on(secondExecutor.shutdown(ShutdownMode.Cancel));
     var g = block_on(join(openHandle));
     if (
-        a == 42 &&
-        b == 7 &&
-        c == 9 &&
-        d == 13 &&
-        e == 17 &&
-        local == 18 &&
-        f == 1 &&
-        (g == - 1 || g == 11)
+        a == 42
+        && b == 7
+        && c == 9
+        && d == 13
+        && e == 17
+        && local == 18
+        && f == 1
+        && (g == -1 || g == 11)
     ) {
         return 0;
     }

@@ -1,95 +1,126 @@
 package fs;
 import (
-    "stdlib/core"
     "stdlib/collections"
-    "stdlib/time"
+    "stdlib/core"
     raw "stdlib/memory/raw"
+    "stdlib/time"
 );
 extern "system" from "c" {
     struct Stamp {
-        var seconds: i64;
-        var nanos: u32;
-        var padding: i32;
+        var seconds:i64;
+        var nanos:u32;
+        var padding:i32;
     }
 
     struct Statx {
-        var mask: u32;
-        var blockSize: u32;
-        var attributes: u64;
-        var links: u32;
-        var uid: u32;
-        var gid: u32;
-        var mode: u16;
-        var padding: u16;
-        var inode: u64;
-        var size: u64;
-        var blocks: u64;
-        var attributeMask: u64;
-        var accessed: Stamp;
-        var created: Stamp;
-        var changed: Stamp;
-        var modified: Stamp;
-        var deviceSpecialMajor: u32;
-        var deviceSpecialMinor: u32;
-        var deviceMajor: u32;
-        var deviceMinor: u32;
-        var tail: u64[14];
+        var mask:u32;
+        var blockSize:u32;
+        var attributes:u64;
+        var links:u32;
+        var uid:u32;
+        var gid:u32;
+        var mode:u16;
+        var padding:u16;
+        var inode:u64;
+        var size:u64;
+        var blocks:u64;
+        var attributeMask:u64;
+        var accessed:Stamp;
+        var created:Stamp;
+        var changed:Stamp;
+        var modified:Stamp;
+        var deviceSpecialMajor:u32;
+        var deviceSpecialMinor:u32;
+        var deviceMajor:u32;
+        var deviceMinor:u32;
+        var tail:u64[14];
     }
 
     struct Dirent {
-        var inode: u64;
-        var offset: i64;
-        var recordLength: u16;
-        var kind: u8;
-        var fileName: u8[256];
+        var inode:u64;
+        var offset:i64;
+        var recordLength:u16;
+        var kind:u8;
+        var fileName:u8[256];
     }
 
-    func openNative(path: *u8, flags: i32, permissions: u32) -> i32 = "open";
-    func closeNative(descriptor: i32) -> i32 = "close";
-    func readNative(descriptor: i32, data: *void, length: usize) -> isize = "read";
-    func writeNative(descriptor: i32, data: *void, length: usize) -> isize = "write";
-    func seekNative(descriptor: i32, offset: i64, origin: i32) -> i64 = "lseek";
+    func openNative(path:*u8, flags:i32, permissions:u32) -> i32 = "open";
+
+    func closeNative(descriptor:i32) -> i32 = "close";
+
+    func readNative(descriptor:i32, data:*void, length:usize) -> isize = "read";
+
+    func writeNative(descriptor:i32, data:*void, length:usize) -> isize = "write";
+
+    func seekNative(descriptor:i32, offset:i64, origin:i32) -> i64 = "lseek";
+
     func errnoAddress() -> *i32 = "__errno_location";
-    func statx(directory: i32, path: *u8, flags: i32, mask: u32, data: *Statx) -> i32;
-    func unlink(path: *u8) -> i32;
-    func mkdir(path: *u8, mode: u32) -> i32;
-    func rmdir(path: *u8) -> i32;
-    func renameNative(oldPath: *u8, newPath: *u8) -> i32 = "rename";
-    func opendir(path: *u8) -> *void;
-    func readdir(directory: *void) -> *Dirent;
-    func closedir(directory: *void) -> i32;
+
+    func statx(directory:i32, path:*u8, flags:i32, mask:u32, data:*Statx) -> i32;
+
+    func unlink(path:*u8) -> i32;
+
+    func mkdir(path:*u8, mode:u32) -> i32;
+
+    func rmdir(path:*u8) -> i32;
+
+    func renameNative(oldPath:*u8, newPath:*u8) -> i32 = "rename";
+
+    func opendir(path:*u8) -> *void;
+
+    func readdir(directory:*void) -> *Dirent;
+
+    func closedir(directory:*void) -> i32;
 }
 
 func systemError() -> Error {
-    var code=*errnoAddress();
-    var kind:ErrorKind=ErrorKind.System;
-    if(code==2) {kind=ErrorKind.NotFound;}
-    if(code==17) {kind=ErrorKind.AlreadyExists;}
-    if(code==1 || code==13) {kind=ErrorKind.AccessDenied;}
-    if(code==20) {kind=ErrorKind.NotDirectory;}
-    if(code==36) {kind=ErrorKind.InvalidPath;}
+    var code = *errnoAddress();
+    var kind:ErrorKind = ErrorKind.System;
+    if (code == 2) {
+        kind = ErrorKind.NotFound;
+    }
+    if (code == 17) {
+        kind = ErrorKind.AlreadyExists;
+    }
+    if (code == 1 || code == 13) {
+        kind = ErrorKind.AccessDenied;
+    }
+    if (code == 20) {
+        kind = ErrorKind.NotDirectory;
+    }
+    if (code == 36) {
+        kind = ErrorKind.InvalidPath;
+    }
     return Error{
-        kind: kind,
-        domain: ErrorDomain.Posix,
-        code:code.(isize), transferred:0
+        kind:kind,
+        domain:ErrorDomain.Posix,
+        code:code.(isize),
+        transferred:0
     };
 }
 
-func cPath(path:u8[])->core.Result<collections.List<u8>,Error> {
-    if(path.length>=9223372036854775807.(usize)){return core.Result<collections.List<u8>,Error>.Err(failure(ErrorKind.InvalidPath));}
-    for(var i:usize=0;i<path.length;i+=1){if(path[i]==0){return core.Result<collections.List<u8>,Error>.Err(failure(ErrorKind.InvalidPath));}}
-    var result=collections.list<u8>();
-    result.ensureCapacity(path.length+1)?;
-    result.appendSlice(&path)?;result.append(0)?;
+func cPath(path:u8[]) -> core.Result<collections.List<u8>,Error> {
+    if (path.length >= 9223372036854775807.(usize)) {
+        return core.Result<collections.List<u8>,Error>.Err(failure(ErrorKind.InvalidPath));
+    }
+    for (var i:usize = 0; i < path.length; i += 1) {
+        if (path[i] == 0) {
+            return core.Result<collections.List<u8>,Error>.Err(failure(ErrorKind.InvalidPath));
+        }
+    }
+    var result = collections.list<u8>();
+    result.ensureCapacity(path.length + 1)?;
+    result.appendSlice(&path)?;
+    result.append(0)?;
     return core.Result<collections.List<u8>,Error>.Ok(result);
 }
 
-func nativeOpen(path: u8[], mode: OpenMode) -> core.Result<File, Error> {
+func nativeOpen(path:u8[], mode:OpenMode) -> core.Result<File,Error> {
     var converted = cPath(path);
     match (converted) {
-        Err(error) => return core.Result<File, Error>.Err(error);
+        Err(error) => return core.Result<File,Error>.Err(error);
         Ok(value) => {
-            var flags: i32 = 524288;
+            var flags:i32 = 524288;
             if (mode == OpenMode.Write) {
                 flags += 1 + 64 + 512;
             }
@@ -99,103 +130,103 @@ func nativeOpen(path: u8[], mode: OpenMode) -> core.Result<File, Error> {
             if (mode == OpenMode.Append) {
                 flags += 1 + 64 + 1024;
             }
-            var bytes: u8[] = value.view();
-            var descriptor: i32;
+            var bytes:u8[] = value.view();
+            var descriptor:i32;
             while (true) {
                 descriptor = openNative(bytes.data, flags, 438);
                 if (descriptor >= 0) {
                     break;
                 }
                 if (*errnoAddress() != 4) {
-                    return core.Result<File, Error>.Err(systemError());
+                    return core.Result<File,Error>.Err(systemError());
                 }
             }
-            return core.Result<File, Error>.Ok(
+            return core.Result<File,Error>.Ok(
                 File{
-                    handle: descriptor.(usize),
-                    active: true,
-                    readable: mode == OpenMode.Read || mode == OpenMode.ReadWrite,
-                    writable: mode != OpenMode.Read
+                    handle:descriptor.(usize),
+                    active:true,
+                    readable:mode == OpenMode.Read || mode == OpenMode.ReadWrite,
+                    writable:mode != OpenMode.Read
                 }
             );
         }
     }
 }
 
-func nativeClose(handle: usize) -> core.Result<void, Error> {
+func nativeClose(handle:usize) -> core.Result<void,Error> {
     if (closeNative(handle.(i32)) != 0) {
-        return core.Result<void, Error>.Err(systemError());
+        return core.Result<void,Error>.Err(systemError());
     }
-    return core.Result<void, Error>.Ok;
+    return core.Result<void,Error>.Ok;
 }
 
-func nativeRead(handle: usize, destination: u8[]) -> core.Result<usize, Error> {
+func nativeRead(handle:usize, destination:u8[]) -> core.Result<usize,Error> {
     if (destination.length == 0) {
-        return core.Result<usize, Error>.Ok(0);
+        return core.Result<usize,Error>.Ok(0);
     }
-    var length: usize = destination.length;
+    var length:usize = destination.length;
     if (length > 1073741824) {
         length = 1073741824;
     }
     while (true) {
-        var count: isize = readNative(handle.(i32), destination.data.(*void), length);
+        var count:isize = readNative(handle.(i32), destination.data.(*void), length);
         if (count >= 0) {
-            return core.Result<usize, Error>.Ok(count.(usize));
+            return core.Result<usize,Error>.Ok(count.(usize));
         }
         if (*errnoAddress() != 4) {
-            return core.Result<usize, Error>.Err(systemError());
+            return core.Result<usize,Error>.Err(systemError());
         }
     }
-    return core.Result<usize, Error>.Err(failure(ErrorKind.System));
+    return core.Result<usize,Error>.Err(failure(ErrorKind.System));
 }
 
-func nativeWrite(handle: usize, source: u8[]) -> core.Result<usize, Error> {
+func nativeWrite(handle:usize, source:u8[]) -> core.Result<usize,Error> {
     if (source.length == 0) {
-        return core.Result<usize, Error>.Ok(0);
+        return core.Result<usize,Error>.Ok(0);
     }
-    var length: usize = source.length;
+    var length:usize = source.length;
     if (length > 1073741824) {
         length = 1073741824;
     }
     while (true) {
-        var count: isize = writeNative(handle.(i32), source.data.(*void), length);
+        var count:isize = writeNative(handle.(i32), source.data.(*void), length);
         if (count >= 0) {
-            return core.Result<usize, Error>.Ok(count.(usize));
+            return core.Result<usize,Error>.Ok(count.(usize));
         }
         if (*errnoAddress() != 4) {
-            return core.Result<usize, Error>.Err(systemError());
+            return core.Result<usize,Error>.Err(systemError());
         }
     }
-    return core.Result<usize, Error>.Err(failure(ErrorKind.System));
+    return core.Result<usize,Error>.Err(failure(ErrorKind.System));
 }
 
-func nativeSeek(handle: usize, offset: i64, origin: SeekOrigin) -> core.Result<u64, Error> {
-    var method: i32 = 0;
+func nativeSeek(handle:usize, offset:i64, origin:SeekOrigin) -> core.Result<u64,Error> {
+    var method:i32 = 0;
     if (origin == SeekOrigin.Current) {
         method = 1;
     }
     if (origin == SeekOrigin.End) {
         method = 2;
     }
-    var position: i64 = seekNative(handle.(i32), offset, method);
+    var position:i64 = seekNative(handle.(i32), offset, method);
     if (position < 0) {
-        return core.Result<u64, Error>.Err(systemError());
+        return core.Result<u64,Error>.Err(systemError());
     }
-    return core.Result<u64, Error>.Ok(position.(u64));
+    return core.Result<u64,Error>.Ok(position.(u64));
 }
 
-func nativeMetadata(path: u8[]) -> core.Result<Metadata, Error> {
+func nativeMetadata(path:u8[]) -> core.Result<Metadata,Error> {
     var converted = cPath(path);
     match (converted) {
-        Err(error) => return core.Result<Metadata, Error>.Err(error);
+        Err(error) => return core.Result<Metadata,Error>.Err(error);
         Ok(value) => {
-            var bytes: u8[] = value.view();
-            var data: Statx;
+            var bytes:u8[] = value.view();
+            var data:Statx;
             if (statx(-100, bytes.data, 256, 2047, (&data).(*Statx)) != 0) {
-                return core.Result<Metadata, Error>.Err(systemError());
+                return core.Result<Metadata,Error>.Err(systemError());
             }
-            var kind: EntryKind = EntryKind.Other;
-            var mode: u16 = data.mode / 4096;
+            var kind:EntryKind = EntryKind.Other;
+            var mode:u16 = data.mode / 4096;
             if (mode == 4) {
                 kind = EntryKind.Directory;
             }
@@ -205,13 +236,13 @@ func nativeMetadata(path: u8[]) -> core.Result<Metadata, Error> {
             if (mode == 10) {
                 kind = EntryKind.Symlink;
             }
-            return core.Result<Metadata, Error>.Ok(
+            return core.Result<Metadata,Error>.Ok(
                 Metadata{
-                    kind: kind,
-                    size: data.size,
-                    modified: time.SystemTime{
-                        seconds: data.modified.seconds,
-                        nanoseconds: data.modified.nanos
+                    kind:kind,
+                    size:data.size,
+                    modified:time.SystemTime{
+                        seconds:data.modified.seconds,
+                        nanoseconds:data.modified.nanos
                     }
                 }
             );
@@ -219,63 +250,63 @@ func nativeMetadata(path: u8[]) -> core.Result<Metadata, Error> {
     }
 }
 
-func nativeRemoveFile(path: u8[]) -> core.Result<void, Error> {
+func nativeRemoveFile(path:u8[]) -> core.Result<void,Error> {
     var converted = cPath(path);
     match (converted) {
-        Err(error) => return core.Result<void, Error>.Err(error);
+        Err(error) => return core.Result<void,Error>.Err(error);
         Ok(value) => {
-            var view: u8[] = value.view();
+            var view:u8[] = value.view();
             if (unlink(view.data) != 0) {
-                return core.Result<void, Error>.Err(systemError());
+                return core.Result<void,Error>.Err(systemError());
             }
-            return core.Result<void, Error>.Ok;
+            return core.Result<void,Error>.Ok;
         }
     }
 }
 
-func nativeCreateDirectory(path: u8[]) -> core.Result<void, Error> {
+func nativeCreateDirectory(path:u8[]) -> core.Result<void,Error> {
     var converted = cPath(path);
     match (converted) {
-        Err(error) => return core.Result<void, Error>.Err(error);
+        Err(error) => return core.Result<void,Error>.Err(error);
         Ok(value) => {
-            var view: u8[] = value.view();
+            var view:u8[] = value.view();
             if (mkdir(view.data, 511) != 0) {
-                return core.Result<void, Error>.Err(systemError());
+                return core.Result<void,Error>.Err(systemError());
             }
-            return core.Result<void, Error>.Ok;
+            return core.Result<void,Error>.Ok;
         }
     }
 }
 
-func nativeRemoveDirectory(path: u8[]) -> core.Result<void, Error> {
+func nativeRemoveDirectory(path:u8[]) -> core.Result<void,Error> {
     var converted = cPath(path);
     match (converted) {
-        Err(error) => return core.Result<void, Error>.Err(error);
+        Err(error) => return core.Result<void,Error>.Err(error);
         Ok(value) => {
-            var view: u8[] = value.view();
+            var view:u8[] = value.view();
             if (rmdir(view.data) != 0) {
-                return core.Result<void, Error>.Err(systemError());
+                return core.Result<void,Error>.Err(systemError());
             }
-            return core.Result<void, Error>.Ok;
+            return core.Result<void,Error>.Ok;
         }
     }
 }
 
-func nativeRename(oldPath: u8[], newPath: u8[]) -> core.Result<void, Error> {
+func nativeRename(oldPath:u8[], newPath:u8[]) -> core.Result<void,Error> {
     var first = cPath(oldPath);
     match (first) {
-        Err(error) => return core.Result<void, Error>.Err(error);
+        Err(error) => return core.Result<void,Error>.Err(error);
         Ok(a) => {
             var second = cPath(newPath);
             match (second) {
-                Err(error) => return core.Result<void, Error>.Err(error);
+                Err(error) => return core.Result<void,Error>.Err(error);
                 Ok(b) => {
-                    var av: u8[] = a.view();
-                    var bv: u8[] = b.view();
+                    var av:u8[] = a.view();
+                    var bv:u8[] = b.view();
                     if (renameNative(av.data, bv.data) != 0) {
-                        return core.Result<void, Error>.Err(systemError());
+                        return core.Result<void,Error>.Err(systemError());
                     }
-                    return core.Result<void, Error>.Ok;
+                    return core.Result<void,Error>.Ok;
                 }
             }
         }
@@ -283,46 +314,47 @@ func nativeRename(oldPath: u8[], newPath: u8[]) -> core.Result<void, Error> {
 }
 
 struct DirectoryState {
-    var handle: *void;
-    var active: bit;
-    pub func close() -> core.Result<void, Error> {
+    var handle:*void;
+    var active:bit;
+
+    pub func close() -> core.Result<void,Error> {
         if (!active) {
-            return core.Result<void, Error>.Ok;
+            return core.Result<void,Error>.Ok;
         }
         active = false;
         if (closedir(handle) != 0) {
-            return core.Result<void, Error>.Err(systemError());
+            return core.Result<void,Error>.Err(systemError());
         }
-        return core.Result<void, Error>.Ok;
+        return core.Result<void,Error>.Ok;
     }
 
-    pub func next() -> core.Result<core.Option<Entry>, Error> {
+    pub func next() -> core.Result<core.Option<Entry>,Error> {
         if (!active) {
-            return core.Result<core.Option<Entry>, Error>.Ok(core.Option<Entry>.None);
+            return core.Result<core.Option<Entry>,Error>.Ok(core.Option<Entry>.None);
         }
         while (true) {
             *errnoAddress() = 0;
-            var entry: *Dirent = readdir(handle);
+            var entry:*Dirent = readdir(handle);
             if (entry == raw.null<Dirent>()) {
                 if (*errnoAddress() != 0) {
-                    return core.Result<core.Option<Entry>, Error>.Err(systemError());
+                    return core.Result<core.Option<Entry>,Error>.Err(systemError());
                 }
-                return core.Result<core.Option<Entry>, Error>.Ok(core.Option<Entry>.None);
+                return core.Result<core.Option<Entry>,Error>.Ok(core.Option<Entry>.None);
             }
-            var length: usize = 0;
+            var length:usize = 0;
             while (length < 256 && (*entry).fileName[length] != 0) {
                 length += 1;
             }
             if (
-                (length == 1 && (*entry).fileName[0] == 46) ||
-                (length == 2 && (*entry).fileName[0] == 46 && (*entry).fileName[1] == 46)
+                (length == 1 && (*entry).fileName[0] == 46)
+                || (length == 2 && (*entry).fileName[0] == 46 && (*entry).fileName[1] == 46)
             ) {
                 continue;
             }
-            var name=collections.list<u8>();
-            var input=slice(&(*entry).fileName[0],length);
+            var name = collections.list<u8>();
+            var input = slice(&(*entry).fileName[0], length);
             name.appendSlice(&input)?;
-            var kind: EntryKind = EntryKind.Unknown;
+            var kind:EntryKind = EntryKind.Unknown;
             if ((*entry).kind == 4) {
                 kind = EntryKind.Directory;
             }
@@ -332,9 +364,11 @@ struct DirectoryState {
             if ((*entry).kind == 10) {
                 kind = EntryKind.Symlink;
             }
-            return core.Result<core.Option<Entry>, Error>.Ok(core.Option<Entry>.Some(Entry{ name: name, kind: kind }));
+            return core.Result<core.Option<Entry>,Error>.Ok(
+                core.Option<Entry>.Some(Entry{name:name, kind:kind})
+            );
         }
-        return core.Result<core.Option<Entry>, Error>.Ok(core.Option<Entry>.None);
+        return core.Result<core.Option<Entry>,Error>.Ok(core.Option<Entry>.None);
     }
 
     destructor {
@@ -344,18 +378,18 @@ struct DirectoryState {
     }
 }
 
-func nativeReadDirectory(path: u8[]) -> core.Result<DirectoryState, Error> {
+func nativeReadDirectory(path:u8[]) -> core.Result<DirectoryState,Error> {
     var converted = cPath(path);
     match (converted) {
-        Err(error) => return core.Result<DirectoryState, Error>.Err(error);
+        Err(error) => return core.Result<DirectoryState,Error>.Err(error);
         Ok(value) => {
-            var view: u8[] = value.view();
-            var directory: *void = opendir(view.data);
+            var view:u8[] = value.view();
+            var directory:*void = opendir(view.data);
             if (directory == raw.core_null().(*void)) {
-                return core.Result<DirectoryState, Error>.Err(systemError());
+                return core.Result<DirectoryState,Error>.Err(systemError());
             }
-            return core.Result<DirectoryState, Error>.Ok(
-                DirectoryState{ handle: directory, active: true }
+            return core.Result<DirectoryState,Error>.Ok(
+                DirectoryState{handle:directory, active:true}
             );
         }
     }

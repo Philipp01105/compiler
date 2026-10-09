@@ -2,36 +2,36 @@ package main;
 // Complete demonstration of syscall-based I/O system
 func main() -> void {
     // 1. Write to stdout
-    var header: string = "=== DMM Syscall I/O System Demo ===\n\n";
-    var len1: int = io_strlen(header);
+    var header:string = "=== DMM Syscall I/O System Demo ===\n\n";
+    var len1:int = io_strlen(header);
     sys_write(1, header, len1);
     // 2. String length calculation
-    var msg1: string = "1. String length test: ";
-    var msg1_len: int = io_strlen(msg1);
+    var msg1:string = "1. String length test: ";
+    var msg1_len:int = io_strlen(msg1);
     sys_write(1, msg1, msg1_len);
-    var test_str: string = "Hello";
-    var test_len: int = io_strlen(test_str);
+    var test_str:string = "Hello";
+    var test_len:int = io_strlen(test_str);
     sys_write(1, test_str, test_len);
-    var newline: string = "\n";
-    var nl_len: int = io_strlen(newline);
+    var newline:string = "\n";
+    var nl_len:int = io_strlen(newline);
     sys_write(1, newline, nl_len);
     // 3. File write test
-    var msg2: string = "2. File I/O test: Writing to file...";
-    var msg2_len: int = io_strlen(msg2);
+    var msg2:string = "2. File I/O test: Writing to file...";
+    var msg2_len:int = io_strlen(msg2);
     sys_write(1, msg2, msg2_len);
     sys_write(1, newline, nl_len);
-    var filename: string = "demo_output.txt";
-    var file_content: string = "This file was created using pure syscalls!\nNo C library functions were used.\n";
-    var fd: int = sys_open(filename, 577, 420);
-    var content_len: int = io_strlen(file_content);
+    var filename:string = "demo_output.txt";
+    var file_content:string = "This file was created using pure syscalls!\nNo C library functions were used.\n";
+    var fd:int = sys_open(filename, 577, 420);
+    var content_len:int = io_strlen(file_content);
     sys_write(fd, file_content, content_len);
     sys_close(fd);
-    var success: string = "   File written successfully!\n\n";
-    var success_len: int = io_strlen(success);
+    var success:string = "   File written successfully!\n\n";
+    var success_len:int = io_strlen(success);
     sys_write(1, success, success_len);
     // 4. Final message
-    var footer: string = "All tests completed successfully!\n";
-    var footer_len: int = io_strlen(footer);
+    var footer:string = "All tests completed successfully!\n";
+    var footer_len:int = io_strlen(footer);
     sys_write(1, footer, footer_len);
 }
 

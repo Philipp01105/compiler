@@ -1,8 +1,10 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
-enum test(id: int, name: string) {
+enum test(id:int, name:string) {
     In(1, "test"),
     Out(2, "test2")
 }

@@ -1,28 +1,30 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 // Test heap management with custom struct types
 
 struct Point {
-    var x: int;
-    var y: int;
+    var x:int;
+    var y:int;
 }
 
 struct Rectangle {
-    var width: int;
-    var height: int;
-    var area: int;
+    var width:int;
+    var height:int;
+    var area:int;
 }
 
 struct Person {
-    var age: int;
-    var initial: char;
+    var age:int;
+    var initial:char;
 }
 
 // Test 1: Basic struct allocation
 func test1_basic_struct() -> void {
     io.println("[TEST 1] Basic struct allocation");
-    var p: *Point = reserve(Point);
+    var p:*Point = reserve(Point);
     io.println("  [OK] Point struct allocated");
     free(p);
     io.println("  [OK] Point struct freed");
@@ -31,9 +33,9 @@ func test1_basic_struct() -> void {
 // Test 2: Multiple struct allocations
 func test2_multiple_structs() -> void {
     io.println("[TEST 2] Multiple struct allocations");
-    var p1: *Point = reserve(Point);
-    var p2: *Point = reserve(Point);
-    var r: *Rectangle = reserve(Rectangle);
+    var p1:*Point = reserve(Point);
+    var p2:*Point = reserve(Point);
+    var r:*Rectangle = reserve(Rectangle);
     io.println("  [OK] Three structs allocated");
     free(p1);
     free(p2);
@@ -44,8 +46,8 @@ func test2_multiple_structs() -> void {
 // Test 3: manual ownership with structs
 func test3_gc_structs() -> void {
     io.println("[TEST 3] manual ownership with structs");
-    var p: *Point = reserve(Point);
-    var r: *Rectangle = reserve(Rectangle);
+    var p:*Point = reserve(Point);
+    var r:*Rectangle = reserve(Rectangle);
     io.println("  [OK] manual ownership structs allocated (explicit release follows)");
 
     free(r);
@@ -55,9 +57,9 @@ func test3_gc_structs() -> void {
 // Test 4: Mixed struct types
 func test4_mixed_struct_types() -> void {
     io.println("[TEST 4] Mixed struct types");
-    var point: *Point = reserve(Point);
-    var rect: *Rectangle = reserve(Rectangle);
-    var person: *Person = reserve(Person);
+    var point:*Point = reserve(Point);
+    var rect:*Rectangle = reserve(Rectangle);
+    var person:*Person = reserve(Person);
     io.println("  [OK] Three different struct types allocated");
     free(person);
     free(rect);
@@ -68,8 +70,8 @@ func test4_mixed_struct_types() -> void {
 // Test 5: Manual and manual ownership structs together
 func test5_manual_and_gc_structs() -> void {
     io.println("[TEST 5] Manual and manual ownership structs");
-    var manual: *Point = reserve(Point);
-    var automatic: *Rectangle = reserve(Rectangle);
+    var manual:*Point = reserve(Point);
+    var automatic:*Rectangle = reserve(Rectangle);
     io.println("  [OK] Manual and manual ownership structs allocated");
     free(manual);
     io.println("  [OK] Manual struct freed (explicit releases follow)");
@@ -80,11 +82,11 @@ func test5_manual_and_gc_structs() -> void {
 // Test 6: Sequential struct operations
 func test6_sequential_structs() -> void {
     io.println("[TEST 6] Sequential struct operations");
-    var p: *Point = reserve(Point);
+    var p:*Point = reserve(Point);
     io.println("  [OK] Point allocated");
     free(p);
     io.println("  [OK] Point freed");
-    var r: *Rectangle = reserve(Rectangle);
+    var r:*Rectangle = reserve(Rectangle);
     io.println("  [OK] Rectangle allocated");
     free(r);
     io.println("  [OK] Rectangle freed");
@@ -93,11 +95,11 @@ func test6_sequential_structs() -> void {
 // Test 7: Many struct pointers
 func test7_many_struct_pointers() -> void {
     io.println("[TEST 7] Many struct pointers");
-    var p1: *Point = reserve(Point);
-    var p2: *Point = reserve(Point);
-    var p3: *Point = reserve(Point);
-    var p4: *Point = reserve(Point);
-    var p5: *Point = reserve(Point);
+    var p1:*Point = reserve(Point);
+    var p2:*Point = reserve(Point);
+    var p3:*Point = reserve(Point);
+    var p4:*Point = reserve(Point);
+    var p5:*Point = reserve(Point);
     io.println("  [OK] Five Point structs allocated");
     free(p1);
     free(p2);
@@ -111,11 +113,11 @@ func test7_many_struct_pointers() -> void {
 func test8_different_sizes() -> void {
     io.println("[TEST 8] Structs with different sizes");
     // Point has 2 ints (8 bytes)
-    var small: *Point = reserve(Point);
+    var small:*Point = reserve(Point);
     // Rectangle has 3 ints (12 bytes)
-    var medium: *Rectangle = reserve(Rectangle);
+    var medium:*Rectangle = reserve(Rectangle);
     // Person has int + char (5+ bytes with padding)
-    var compact: *Person = reserve(Person);
+    var compact:*Person = reserve(Person);
     io.println("  [OK] Different sized structs allocated");
     free(small);
     free(medium);

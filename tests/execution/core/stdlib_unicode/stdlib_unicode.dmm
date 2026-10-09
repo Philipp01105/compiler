@@ -1,13 +1,16 @@
 package main;
-import ("stdlib/core" "stdlib/collections" codec16 "stdlib/text/utf16" "stdlib/text/utf8");
 import (
+    byteops "stdlib/bytes"
+    "stdlib/collections"
+    "stdlib/core"
     stdlib "stdlib/core"
     "stdlib/text"
-    byteops "stdlib/bytes"
+    codec16 "stdlib/text/utf16"
+    "stdlib/text/utf8"
     "stdlib/unicode"
 );
 
-func equal(result: core.Result<collections.List<u8>, unicode.Error>, expected: u8[]) -> bit {
+func equal(result:core.Result<collections.List<u8>,unicode.Error>, expected:u8[]) -> bit {
     match (result) {
         Err(error) => return false;
         Ok(value) => {
@@ -18,10 +21,10 @@ func equal(result: core.Result<collections.List<u8>, unicode.Error>, expected: u
 
 func main() -> int {
     if (
-        !unicode.isAlphabetic(945) ||
-        !unicode.isWhitespace(8195) ||
-        !unicode.isDigit(1633) ||
-        unicode.combiningClass(769) != 230
+        !unicode.isAlphabetic(945)
+        || !unicode.isWhitespace(8195)
+        || !unicode.isDigit(1633)
+        || unicode.combiningClass(769) != 230
     ) {
         return 1;
     }
@@ -33,57 +36,41 @@ func main() -> int {
     ) {
         return 2;
     }
-    if (
-        !equal(
-            unicode.mapCase(text.bytes("ΟΣ"), unicode.CaseMapping.Lower),
-            text.bytes("ος")
-        )
-    ) {
+    if (!equal(unicode.mapCase(text.bytes("ΟΣ"), unicode.CaseMapping.Lower), text.bytes("ος"))) {
         return 3;
     }
-    if (
-        !equal(
-            unicode.normalize(text.bytes("é"), unicode.Normalization.NFC),
-            text.bytes("é")
-        )
-    ) {
+    if (!equal(unicode.normalize(text.bytes("é"), unicode.Normalization.NFC), text.bytes("é"))) {
         return 4;
     }
-    if (
-        !equal(
-            unicode.normalize(text.bytes("é"), unicode.Normalization.NFD),
-            text.bytes("é")
-        )
-    ) {
+    if (!equal(unicode.normalize(text.bytes("é"), unicode.Normalization.NFD), text.bytes("é"))) {
         return 5;
     }
-    if (
-        !equal(
-            unicode.normalize(text.bytes("ﬃ"), unicode.Normalization.NFKC),
-            text.bytes("ffi")
-        )
-    ) {
+    if (!equal(unicode.normalize(text.bytes("ﬃ"), unicode.Normalization.NFKC), text.bytes("ffi"))) {
         return 6;
     }
-    if (
-        !equal(
-            unicode.normalize(text.bytes("각"), unicode.Normalization.NFD),
-            text.bytes("각")
-        )
-    ) {
+    if (!equal(unicode.normalize(text.bytes("각"), unicode.Normalization.NFD), text.bytes("각"))) {
         return 7;
     }
-    var encodedInput=text.bytes("A😀");
+    var encodedInput = text.bytes("A😀");
     var wide = codec16.fromUtf8(&encodedInput);
     match (wide) {
         Err(error) => return 8;
         Ok(value) => {
-            if(value.length()!=3) {return 9;}
-            var units=value.view();
-            match(codec16.toUtf8(&units)){Ok(bytes)=>{if(bytes.view()!=encodedInput){return 9;}}Err(error)=>return 9;}
+            if (value.length() != 3) {
+                return 9;
+            }
+            var units = value.view();
+            match (codec16.toUtf8(&units)) {
+                Ok(bytes) => {
+                    if (bytes.view() != encodedInput) {
+                        return 9;
+                    }
+                }
+                Err(error) => return 9;
+            }
         }
     }
-    var invalid: u8[2] = [192, 128];
+    var invalid:u8[2] = [192, 128];
     var checked = unicode.validate(invalid);
     match (checked) {
         Ok => return 10;
@@ -102,12 +89,17 @@ func main() -> int {
             }
         }
     }
-    var builder=text.builder();
-    match(builder.append("abc")){Ok=>{}Err(error)=>return 14;}
-    var built=text.finish(builder);
-    if(!built.contains("abc") || built.length()!=3){return 15;}
-    var surrogate: u16[1] = [55296];
-    var surrogateView=surrogate[:];
+    var builder = text.builder();
+    match (builder.append("abc")) {
+        Ok => {}
+        Err(error) => return 14;
+    }
+    var built = text.finish(builder);
+    if (!built.contains("abc") || built.length() != 3) {
+        return 15;
+    }
+    var surrogate:u16[1] = [55296];
+    var surrogateView = surrogate[:];
     var rejected = codec16.toUtf8(&surrogateView);
     match (rejected) {
         Ok(value) => return 16;
@@ -117,17 +109,13 @@ func main() -> int {
             }
         }
     }
-    var storage: u8[2] = [7, 8];
-    var output: u8[] = storage;
+    var storage:u8[2] = [7, 8];
+    var output:u8[] = storage;
     var encoded = utf8.encode(128512, &mut output, 0);
     match (encoded) {
         Ok(value) => return 18;
         Err(error) => {
-            if (
-                error.kind != utf8.ErrorKind.BufferTooSmall ||
-                storage[0] != 7 ||
-                storage[1] != 8
-            ) {
+            if (error.kind != utf8.ErrorKind.BufferTooSmall || storage[0] != 7 || storage[1] != 8) {
                 return 19;
             }
         }
@@ -146,7 +134,7 @@ func main() -> int {
             }
         }
     }
-    for (var i: int = 0; i < 2; i += 1) {
+    for (var i:int = 0; i < 2; i += 1) {
         var part = pieces.next();
         match (part) {
             None => return 23;

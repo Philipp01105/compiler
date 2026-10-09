@@ -1,10 +1,12 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
-import "stdlib/net/raw";
-import "stdlib/time";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+    "stdlib/net/raw"
+    "stdlib/time"
+);
 
-async func exercise(family: net.AddressFamily) -> stdlib.Result<int, net.Error> {
+async func exercise(family:net.AddressFamily) -> stdlib.Result<int,net.Error> {
     var endpoint = net.ipv4(2130706433, 0);
     match (family) {
         Any => return stdlib.Result<int,net.Error>.Ok(91);
@@ -13,56 +15,61 @@ async func exercise(family: net.AddressFamily) -> stdlib.Result<int, net.Error> 
             endpoint = net.ipv6(0, 1, 0, 0);
         }
     }
-    var receiver: net.Socket = net.socket(family, net.Transport.UDP)?;
+    var receiver:net.Socket = net.socket(family, net.Transport.UDP)?;
     net.bind(&mut receiver, endpoint)?;
     var address = net.localAddress(&receiver)?;
-    var sender: net.Socket = net.socket(family, net.Transport.UDP)?;
-    var output: u8[4] = [1, 2, 3, 4];
-    var source: u8[] = output[:];
+    var sender:net.Socket = net.socket(family, net.Transport.UDP)?;
+    var output:u8[4] = [
+        1,
+        2,
+        3,
+        4
+    ];
+    var source:u8[] = output[:];
     var count = net.sendTo(&sender, &source, address, time.Deadline.after(2000000000)).await()?;
-    var input: u8[4];
-    var destination: u8[] = input[:];
+    var input:u8[4];
+    var destination:u8[] = input[:];
     var packet = net.recvFrom(&receiver, &mut destination, time.Deadline.after(2000000000)).await()?;
     if (count != 4 || packet.bytes != 4 || input[2] != 3 || packet.truncated) {
-        return stdlib.Result<int, net.Error>.Ok(1);
+        return stdlib.Result<int,net.Error>.Ok(1);
     }
     // Cancellation before first poll releases the checked buffer loan.
     cancel(net.recvFrom(&receiver, &mut destination, time.Deadline.noTimeout())).await();
     input[0] = 8;
     var timed = net.recvFrom(&receiver, &mut destination, time.Deadline.after(1000000)).await();
     match (timed) {
-        Ok(value) => return stdlib.Result<int, net.Error>.Ok(2);
+        Ok(value) => return stdlib.Result<int,net.Error>.Ok(2);
         Err(e) => {
             if (e.kind != net.ErrorKind.TimedOut) {
-                return stdlib.Result<int, net.Error>.Ok(3);
+                return stdlib.Result<int,net.Error>.Ok(3);
             }
         }
     }
-    var listener: net.Socket = net.socket(family, net.Transport.TCP)?;
+    var listener:net.Socket = net.socket(family, net.Transport.TCP)?;
     net.bind(&mut listener, endpoint)?;
     net.listen(&mut listener, 4)?;
     var listening = net.localAddress(&listener)?;
-    var client: net.Socket = net.socket(family, net.Transport.TCP)?;
+    var client:net.Socket = net.socket(family, net.Transport.TCP)?;
     net.connect(&client, listening, time.Deadline.after(2000000000)).await()?;
     var accepted = net.accept(&listener, time.Deadline.after(2000000000)).await()?;
     var written = net.write(&client, &source, time.Deadline.after(2000000000)).await()?;
     var read = net.read(&accepted.socket, &mut destination, time.Deadline.after(2000000000)).await()?;
     if (written != 4 || read.bytes != 4 || read.eof || input[0] != 1) {
-        return stdlib.Result<int, net.Error>.Ok(4);
+        return stdlib.Result<int,net.Error>.Ok(4);
     }
     net.shutdown(&mut client, net.Shutdown.Write)?;
     var eof = net.read(&accepted.socket, &mut destination, time.Deadline.after(2000000000)).await()?;
     if (!eof.eof || eof.bytes != 0) {
-        return stdlib.Result<int, net.Error>.Ok(5);
+        return stdlib.Result<int,net.Error>.Ok(5);
     }
     net.close(client)?;
     net.close(listener)?;
     net.close(sender)?;
     net.close(receiver)?;
-    return stdlib.Result<int, net.Error>.Ok(0);
+    return stdlib.Result<int,net.Error>.Ok(0);
 }
 
-async func run() -> stdlib.Result<int, net.Error> {
+async func run() -> stdlib.Result<int,net.Error> {
     var a = exercise(net.AddressFamily.IPv4).await()?;
     var b = exercise(net.AddressFamily.IPv6).await()?;
     // DNS inputs are copied synchronously, and cancellation must be safe even
@@ -84,16 +91,16 @@ async func run() -> stdlib.Result<int, net.Error> {
         time.Deadline.after(2000000000)
     ).await()?;
     if (answers.length() == 0) {
-        return stdlib.Result<int, net.Error>.Ok(6);
+        return stdlib.Result<int,net.Error>.Ok(6);
     }
-    return stdlib.Result<int, net.Error>.Ok(a + b);
+    return stdlib.Result<int,net.Error>.Ok(a + b);
 }
 
-async func join(handle: JoinHandle<stdlib.Result<int, net.Error>>) -> stdlib.Result<int, net.Error> {
+async func join(handle:JoinHandle<stdlib.Result<int,net.Error>>) -> stdlib.Result<int,net.Error> {
     var result = handle.await();
     match (result) {
         Ok(value) => return value;
-        Err(error) => return stdlib.Result<int, net.Error>.Ok(7);
+        Err(error) => return stdlib.Result<int,net.Error>.Ok(7);
     }
 }
 

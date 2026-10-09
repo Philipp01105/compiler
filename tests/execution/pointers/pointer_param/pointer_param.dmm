@@ -1,13 +1,15 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 // Test pointer parameters in functions
-func modify_value(p: *int) -> void {
+func modify_value(p:*int) -> void {
     *p = 42;
 }
 
-func swap_values(a: *int, b: *int) -> void {
-    var temp: int = *a;
+func swap_values(a:*int, b:*int) -> void {
+    var temp:int = *a;
     *a = *b;
     *b = temp;
 }
@@ -17,7 +19,7 @@ func main() -> void {
     // Test 1: Modify value through pointer parameter
     io.println("");
     io.println("Test 1: Modify value through pointer");
-    var x: *int = reserve(int);
+    var x:*int = reserve(int);
     *x = 10;
     io.print("Before: ");
     io.println(*x);
@@ -28,8 +30,8 @@ func main() -> void {
     // Test 2: Swap two values using pointer parameters
     io.println("");
     io.println("Test 2: Swap two values");
-    var a: *int = reserve(int);
-    var b: *int = reserve(int);
+    var a:*int = reserve(int);
+    var b:*int = reserve(int);
     *a = 100;
     *b = 200;
     io.print("Before swap: a=");

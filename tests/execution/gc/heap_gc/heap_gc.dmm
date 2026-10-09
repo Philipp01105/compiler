@@ -1,9 +1,11 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 // Former manual ownership fixture migrated to manual allocation ownership.
 func main() -> void {
-    var p: *int = reserve(int);
+    var p:*int = reserve(int);
     io.println("Manually managed memory allocated");
     free(p);
 }

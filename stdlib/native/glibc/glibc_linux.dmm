@@ -3,198 +3,223 @@ package glibc;
 // pointer validity, lengths, resource lifetimes and synchronization.
 extern "system" from "c" {
     pub struct Timespec {
-        pub var seconds: i64;
-        pub var nanoseconds: i64;
+        pub var seconds:i64;
+        pub var nanoseconds:i64;
     }
 
     pub struct Sockaddr {
-        pub var family: u16;
-        pub var data: u8[14];
+        pub var family:u16;
+        pub var data:u8[14];
     }
 
     pub struct SockaddrIn {
-        pub var family: u16;
-        pub var port: u16;
-        pub var address: u32;
-        pub var padding: u8[8];
+        pub var family:u16;
+        pub var port:u16;
+        pub var address:u32;
+        pub var padding:u8[8];
     }
 
     pub struct SockaddrIn6 {
-        pub var family: u16;
-        pub var port: u16;
-        pub var flow: u32;
-        pub var address: u8[16];
-        pub var scope: u32;
+        pub var family:u16;
+        pub var port:u16;
+        pub var flow:u32;
+        pub var address:u8[16];
+        pub var scope:u32;
     }
 
-    pub align(8) struct SockaddrStorage {
-        pub var family: u16;
-        pub var padding: u8[126];
-    }
-
-    pub struct Addrinfo {
-        pub var flags: i32;
-        pub var family: i32;
-        pub var socketType: i32;
-        pub var protocol: i32;
-        pub var addressLength: u32;
-        pub var address: *Sockaddr;
-        pub var canonicalName: *u8;
-        pub var next: *Addrinfo;
+    pub align(8) struct SockaddrStorage{pub var family:u16;
+    pub var padding:u8[126];
+    } pub struct Addrinfo {
+        pub var flags:i32;
+        pub var family:i32;
+        pub var socketType:i32;
+        pub var protocol:i32;
+        pub var addressLength:u32;
+        pub var address:*Sockaddr;
+        pub var canonicalName:*u8;
+        pub var next:*Addrinfo;
     }
 
     pub union EpollData {
-        pub var pointer: *void;
-        pub var descriptor: i32;
-        pub var word: u32;
-        pub var wide: u64;
+        pub var pointer:*void;
+        pub var descriptor:i32;
+        pub var word:u32;
+        pub var wide:u64;
     }
 
-    pub pack(1) struct EpollEvent {
-        pub var events: u32;
-        pub var data: EpollData;
-    }
+    pub pack(1) struct EpollEvent{pub var events:u32;
+    pub var data:EpollData;
+    } pub func errnoAddress() -> *i32 = "__errno_location";
 
-    pub func errnoAddress() -> *i32 = "__errno_location";
-    pub func clockGettime(clock: i32, time: *Timespec) -> i32 = "clock_gettime";
-    pub func malloc(size: usize) -> *void;
-    pub func calloc(count: usize, size: usize) -> *void;
-    pub func release(address: *void) -> void = "free";
-    pub func memcpy(destination: *void, source: *void, length: usize) -> *void;
-    pub func exit(code: i32) -> void;
-    pub func immediateExit(code: i32) -> void = "_exit";
-    pub func close(descriptor: i32) -> i32;
-    pub func read(descriptor: i32, buffer: *void, length: usize) -> isize;
-    pub func write(descriptor: i32, buffer: *void, length: usize) -> isize;
-    pub func socket(family: i32, kind: i32, protocol: i32) -> i32;
-    pub func bind(descriptor: i32, address: *Sockaddr, length: u32) -> i32;
-    pub func listen(descriptor: i32, backlog: i32) -> i32;
-    pub func connect(descriptor: i32, address: *Sockaddr, length: u32) -> i32;
-    pub func accept4(descriptor: i32, address: *Sockaddr, length: *u32, flags: i32) -> i32;
-    pub func shutdown(descriptor: i32, how: i32) -> i32;
-    pub func recv(descriptor: i32, buffer: *void, length: usize, flags: i32) -> isize;
-    pub func send(descriptor: i32, buffer: *void, length: usize, flags: i32) -> isize;
+    pub func clockGettime(clock:i32, time:*Timespec) -> i32 = "clock_gettime";
+
+    pub func malloc(size:usize) -> *void;
+
+    pub func calloc(count:usize, size:usize) -> *void;
+
+    pub func release(address:*void) -> void = "free";
+
+    pub func memcpy(destination:*void, source:*void, length:usize) -> *void;
+
+    pub func exit(code:i32) -> void;
+
+    pub func immediateExit(code:i32) -> void = "_exit";
+
+    pub func close(descriptor:i32) -> i32;
+
+    pub func read(descriptor:i32, buffer:*void, length:usize) -> isize;
+
+    pub func write(descriptor:i32, buffer:*void, length:usize) -> isize;
+
+    pub func socket(family:i32, kind:i32, protocol:i32) -> i32;
+
+    pub func bind(descriptor:i32, address:*Sockaddr, length:u32) -> i32;
+
+    pub func listen(descriptor:i32, backlog:i32) -> i32;
+
+    pub func connect(descriptor:i32, address:*Sockaddr, length:u32) -> i32;
+
+    pub func accept4(descriptor:i32, address:*Sockaddr, length:*u32, flags:i32) -> i32;
+
+    pub func shutdown(descriptor:i32, how:i32) -> i32;
+
+    pub func recv(descriptor:i32, buffer:*void, length:usize, flags:i32) -> isize;
+
+    pub func send(descriptor:i32, buffer:*void, length:usize, flags:i32) -> isize;
+
     pub func recvfrom(
-        descriptor: i32,
-        buffer: *void,
-        length: usize,
-        flags: i32,
-        address: *Sockaddr,
-        addressLength: *u32
+        descriptor:i32,
+        buffer:*void,
+        length:usize,
+        flags:i32,
+        address:*Sockaddr,
+        addressLength:*u32
     ) -> isize;
+
     pub func sendto(
-        descriptor: i32,
-        buffer: *void,
-        length: usize,
-        flags: i32,
-        address: *Sockaddr,
-        addressLength: u32
+        descriptor:i32,
+        buffer:*void,
+        length:usize,
+        flags:i32,
+        address:*Sockaddr,
+        addressLength:u32
     ) -> isize;
-    pub func getsockopt(descriptor: i32, level: i32, option: i32, value: *void, length: *u32) -> i32;
-    pub func setsockopt(descriptor: i32, level: i32, option: i32, value: *void, length: u32) -> i32;
-    pub func getsockname(descriptor: i32, address: *Sockaddr, length: *u32) -> i32;
-    pub func getpeername(descriptor: i32, address: *Sockaddr, length: *u32) -> i32;
-    pub func epollCreate(flags: i32) -> i32 = "epoll_create1";
-    pub func epollControl(epoll: i32, operation: i32, descriptor: i32, event: *EpollEvent) -> i32 = "epoll_ctl";
-    pub func epollWait(epoll: i32, events: *EpollEvent, maximum: i32, timeout: i32) -> i32 = "epoll_wait";
-    pub func eventfd(initial: u32, flags: i32) -> i32;
-    pub func getaddrinfo(node: *u8, service: *u8, hints: *Addrinfo, result: **Addrinfo) -> i32;
-    pub func freeaddrinfo(result: *Addrinfo) -> void;
-    pub func resolverError(code: i32) -> *u8 = "gai_strerror";
+
+    pub func getsockopt(descriptor:i32, level:i32, option:i32, value:*void, length:*u32) -> i32;
+
+    pub func setsockopt(descriptor:i32, level:i32, option:i32, value:*void, length:u32) -> i32;
+
+    pub func getsockname(descriptor:i32, address:*Sockaddr, length:*u32) -> i32;
+
+    pub func getpeername(descriptor:i32, address:*Sockaddr, length:*u32) -> i32;
+
+    pub func epollCreate(flags:i32) -> i32 = "epoll_create1";
+
+    pub func epollControl(epoll:i32, operation:i32, descriptor:i32, event:*EpollEvent) -> i32 = "epoll_ctl";
+
+    pub func epollWait(epoll:i32, events:*EpollEvent, maximum:i32, timeout:i32) -> i32 = "epoll_wait";
+
+    pub func eventfd(initial:u32, flags:i32) -> i32;
+
+    pub func getaddrinfo(node:*u8, service:*u8, hints:*Addrinfo, result:**Addrinfo) -> i32;
+
+    pub func freeaddrinfo(result:*Addrinfo) -> void;
+
+    pub func resolverError(code:i32) -> *u8 = "gai_strerror";
 }
 
-pub const AF_INET: i32 = 2;
+pub const AF_INET:i32 = 2;
 
-pub const AF_INET6: i32 = 10;
+pub const AF_INET6:i32 = 10;
 
-pub const SOCK_STREAM: i32 = 1;
+pub const SOCK_STREAM:i32 = 1;
 
-pub const SOCK_DGRAM: i32 = 2;
+pub const SOCK_DGRAM:i32 = 2;
 
-pub const SOCK_NONBLOCK: i32 = 2048;
+pub const SOCK_NONBLOCK:i32 = 2048;
 
-pub const SOCK_CLOEXEC: i32 = 524288;
+pub const SOCK_CLOEXEC:i32 = 524288;
 
-pub const SOL_SOCKET: i32 = 1;
+pub const SOL_SOCKET:i32 = 1;
 
-pub const SO_ERROR: i32 = 4;
+pub const SO_ERROR:i32 = 4;
 
-pub const SO_REUSEADDR: i32 = 2;
+pub const SO_REUSEADDR:i32 = 2;
 
-pub const MSG_NOSIGNAL: i32 = 16384;
+pub const MSG_NOSIGNAL:i32 = 16384;
 
-pub const EPOLL_CLOEXEC: i32 = 524288;
+pub const EPOLL_CLOEXEC:i32 = 524288;
 
-pub const EPOLL_CTL_ADD: i32 = 1;
+pub const EPOLL_CTL_ADD:i32 = 1;
 
-pub const EPOLL_CTL_DEL: i32 = 2;
+pub const EPOLL_CTL_DEL:i32 = 2;
 
-pub const EPOLL_CTL_MOD: i32 = 3;
+pub const EPOLL_CTL_MOD:i32 = 3;
 
-pub const EPOLLIN: u32 = 1;
+pub const EPOLLIN:u32 = 1;
 
-pub const EPOLLOUT: u32 = 4;
+pub const EPOLLOUT:u32 = 4;
 
-pub const EPOLLERR: u32 = 8;
+pub const EPOLLERR:u32 = 8;
 
-pub const EPOLLHUP: u32 = 16;
+pub const EPOLLHUP:u32 = 16;
 
-pub const EPOLLRDHUP: u32 = 8192;
+pub const EPOLLRDHUP:u32 = 8192;
 
-pub const EPOLLONESHOT: u32 = 1073741824;
+pub const EPOLLONESHOT:u32 = 1073741824;
 
-pub const EFD_NONBLOCK: i32 = 2048;
+pub const EFD_NONBLOCK:i32 = 2048;
 
-pub const EFD_CLOEXEC: i32 = 524288;
+pub const EFD_CLOEXEC:i32 = 524288;
 
-pub const CLOCK_MONOTONIC: i32 = 1;
+pub const CLOCK_MONOTONIC:i32 = 1;
 
-pub const EINTR: i32 = 4;
+pub const EINTR:i32 = 4;
 
-pub const EAGAIN: i32 = 11;
+pub const EAGAIN:i32 = 11;
 
-pub const EINPROGRESS: i32 = 115;
+pub const EINPROGRESS:i32 = 115;
 
-pub const ECANCELED: i32 = 125;
+pub const ECANCELED:i32 = 125;
 
-pub const AI_PASSIVE: i32 = 1;
+pub const AI_PASSIVE:i32 = 1;
 
-pub const AI_NUMERICHOST: i32 = 4;
+pub const AI_NUMERICHOST:i32 = 4;
 
-pub const AI_NUMERICSERV: i32 = 1024;
+pub const AI_NUMERICSERV:i32 = 1024;
 
-pub const AF_UNSPEC: i32 = 0;
+pub const AF_UNSPEC:i32 = 0;
 
-pub const IPPROTO_IPV6: i32 = 41;
+pub const IPPROTO_IPV6:i32 = 41;
 
-pub const IPV6_V6ONLY: i32 = 26;
+pub const IPV6_V6ONLY:i32 = 26;
 
-pub const EBADF: i32 = 9;
+pub const EBADF:i32 = 9;
 
-pub const ECONNREFUSED: i32 = 111;
+pub const ECONNREFUSED:i32 = 111;
 
-pub const ECONNRESET: i32 = 104;
+pub const ECONNRESET:i32 = 104;
 
-pub const ECONNABORTED: i32 = 103;
+pub const ECONNABORTED:i32 = 103;
 
-pub const EPIPE: i32 = 32;
+pub const EPIPE:i32 = 32;
 
-pub const ENETUNREACH: i32 = 101;
+pub const ENETUNREACH:i32 = 101;
 
-pub const EHOSTUNREACH: i32 = 113;
+pub const EHOSTUNREACH:i32 = 113;
 
-pub const EADDRINUSE: i32 = 98;
+pub const EADDRINUSE:i32 = 98;
 
-pub const ENOMEM: i32 = 12;
+pub const ENOMEM:i32 = 12;
 
-pub const ENOBUFS: i32 = 105;
+pub const ENOBUFS:i32 = 105;
 
-pub const EINVAL: i32 = 22;
+pub const EINVAL:i32 = 22;
 
-pub const EAFNOSUPPORT: i32 = 97;
+pub const EAFNOSUPPORT:i32 = 97;
 
-pub const ETIMEDOUT: i32 = 110;
+pub const ETIMEDOUT:i32 = 110;
 
-pub const EAI_MEMORY: i32 = -10;
+pub const EAI_MEMORY:i32 = -10;
 
-pub const EAI_SYSTEM: i32 = -11;
+pub const EAI_SYSTEM:i32 = -11;

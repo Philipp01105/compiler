@@ -4,45 +4,48 @@ import (
 );
 extern "system" from "kernel32" {
     struct FileTime {
-        var low: u32;
-        var high: u32;
+        var low:u32;
+        var high:u32;
     }
 
-    func QueryPerformanceCounter(value: *i64) -> i32;
-    func QueryPerformanceFrequency(value: *i64) -> i32;
-    func GetSystemTimePreciseAsFileTime(value: *FileTime) -> void;
-    func Sleep(milliseconds: u32) -> void;
+    func QueryPerformanceCounter(value:*i64) -> i32;
+
+    func QueryPerformanceFrequency(value:*i64) -> i32;
+
+    func GetSystemTimePreciseAsFileTime(value:*FileTime) -> void;
+
+    func Sleep(milliseconds:u32) -> void;
 }
 
-func nativeNow() -> stdlib.Result<Instant, Error> {
-    var counter: i64;
-    var frequency: i64;
+func nativeNow() -> stdlib.Result<Instant,Error> {
+    var counter:i64;
+    var frequency:i64;
     if (
-        QueryPerformanceCounter((&counter).(*i64)) == 0 ||
-        QueryPerformanceFrequency((&frequency).(*i64)) == 0 ||
-        counter < 0 ||
-        frequency <= 0
+        QueryPerformanceCounter((&counter).(*i64)) == 0
+        || QueryPerformanceFrequency((&frequency).(*i64)) == 0
+        || counter < 0
+        || frequency <= 0
     ) {
-        return stdlib.Result<Instant, Error>.Err(Error.ClockFailure);
+        return stdlib.Result<Instant,Error>.Err(Error.ClockFailure);
     }
-    var whole: u64 = counter.(u64) / frequency.(u64);
-    var fraction: u64 = counter.(u64) % frequency.(u64);
+    var whole:u64 = counter.(u64) / frequency.(u64);
+    var fraction:u64 = counter.(u64) % frequency.(u64);
     if (whole > 18446744073.(u64) || fraction > 18446744073709551615.(u64) / 1000000000) {
-        return stdlib.Result<Instant, Error>.Err(Error.Overflow);
+        return stdlib.Result<Instant,Error>.Err(Error.Overflow);
     }
-    var nanos: u64 = whole * 1000000000;
-    var partial: u64 = fraction * 1000000000 / frequency.(u64);
+    var nanos:u64 = whole * 1000000000;
+    var partial:u64 = fraction * 1000000000 / frequency.(u64);
     if (partial > 18446744073709551615.(u64) - nanos) {
-        return stdlib.Result<Instant, Error>.Err(Error.Overflow);
+        return stdlib.Result<Instant,Error>.Err(Error.Overflow);
     }
-    return stdlib.Result<Instant, Error>.Ok(Instant{ nanoseconds: nanos + partial });
+    return stdlib.Result<Instant,Error>.Ok(Instant{nanoseconds:nanos + partial});
 }
 
-func nativeSystemNow() -> stdlib.Result<SystemTime, Error> {
-    var value: FileTime;
+func nativeSystemNow() -> stdlib.Result<SystemTime,Error> {
+    var value:FileTime;
     GetSystemTimePreciseAsFileTime((&value).(*FileTime));
-    var ticks: u64 = value.high.(u64) * 4294967296 + value.low.(u64);
-    return stdlib.Result<SystemTime, Error>.Ok(
+    var ticks:u64 = value.high.(u64) * 4294967296 + value.low.(u64);
+    return stdlib.Result<SystemTime,Error>.Ok(
         SystemTime{
             seconds:(ticks / 10000000).(i64) - 11644473600,
             nanoseconds:((ticks % 10000000) * 100).(u32)
@@ -50,8 +53,8 @@ func nativeSystemNow() -> stdlib.Result<SystemTime, Error> {
     );
 }
 
-func nativeSleep(duration: Duration) -> stdlib.Result<void, Error> {
-    var milliseconds: u64 = duration.nanoseconds / 1000000;
+func nativeSleep(duration:Duration) -> stdlib.Result<void,Error> {
+    var milliseconds:u64 = duration.nanoseconds / 1000000;
     if (duration.nanoseconds % 1000000 != 0) {
         milliseconds += 1;
     }
@@ -60,5 +63,5 @@ func nativeSleep(duration: Duration) -> stdlib.Result<void, Error> {
         milliseconds -= 4294967294.(u64);
     }
     Sleep(milliseconds.(u32));
-    return stdlib.Result<void, Error>.Ok;
+    return stdlib.Result<void,Error>.Ok;
 }

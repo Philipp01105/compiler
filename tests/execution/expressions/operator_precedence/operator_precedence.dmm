@@ -1,9 +1,11 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
 func main() -> void {
-    var grouped: int = (1 + 2) * 3;
+    var grouped:int = (1 + 2) * 3;
     io.println(1 + 2 * 3);
     io.println(grouped);
     io.println(1 + 2 * 3 == 7);

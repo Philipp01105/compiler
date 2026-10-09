@@ -1,33 +1,76 @@
 package io;
-import memraw "stdlib/memory/raw";
-import "stdlib/core";
+import (
+    "stdlib/core"
+    memraw "stdlib/memory/raw"
+);
 extern "system" from "kernel32" {
-    func GetStdHandle(kind:u32)->*void;
-    func ReadFile(handle:*void,data:*u8,length:u32,count:*u32,overlapped:*void)->i32;
-    func WriteFile(handle:*void,data:*u8,length:u32,count:*u32,overlapped:*void)->i32;
-    func GetLastError()->u32;
+    func GetStdHandle(kind:u32) -> *void;
+
+    func ReadFile(handle:*void, data:*u8, length:u32, count:*u32, overlapped:*void) -> i32;
+
+    func WriteFile(handle:*void, data:*u8, length:u32, count:*u32, overlapped:*void) -> i32;
+
+    func GetLastError() -> u32;
 }
-func standardRead(fd:int,output:u8[])->core.Result<usize,Error> {
-    if(output.length==0) { return core.Result<usize,Error>.Ok(0); }
-    var requested=output.length;
-    if(requested>1073741824) { requested=1073741824; }
-    var count:u32=0;
-    var result=ReadFile(GetStdHandle((0-10-fd).(u32)),output.data,requested.(u32),(&count).(*u32),memraw.null<u8>().(*void));
-    if(result==0) {
-        var code=GetLastError();
-        if(code==109 || code==38) { return core.Result<usize,Error>.Ok(0); }
-        return core.Result<usize,Error>.Err(Error{kind:ErrorKind.System,domain:ErrorDomain.Win32,code:code.(isize),transferred:count.(usize)});
+
+func standardRead(fd:int, output:u8[]) -> core.Result<usize,Error> {
+    if (output.length == 0) {
+        return core.Result<usize,Error>.Ok(0);
+    }
+    var requested = output.length;
+    if (requested > 1073741824) {
+        requested = 1073741824;
+    }
+    var count:u32 = 0;
+    var result = ReadFile(
+        GetStdHandle((0 - 10 - fd).(u32)),
+        output.data,
+        requested.(u32),
+        (&count).(*u32),
+        memraw.null<u8>().(*void)
+    );
+    if (result == 0) {
+        var code = GetLastError();
+        if (code == 109 || code == 38) {
+            return core.Result<usize,Error>.Ok(0);
+        }
+        return core.Result<usize,Error>.Err(
+            Error{
+                kind:ErrorKind.System,
+                domain:ErrorDomain.Win32,
+                code:code.(isize),
+                transferred:count.(usize)
+            }
+        );
     }
     return core.Result<usize,Error>.Ok(count.(usize));
 }
-func standardWrite(fd:int,input:u8[])->core.Result<usize,Error> {
-    if(input.length==0) { return core.Result<usize,Error>.Ok(0); }
-    var requested=input.length;
-    if(requested>1073741824) { requested=1073741824; }
-    var count:u32=0;
-    var result=WriteFile(GetStdHandle((0-10-fd).(u32)),input.data,requested.(u32),(&count).(*u32),memraw.null<u8>().(*void));
-    if(result==0) {
-        return core.Result<usize,Error>.Err(Error{kind:ErrorKind.System,domain:ErrorDomain.Win32,code:GetLastError().(isize),transferred:count.(usize)});
+
+func standardWrite(fd:int, input:u8[]) -> core.Result<usize,Error> {
+    if (input.length == 0) {
+        return core.Result<usize,Error>.Ok(0);
+    }
+    var requested = input.length;
+    if (requested > 1073741824) {
+        requested = 1073741824;
+    }
+    var count:u32 = 0;
+    var result = WriteFile(
+        GetStdHandle((0 - 10 - fd).(u32)),
+        input.data,
+        requested.(u32),
+        (&count).(*u32),
+        memraw.null<u8>().(*void)
+    );
+    if (result == 0) {
+        return core.Result<usize,Error>.Err(
+            Error{
+                kind:ErrorKind.System,
+                domain:ErrorDomain.Win32,
+                code:GetLastError().(isize),
+                transferred:count.(usize)
+            }
+        );
     }
     return core.Result<usize,Error>.Ok(count.(usize));
 }

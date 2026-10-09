@@ -1,6 +1,6 @@
 package main;
 
-enum Number(value: int) {
+enum Number(value:int) {
     Broken("text")
 }
 

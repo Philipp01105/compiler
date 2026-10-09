@@ -1,7 +1,7 @@
 package main;
 
 func main() -> void {
-    var values: int[3];
-    var index: int = -1;
+    var values:int[3];
+    var index:int = -1;
     values[index] = 7;
 }

@@ -1,6 +1,8 @@
 package main;
-import memraw "stdlib/memory/raw";
-import "stdlib/core";
+import (
+    "stdlib/core"
+    memraw "stdlib/memory/raw"
+);
 
 func main() -> int {
     var values = slice(memraw.core_null().(*void), 1);

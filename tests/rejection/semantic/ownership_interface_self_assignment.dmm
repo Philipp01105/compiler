@@ -11,7 +11,7 @@ struct Number {
 }
 
 func main() -> void {
-    var number: Number;
-    var value: Value = number;
+    var number:Number;
+    var value:Value = number;
     value = value;
 }

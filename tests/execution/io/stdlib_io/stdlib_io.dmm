@@ -1,19 +1,31 @@
 package main;
-import memraw "stdlib/memory/raw";
-import ("stdlib/core" "stdlib/io" "stdlib/fs" "stdlib/text");
+import (
+    "stdlib/core"
+    "stdlib/fs"
+    "stdlib/io"
+    memraw "stdlib/memory/raw"
+    "stdlib/text"
+);
 
 func main() -> void {
-    io.println(0);io.println(1);
-    var bytes=text.bytes("ok");
-    match(fs.writeFile("stdlib_io.tmp",&bytes)){
-        Err(error)=>{memraw.core_trap();}
-        Ok=>io.println(0);
+    io.println(0);
+    io.println(1);
+    var bytes = text.bytes("ok");
+    match (fs.writeFile("stdlib_io.tmp", &bytes)) {
+        Err(error) => {
+            memraw.core_trap();
+        }
+        Ok => io.println(0);
     }
-    match(fs.readFile("stdlib_io.tmp",7)){
-        Err(error)=>{memraw.core_trap();}
-        Ok(data)=>{
+    match (fs.readFile("stdlib_io.tmp", 7)) {
+        Err(error) => {
+            memraw.core_trap();
+        }
+        Ok(data) => {
             io.println(data.length());
-            var source=data.view();var output=io.stdout();output.writeAll(&source);
+            var source = data.view();
+            var output = io.stdout();
+            output.writeAll(&source);
             io.println("");
         }
     }

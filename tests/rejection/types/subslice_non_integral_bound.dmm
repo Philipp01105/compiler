@@ -1,6 +1,6 @@
 package main;
 
 func main() -> void {
-    var values: int[3] = [1, 2, 3];
-    var invalid: int[] = values["first":];
+    var values:int[3] = [1, 2, 3];
+    var invalid:int[] = values["first":];
 }

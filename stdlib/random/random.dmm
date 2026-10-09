@@ -8,13 +8,14 @@ pub enum Error {
     pub SystemFailure,
 }
 
-pub func systemFill(output: &mut u8[]) -> stdlib.Result<void, Error> {
+pub func systemFill(output:&mut u8[]) -> stdlib.Result<void,Error> {
     return nativeSystemFill(output);
 }
 
 // Full-period 64-bit LCG; deterministic and explicitly non-cryptographic.
 pub struct Generator {
-    var state: u64;
+    var state:u64;
+
     pub func next() -> u64 {
         state = state * 6364136223846793005.(u64) + 1442695040888963407.(u64);
         return state;
@@ -25,28 +26,28 @@ pub struct Generator {
         return (state / 2048).(double) / 9007199254740992.0;
     }
 
-    pub func below(bound: u64) -> stdlib.Result<u64, Error> {
+    pub func below(bound:u64) -> stdlib.Result<u64,Error> {
         if (bound == 0) {
-            return stdlib.Result<u64, Error>.Err(Error.InvalidBound);
+            return stdlib.Result<u64,Error>.Err(Error.InvalidBound);
         }
-        var threshold: u64 = (0.(u64) - bound) % bound;
+        var threshold:u64 = (0.(u64) - bound) % bound;
         while (true) {
             state = state * 6364136223846793005.(u64) + 1442695040888963407.(u64);
             if (state >= threshold) {
-                return stdlib.Result<u64, Error>.Ok(state % bound);
+                return stdlib.Result<u64,Error>.Ok(state % bound);
             }
         }
-        return stdlib.Result<u64, Error>.Err(Error.SystemFailure);
+        return stdlib.Result<u64,Error>.Err(Error.SystemFailure);
     }
 
-    pub func fill(output: &mut u8[]) -> void {
-        for (var i: usize = 0; i < (*output).length; i += 1) {
+    pub func fill(output:&mut u8[]) -> void {
+        for (var i:usize = 0; i < (*output).length; i += 1) {
             state = state * 6364136223846793005.(u64) + 1442695040888963407.(u64);
             (*output)[i] = (state / 72057594037927936.(u64)).(u8);
         }
     }
 }
 
-pub func seeded(seed: u64) -> Generator {
-    return Generator{ state: seed };
+pub func seeded(seed:u64) -> Generator {
+    return Generator{state:seed};
 }

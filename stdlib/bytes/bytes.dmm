@@ -1,10 +1,14 @@
 package bytes;
-import ("stdlib/core" "stdlib/collections");
-pub func startsWith(value: u8[], prefix: u8[]) -> bit {
+import (
+    "stdlib/collections"
+    "stdlib/core"
+);
+
+pub func startsWith(value:u8[], prefix:u8[]) -> bit {
     if (prefix.length > value.length) {
         return false;
     }
-    for (var i: usize = 0; i < prefix.length; i += 1) {
+    for (var i:usize = 0; i < prefix.length; i += 1) {
         if (value[i] != prefix[i]) {
             return false;
         }
@@ -12,11 +16,11 @@ pub func startsWith(value: u8[], prefix: u8[]) -> bit {
     return true;
 }
 
-pub func endsWith(value: u8[], suffix: u8[]) -> bit {
+pub func endsWith(value:u8[], suffix:u8[]) -> bit {
     if (suffix.length > value.length) {
         return false;
     }
-    for (var i: usize = 0; i < suffix.length; i += 1) {
+    for (var i:usize = 0; i < suffix.length; i += 1) {
         if (value[value.length - suffix.length + i] != suffix[i]) {
             return false;
         }
@@ -24,13 +28,13 @@ pub func endsWith(value: u8[], suffix: u8[]) -> bit {
     return true;
 }
 
-pub func find(value: u8[], needle: u8[]) -> core.Option<usize> {
+pub func find(value:u8[], needle:u8[]) -> core.Option<usize> {
     if (needle.length > value.length) {
         return core.Option<usize>.None;
     }
-    for (var start: usize = 0; start <= value.length - needle.length; start += 1) {
-        var same: bit = true;
-        for (var i: usize = 0; i < needle.length; i += 1) {
+    for (var start:usize = 0; start <= value.length - needle.length; start += 1) {
+        var same:bit = true;
+        for (var i:usize = 0; i < needle.length; i += 1) {
             if (value[start + i] != needle[i]) {
                 same = false;
                 break;
@@ -43,67 +47,94 @@ pub func find(value: u8[], needle: u8[]) -> core.Option<usize> {
     return core.Option<usize>.None;
 }
 
-pub func asciiSpace(value: u8) -> bit {
+pub func asciiSpace(value:u8) -> bit {
     return value == 32 || (value >= 9 && value <= 13);
 }
 
-pub func trimAscii(value: u8[]) -> u8[] {
-    var start: usize = 0;
-    var end: usize = value.length;
+pub func trimAscii(value:u8[]) -> u8[] {
+    var start:usize = 0;
+    var end:usize = value.length;
     while (start < end && asciiSpace(value[start])) {
         start += 1;
     }
     while (end > start && asciiSpace(value[end - 1])) {
         end -= 1;
     }
-    return value[start: end];
+    return value[start:end];
 }
 
 pub struct Split<'a> {
-    var source: &'a u8[];
-    var delimiter: u8;
-    var offset: usize;
-    var finished: bit;
+    var source:&'a u8[];
+    var delimiter:u8;
+    var offset:usize;
+    var finished:bit;
+
     pub func next() -> core.Option<u8[]> {
         if (finished) {
             return core.Option<u8[]>.None;
         }
-        var start: usize = offset;
+        var start:usize = offset;
         while (offset < source.length && source[offset] != delimiter) {
             offset += 1;
         }
-        var end: usize = offset;
+        var end:usize = offset;
         if (offset == source.length) {
             finished = true;
         } else {
             offset += 1;
         }
-        return core.Option<u8[]>.Some((*source)[start: end]);
+        return core.Option<u8[]>.Some((*source)[start:end]);
     }
 
-    pub func iter()->Split<'a> {return Split<'a>{source:source,delimiter:delimiter,offset:0,finished:false};}
+    pub func iter() -> Split<'a> {
+        return Split<'a>{
+            source:source,
+            delimiter:delimiter,
+            offset:0,
+            finished:false
+        };
+    }
 }
 
-pub func split<'a>(value: &'a u8[], delimiter: u8) -> Split<'a> {
+pub func split<'a>(value:&'a u8[], delimiter:u8) -> Split<'a> {
     return Split<'a>{
-        source: value,
-        delimiter: delimiter,
-        offset: 0,
-        finished: false
+        source:value,
+        delimiter:delimiter,
+        offset:0,
+        finished:false
     };
 }
 
-pub func clone(value:u8[])->core.Result<collections.List<u8>,core.AllocError> {
-    var result=collections.list<u8>();result.appendSlice(&value)?;
+pub func clone(value:u8[]) -> core.Result<collections.List<u8>,core.AllocError> {
+    var result = collections.list<u8>();
+    result.appendSlice(&value)?;
     return core.Result<collections.List<u8>,core.AllocError>.Ok(result);
 }
-pub func replace(value:u8[],needle:u8[],replacement:u8[])->core.Result<collections.List<u8>,core.AllocError> {
-    var result=collections.list<u8>();var start:usize=0;
-    while(start<value.length) {
-        var found:bit=needle.length>0 && needle.length<=value.length-start;
-        if(found){for(var i:usize=0;i<needle.length;i+=1){if(value[start+i]!=needle[i]){found=false;break;}}}
-        if(found){result.appendSlice(&replacement)?;start+=needle.length;}
-        else {result.append(value[start])?;start+=1;}
+
+pub func replace(
+    value:u8[],
+    needle:u8[],
+    replacement:u8[]
+) -> core.Result<collections.List<u8>,core.AllocError> {
+    var result = collections.list<u8>();
+    var start:usize = 0;
+    while (start < value.length) {
+        var found:bit = needle.length > 0 && needle.length <= value.length - start;
+        if (found) {
+            for (var i:usize = 0; i < needle.length; i += 1) {
+                if (value[start + i] != needle[i]) {
+                    found = false;
+                    break;
+                }
+            }
+        }
+        if (found) {
+            result.appendSlice(&replacement)?;
+            start += needle.length;
+        } else {
+            result.append(value[start])?;
+            start += 1;
+        }
     }
     return core.Result<collections.List<u8>,core.AllocError>.Ok(result);
 }

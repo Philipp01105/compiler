@@ -4,8 +4,8 @@ import (
 );
 
 func main() -> int {
-    var storage: u8[4];
-    var view: u8[] = storage;
+    var storage:u8[4];
+    var view:u8[] = storage;
     var writer = binary.writer(&mut view);
     var result = writer.writeBytes(&view);
     return 0;

@@ -1,54 +1,56 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
 func main() -> void {
     {
-        var _output0: string = "nested=" + add(1, multiply(2, add(3, 4)));
+        var _output0:string = "nested=" + add(1, multiply(2, add(3, 4)));
         io.println(_output0);
         free(_output0);
     }
     {
-        var _output1: string = "factorial=" + factorial(6);
+        var _output1:string = "factorial=" + factorial(6);
         io.println(_output1);
         free(_output1);
     }
     {
-        var _output2: string = "mutual=" + even(12);
+        var _output2:string = "mutual=" + even(12);
         io.println(_output2);
         free(_output2);
     }
     {
-        var _output3: string = "ten=" + sum10(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+        var _output3:string = "ten=" + sum10(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
         io.println(_output3);
         free(_output3);
     }
     {
-        var _output4: string = "mixed=" + mixed(1, 2.5, 3, 4.5, 5, 6.5, 7, 8.5, 9, 10.5);
+        var _output4:string = "mixed=" + mixed(1, 2.5, 3, 4.5, 5, 6.5, 7, 8.5, 9, 10.5);
         io.println(_output4);
         free(_output4);
     }
     {
-        var _output5: string = "float=" + float_add(1.25, 2.5);
+        var _output5:string = "float=" + float_add(1.25, 2.5);
         io.println(_output5);
         free(_output5);
     }
     {
-        var _output6: string = "order=" + add(mark(1), mark(2));
+        var _output6:string = "order=" + add(mark(1), mark(2));
         io.println(_output6);
         free(_output6);
     }
 }
 
-func add(a: int, b: int) -> int {
+func add(a:int, b:int) -> int {
     return a + b;
 }
 
-func multiply(a: int, b: int) -> int {
+func multiply(a:int, b:int) -> int {
     return a * b;
 }
 
-func factorial(n: int) -> int {
+func factorial(n:int) -> int {
     if (n <= 1) {
         return 1;
     } else {
@@ -56,7 +58,7 @@ func factorial(n: int) -> int {
     }
 }
 
-func even(n: int) -> bit {
+func even(n:int) -> bit {
     if (n == 0) {
         return true;
     } else {
@@ -64,7 +66,7 @@ func even(n: int) -> bit {
     }
 }
 
-func odd(n: int) -> bit {
+func odd(n:int) -> bit {
     if (n == 0) {
         return false;
     } else {
@@ -72,41 +74,30 @@ func odd(n: int) -> bit {
     }
 }
 
-func sum10(
-    a: int,
-    b: int,
-    c: int,
-    d: int,
-    e: int,
-    f: int,
-    g: int,
-    h: int,
-    i: int,
-    j: int
-) -> int {
+func sum10(a:int, b:int, c:int, d:int, e:int, f:int, g:int, h:int, i:int, j:int) -> int {
     return a + b + c + d + e + f + g + h + i + j;
 }
 
 func mixed(
-    a: int,
-    b: double,
-    c: int,
-    d: double,
-    e: int,
-    f: double,
-    g: int,
-    h: double,
-    i: int,
-    j: double
+    a:int,
+    b:double,
+    c:int,
+    d:double,
+    e:int,
+    f:double,
+    g:int,
+    h:double,
+    i:int,
+    j:double
 ) -> double {
     return a + b + c + d + e + f + g + h + i + j;
 }
 
-func float_add(a: float, b: float) -> float {
+func float_add(a:float, b:float) -> float {
     return a + b;
 }
 
-func mark(x: int) -> int {
+func mark(x:int) -> int {
     io.println(x);
     return x;
 }

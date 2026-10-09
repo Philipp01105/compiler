@@ -1,34 +1,102 @@
 package main;
-import ("stdlib/core" "stdlib/process" "stdlib/text" "stdlib/collections");
-func same(value:&text.String,expected:string)->bit {
-    return value.length()==text.bytes(expected).length && value.startsWith(expected);
+import (
+    "stdlib/collections"
+    "stdlib/core"
+    "stdlib/process"
+    "stdlib/text"
+);
+
+func same(value:&text.String, expected:string) -> bit {
+    return value.length() == text.bytes(expected).length && value.startsWith(expected);
 }
-func check()->core.Result<int,process.Error> {
-    var arguments=process.args()?;
-    if(arguments.length()!=0) {
-        var expected:string[7]=["child","","two words","a\"b","tail\\","grüße😀","\\\""];
-        if(arguments.length()!=7){return core.Result<int,process.Error>.Ok(31);}
-        for(var i:usize=0;i<7;i+=1){if(!same(arguments.get(i),expected[i])){return core.Result<int,process.Error>.Ok(32+i.(int));}}
-        match(process.env("DMM_PROCESS_TEST")?){Some(value)=>{if(!same(&value,"inherited")){return core.Result<int,process.Error>.Ok(40);}}None=>return core.Result<int,process.Error>.Ok(41);}
+
+func check() -> core.Result<int,process.Error> {
+    var arguments = process.args()?;
+    if (arguments.length() != 0) {
+        var expected:string[7] = [
+            "child",
+            "",
+            "two words",
+            "a\"b",
+            "tail\\",
+            "grüße😀",
+            "\\\""
+        ];
+        if (arguments.length() != 7) {
+            return core.Result<int,process.Error>.Ok(31);
+        }
+        for (var i:usize = 0; i < 7; i += 1) {
+            if (!same(arguments.get(i), expected[i])) {
+                return core.Result<int,process.Error>.Ok(32 + i.(int));
+            }
+        }
+        match (process.env("DMM_PROCESS_TEST")?) {
+            Some(value) => {
+                if (!same(&value, "inherited")) {
+                    return core.Result<int,process.Error>.Ok(40);
+                }
+            }
+            None => return core.Result<int,process.Error>.Ok(41);
+        }
         return core.Result<int,process.Error>.Ok(17);
     }
     process.removeEnv("DMM_PROCESS_TEST")?;
-    match(process.env("DMM_PROCESS_TEST")?){None=>{}Some(value)=>return core.Result<int,process.Error>.Ok(1);}
-    process.setEnv("DMM_PROCESS_TEST","snapshot")?;
-    var snapshot=process.env("DMM_PROCESS_TEST")?;
-    process.setEnv("DMM_PROCESS_TEST","inherited")?;
-    match(snapshot){Some(value)=>{if(!same(&value,"snapshot")){return core.Result<int,process.Error>.Ok(2);}}None=>return core.Result<int,process.Error>.Ok(3);}
-    var directory=process.cwd()?;
+    match (process.env("DMM_PROCESS_TEST")?) {
+        None => {}
+        Some(value) => return core.Result<int,process.Error>.Ok(1);
+    }
+    process.setEnv("DMM_PROCESS_TEST", "snapshot")?;
+    var snapshot = process.env("DMM_PROCESS_TEST")?;
+    process.setEnv("DMM_PROCESS_TEST", "inherited")?;
+    match (snapshot) {
+        Some(value) => {
+            if (!same(&value, "snapshot")) {
+                return core.Result<int,process.Error>.Ok(2);
+            }
+        }
+        None => return core.Result<int,process.Error>.Ok(3);
+    }
+    var directory = process.cwd()?;
     process.setCwd(".")?;
-    var current=process.cwd()?;
-    if(directory.length()!=current.length() || !directory.startsWith(current.view())){return core.Result<int,process.Error>.Ok(4);}
-    var child:string[7]=["child","","two words","a\"b","tail\\","grüße😀","\\\""];
-    var values:string[]=child[:];
-    match(process.run("./process_test.exe",&values)?){Code(code)=>{if(code!=17){return core.Result<int,process.Error>.Ok(50+code.(int));}}Signal(signal)=>return core.Result<int,process.Error>.Ok(5);}
-    var empty:string[1];var noArgs:string[]=empty[:0];
-    match(process.run("./dmm_missing_program",&noArgs)){Err(error)=>{}Ok(status)=>return core.Result<int,process.Error>.Ok(6);}
-    match(process.run("",&noArgs)){Err(error)=>{}Ok(status)=>return core.Result<int,process.Error>.Ok(7);}
+    var current = process.cwd()?;
+    if (directory.length() != current.length() || !directory.startsWith(current.view())) {
+        return core.Result<int,process.Error>.Ok(4);
+    }
+    var child:string[7] = [
+        "child",
+        "",
+        "two words",
+        "a\"b",
+        "tail\\",
+        "grüße😀",
+        "\\\""
+    ];
+    var values:string[] = child[:];
+    match (process.run("./process_test.exe", &values)?) {
+        Code(code) => {
+            if (code != 17) {
+                return core.Result<int,process.Error>.Ok(50 + code.(int));
+            }
+        }
+        Signal(signal) => return core.Result<int,process.Error>.Ok(5);
+    }
+    var empty:string[1];
+    var noArgs:string[] = empty[:0];
+    match (process.run("./dmm_missing_program", &noArgs)) {
+        Err(error) => {}
+        Ok(status) => return core.Result<int,process.Error>.Ok(6);
+    }
+    match (process.run("", &noArgs)) {
+        Err(error) => {}
+        Ok(status) => return core.Result<int,process.Error>.Ok(7);
+    }
     process.removeEnv("DMM_PROCESS_TEST")?;
     return core.Result<int,process.Error>.Ok(0);
 }
-func main()->int {match(check()){Ok(code)=>return code;Err(error)=>return 99;}}
+
+func main() -> int {
+    match (check()) {
+        Ok(code) => return code;
+        Err(error) => return 99;
+    }
+}

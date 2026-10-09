@@ -1,12 +1,14 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 // Test pointer assignment bug fix
 // This test ensures that pointer-to-pointer assignments work correctly
 func main() -> void {
-    var a: int = 8;
-    var x: *int;
-    var y: *int = (&a).(*int);
+    var a:int = 8;
+    var x:*int;
+    var y:*int = (&a).(*int);
     x = y;
     io.println(*x);
 }

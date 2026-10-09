@@ -1,12 +1,14 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
 struct Point {
-    var x: int;
+    var x:int;
 }
 
 func main() -> void {
-    var p: Point;
+    var p:Point;
     io.println(p.y);
 }

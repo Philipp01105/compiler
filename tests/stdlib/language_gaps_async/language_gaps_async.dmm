@@ -1,292 +1,533 @@
 package main;
-import memraw "stdlib/memory/raw";
-import polling "stdlib/async/poll";
-import ("stdlib/core" "stdlib/async" "stdlib/time");
-var destroyed: i32 = 0;
-var cancelPolls:i32=0;
-var pollerDrops:i32=0;
-struct Payload { var value: i32; destructor { destroyed += 1; } }
+import (
+    "stdlib/async"
+    polling "stdlib/async/poll"
+    "stdlib/core"
+    memraw "stdlib/memory/raw"
+    "stdlib/time"
+);
+var destroyed:i32 = 0;
+var cancelPolls:i32 = 0;
+var pollerDrops:i32 = 0;
+
+struct Payload {
+    var value:i32;
+    destructor {
+        destroyed += 1;
+    }
+}
+
 struct Immediate {
-    var result: i32;
-    pub func poll(context: &mut polling.Context) -> polling.Poll<i32> {
+    var result:i32;
+
+    pub func poll(context:&mut polling.Context) -> polling.Poll<i32> {
         return polling.Poll<i32>.Ready(result);
     }
-    pub func cancelPoll(context: &mut polling.Context) -> polling.Poll<polling.CancelAck> {
+
+    pub func cancelPoll(context:&mut polling.Context) -> polling.Poll<polling.CancelAck> {
         return polling.Poll<polling.CancelAck>.Ready(polling.CancelAck.Confirmed);
     }
 }
+
 struct WakeOnce {
     var ready:bit;
-    pub func poll(context:&mut polling.Context)->polling.Poll<i32> {
-        if (ready) { return polling.Poll<i32>.Ready(43); }
-        ready=true;
-        var wake=context.retainWaker();
+
+    pub func poll(context:&mut polling.Context) -> polling.Poll<i32> {
+        if (ready) {
+            return polling.Poll<i32>.Ready(43);
+        }
+        ready = true;
+        var wake = context.retainWaker();
         wake.wake();
         return polling.Poll<i32>.Pending;
     }
-    pub func cancelPoll(context:&mut polling.Context)->polling.Poll<polling.CancelAck> {
+
+    pub func cancelPoll(context:&mut polling.Context) -> polling.Poll<polling.CancelAck> {
         return polling.Poll<polling.CancelAck>.Ready(polling.CancelAck.Confirmed);
     }
 }
+
 struct UntilCancelled {
     var remaining:i32;
     var address:*i32;
-    pub func poll(context:&mut polling.Context)->polling.Poll<i32> {
-        if(address==memraw.core_null().(*i32)) { address=(&remaining).(*i32); }
-        if(address!=(&remaining).(*i32)) { memraw.core_trap(); }
+
+    pub func poll(context:&mut polling.Context) -> polling.Poll<i32> {
+        if (address == memraw.core_null().(*i32)) {
+            address = (&remaining).(*i32);
+        }
+        if (address != (&remaining).(*i32)) {
+            memraw.core_trap();
+        }
         return polling.Poll<i32>.Pending;
     }
-    pub func cancelPoll(context:&mut polling.Context)->polling.Poll<polling.CancelAck> {
-        if(address!=(&remaining).(*i32)) { memraw.core_trap(); }
-        cancelPolls+=1;
-        if(remaining!=0) {
-            remaining-=1;
-            var wake=context.retainWaker(); wake.wake();
+
+    pub func cancelPoll(context:&mut polling.Context) -> polling.Poll<polling.CancelAck> {
+        if (address != (&remaining).(*i32)) {
+            memraw.core_trap();
+        }
+        cancelPolls += 1;
+        if (remaining != 0) {
+            remaining -= 1;
+            var wake = context.retainWaker();
+            wake.wake();
             return polling.Poll<polling.CancelAck>.Pending;
         }
         return polling.Poll<polling.CancelAck>.Ready(polling.CancelAck.Confirmed);
     }
-    destructor { pollerDrops+=1; }
+
+    destructor {
+        pollerDrops += 1;
+    }
 }
+
 struct WakeTwice {
     var remaining:i32;
-    pub func poll(context:&mut polling.Context)->polling.Poll<i32> {
-        if(remaining==0) { return polling.Poll<i32>.Ready(101); }
-        remaining-=1; var wake=context.retainWaker(); wake.wake();
+
+    pub func poll(context:&mut polling.Context) -> polling.Poll<i32> {
+        if (remaining == 0) {
+            return polling.Poll<i32>.Ready(101);
+        }
+        remaining -= 1;
+        var wake = context.retainWaker();
+        wake.wake();
         return polling.Poll<i32>.Pending;
     }
-    pub func cancelPoll(context:&mut polling.Context)->polling.Poll<polling.CancelAck> {
+
+    pub func cancelPoll(context:&mut polling.Context) -> polling.Poll<polling.CancelAck> {
         return polling.Poll<polling.CancelAck>.Ready(polling.CancelAck.Confirmed);
     }
 }
-async func nothing()->void {}
-var compositionDrops:i32=0;
-struct CompositionOwner { var value:i32; destructor { compositionDrops+=1; } }
-async func ownedNothing(owner:CompositionOwner)->void {}
-enum Tasks { Task(Future<i32>), Empty }
-@[must_consume] interface Resume { once func __invoke()->Future<i32>; }
-func namedResume(child:Future<i32>)->Resume {
-    return func [move child]()->Future<i32> { return child; };
-}
-enum TaskPair { Both(Future<i32>,Future<i32>), Empty }
-enum TaskBundle { Packed(TaskPair), Empty }
-func swapTasks(value:TaskPair)->TaskPair {
-    match(value) {
-        Both(left,right)=>return TaskPair.Both(right,left);
-        Empty=>return TaskPair.Empty;
+
+async func nothing() -> void {}
+
+var compositionDrops:i32 = 0;
+
+struct CompositionOwner {
+    var value:i32;
+    destructor {
+        compositionDrops += 1;
     }
 }
-func swapBundle(value:TaskBundle)->TaskBundle {
-    match(value) {
-        Packed(pair)=>return TaskBundle.Packed(swapTasks(pair));
-        Empty=>return TaskBundle.Empty;
+
+async func ownedNothing(owner:CompositionOwner) -> void {}
+
+enum Tasks {
+    Task(Future<i32>),
+    Empty
+}
+
+@[must_consume]
+interface Resume {
+    once func __invoke() -> Future<i32>;
+}
+
+func namedResume(child:Future<i32>) -> Resume {
+    return func[move child]() -> Future<i32>{
+        return child;
+    };
+}
+
+enum TaskPair {
+    Both(Future<i32>, Future<i32>),
+    Empty
+}
+
+enum TaskBundle {
+    Packed(TaskPair),
+    Empty
+}
+
+func swapTasks(value:TaskPair) -> TaskPair {
+    match (value) {
+        Both(left, right) => return TaskPair.Both(right, left);
+        Empty => return TaskPair.Empty;
     }
 }
-async func work(value: &i32) -> i32 { return *value; }
-struct BorrowedResult<'a> { var source:&'a i32; }
-struct NestedResult<'a> { var reader:BorrowedResult<'a>; }
-struct SplitResult<'a,'b> { var left:NestedResult<'a>; var right:NestedResult<'b>; }
-async func splitResult<'a,'b>(left:&'a i32,right:&'b i32,extra:&i32)->SplitResult<'a,'b> {
-    return SplitResult<'a,'b>{left:NestedResult<'a>{reader:BorrowedResult<'a>{source:left}},
-        right:NestedResult<'b>{reader:BorrowedResult<'b>{source:right}}};
+
+func swapBundle(value:TaskBundle) -> TaskBundle {
+    match (value) {
+        Packed(pair) => return TaskBundle.Packed(swapTasks(pair));
+        Empty => return TaskBundle.Empty;
+    }
 }
-async func borrowedResult<'a>(source:&'a i32)->NestedResult<'a> {
+
+async func work(value:&i32) -> i32 {
+    return *value;
+}
+
+struct BorrowedResult<'a> {
+    var source:&'a i32;
+}
+
+struct NestedResult<'a> {
+    var reader:BorrowedResult<'a>;
+}
+
+struct SplitResult<'a,'b> {
+    var left:NestedResult<'a>;
+    var right:NestedResult<'b>;
+}
+
+async func splitResult<'a,'b>(left:&'a i32, right:&'b i32, extra:&i32) -> SplitResult<'a,'b> {
+    return SplitResult<'a,'b>{
+        left:NestedResult<'a>{reader:BorrowedResult<'a>{source:left}},
+        right:NestedResult<'b>{reader:BorrowedResult<'b>{source:right}}
+    };
+}
+
+async func borrowedResult<'a>(source:&'a i32) -> NestedResult<'a> {
     return NestedResult<'a>{reader:BorrowedResult<'a>{source:source}};
 }
-async func forwardBorrowedResult<'a>(source:&'a i32)->NestedResult<'a> {
-    var task=borrowedResult(source);
+
+async func forwardBorrowedResult<'a>(source:&'a i32) -> NestedResult<'a> {
+    var task = borrowedResult(source);
     return task.await();
 }
-func acceptSend<T: core.Send>(value: T) -> void {}
-func drive<P: polling.Poller<i32>>(poller: &mut P, context: &mut polling.Context) -> i32 {
+
+func acceptSend<T:core.Send>(value:T) -> void {}
+
+func drive<P:polling.Poller<i32>>(poller:&mut P, context:&mut polling.Context) -> i32 {
     match (poller.poll(context)) {
         Ready(value) => return value;
         Pending => return -1;
     }
 }
+
 func main() -> int {
     {
-        var left=ownedNothing(CompositionOwner{value:7});
-        var right=ownedNothing(CompositionOwner{value:8});
-        var joined=asynchronous.join(asynchronous.asUnit(left),asynchronous.asUnit(right));
-        var result=block_on(joined);
-        if(compositionDrops!=2) { return 77; }
-        compositionDrops=0;
+        var left = ownedNothing(CompositionOwner{value:7});
+        var right = ownedNothing(CompositionOwner{value:8});
+        var joined = asynchronous.join(asynchronous.asUnit(left), asynchronous.asUnit(right));
+        var result = block_on(joined);
+        if (compositionDrops != 2) {
+            return 77;
+        }
+        compositionDrops = 0;
     }
     {
-        var prior=cancelPolls; var dropped=pollerDrops;
-        var outer=asynchronous.select(
-            polling.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:memraw.core_null().(*i32)}),
-            polling.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:memraw.core_null().(*i32)}));
-        var ready=futurePoll(&mut outer,memraw.core_null().(*void));
+        var prior = cancelPolls;
+        var dropped = pollerDrops;
+        var outer = asynchronous.select(
+            polling.fromPoller<i32,UntilCancelled>(
+                UntilCancelled{remaining:2, address:memraw.core_null().(*i32)}
+            ),
+            polling.fromPoller<i32,UntilCancelled>(
+                UntilCancelled{remaining:2, address:memraw.core_null().(*i32)}
+            )
+        );
+        var ready = futurePoll(&mut outer, memraw.core_null().(*void));
         block_on(cancel(outer));
-        if(ready || cancelPolls!=prior+6 || pollerDrops!=dropped+2) { return 71; }
-        prior=cancelPolls; dropped=pollerDrops;
-        var joined=asynchronous.join(
-            polling.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:memraw.core_null().(*i32)}),
-            polling.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:memraw.core_null().(*i32)}));
-        ready=futurePoll(&mut joined,memraw.core_null().(*void)); block_on(cancel(joined));
-        if(ready || cancelPolls!=prior+6 || pollerDrops!=dropped+2) { return 72; }
-        prior=cancelPolls; dropped=pollerDrops;
-        var raced=asynchronous.race(
-            polling.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:memraw.core_null().(*i32)}),
-            polling.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:memraw.core_null().(*i32)}));
-        ready=futurePoll(&mut raced,memraw.core_null().(*void)); block_on(cancel(raced));
-        if(ready || cancelPolls!=prior+6 || pollerDrops!=dropped+2) { return 73; }
-        prior=cancelPolls; dropped=pollerDrops;
-        var timed=asynchronous.timeout(
-            polling.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:memraw.core_null().(*i32)}),
-            time.Deadline.after(1000000000));
-        ready=futurePoll(&mut timed,memraw.core_null().(*void)); block_on(cancel(timed));
-        if(ready || cancelPolls!=prior+3 || pollerDrops!=dropped+1) { return 74; }
-        dropped=pollerDrops;
-        block_on(cancel(asynchronous.select(
-            polling.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:memraw.core_null().(*i32)}),
-            polling.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:memraw.core_null().(*i32)}))));
-        if(pollerDrops!=dropped+2) { return 75; }
-        cancelPolls=0; pollerDrops=0;
-        block_on(asynchronous.joinVoid(ownedNothing(CompositionOwner{value:1}),ownedNothing(CompositionOwner{value:2})));
-        block_on(asynchronous.raceVoid(ownedNothing(CompositionOwner{value:3}),ownedNothing(CompositionOwner{value:4})));
-        block_on(cancel(asynchronous.joinVoid(ownedNothing(CompositionOwner{value:5}),ownedNothing(CompositionOwner{value:6}))));
-        if(compositionDrops!=6) { return 76; }
+        if (ready || cancelPolls != prior + 6 || pollerDrops != dropped + 2) {
+            return 71;
+        }
+        prior = cancelPolls;
+        dropped = pollerDrops;
+        var joined = asynchronous.join(
+            polling.fromPoller<i32,UntilCancelled>(
+                UntilCancelled{remaining:2, address:memraw.core_null().(*i32)}
+            ),
+            polling.fromPoller<i32,UntilCancelled>(
+                UntilCancelled{remaining:2, address:memraw.core_null().(*i32)}
+            )
+        );
+        ready = futurePoll(&mut joined, memraw.core_null().(*void));
+        block_on(cancel(joined));
+        if (ready || cancelPolls != prior + 6 || pollerDrops != dropped + 2) {
+            return 72;
+        }
+        prior = cancelPolls;
+        dropped = pollerDrops;
+        var raced = asynchronous.race(
+            polling.fromPoller<i32,UntilCancelled>(
+                UntilCancelled{remaining:2, address:memraw.core_null().(*i32)}
+            ),
+            polling.fromPoller<i32,UntilCancelled>(
+                UntilCancelled{remaining:2, address:memraw.core_null().(*i32)}
+            )
+        );
+        ready = futurePoll(&mut raced, memraw.core_null().(*void));
+        block_on(cancel(raced));
+        if (ready || cancelPolls != prior + 6 || pollerDrops != dropped + 2) {
+            return 73;
+        }
+        prior = cancelPolls;
+        dropped = pollerDrops;
+        var timed = asynchronous.timeout(
+            polling.fromPoller<i32,UntilCancelled>(
+                UntilCancelled{remaining:2, address:memraw.core_null().(*i32)}
+            ),
+            time.Deadline.after(1000000000)
+        );
+        ready = futurePoll(&mut timed, memraw.core_null().(*void));
+        block_on(cancel(timed));
+        if (ready || cancelPolls != prior + 3 || pollerDrops != dropped + 1) {
+            return 74;
+        }
+        dropped = pollerDrops;
+        block_on(
+            cancel(
+                asynchronous.select(
+                    polling.fromPoller<i32,UntilCancelled>(
+                        UntilCancelled{remaining:2, address:memraw.core_null().(*i32)}
+                    ),
+                    polling.fromPoller<i32,UntilCancelled>(
+                        UntilCancelled{remaining:2, address:memraw.core_null().(*i32)}
+                    )
+                )
+            )
+        );
+        if (pollerDrops != dropped + 2) {
+            return 75;
+        }
+        cancelPolls = 0;
+        pollerDrops = 0;
+        block_on(
+            asynchronous.joinVoid(
+                ownedNothing(CompositionOwner{value:1}),
+                ownedNothing(CompositionOwner{value:2})
+            )
+        );
+        block_on(
+            asynchronous.raceVoid(
+                ownedNothing(CompositionOwner{value:3}),
+                ownedNothing(CompositionOwner{value:4})
+            )
+        );
+        block_on(
+            cancel(
+                asynchronous.joinVoid(
+                    ownedNothing(CompositionOwner{value:5}),
+                    ownedNothing(CompositionOwner{value:6})
+                )
+            )
+        );
+        if (compositionDrops != 6) {
+            return 76;
+        }
     }
     {
-        var task=polling.fromPoller<i32,WakeTwice>(WakeTwice{remaining:2});
-        if(futurePoll(&mut task,memraw.core_null().(*void))) { block_on(cancel(task)); return 61; }
-        if(block_on(task)!=101) { return 62; }
-        var selected=asynchronous.select(
+        var task = polling.fromPoller<i32,WakeTwice>(WakeTwice{remaining:2});
+        if (futurePoll(&mut task, memraw.core_null().(*void))) {
+            block_on(cancel(task));
+            return 61;
+        }
+        if (block_on(task) != 101) {
+            return 62;
+        }
+        var selected = asynchronous.select(
             polling.fromPoller<i32,WakeTwice>(WakeTwice{remaining:2}),
-            polling.fromPoller<i32,WakeTwice>(WakeTwice{remaining:2}));
-        if(futurePoll(&mut selected,memraw.core_null().(*void))) { block_on(cancel(selected)); return 63; }
-        match(block_on(selected)) {
-            Left(value,other)=>{ if(value!=101 || block_on(other)!=101) { return 64; } }
-            Right(other,value)=>{ if(value!=101 || block_on(other)!=101) { return 65; } }
+            polling.fromPoller<i32,WakeTwice>(WakeTwice{remaining:2})
+        );
+        if (futurePoll(&mut selected, memraw.core_null().(*void))) {
+            block_on(cancel(selected));
+            return 63;
         }
-        var prior=cancelPolls;
-        var pending=polling.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:memraw.core_null().(*i32)});
-        if(futurePoll(&mut pending,memraw.core_null().(*void))) { block_on(cancel(pending)); return 66; }
-        block_on(cancel(pending));
-        if(cancelPolls!=prior+3) { return 67; }
-        cancelPolls=0; pollerDrops=0;
-        block_on(asynchronous.joinVoid(nothing(),nothing()));
-        block_on(asynchronous.raceVoid(nothing(),nothing()));
-        match(block_on(asynchronous.selectVoid(nothing(),nothing()))) {
-            Left(unit,other)=>{ block_on(other); }
-            Right(other,unit)=>{ block_on(other); }
-        }
-        match(block_on(asynchronous.timeoutVoid(nothing(),time.Deadline.after(1000000000)))) {
-            Completed=>{} Elapsed=>return 68;
-        }
-        var number:i32=69;
-        var joined=block_on(asynchronous.join(asynchronous.asUnit(nothing()),work(&number)));
-        if(joined.right!=69) { return 69; }
-        number=70;
-    }
-    {
-        var left:i32=91; var right:i32=92; var extra:i32=93;
-        var task=splitResult(&left,&right,&extra);
-        var result=block_on(task);
-        extra=94;
-        var projected=result.left;
-        right=95;
-        if(*projected.reader.source!=91 || extra!=94 || right!=95) { return 49; }
-    }
-    {
-        var source:i32=81;
-        {
-            var task=forwardBorrowedResult(&source);
-            var result=block_on(task);
-            if(*result.reader.source!=81) { return 46; }
-        }
-        source=82;
-        {
-            var result=block_on(borrowedResult(&source));
-            if(*result.reader.source!=82) { return 47; }
-        }
-        source=83;
-        {
-            var task=borrowedResult(&source);
-            while(!futurePoll(&mut task,memraw.core_null().(*void))) {}
-            var result=futureComplete(task);
-            if(*result.reader.source!=83) { return 48; }
-        }
-        source=84;
-    }
-    {
-        var left:i32=61; var right:i32=62;
-        var bundle=TaskBundle.Packed(TaskPair.Both(work(&left),work(&right)));
-        var mapped=swapBundle(bundle);
-        var reordered=take(mapped);
-        match(reordered) {
-            Packed(pair)=>{ match(pair) {
-                Both(first,second)=>{
-                    var firstValue=block_on(first);
-                    right=63;
-                    var secondValue=block_on(second);
-                    left=64;
-                    if(firstValue!=62 || secondValue!=61) { return 42; }
+        match (block_on(selected)) {
+            Left(value, other) => {
+                if (value != 101 || block_on(other) != 101) {
+                    return 64;
                 }
-                Empty=>return 44;
-            } }
-            Empty=>return 45;
+            }
+            Right(other, value) => {
+                if (value != 101 || block_on(other) != 101) {
+                    return 65;
+                }
+            }
+        }
+        var prior = cancelPolls;
+        var pending = polling.fromPoller<i32,UntilCancelled>(
+            UntilCancelled{remaining:2, address:memraw.core_null().(*i32)}
+        );
+        if (futurePoll(&mut pending, memraw.core_null().(*void))) {
+            block_on(cancel(pending));
+            return 66;
+        }
+        block_on(cancel(pending));
+        if (cancelPolls != prior + 3) {
+            return 67;
+        }
+        cancelPolls = 0;
+        pollerDrops = 0;
+        block_on(asynchronous.joinVoid(nothing(), nothing()));
+        block_on(asynchronous.raceVoid(nothing(), nothing()));
+        match (block_on(asynchronous.selectVoid(nothing(), nothing()))) {
+            Left(unit, other) => {
+                block_on(other);
+            }
+            Right(other, unit) => {
+                block_on(other);
+            }
+        }
+        match (block_on(asynchronous.timeoutVoid(nothing(), time.Deadline.after(1000000000)))) {
+            Completed => {}
+            Elapsed => return 68;
+        }
+        var number:i32 = 69;
+        var joined = block_on(asynchronous.join(asynchronous.asUnit(nothing()), work(&number)));
+        if (joined.right != 69) {
+            return 69;
+        }
+        number = 70;
+    }
+    {
+        var left:i32 = 91;
+        var right:i32 = 92;
+        var extra:i32 = 93;
+        var task = splitResult(&left, &right, &extra);
+        var result = block_on(task);
+        extra = 94;
+        var projected = result.left;
+        right = 95;
+        if (*projected.reader.source != 91 || extra != 94 || right != 95) {
+            return 49;
         }
     }
     {
-        var left:i32=71; var right:i32=72;
-        var child=work(&left);
-        var firstValue=block_on(replace(child,work(&right)));
-        left=73;
-        var secondValue=block_on(child);
-        right=74;
-        if(firstValue!=71 || secondValue!=72) { return 46; }
+        var source:i32 = 81;
+        {
+            var task = forwardBorrowedResult(&source);
+            var result = block_on(task);
+            if (*result.reader.source != 81) {
+                return 46;
+            }
+        }
+        source = 82;
+        {
+            var result = block_on(borrowedResult(&source));
+            if (*result.reader.source != 82) {
+                return 47;
+            }
+        }
+        source = 83;
+        {
+            var task = borrowedResult(&source);
+            while (!futurePoll(&mut task, memraw.core_null().(*void))) {}
+            var result = futureComplete(task);
+            if (*result.reader.source != 83) {
+                return 48;
+            }
+        }
+        source = 84;
     }
     {
-        var source:i32=53;
-        var resume=namedResume(work(&source));
-        var child=resume();
-        if(block_on(child)!=53) { return 41; }
-        source=54;
+        var left:i32 = 61;
+        var right:i32 = 62;
+        var bundle = TaskBundle.Packed(TaskPair.Both(work(&left), work(&right)));
+        var mapped = swapBundle(bundle);
+        var reordered = take(mapped);
+        match (reordered) {
+            Packed(pair) => {
+                match (pair) {
+                    Both(first, second) => {
+                        var firstValue = block_on(first);
+                        right = 63;
+                        var secondValue = block_on(second);
+                        left = 64;
+                        if (firstValue != 62 || secondValue != 61) {
+                            return 42;
+                        }
+                    }
+                    Empty => return 44;
+                }
+            }
+            Empty => return 45;
+        }
+    }
+    {
+        var left:i32 = 71;
+        var right:i32 = 72;
+        var child = work(&left);
+        var firstValue = block_on(replace(child, work(&right)));
+        left = 73;
+        var secondValue = block_on(child);
+        right = 74;
+        if (firstValue != 71 || secondValue != 72) {
+            return 46;
+        }
+    }
+    {
+        var source:i32 = 53;
+        var resume = namedResume(work(&source));
+        var child = resume();
+        if (block_on(child) != 53) {
+            return 41;
+        }
+        source = 54;
     }
     block_on(asynchronous.sleep(time.nanoseconds(1000000)));
     {
-        var number:i32=51;
-        match(block_on(asynchronous.timeout(work(&number),time.Deadline.after(1000000000)))) {
-            Completed(value)=>{ if(value!=51) { return 37; } }
-            Elapsed=>return 38;
+        var number:i32 = 51;
+        match (block_on(asynchronous.timeout(work(&number), time.Deadline.after(1000000000)))) {
+            Completed(value) => {
+                if (value != 51) {
+                    return 37;
+                }
+            }
+            Elapsed => return 38;
         }
-        number=52;
+        number = 52;
     }
-    match(block_on(asynchronous.timeout(
-        polling.fromPoller<i32,UntilCancelled>(UntilCancelled{remaining:2,address:memraw.core_null().(*i32)}),
-        time.Deadline.after(1000000)))) {
-        Completed(value)=>return 39;
-        Elapsed=>{}
+    match (
+        block_on(
+            asynchronous.timeout(
+                polling.fromPoller<i32,UntilCancelled>(
+                    UntilCancelled{remaining:2, address:memraw.core_null().(*i32)}
+                ),
+                time.Deadline.after(1000000)
+            )
+        )
+    ) {
+        Completed(value) => return 39;
+        Elapsed => {}
     }
-    if(cancelPolls!=3 || pollerDrops!=1) { return 40; }
-    if (block_on(polling.fromPoller<i32,Immediate>(Immediate{result:37}))!=37) { return 30; }
-    if (block_on(polling.fromPoller<i32,WakeOnce>(WakeOnce{ready:false}))!=43) { return 34; }
+    if (cancelPolls != 3 || pollerDrops != 1) {
+        return 40;
+    }
+    if (block_on(polling.fromPoller<i32,Immediate>(Immediate{result:37})) != 37) {
+        return 30;
+    }
+    if (block_on(polling.fromPoller<i32,WakeOnce>(WakeOnce{ready:false})) != 43) {
+        return 34;
+    }
     {
-        var left:i32=44;
-        var right:i32=45;
-        var joined=block_on(asynchronous.join(work(&left),work(&right)));
-        if(joined.left!=44 || joined.right!=45) { return 35; }
-        left=46; right=47;
-        if(block_on(asynchronous.race(work(&left),work(&right)))!=46) { return 36; }
-        left=48; right=49;
-    }
-    {
-        var context=polling.context(polling.noopWaker());
-        var source:i32=39;
-        match (polling.poll(work(&source),&mut context)) {
-            Ready(value)=>{ source=40; if(value!=39) { return 31; } }
-            Pending(child)=>{ if(block_on(child)!=39) { return 32; } }
+        var left:i32 = 44;
+        var right:i32 = 45;
+        var joined = block_on(asynchronous.join(work(&left), work(&right)));
+        if (joined.left != 44 || joined.right != 45) {
+            return 35;
         }
-        source=41;
-        var child=work(&source);
-        var acknowledged=futureCancelPoll(&mut child,memraw.core_null().(*void));
+        left = 46;
+        right = 47;
+        if (block_on(asynchronous.race(work(&left), work(&right))) != 46) {
+            return 36;
+        }
+        left = 48;
+        right = 49;
+    }
+    {
+        var context = polling.context(polling.noopWaker());
+        var source:i32 = 39;
+        match (polling.poll(work(&source), &mut context)) {
+            Ready(value) => {
+                source = 40;
+                if (value != 39) {
+                    return 31;
+                }
+            }
+            Pending(child) => {
+                if (block_on(child) != 39) {
+                    return 32;
+                }
+            }
+        }
+        source = 41;
+        var child = work(&source);
+        var acknowledged = futureCancelPoll(&mut child, memraw.core_null().(*void));
         futureCancelComplete(child);
-        if(!acknowledged) { return 33; }
-        source=42;
+        if (!acknowledged) {
+            return 33;
+        }
+        source = 42;
     }
     {
         var idle = polling.noopWaker();
@@ -294,95 +535,138 @@ func main() -> int {
         var clone = polling.retainWaker();
         clone.wake();
         acceptSend(polling.retainWaker());
-        var immediate = Immediate{result: 31};
-        if (drive(&mut immediate, &mut polling) != 31) { return 9; }
+        var immediate = Immediate{result:31};
+        if (drive(&mut immediate, &mut polling) != 31) {
+            return 9;
+        }
         match (immediate.cancelPoll(&mut polling)) {
-            Ready(ack) => { match (ack) { Confirmed => {} } }
+            Ready(ack) => {
+                match (ack) {
+                    Confirmed => {}
+                }
+            }
             Pending => return 10;
         }
     }
     var polled = polling.Poll<i32>.Ready(23);
     match (polled) {
-        Ready(value) => { if (value != 23) { return 4; } }
+        Ready(value) => {
+            if (value != 23) {
+                return 4;
+            }
+        }
         Pending => return 5;
     }
     {
         var owner = polling.Poll<Payload>.Ready(Payload{value:29});
         match (owner) {
-            Ready(value) => { if (value.value != 29) { return 6; } }
+            Ready(value) => {
+                if (value.value != 29) {
+                    return 6;
+                }
+            }
             Pending => return 7;
         }
     }
-    if (destroyed != 1) { return 8; }
-    var source: i32 = 7;
+    if (destroyed != 1) {
+        return 8;
+    }
+    var source:i32 = 7;
     var pending = Tasks.Task(work(&source));
     match (pending) {
         Task(child) => {
             var moved = take(child);
-            if (block_on(moved) != 7) { return 1; }
+            if (block_on(moved) != 7) {
+                return 1;
+            }
             source = 8;
         }
-        Empty => { source = 9; }
+        Empty => {
+            source = 9;
+        }
     }
     source = 10;
     var cancelled = Tasks.Task(work(&source));
     match (cancelled) {
-        Task(child) => { block_on(cancel(child)); source = 11; }
-        Empty => { source = 12; }
+        Task(child) => {
+            block_on(cancel(child));
+            source = 11;
+        }
+        Empty => {
+            source = 12;
+        }
     }
     source = 13;
-    var other: i32 = 14;
+    var other:i32 = 14;
     var first = work(&source);
     var prior = replace(first, work(&other));
     var previous = block_on(prior);
     var current = block_on(first);
-    if (previous != 13 || current != 14) { return 2; }
+    if (previous != 13 || current != 14) {
+        return 2;
+    }
     source = 15;
     other = 16;
     var inline = work(&source);
     previous = block_on(replace(inline, work(&other)));
     current = block_on(inline);
-    if (previous != 15 || current != 16) { return 3; }
+    if (previous != 15 || current != 16) {
+        return 3;
+    }
     source = 17;
     other = 18;
-    var child=work(&source);
-    var resume=func [move child]()->Future<i32> { return child; };
-    var transferred=resume();
-    if(block_on(transferred)!=17) { return 11; }
-    source=19;
-    var cancelledChild=work(&source);
-    var cancelCaptured=func [move cancelledChild]()->void { block_on(cancel(cancelledChild)); };
+    var child = work(&source);
+    var resume = func[move child]() -> Future<i32>{
+        return child;
+    };
+    var transferred = resume();
+    if (block_on(transferred) != 17) {
+        return 11;
+    }
+    source = 19;
+    var cancelledChild = work(&source);
+    var cancelCaptured = func[move cancelledChild]() -> void{
+        block_on(cancel(cancelledChild));
+    };
     cancelCaptured();
-    source=20;
+    source = 20;
     {
-        var deferredChild=work(&source);
-        var finishDeferred=func [move deferredChild]()->void { block_on(cancel(deferredChild)); };
+        var deferredChild = work(&source);
+        var finishDeferred = func[move deferredChild]() -> void{
+            block_on(cancel(deferredChild));
+        };
         defer finishDeferred();
     }
-    source=21;
-    var firstChild=work(&source);
-    var secondChild=work(&other);
-    var pair=TaskPair.Both(firstChild,secondChild);
-    var movedPair=take(pair);
-    match(movedPair) {
-        Both(left,right)=>{
+    source = 21;
+    var firstChild = work(&source);
+    var secondChild = work(&other);
+    var pair = TaskPair.Both(firstChild, secondChild);
+    var movedPair = take(pair);
+    match (movedPair) {
+        Both(left, right) => {
             block_on(cancel(left));
-            source=22;
-            if(block_on(right)!=18) { return 12; }
-            other=23;
+            source = 22;
+            if (block_on(right) != 18) {
+                return 12;
+            }
+            other = 23;
         }
-        Empty=>return 13;
+        Empty => return 13;
     }
-    match(TaskPair.Both(work(&source),work(&other))) {
-        Both(left,right)=>{
-            var firstResult=block_on(left);
-            source=24;
-            var secondResult=block_on(right);
-            other=25;
-            if(firstResult!=22) { return 14; }
-            if(secondResult!=23) { return 15; }
+    match (TaskPair.Both(work(&source), work(&other))) {
+        Both(left, right) => {
+            var firstResult = block_on(left);
+            source = 24;
+            var secondResult = block_on(right);
+            other = 25;
+            if (firstResult != 22) {
+                return 14;
+            }
+            if (secondResult != 23) {
+                return 15;
+            }
         }
-        Empty=>return 16;
+        Empty => return 16;
     }
     return 0;
 }

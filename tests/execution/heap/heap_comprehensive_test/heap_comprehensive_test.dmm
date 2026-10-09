@@ -1,6 +1,8 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 // ============================================================================
 // COMPREHENSIVE HEAP MANAGEMENT TEST
 // ============================================================================
@@ -15,30 +17,30 @@ import stdlib "stdlib/core";
 
 // Test structs
 struct Point {
-    var x: int;
-    var y: int;
+    var x:int;
+    var y:int;
 }
 
 struct Data {
-    var value: int;
+    var value:int;
 }
 
 // Test 1: Pointer declarations for all types
 func test1_pointer_declarations() -> void {
     io.println("[TEST 1] Pointer Declarations");
-    var intPtr: *int;
-    var charPtr: *char;
-    var bytePtr: *byte;
-    var floatPtr: *float;
-    var doublePtr: *double;
-    var stringPtr: *string;
+    var intPtr:*int;
+    var charPtr:*char;
+    var bytePtr:*byte;
+    var floatPtr:*float;
+    var doublePtr:*double;
+    var stringPtr:*string;
     io.println("  [OK] All pointer types declared");
 }
 
 // Test 2: Basic reserve and free with int
 func test2_basic_int() -> void {
     io.println("[TEST 2] Basic int allocation");
-    var p: *int = reserve(int);
+    var p:*int = reserve(int);
     io.println("  [OK] Int allocated");
     free(p);
     io.println("  [OK] Int freed");
@@ -47,7 +49,7 @@ func test2_basic_int() -> void {
 // Test 3: Basic reserve and free with char
 func test3_basic_char() -> void {
     io.println("[TEST 3] Basic char allocation");
-    var p: *char = reserve(char);
+    var p:*char = reserve(char);
     io.println("  [OK] Char allocated");
     free(p);
     io.println("  [OK] Char freed");
@@ -56,7 +58,7 @@ func test3_basic_char() -> void {
 // Test 4: Basic reserve and free with float
 func test4_basic_float() -> void {
     io.println("[TEST 4] Basic float allocation");
-    var p: *float = reserve(float);
+    var p:*float = reserve(float);
     io.println("  [OK] Float allocated");
     free(p);
     io.println("  [OK] Float freed");
@@ -65,7 +67,7 @@ func test4_basic_float() -> void {
 // Test 5: Basic reserve and free with double
 func test5_basic_double() -> void {
     io.println("[TEST 5] Basic double allocation");
-    var p: *double = reserve(double);
+    var p:*double = reserve(double);
     io.println("  [OK] Double allocated");
     free(p);
     io.println("  [OK] Double freed");
@@ -74,9 +76,9 @@ func test5_basic_double() -> void {
 // Test 6: Multiple allocations of same type
 func test6_multiple_same_type() -> void {
     io.println("[TEST 6] Multiple allocations of same type");
-    var p1: *int = reserve(int);
-    var p2: *int = reserve(int);
-    var p3: *int = reserve(int);
+    var p1:*int = reserve(int);
+    var p2:*int = reserve(int);
+    var p3:*int = reserve(int);
     io.println("  [OK] Three ints allocated");
     free(p1);
     free(p2);
@@ -87,10 +89,10 @@ func test6_multiple_same_type() -> void {
 // Test 7: Multiple allocations of different types
 func test7_multiple_different_types() -> void {
     io.println("[TEST 7] Multiple allocations of different types");
-    var intPtr: *int = reserve(int);
-    var charPtr: *char = reserve(char);
-    var floatPtr: *float = reserve(float);
-    var doublePtr: *double = reserve(double);
+    var intPtr:*int = reserve(int);
+    var charPtr:*char = reserve(char);
+    var floatPtr:*float = reserve(float);
+    var doublePtr:*double = reserve(double);
     io.println("  [OK] Multiple types allocated");
     free(intPtr);
     free(charPtr);
@@ -102,7 +104,7 @@ func test7_multiple_different_types() -> void {
 // Test 8: Explicit allocation ownership with int
 func test8_gc_int() -> void {
     io.println("[TEST 8] manual ownership with int");
-    var p: *int = reserve(int);
+    var p:*int = reserve(int);
     io.println("  [OK] manual ownership int allocated (explicit release follows)");
 
     free(p);
@@ -111,9 +113,9 @@ func test8_gc_int() -> void {
 // Test 9: Explicit allocation ownership with multiple types
 func test9_gc_multiple() -> void {
     io.println("[TEST 9] manual ownership with multiple types");
-    var intPtr: *int = reserve(int);
-    var charPtr: *char = reserve(char);
-    var floatPtr: *float = reserve(float);
+    var intPtr:*int = reserve(int);
+    var charPtr:*char = reserve(char);
+    var floatPtr:*float = reserve(float);
     io.println("  [OK] Multiple manual ownership allocations (explicit release follows)");
 
     free(floatPtr);
@@ -124,10 +126,10 @@ func test9_gc_multiple() -> void {
 // Test 10: Mixed manual and manual ownership management
 func test10_mixed_management() -> void {
     io.println("[TEST 10] Mixed manual and manual ownership management");
-    var manual1: *int = reserve(int);
-    var gc1: *int = reserve(int);
-    var manual2: *char = reserve(char);
-    var gc2: *float = reserve(float);
+    var manual1:*int = reserve(int);
+    var gc1:*int = reserve(int);
+    var manual2:*char = reserve(char);
+    var gc2:*float = reserve(float);
     io.println("  [OK] Mixed allocations created");
     free(manual1);
     free(manual2);
@@ -140,15 +142,15 @@ func test10_mixed_management() -> void {
 // Test 11: Sequential allocation and freeing
 func test11_sequential() -> void {
     io.println("[TEST 11] Sequential allocation and freeing");
-    var p1: *int = reserve(int);
+    var p1:*int = reserve(int);
     io.println("  [OK] Allocated p1");
     free(p1);
     io.println("  [OK] Freed p1");
-    var p2: *char = reserve(char);
+    var p2:*char = reserve(char);
     io.println("  [OK] Allocated p2");
     free(p2);
     io.println("  [OK] Freed p2");
-    var p3: *double = reserve(double);
+    var p3:*double = reserve(double);
     io.println("  [OK] Allocated p3");
     free(p3);
     io.println("  [OK] Freed p3");
@@ -157,9 +159,9 @@ func test11_sequential() -> void {
 // Test 12: Nested scope with manual ownership
 func test12_nested_gc() -> void {
     io.println("[TEST 12] Nested scope with manual ownership");
-    var outer: *int = reserve(int);
+    var outer:*int = reserve(int);
     io.println("  [OK] Outer manual allocation");
-    var gcOuter: *int = reserve(int);
+    var gcOuter:*int = reserve(int);
     io.println("  [OK] Outer manual ownership allocation");
     free(outer);
     io.println("  [OK] Outer manual freed");
@@ -170,16 +172,16 @@ func test12_nested_gc() -> void {
 // Test 13: Allocate many pointers
 func test13_many_pointers() -> void {
     io.println("[TEST 13] Many pointers");
-    var p1: *int = reserve(int);
-    var p2: *int = reserve(int);
-    var p3: *int = reserve(int);
-    var p4: *int = reserve(int);
-    var p5: *int = reserve(int);
-    var p6: *int = reserve(int);
-    var p7: *int = reserve(int);
-    var p8: *int = reserve(int);
-    var p9: *int = reserve(int);
-    var p10: *int = reserve(int);
+    var p1:*int = reserve(int);
+    var p2:*int = reserve(int);
+    var p3:*int = reserve(int);
+    var p4:*int = reserve(int);
+    var p5:*int = reserve(int);
+    var p6:*int = reserve(int);
+    var p7:*int = reserve(int);
+    var p8:*int = reserve(int);
+    var p9:*int = reserve(int);
+    var p10:*int = reserve(int);
     io.println("  [OK] 10 pointers allocated");
     free(p1);
     free(p2);
@@ -197,7 +199,7 @@ func test13_many_pointers() -> void {
 // Test 14: Byte type allocation
 func test14_byte_type() -> void {
     io.println("[TEST 14] Byte type allocation");
-    var p: *byte = reserve(byte);
+    var p:*byte = reserve(byte);
     io.println("  [OK] Byte allocated");
     free(p);
     io.println("  [OK] Byte freed");
@@ -206,9 +208,9 @@ func test14_byte_type() -> void {
 // Test 15: Different order of free
 func test15_free_order() -> void {
     io.println("[TEST 15] Different order of free");
-    var p1: *int = reserve(int);
-    var p2: *char = reserve(char);
-    var p3: *float = reserve(float);
+    var p1:*int = reserve(int);
+    var p2:*char = reserve(char);
+    var p3:*float = reserve(float);
     io.println("  [OK] Three allocations");
     free(p2);
     io.println("  [OK] Freed middle one");
@@ -221,7 +223,7 @@ func test15_free_order() -> void {
 // Test 16: manual ownership in function scope
 func test16_gc_function_scope() -> void {
     io.println("[TEST 16] manual ownership in function scope");
-    var temp: *int = reserve(int);
+    var temp:*int = reserve(int);
     io.println("  [OK] manual ownership variable in function");
     // Auto-freed when function returns
 
@@ -231,7 +233,7 @@ func test16_gc_function_scope() -> void {
 // Test 17: Multiple reserve calls
 func test17_multiple_reserve_calls() -> void {
     io.println("[TEST 17] Multiple reserve calls");
-    var p: *int = reserve(int);
+    var p:*int = reserve(int);
     io.println("  [OK] First reserve");
     free(p);
     p = reserve(int);
@@ -245,11 +247,11 @@ func test17_multiple_reserve_calls() -> void {
 // Test 18: All data types together
 func test18_all_types_together() -> void {
     io.println("[TEST 18] All data types together");
-    var intP: *int = reserve(int);
-    var charP: *char = reserve(char);
-    var byteP: *byte = reserve(byte);
-    var floatP: *float = reserve(float);
-    var doubleP: *double = reserve(double);
+    var intP:*int = reserve(int);
+    var charP:*char = reserve(char);
+    var byteP:*byte = reserve(byte);
+    var floatP:*float = reserve(float);
+    var doubleP:*double = reserve(double);
     io.println("  [OK] All 5 basic types allocated");
     free(doubleP);
     free(floatP);
@@ -262,10 +264,10 @@ func test18_all_types_together() -> void {
 // Test 19: manual ownership with all types
 func test19_gc_all_types() -> void {
     io.println("[TEST 19] manual ownership with all types");
-    var intP: *int = reserve(int);
-    var charP: *char = reserve(char);
-    var floatP: *float = reserve(float);
-    var doubleP: *double = reserve(double);
+    var intP:*int = reserve(int);
+    var charP:*char = reserve(char);
+    var floatP:*float = reserve(float);
+    var doubleP:*double = reserve(double);
     io.println("  [OK] All manual ownership types allocated (explicit release follows)");
 
     free(doubleP);
@@ -277,11 +279,11 @@ func test19_gc_all_types() -> void {
 // Test 20: Alternating manual and manual ownership
 func test20_alternating() -> void {
     io.println("[TEST 20] Alternating manual and manual ownership");
-    var m1: *int = reserve(int);
-    var g1: *int = reserve(int);
-    var m2: *int = reserve(int);
-    var g2: *int = reserve(int);
-    var m3: *int = reserve(int);
+    var m1:*int = reserve(int);
+    var g1:*int = reserve(int);
+    var m2:*int = reserve(int);
+    var g2:*int = reserve(int);
+    var m3:*int = reserve(int);
     io.println("  [OK] Alternating allocations");
     free(m1);
     free(m2);
@@ -295,7 +297,7 @@ func test20_alternating() -> void {
 // Test 21: Struct allocation
 func test21_struct_allocation() -> void {
     io.println("[TEST 21] Struct allocation");
-    var p: *Point = reserve(Point);
+    var p:*Point = reserve(Point);
     io.println("  [OK] Struct allocated");
     free(p);
     io.println("  [OK] Struct freed");
@@ -304,9 +306,9 @@ func test21_struct_allocation() -> void {
 // Test 22: Multiple struct allocations
 func test22_multiple_structs() -> void {
     io.println("[TEST 22] Multiple struct allocations");
-    var p1: *Point = reserve(Point);
-    var p2: *Point = reserve(Point);
-    var d: *Data = reserve(Data);
+    var p1:*Point = reserve(Point);
+    var p2:*Point = reserve(Point);
+    var d:*Data = reserve(Data);
     io.println("  [OK] Multiple structs allocated");
     free(p1);
     free(p2);
@@ -317,8 +319,8 @@ func test22_multiple_structs() -> void {
 // Test 23: manual ownership with structs
 func test23_gc_structs() -> void {
     io.println("[TEST 23] manual ownership with structs");
-    var p: *Point = reserve(Point);
-    var d: *Data = reserve(Data);
+    var p:*Point = reserve(Point);
+    var d:*Data = reserve(Data);
     io.println("  [OK] manual ownership structs allocated (explicit release follows)");
 
     free(d);

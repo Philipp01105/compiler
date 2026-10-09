@@ -6,8 +6,8 @@ interface Value {
 
 struct Number {}
 
-impl Value for Number{ func get() -> int {
-    return 1;
-}
-
+impl Value for Number{
+    func get() -> int {
+        return 1;
+    }
 } func main() -> void {}

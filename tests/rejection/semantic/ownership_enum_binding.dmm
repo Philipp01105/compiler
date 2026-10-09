@@ -1,7 +1,7 @@
 package main;
 
 struct Resource {
-    var value: int;
+    var value:int;
     destructor {}
 }
 
@@ -11,8 +11,8 @@ enum Holder {
 }
 
 func main() -> void {
-    var resource: Resource;
-    var holder: Holder = Holder.Value(resource);
+    var resource:Resource;
+    var holder:Holder = Holder.Value(resource);
     match (holder) {
         Value(value) => {}
         Empty => {}

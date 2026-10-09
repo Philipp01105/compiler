@@ -1,15 +1,18 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
 struct Counter {
-    var value: int;
-    static func twice(value: int) -> int {
+    var value:int;
+
+    static func twice(value:int) -> int {
         return value * 2;
     }
 }
 
 func main() -> void {
-    var counter: Counter;
+    var counter:Counter;
     io.println(counter.twice(2));
 }

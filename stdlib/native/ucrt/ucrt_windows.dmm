@@ -1,18 +1,25 @@
 package ucrt;
 extern "system" from "ucrt" {
     pub func beginThread(
-        security: *void,
-        stackSize: u32,
-        start: extern "system" func(*void) -> u32,
-        context: *void,
-        flags: u32,
-        threadId: *u32
+        security:*void,
+        stackSize:u32,
+        start:extern "system" func(*void) -> u32,
+        context:*void,
+        flags:u32,
+        threadId:*u32
     ) -> usize = "_beginthreadex";
+
     pub func errnoAddress() -> *i32 = "_errno";
-    pub func malloc(size: usize) -> *void;
-    pub func calloc(count: usize, size: usize) -> *void;
-    pub func release(address: *void) -> void = "free";
-    pub func memcpy(destination: *void, source: *void, length: usize) -> *void;
-    pub func exit(code: i32) -> void;
-    pub func immediateExit(code: i32) -> void = "_exit";
+
+    pub func malloc(size:usize) -> *void;
+
+    pub func calloc(count:usize, size:usize) -> *void;
+
+    pub func release(address:*void) -> void = "free";
+
+    pub func memcpy(destination:*void, source:*void, length:usize) -> *void;
+
+    pub func exit(code:i32) -> void;
+
+    pub func immediateExit(code:i32) -> void = "_exit";
 }

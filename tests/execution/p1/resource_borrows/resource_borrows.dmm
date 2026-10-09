@@ -1,13 +1,13 @@
 package main;
 
 struct Pair {
-    var first: int;
-    var second: int;
+    var first:int;
+    var second:int;
     destructor {}
 }
 
-func branchRoundTrip(condition: int) -> int {
-    var pair: Pair;
+func branchRoundTrip(condition:int) -> int {
+    var pair:Pair;
     pair.first = 3;
     pair.second = 4;
     if (condition) {
@@ -21,10 +21,10 @@ func branchRoundTrip(condition: int) -> int {
 }
 
 func loopRoundTrip() -> int {
-    var pair: Pair;
+    var pair:Pair;
     pair.first = 5;
     pair.second = 6;
-    for (var index: int = 0; index < 2; index++) {
+    for (var index:int = 0; index < 2; index++) {
         var moved = pair;
         pair = moved;
     }
@@ -32,7 +32,7 @@ func loopRoundTrip() -> int {
 }
 
 func main() -> int {
-    var pair: Pair;
+    var pair:Pair;
     pair.first = 1;
     pair.second = 2;
 
@@ -47,7 +47,7 @@ func main() -> int {
 
     var moved = pair;
     pair = moved;
-    var values: int[2];
+    var values:int[2];
     var first = &mut values[0];
     var second = &mut values[1];
     *first = 1;
@@ -55,5 +55,6 @@ func main() -> int {
     if (values[0] + values[1] != 3) {
         return 1;
     }
-    return pair.first + pair.second + branchRoundTrip(0) + branchRoundTrip(1) + loopRoundTrip() - 58;
+    return pair.first + pair.second + branchRoundTrip(0) + branchRoundTrip(1) + loopRoundTrip()
+        - 58;
 }

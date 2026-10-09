@@ -5,7 +5,8 @@ interface Value {
 }
 
 struct Resource {
-    var value: int;
+    var value:int;
+
     func get() -> int {
         return value;
     }
@@ -14,8 +15,8 @@ struct Resource {
 }
 
 func main() -> void {
-    var values: Value[1];
-    var resource: Resource;
+    var values:Value[1];
+    var resource:Resource;
     values[0] = resource;
     resource.get();
 }

@@ -1,62 +1,251 @@
 package main;
-import ("stdlib/core" "stdlib/collections" "stdlib/io" "stdlib/fs" "stdlib/text" "stdlib/numeric");
-func line(value:core.Option<collections.List<u8>>,expected:string)->bit{
-    match(value){Some(bytes)=>return bytes.view()==text.bytes(expected);None=>return false;}
+import (
+    "stdlib/collections"
+    "stdlib/core"
+    "stdlib/fs"
+    "stdlib/io"
+    "stdlib/numeric"
+    "stdlib/text"
+);
+
+func line(value:core.Option<collections.List<u8>>, expected:string) -> bit {
+    match (value) {
+        Some(bytes) => return bytes.view() == text.bytes(expected);
+        None => return false;
+    }
 }
-func check()->core.Result<int,fs.Error>{
-    var scratch:u8[16];var output=scratch[:];var emptyStorage:u8[1];var empty=emptyStorage[:0];
+
+func check() -> core.Result<int,fs.Error> {
+    var scratch:u8[16];
+    var output = scratch[:];
+    var emptyStorage:u8[1];
+    var empty = emptyStorage[:0];
     var closed:fs.File;
-    match(closed.read(&mut output)){Ok(count)=>return core.Result<int,fs.Error>.Ok(1);Err(error)=>{if(error.kind!=io.ErrorKind.Closed){return core.Result<int,fs.Error>.Ok(1);}}}
-    closed.close()?;
-    match(fs.open("no-such-stream-directory/missing.bin")){Ok(file)=>return core.Result<int,fs.Error>.Ok(2);Err(error)=>{if(error.kind!=fs.ErrorKind.NotFound){return core.Result<int,fs.Error>.Ok(2);}}}
-    {
-        var file=fs.create("stream.bin")?;
-        match(file.read(&mut output)){Ok(count)=>return core.Result<int,fs.Error>.Ok(5);Err(error)=>{if(error.kind!=io.ErrorKind.AccessDenied){return core.Result<int,fs.Error>.Ok(5);}}}
-        if(file.write(&empty)?!=0){return core.Result<int,fs.Error>.Ok(5);}
-        {
-            var writer=io.bufferedWriter(&mut file,3)?;
-            var prefix=text.bytes("ab\nc\r\n");writer.writeAll(&prefix)?;
-            var binary:u8[3]=[0,255,42];var bytes=binary[:];writer.writeAll(&bytes)?;writer.flush()?;
-            if(writer.pending()!=0){return core.Result<int,fs.Error>.Ok(7);}
+    match (closed.read(&mut output)) {
+        Ok(count) => return core.Result<int,fs.Error>.Ok(1);
+        Err(error) => {
+            if (error.kind != io.ErrorKind.Closed) {
+                return core.Result<int,fs.Error>.Ok(1);
+            }
         }
-        file.close()?;file.close()?;
-        match(file.write(&empty)){Ok(count)=>return core.Result<int,fs.Error>.Ok(8);Err(error)=>{if(error.kind!=io.ErrorKind.Closed){return core.Result<int,fs.Error>.Ok(8);}}}
+    }
+    closed.close()?;
+    match (fs.open("no-such-stream-directory/missing.bin")) {
+        Ok(file) => return core.Result<int,fs.Error>.Ok(2);
+        Err(error) => {
+            if (error.kind != fs.ErrorKind.NotFound) {
+                return core.Result<int,fs.Error>.Ok(2);
+            }
+        }
     }
     {
-        var file=fs.open("stream.bin")?;
-        var reader=io.bufferedReader(&mut file,2)?;
-        if(!line(reader.readLine(64)?,"ab")||!line(reader.readLine(64)?,"c")){return core.Result<int,fs.Error>.Ok(9);}
-        var binary:u8[3];var bytes=binary[:];io.readExact(&mut reader,&mut bytes)?;
-        if(binary[0]!=0||binary[1]!=255||binary[2]!=42){return core.Result<int,fs.Error>.Ok(11);}
-        if(reader.read(&mut output)?!=0||reader.read(&mut empty)?!=0){return core.Result<int,fs.Error>.Ok(12);}
-        match(reader.readLine(64)?){None=>{}Some(value)=>return core.Result<int,fs.Error>.Ok(12);}
+        var file = fs.create("stream.bin")?;
+        match (file.read(&mut output)) {
+            Ok(count) => return core.Result<int,fs.Error>.Ok(5);
+            Err(error) => {
+                if (error.kind != io.ErrorKind.AccessDenied) {
+                    return core.Result<int,fs.Error>.Ok(5);
+                }
+            }
+        }
+        if (file.write(&empty)? != 0) {
+            return core.Result<int,fs.Error>.Ok(5);
+        }
+        {
+            var writer = io.bufferedWriter(&mut file, 3)?;
+            var prefix = text.bytes("ab\nc\r\n");
+            writer.writeAll(&prefix)?;
+            var binary:u8[3] = [0, 255, 42];
+            var bytes = binary[:];
+            writer.writeAll(&bytes)?;
+            writer.flush()?;
+            if (writer.pending() != 0) {
+                return core.Result<int,fs.Error>.Ok(7);
+            }
+        }
+        file.close()?;
+        file.close()?;
+        match (file.write(&empty)) {
+            Ok(count) => return core.Result<int,fs.Error>.Ok(8);
+            Err(error) => {
+                if (error.kind != io.ErrorKind.Closed) {
+                    return core.Result<int,fs.Error>.Ok(8);
+                }
+            }
+        }
     }
-    {var file=fs.openAppend("stream.bin")?;var tail=text.bytes("tail");file.writeAll(&tail)?;}
-    {var bytes=fs.readFile("stream.bin",64)?;var view=bytes.view();if(bytes.length()!=13||view[9]!=116||view[12]!=108){return core.Result<int,fs.Error>.Ok(15);}}
-    {var file=fs.open("stream.bin",fs.OpenMode.ReadWrite)?;var bytes=text.bytes("XY");file.writeAll(&bytes)?;}
     {
-        var file=fs.open("stream.bin")?;var bytes=collections.list<u8>();
-        match(io.readToEnd<fs.File>(&mut file,&mut bytes,2)){Ok(count)=>return core.Result<int,fs.Error>.Ok(17);Err(error)=>{if(error.kind!=io.ErrorKind.LimitExceeded||error.transferred!=3){return core.Result<int,fs.Error>.Ok(17);}}}
-        if(bytes.view()!=text.bytes("XY")){return core.Result<int,fs.Error>.Ok(17);}
+        var file = fs.open("stream.bin")?;
+        var reader = io.bufferedReader(&mut file, 2)?;
+        if (!line(reader.readLine(64)?, "ab") || !line(reader.readLine(64)?, "c")) {
+            return core.Result<int,fs.Error>.Ok(9);
+        }
+        var binary:u8[3];
+        var bytes = binary[:];
+        io.readExact(&mut reader, &mut bytes)?;
+        if (binary[0] != 0 || binary[1] != 255 || binary[2] != 42) {
+            return core.Result<int,fs.Error>.Ok(11);
+        }
+        if (reader.read(&mut output)? != 0 || reader.read(&mut empty)? != 0) {
+            return core.Result<int,fs.Error>.Ok(12);
+        }
+        match (reader.readLine(64)?) {
+            None => {}
+            Some(value) => return core.Result<int,fs.Error>.Ok(12);
+        }
     }
-    {var source=fs.open("stream.bin")?;var copied=fs.create("copy.bin")?;if(io.copy(&mut source,&mut copied)?!=13){return core.Result<int,fs.Error>.Ok(19);}}
-    {var source=fs.open("copy.bin")?;match(io.readExact(&mut source,&mut output)){Ok=>return core.Result<int,fs.Error>.Ok(21);Err(error)=>{if(error.kind!=io.ErrorKind.UnexpectedEof||error.transferred!=13){return core.Result<int,fs.Error>.Ok(21);}}}}
     {
-        var source=fs.open("copy.bin")?;
-        match(io.bufferedReader(&mut source,0)){Ok(reader)=>return core.Result<int,fs.Error>.Ok(26);Err(error)=>{if(error.kind!=io.ErrorKind.InvalidInput){return core.Result<int,fs.Error>.Ok(26);}}}
-        match(io.bufferedReader(&mut source,18446744073709551615)){Ok(reader)=>return core.Result<int,fs.Error>.Ok(36);Err(error)=>{if(error.kind!=io.ErrorKind.CapacityOverflow){return core.Result<int,fs.Error>.Ok(36);}}}
+        var file = fs.openAppend("stream.bin")?;
+        var tail = text.bytes("tail");
+        file.writeAll(&tail)?;
     }
-    {var target=io.stdout();match(io.bufferedWriter(&mut target,0)){Ok(writer)=>return core.Result<int,fs.Error>.Ok(27);Err(error)=>{if(error.kind!=io.ErrorKind.InvalidInput){return core.Result<int,fs.Error>.Ok(27);}}}}
-    var large:u8[8193];for(var i:usize=0;i<8193;i+=1){large[i]=(i%251).(u8);}var largeView=large[:];fs.writeFile("large.bin",&largeView)?;
-    {var bytes=fs.readFile("large.bin",16384)?;if(bytes.view()!=largeView){return core.Result<int,fs.Error>.Ok(29);}}
-    {var source=fs.open("large.bin")?;var reader=io.bufferedReader(&mut source,64)?;match(reader.readLine(100)?){Some(bytes)=>{if(bytes.length()!=10||*bytes.get(9)!=9){return core.Result<int,fs.Error>.Ok(35);}}None=>return core.Result<int,fs.Error>.Ok(35);}}
-    var contents=text.bytes("first\r\nlast");fs.writeFile("lines.bin",&contents)?;
-    {var source=fs.open("lines.bin")?;var reader=io.bufferedReader(&mut source,2)?;if(!line(reader.readLine(64)?,"first")||!line(reader.readLine(64)?,"last")){return core.Result<int,fs.Error>.Ok(30);}}
-    var digits:u8[65];var formatted=digits[:];
-    match(numeric.formatInt((-9223372036854775807-1).(i64),10,formatted)){Ok(count)=>{var data=formatted[:count];fs.writeFile("integers.bin",&data)?;}Err(error)=>return core.Result<int,fs.Error>.Ok(33);}
-    {var file=fs.openAppend("integers.bin")?;var separator=text.bytes(" ");file.writeAll(&separator)?;match(numeric.formatUint(18446744073709551615,10,formatted)){Ok(count)=>{var data=formatted[:count];file.writeAll(&data)?;}Err(error)=>return core.Result<int,fs.Error>.Ok(33);}}
-    {var bytes=fs.readFile("integers.bin",64)?;if(bytes.length()!=41||*bytes.get(0)!=45||*bytes.get(19)!=56||*bytes.get(40)!=53){return core.Result<int,fs.Error>.Ok(34);}}
+    {
+        var bytes = fs.readFile("stream.bin", 64)?;
+        var view = bytes.view();
+        if (bytes.length() != 13 || view[9] != 116 || view[12] != 108) {
+            return core.Result<int,fs.Error>.Ok(15);
+        }
+    }
+    {
+        var file = fs.open("stream.bin", fs.OpenMode.ReadWrite)?;
+        var bytes = text.bytes("XY");
+        file.writeAll(&bytes)?;
+    }
+    {
+        var file = fs.open("stream.bin")?;
+        var bytes = collections.list<u8>();
+        match (io.readToEnd<fs.File>(&mut file, &mut bytes, 2)) {
+            Ok(count) => return core.Result<int,fs.Error>.Ok(17);
+            Err(error) => {
+                if (error.kind != io.ErrorKind.LimitExceeded || error.transferred != 3) {
+                    return core.Result<int,fs.Error>.Ok(17);
+                }
+            }
+        }
+        if (bytes.view() != text.bytes("XY")) {
+            return core.Result<int,fs.Error>.Ok(17);
+        }
+    }
+    {
+        var source = fs.open("stream.bin")?;
+        var copied = fs.create("copy.bin")?;
+        if (io.copy(&mut source, &mut copied)? != 13) {
+            return core.Result<int,fs.Error>.Ok(19);
+        }
+    }
+    {
+        var source = fs.open("copy.bin")?;
+        match (io.readExact(&mut source, &mut output)) {
+            Ok => return core.Result<int,fs.Error>.Ok(21);
+            Err(error) => {
+                if (error.kind != io.ErrorKind.UnexpectedEof || error.transferred != 13) {
+                    return core.Result<int,fs.Error>.Ok(21);
+                }
+            }
+        }
+    }
+    {
+        var source = fs.open("copy.bin")?;
+        match (io.bufferedReader(&mut source, 0)) {
+            Ok(reader) => return core.Result<int,fs.Error>.Ok(26);
+            Err(error) => {
+                if (error.kind != io.ErrorKind.InvalidInput) {
+                    return core.Result<int,fs.Error>.Ok(26);
+                }
+            }
+        }
+        match (io.bufferedReader(&mut source, 18446744073709551615)) {
+            Ok(reader) => return core.Result<int,fs.Error>.Ok(36);
+            Err(error) => {
+                if (error.kind != io.ErrorKind.CapacityOverflow) {
+                    return core.Result<int,fs.Error>.Ok(36);
+                }
+            }
+        }
+    }
+    {
+        var target = io.stdout();
+        match (io.bufferedWriter(&mut target, 0)) {
+            Ok(writer) => return core.Result<int,fs.Error>.Ok(27);
+            Err(error) => {
+                if (error.kind != io.ErrorKind.InvalidInput) {
+                    return core.Result<int,fs.Error>.Ok(27);
+                }
+            }
+        }
+    }
+    var large:u8[8193];
+    for (var i:usize = 0; i < 8193; i += 1) {
+        large[i] = (i % 251).(u8);
+    }
+    var largeView = large[:];
+    fs.writeFile("large.bin", &largeView)?;
+    {
+        var bytes = fs.readFile("large.bin", 16384)?;
+        if (bytes.view() != largeView) {
+            return core.Result<int,fs.Error>.Ok(29);
+        }
+    }
+    {
+        var source = fs.open("large.bin")?;
+        var reader = io.bufferedReader(&mut source, 64)?;
+        match (reader.readLine(100)?) {
+            Some(bytes) => {
+                if (bytes.length() != 10 || *bytes.get(9) != 9) {
+                    return core.Result<int,fs.Error>.Ok(35);
+                }
+            }
+            None => return core.Result<int,fs.Error>.Ok(35);
+        }
+    }
+    var contents = text.bytes("first\r\nlast");
+    fs.writeFile("lines.bin", &contents)?;
+    {
+        var source = fs.open("lines.bin")?;
+        var reader = io.bufferedReader(&mut source, 2)?;
+        if (!line(reader.readLine(64)?, "first") || !line(reader.readLine(64)?, "last")) {
+            return core.Result<int,fs.Error>.Ok(30);
+        }
+    }
+    var digits:u8[65];
+    var formatted = digits[:];
+    match (numeric.formatInt((-9223372036854775807 - 1).(i64), 10, formatted)) {
+        Ok(count) => {
+            var data = formatted[:count];
+            fs.writeFile("integers.bin", &data)?;
+        }
+        Err(error) => return core.Result<int,fs.Error>.Ok(33);
+    }
+    {
+        var file = fs.openAppend("integers.bin")?;
+        var separator = text.bytes(" ");
+        file.writeAll(&separator)?;
+        match (numeric.formatUint(18446744073709551615, 10, formatted)) {
+            Ok(count) => {
+                var data = formatted[:count];
+                file.writeAll(&data)?;
+            }
+            Err(error) => return core.Result<int,fs.Error>.Ok(33);
+        }
+    }
+    {
+        var bytes = fs.readFile("integers.bin", 64)?;
+        if (
+            bytes.length() != 41
+            || *bytes.get(0) != 45
+            || *bytes.get(19) != 56
+            || *bytes.get(40) != 53
+        ) {
+            return core.Result<int,fs.Error>.Ok(34);
+        }
+    }
     io.println("streams")?;
     return core.Result<int,fs.Error>.Ok(0);
 }
-func main()->int{match(check()){Ok(code)=>return code;Err(error)=>return 99;}}
+
+func main() -> int {
+    match (check()) {
+        Ok(code) => return code;
+        Err(error) => return 99;
+    }
+}

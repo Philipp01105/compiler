@@ -6,16 +6,21 @@ pub enum Poll<T> {
     pub Ready(T)
 }
 
-import memraw "stdlib/memory/raw";
-import ("stdlib/core" "stdlib/internal/executor");
+import (
+    "stdlib/core"
+    "stdlib/internal/executor"
+    memraw "stdlib/memory/raw"
+);
 // Only this package may construct a waker from a scheduler context. Retaining
 // the task also retains its executor until every cloned waker is destroyed.
-@[no_default] @[core.Send + core.Sync] pub struct Waker {
-    var raw: *void;
+@[no_default]
+@[core.Send + core.Sync]
+pub struct Waker {
+    var raw:*void;
 
     pub func clone() -> Waker {
         executor.__dmm_async_context_retain(raw);
-        return Waker{raw: raw};
+        return Waker{raw:raw};
     }
 
     pub func wake() -> void {
@@ -27,25 +32,28 @@ import ("stdlib/core" "stdlib/internal/executor");
     }
 }
 
-@[no_default] pub struct Context {
-    var waker: Waker;
+@[no_default]
+pub struct Context {
+    var waker:Waker;
 
-    pub func retainWaker() -> Waker { return waker.clone(); }
+    pub func retainWaker() -> Waker {
+        return waker.clone();
+    }
 }
 
 // Useful for a poller that completes synchronously or for deterministic tests.
 pub func noopWaker() -> Waker {
-    return Waker{raw: memraw.core_null().(*void)};
+    return Waker{raw:memraw.core_null().(*void)};
 }
 
-pub func context(waker: Waker) -> Context {
-    return Context{waker: waker};
+pub func context(waker:Waker) -> Context {
+    return Context{waker:waker};
 }
 
 // The future adapter will call this within the package's trusted boundary.
-func contextFromRaw(raw: *void) -> Context {
+func contextFromRaw(raw:*void) -> Context {
     executor.__dmm_async_context_retain(raw);
-    return Context{waker: Waker{raw: raw}};
+    return Context{waker:Waker{raw:raw}};
 }
 
 pub enum CancelAck {
@@ -55,8 +63,9 @@ pub enum CancelAck {
 // Ready from cancelPoll confirms that the poller has ended all child work and
 // released every wake registration. Pending leaves its pinned state intact.
 pub interface Poller<T> {
-    pub func poll(context: &mut Context) -> Poll<T>;
-    pub func cancelPoll(context: &mut Context) -> Poll<CancelAck>;
+    pub func poll(context:&mut Context) -> Poll<T>;
+
+    pub func cancelPoll(context:&mut Context) -> Poll<CancelAck>;
 }
 
 // A pending result retains ownership of the handle and all of its loans.
@@ -65,7 +74,7 @@ pub enum FuturePoll<T> {
     pub Ready(T)
 }
 
-pub func poll<T>(future: Future<T>, context: &mut Context) -> FuturePoll<T> {
+pub func poll<T>(future:Future<T>, context:&mut Context) -> FuturePoll<T> {
     if (futurePoll(&mut future, context.waker.raw)) {
         return FuturePoll<T>.Ready(futureComplete(future));
     }
@@ -77,55 +86,69 @@ pub enum VoidFuturePoll {
     pub Ready
 }
 
-pub func pollVoid(future:Future<void>,context:&mut Context)->VoidFuturePoll {
-    if(futurePoll(&mut future,context.waker.raw)) {
+pub func pollVoid(future:Future<void>, context:&mut Context) -> VoidFuturePoll {
+    if (futurePoll(&mut future, context.waker.raw)) {
         futureComplete(future);
         return VoidFuturePoll.Ready;
     }
     return VoidFuturePoll.Pending(future);
 }
 
-
-
-pub async func fromPoller<T,P: Poller<T>>(poller: P) -> T {
-    var completed:bit=false;
+pub async func fromPoller<T,P:Poller<T>>(poller:P) -> T {
+    var completed:bit = false;
     defer func() {
         if (!completed) {
-            var acknowledged:bit=false;
+            var acknowledged:bit = false;
             while (!acknowledged) {
-                var context=contextFromRaw(asyncContext());
+                var context = contextFromRaw(asyncContext());
                 match (poller.cancelPoll(&mut context)) {
-                    Ready(ack) => { acknowledged=true; }
-                    Pending => { park().await(); }
+                    Ready(ack) => {
+                        acknowledged = true;
+                    }
+                    Pending => {
+                        park().await();
+                    }
                 }
             }
         }
     }
     while (true) {
         // A pending handle can move to another driving task/context.
-        var context=contextFromRaw(asyncContext());
+        var context = contextFromRaw(asyncContext());
         match (poller.poll(&mut context)) {
-            Ready(value) => { completed=true; return value; }
-            Pending => { park().await(); }
+            Ready(value) => {
+                completed = true;
+                return value;
+            }
+            Pending => {
+                park().await();
+            }
         }
     }
     memraw.core_trap();
 }
 
+pub enum Selection<T,U> {
+    pub Left(T, Future<U>),
+    pub Right(Future<T>, U)
+}
 
-
-pub enum Selection<T,U> {pub Left(T,Future<U>),pub Right(Future<T>,U)}
-pub async func select<T,U>(left:Future<T>,right:Future<U>) -> Selection<T,U> {
+pub async func select<T,U>(left:Future<T>, right:Future<U>) -> Selection<T,U> {
     while (true) {
-        var context=contextFromRaw(asyncContext());
-        var leftReady=futurePoll(&mut left,context.waker.raw);
-        var rightReady=futurePoll(&mut right,context.waker.raw);
-        if (leftReady) { return Selection<T,U>.Left(futureComplete(left),right); }
-        if (rightReady) { return Selection<T,U>.Right(left,futureComplete(right)); }
+        var context = contextFromRaw(asyncContext());
+        var leftReady = futurePoll(&mut left, context.waker.raw);
+        var rightReady = futurePoll(&mut right, context.waker.raw);
+        if (leftReady) {
+            return Selection<T,U>.Left(futureComplete(left), right);
+        }
+        if (rightReady) {
+            return Selection<T,U>.Right(left, futureComplete(right));
+        }
         park().await();
     }
     memraw.core_trap();
 }
 
-
-func park()->Future<void> {return nativeFuture(executor.parkFrame());}
+func park() -> Future<void> {
+    return nativeFuture(executor.parkFrame());
+}

@@ -1,16 +1,16 @@
 package main;
 
 struct Resource {
-    var value: int;
+    var value:int;
     destructor {}
 }
 
 struct Box<T> {
-    var value: T;
+    var value:T;
 }
 
 func main() -> int {
-    var box: Box<Resource>;
+    var box:Box<Resource>;
     var moved = box;
     return box.value.value;
 }

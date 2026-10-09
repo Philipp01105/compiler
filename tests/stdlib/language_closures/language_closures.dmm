@@ -1,211 +1,592 @@
 package main;
-import memraw "stdlib/memory/raw";
-import (stdlib "stdlib/core" "stdlib/algorithms" "stdlib/core");
-var destroyed:i32=0;
-struct Resource { var value:i32; destructor { destroyed+=1; } }
-interface Finisher { once func finish()->i32; func peek()->i32; }
+import (
+    "stdlib/algorithms"
+    stdlib "stdlib/core"
+    "stdlib/core"
+    memraw "stdlib/memory/raw"
+);
+var destroyed:i32 = 0;
+
+struct Resource {
+    var value:i32;
+    destructor {
+        destroyed += 1;
+    }
+}
+
+interface Finisher {
+    once func finish() -> i32;
+
+    func peek() -> i32;
+}
+
 struct FinishOwner {
- var owner:Resource;
- func finish()->i32 { return owner.value; }
- func peek()->i32 { return owner.value; }
+    var owner:Resource;
+
+    func finish() -> i32 {
+        return owner.value;
+    }
+
+    func peek() -> i32 {
+        return owner.value;
+    }
 }
+
 struct SharedFinishOwner {
- var owner:Resource;
- func finish()->i32 { return owner.value; }
- func peek()->i32 { return owner.value; }
+    var owner:Resource;
+
+    func finish() -> i32 {
+        return owner.value;
+    }
+
+    func peek() -> i32 {
+        return owner.value;
+    }
 }
-func finishGeneric<F:Finisher>(value:F)->i32 { return value.finish(); }
-interface Counter { mut func advance()->i32; }
-struct Count { var value:i32; func advance()->i32 { value+=1; return value; } }
-func advanceGeneric<C:Counter>(value:&mut C)->i32 { return (*value).advance(); }
-func apply(f:func(i32)->i32,x:i32)->i32 { return f(x); }
-interface Adder { func __invoke(value:i32)->i32; }
-interface Accumulator { mut func __invoke(value:i32)->i32; }
-interface OwnerFactory { once func __invoke()->Resource; }
-func makeAdder(offset:i32)->Adder { return func [move offset](value:i32)->i32 { return offset+value; }; }
-func makeAccumulator(initial:i32)->Accumulator {
- return func [move initial](value:i32)->i32 { initial+=value; return initial; };
+
+func finishGeneric<F:Finisher>(value:F) -> i32 {
+    return value.finish();
 }
-func makeOwner(value:i32)->OwnerFactory {
- var owner=Resource{value:value};
- return func [move owner]()->Resource { return owner; };
+
+interface Counter {
+    mut func advance() -> i32;
 }
-func applyMutable(f:mut func(i32)->i32,x:i32)->i32 { return f(x); }
-func applyTwice(f:mut func(i32)->i32,a:i32,b:i32)->i32 { var first=f(a); return first+f(b); }
-func compareOnce(f:func(i32,i32)->bit)->bit { return f(1,2); }
-func invokeOnce(f:once func(i32)->i32,value:i32)->i32 { return f(value); }
-func increment(value:i32)->i32 { return value+1; }
-interface OnceInvoker { func run(callback:once func(i32)->i32)->i32; }
-struct Invoker { func run(callback:once func(i32)->i32)->i32 { return callback(28); } }
-func runOnce<I:OnceInvoker>(invoker:I)->i32 { return invoker.run(increment); }
-func returnOwner(f:once func()->Resource)->Resource { return f(); }
-func chooseOwned<T>(value:T)->T {
- var choose=func [move value]()->T { return value; };
- return choose();
+
+struct Count {
+    var value:i32;
+
+    func advance() -> i32 {
+        value += 1;
+        return value;
+    }
 }
-func nestedCallback(f:func(i32)->i32,x:i32)->i32 {
- var bonus:i32=1;
- var add:once func(i32)->i32=func [move bonus](value:i32)->i32 { return value+bonus; };
- return f(add(x));
+
+func advanceGeneric<C:Counter>(value:&mut C) -> i32 {
+    return (*value).advance();
 }
-func choose<T:core.Copy>(first:T,second:T)->T {
- var selected:once func(T)->T=func [move first](unused:T)->T { return first; };
- return selected(second);
+
+func apply(f:func(i32) -> i32, x:i32) -> i32 {
+    return f(x);
 }
-func main()->int {
- { var counter=Count{value:3}; if(advanceGeneric(&mut counter)!=4 || advanceGeneric(&mut counter)!=5) { return 77; } }
- {
-  var before=destroyed;
-  var finisher:Finisher=FinishOwner{owner:Resource{value:241}};
-  if(finisher.peek()!=241 || finisher.finish()!=241 || destroyed!=before+1) { return 74; }
-  var shared:Finisher=SharedFinishOwner{owner:Resource{value:242}};
-  if(shared.finish()!=242 || destroyed!=before+2) { return 75; }
-  if(finishGeneric(FinishOwner{owner:Resource{value:243}})!=243 || destroyed!=before+3) { return 76; }
-  destroyed=0;
- }
- {
-  var add=makeAdder(211);
-  if(add(2)!=213 || add(3)!=214) { return 70; }
-  var sum=makeAccumulator(221);
-  if(sum(2)!=223 || sum(3)!=226) { return 71; }
-  { var make=makeOwner(231); var owner=make(); if(owner.value!=231) { return 72; } }
-  if(destroyed!=1) { return 73; }
-  destroyed=0;
- }
- var single:once func(i32)->i32=increment;
- var movedSingle=single;
- if(movedSingle(4)!=5 || invokeOnce(increment,6)!=7) { return 19; }
- var invoker:Invoker;
- if(runOnce(invoker)!=29) { return 28; }
- var identity=func [](x:i32)->i32 { return x; };
- if(identity(9)!=9) { return 18; }
- var offset:i32=7;
- var annotated:once func(i32)->i32=func [move offset](x:i32)->i32 { return offset+x; };
- var movedAnnotated=annotated;
- if(movedAnnotated(23)!=30) { return 29; }
- var sharedAnnotation:func(i32)->i32=func [move offset](x:i32)->i32 { return offset+x; };
- if(sharedAnnotation(24)!=31 || sharedAnnotation(25)!=32) { return 30; }
- if(choose<i32>(3,4)!=3 || choose<i64>(5,6)!=5) { return 13; }
- var add=func [move offset](x:i32)->i32 { return x+offset; };
- if(add(3)!=10 || apply(add,3)!=10) { return 1; }
- var factor:i32=5;
- var multiply=func [move factor](x:i32)->i32 { return x*factor; };
- if(nestedCallback(multiply,3)!=20) { return 14; }
- var addRef=func [&offset](x:i32)->i32 { return x+offset; };
- if(addRef(5)!=12) { return 2; }
- var state:i32=1;
- { var mutableAnnotation:mut func()->void=func [&mut state]()->void { state+=1; };
- mutableAnnotation(); mutableAnnotation(); }
- if(state!=3) { return 31; }
- state=1;
- { var tally=func [&mut state](x:i32)->i32 { state+=x; return state; };
- if(tally(2)!=3 || applyMutable(tally,4)!=7) { return 3; } }
- if(state!=7) { return 4; }
- { var tally=func [&mut state](x:i32)->i32 { state+=x; return state; };
- if(applyTwice(tally,1,2)!=18) { return 8; } }
- if(state!=10) { return 9; }
- { var owner=Resource{value:5}; var captured=func [move owner](x:i32)->i32 { return x+owner.value; };
- if(captured(2)!=7) { return 10; } }
- if(destroyed!=1) { return 11; }
- { var owner=Resource{value:23};
- var fallback=func [move owner]()->i32 { return owner.value; };
- if(stdlib.unwrapOrElse(stdlib.Option<i32>.None,fallback)!=23) { return 20; } }
- if(destroyed!=2) { return 21; }
- { var owner=Resource{value:24};
- var fallback=func [move owner]()->i32 { memraw.core_trap(); return owner.value; };
- if(stdlib.unwrapOrElse(stdlib.Option<i32>.Some(25),fallback)!=25) { return 22; } }
- if(destroyed!=3) { return 23; }
- { var source=Resource{value:40};
- var fallback=func [move source]()->Resource { return source; };
- var result=stdlib.unwrapOrElse(stdlib.Option<Resource>.None,fallback);
- if(result.value!=40 || destroyed!=3) { return 32; } }
- if(destroyed!=4) { return 33; }
- { var source=Resource{value:41};
- var fallback=func [move source]()->Resource { return source; };
- var result=stdlib.unwrapOrElse(stdlib.Option<Resource>.Some(Resource{value:42}),fallback);
- if(result.value!=42 || destroyed!=5) { return 34; } }
- if(destroyed!=6) { return 35; }
- { var first=Resource{value:43}; var second=Resource{value:44};
- var choose=func [move first,move second]()->Resource { return first; };
- var result=returnOwner(choose);
- if(result.value!=43 || destroyed!=7) { return 36; } }
- if(destroyed!=8) { return 37; }
- { var result=chooseOwned(Resource{value:45});
- if(result.value!=45 || destroyed!=8) { return 38; } }
- if(destroyed!=9) { return 39; }
- var read:i32=46;
- { var source=Resource{value:47};
- var mixed=func [move source,&read]()->Resource { if(read!=46) { memraw.core_trap(); } return source; };
- var result=mixed(); if(result.value!=47 || destroyed!=9) { return 40; } }
- if(destroyed!=10) { return 41; }
- if((func [move offset](x:i32)->i32 { return offset+x; })(2)!=9) { return 42; }
- { var source=Resource{value:48};
- var result=(func [move source]()->Resource { return source; })();
- if(result.value!=48 || destroyed!=10) { return 43; } }
- if(destroyed!=11) { return 44; }
- { var source=Resource{value:49};
- if((func [move source]()->i32 { return source.value; })()!=49) { return 46; } }
- if(destroyed!=12) { return 47; }
- { var source=Resource{value:50};
- defer (func [move source]()->void { if(source.value!=50) { memraw.core_trap(); } })();
- if(destroyed!=12) { return 48; } }
- if(destroyed!=13) { return 49; }
- { var directState:i32=0;
- (func [&mut directState]()->void { directState+=1; })();
- if(directState!=1) { return 45; } }
- var mapper=func [move offset](x:i32)->i32 { return offset+x; };
- match(stdlib.mapOption(stdlib.Option<i32>.Some(26),mapper)) {
- Some(value)=>{ if(value!=33) { return 24; } }
- None=>return 25;
- }
- var onceState:i32=0;
- { var callback=func [&mut onceState](x:i32)->i32 { onceState+=x; return onceState; };
- if(invokeOnce(callback,27)!=27) { return 26; } }
- if(onceState!=27) { return 27; }
- var values:i32[4]=[4,1,3,2];
- var pivot:i32=3;
- var compare=func [move pivot](a:i32,b:i32)->bit { return (a<pivot && b>=pivot) || (a<pivot && b<pivot && a<b) || (a>=pivot && b>=pivot && a<b); };
- var view=values[:];
- if(!compareOnce(compare)) { return 7; }
- algorithms.sort(&mut view,compare);
- if(values[0]!=1 || values[1]!=2 || values[2]!=3 || values[3]!=4) { return 5; }
- var queries:i32=0;
- var query:i32=3;
- { var ordered=func [&mut queries](a:i32,b:i32)->bit { queries+=1; return a<b; };
- match (algorithms.binarySearch(view,query,ordered)) {
- Some(index)=>{ if(index!=2) { return 15; } }
- None=>return 16;
- } }
- if(queries<=0) { return 17; }
- var visits:i32=0;
- { var counting=func [&mut visits](a:i32,b:i32)->bit { visits+=1; return a>b; };
- algorithms.sort(&mut view,counting); }
- if(visits<=0 || values[0]!=4 || values[1]!=3 || values[2]!=2 || values[3]!=1) { return 12; }
- var beforeUnused=destroyed;
- { var owner=Resource{value:51};
- var unused=func [move owner](value:i32)->i32 { memraw.core_trap(); return owner.value+value; };
- match(stdlib.mapOption(stdlib.Option<i32>.None,unused)) {
-  Some(value)=>return 50;
-  None=>{}
- } }
- if(destroyed!=beforeUnused+1) { return 51; }
- { var owner=Resource{value:52};
- var unused=func [move owner](value:i32)->stdlib.Option<i32> {
-  memraw.core_trap(); return stdlib.Option<i32>.Some(owner.value+value);
- };
- match(stdlib.andThenOption(stdlib.Option<i32>.None,unused)) {
-  Some(value)=>return 52;
-  None=>{}
- } }
- if(destroyed!=beforeUnused+2) { return 53; }
- { var owner=Resource{value:53};
- var mapper=func [move owner](value:i32)->stdlib.Option<i32> {
-  return stdlib.Option<i32>.Some(owner.value+value);
- };
- match(stdlib.andThenOption(stdlib.Option<i32>.Some(3),mapper)) {
-  Some(value)=>{ if(value!=56) { return 54; } }
-  None=>return 55;
- } }
- if(destroyed!=beforeUnused+3) { return 56; }
- return 0;
+
+interface Adder {
+    func __invoke(value:i32) -> i32;
+}
+
+interface Accumulator {
+    mut func __invoke(value:i32) -> i32;
+}
+
+interface OwnerFactory {
+    once func __invoke() -> Resource;
+}
+
+func makeAdder(offset:i32) -> Adder {
+    return func[move offset](value:i32) -> i32{
+        return offset + value;
+    };
+}
+
+func makeAccumulator(initial:i32) -> Accumulator {
+    return func[move initial](value:i32) -> i32{
+        initial += value;
+        return initial;
+    };
+}
+
+func makeOwner(value:i32) -> OwnerFactory {
+    var owner = Resource{value:value};
+    return func[move owner]() -> Resource{
+        return owner;
+    };
+}
+
+func applyMutable(f:mut func(i32) -> i32, x:i32) -> i32 {
+    return f(x);
+}
+
+func applyTwice(f:mut func(i32) -> i32, a:i32, b:i32) -> i32 {
+    var first = f(a);
+    return first + f(b);
+}
+
+func compareOnce(f:func(i32,i32) -> bit) -> bit {
+    return f(1, 2);
+}
+
+func invokeOnce(f:once func(i32) -> i32, value:i32) -> i32 {
+    return f(value);
+}
+
+func increment(value:i32) -> i32 {
+    return value + 1;
+}
+
+interface OnceInvoker {
+    func run(callback:once func(i32) -> i32) -> i32;
+}
+
+struct Invoker {
+    func run(callback:once func(i32) -> i32) -> i32 {
+        return callback(28);
+    }
+}
+
+func runOnce<I:OnceInvoker>(invoker:I) -> i32 {
+    return invoker.run(increment);
+}
+
+func returnOwner(f:once func() -> Resource) -> Resource {
+    return f();
+}
+
+func chooseOwned<T>(value:T) -> T {
+    var choose = func[move value]() -> T{
+        return value;
+    };
+    return choose();
+}
+
+func nestedCallback(f:func(i32) -> i32, x:i32) -> i32 {
+    var bonus:i32 = 1;
+    var add:once func(i32) -> i32 = func[move bonus](value:i32) -> i32{
+        return value + bonus;
+    };
+    return f(add(x));
+}
+
+func choose<T:core.Copy>(first:T, second:T) -> T {
+    var selected:once func(T) -> T = func[move first](unused:T) -> T{
+        return first;
+    };
+    return selected(second);
+}
+
+func main() -> int {
+    {
+        var counter = Count{value:3};
+        if (advanceGeneric(&mut counter) != 4 || advanceGeneric(&mut counter) != 5) {
+            return 77;
+        }
+    }
+    {
+        var before = destroyed;
+        var finisher:Finisher = FinishOwner{owner:Resource{value:241}};
+        if (finisher.peek() != 241 || finisher.finish() != 241 || destroyed != before + 1) {
+            return 74;
+        }
+        var shared:Finisher = SharedFinishOwner{owner:Resource{value:242}};
+        if (shared.finish() != 242 || destroyed != before + 2) {
+            return 75;
+        }
+        if (
+            finishGeneric(FinishOwner{owner:Resource{value:243}}) != 243
+            || destroyed != before + 3
+        ) {
+            return 76;
+        }
+        destroyed = 0;
+    }
+    {
+        var add = makeAdder(211);
+        if (add(2) != 213 || add(3) != 214) {
+            return 70;
+        }
+        var sum = makeAccumulator(221);
+        if (sum(2) != 223 || sum(3) != 226) {
+            return 71;
+        }
+        {
+            var make = makeOwner(231);
+            var owner = make();
+            if (owner.value != 231) {
+                return 72;
+            }
+        }
+        if (destroyed != 1) {
+            return 73;
+        }
+        destroyed = 0;
+    }
+    var single:once func(i32) -> i32 = increment;
+    var movedSingle = single;
+    if (movedSingle(4) != 5 || invokeOnce(increment, 6) != 7) {
+        return 19;
+    }
+    var invoker:Invoker;
+    if (runOnce(invoker) != 29) {
+        return 28;
+    }
+    var identity = func[](x:i32) -> i32{
+        return x;
+    };
+    if (identity(9) != 9) {
+        return 18;
+    }
+    var offset:i32 = 7;
+    var annotated:once func(i32) -> i32 = func[move offset](x:i32) -> i32{
+        return offset + x;
+    };
+    var movedAnnotated = annotated;
+    if (movedAnnotated(23) != 30) {
+        return 29;
+    }
+    var sharedAnnotation:func(i32) -> i32 = func[move offset](x:i32) -> i32{
+        return offset + x;
+    };
+    if (sharedAnnotation(24) != 31 || sharedAnnotation(25) != 32) {
+        return 30;
+    }
+    if (choose<i32>(3, 4) != 3 || choose<i64>(5, 6) != 5) {
+        return 13;
+    }
+    var add = func[move offset](x:i32) -> i32{
+        return x + offset;
+    };
+    if (add(3) != 10 || apply(add, 3) != 10) {
+        return 1;
+    }
+    var factor:i32 = 5;
+    var multiply = func[move factor](x:i32) -> i32{
+        return x * factor;
+    };
+    if (nestedCallback(multiply, 3) != 20) {
+        return 14;
+    }
+    var addRef = func[&offset](x:i32) -> i32{
+        return x + offset;
+    };
+    if (addRef(5) != 12) {
+        return 2;
+    }
+    var state:i32 = 1;
+    {
+        var mutableAnnotation:mut func() -> void = func[&mut state]() -> void{
+            state += 1;
+        };
+        mutableAnnotation();
+        mutableAnnotation();
+    }
+    if (state != 3) {
+        return 31;
+    }
+    state = 1;
+    {
+        var tally = func[&mut state](x:i32) -> i32{
+            state += x;
+            return state;
+        };
+        if (tally(2) != 3 || applyMutable(tally, 4) != 7) {
+            return 3;
+        }
+    }
+    if (state != 7) {
+        return 4;
+    }
+    {
+        var tally = func[&mut state](x:i32) -> i32{
+            state += x;
+            return state;
+        };
+        if (applyTwice(tally, 1, 2) != 18) {
+            return 8;
+        }
+    }
+    if (state != 10) {
+        return 9;
+    }
+    {
+        var owner = Resource{value:5};
+        var captured = func[move owner](x:i32) -> i32{
+            return x + owner.value;
+        };
+        if (captured(2) != 7) {
+            return 10;
+        }
+    }
+    if (destroyed != 1) {
+        return 11;
+    }
+    {
+        var owner = Resource{value:23};
+        var fallback = func[move owner]() -> i32{
+            return owner.value;
+        };
+        if (stdlib.unwrapOrElse(stdlib.Option<i32>.None, fallback) != 23) {
+            return 20;
+        }
+    }
+    if (destroyed != 2) {
+        return 21;
+    }
+    {
+        var owner = Resource{value:24};
+        var fallback = func[move owner]() -> i32{
+            memraw.core_trap();
+            return owner.value;
+        };
+        if (stdlib.unwrapOrElse(stdlib.Option<i32>.Some(25), fallback) != 25) {
+            return 22;
+        }
+    }
+    if (destroyed != 3) {
+        return 23;
+    }
+    {
+        var source = Resource{value:40};
+        var fallback = func[move source]() -> Resource{
+            return source;
+        };
+        var result = stdlib.unwrapOrElse(stdlib.Option<Resource>.None, fallback);
+        if (result.value != 40 || destroyed != 3) {
+            return 32;
+        }
+    }
+    if (destroyed != 4) {
+        return 33;
+    }
+    {
+        var source = Resource{value:41};
+        var fallback = func[move source]() -> Resource{
+            return source;
+        };
+        var result = stdlib.unwrapOrElse(
+            stdlib.Option<Resource>.Some(Resource{value:42}),
+            fallback
+        );
+        if (result.value != 42 || destroyed != 5) {
+            return 34;
+        }
+    }
+    if (destroyed != 6) {
+        return 35;
+    }
+    {
+        var first = Resource{value:43};
+        var second = Resource{value:44};
+        var choose = func[move first, move second]() -> Resource{
+            return first;
+        };
+        var result = returnOwner(choose);
+        if (result.value != 43 || destroyed != 7) {
+            return 36;
+        }
+    }
+    if (destroyed != 8) {
+        return 37;
+    }
+    {
+        var result = chooseOwned(Resource{value:45});
+        if (result.value != 45 || destroyed != 8) {
+            return 38;
+        }
+    }
+    if (destroyed != 9) {
+        return 39;
+    }
+    var read:i32 = 46;
+    {
+        var source = Resource{value:47};
+        var mixed = func[move source, &read]() -> Resource{
+            if (read != 46) {
+                memraw.core_trap();
+            }
+            return source;
+        };
+        var result = mixed();
+        if (result.value != 47 || destroyed != 9) {
+            return 40;
+        }
+    }
+    if (destroyed != 10) {
+        return 41;
+    }
+    if (
+        (
+            func[move offset](x:i32) -> i32{
+                return offset + x;
+            }
+        )(2) != 9
+    ) {
+        return 42;
+    }
+    {
+        var source = Resource{value:48};
+        var result = (
+            func[move source]() -> Resource{
+                return source;
+            }
+        )();
+        if (result.value != 48 || destroyed != 10) {
+            return 43;
+        }
+    }
+    if (destroyed != 11) {
+        return 44;
+    }
+    {
+        var source = Resource{value:49};
+        if (
+            (
+                func[move source]() -> i32{
+                    return source.value;
+                }
+            )() != 49
+        ) {
+            return 46;
+        }
+    }
+    if (destroyed != 12) {
+        return 47;
+    }
+    {
+        var source = Resource{value:50};
+        defer(
+            func[move source]() -> void{
+                if (source.value != 50) {
+                    memraw.core_trap();
+                }
+            }
+        )();
+        if (destroyed != 12) {
+            return 48;
+        }
+    }
+    if (destroyed != 13) {
+        return 49;
+    }
+    {
+        var directState:i32 = 0;
+        (
+            func[&mut directState]() -> void{
+                directState += 1;
+            }
+        )();
+        if (directState != 1) {
+            return 45;
+        }
+    }
+    var mapper = func[move offset](x:i32) -> i32{
+        return offset + x;
+    };
+    match (stdlib.mapOption(stdlib.Option<i32>.Some(26), mapper)) {
+        Some(value) => {
+            if (value != 33) {
+                return 24;
+            }
+        }
+        None => return 25;
+    }
+    var onceState:i32 = 0;
+    {
+        var callback = func[&mut onceState](x:i32) -> i32{
+            onceState += x;
+            return onceState;
+        };
+        if (invokeOnce(callback, 27) != 27) {
+            return 26;
+        }
+    }
+    if (onceState != 27) {
+        return 27;
+    }
+    var values:i32[4] = [
+        4,
+        1,
+        3,
+        2
+    ];
+    var pivot:i32 = 3;
+    var compare = func[move pivot](a:i32, b:i32) -> bit{
+        return (a < pivot && b >= pivot) || (a < pivot && b < pivot && a < b) || (
+            a >= pivot
+            && b >= pivot
+            && a < b
+        );
+    };
+    var view = values[:];
+    if (!compareOnce(compare)) {
+        return 7;
+    }
+    algorithms.sort(&mut view, compare);
+    if (values[0] != 1 || values[1] != 2 || values[2] != 3 || values[3] != 4) {
+        return 5;
+    }
+    var queries:i32 = 0;
+    var query:i32 = 3;
+    {
+        var ordered = func[&mut queries](a:i32, b:i32) -> bit{
+            queries += 1;
+            return a < b;
+        };
+        match (algorithms.binarySearch(view, query, ordered)) {
+            Some(index) => {
+                if (index != 2) {
+                    return 15;
+                }
+            }
+            None => return 16;
+        }
+    }
+    if (queries <= 0) {
+        return 17;
+    }
+    var visits:i32 = 0;
+    {
+        var counting = func[&mut visits](a:i32, b:i32) -> bit{
+            visits += 1;
+            return a > b;
+        };
+        algorithms.sort(&mut view, counting);
+    }
+    if (visits <= 0 || values[0] != 4 || values[1] != 3 || values[2] != 2 || values[3] != 1) {
+        return 12;
+    }
+    var beforeUnused = destroyed;
+    {
+        var owner = Resource{value:51};
+        var unused = func[move owner](value:i32) -> i32{
+            memraw.core_trap();
+            return owner.value + value;
+        };
+        match (stdlib.mapOption(stdlib.Option<i32>.None, unused)) {
+            Some(value) => return 50;
+            None => {}
+        }
+    }
+    if (destroyed != beforeUnused + 1) {
+        return 51;
+    }
+    {
+        var owner = Resource{value:52};
+        var unused = func[move owner](value:i32) -> stdlib.Option<i32>{
+            memraw.core_trap();
+            return stdlib.Option<i32>.Some(owner.value + value);
+        };
+        match (stdlib.andThenOption(stdlib.Option<i32>.None, unused)) {
+            Some(value) => return 52;
+            None => {}
+        }
+    }
+    if (destroyed != beforeUnused + 2) {
+        return 53;
+    }
+    {
+        var owner = Resource{value:53};
+        var mapper = func[move owner](value:i32) -> stdlib.Option<i32>{
+            return stdlib.Option<i32>.Some(owner.value + value);
+        };
+        match (stdlib.andThenOption(stdlib.Option<i32>.Some(3), mapper)) {
+            Some(value) => {
+                if (value != 56) {
+                    return 54;
+                }
+            }
+            None => return 55;
+        }
+    }
+    if (destroyed != beforeUnused + 3) {
+        return 56;
+    }
+    return 0;
 }

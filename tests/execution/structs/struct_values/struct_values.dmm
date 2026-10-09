@@ -1,42 +1,44 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
 struct Pair {
-    var x: int;
-    var y: int;
+    var x:int;
+    var y:int;
 }
 
 struct Box {
-    var pair: Pair;
-    var marker: char;
+    var pair:Pair;
+    var marker:char;
 }
 
-func changed(value: Pair) -> Pair {
+func changed(value:Pair) -> Pair {
     value.x = value.x + 10;
     return value;
 }
 
 func main() -> void {
-    var original: Pair;
+    var original:Pair;
     original.x = 1;
     original.y = 2;
-    var copy: Pair = changed(original);
+    var copy:Pair = changed(original);
     io.println(original.x);
     io.println(copy.x);
-    var assigned: Pair;
+    var assigned:Pair;
     assigned = copy;
     assigned.y = 9;
     io.println(copy.y);
     io.println(assigned.y);
 
-    var box: Box;
+    var box:Box;
     box.pair = assigned;
     box.marker = 'Z';
     io.println(box.pair.x);
     io.println(box.marker);
 
-    var items: Pair[2];
+    var items:Pair[2];
     items[1] = box.pair;
     io.println(items[1].x);
     io.println(items[1].y);

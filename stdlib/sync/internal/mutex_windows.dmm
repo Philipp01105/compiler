@@ -1,24 +1,36 @@
 package internal;
-import memraw "stdlib/memory/raw";
 import (
     "stdlib/core"
+    memraw "stdlib/memory/raw"
 );
 
 // An SRW lock is non-recursive: two simultaneous guards never authorize
 // independent mutable references merely because they share a thread.
 extern "system" from "kernel32" {
-    func initializeLock(address: *usize) -> void = "InitializeSRWLock";
-    func acquireLock(address: *usize) -> void = "AcquireSRWLockExclusive";
-    func releaseLock(address: *usize) -> void = "ReleaseSRWLockExclusive";
+    func initializeLock(address:*usize) -> void = "InitializeSRWLock";
+
+    func acquireLock(address:*usize) -> void = "AcquireSRWLockExclusive";
+
+    func releaseLock(address:*usize) -> void = "ReleaseSRWLockExclusive";
 }
 
 pub func create() -> *void {
-    var address: *usize = memraw.core_alloc(sizeof(usize)).(*usize);
-    if (address == memraw.null<usize>()) { return address.(*void); }
+    var address:*usize = memraw.core_alloc(sizeof(usize)).(*usize);
+    if (address == memraw.null<usize>()) {
+        return address.(*void);
+    }
     initializeLock(address);
     return address.(*void);
 }
 
-pub func lock(address: *void) -> void { acquireLock(address.(*usize)); }
-pub func unlock(address: *void) -> void { releaseLock(address.(*usize)); }
-pub func release(address: *void) -> void { memraw.core_release(address.(*u8)); }
+pub func lock(address:*void) -> void {
+    acquireLock(address.(*usize));
+}
+
+pub func unlock(address:*void) -> void {
+    releaseLock(address.(*usize));
+}
+
+pub func release(address:*void) -> void {
+    memraw.core_release(address.(*u8));
+}

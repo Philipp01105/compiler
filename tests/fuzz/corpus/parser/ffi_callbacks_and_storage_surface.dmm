@@ -1,24 +1,27 @@
 package main;
 extern "system" from "native_seed" {
     struct Context;
-    func acquire(bytes: usize) -> *Context;
-    func visit(context: *Context, callback: extern "system" func(*u8, usize) -> i32) -> i32;
-    func release(context: *Context) -> void;
+
+    func acquire(bytes:usize) -> *Context;
+
+    func visit(context:*Context, callback:extern "system" func(*u8,usize) -> i32) -> i32;
+
+    func release(context:*Context) -> void;
 }
 
 struct Adapter<T> {
-    var context: *Context;
-    var payload: T;
-    var handler: extern "system" func(*u8, usize) -> i32;
+    var context:*Context;
+    var payload:T;
+    var handler:extern "system" func(*u8,usize) -> i32;
     destructor {
         release(context);
     }
 }
 
-extern "system" func inspect(data: *u8, length: usize) -> i32 {
-    var bytes: u8[] = slice(data, length);
-    var checksum: i32;
-    for (var i: usize = 0.(usize); i < length; i += 1.(usize)) {
+extern "system" func inspect(data:*u8, length:usize) -> i32 {
+    var bytes:u8[] = slice(data, length);
+    var checksum:i32;
+    for (var i:usize = 0.(usize); i < length; i += 1.(usize)) {
         checksum += bytes[i].(i32);
     }
     return checksum;
@@ -26,9 +29,14 @@ extern "system" func inspect(data: *u8, length: usize) -> i32 {
 
 func main() -> int {
     var adapter = Adapter<int[4]>{
-        context: acquire(64.(usize)),
-        payload:[1, 2, 3, 4],
-        handler: inspect
+        context:acquire(64.(usize)),
+        payload:[
+            1,
+            2,
+            3,
+            4
+        ],
+        handler:inspect
     };
     var output = visit(adapter.context, adapter.handler);
     return output.(int) + adapter.payload[2];

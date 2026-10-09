@@ -1,15 +1,26 @@
 package math;
 extern "system" from "ucrt" {
-    func nativeAbs(value: double) -> double = "fabs";
-    func nativeSqrt(value: double) -> double = "sqrt";
-    func nativeSin(value: double) -> double = "sin";
-    func nativeCos(value: double) -> double = "cos";
-    func nativeTan(value: double) -> double = "tan";
-    func nativeLog(value: double) -> double = "log";
-    func nativeExp(value: double) -> double = "exp";
-    func nativePow(value: double, other: double) -> double = "pow";
-    func nativeFloor(value: double) -> double = "floor";
-    func nativeCeil(value: double) -> double = "ceil";
-    func nativeTrunc(value: double) -> double = "trunc";
-    func nativeRemainder(value: double, other: double) -> double = "fmod";
+    func nativeAbs(value:double) -> double = "fabs";
+
+    func nativeSqrt(value:double) -> double = "sqrt";
+
+    func nativeSin(value:double) -> double = "sin";
+
+    func nativeCos(value:double) -> double = "cos";
+
+    func nativeTan(value:double) -> double = "tan";
+
+    func nativeLog(value:double) -> double = "log";
+
+    func nativeExp(value:double) -> double = "exp";
+
+    func nativePow(value:double, other:double) -> double = "pow";
+
+    func nativeFloor(value:double) -> double = "floor";
+
+    func nativeCeil(value:double) -> double = "ceil";
+
+    func nativeTrunc(value:double) -> double = "trunc";
+
+    func nativeRemainder(value:double, other:double) -> double = "fmod";
 }

@@ -1,68 +1,70 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
 func main() -> void {
-    var a: int = -7;
+    var a:int = -7;
     {
-        var _output0: string = "sub=" + (10 - 3 - 2);
+        var _output0:string = "sub=" + (10 - 3 - 2);
         io.println(_output0);
         free(_output0);
     }
     {
-        var _output1: string = "negative=" + (a / 2) + "," + (a % 2);
+        var _output1:string = "negative=" + (a / 2) + "," + (a % 2);
         io.println(_output1);
         free(_output1);
     }
     {
-        var _output2: string = "equal=" + (-1 == (0 - 1));
+        var _output2:string = "equal=" + (-1 == (0 - 1));
         io.println(_output2);
         free(_output2);
     }
-    var f: float = 1.5;
-    var d: double = f + 2;
+    var f:float = 1.5;
+    var d:double = f + 2;
     {
-        var _output3: string = "double=" + d;
+        var _output3:string = "double=" + d;
         io.println(_output3);
         free(_output3);
     }
     {
-        var _output4: string = "math=" + (-d * 2.0 / 4.0);
+        var _output4:string = "math=" + (-d * 2.0 / 4.0);
         io.println(_output4);
         free(_output4);
     }
     f = (d / 2.0).(float);
     {
-        var _output5: string = "float=" + f;
+        var _output5:string = "float=" + f;
         io.println(_output5);
         free(_output5);
     }
     {
-        var _output6: string = "convert=" + (-3.9).(int);
+        var _output6:string = "convert=" + (-3.9).(int);
         io.println(_output6);
         free(_output6);
     }
     {
-        var _output7: string = "compare=" + (1.25 < 2.0) + (2.0 >= 2) + (1.0 != 2.0);
+        var _output7:string = "compare=" + (1.25 < 2.0) + (2.0 >= 2) + (1.0 != 2.0);
         io.println(_output7);
         free(_output7);
     }
-    var b: byte = 255;
-    var ch: char = 'A';
-    var flag: bit = (4).(bit);
+    var b:byte = 255;
+    var ch:char = 'A';
+    var flag:bit = (4).(bit);
     {
-        var _output8: string = "small=" + b + "," + ch + "," + flag;
+        var _output8:string = "small=" + b + "," + ch + "," + flag;
         io.println(_output8);
         free(_output8);
     }
     {
-        var _output9: string = "short=" + (false && noisy()) + (true || noisy());
+        var _output9:string = "short=" + (false && noisy()) + (true || noisy());
         io.println(_output9);
         free(_output9);
     }
-    var nan: double = 0.0 / 0.0;
+    var nan:double = 0.0 / 0.0;
     {
-        var _output10: string = "nan=" + (nan == nan) + (nan != nan) + (nan < 0.0) + (nan).(bit);
+        var _output10:string = "nan=" + (nan == nan) + (nan != nan) + (nan < 0.0) + (nan).(bit);
         io.println(_output10);
         free(_output10);
     }

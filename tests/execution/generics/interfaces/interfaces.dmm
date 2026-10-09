@@ -1,32 +1,41 @@
 package main;
-import "stdlib/io";
-interface Printable{func toString()->string;}
-interface Equal{func equal(other:Self)->bit;}
+import (
+    "stdlib/io"
+);
+
+interface Printable {
+    func toString() -> string;
+}
+
+interface Equal {
+    func equal(other:Self) -> bit;
+}
 
 struct Person {
-    var name: string;
+    var name:string;
+
     func toString() -> string {
         return name;
     }
 
-    func equal(other: Self) -> bit {
+    func equal(other:Self) -> bit {
         return name == other.name;
     }
 }
 
-func output<T: Printable>(value: T) -> void {
+func output<T:Printable>(value:T) -> void {
     io.println(value.toString());
 }
 
-func compare<T: Printable + Equal>(a: T, b: T) -> bit {
+func compare<T:Printable + Equal>(a:T, b:T) -> bit {
     output(a);
     return a.equal(b);
 }
 
 func main() -> void {
-    var p: Person;
+    var p:Person;
     p.name = "Ada";
-    var q: Person;
+    var q:Person;
     q.name = "Ada";
     io.println(compare(p, q));
 }

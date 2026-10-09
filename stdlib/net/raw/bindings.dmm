@@ -4,19 +4,19 @@ import (
 );
 extern "system" {
     union NetPointer {
-        pub var bits: usize;
-        pub var pointer: *void;
+        pub var bits:usize;
+        pub var pointer:*void;
     }
 }
 
-func netPointer(value: usize) -> *void {
-    var p: NetPointer;
+func netPointer(value:usize) -> *void {
+    var p:NetPointer;
     p.bits = value;
     return p.pointer;
 }
 
-func netImpl_pointer(value: *u8) -> usize {
-    var p: NetPointer;
+func netImpl_pointer(value:*u8) -> usize {
+    var p:NetPointer;
     p.pointer = value.(*void);
     return p.bits;
 }
@@ -25,13 +25,13 @@ func netImpl_now() -> usize {
     return network.__dmm_net_now().(usize);
 }
 
-func netImpl_socket(family: usize, transport: usize, error: *u8) -> usize {
+func netImpl_socket(family:usize, transport:usize, error:*u8) -> usize {
     return network.__dmm_net_pointer(
         network.__dmm_net_socket(family.(u64), transport.(u64), error.(*network.Error)).(*void)
     ).(usize);
 }
 
-func netImpl_bind(socket: usize, address: *u8, error: *u8) -> i32 {
+func netImpl_bind(socket:usize, address:*u8, error:*u8) -> i32 {
     return network.__dmm_net_bind(
         netPointer(socket).(*network.Socket),
         address.(*network.Address),
@@ -39,7 +39,7 @@ func netImpl_bind(socket: usize, address: *u8, error: *u8) -> i32 {
     );
 }
 
-func netImpl_listen(socket: usize, backlog: usize, error: *u8) -> i32 {
+func netImpl_listen(socket:usize, backlog:usize, error:*u8) -> i32 {
     return network.__dmm_net_listen(
         netPointer(socket).(*network.Socket),
         backlog.(u64),
@@ -47,14 +47,11 @@ func netImpl_listen(socket: usize, backlog: usize, error: *u8) -> i32 {
     );
 }
 
-func netImpl_close(socket: usize, error: *u8) -> i32 {
-    return network.__dmm_net_close(
-        netPointer(socket).(*network.Socket),
-        error.(*network.Error)
-    );
+func netImpl_close(socket:usize, error:*u8) -> i32 {
+    return network.__dmm_net_close(netPointer(socket).(*network.Socket), error.(*network.Error));
 }
 
-func netImpl_address_packet(socket: usize, packet: *u8, error: *u8) -> i32 {
+func netImpl_address_packet(socket:usize, packet:*u8, error:*u8) -> i32 {
     return network.__dmm_net_address_packet(
         netPointer(socket).(*network.Socket),
         packet.(*u64),
@@ -62,7 +59,7 @@ func netImpl_address_packet(socket: usize, packet: *u8, error: *u8) -> i32 {
     );
 }
 
-func netImpl_shutdown_socket(socket: usize, direction: usize, error: *u8) -> i32 {
+func netImpl_shutdown_socket(socket:usize, direction:usize, error:*u8) -> i32 {
     return network.__dmm_net_shutdown_socket(
         netPointer(socket).(*network.Socket),
         direction.(u64),
@@ -70,32 +67,34 @@ func netImpl_shutdown_socket(socket: usize, direction: usize, error: *u8) -> i32
     );
 }
 
-func netImpl_start(request: *u8) -> usize {
-    return network.__dmm_net_pointer(
-        network.__dmm_net_start(request.(*network.Request)).(*void)
-    ).(usize);
+func netImpl_start(request:*u8) -> usize {
+    return network.__dmm_net_pointer(network.__dmm_net_start(request.(*network.Request)).(*void)).(
+        usize
+    );
 }
 
-func netImpl_release(operation: usize) -> void {
+func netImpl_release(operation:usize) -> void {
     network.__dmm_net_release(netPointer(operation).(*network.Operation));
 }
 
-func netImpl_result(operation: usize, field: usize) -> usize {
-    return network.__dmm_net_result(netPointer(operation).(*network.Operation), field.(u64)).(usize);
+func netImpl_result(operation:usize, field:usize) -> usize {
+    return network.__dmm_net_result(netPointer(operation).(*network.Operation), field.(u64)).(
+        usize
+    );
 }
 
-func netImpl_result_address(operation: usize, address: *u8) -> void {
+func netImpl_result_address(operation:usize, address:*u8) -> void {
     network.__dmm_net_result_address(
         netPointer(operation).(*network.Operation),
         address.(*network.Address)
     );
 }
 
-func netImpl_addresses_count(addresses: usize) -> usize {
+func netImpl_addresses_count(addresses:usize) -> usize {
     return network.__dmm_net_addresses_count(netPointer(addresses).(*network.Addresses)).(usize);
 }
 
-func netImpl_addresses_get(addresses: usize, index: usize, address: *u8) -> i32 {
+func netImpl_addresses_get(addresses:usize, index:usize, address:*u8) -> i32 {
     return network.__dmm_net_addresses_get(
         netPointer(addresses).(*network.Addresses),
         index.(u64),
@@ -103,10 +102,10 @@ func netImpl_addresses_get(addresses: usize, index: usize, address: *u8) -> i32 
     );
 }
 
-func netImpl_addresses_release(addresses: usize) -> void {
+func netImpl_addresses_release(addresses:usize) -> void {
     network.__dmm_net_addresses_release(netPointer(addresses).(*network.Addresses));
 }
 
-func netImpl_wait(operation: usize) -> *void {
+func netImpl_wait(operation:usize) -> *void {
     return network.__dmm_net_wait(operation.(u64));
 }

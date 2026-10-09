@@ -11,7 +11,7 @@ struct Device {
 }
 
 func main() -> void {
-    var device: Device;
-    var erased: Factory = device;
+    var device:Device;
+    var erased:Factory = device;
     erased.code();
 }

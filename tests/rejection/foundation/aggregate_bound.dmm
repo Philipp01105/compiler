@@ -4,10 +4,10 @@ interface Printable {
     func toString() -> string;
 }
 
-struct Box<T: Printable> {
-    var value: T;
+struct Box<T:Printable> {
+    var value:T;
 }
 
 func main() -> void {
-    var box: Box<int>;
+    var box:Box<int>;
 }

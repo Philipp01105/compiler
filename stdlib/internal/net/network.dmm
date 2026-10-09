@@ -7,157 +7,157 @@ import (
 // slots, operation references, publication, the deadline heap and DNS admission.
 extern "system" {
     pub struct Address {
-        pub var family: u64;
-        pub var port: u64;
-        pub var scope: u64;
-        pub var bytes: u8[16];
+        pub var family:u64;
+        pub var port:u64;
+        pub var scope:u64;
+        pub var bytes:u8[16];
     }
 
     pub struct Error {
-        pub var kind: u64;
-        pub var domain: u64;
-        pub var code: i64;
+        pub var kind:u64;
+        pub var domain:u64;
+        pub var code:i64;
     }
 
     pub struct Socket {
-        pub var fd: usize;
-        pub var family: u64;
-        pub var transport: u64;
-        pub var state: u64;
-        pub var read: *Operation;
-        pub var write: *Operation;
+        pub var fd:usize;
+        pub var family:u64;
+        pub var transport:u64;
+        pub var state:u64;
+        pub var read:*Operation;
+        pub var write:*Operation;
     }
 
     pub struct Addresses {
-        pub var count: usize;
+        pub var count:usize;
     }
 
     pub struct Request {
-        pub var command: u64;
-        pub var socket: *Socket;
-        pub var buffer: *void;
-        pub var length: u64;
-        pub var deadline: u64;
-        pub var address: Address;
-        pub var hostname: *u8;
-        pub var transport: u64;
+        pub var command:u64;
+        pub var socket:*Socket;
+        pub var buffer:*void;
+        pub var length:u64;
+        pub var deadline:u64;
+        pub var address:Address;
+        pub var hostname:*u8;
+        pub var transport:u64;
     }
 
     union PointerBits {
-        pub var bits: usize;
-        pub var pointer: *void;
+        pub var bits:usize;
+        pub var pointer:*void;
     }
 
     struct NetFuture {
-        pub var poll: extern "system" func(*void, *void) -> i32;
-        pub var destroy: extern "system" func(*void, i32) -> void;
-        pub var state: i64;
-        pub var cancelPoll: extern "system" func(*void, *void) -> i32;
-        pub var resultDestroy: extern "system" func(*void) -> void;
-        pub var context: *void;
-        pub var resultPresent: u64;
-        pub var cancelState: u64;
-        pub var operation: *Operation;
-        pub var resultCancel: *void;
+        pub var poll:extern "system" func(*void,*void) -> i32;
+        pub var destroy:extern "system" func(*void,i32) -> void;
+        pub var state:i64;
+        pub var cancelPoll:extern "system" func(*void,*void) -> i32;
+        pub var resultDestroy:extern "system" func(*void) -> void;
+        pub var context:*void;
+        pub var resultPresent:u64;
+        pub var cancelState:u64;
+        pub var operation:*Operation;
+        pub var resultCancel:*void;
     }
 }
 
-const NEVER: u64 = 18446744073709551615;
-const INVALID: usize = 18446744073709551615;
-var operations: *Operation;
-var notifications: *Operation;
-var dnsHead: *Operation;
-var dnsTail: *Operation;
-var dnsCount: usize;
-var deadlineHeap: **Operation;
-var heapCount: usize;
-var heapCapacity: usize;
-var runtimeState: i32;
-var initialized: i32;
-var stopReactor: i32;
-var stopDns: i32;
-var reactorThread: *void;
-var dnsThread0: *void;
-var dnsThread1: *void;
+const NEVER:u64 = 18446744073709551615;
+const INVALID:usize = 18446744073709551615;
+var operations:*Operation;
+var notifications:*Operation;
+var dnsHead:*Operation;
+var dnsTail:*Operation;
+var dnsCount:usize;
+var deadlineHeap:**Operation;
+var heapCount:usize;
+var heapCapacity:usize;
+var runtimeState:i32;
+var initialized:i32;
+var stopReactor:i32;
+var stopDns:i32;
+var reactorThread:*void;
+var dnsThread0:*void;
+var dnsThread1:*void;
 
 func nullPointer() -> *void {
-    var value: PointerBits;
+    var value:PointerBits;
     return value.pointer;
 }
 
-func pointer(bits: usize) -> *void {
-    var value: PointerBits;
+func pointer(bits:usize) -> *void {
+    var value:PointerBits;
     value.bits = bits;
     return value.pointer;
 }
 
-func bits(address: *void) -> usize {
-    var value: PointerBits;
+func bits(address:*void) -> usize {
+    var value:PointerBits;
     value.pointer = address;
     return value.bits;
 }
 
-func require(ok: bit) -> void {
+func require(ok:bit) -> void {
     if (!ok) {
         abort();
     }
 }
 
-func netError(kind: u64) -> Error {
-    var value: Error;
+func netError(kind:u64) -> Error {
+    var value:Error;
     value.kind = kind;
     return value;
 }
 
-func errorWith(kind: u64, domain: u64, code: i32) -> Error {
-    var value: Error;
+func errorWith(kind:u64, domain:u64, code:i32) -> Error {
+    var value:Error;
     value.kind = kind;
     value.domain = domain;
     value.code = code.(i64);
     return value;
 }
 
-func heapSwap(a: usize, b: usize) -> void {
-    var saved: *Operation = deadlineHeap[a];
+func heapSwap(a:usize, b:usize) -> void {
+    var saved:*Operation = deadlineHeap[a];
     deadlineHeap[a] = deadlineHeap[b];
     deadlineHeap[b] = saved;
     (*deadlineHeap[a]).heapIndex = a;
     (*deadlineHeap[b]).heapIndex = b;
 }
 
-func heapUp(index: usize) -> void {
+func heapUp(index:usize) -> void {
     while (
-        index != 0 &&
-        (*deadlineHeap[index]).request.deadline < (*deadlineHeap[(index - 1) / 2]).request.deadline
+        index != 0
+        && (*deadlineHeap[index]).request.deadline < (*deadlineHeap[(index - 1)
+            / 2]).request.deadline
     ) {
         heapSwap(index, (index - 1) / 2);
         index = (index - 1) / 2;
     }
 }
 
-func heapRemove(op: *Operation) -> void {
-    var index: usize = (*op).heapIndex;
+func heapRemove(op:*Operation) -> void {
+    var index:usize = (*op).heapIndex;
     if (index == INVALID) {
         return;
-    }
-    (*op).heapIndex = INVALID;
+    }(*op).heapIndex = INVALID;
     heapCount = heapCount - 1;
     if (index == heapCount) {
         return;
     }
-    var moved: *Operation = deadlineHeap[heapCount];
+    var moved:*Operation = deadlineHeap[heapCount];
     deadlineHeap[index] = moved;
     (*moved).heapIndex = index;
     heapUp(index);
     index = (*moved).heapIndex;
     while (true) {
-        var child: usize = index * 2 + 1;
+        var child:usize = index * 2 + 1;
         if (child >= heapCount) {
             break;
         }
         if (
-            child + 1 < heapCount &&
-            (*deadlineHeap[child + 1]).request.deadline < (*deadlineHeap[child]).request.deadline
+            child + 1 < heapCount
+            && (*deadlineHeap[child + 1]).request.deadline < (*deadlineHeap[child]).request.deadline
         ) {
             child = child + 1;
         }
@@ -169,33 +169,32 @@ func heapRemove(op: *Operation) -> void {
     }
 }
 
-func heapInsert(op: *Operation) -> bit {
+func heapInsert(op:*Operation) -> bit {
     if ((*op).request.deadline == NEVER) {
         return true;
     }
     if (heapCount == heapCapacity) {
-        var capacity: usize = 32;
+        var capacity:usize = 32;
         if (heapCapacity != 0) {
             capacity = heapCapacity * 2;
         }
         if (capacity < heapCapacity || capacity > INVALID / 8) {
             return false;
         }
-        var grown: *void = reallocate(deadlineHeap.(*void), capacity * 8);
+        var grown:*void = reallocate(deadlineHeap.(*void), capacity * 8);
         if (grown == nullPointer()) {
             return false;
         }
         deadlineHeap = grown.(**Operation);
         heapCapacity = capacity;
-    }
-    (*op).heapIndex = heapCount;
+    }(*op).heapIndex = heapCount;
     deadlineHeap[heapCount] = op;
     heapCount = heapCount + 1;
     heapUp((*op).heapIndex);
     return true;
 }
 
-func releaseLocked(op: *Operation) -> void {
+func releaseLocked(op:*Operation) -> void {
     (*op).refs = (*op).refs - 1;
     if ((*op).refs != 0) {
         return;
@@ -213,16 +212,16 @@ func releaseLocked(op: *Operation) -> void {
     release(op.(*void));
 }
 
-func completeLocked(op: *Operation, error: Error) -> void {
+func completeLocked(op:*Operation, error:Error) -> void {
     if ((*op).done != 0) {
         return;
     }
     heapRemove(op);
     (*op).done = 1;
     (*op).error = error;
-    var s: *Socket = (*op).request.socket;
+    var s:*Socket = (*op).request.socket;
     if (s != nullPointer().(*Socket)) {
-        var claimed: bit = (*s).read == op || (*s).write == op;
+        var claimed:bit = (*s).read == op || (*s).write == op;
         if ((*s).read == op) {
             (*s).read = nullPointer().(*Operation);
         }
@@ -233,15 +232,13 @@ func completeLocked(op: *Operation, error: Error) -> void {
             if (error.kind != 0) {
                 if ((*s).fd != INVALID) {
                     closeFd((*s).fd);
-                }
-                (*s).fd = INVALID;
+                }(*s).fd = INVALID;
             } else {
                 (*s).state = 3;
             }
         }
         updateInterest(s);
-    }
-    (*op).refs = (*op).refs + 1;
+    }(*op).refs = (*op).refs + 1;
     (*op).notifyNext = notifications;
     notifications = op;
 }
@@ -249,7 +246,7 @@ func completeLocked(op: *Operation, error: Error) -> void {
 func deliver() -> void {
     while (true) {
         lockNet();
-        var op: *Operation = notifications;
+        var op:*Operation = notifications;
         if (op == nullPointer().(*Operation)) {
             unlockNet();
             return;
@@ -265,15 +262,15 @@ func deliver() -> void {
     }
 }
 
-func milliseconds(now: u64, deadline: u64) -> i32 {
+func milliseconds(now:u64, deadline:u64) -> i32 {
     if (deadline == NEVER) {
         return -1;
     }
     if (deadline <= now) {
         return 0;
     }
-    var delta: u64 = deadline - now;
-    var ms: u64 = delta / 1000000;
+    var delta:u64 = deadline - now;
+    var ms:u64 = delta / 1000000;
     if (delta % 1000000 != 0) {
         ms = ms + 1;
     }
@@ -283,7 +280,7 @@ func milliseconds(now: u64, deadline: u64) -> i32 {
     return ms.(i32);
 }
 
-func initialize(error: *Error) -> bit {
+func initialize(error:*Error) -> bit {
     if (runtimeState != 0) {
         *error = netError(3);
         return false;
@@ -299,7 +296,7 @@ func initialize(error: *Error) -> bit {
     return true;
 }
 
-func usable(s: *Socket, error: *Error, admission: bit) -> bit {
+func usable(s:*Socket, error:*Error, admission:bit) -> bit {
     if (admission && runtimeState != 0) {
         *error = netError(3);
         return false;
@@ -312,11 +309,9 @@ func usable(s: *Socket, error: *Error, admission: bit) -> bit {
     return true;
 }
 
-pub export "system" func __dmm_net_pointer(address: *void) -> u64 {
+pub export "system" func __dmm_net_pointer(address:*void) -> u64{
     return bits(address).(u64);
-}
-
-pub export "system" func __dmm_net_socket(family: u64, transport: u64, error: *Error) -> *Socket {
+} pub export "system" func __dmm_net_socket(family:u64, transport:u64, error:*Error) -> *Socket{
     *error = netError(0);
     lockNet();
     if (!initialize(error)) {
@@ -328,13 +323,12 @@ pub export "system" func __dmm_net_socket(family: u64, transport: u64, error: *E
         unlockNet();
         return nullPointer().(*Socket);
     }
-    var s: *Socket = allocate(Socket.size).(*Socket);
+    var s:*Socket = allocate(Socket.size).(*Socket);
     if (s == nullPointer().(*Socket)) {
         *error = netError(10);
         unlockNet();
         return s;
-    }
-    (*s).fd = newFd(family, transport, error);
+    }(*s).fd = newFd(family, transport, error);
     (*s).family = family;
     (*s).transport = transport;
     if ((*s).fd == INVALID) {
@@ -343,29 +337,27 @@ pub export "system" func __dmm_net_socket(family: u64, transport: u64, error: *E
     }
     unlockNet();
     return s;
-}
-
-pub export "system" func __dmm_net_bind(s: *Socket, address: *Address, error: *Error) -> i32 {
+} pub export "system" func __dmm_net_bind(s:*Socket, address:*Address, error:*Error) -> i32{
     lockNet();
-    var native: NativeAddress;
-    var length: i32;
-    var ok: bit = usable(s, error, true);
+    var native:NativeAddress;
+    var length:i32;
+    var ok:bit = usable(s, error, true);
     if (
-        ok &&
-        (
-            (*s).read != nullPointer().(*Operation) ||
-            (*s).write != nullPointer().(*Operation) ||
-            (*s).state != 0
+        ok
+        && (
+            (*s).read != nullPointer().(*Operation)
+            || (*s).write != nullPointer().(*Operation)
+            || (*s).state != 0
         )
     ) {
         *error = netError(4);
         ok = false;
     }
     if (
-        ok &&
-        (
-            !toNative(address, (&native).(*NativeAddress), (&length).(*i32)) ||
-            (*address).family != (*s).family
+        ok
+        && (
+            !toNative(address, (&native).(*NativeAddress), (&length).(*i32))
+            || (*address).family != (*s).family
         )
     ) {
         *error = netError(5);
@@ -380,18 +372,16 @@ pub export "system" func __dmm_net_bind(s: *Socket, address: *Address, error: *E
     }
     unlockNet();
     return ok.(i32);
-}
-
-pub export "system" func __dmm_net_listen(s: *Socket, backlog: u64, error: *Error) -> i32 {
+} pub export "system" func __dmm_net_listen(s:*Socket, backlog:u64, error:*Error) -> i32{
     lockNet();
-    var ok: bit = usable(s, error, true);
+    var ok:bit = usable(s, error, true);
     if (
-        ok &&
-        (
-            (*s).transport != 1 ||
-            (*s).state != 1 ||
-            (*s).read != nullPointer().(*Operation) ||
-            (*s).write != nullPointer().(*Operation)
+        ok
+        && (
+            (*s).transport != 1
+            || (*s).state != 1
+            || (*s).read != nullPointer().(*Operation)
+            || (*s).write != nullPointer().(*Operation)
         )
     ) {
         *error = netError(4);
@@ -410,21 +400,21 @@ pub export "system" func __dmm_net_listen(s: *Socket, backlog: u64, error: *Erro
     }
     unlockNet();
     return ok.(i32);
-}
-
-pub export "system" func __dmm_net_address(s: *Socket, peer: u64, out: *Address, error: *Error) -> i32 {
+} pub export "system" func __dmm_net_address(
+    s:*Socket,
+    peer:u64,
+    out:*Address,
+    error:*Error
+) -> i32{
     lockNet();
-    var ok: bit = usable(s, error, true);
-    var native: NativeAddress;
-    var length: i32 = (NativeAddress.size).(i32);
+    var ok:bit = usable(s, error, true);
+    var native:NativeAddress;
+    var length:i32 = (NativeAddress.size).(i32);
     if (ok && ((peer != 0 && (*s).state != 3) || (peer == 0 && (*s).state == 0))) {
         *error = netError(4);
         ok = false;
     }
-    if (
-        ok &&
-        addressFd((*s).fd, peer, (&native).(*NativeAddress), (&length).(*i32)) != 0
-    ) {
+    if (ok && addressFd((*s).fd, peer, (&native).(*NativeAddress), (&length).(*i32)) != 0) {
         *error = nativeError(osError());
         ok = false;
     }
@@ -433,21 +423,21 @@ pub export "system" func __dmm_net_address(s: *Socket, peer: u64, out: *Address,
     }
     unlockNet();
     return ok.(i32);
-}
-
-pub export "system" func __dmm_net_address_packet(s: *Socket, packet: *u64, error: *Error) -> i32 {
+} pub export "system" func __dmm_net_address_packet(s:*Socket, packet:*u64, error:*Error) -> i32{
     return __dmm_net_address(s, packet[0], (&packet[1]).(*Address), error);
-}
-
-pub export "system" func __dmm_net_shutdown_socket(s: *Socket, direction: u64, error: *Error) -> i32 {
+} pub export "system" func __dmm_net_shutdown_socket(
+    s:*Socket,
+    direction:u64,
+    error:*Error
+) -> i32{
     lockNet();
-    var ok: bit = usable(s, error, true);
+    var ok:bit = usable(s, error, true);
     if (
-        ok &&
-        (
-            (*s).read != nullPointer().(*Operation) ||
-            (*s).write != nullPointer().(*Operation) ||
-            (*s).state != 3
+        ok
+        && (
+            (*s).read != nullPointer().(*Operation)
+            || (*s).write != nullPointer().(*Operation)
+            || (*s).state != 3
         )
     ) {
         *error = netError(4);
@@ -463,27 +453,21 @@ pub export "system" func __dmm_net_shutdown_socket(s: *Socket, direction: u64, e
     }
     unlockNet();
     return ok.(i32);
-}
-
-pub export "system" func __dmm_net_close(s: *Socket, error: *Error) -> i32 {
+} pub export "system" func __dmm_net_close(s:*Socket, error:*Error) -> i32{
     *error = netError(0);
     if (s == nullPointer().(*Socket)) {
         return 1;
     }
     lockNet();
-    require(
-        (*s).read == nullPointer().(*Operation) &&
-        (*s).write == nullPointer().(*Operation)
-    );
-    var ok: i32 = 1;
+    require((*s).read == nullPointer().(*Operation) && (*s).write == nullPointer().(*Operation));
+    var ok:i32 = 1;
     if ((*s).fd != INVALID && closeFd((*s).fd) != 0) {
         *error = nativeError(osError());
         ok = 0;
     }
     if (closeError(error)) {
         ok = 0;
-    }
-    (*s).fd = INVALID;
+    }(*s).fd = INVALID;
     unlockNet();
     release(s.(*void));
     return ok;

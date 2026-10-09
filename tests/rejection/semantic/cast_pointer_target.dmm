@@ -1,5 +1,5 @@
 package main;
 
 func main() -> void {
-    var value: *int = 3.(*int);
+    var value:*int = 3.(*int);
 }

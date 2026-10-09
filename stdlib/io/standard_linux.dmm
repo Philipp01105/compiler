@@ -1,30 +1,61 @@
 package io;
-import ("stdlib/core" "stdlib/native/glibc");
-func standardRead(fd:int,output:u8[])->core.Result<usize,Error> {
-    if(output.length==0) { return core.Result<usize,Error>.Ok(0); }
-    var count=output.length;
-    if(count>1073741824) { count=1073741824; }
-    while(true) {
-        var result=glibc.read(fd.(i32),output.data.(*void),count);
-        if(result>=0) { return core.Result<usize,Error>.Ok(result.(usize)); }
-        var code=*glibc.errnoAddress();
-        if(code!=4) {
-            return core.Result<usize,Error>.Err(Error{kind:ErrorKind.System,domain:ErrorDomain.Posix,code:code.(isize),transferred:0});
+import (
+    "stdlib/core"
+    "stdlib/native/glibc"
+);
+
+func standardRead(fd:int, output:u8[]) -> core.Result<usize,Error> {
+    if (output.length == 0) {
+        return core.Result<usize,Error>.Ok(0);
+    }
+    var count = output.length;
+    if (count > 1073741824) {
+        count = 1073741824;
+    }
+    while (true) {
+        var result = glibc.read(fd.(i32), output.data.(*void), count);
+        if (result >= 0) {
+            return core.Result<usize,Error>.Ok(result.(usize));
+        }
+        var code = *glibc.errnoAddress();
+        if (code != 4) {
+            return core.Result<usize,Error>.Err(
+                Error{
+                    kind:ErrorKind.System,
+                    domain:ErrorDomain.Posix,
+                    code:code.(isize),
+                    transferred:0
+                }
+            );
         }
     }
-    return core.Result<usize,Error>.Err(failure(ErrorKind.System,0));
+    return core.Result<usize,Error>.Err(failure(ErrorKind.System, 0));
 }
-func standardWrite(fd:int,input:u8[])->core.Result<usize,Error> {
-    if(input.length==0) { return core.Result<usize,Error>.Ok(0); }
-    var count=input.length;
-    if(count>1073741824) { count=1073741824; }
-    while(true) {
-        var result=glibc.write(fd.(i32),input.data.(*void),count);
-        if(result>=0) { return core.Result<usize,Error>.Ok(result.(usize)); }
-        var code=*glibc.errnoAddress();
-        if(code!=4) {
-            return core.Result<usize,Error>.Err(Error{kind:ErrorKind.System,domain:ErrorDomain.Posix,code:code.(isize),transferred:0});
+
+func standardWrite(fd:int, input:u8[]) -> core.Result<usize,Error> {
+    if (input.length == 0) {
+        return core.Result<usize,Error>.Ok(0);
+    }
+    var count = input.length;
+    if (count > 1073741824) {
+        count = 1073741824;
+    }
+    while (true) {
+        var result = glibc.write(fd.(i32), input.data.(*void), count);
+        if (result >= 0) {
+            return core.Result<usize,Error>.Ok(result.(usize));
+        }
+        var code = *glibc.errnoAddress();
+        if (code != 4) {
+            return core.Result<usize,Error>.Err(
+                Error{
+                    kind:ErrorKind.System,
+                    domain:ErrorDomain.Posix,
+                    code:code.(isize),
+                    transferred:0
+                }
+            );
         }
     }
-    return core.Result<usize,Error>.Err(failure(ErrorKind.System,0));
+    return core.Result<usize,Error>.Err(failure(ErrorKind.System, 0));
 }

@@ -1,6 +1,8 @@
 package main;
-import memraw "stdlib/memory/raw";
-import "stdlib/core";
+import (
+    "stdlib/core"
+    memraw "stdlib/memory/raw"
+);
 
 func main() -> void {
     memraw.core_trap();

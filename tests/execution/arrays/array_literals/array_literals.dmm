@@ -1,21 +1,28 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
-var packageFixed: int[5] = [3, 4;
+var packageFixed:int[5] = [3, 4;
 5];
-var packageSlice: int[] = [6, 7, 8];
+var packageSlice:int[] = [6, 7, 8];
 
-func sum(values: int[]) -> int {
-    var total: int = 0;
-    for (var i: int = 0; i < 6; i++) {
+func sum(values:int[]) -> int {
+    var total:int = 0;
+    for (var i:int = 0; i < 6; i++) {
         total += values[i];
     }
     return total;
 }
 
 func fixed() -> int[4] {
-    return [1, 2, 3, 4];
+    return [
+        1,
+        2,
+        3,
+        4
+    ];
 }
 
 func forwarded() -> int[] {
@@ -29,34 +36,39 @@ func numbers() -> int[] {
 func main() -> void {
     io.println(packageFixed[4]);
     io.println(packageSlice[1]);
-    var fixedValues: int[4] = [0, 1;
+    var fixedValues:int[4] = [0, 1;
     4];
     io.println(fixedValues[0]);
     io.println(fixedValues[3]);
-    fixedValues = [4, 5, 6, 7];
+    fixedValues = [
+        4,
+        5,
+        6,
+        7
+    ];
     io.println(fixedValues[2]);
 
-    var sliceValues: int[] = [1, 2;
+    var sliceValues:int[] = [1, 2;
     6];
-    var copied: int[] = sliceValues;
+    var copied:int[] = sliceValues;
     copied[1] = 9;
     io.println(sliceValues[1]);
     io.println(sum([1, 2, 3;
     6]));
 
-    var returnedFixed: int[4] = fixed();
+    var returnedFixed:int[4] = fixed();
     io.println(returnedFixed[3]);
-    var returnedSlice: int[] = numbers();
+    var returnedSlice:int[] = numbers();
     io.println(returnedSlice[2]);
-    var forwardedSlice: int[] = forwarded();
+    var forwardedSlice:int[] = forwarded();
     io.println(forwardedSlice[0]);
 
-    var reassigned: int[] = [1, 2];
+    var reassigned:int[] = [1, 2];
     reassigned = [5, 6, 7];
     io.println(reassigned[2]);
 
-    var ownerAfterView: int[] = [8, 9];
-    var finishedView: int[] = ownerAfterView;
+    var ownerAfterView:int[] = [8, 9];
+    var finishedView:int[] = ownerAfterView;
     io.println(finishedView[0]);
     ownerAfterView = [2, 4];
     io.println(ownerAfterView[1]);

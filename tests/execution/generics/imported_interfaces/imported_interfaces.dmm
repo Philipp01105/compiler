@@ -1,32 +1,36 @@
 package main;
-import "stdlib/io";
-import "dmm.test/imported_interfaces/contracts";
+import (
+    "stdlib/io"
+
+    "dmm.test/imported_interfaces/contracts"
+);
 
 struct Person {
-    var name: string;
+    var name:string;
+
     func toString() -> string {
         return name;
     }
 
-    func equal(other: Self) -> bit {
+    func equal(other:Self) -> bit {
         return name == other.name;
     }
 }
 
-func output<T: contracts.Printable>(value: T) -> string {
+func output<T:contracts.Printable>(value:T) -> string {
     return value.toString();
 }
 
-func compare<T: contracts.Printable + contracts.Equal>(a: T, b: T) -> bit {
+func compare<T:contracts.Printable + contracts.Equal>(a:T, b:T) -> bit {
     return a.equal(b);
 }
 
 func main() -> void {
-    var p: Person;
+    var p:Person;
     p.name = "Ada";
     io.println(output(p));
     io.println(compare(p, p));
-    var items: contracts.Printable[1];
+    var items:contracts.Printable[1];
     items[0] = p;
     io.println(items[0].toString());
 }

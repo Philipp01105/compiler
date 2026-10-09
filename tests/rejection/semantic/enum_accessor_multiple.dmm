@@ -5,6 +5,6 @@ enum Pair<T> {
 }
 
 func main() -> void {
-    var p: Pair<int> = Pair<int>.Values(1, 2);
+    var p:Pair<int> = Pair<int>.Values(1, 2);
     p.Values();
 }

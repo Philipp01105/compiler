@@ -4,12 +4,12 @@ import (
 );
 
 func main() -> int {
-    var created = collections.buffer<u8>(4,0);
+    var created = collections.buffer<u8>(4, 0);
     match (created) {
         Err(error) => return 1;
         Ok(owner) => {
             var view = owner.view();
-            *owner.getMut(0)=1;
+            *owner.getMut(0) = 1;
             return view[0].(int);
         }
     }

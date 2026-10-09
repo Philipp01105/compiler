@@ -1,7 +1,7 @@
 package main;
 
 func make<T>() -> T {
-    var x: T;
+    var x:T;
     return x;
 }
 

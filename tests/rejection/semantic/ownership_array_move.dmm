@@ -1,12 +1,12 @@
 package main;
 
 struct Resource {
-    var value: int;
+    var value:int;
     destructor {}
 }
 
 func main() -> int {
-    var resources: Resource[2];
+    var resources:Resource[2];
     var moved = resources;
     return resources[0].value;
 }

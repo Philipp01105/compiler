@@ -1,38 +1,62 @@
 package main;
 import (
     stdlib "stdlib/core"
-    "stdlib/text"
-    "stdlib/path"
     "stdlib/fs"
     "stdlib/io"
-    env "stdlib/process/native"
-    "stdlib/time"
-    "stdlib/random"
     "stdlib/math"
+    "stdlib/path"
+    env "stdlib/process/native"
+    "stdlib/random"
+    "stdlib/text"
+    "stdlib/time"
 );
 
-func fsOk(value: stdlib.Result<void, fs.Error>) -> bit {
+func fsOk(value:stdlib.Result<void,fs.Error>) -> bit {
     match (value) {
         Ok => return true;
         Err(error) => return false;
     }
 }
 
-func envOk(value: stdlib.Result<void, env.Error>) -> bit {
+func envOk(value:stdlib.Result<void,env.Error>) -> bit {
     match (value) {
         Ok => return true;
         Err(error) => return false;
     }
 }
 
-func ioOk(value:stdlib.Result<void,io.Error>)->bit {
-    match(value){Ok=>return true;Err(error)=>return false;}
+func ioOk(value:stdlib.Result<void,io.Error>) -> bit {
+    match (value) {
+        Ok => return true;
+        Err(error) => return false;
+    }
 }
 
 func main() -> int {
-    match(time.milliseconds(2)){Ok(value)=>{if(value.nanoseconds!=2000000){return 100;}}Err(error)=>return 101;}
-    match(time.milliseconds(18446744073710)){Err(error)=>{if(error!=time.Error.Overflow){return 102;}}Ok(value)=>return 103;}
-    match(time.after(time.nanoseconds(18446744073709551615))){Err(error)=>{if(error!=time.Error.Overflow){return 104;}}Ok(value)=>return 105;}
+    match (time.milliseconds(2)) {
+        Ok(value) => {
+            if (value.nanoseconds != 2000000) {
+                return 100;
+            }
+        }
+        Err(error) => return 101;
+    }
+    match (time.milliseconds(18446744073710)) {
+        Err(error) => {
+            if (error != time.Error.Overflow) {
+                return 102;
+            }
+        }
+        Ok(value) => return 103;
+    }
+    match (time.after(time.nanoseconds(18446744073709551615))) {
+        Err(error) => {
+            if (error != time.Error.Overflow) {
+                return 104;
+            }
+        }
+        Ok(value) => return 105;
+    }
 
     var normalized = path.normalize(text.bytes("/a/b/../c/./"), path.Style.Posix);
     match (normalized) {
@@ -44,21 +68,18 @@ func main() -> int {
         }
     }
     if (
-        path.basename(text.bytes("/a/file.txt"), path.Style.Posix) != text.bytes("file.txt") ||
-        path.extension(text.bytes(".hidden"), path.Style.Posix).length != 0
+        path.basename(text.bytes("/a/file.txt"), path.Style.Posix) != text.bytes("file.txt")
+        || path.extension(text.bytes(".hidden"), path.Style.Posix).length != 0
     ) {
         return 3;
     }
     if (
-        path.dirname(text.bytes("C:\\file.txt"), path.Style.Windows) != text.bytes("C:\\") ||
-        path.dirname(text.bytes("/"), path.Style.Posix) != text.bytes("/")
+        path.dirname(text.bytes("C:\\file.txt"), path.Style.Windows) != text.bytes("C:\\")
+        || path.dirname(text.bytes("/"), path.Style.Posix) != text.bytes("/")
     ) {
         return 32;
     }
-    var windows = path.normalize(
-        text.bytes("\\\\server\\share\\a\\..\\..\\b"),
-        path.Style.Windows
-    );
+    var windows = path.normalize(text.bytes("\\\\server\\share\\a\\..\\..\\b"), path.Style.Windows);
     match (windows) {
         Err(error) => return 33;
         Ok(value) => {
@@ -116,19 +137,48 @@ func main() -> int {
         return 42;
     }
     // A retrieved value owns its bytes across later environment mutations.
-    if (!envOk(env.set(text.bytes("DMM_STDLIB_TEST_VALUE"), text.bytes("snapshot")))) { return 43; }
-    match(env.get(text.bytes("DMM_STDLIB_TEST_VALUE"))) {
-        Err(error)=>return 44;
-        Ok(snapshot)=>{
-            if (!envOk(env.set(text.bytes("DMM_STDLIB_TEST_VALUE"), text.bytes("changed")))) { return 45; }
-            if (!envOk(env.remove(text.bytes("DMM_STDLIB_TEST_VALUE")))) { return 46; }
-            if(snapshot.view()!=text.bytes("snapshot")) { return 47; }
+    if (!envOk(env.set(text.bytes("DMM_STDLIB_TEST_VALUE"), text.bytes("snapshot")))) {
+        return 43;
+    }
+    match (env.get(text.bytes("DMM_STDLIB_TEST_VALUE"))) {
+        Err(error) => return 44;
+        Ok(snapshot) => {
+            if (!envOk(env.set(text.bytes("DMM_STDLIB_TEST_VALUE"), text.bytes("changed")))) {
+                return 45;
+            }
+            if (!envOk(env.remove(text.bytes("DMM_STDLIB_TEST_VALUE")))) {
+                return 46;
+            }
+            if (snapshot.view() != text.bytes("snapshot")) {
+                return 47;
+            }
         }
     }
-    match(env.get(text.bytes(""))) { Ok(value)=>return 48; Err(error)=>{if(error.kind!=env.ErrorKind.InvalidName){return 49;}} }
-    match(env.set(text.bytes("bad=name"),text.bytes("value"))) { Ok=>return 50; Err(error)=>{if(error.kind!=env.ErrorKind.InvalidName){return 51;}} }
-    var invalid:u8[3]=[65,0,66];
-    match(env.set(text.bytes("DMM_STDLIB_TEST_VALUE"),invalid[:])) { Ok=>return 52; Err(error)=>{if(error.kind!=env.ErrorKind.InvalidValue){return 53;}} }
+    match (env.get(text.bytes(""))) {
+        Ok(value) => return 48;
+        Err(error) => {
+            if (error.kind != env.ErrorKind.InvalidName) {
+                return 49;
+            }
+        }
+    }
+    match (env.set(text.bytes("bad=name"), text.bytes("value"))) {
+        Ok => return 50;
+        Err(error) => {
+            if (error.kind != env.ErrorKind.InvalidName) {
+                return 51;
+            }
+        }
+    }
+    var invalid:u8[3] = [65, 0, 66];
+    match (env.set(text.bytes("DMM_STDLIB_TEST_VALUE"), invalid[:])) {
+        Ok => return 52;
+        Err(error) => {
+            if (error.kind != env.ErrorKind.InvalidValue) {
+                return 53;
+            }
+        }
+    }
     var first = time.now();
     var second = time.now();
     match (first) {
@@ -164,7 +214,7 @@ func main() -> int {
     if (generator.next() != 10481999410520546993.(u64)) {
         return 16;
     }
-    for (var i: int = 0; i < 100; i += 1) {
+    for (var i:int = 0; i < 100; i += 1) {
         var bounded = generator.below(7);
         match (bounded) {
             Err(error) => return 43;
@@ -175,28 +225,41 @@ func main() -> int {
             }
         }
     }
-    var samples: u8[32];
-    var sampleView: u8[] = samples;
+    var samples:u8[32];
+    var sampleView:u8[] = samples;
     var entropy = random.systemFill(&mut sampleView);
     match (entropy) {
         Err(error) => return 17;
         Ok => {}
     }
     if (
-        math.sqrt(9.0) != 3.0 ||
-        math.floor(-1.2) != - 2.0 ||
-        math.abs(-7.0) != 7.0 ||
-        math.pow(2.0, 3.0) != 8.0 ||
-        !math.isFinite(math.PI)
+        math.sqrt(9.0) != 3.0
+        || math.floor(-1.2) != -2.0
+        || math.abs(-7.0) != 7.0
+        || math.pow(2.0, 3.0) != 8.0
+        || !math.isFinite(math.PI)
     ) {
         return 18;
     }
     if (!fsOk(fs.createDir(text.bytes("dmm-stdlib-system-test")))) {
         return 19;
     }
-    var filePath: u8[] = text.bytes("dmm-stdlib-system-test/ä😀.txt");
-    var binary: u8[12] = [104, 101, 108, 108, 111, 0, 98, 105, 110, 97, 114, 121];
-    var content: u8[] = binary;
+    var filePath:u8[] = text.bytes("dmm-stdlib-system-test/ä😀.txt");
+    var binary:u8[12] = [
+        104,
+        101,
+        108,
+        108,
+        111,
+        0,
+        98,
+        105,
+        110,
+        97,
+        114,
+        121
+    ];
+    var content:u8[] = binary;
     if (!fsOk(fs.writeFile(filePath, &content))) {
         return 20;
     }
@@ -231,8 +294,8 @@ func main() -> int {
     match (opened) {
         Err(error) => return 45;
         Ok(file) => {
-            var chunk: u8[3];
-            var view: u8[] = chunk;
+            var chunk:u8[3];
+            var view:u8[] = chunk;
             var count = file.read(&mut view);
             match (count) {
                 Err(error) => return 46;
@@ -281,15 +344,21 @@ func main() -> int {
             var next = value.next();
             match (next) {
                 Err(error) => return 26;
-                Ok(optional) => match(optional) {Some(entry)=>{
-                    if (entry.name.view() != text.bytes("ä😀.txt")) {
-                        return 27;
+                Ok(optional) => match (optional) {
+                    Some(entry) => {
+                        if (entry.name.view() != text.bytes("ä😀.txt")) {
+                            return 27;
+                        }
                     }
-                } None=>return 27;}
+                    None => return 27;
+                }
             }
             var end = value.next();
             match (end) {
-                Ok(optional) => match(optional){Some(entry)=>return 28;None=>{}}
+                Ok(optional) => match (optional) {
+                    Some(entry) => return 28;
+                    None => {}
+                }
                 Err(error) => return 29;
             }
             if (!fsOk(value.close())) {
@@ -298,9 +367,9 @@ func main() -> int {
         }
     }
     if (
-        !fsOk(fs.rename(filePath, text.bytes("dmm-stdlib-system-test/renamed.txt"))) ||
-        !fsOk(fs.removeFile(text.bytes("dmm-stdlib-system-test/renamed.txt"))) ||
-        !fsOk(fs.removeDir(text.bytes("dmm-stdlib-system-test")))
+        !fsOk(fs.rename(filePath, text.bytes("dmm-stdlib-system-test/renamed.txt")))
+        || !fsOk(fs.removeFile(text.bytes("dmm-stdlib-system-test/renamed.txt")))
+        || !fsOk(fs.removeDir(text.bytes("dmm-stdlib-system-test")))
     ) {
         return 31;
     }

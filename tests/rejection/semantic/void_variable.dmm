@@ -1,5 +1,5 @@
 package main;
 
 func main() -> void {
-    var impossible: void;
+    var impossible:void;
 }

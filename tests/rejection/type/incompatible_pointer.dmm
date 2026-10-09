@@ -1,6 +1,6 @@
 package main;
 
 func main() -> void {
-    var x: int;
-    var p: *double = &x;
+    var x:int;
+    var p:*double = &x;
 }

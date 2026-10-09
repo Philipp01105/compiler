@@ -1,9 +1,11 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
-func work(n: int) -> int {
-    var values: int[4];
+func work(n:int) -> int {
+    var values:int[4];
     values[0] = 1;
     values[1] = 2;
     var i = 0;

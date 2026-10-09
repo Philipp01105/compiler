@@ -1,6 +1,6 @@
 package main;
 
-enum State(code: int) {
+enum State(code:int) {
     Ready(1),
     Ready(2)
 }

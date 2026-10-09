@@ -1,9 +1,11 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 // Conditional test
 func main() -> void {
-    var x: int = 10;
+    var x:int = 10;
     if (x > 5) {
         io.println("x is greater than 5");
     } else {

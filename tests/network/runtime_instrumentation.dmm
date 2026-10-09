@@ -1,22 +1,22 @@
 package network;
 extern "system" {
     union DnsHook {
-        pub var bits: usize;
-        pub var callback: extern "system" func(*u8, *Address, *Address, *void) -> i32;
+        pub var bits:usize;
+        pub var callback:extern "system" func(*u8,*Address,*Address,*void) -> i32;
     }
 
     union ReactorHook {
-        pub var bits: usize;
-        pub var callback: extern "system" func(*void) -> void;
+        pub var bits:usize;
+        pub var callback:extern "system" func(*void) -> void;
     }
 }
 
-var testSockets: usize;
-var testCloseError: i32;
-var testDnsHook: DnsHook;
-var testDnsArgument: *void;
-var testReactorHook: ReactorHook;
-var testReactorArgument: *void;
+var testSockets:usize;
+var testCloseError:i32;
+var testDnsHook:DnsHook;
+var testDnsArgument:*void;
+var testReactorHook:ReactorHook;
+var testReactorArgument:*void;
 
 func socketOpened() -> void {
     testSockets = testSockets + 1;
@@ -27,7 +27,7 @@ func socketClosed() -> void {
     testSockets = testSockets - 1;
 }
 
-func closeError(error: *Error) -> bit {
+func closeError(error:*Error) -> bit {
     if (testCloseError == 0) {
         return false;
     }
@@ -36,44 +36,36 @@ func closeError(error: *Error) -> bit {
     return true;
 }
 
-export "system" func __dmm_net_test_socket_handles() -> usize {
+export "system" func __dmm_net_test_socket_handles() -> usize{
     lockNet();
-    var count: usize = testSockets;
+    var count:usize = testSockets;
     unlockNet();
     return count;
-}
-
-export "system" func __dmm_net_test_close_error(code: i32) -> void {
+} export "system" func __dmm_net_test_close_error(code:i32) -> void{
     lockNet();
     testCloseError = code;
     unlockNet();
-}
-
-export "system" func __dmm_net_test_dns_hook(
-    callback: extern "system" func(*u8, *Address, *Address, *void) -> i32,
-    argument: *void
-) -> void {
+} export "system" func __dmm_net_test_dns_hook(
+    callback:extern "system" func(*u8,*Address,*Address,*void) -> i32,
+    argument:*void
+) -> void{
     lockNet();
     testDnsHook.callback = callback;
     testDnsArgument = argument;
     unlockNet();
-}
-
-export "system" func __dmm_net_test_reactor_hook(
-    callback: extern "system" func(*void) -> void,
-    argument: *void
-) -> void {
+} export "system" func __dmm_net_test_reactor_hook(
+    callback:extern "system" func(*void) -> void,
+    argument:*void
+) -> void{
     lockNet();
     testReactorHook.callback = callback;
     testReactorArgument = argument;
     wakeReactor();
     unlockNet();
-}
-
-func runReactorHook() -> void {
+} func runReactorHook() -> void {
     lockNet();
-    var hook: ReactorHook = testReactorHook;
-    var argument: *void = testReactorArgument;
+    var hook:ReactorHook = testReactorHook;
+    var argument:*void = testReactorArgument;
     testReactorHook.bits = 0;
     unlockNet();
     if (hook.bits != 0) {
@@ -81,16 +73,16 @@ func runReactorHook() -> void {
     }
 }
 
-func resolveJob(op: *Operation, error: *Error) -> *Addresses {
+func resolveJob(op:*Operation, error:*Error) -> *Addresses {
     lockNet();
-    var hook: DnsHook = testDnsHook;
-    var argument: *void = testDnsArgument;
+    var hook:DnsHook = testDnsHook;
+    var argument:*void = testDnsArgument;
     unlockNet();
     if (hook.bits == 0) {
         return resolveNative(op, error);
     }
-    var address: Address;
-    var code: i32 = hook.callback(
+    var address:Address;
+    var code:i32 = hook.callback(
         (*op).hostname,
         (&(*op).request.address).(*Address),
         (&address).(*Address),
@@ -100,13 +92,12 @@ func resolveJob(op: *Operation, error: *Error) -> *Addresses {
         *error = errorWith(11, 3, code);
         return nullPointer().(*Addresses);
     }
-    var list: *Addresses = allocate(Addresses.size + Address.size).(*Addresses);
+    var list:*Addresses = allocate(Addresses.size + Address.size).(*Addresses);
     if (list == nullPointer().(*Addresses)) {
         *error = netError(10);
         return list;
-    }
-    (*list).count = 1;
-    var values: *Address = listValues(list);
+    }(*list).count = 1;
+    var values:*Address = listValues(list);
     values[0] = address;
     return list;
 }

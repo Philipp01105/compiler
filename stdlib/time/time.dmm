@@ -1,7 +1,7 @@
 package time;
-import memraw "stdlib/memory/raw";
 import (
     stdlib "stdlib/core"
+    memraw "stdlib/memory/raw"
 );
 
 pub enum Error {
@@ -11,7 +11,8 @@ pub enum Error {
 }
 
 pub struct Duration {
-    pub var nanoseconds: u64;
+    pub var nanoseconds:u64;
+
     pub func wholeSeconds() -> u64 {
         return nanoseconds / 1000000000;
     }
@@ -22,14 +23,18 @@ pub struct Duration {
 }
 
 pub struct Instant {
-    var nanoseconds: u64;
-    pub func ticks()->u64 {return nanoseconds;}
-    pub func since(earlier: Instant) -> stdlib.Result<Duration, Error> {
+    var nanoseconds:u64;
+
+    pub func ticks() -> u64 {
+        return nanoseconds;
+    }
+
+    pub func since(earlier:Instant) -> stdlib.Result<Duration,Error> {
         if (nanoseconds < earlier.nanoseconds) {
-            return stdlib.Result<Duration, Error>.Err(Error.NegativeDuration);
+            return stdlib.Result<Duration,Error>.Err(Error.NegativeDuration);
         }
-        return stdlib.Result<Duration, Error>.Ok(
-            Duration{ nanoseconds: nanoseconds - earlier.nanoseconds }
+        return stdlib.Result<Duration,Error>.Ok(
+            Duration{nanoseconds:nanoseconds - earlier.nanoseconds}
         );
     }
 }
@@ -37,63 +42,82 @@ pub struct Instant {
 // Absolute monotonic nanoseconds; the maximum value denotes no timeout.
 pub struct Deadline {
     var nanoseconds:u64;
-    pub static func noTimeout()->Self {return Deadline{nanoseconds:18446744073709551615};}
-    pub static func at(value:u64)->Self {return Deadline{nanoseconds:value};}
-    pub static func after(value:u64)->Self {
-        match(now()) {
-            Ok(instant)=>{
-                if(value>=18446744073709551615-instant.nanoseconds){return Deadline.at(18446744073709551614);}
-                return Deadline.at(instant.nanoseconds+value);
+
+    pub static func noTimeout() -> Self {
+        return Deadline{nanoseconds:18446744073709551615};
+    }
+
+    pub static func at(value:u64) -> Self {
+        return Deadline{nanoseconds:value};
+    }
+
+    pub static func after(value:u64) -> Self {
+        match (now()) {
+            Ok(instant) => {
+                if (value >= 18446744073709551615 - instant.nanoseconds) {
+                    return Deadline.at(18446744073709551614);
+                }
+                return Deadline.at(instant.nanoseconds + value);
             }
-            Err(error)=>{memraw.core_trap();}
+            Err(error) => {
+                memraw.core_trap();
+            }
         }
     }
-    pub func ticks()->u64 {return nanoseconds;}
+
+    pub func ticks() -> u64 {
+        return nanoseconds;
+    }
 }
 
 pub struct SystemTime {
-    pub var seconds: i64;
-    pub var nanoseconds: u32;
+    pub var seconds:i64;
+    pub var nanoseconds:u32;
 }
 
-pub func now() -> stdlib.Result<Instant, Error> {
+pub func now() -> stdlib.Result<Instant,Error> {
     return nativeNow();
 }
 
-pub func systemNow() -> stdlib.Result<SystemTime, Error> {
+pub func systemNow() -> stdlib.Result<SystemTime,Error> {
     return nativeSystemNow();
 }
 
-pub func sleep(duration: Duration) -> stdlib.Result<void, Error> {
+pub func sleep(duration:Duration) -> stdlib.Result<void,Error> {
     return nativeSleep(duration);
 }
 
-pub func nanoseconds(value: u64) -> Duration {
-    return Duration{ nanoseconds: value };
+pub func nanoseconds(value:u64) -> Duration {
+    return Duration{nanoseconds:value};
 }
 
-pub func seconds(value: u64) -> stdlib.Result<Duration, Error> {
+pub func seconds(value:u64) -> stdlib.Result<Duration,Error> {
     if (value > 18446744073.(u64)) {
-        return stdlib.Result<Duration, Error>.Err(Error.Overflow);
+        return stdlib.Result<Duration,Error>.Err(Error.Overflow);
     }
-    return stdlib.Result<Duration, Error>.Ok(Duration{ nanoseconds: value * 1000000000 });
+    return stdlib.Result<Duration,Error>.Ok(Duration{nanoseconds:value * 1000000000});
 }
 
-pub func add(left: Duration, right: Duration) -> stdlib.Result<Duration, Error> {
+pub func add(left:Duration, right:Duration) -> stdlib.Result<Duration,Error> {
     if (right.nanoseconds > 18446744073709551615.(u64) - left.nanoseconds) {
-        return stdlib.Result<Duration, Error>.Err(Error.Overflow);
+        return stdlib.Result<Duration,Error>.Err(Error.Overflow);
     }
-    return stdlib.Result<Duration, Error>.Ok(
-        Duration{ nanoseconds: left.nanoseconds + right.nanoseconds }
+    return stdlib.Result<Duration,Error>.Ok(
+        Duration{nanoseconds:left.nanoseconds + right.nanoseconds}
     );
 }
 
-pub func milliseconds(value:u64)->stdlib.Result<Duration,Error>{
-    if(value>18446744073709.(u64)){return stdlib.Result<Duration,Error>.Err(Error.Overflow);}
-    return stdlib.Result<Duration,Error>.Ok(Duration{nanoseconds:value*1000000});
+pub func milliseconds(value:u64) -> stdlib.Result<Duration,Error> {
+    if (value > 18446744073709.(u64)) {
+        return stdlib.Result<Duration,Error>.Err(Error.Overflow);
+    }
+    return stdlib.Result<Duration,Error>.Ok(Duration{nanoseconds:value * 1000000});
 }
-pub func after(duration:Duration)->stdlib.Result<Deadline,Error>{
-    var instant=now()?;
-    if(duration.nanoseconds>=18446744073709551615-instant.ticks()){return stdlib.Result<Deadline,Error>.Err(Error.Overflow);}
-    return stdlib.Result<Deadline,Error>.Ok(Deadline.at(instant.ticks()+duration.nanoseconds));
+
+pub func after(duration:Duration) -> stdlib.Result<Deadline,Error> {
+    var instant = now()?;
+    if (duration.nanoseconds >= 18446744073709551615 - instant.ticks()) {
+        return stdlib.Result<Deadline,Error>.Err(Error.Overflow);
+    }
+    return stdlib.Result<Deadline,Error>.Ok(Deadline.at(instant.ticks() + duration.nanoseconds));
 }

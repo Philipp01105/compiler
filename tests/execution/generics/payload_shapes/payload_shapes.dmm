@@ -1,23 +1,25 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
 enum Value<T> {
     Data(T),
     Empty,
 }
 
-func copy<T>(value: Value<T>) -> Value<T> {
+func copy<T>(value:Value<T>) -> Value<T> {
     return value;
 }
 
 func main() -> void {
-    var a: int[3];
+    var a:int[3];
     a[0] = 11;
     a[1] = 22;
     a[2] = 33;
-    var value: Value < int[3] >= Value<int[3]>.Data(a);
-    var other: Value < int[3] >= copy(value);
+    var value:Value<int[3]>= Value<int[3]>.Data(a);
+    var other:Value<int[3]>= copy(value);
     a[0] = 99;
     match (other) {
         Data(items) => {
@@ -26,13 +28,13 @@ func main() -> void {
         }
         Empty => io.println(0);
     }
-    var number: int = 17;
-    var pointer: Value < * int >= Value< * int>.Data((&number).(*int));
+    var number:int = 17;
+    var pointer:Value<*int>= Value<*int>.Data((&number).(*int));
     match (pointer) {
         Data(p) => io.println(*p);
         Empty => io.println(0);
     }
-    var floating: Value < double >= Value<double>.Data(2.5);
+    var floating:Value<double>= Value<double>.Data(2.5);
     match (floating) {
         Data(x) => io.println(x);
         Empty => io.println(0);

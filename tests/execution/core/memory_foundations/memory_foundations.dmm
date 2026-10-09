@@ -1,22 +1,24 @@
 package main;
-import memraw "stdlib/memory/raw";
-import "stdlib/io";
-import stdlib "stdlib/core";
-import "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/core"
+    "stdlib/io"
+    memraw "stdlib/memory/raw"
+);
 
 struct Node {
-    var value: i32;
-    var next: *Node;
-    var children: Node[];
+    var value:i32;
+    var next:*Node;
+    var children:Node[];
 }
 
 struct Holder {
-    var items: i32[];
-    var suffix: i64;
+    var items:i32[];
+    var suffix:i64;
 }
 
 struct Box<T> {
-    var value: T;
+    var value:T;
 }
 
 enum Payload<T> {
@@ -24,24 +26,24 @@ enum Payload<T> {
     Empty
 }
 
-var shared: i32[];
-var global_backing: i32[3];
+var shared:i32[];
+var global_backing:i32[3];
 const NODE_SIZE = sizeof(Node);
 const CAPACITY = sizeof(i64);
 
-func identity<T>(value: T) -> T {
+func identity<T>(value:T) -> T {
     return value;
 }
 
-func allocate_values(count: usize) -> i32[] {
+func allocate_values(count:usize) -> i32[] {
     return memraw.alloc<i32>(count);
 }
 
-func forward(values: i32[]) -> i32[] {
+func forward(values:i32[]) -> i32[] {
     return values;
 }
 
-func tail(values: i32[]) -> i32[] {
+func tail(values:i32[]) -> i32[] {
     return slice((&values[1]).(*i32), values.length - 1);
 }
 
@@ -49,64 +51,50 @@ func global_view() -> i32[] {
     return global_backing;
 }
 
-func floating_pointers(p: *float, value: float, q: *double, other: double) -> double {
+func floating_pointers(p:*float, value:float, q:*double, other:double) -> double {
     *p = value;
     *q = other;
-    return *p + * q;
+    return *p + *q;
 }
 
-func floating_array(values: float[2], value: float) -> float {
+func floating_array(values:float[2], value:float) -> float {
     values[1] = value;
     return values[0] + values[1];
 }
 
-func many(
-    a: int,
-    b: int,
-    c: int,
-    d: int,
-    e: int,
-    values: i32[],
-    other: i32[],
-    last: int
-) -> int {
+func many(a:int, b:int, c:int, d:int, e:int, values:i32[], other:i32[], last:int) -> int {
     return a + b + c + d + e + last + values[1] + other[0];
 }
 
 func main() -> int {
     if (
-        sizeof(u8) != 1 ||
-        alignof(u8) != 1 ||
-        sizeof(i16) != 2 ||
-        sizeof(i32) != 4 ||
-        sizeof(i64) != 8
+        sizeof(u8) != 1
+        || alignof(u8) != 1
+        || sizeof(i16) != 2
+        || sizeof(i32) != 4
+        || sizeof(i64) != 8
     ) {
         return 1;
     }
-    if (
-        sizeof(*void) != 8 ||
-        alignof(*void) != 8 ||
-        sizeof(i32[]) != 16 ||
-        alignof(i32[]) != 8
-    ) {
+    if (sizeof(*void) != 8 || alignof(*void) != 8 || sizeof(i32[]) != 16 || alignof(i32[]) != 8) {
         return 2;
     }
     if (
-        NODE_SIZE != 32 ||
-        sizeof(Holder) != 24 ||
-        sizeof(Box<i32[]>) != 16 ||
-        sizeof(Payload<i32[]>) != 24
+        NODE_SIZE != 32
+        || sizeof(Holder) != 24
+        || sizeof(Box<i32[]>) != 16
+        || sizeof(Payload<i32[]>) != 24
     ) {
         return 3;
     }
     if (sizeof(u8[CAPACITY]) != 64 || sizeof(*i32[2]) != 16) {
         return 4;
     }
-    var backing: i32[3];
+    var backing:i32[3];
     backing[0] = 2;
     backing[1] = 3;
     backing[2] = 4;
-    var borrowed: i32[] = backing;
+    var borrowed:i32[] = backing;
     if (borrowed.length != 3 || borrowed.data != (&backing[0]).(*i32)) {
         return 5;
     }
@@ -119,7 +107,7 @@ func main() -> int {
     if (copy.length != 2 || copy[0] != 9 || borrowed.length != 3) {
         return 7;
     }
-    var holder: Holder;
+    var holder:Holder;
     holder.items = borrowed;
     holder.suffix = 42;
     if (holder.items[2] != 4 || holder.suffix != 42 || holder.items.length != 3) {
@@ -141,13 +129,11 @@ func main() -> int {
     }
     if ((*node).value != 0 || (*node).next != memraw.null<Node>() || (*node).children.length != 0) {
         return 12;
-    }
-    (*node).value = 123;
+    }(*node).value = 123;
     (*node).children = memraw.alloc<Node>(2);
     if ((*node).children.length != 2 || (*node).children[1].value != 0) {
         return 13;
-    }
-    (*node).children[1].value = 456;
+    }(*node).children[1].value = 456;
     if ((*node).children[0].value != 0 || (*node).children[1].value != 456) {
         return 14;
     }
@@ -208,7 +194,7 @@ func main() -> int {
     }
     memraw.release(wide);
     memraw.release(real);
-    var floating_values: float[2];
+    var floating_values:float[2];
     floating_values[0] = 1.25;
     if (floating_array(floating_values, 2.5) != 3.75 || floating_values[1] != 2.5) {
         return 31;

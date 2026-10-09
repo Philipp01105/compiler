@@ -5,40 +5,55 @@ import (
 
 // Stored checked borrows keep their descriptors and backing storage live.
 pub struct Reader<'a> {
-    var source: &'a u8[];
-    var cursor: ReadCursor;
+    var source:&'a u8[];
+    var cursor:ReadCursor;
 
-    pub func offset() -> usize { return cursor.offset(); }
-    pub func remaining() -> usize { return cursor.remaining(source); }
-    pub func skip(count: usize) -> stdlib.Result<void, Error> {
+    pub func offset() -> usize {
+        return cursor.offset();
+    }
+
+    pub func remaining() -> usize {
+        return cursor.remaining(source);
+    }
+
+    pub func skip(count:usize) -> stdlib.Result<void,Error> {
         return cursor.skip(source, count);
     }
-    pub func readUint(width: usize, endian: Endian) -> stdlib.Result<u64, Error> {
+
+    pub func readUint(width:usize, endian:Endian) -> stdlib.Result<u64,Error> {
         return cursor.readUint(source, width, endian);
     }
-    pub func readBytes(destination: &mut u8[]) -> stdlib.Result<void, Error> {
+
+    pub func readBytes(destination:&mut u8[]) -> stdlib.Result<void,Error> {
         return cursor.readBytes(source, destination);
     }
 }
 
-pub func reader<'a>(source: &'a u8[]) -> Reader<'a> {
-    return Reader<'a>{ source: source, cursor: readCursor() };
+pub func reader<'a>(source:&'a u8[]) -> Reader<'a> {
+    return Reader<'a>{source:source, cursor:readCursor()};
 }
 
 pub struct Writer<'a> {
-    var destination: &'a mut u8[];
-    var cursor: WriteCursor;
+    var destination:&'a mut u8[];
+    var cursor:WriteCursor;
 
-    pub func offset() -> usize { return cursor.offset(); }
-    pub func remaining() -> usize { return cursor.remaining(destination); }
-    pub func writeUint(value: u64, width: usize, endian: Endian) -> stdlib.Result<void, Error> {
+    pub func offset() -> usize {
+        return cursor.offset();
+    }
+
+    pub func remaining() -> usize {
+        return cursor.remaining(destination);
+    }
+
+    pub func writeUint(value:u64, width:usize, endian:Endian) -> stdlib.Result<void,Error> {
         return cursor.writeUint(destination, value, width, endian);
     }
-    pub func writeBytes(source: &u8[]) -> stdlib.Result<void, Error> {
+
+    pub func writeBytes(source:&u8[]) -> stdlib.Result<void,Error> {
         return cursor.writeBytes(destination, source);
     }
 }
 
-pub func writer<'a>(destination: &'a mut u8[]) -> Writer<'a> {
-    return Writer<'a>{ destination: destination, cursor: writeCursor() };
+pub func writer<'a>(destination:&'a mut u8[]) -> Writer<'a> {
+    return Writer<'a>{destination:destination, cursor:writeCursor()};
 }

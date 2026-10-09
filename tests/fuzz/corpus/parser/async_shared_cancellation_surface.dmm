@@ -1,14 +1,17 @@
 package main;
-import atomic "stdlib/sync/atomic";
-import "stdlib/core"; import "stdlib/memory";
-import stdlib "stdlib/core";
+import (
+    "stdlib/core"
+    stdlib "stdlib/core"
+    "stdlib/memory"
+    atomic "stdlib/sync/atomic"
+);
 
 struct State {
-    var processed: atomic.AtomicUsize;
-    var errors: atomic.AtomicUsize;
+    var processed:atomic.AtomicUsize;
+    var errors:atomic.AtomicUsize;
 }
 
-async func worker(owner: memory.Shared<State>, rounds: int) -> stdlib.Result<int, int> {
+async func worker(owner:memory.Shared<State>, rounds:int) -> stdlib.Result<int,int> {
     var state = owner.get();
     for (var i = 0; i < rounds; i += 1) {
         var count = state.processed.load();
@@ -21,10 +24,10 @@ async func worker(owner: memory.Shared<State>, rounds: int) -> stdlib.Result<int
             var n = view.errors.load();
         }
     }
-    return stdlib.Result<int, int>.Ok(rounds);
+    return stdlib.Result<int,int>.Ok(rounds);
 }
 
-async func collect(handle: JoinHandle<stdlib.Result<int, int>>) -> int {
+async func collect(handle:JoinHandle<stdlib.Result<int,int>>) -> int {
     match (handle.await()) {
         Ok(result) => match (result) {
             Ok(value) => return value;
@@ -37,10 +40,7 @@ async func collect(handle: JoinHandle<stdlib.Result<int, int>>) -> int {
 func main() -> int {
     match (
         memory.shared(
-            State{
-                processed: atomic.atomicUsize(0.(usize)),
-                errors: atomic.atomicUsize(0.(usize))
-            }
+            State{processed:atomic.atomicUsize(0.(usize)), errors:atomic.atomicUsize(0.(usize))}
         )
     ) {
         Ok(owner) => {

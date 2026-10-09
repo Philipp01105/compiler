@@ -1,47 +1,77 @@
 package main;
 import (
+    "stdlib/collections"
     stdlib "stdlib/core"
     "stdlib/fs"
-    "stdlib/collections"
     "stdlib/text"
 );
-func forward(file:fs.File)->fs.File { return file; }
-func openOptional(path:u8[])->stdlib.Result<stdlib.Option<fs.File>,fs.Error> {
-    var file=fs.open(path,fs.OpenMode.Write)?;
+
+func forward(file:fs.File) -> fs.File {
+    return file;
+}
+
+func openOptional(path:u8[]) -> stdlib.Result<stdlib.Option<fs.File>,fs.Error> {
+    var file = fs.open(path, fs.OpenMode.Write)?;
     return stdlib.Result<stdlib.Option<fs.File>,fs.Error>.Ok(stdlib.Option<fs.File>.Some(file));
 }
-func cleanup(path:u8[])->bit {
-    var result=fs.removeFile(path);
-    match(result) { Ok=>return true; Err(error)=>return false; }
+
+func cleanup(path:u8[]) -> bit {
+    var result = fs.removeFile(path);
+    match (result) {
+        Ok => return true;
+        Err(error) => return false;
+    }
 }
-func main()->int {
-    var first=text.bytes("dmm-language-files-a.tmp");
-    var second=text.bytes("dmm-language-files-b.tmp");
+
+func main() -> int {
+    var first = text.bytes("dmm-language-files-a.tmp");
+    var second = text.bytes("dmm-language-files-b.tmp");
     {
-        var files=collections.list<fs.File>();
-        var opened=openOptional(first);
-        match(opened) {
-            Ok(optional)=>{
-                var mapped=stdlib.mapOption(optional,forward);
-                match(mapped) { Some(file)=>match(files.append(file)){Ok=>{}Err(e)=>return 1;} None=>return 1; }
+        var files = collections.list<fs.File>();
+        var opened = openOptional(first);
+        match (opened) {
+            Ok(optional) => {
+                var mapped = stdlib.mapOption(optional, forward);
+                match (mapped) {
+                    Some(file) => match (files.append(file)) {
+                        Ok => {}
+                        Err(e) => return 1;
+                    }
+                    None => return 1;
+                }
             }
-            Err(error)=>return 2;
+            Err(error) => return 2;
         }
-        var openedSecond=fs.open(second,fs.OpenMode.Write);
-        match(openedSecond) { Ok(file)=>match(files.append(file)){Ok=>{}Err(e)=>return 3;} Err(error)=>return 3; }
-        if(files.length()!=2 || !files.get(0).isOpen()) { return 4; }
-        var removed=files.remove(0);
-        match(removed) {
-            Some(file)=>{
-                var source=text.bytes("owner moves\n");
-                var written=file.writeAll(&source);
-                match(written) { Ok=>{} Err(error)=>return 5; }
+        var openedSecond = fs.open(second, fs.OpenMode.Write);
+        match (openedSecond) {
+            Ok(file) => match (files.append(file)) {
+                Ok => {}
+                Err(e) => return 3;
             }
-            None=>return 6;
+            Err(error) => return 3;
+        }
+        if (files.length() != 2 || !files.get(0).isOpen()) {
+            return 4;
+        }
+        var removed = files.remove(0);
+        match (removed) {
+            Some(file) => {
+                var source = text.bytes("owner moves\n");
+                var written = file.writeAll(&source);
+                match (written) {
+                    Ok => {}
+                    Err(error) => return 5;
+                }
+            }
+            None => return 6;
         }
         files.clear();
     }
-    if(!cleanup(first)) { return 7; }
-    if(!cleanup(second)) { return 8; }
+    if (!cleanup(first)) {
+        return 7;
+    }
+    if (!cleanup(second)) {
+        return 8;
+    }
     return 0;
 }

@@ -1,6 +1,6 @@
 package main;
 
-func value(x: int) -> int {
+func value(x:int) -> int {
     if (x > 0) {
         return 1;
     }

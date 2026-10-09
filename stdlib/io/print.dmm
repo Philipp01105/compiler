@@ -1,91 +1,229 @@
 package io;
-import ("stdlib/core" "stdlib/text" "stdlib/numeric");
+import (
+    "stdlib/core"
+    "stdlib/numeric"
+    "stdlib/text"
+);
 
-pub func print(value:string)->core.Result<void,Error> {
-    var input=text.bytes(value); var target=stdout();
-    return writeAll(&mut target,&input);
+pub func print(value:string) -> core.Result<void,Error> {
+    var input = text.bytes(value);
+    var target = stdout();
+    return writeAll(&mut target, &input);
 }
-pub func println(value:string)->core.Result<void,Error> {
-    print(value)?; return print("\n");
+
+pub func println(value:string) -> core.Result<void,Error> {
+    print(value)?;
+    return print("\n");
 }
-pub func print<'a>(value:text.Text<'a>)->core.Result<void,Error> {
-    var target=stdout(); var buffer:u8[512]; var offset:usize=0;
-    while(offset<value.length()) {
-        var count=value.length()-offset;
-        if(count>512) {count=512;}
-        for(var i:usize=0;i<count;i+=1) {buffer[i]=value.byteAt(offset+i);}
-        var input=buffer[:count];
-        match(writeAll(&mut target,&input)) {
-            Ok=>{}
-            Err(error)=>{error.transferred+=offset; return core.Result<void,Error>.Err(error);}
+
+pub func print<'a>(value:text.Text<'a>) -> core.Result<void,Error> {
+    var target = stdout();
+    var buffer:u8[512];
+    var offset:usize = 0;
+    while (offset < value.length()) {
+        var count = value.length() - offset;
+        if (count > 512) {
+            count = 512;
         }
-        offset+=count;
+        for (var i:usize = 0; i < count; i += 1) {
+            buffer[i] = value.byteAt(offset + i);
+        }
+        var input = buffer[:count];
+        match (writeAll(&mut target, &input)) {
+            Ok => {}
+            Err(error) => {
+                error.transferred += offset;
+                return core.Result<void,Error>.Err(error);
+            }
+        }
+        offset += count;
     }
     return core.Result<void,Error>.Ok;
 }
-pub func println<'a>(value:text.Text<'a>)->core.Result<void,Error> {
-    print(value)?; return print("\n");
+
+pub func println<'a>(value:text.Text<'a>) -> core.Result<void,Error> {
+    print(value)?;
+    return print("\n");
 }
-func printSigned(value:i64)->core.Result<void,Error> {
-    var storage:u8[65]; var buffer:u8[]=storage[:];
-    match(numeric.formatInt(value,10,buffer)) {
-        Ok(count)=>{var input=buffer[:count];var target=stdout();return writeAll(&mut target,&input);}
-        Err(error)=>return core.Result<void,Error>.Err(failure(ErrorKind.InvalidInput,0));
+
+func printSigned(value:i64) -> core.Result<void,Error> {
+    var storage:u8[65];
+    var buffer:u8[] = storage[:];
+    match (numeric.formatInt(value, 10, buffer)) {
+        Ok(count) => {
+            var input = buffer[:count];
+            var target = stdout();
+            return writeAll(&mut target, &input);
+        }
+        Err(error) => return core.Result<void,Error>.Err(failure(ErrorKind.InvalidInput, 0));
     }
 }
-func printUnsigned(value:u64)->core.Result<void,Error> {
-    var storage:u8[65]; var buffer:u8[]=storage[:];
-    match(numeric.formatUint(value,10,buffer)) {
-        Ok(count)=>{var input=buffer[:count];var target=stdout();return writeAll(&mut target,&input);}
-        Err(error)=>return core.Result<void,Error>.Err(failure(ErrorKind.InvalidInput,0));
+
+func printUnsigned(value:u64) -> core.Result<void,Error> {
+    var storage:u8[65];
+    var buffer:u8[] = storage[:];
+    match (numeric.formatUint(value, 10, buffer)) {
+        Ok(count) => {
+            var input = buffer[:count];
+            var target = stdout();
+            return writeAll(&mut target, &input);
+        }
+        Err(error) => return core.Result<void,Error>.Err(failure(ErrorKind.InvalidInput, 0));
     }
 }
-pub func print(value:int)->core.Result<void,Error> { return printSigned(value.(i64)); }
-pub func print(value:i8)->core.Result<void,Error> { return printSigned(value.(i64)); }
-pub func print(value:i16)->core.Result<void,Error> { return printSigned(value.(i64)); }
-pub func print(value:i32)->core.Result<void,Error> { return printSigned(value.(i64)); }
-pub func print(value:i64)->core.Result<void,Error> { return printSigned(value.(i64)); }
-pub func print(value:isize)->core.Result<void,Error> { return printSigned(value.(i64)); }
-pub func print(value:byte)->core.Result<void,Error> { return printUnsigned(value.(u64)); }
-pub func print(value:u8)->core.Result<void,Error> { return printUnsigned(value.(u64)); }
-pub func print(value:u16)->core.Result<void,Error> { return printUnsigned(value.(u64)); }
-pub func print(value:u32)->core.Result<void,Error> { return printUnsigned(value.(u64)); }
-pub func print(value:u64)->core.Result<void,Error> { return printUnsigned(value.(u64)); }
-pub func print(value:usize)->core.Result<void,Error> { return printUnsigned(value.(u64)); }
-pub func print(value:bit)->core.Result<void,Error> {
-    if(value) { return printUnsigned(1); } return printUnsigned(0);
+
+pub func print(value:int) -> core.Result<void,Error> {
+    return printSigned(value.(i64));
 }
-pub func print(value:char)->core.Result<void,Error> {
-    var encoded:string="" + value;
-    var result=print(encoded);
+
+pub func print(value:i8) -> core.Result<void,Error> {
+    return printSigned(value.(i64));
+}
+
+pub func print(value:i16) -> core.Result<void,Error> {
+    return printSigned(value.(i64));
+}
+
+pub func print(value:i32) -> core.Result<void,Error> {
+    return printSigned(value.(i64));
+}
+
+pub func print(value:i64) -> core.Result<void,Error> {
+    return printSigned(value.(i64));
+}
+
+pub func print(value:isize) -> core.Result<void,Error> {
+    return printSigned(value.(i64));
+}
+
+pub func print(value:byte) -> core.Result<void,Error> {
+    return printUnsigned(value.(u64));
+}
+
+pub func print(value:u8) -> core.Result<void,Error> {
+    return printUnsigned(value.(u64));
+}
+
+pub func print(value:u16) -> core.Result<void,Error> {
+    return printUnsigned(value.(u64));
+}
+
+pub func print(value:u32) -> core.Result<void,Error> {
+    return printUnsigned(value.(u64));
+}
+
+pub func print(value:u64) -> core.Result<void,Error> {
+    return printUnsigned(value.(u64));
+}
+
+pub func print(value:usize) -> core.Result<void,Error> {
+    return printUnsigned(value.(u64));
+}
+
+pub func print(value:bit) -> core.Result<void,Error> {
+    if (value) {
+        return printUnsigned(1);
+    }
+    return printUnsigned(0);
+}
+
+pub func print(value:char) -> core.Result<void,Error> {
+    var encoded:string = "" + value;
+    var result = print(encoded);
     free(encoded);
     return result;
 }
-pub func print(value:float)->core.Result<void,Error> {
-    var encoded:string="" + value;
-    var result=print(encoded);
+
+pub func print(value:float) -> core.Result<void,Error> {
+    var encoded:string = "" + value;
+    var result = print(encoded);
     free(encoded);
     return result;
 }
-pub func print(value:double)->core.Result<void,Error> {
-    var encoded:string="" + value;
-    var result=print(encoded);
+
+pub func print(value:double) -> core.Result<void,Error> {
+    var encoded:string = "" + value;
+    var result = print(encoded);
     free(encoded);
     return result;
 }
-pub func println(value:int)->core.Result<void,Error> { print(value)?; return print("\n"); }
-pub func println(value:i8)->core.Result<void,Error> { print(value)?; return print("\n"); }
-pub func println(value:i16)->core.Result<void,Error> { print(value)?; return print("\n"); }
-pub func println(value:i32)->core.Result<void,Error> { print(value)?; return print("\n"); }
-pub func println(value:i64)->core.Result<void,Error> { print(value)?; return print("\n"); }
-pub func println(value:isize)->core.Result<void,Error> { print(value)?; return print("\n"); }
-pub func println(value:byte)->core.Result<void,Error> { print(value)?; return print("\n"); }
-pub func println(value:u8)->core.Result<void,Error> { print(value)?; return print("\n"); }
-pub func println(value:u16)->core.Result<void,Error> { print(value)?; return print("\n"); }
-pub func println(value:u32)->core.Result<void,Error> { print(value)?; return print("\n"); }
-pub func println(value:u64)->core.Result<void,Error> { print(value)?; return print("\n"); }
-pub func println(value:usize)->core.Result<void,Error> { print(value)?; return print("\n"); }
-pub func println(value:bit)->core.Result<void,Error> { print(value)?; return print("\n"); }
-pub func println(value:char)->core.Result<void,Error> { print(value)?; return print("\n"); }
-pub func println(value:float)->core.Result<void,Error> { print(value)?; return print("\n"); }
-pub func println(value:double)->core.Result<void,Error> { print(value)?; return print("\n"); }
+
+pub func println(value:int) -> core.Result<void,Error> {
+    print(value)?;
+    return print("\n");
+}
+
+pub func println(value:i8) -> core.Result<void,Error> {
+    print(value)?;
+    return print("\n");
+}
+
+pub func println(value:i16) -> core.Result<void,Error> {
+    print(value)?;
+    return print("\n");
+}
+
+pub func println(value:i32) -> core.Result<void,Error> {
+    print(value)?;
+    return print("\n");
+}
+
+pub func println(value:i64) -> core.Result<void,Error> {
+    print(value)?;
+    return print("\n");
+}
+
+pub func println(value:isize) -> core.Result<void,Error> {
+    print(value)?;
+    return print("\n");
+}
+
+pub func println(value:byte) -> core.Result<void,Error> {
+    print(value)?;
+    return print("\n");
+}
+
+pub func println(value:u8) -> core.Result<void,Error> {
+    print(value)?;
+    return print("\n");
+}
+
+pub func println(value:u16) -> core.Result<void,Error> {
+    print(value)?;
+    return print("\n");
+}
+
+pub func println(value:u32) -> core.Result<void,Error> {
+    print(value)?;
+    return print("\n");
+}
+
+pub func println(value:u64) -> core.Result<void,Error> {
+    print(value)?;
+    return print("\n");
+}
+
+pub func println(value:usize) -> core.Result<void,Error> {
+    print(value)?;
+    return print("\n");
+}
+
+pub func println(value:bit) -> core.Result<void,Error> {
+    print(value)?;
+    return print("\n");
+}
+
+pub func println(value:char) -> core.Result<void,Error> {
+    print(value)?;
+    return print("\n");
+}
+
+pub func println(value:float) -> core.Result<void,Error> {
+    print(value)?;
+    return print("\n");
+}
+
+pub func println(value:double) -> core.Result<void,Error> {
+    print(value)?;
+    return print("\n");
+}

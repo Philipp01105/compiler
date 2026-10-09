@@ -1,15 +1,17 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
 struct Counter {
-    var value: int;
+    var value:int;
 
-    func init(start: int) -> void {
+    func init(start:int) -> void {
         value = start;
     }
 
-    func add(amount: int) -> void {
+    func add(amount:int) -> void {
         value += amount;
     }
 
@@ -17,13 +19,13 @@ struct Counter {
         return value;
     }
 
-    static func twice(value: int) -> int {
+    static func twice(value:int) -> int {
         return value * 2;
     }
 }
 
 func main() -> void {
-    var counter: Counter;
+    var counter:Counter;
     counter.init(10);
     counter.add(7);
     io.println(counter.get());

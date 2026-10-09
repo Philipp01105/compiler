@@ -4,12 +4,12 @@ struct Resource {
     destructor {}
 }
 
-func modify(value: &mut Resource) -> void {}
+func modify(value:&mut Resource) -> void {}
 
-func consume(value: Resource) -> void {}
+func consume(value:Resource) -> void {}
 
 func main() -> void {
-    var owner: Resource;
+    var owner:Resource;
     defer func() {
         modify(&mut owner);
     }

@@ -5,14 +5,15 @@ interface Value {
 }
 
 struct Number {
-    var number: int;
+    var number:int;
+
     func get() -> int {
         return number;
     }
 }
 
 func main() -> void {
-    var number: Number;
-    var values: Value[2] = [number;
+    var number:Number;
+    var values:Value[2] = [number;
     2];
 }

@@ -1,12 +1,12 @@
 package network;
 import (
-    "stdlib/internal/threading"
     "stdlib/internal/executor"
+    "stdlib/internal/threading"
 );
 
-func admit(op: *Operation) -> void {
-    var request: *Request = (&(*op).request).(*Request);
-    var error: Error = netError(0);
+func admit(op:*Operation) -> void {
+    var request:*Request = (&(*op).request).(*Request);
+    var error:Error = netError(0);
     if (!initialize((&error).(*Error))) {
         completeLocked(op, error);
         return;
@@ -21,10 +21,14 @@ func admit(op: *Operation) -> void {
             return;
         }
         if (
-            (*request).hostname == nullPointer().(*u8) ||
-            ((*request).address.family != 0 && (*request).address.family != 4 && (*request).address.family != 6) ||
-            (*request).address.port > 65535 ||
-            ((*request).transport != 1 && (*request).transport != 2)
+            (*request).hostname == nullPointer().(*u8)
+            || (
+                (*request).address.family != 0
+                && (*request).address.family != 4
+                && (*request).address.family != 6
+            )
+            || (*request).address.port > 65535
+            || ((*request).transport != 1 && (*request).transport != 2)
         ) {
             completeLocked(op, netError(5));
             return;
@@ -33,7 +37,7 @@ func admit(op: *Operation) -> void {
             completeLocked(op, netError(1));
             return;
         }
-        var length: usize = stringLength((*request).hostname);
+        var length:usize = stringLength((*request).hostname);
         (*op).hostname = allocate(length + 1).(*u8);
         if ((*op).hostname == nullPointer().(*u8)) {
             completeLocked(op, netError(10));
@@ -57,28 +61,28 @@ func admit(op: *Operation) -> void {
         wakeDns();
         return;
     }
-    var s: *Socket = (*request).socket;
+    var s:*Socket = (*request).socket;
     if (!usable(s, (&error).(*Error), true)) {
         completeLocked(op, error);
         return;
     }
-    var command: u64 = (*request).command;
-    var reads: bit = command == 1 || command == 2 || command == 3 || command == 5;
-    var writes: bit = command == 1 || command == 4 || command == 6;
+    var command:u64 = (*request).command;
+    var reads:bit = command == 1 || command == 2 || command == 3 || command == 5;
+    var writes:bit = command == 1 || command == 4 || command == 6;
     if (
-        command < 1 ||
-        command > 6 ||
-        (command == 1 && ((*s).transport != 1 || (*s).state > 1)) ||
-        (command == 2 && ((*s).transport != 1 || (*s).state != 2)) ||
-        ((command == 3 || command == 4) && ((*s).transport != 1 || (*s).state != 3)) ||
-        ((command == 5 || command == 6) && (*s).transport != 2)
+        command < 1
+        || command > 6
+        || (command == 1 && ((*s).transport != 1 || (*s).state > 1))
+        || (command == 2 && ((*s).transport != 1 || (*s).state != 2))
+        || ((command == 3 || command == 4) && ((*s).transport != 1 || (*s).state != 3))
+        || ((command == 5 || command == 6) && (*s).transport != 2)
     ) {
         completeLocked(op, netError(4));
         return;
     }
     if (
-        (reads && (*s).read != nullPointer().(*Operation)) ||
-        (writes && (*s).write != nullPointer().(*Operation))
+        (reads && (*s).read != nullPointer().(*Operation))
+        || (writes && (*s).write != nullPointer().(*Operation))
     ) {
         completeLocked(op, netError(1));
         return;
@@ -89,20 +93,23 @@ func admit(op: *Operation) -> void {
     if (writes) {
         (*s).write = op;
     }
-    if ((*request).length > 2147483647 || ((*request).length != 0 && (*request).buffer == nullPointer())) {
+    if (
+        (*request).length > 2147483647
+        || ((*request).length != 0 && (*request).buffer == nullPointer())
+    ) {
         completeLocked(op, netError(5));
         return;
     }
     if (command == 1 || command == 6) {
-        var address: NativeAddress;
-        var length: i32;
+        var address:NativeAddress;
+        var length:i32;
         if (
             !toNative(
                 (&(*request).address).(*Address),
                 (&address).(*NativeAddress),
                 (&length).(*i32)
-            ) ||
-            (*request).address.family != (*s).family
+            )
+            || (*request).address.family != (*s).family
         ) {
             completeLocked(op, netError(5));
             return;
@@ -117,8 +124,8 @@ func admit(op: *Operation) -> void {
     }
 }
 
-pub export "system" func __dmm_net_start(request: *Request) -> *Operation {
-    var op: *Operation = allocate(Operation.size).(*Operation);
+pub export "system" func __dmm_net_start(request:*Request) -> *Operation{
+    var op:*Operation = allocate(Operation.size).(*Operation);
     require(op != nullPointer().(*Operation));
     (*op).request = *request;
     (*op).refs = 1;
@@ -133,29 +140,23 @@ pub export "system" func __dmm_net_start(request: *Request) -> *Operation {
     unlockNet();
     deliver();
     return op;
-}
-
-pub export "system" func __dmm_net_cancel(op: *Operation) -> void {
+} pub export "system" func __dmm_net_cancel(op:*Operation) -> void{
     lockNet();
     if ((*op).done == 0) {
         (*op).cancel = 1;
     }
     wakeReactor();
     unlockNet();
-}
-
-pub export "system" func __dmm_net_poll(op: *Operation, context: *void) -> i32 {
+} pub export "system" func __dmm_net_poll(op:*Operation, context:*void) -> i32{
     return executor.__dmm_async_io_poll((*op).io, context);
-}
-
-pub export "system" func __dmm_net_release(op: *Operation) -> void {
+} pub export "system" func __dmm_net_release(op:*Operation) -> void{
     if (op == nullPointer().(*Operation)) {
         return;
     }
     lockNet();
     require((*op).done != 0);
-    var previous: *Operation = nullPointer().(*Operation);
-    var current: *Operation = operations;
+    var previous:*Operation = nullPointer().(*Operation);
+    var current:*Operation = operations;
     while (current != nullPointer().(*Operation) && current != op) {
         previous = current;
         current = (*current).next;
@@ -168,12 +169,10 @@ pub export "system" func __dmm_net_release(op: *Operation) -> void {
     }
     releaseLocked(op);
     unlockNet();
-}
-
-pub export "system" func __dmm_net_result(op: *Operation, field: u64) -> u64 {
+} pub export "system" func __dmm_net_result(op:*Operation, field:u64) -> u64{
     lockNet();
     require((*op).done != 0);
-    var result: u64 = 0;
+    var result:u64 = 0;
     if (field == 0) {
         result = (*op).error.kind;
     }
@@ -202,42 +201,36 @@ pub export "system" func __dmm_net_result(op: *Operation, field: u64) -> u64 {
     }
     unlockNet();
     return result;
-}
-
-pub export "system" func __dmm_net_result_address(op: *Operation, out: *Address) -> void {
+} pub export "system" func __dmm_net_result_address(op:*Operation, out:*Address) -> void{
     lockNet();
     require((*op).done != 0);
     *out = (*op).peer;
     unlockNet();
-}
-
-func listValues(list: *Addresses) -> *Address {
+} func listValues(list:*Addresses) -> *Address {
     return pointer(bits(list.(*void)) + Addresses.size).(*Address);
 }
 
-pub export "system" func __dmm_net_addresses_count(list: *Addresses) -> u64 {
+pub export "system" func __dmm_net_addresses_count(list:*Addresses) -> u64{
     if (list == nullPointer().(*Addresses)) {
         return 0;
     }
     return (*list).count.(u64);
-}
-
-pub export "system" func __dmm_net_addresses_get(list: *Addresses, index: u64, out: *Address) -> i32 {
+} pub export "system" func __dmm_net_addresses_get(
+    list:*Addresses,
+    index:u64,
+    out:*Address
+) -> i32{
     if (list == nullPointer().(*Addresses) || index >= (*list).count.(u64)) {
         return 0;
     }
-    var values: *Address = listValues(list);
+    var values:*Address = listValues(list);
     *out = values[index];
     return 1;
-}
-
-pub export "system" func __dmm_net_addresses_release(list: *Addresses) -> void {
+} pub export "system" func __dmm_net_addresses_release(list:*Addresses) -> void{
     release(list.(*void));
-}
-
-func removeQueued(op: *Operation) -> void {
-    var previous: *Operation = nullPointer().(*Operation);
-    var current: *Operation = dnsHead;
+} func removeQueued(op:*Operation) -> void {
+    var previous:*Operation = nullPointer().(*Operation);
+    var current:*Operation = dnsHead;
     while (current != nullPointer().(*Operation) && current != op) {
         previous = current;
         current = (*current).dnsNext;
@@ -257,7 +250,7 @@ func removeQueued(op: *Operation) -> void {
     }
 }
 
-pub export "system" func __dmm_net_dns_entry(unused: *void) -> void {
+pub export "system" func __dmm_net_dns_entry(unused:*void) -> void{
     while (true) {
         lockNet();
         while (dnsHead == nullPointer().(*Operation) && stopDns == 0) {
@@ -267,7 +260,7 @@ pub export "system" func __dmm_net_dns_entry(unused: *void) -> void {
             unlockNet();
             return;
         }
-        var op: *Operation = dnsHead;
+        var op:*Operation = dnsHead;
         dnsHead = (*op).dnsNext;
         if (dnsHead == nullPointer().(*Operation)) {
             dnsTail = nullPointer().(*Operation);
@@ -276,8 +269,8 @@ pub export "system" func __dmm_net_dns_entry(unused: *void) -> void {
         (*op).dnsQueued = 0;
         (*op).dnsActive = 1;
         unlockNet();
-        var error: Error = netError(0);
-        var list: *Addresses = resolveJob(op, (&error).(*Error));
+        var error:Error = netError(0);
+        var list:*Addresses = resolveJob(op, (&error).(*Error));
         lockNet();
         (*op).dnsActive = 0;
         if ((*op).done == 0) {
@@ -290,27 +283,25 @@ pub export "system" func __dmm_net_dns_entry(unused: *void) -> void {
         unlockNet();
         deliver();
     }
-}
-
-pub export "system" func __dmm_net_reactor_entry(unused: *void) -> void {
+} pub export "system" func __dmm_net_reactor_entry(unused:*void) -> void{
     while (true) {
         lockNet();
-        var now: u64 = __dmm_net_now();
+        var now:u64 = __dmm_net_now();
         while (heapCount != 0 && (*deadlineHeap[0]).request.deadline <= now) {
-            var expired: *Operation = deadlineHeap[0];
+            var expired:*Operation = deadlineHeap[0];
             heapRemove(expired);
             (*expired).timeout = 1;
         }
-        var wait: i32 = -1;
+        var wait:i32 = -1;
         if (heapCount != 0) {
             wait = milliseconds(now, (*deadlineHeap[0]).request.deadline);
         }
-        var op: *Operation = operations;
+        var op:*Operation = operations;
         while (op != nullPointer().(*Operation)) {
             if ((*op).done == 0) {
                 if ((*op).cancel != 0 || (*op).timeout != 0) {
                     if (!cancelOs(op)) {
-                        var kind: u64 = 3;
+                        var kind:u64 = 3;
                         if ((*op).timeout != 0) {
                             kind = 2;
                         }
@@ -325,7 +316,7 @@ pub export "system" func __dmm_net_reactor_entry(unused: *void) -> void {
             }
             op = (*op).next;
         }
-        var stop: i32 = stopReactor;
+        var stop:i32 = stopReactor;
         unlockNet();
         deliver();
         if (stop != 0) {
@@ -334,54 +325,42 @@ pub export "system" func __dmm_net_reactor_entry(unused: *void) -> void {
         runReactorHook();
         waitReactor(wait);
     }
-}
-
-pub export "system" func __dmm_net_future_cancel(frame: *void, context: *void) -> i32 {
-    var f: *NetFuture = frame.(*NetFuture);
+} pub export "system" func __dmm_net_future_cancel(frame:*void, context:*void) -> i32{
+    var f:*NetFuture = frame.(*NetFuture);
     __dmm_net_cancel((*f).operation);
-    var ready: i32 = __dmm_net_poll((*f).operation, context);
+    var ready:i32 = __dmm_net_poll((*f).operation, context);
     if (ready != 0) {
         (*f).state = -1;
     }
     return ready;
-}
-
-pub export "system" func __dmm_net_future_poll(frame: *void, context: *void) -> i32 {
-    var f: *NetFuture = frame.(*NetFuture);
+} pub export "system" func __dmm_net_future_poll(frame:*void, context:*void) -> i32{
+    var f:*NetFuture = frame.(*NetFuture);
     if (executor.__dmm_async_cancel_requested(context) != 0) {
         return __dmm_net_future_cancel(frame, context);
     }
-    var ready: i32 = __dmm_net_poll((*f).operation, context);
+    var ready:i32 = __dmm_net_poll((*f).operation, context);
     if (ready != 0) {
         (*f).state = -1;
         (*f).resultPresent = 1;
     }
     return ready;
-}
-
-pub export "system" func __dmm_net_future_destroy(frame: *void, dispose: i32) -> void {
+} pub export "system" func __dmm_net_future_destroy(frame:*void, dispose:i32) -> void{
     release(frame);
-}
-
-pub export "system" func __dmm_net_wait(operation: u64) -> *void {
-    var f: *NetFuture = allocate(NetFuture.size).(*NetFuture);
+} pub export "system" func __dmm_net_wait(operation:u64) -> *void{
+    var f:*NetFuture = allocate(NetFuture.size).(*NetFuture);
     require(f != nullPointer().(*NetFuture));
     (*f).poll = __dmm_net_future_poll;
     (*f).cancelPoll = __dmm_net_future_cancel;
     (*f).destroy = __dmm_net_future_destroy;
     (*f).operation = pointer(operation.(usize)).(*Operation);
     return f.(*void);
-}
-
-pub export "system" func __dmm_net_begin_draining() -> void {
+} pub export "system" func __dmm_net_begin_draining() -> void{
     lockNet();
     if (runtimeState == 0) {
         runtimeState = 1;
     }
     unlockNet();
-}
-
-pub export "system" func __dmm_net_finish() -> void {
+} pub export "system" func __dmm_net_finish() -> void{
     __dmm_net_begin_draining();
     lockNet();
     stopDns = 1;

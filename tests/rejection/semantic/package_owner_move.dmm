@@ -1,11 +1,11 @@
 package main;
 
 struct Resource {
-    var value: int;
+    var value:int;
     destructor {}
 }
 
-var shared: Resource;
+var shared:Resource;
 
 func main() -> int {
     var moved = shared;

@@ -1,14 +1,16 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
 func main() -> void {
-    var path: string = "formatted_read.tmp";
-    var output: int = sys_open(path, 577, 384);
-    var text: string = "42";
+    var path:string = "formatted_read.tmp";
+    var output:int = sys_open(path, 577, 384);
+    var text:string = "42";
     sys_write(output, text, 2);
     sys_close(output);
-    var input: int = sys_open(path, 0, 0);
+    var input:int = sys_open(path, 0, 0);
     io.println(read(input, "%i"));
     sys_close(input);
 }

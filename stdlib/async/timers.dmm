@@ -1,7 +1,14 @@
 package asynchronous;
-import ("stdlib/core" "stdlib/time" polling "stdlib/async/poll");
-pub async func sleep(duration:time.Duration)->void {
-    polling.fromPoller<polling.Unit,polling.Timer>(polling.timer(time.Deadline.after(duration.nanoseconds))).await();
+import (
+    polling "stdlib/async/poll"
+    "stdlib/core"
+    "stdlib/time"
+);
+
+pub async func sleep(duration:time.Duration) -> void {
+    polling.fromPoller<polling.Unit,polling.Timer>(
+        polling.timer(time.Deadline.after(duration.nanoseconds))
+    ).await();
 }
 
 pub enum Timed<T> {
@@ -9,19 +16,33 @@ pub enum Timed<T> {
     pub Elapsed
 }
 
-pub async func timeout<T>(future:Future<T>,deadline:time.Deadline)->Timed<T> {
-    match(select(future,polling.fromPoller<polling.Unit,polling.Timer>(polling.timer(deadline))).await()) {
-        Left(value,clock)=>{ cancel(clock).await(); return Timed<T>.Completed(value); }
-        Right(pending,unit)=>{ cancel(pending).await(); return Timed<T>.Elapsed; }
+pub async func timeout<T>(future:Future<T>, deadline:time.Deadline) -> Timed<T> {
+    match (
+        select(future, polling.fromPoller<polling.Unit,polling.Timer>(polling.timer(deadline))).await()
+    ) {
+        Left(value, clock) => {
+            cancel(clock).await();
+            return Timed<T>.Completed(value);
+        }
+        Right(pending, unit) => {
+            cancel(pending).await();
+            return Timed<T>.Elapsed;
+        }
     }
 }
 
-pub enum TimedVoid { pub Completed, pub Elapsed }
-pub async func timeoutVoid(future:Future<void>,deadline:time.Deadline)->TimedVoid {
-    match(timeout(asUnit(future),deadline).await()) {
-        Completed(unit)=>return TimedVoid.Completed;
-        Elapsed=>return TimedVoid.Elapsed;
+pub enum TimedVoid {
+    pub Completed,
+    pub Elapsed
+}
+
+pub async func timeoutVoid(future:Future<void>, deadline:time.Deadline) -> TimedVoid {
+    match (timeout(asUnit(future), deadline).await()) {
+        Completed(unit) => return TimedVoid.Completed;
+        Elapsed => return TimedVoid.Elapsed;
     }
 }
 
-pub async func sleepUntil(deadline:time.Deadline)->void {polling.fromPoller<polling.Unit,polling.Timer>(polling.timer(deadline)).await();}
+pub async func sleepUntil(deadline:time.Deadline) -> void {
+    polling.fromPoller<polling.Unit,polling.Timer>(polling.timer(deadline)).await();
+}

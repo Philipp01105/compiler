@@ -1,9 +1,11 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
 func main() -> void {
     io.println("Creating stream from sysin...");
-    var input: Stream = read(sysin);
+    var input:Stream = read(sysin);
     io.println("Stream created successfully!");
 }

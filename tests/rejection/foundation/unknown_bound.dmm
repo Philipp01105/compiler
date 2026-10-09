@@ -1,6 +1,6 @@
 package main;
 
-func bad<T: Missing>(value: T) -> T {
+func bad<T:Missing>(value:T) -> T {
     return value;
 }
 

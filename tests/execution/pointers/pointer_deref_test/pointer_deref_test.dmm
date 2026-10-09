@@ -1,14 +1,16 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 // Test pointer dereferencing, address-of, and writes through heap pointers.
 
 // Test 1: Basic pointer and dereference
 func test1_basic_deref() -> void {
     io.println("[TEST 1] Basic pointer dereference");
-    var x: int = 42;
-    var p: *int = (&x).(*int); // Explicit checked-borrow to raw-pointer boundary
-    var value: int = *p; // Dereference p to get value
+    var x:int = 42;
+    var p:*int = (&x).(*int); // Explicit checked-borrow to raw-pointer boundary
+    var value:int = *p; // Dereference p to get value
     io.print("Original value: ");
     io.println(x);
     io.print("Value through pointer: ");
@@ -19,10 +21,10 @@ func test1_basic_deref() -> void {
 // Test 2: Multiple int pointers
 func test2_multiple_pointers() -> void {
     io.println("[TEST 2] Multiple int pointers");
-    var a: int = 100;
-    var b: int = 200;
-    var pa: *int = (&a).(*int);
-    var pb: *int = (&b).(*int);
+    var a:int = 100;
+    var b:int = 200;
+    var pa:*int = (&a).(*int);
+    var pb:*int = (&b).(*int);
     io.print("First value: ");
     io.println(*pa);
     io.print("Second value: ");
@@ -33,10 +35,10 @@ func test2_multiple_pointers() -> void {
 // Test 3: Heap allocated pointer dereference
 func test3_heap_deref() -> void {
     io.println("[TEST 3] Heap allocated pointer dereference");
-    var p: *int = reserve(int);
+    var p:*int = reserve(int);
     *p = 73;
     {
-        var _output0: string = "Heap value: " + * p;
+        var _output0:string = "Heap value: " + *p;
         io.println(_output0);
         free(_output0);
     }

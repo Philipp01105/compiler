@@ -1,4 +1,4 @@
 package main;
 
 func main() -> void {
-    var c: char = 'x; }
+    var c:char = 'x; }

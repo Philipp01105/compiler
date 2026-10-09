@@ -1,12 +1,12 @@
 package threading;
 extern "system" {
     union PointerBits {
-        pub var bits: usize;
-        pub var pointer: *void;
+        pub var bits:usize;
+        pub var pointer:*void;
     }
 }
 
 func nullPointer() -> *void {
-    var value: PointerBits;
+    var value:PointerBits;
     return value.pointer;
 }

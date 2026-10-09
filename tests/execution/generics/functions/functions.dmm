@@ -1,24 +1,26 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
-func identity<T>(value: T) -> T {
+func identity<T>(value:T) -> T {
     return value;
 }
 
-func first<T>(values: T[]) -> T {
+func first<T>(values:T[]) -> T {
     return values[0];
 }
 
-func choose<T>(a: T, b: T) -> T {
+func choose<T>(a:T, b:T) -> T {
     return b;
 }
 
-func choose(a: int, b: int) -> int {
+func choose(a:int, b:int) -> int {
     return a + b;
 }
 
-func factorial<T>(value: T) -> T {
+func factorial<T>(value:T) -> T {
     if (value <= 1) {
         return value;
     }
@@ -32,11 +34,11 @@ func main() -> void {
     io.println(identity(2.5));
     io.println(identity(43));
     io.println(choose(2, 3));
-    var numbers: int[3];
+    var numbers:int[3];
     numbers[0] = 7;
     io.println(first(numbers));
     io.println(factorial(5));
-    var x: int = 8;
-    var p: *int = identity((&x).(*int));
+    var x:int = 8;
+    var p:*int = identity((&x).(*int));
     io.println(*p);
 }

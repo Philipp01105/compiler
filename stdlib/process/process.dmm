@@ -1,74 +1,169 @@
 package process;
-import ("stdlib/core" "stdlib/collections" "stdlib/text" "stdlib/text/utf8" native "stdlib/process/native");
-pub enum ErrorKind {pub InvalidInput,pub InvalidEncoding,pub OutOfMemory,pub CapacityOverflow,pub NotFound,pub AccessDenied,pub System}
+import (
+    "stdlib/collections"
+    "stdlib/core"
+    native "stdlib/process/native"
+    "stdlib/text"
+    "stdlib/text/utf8"
+);
+
+pub enum ErrorKind {
+    pub InvalidInput,
+    pub InvalidEncoding,
+    pub OutOfMemory,
+    pub CapacityOverflow,
+    pub NotFound,
+    pub AccessDenied,
+    pub System
+}
+
 pub struct Error {
-    pub var kind:ErrorKind;pub var code:isize;
-    pub static func fromResidual(error:core.AllocError)->Self {
-        var kind=ErrorKind.OutOfMemory;if(error==core.AllocError.CapacityOverflow){kind=ErrorKind.CapacityOverflow;}
-        return Error{kind:kind,code:0};
+    pub var kind:ErrorKind;
+    pub var code:isize;
+
+    pub static func fromResidual(error:core.AllocError) -> Self {
+        var kind = ErrorKind.OutOfMemory;
+        if (error == core.AllocError.CapacityOverflow) {
+            kind = ErrorKind.CapacityOverflow;
+        }
+        return Error{kind:kind, code:0};
     }
-    pub static func fromNative(error:native.Error)->Self {
-        var kind=ErrorKind.System;
-        match(error.kind){Missing=>kind=ErrorKind.NotFound;NotFound=>kind=ErrorKind.NotFound;AccessDenied=>kind=ErrorKind.AccessDenied;InvalidName=>kind=ErrorKind.InvalidInput;InvalidValue=>kind=ErrorKind.InvalidInput;InvalidEncoding=>kind=ErrorKind.InvalidEncoding;OutOfMemory=>kind=ErrorKind.OutOfMemory;CapacityOverflow=>kind=ErrorKind.CapacityOverflow;System=>{}}
-        return Error{kind:kind,code:error.code};
+
+    pub static func fromNative(error:native.Error) -> Self {
+        var kind = ErrorKind.System;
+        match (error.kind) {
+            Missing => kind = ErrorKind.NotFound;
+            NotFound => kind = ErrorKind.NotFound;
+            AccessDenied => kind = ErrorKind.AccessDenied;
+            InvalidName => kind = ErrorKind.InvalidInput;
+            InvalidValue => kind = ErrorKind.InvalidInput;
+            InvalidEncoding => kind = ErrorKind.InvalidEncoding;
+            OutOfMemory => kind = ErrorKind.OutOfMemory;
+            CapacityOverflow => kind = ErrorKind.CapacityOverflow;
+            System => {}
+        }
+        return Error{kind:kind, code:error.code};
     }
 }
-pub enum ExitStatus {pub Code(i32),pub Signal(i32)}
-func decoded(value:&u8[])->core.Result<text.String,Error> {
-    match(text.fromUtf8(value)) {
-        Ok(result)=>return core.Result<text.String,Error>.Ok(result);
-        Err(error)=>{
-            var kind=ErrorKind.InvalidEncoding;
-            if(error.kind==text.ErrorKind.OutOfMemory){kind=ErrorKind.OutOfMemory;}
-            if(error.kind==text.ErrorKind.CapacityOverflow){kind=ErrorKind.CapacityOverflow;}
-            return core.Result<text.String,Error>.Err(Error{kind:kind,code:0});
+
+pub enum ExitStatus {
+    pub Code(i32),
+    pub Signal(i32)
+}
+
+func decoded(value:&u8[]) -> core.Result<text.String,Error> {
+    match (text.fromUtf8(value)) {
+        Ok(result) => return core.Result<text.String,Error>.Ok(result);
+        Err(error) => {
+            var kind = ErrorKind.InvalidEncoding;
+            if (error.kind == text.ErrorKind.OutOfMemory) {
+                kind = ErrorKind.OutOfMemory;
+            }
+            if (error.kind == text.ErrorKind.CapacityOverflow) {
+                kind = ErrorKind.CapacityOverflow;
+            }
+            return core.Result<text.String,Error>.Err(Error{kind:kind, code:0});
         }
     }
 }
-pub func args()->core.Result<collections.List<text.String>,Error> {
-    match(native.args()) {
-        Err(error)=>return core.Result<collections.List<text.String>,Error>.Err(Error.fromNative(error));
-        Ok(values)=>{
-            var output=collections.list<text.String>();
-            for(var &value=values){var bytes=value.view();output.append(decoded(&bytes)?)?;}
+
+pub func args() -> core.Result<collections.List<text.String>,Error> {
+    match (native.args()) {
+        Err(error) => return core.Result<collections.List<text.String>,Error>.Err(
+            Error.fromNative(error)
+        );
+        Ok(values) => {
+            var output = collections.list<text.String>();
+            for (var & value = values) {
+                var bytes = value.view();
+                output.append(decoded(&bytes)?)?;
+            }
             return core.Result<collections.List<text.String>,Error>.Ok(output);
         }
     }
 }
-pub func env(name:string)->core.Result<core.Option<text.String>,Error> {
+
+pub func env(name:string) -> core.Result<core.Option<text.String>,Error> {
     validated(name)?;
-    match(native.get(text.bytes(name))) {
-        Err(error)=>{if(error.kind==native.ErrorKind.Missing){return core.Result<core.Option<text.String>,Error>.Ok(core.Option<text.String>.None);}return core.Result<core.Option<text.String>,Error>.Err(Error.fromNative(error));}
-        Ok(value)=>{var bytes=value.view();return core.Result<core.Option<text.String>,Error>.Ok(core.Option<text.String>.Some(decoded(&bytes)?));}
-    }
-}
-pub func setEnv(name:string,value:string)->core.Result<void,Error> {
-    validated(name)?;validated(value)?;
-    match(native.set(text.bytes(name),text.bytes(value))){Ok=>return core.Result<void,Error>.Ok;Err(error)=>return core.Result<void,Error>.Err(Error.fromNative(error));}
-}
-pub func removeEnv(name:string)->core.Result<void,Error> {
-    validated(name)?;
-    match(native.remove(text.bytes(name))){Ok=>return core.Result<void,Error>.Ok;Err(error)=>return core.Result<void,Error>.Err(Error.fromNative(error));}
-}
-pub func cwd()->core.Result<text.String,Error> {
-    match(native.cwd()){Ok(value)=>{var bytes=value.view();return decoded(&bytes);}Err(error)=>return core.Result<text.String,Error>.Err(Error.fromNative(error));}
-}
-pub func setCwd(path:string)->core.Result<void,Error> {
-    validated(path)?;
-    match(native.setCwd(text.bytes(path))){Ok=>return core.Result<void,Error>.Ok;Err(error)=>return core.Result<void,Error>.Err(Error.fromNative(error));}
-}
-pub func run(program:string,args:&string[])->core.Result<ExitStatus,Error> {
-    validated(program)?;for(var i:usize=0;i<args.length;i+=1){validated(args[i])?;}
-    var file=text.bytes(program);var arguments=collections.list<native.Argument>();
-    for(var i:usize=0;i<args.length;i+=1){arguments.append(native.Argument{bytes:text.bytes(args[i])})?;}
-    var values=arguments.view();
-    match(native.run(file,&values)) {
-        Ok(status)=>match(status){Code(value)=>return core.Result<ExitStatus,Error>.Ok(ExitStatus.Code(value));Signal(value)=>return core.Result<ExitStatus,Error>.Ok(ExitStatus.Signal(value));}
-        Err(error)=>return core.Result<ExitStatus,Error>.Err(Error.fromNative(error));
+    match (native.get(text.bytes(name))) {
+        Err(error) => {
+            if (error.kind == native.ErrorKind.Missing) {
+                return core.Result<core.Option<text.String>,Error>.Ok(
+                    core.Option<text.String>.None
+                );
+            }
+            return core.Result<core.Option<text.String>,Error>.Err(Error.fromNative(error));
+        }
+        Ok(value) => {
+            var bytes = value.view();
+            return core.Result<core.Option<text.String>,Error>.Ok(
+                core.Option<text.String>.Some(decoded(&bytes)?)
+            );
+        }
     }
 }
 
-func validated(value:string)->core.Result<void,Error> {
-    var bytes=text.bytes(value);
-    match(utf8.validate(&bytes)){Ok=>return core.Result<void,Error>.Ok;Err(error)=>return core.Result<void,Error>.Err(Error{kind:ErrorKind.InvalidEncoding,code:0});}
+pub func setEnv(name:string, value:string) -> core.Result<void,Error> {
+    validated(name)?;
+    validated(value)?;
+    match (native.set(text.bytes(name), text.bytes(value))) {
+        Ok => return core.Result<void,Error>.Ok;
+        Err(error) => return core.Result<void,Error>.Err(Error.fromNative(error));
+    }
+}
+
+pub func removeEnv(name:string) -> core.Result<void,Error> {
+    validated(name)?;
+    match (native.remove(text.bytes(name))) {
+        Ok => return core.Result<void,Error>.Ok;
+        Err(error) => return core.Result<void,Error>.Err(Error.fromNative(error));
+    }
+}
+
+pub func cwd() -> core.Result<text.String,Error> {
+    match (native.cwd()) {
+        Ok(value) => {
+            var bytes = value.view();
+            return decoded(&bytes);
+        }
+        Err(error) => return core.Result<text.String,Error>.Err(Error.fromNative(error));
+    }
+}
+
+pub func setCwd(path:string) -> core.Result<void,Error> {
+    validated(path)?;
+    match (native.setCwd(text.bytes(path))) {
+        Ok => return core.Result<void,Error>.Ok;
+        Err(error) => return core.Result<void,Error>.Err(Error.fromNative(error));
+    }
+}
+
+pub func run(program:string, args:&string[]) -> core.Result<ExitStatus,Error> {
+    validated(program)?;
+    for (var i:usize = 0; i < args.length; i += 1) {
+        validated(args[i])?;
+    }
+    var file = text.bytes(program);
+    var arguments = collections.list<native.Argument>();
+    for (var i:usize = 0; i < args.length; i += 1) {
+        arguments.append(native.Argument{bytes:text.bytes(args[i])})?;
+    }
+    var values = arguments.view();
+    match (native.run(file, &values)) {
+        Ok(status) => match (status) {
+            Code(value) => return core.Result<ExitStatus,Error>.Ok(ExitStatus.Code(value));
+            Signal(value) => return core.Result<ExitStatus,Error>.Ok(ExitStatus.Signal(value));
+        }
+        Err(error) => return core.Result<ExitStatus,Error>.Err(Error.fromNative(error));
+    }
+}
+
+func validated(value:string) -> core.Result<void,Error> {
+    var bytes = text.bytes(value);
+    match (utf8.validate(&bytes)) {
+        Ok => return core.Result<void,Error>.Ok;
+        Err(error) => return core.Result<void,Error>.Err(
+            Error{kind:ErrorKind.InvalidEncoding, code:0}
+        );
+    }
 }

@@ -1,11 +1,11 @@
 package raw;
 
 // Begin a T lifetime in aligned storage without a live value. Takes ownership.
-pub func initialize<T>(ptr: *T, value: T) -> void {
+pub func initialize<T>(ptr:*T, value:T) -> void {
     __dmm_intrinsic_initialize(ptr, value);
 }
 
 // Run normal destruction and end the lifetime; leave allocation intact.
-pub func destroy<T>(ptr: *T) -> void {
+pub func destroy<T>(ptr:*T) -> void {
     __dmm_intrinsic_destroy(ptr);
 }

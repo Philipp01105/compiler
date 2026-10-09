@@ -1,13 +1,14 @@
 package main;
-import memraw "stdlib/memory/raw";
-
-import "stdlib/core";
+import (
+    "stdlib/core"
+    memraw "stdlib/memory/raw"
+);
 
 func stop() -> never {
     memraw.core_trap();
 }
 
-func invoke(stopFunction: func() -> never) -> never {
+func invoke(stopFunction:func() -> never) -> never {
     stopFunction();
 }
 
@@ -15,14 +16,14 @@ func impossibleValue() -> int {
     return stop();
 }
 
-func checked(value: int) -> int {
+func checked(value:int) -> int {
     if (value < 0) {
         stop();
     }
     return value + 1;
 }
 
-func selected(flag: bit) -> int {
+func selected(flag:bit) -> int {
     if (flag) {
         return 7;
     }
@@ -30,7 +31,7 @@ func selected(flag: bit) -> int {
 }
 
 func main() -> int {
-    var stopper: func() -> never = stop;
+    var stopper:func() -> never = stop;
     if (checked(41) != 42) {
         return 1;
     }

@@ -1,59 +1,103 @@
 package io;
-import memraw "stdlib/memory/raw";
-import ("stdlib/core" "stdlib/collections");
+import (
+    "stdlib/collections"
+    "stdlib/core"
+    memraw "stdlib/memory/raw"
+);
 
 pub struct BufferedReader<'a,R:Reader> {
     var source:&'a mut R;
     var buffer:collections.Buffer<u8>;
-    var start:usize; var end:usize; var eof:bit;
-    pub func read(output:&mut u8[])->core.Result<usize,Error> {
-        if(output.length==0) { return core.Result<usize,Error>.Ok(0); }
-        if(start==end) {
-            if(eof) { return core.Result<usize,Error>.Ok(0); }
-            var destination=buffer.view();
-            var count=source.read(&mut destination)?;
-            if(count>destination.length) { memraw.core_trap(); }
-            start=0; end=count;
-            if(count==0) { eof=true; return core.Result<usize,Error>.Ok(0); }
+    var start:usize;
+    var end:usize;
+    var eof:bit;
+
+    pub func read(output:&mut u8[]) -> core.Result<usize,Error> {
+        if (output.length == 0) {
+            return core.Result<usize,Error>.Ok(0);
         }
-        var count=end-start;
-        if(count>output.length) { count=output.length; }
-        for(var i:usize=0;i<count;i+=1) { (*output)[i]=*buffer.get(start+i); }
-        start+=count;
+        if (start == end) {
+            if (eof) {
+                return core.Result<usize,Error>.Ok(0);
+            }
+            var destination = buffer.view();
+            var count = source.read(&mut destination)?;
+            if (count > destination.length) {
+                memraw.core_trap();
+            }
+            start = 0;
+            end = count;
+            if (count == 0) {
+                eof = true;
+                return core.Result<usize,Error>.Ok(0);
+            }
+        }
+        var count = end - start;
+        if (count > output.length) {
+            count = output.length;
+        }
+        for (var i:usize = 0; i < count; i += 1) {
+            (*output)[i] = *buffer.get(start + i);
+        }
+        start += count;
         return core.Result<usize,Error>.Ok(count);
     }
-    pub func readLine(maximum:usize)->core.Result<core.Option<collections.List<u8>>,Error> {
-        var line=collections.list<u8>();
-        while(true) {
-            var octet:u8[1]; var output:u8[]=octet[:];
-            var count=self.read(&mut output)?;
-            if(count==0) {
-                if(line.length()==0) { return core.Result<core.Option<collections.List<u8>>,Error>.Ok(core.Option<collections.List<u8>>.None); }
+
+    pub func readLine(maximum:usize) -> core.Result<core.Option<collections.List<u8>>,Error> {
+        var line = collections.list<u8>();
+        while (true) {
+            var octet:u8[1];
+            var output:u8[] = octet[:];
+            var count = self.read(&mut output)?;
+            if (count == 0) {
+                if (line.length() == 0) {
+                    return core.Result<core.Option<collections.List<u8>>,Error>.Ok(
+                        core.Option<collections.List<u8>>.None
+                    );
+                }
                 break;
             }
-            if(octet[0]==10) {
-                if(line.length()>0 && *line.get(line.length()-1)==13) { line.truncate(line.length()-1); }
+            if (octet[0] == 10) {
+                if (line.length() > 0 && *line.get(line.length() - 1) == 13) {
+                    line.truncate(line.length() - 1);
+                }
                 break;
             }
-            if(line.length()==maximum) {
+            if (line.length() == maximum) {
                 // Preserve the lookahead byte in this reader.
-                start-=1;
-                return core.Result<core.Option<collections.List<u8>>,Error>.Err(failure(ErrorKind.LimitExceeded,line.length()));
+                start -= 1;
+                return core.Result<core.Option<collections.List<u8>>,Error>.Err(
+                    failure(ErrorKind.LimitExceeded, line.length())
+                );
             }
             line.append(octet[0])?;
         }
-        return core.Result<core.Option<collections.List<u8>>,Error>.Ok(core.Option<collections.List<u8>>.Some(line));
+        return core.Result<core.Option<collections.List<u8>>,Error>.Ok(
+            core.Option<collections.List<u8>>.Some(line)
+        );
     }
-    pub func readAll(maximum:usize)->core.Result<collections.List<u8>,Error> {
-        return readAll(&mut self,maximum);
+
+    pub func readAll(maximum:usize) -> core.Result<collections.List<u8>,Error> {
+        return readAll(&mut self, maximum);
     }
 }
-pub func bufferedReader<'a,R:Reader>(source:&'a mut R,capacity:usize)
-    ->core.Result<BufferedReader<'a,R>,Error> {
-    if(capacity==0) { return core.Result<BufferedReader<'a,R>,Error>.Err(failure(ErrorKind.InvalidInput,0)); }
-    var buffer=collections.buffer<u8>(capacity,0.(u8))?;
+
+pub func bufferedReader<'a,R:Reader>(
+    source:&'a mut R,
+    capacity:usize
+) -> core.Result<BufferedReader<'a,R>,Error> {
+    if (capacity == 0) {
+        return core.Result<BufferedReader<'a,R>,Error>.Err(failure(ErrorKind.InvalidInput, 0));
+    }
+    var buffer = collections.buffer<u8>(capacity, 0.(u8))?;
     return core.Result<BufferedReader<'a,R>,Error>.Ok(
-        BufferedReader<'a,R>{source:source,buffer:buffer,start:0,end:0,eof:false}
+        BufferedReader<'a,R>{
+            source:source,
+            buffer:buffer,
+            start:0,
+            end:0,
+            eof:false
+        }
     );
 }
 
@@ -61,54 +105,87 @@ pub func bufferedReader<'a,R:Reader>(source:&'a mut R,capacity:usize)
 pub struct BufferedWriter<'a,W:Writer> {
     var target:&'a mut W;
     var data:collections.List<u8>;
-    var maximum:usize; var sent:usize;
-    pub func flush()->core.Result<void,Error> {
-        var beginning=sent;
-        while(sent<data.length()) {
-            var storage=data.view();
-            var pending=storage[sent:];
-            match(target.write(&pending)) {
-                Err(error)=>{
-                    sent+=error.transferred;
-                    if(sent>data.length()) { memraw.core_trap(); }
-                    error.transferred=sent-beginning;
+    var maximum:usize;
+    var sent:usize;
+
+    pub func flush() -> core.Result<void,Error> {
+        var beginning = sent;
+        while (sent < data.length()) {
+            var storage = data.view();
+            var pending = storage[sent:];
+            match (target.write(&pending)) {
+                Err(error) => {
+                    sent += error.transferred;
+                    if (sent > data.length()) {
+                        memraw.core_trap();
+                    }
+                    error.transferred = sent - beginning;
                     return core.Result<void,Error>.Err(error);
                 }
-                Ok(count)=>{
-                    if(count==0) { return core.Result<void,Error>.Err(failure(ErrorKind.WriteZero,sent-beginning)); }
-                    if(count>pending.length) { memraw.core_trap(); }
-                    sent+=count;
+                Ok(count) => {
+                    if (count == 0) {
+                        return core.Result<void,Error>.Err(
+                            failure(ErrorKind.WriteZero, sent - beginning)
+                        );
+                    }
+                    if (count > pending.length) {
+                        memraw.core_trap();
+                    }
+                    sent += count;
                 }
             }
         }
-        data.clear(); sent=0;
+        data.clear();
+        sent = 0;
         return core.Result<void,Error>.Ok;
     }
-    pub func write(input:&u8[])->core.Result<usize,Error> {
-        if(input.length==0) { return core.Result<usize,Error>.Ok(0); }
-        if(sent>0 || data.length()==maximum) {
-            match(self.flush()) {
-                Ok=>{}
-                Err(error)=>{error.transferred=0; return core.Result<usize,Error>.Err(error);}
+
+    pub func write(input:&u8[]) -> core.Result<usize,Error> {
+        if (input.length == 0) {
+            return core.Result<usize,Error>.Ok(0);
+        }
+        if (sent > 0 || data.length() == maximum) {
+            match (self.flush()) {
+                Ok => {}
+                Err(error) => {
+                    error.transferred = 0;
+                    return core.Result<usize,Error>.Err(error);
+                }
             }
         }
-        var count=maximum-data.length();
-        if(count>input.length) { count=input.length; }
-        var source=(*input)[:count];
+        var count = maximum - data.length();
+        if (count > input.length) {
+            count = input.length;
+        }
+        var source = (*input)[:count];
         data.appendSlice(&source)?;
         return core.Result<usize,Error>.Ok(count);
     }
-    pub func writeAll(input:&u8[])->core.Result<void,Error> {
-        return writeAll(&mut self,input);
+
+    pub func writeAll(input:&u8[]) -> core.Result<void,Error> {
+        return writeAll(&mut self, input);
     }
-    pub func pending()->usize { return data.length()-sent; }
+
+    pub func pending() -> usize {
+        return data.length() - sent;
+    }
 }
-pub func bufferedWriter<'a,W:Writer>(target:&'a mut W,capacity:usize)
-    ->core.Result<BufferedWriter<'a,W>,Error> {
-    if(capacity==0) { return core.Result<BufferedWriter<'a,W>,Error>.Err(failure(ErrorKind.InvalidInput,0)); }
-    var buffer=collections.list<u8>();
+
+pub func bufferedWriter<'a,W:Writer>(
+    target:&'a mut W,
+    capacity:usize
+) -> core.Result<BufferedWriter<'a,W>,Error> {
+    if (capacity == 0) {
+        return core.Result<BufferedWriter<'a,W>,Error>.Err(failure(ErrorKind.InvalidInput, 0));
+    }
+    var buffer = collections.list<u8>();
     buffer.ensureCapacity(capacity)?;
     return core.Result<BufferedWriter<'a,W>,Error>.Ok(
-        BufferedWriter<'a,W>{target:target,data:buffer,maximum:capacity,sent:0}
+        BufferedWriter<'a,W>{
+            target:target,
+            data:buffer,
+            maximum:capacity,
+            sent:0
+        }
     );
 }

@@ -1,7 +1,7 @@
 package main;
 
 func main() -> void {
-    var left: int[] = [1, 2];
-    var right: int[] = [1, 3];
-    var ordered: bit = left < right;
+    var left:int[] = [1, 2];
+    var right:int[] = [1, 3];
+    var ordered:bit = left < right;
 }

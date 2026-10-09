@@ -1,15 +1,41 @@
 // Test-only ring preserves wraparound, growth, and retained-loan regressions.
 package main;
-import memraw "stdlib/memory/raw";
-import "stdlib/core";
-enum TestStatus {None,OutOfMemory,CapacityOverflow,InvalidIndex}
-func growTestRing<T>(storage:&mut *T,slots:&mut usize,head:&mut usize,count:usize,capacity:usize)->TestStatus {
-    if(capacity<=*slots) { return TestStatus.None; }
-    if(capacity>9223372036854775807.(usize)/sizeof(T)) { return TestStatus.CapacityOverflow; }
-    var grown:*T=memraw.core_alloc(capacity*sizeof(T)).(*T);
-    if(grown==memraw.null<T>()) { return TestStatus.OutOfMemory; }
-    for(var i:usize=0;i<count;i+=1) { memraw.initialize<T>(&grown[i],take((*storage)[(*head+i)%*slots])); }
-    memraw.core_release((*storage).(*u8)); *storage=grown; *slots=capacity; *head=0;
+import (
+    "stdlib/core"
+    memraw "stdlib/memory/raw"
+);
+
+enum TestStatus {
+    None,
+    OutOfMemory,
+    CapacityOverflow,
+    InvalidIndex
+}
+
+func growTestRing<T>(
+    storage:&mut * T,
+    slots:&mut usize,
+    head:&mut usize,
+    count:usize,
+    capacity:usize
+) -> TestStatus {
+    if (capacity <= *slots) {
+        return TestStatus.None;
+    }
+    if (capacity > 9223372036854775807.(usize) / sizeof(T)) {
+        return TestStatus.CapacityOverflow;
+    }
+    var grown:*T = memraw.core_alloc(capacity * sizeof(T)).(*T);
+    if (grown == memraw.null<T>()) {
+        return TestStatus.OutOfMemory;
+    }
+    for (var i:usize = 0; i < count; i += 1) {
+        memraw.initialize<T>(&grown[i], take((*storage)[(*head + i) % *slots]));
+    }
+    memraw.core_release((*storage).(*u8));
+    *storage = grown;
+    *slots = capacity;
+    *head = 0;
     return TestStatus.None;
 }
 
@@ -18,73 +44,121 @@ struct TestRing<T> {
     var slots:usize;
     var count:usize;
     var head:usize;
-    pub func length()->usize { return count; }
-    pub func capacity()->usize { return slots; }
-    pub func get(index:usize)->T where T:core.Copy {
-        if(index>=count) { memraw.core_trap(); }
-        return storage[(head+index)%slots];
+
+    pub func length() -> usize {
+        return count;
     }
-    pub func getRef(index:usize)->&T {
-        if(index>=count) { memraw.core_trap(); }
-        return &storage[(head+index)%slots];
+
+    pub func capacity() -> usize {
+        return slots;
     }
-    pub func getMut(index:usize)->&mut T {
-        if(index>=count) { memraw.core_trap(); }
-        return &mut storage[(head+index)%slots];
-    }
-    pub func ensureCapacity(capacity:usize)->TestStatus {
-        return growTestRing<T>(&mut storage,&mut slots,&mut head,count,capacity);
-    }
-    pub func pushBack(value:T)->TestStatus {
-        if(count==slots) {
-            var capacity:usize=8;
-            if(count>0) {
-                if(count>4611686018427387903.(usize)/sizeof(T)) { return TestStatus.CapacityOverflow; }
-                capacity=count*2;
-            }
-            var status=growTestRing<T>(&mut storage,&mut slots,&mut head,count,capacity);
-            if(status!=TestStatus.None) { return status; }
+
+    pub func get(index:usize) -> T where T:core.Copy {
+        if (index >= count) {
+            memraw.core_trap();
         }
-        memraw.initialize<T>(&storage[(head+count)%slots],value); count+=1;
+        return storage[(head + index) % slots];
+    }
+
+    pub func getRef(index:usize) -> &T {
+        if (index >= count) {
+            memraw.core_trap();
+        }
+        return &storage[(head + index) % slots];
+    }
+
+    pub func getMut(index:usize) -> &mut T {
+        if (index >= count) {
+            memraw.core_trap();
+        }
+        return &mut storage[(head + index) % slots];
+    }
+
+    pub func ensureCapacity(capacity:usize) -> TestStatus {
+        return growTestRing<T>(&mut storage, &mut slots, &mut head, count, capacity);
+    }
+
+    pub func pushBack(value:T) -> TestStatus {
+        if (count == slots) {
+            var capacity:usize = 8;
+            if (count > 0) {
+                if (count > 4611686018427387903.(usize) / sizeof(T)) {
+                    return TestStatus.CapacityOverflow;
+                }
+                capacity = count * 2;
+            }
+            var status = growTestRing<T>(&mut storage, &mut slots, &mut head, count, capacity);
+            if (status != TestStatus.None) {
+                return status;
+            }
+        }
+        memraw.initialize<T>(&storage[(head + count) % slots], value);
+        count += 1;
         return TestStatus.None;
     }
-    pub func pushFront(value:T)->TestStatus {
-        if(count==slots) {
-            var capacity:usize=8;
-            if(count>0) {
-                if(count>4611686018427387903.(usize)/sizeof(T)) { return TestStatus.CapacityOverflow; }
-                capacity=count*2;
+
+    pub func pushFront(value:T) -> TestStatus {
+        if (count == slots) {
+            var capacity:usize = 8;
+            if (count > 0) {
+                if (count > 4611686018427387903.(usize) / sizeof(T)) {
+                    return TestStatus.CapacityOverflow;
+                }
+                capacity = count * 2;
             }
-            var status=growTestRing<T>(&mut storage,&mut slots,&mut head,count,capacity);
-            if(status!=TestStatus.None) { return status; }
+            var status = growTestRing<T>(&mut storage, &mut slots, &mut head, count, capacity);
+            if (status != TestStatus.None) {
+                return status;
+            }
         }
-        head=(head+slots-1)%slots;
-        memraw.initialize<T>(&storage[(head+0)%slots],value); count+=1;
+        head = (head + slots - 1) % slots;
+        memraw.initialize<T>(&storage[(head + 0) % slots], value);
+        count += 1;
         return TestStatus.None;
     }
-    pub func popFront()->core.Option<T> {
-        if(count==0) { return core.Option<T>.None; }
-        var value=take(storage[head]); head=(head+1)%slots; count-=1;
+
+    pub func popFront() -> core.Option<T> {
+        if (count == 0) {
+            return core.Option<T>.None;
+        }
+        var value = take(storage[head]);
+        head = (head + 1) % slots;
+        count -= 1;
         return core.Option<T>.Some(value);
     }
-    pub func popBack()->core.Option<T> {
-        if(count==0) { return core.Option<T>.None; }
-        count-=1; return core.Option<T>.Some(take(storage[(head+count)%slots]));
+
+    pub func popBack() -> core.Option<T> {
+        if (count == 0) {
+            return core.Option<T>.None;
+        }
+        count -= 1;
+        return core.Option<T>.Some(take(storage[(head + count) % slots]));
     }
-    pub func clear()->void {
-        while(count>0) { memraw.destroy<T>(&storage[head]); head=(head+1)%slots; count-=1; }
-        head=0;
+
+    pub func clear() -> void {
+        while (count > 0) {
+            memraw.destroy<T>(&storage[head]);
+            head = (head + 1) % slots;
+            count -= 1;
+        }
+        head = 0;
     }
+
     destructor {
-        while(count>0) { memraw.destroy<T>(&storage[head]); head=(head+1)%slots; count-=1; }
+        while (count > 0) {
+            memraw.destroy<T>(&storage[head]);
+            head = (head + 1) % slots;
+            count -= 1;
+        }
         memraw.core_release(storage.(*u8));
     }
 }
 
-func testRing<T>(capacity:usize)->core.Result<TestRing<T>,TestStatus> {
+func testRing<T>(capacity:usize) -> core.Result<TestRing<T>,TestStatus> {
     var value:TestRing<T>;
-    var status=value.ensureCapacity(capacity);
-    if(status!=TestStatus.None) { return core.Result<TestRing<T>,TestStatus>.Err(status); }
+    var status = value.ensureCapacity(capacity);
+    if (status != TestStatus.None) {
+        return core.Result<TestRing<T>,TestStatus>.Err(status);
+    }
     return core.Result<TestRing<T>,TestStatus>.Ok(value);
 }
-

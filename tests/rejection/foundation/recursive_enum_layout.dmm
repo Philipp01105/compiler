@@ -6,5 +6,5 @@ enum E {
 }
 
 func main() -> void {
-    var e: E = E.End;
+    var e:E = E.End;
 }

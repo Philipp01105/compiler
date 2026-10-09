@@ -5,12 +5,12 @@ func socketOpened() -> void {}
 
 func socketClosed() -> void {}
 
-func closeError(error: *Error) -> bit {
+func closeError(error:*Error) -> bit {
     return false;
 }
 
 func runReactorHook() -> void {}
 
-func resolveJob(op: *Operation, error: *Error) -> *Addresses {
+func resolveJob(op:*Operation, error:*Error) -> *Addresses {
     return resolveNative(op, error);
 }

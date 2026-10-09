@@ -1,76 +1,76 @@
 package limits;
 
-pub const I8_MIN: i8 = -127 - 1;
+pub const I8_MIN:i8 = -127 - 1;
 
-pub const I8_MAX: i8 = 127;
+pub const I8_MAX:i8 = 127;
 
-pub const U8_MIN: u8 = 0;
+pub const U8_MIN:u8 = 0;
 
-pub const U8_MAX: u8 = 255;
+pub const U8_MAX:u8 = 255;
 
-pub const I16_MIN: i16 = -32767 - 1;
+pub const I16_MIN:i16 = -32767 - 1;
 
-pub const I16_MAX: i16 = 32767;
+pub const I16_MAX:i16 = 32767;
 
-pub const U16_MIN: u16 = 0;
+pub const U16_MIN:u16 = 0;
 
-pub const U16_MAX: u16 = 65535;
+pub const U16_MAX:u16 = 65535;
 
-pub const I32_MIN: i32 = -2147483647 - 1;
+pub const I32_MIN:i32 = -2147483647 - 1;
 
-pub const I32_MAX: i32 = 2147483647;
+pub const I32_MAX:i32 = 2147483647;
 
-pub const U32_MIN: u32 = 0;
+pub const U32_MIN:u32 = 0;
 
-pub const U32_MAX: u32 = 4294967295;
+pub const U32_MAX:u32 = 4294967295;
 
-pub const I64_MIN: i64 = -9223372036854775807 - 1;
+pub const I64_MIN:i64 = -9223372036854775807 - 1;
 
-pub const I64_MAX: i64 = 9223372036854775807;
+pub const I64_MAX:i64 = 9223372036854775807;
 
-pub const U64_MIN: u64 = 0;
+pub const U64_MIN:u64 = 0;
 
-pub const U64_MAX: u64 = 18446744073709551615;
+pub const U64_MAX:u64 = 18446744073709551615;
 
 // Both supported targets have 64-bit pointers.
-pub const ISIZE_MIN: isize = -9223372036854775807 - 1;
+pub const ISIZE_MIN:isize = -9223372036854775807 - 1;
 
-pub const ISIZE_MAX: isize = 9223372036854775807;
+pub const ISIZE_MAX:isize = 9223372036854775807;
 
-pub const USIZE_MIN: usize = 0;
+pub const USIZE_MIN:usize = 0;
 
-pub const USIZE_MAX: usize = 18446744073709551615;
+pub const USIZE_MAX:usize = 18446744073709551615;
 
 // Compatibility spellings remain distinct primitive types in DMM.
-pub const INT_MIN: int = -2147483647 - 1;
+pub const INT_MIN:int = -2147483647 - 1;
 
-pub const INT_MAX: int = 2147483647;
+pub const INT_MAX:int = 2147483647;
 
-pub const CHAR_MIN: char = (-127 - 1).(char);
+pub const CHAR_MIN:char = (-127 - 1).(char);
 
-pub const CHAR_MAX: char = 127.(char);
+pub const CHAR_MAX:char = 127.(char);
 
-pub const BYTE_MIN: byte = 0.(byte);
+pub const BYTE_MIN:byte = 0.(byte);
 
-pub const BYTE_MAX: byte = 255.(byte);
+pub const BYTE_MAX:byte = 255.(byte);
 
 // MIN/MAX are finite bounds, not the smallest positive magnitude.
-pub const FLOAT_MAX: float = 3.4028234663852886e38.(float);
+pub const FLOAT_MAX:float = 3.4028234663852886e38.(float);
 
-pub const FLOAT_MIN: float = -3.4028234663852886e38.(float);
+pub const FLOAT_MIN:float = -3.4028234663852886e38.(float);
 
-pub const FLOAT_MIN_NORMAL: float = 1.1754943508222875e-38.(float);
+pub const FLOAT_MIN_NORMAL:float = 1.1754943508222875e-38.(float);
 
-pub const FLOAT_MIN_POSITIVE: float = 1.4012984643248171e-45.(float);
+pub const FLOAT_MIN_POSITIVE:float = 1.4012984643248171e-45.(float);
 
-pub const FLOAT_EPSILON: float = 1.1920928955078125e-7.(float);
+pub const FLOAT_EPSILON:float = 1.1920928955078125e-7.(float);
 
-pub const DOUBLE_MAX: double = 1.7976931348623157e308;
+pub const DOUBLE_MAX:double = 1.7976931348623157e308;
 
-pub const DOUBLE_MIN: double = -1.7976931348623157e308;
+pub const DOUBLE_MIN:double = -1.7976931348623157e308;
 
-pub const DOUBLE_MIN_NORMAL: double = 2.2250738585072014e-308;
+pub const DOUBLE_MIN_NORMAL:double = 2.2250738585072014e-308;
 
-pub const DOUBLE_MIN_POSITIVE: double = 4.9406564584124654e-324;
+pub const DOUBLE_MIN_POSITIVE:double = 4.9406564584124654e-324;
 
-pub const DOUBLE_EPSILON: double = 2.2204460492503131e-16;
+pub const DOUBLE_EPSILON:double = 2.2204460492503131e-16;

@@ -1,31 +1,33 @@
 package main;
 
-func identity<T>(value: T) -> T {
+func identity<T>(value:T) -> T {
     return value;
 }
 
-func retain(callable: func<X>(X) -> X) -> func<Y>(Y) -> Y {
+func retain(callable:func<X>(X) -> X) -> func<Y>(Y) -> Y {
     return callable;
 }
 
-func increment(value: int) -> int {
+func increment(value:int) -> int {
     return value + 1;
 }
 
-func doubleValue(value: int) -> int {
+func doubleValue(value:int) -> int {
     return value * 2;
 }
 
 struct Pipeline {
     var stages:(func(int) -> int)[2];
-    func run(value: int) -> int {
+
+    func run(value:int) -> int {
         return stages[1](stages[0](value));
     }
 }
 
 struct Counter {
-    var value: int;
-    func add(delta: int) -> int {
+    var value:int;
+
+    func add(delta:int) -> int {
         return value + delta;
     }
 }
@@ -41,7 +43,7 @@ enum Number {
     Pair(int, int)
 }
 
-func evaluate(number: Number) -> int {
+func evaluate(number:Number) -> int {
     return match (number) {
         Empty => {
             0
@@ -56,17 +58,19 @@ func evaluate(number: Number) -> int {
 }
 
 func main() -> int {
-    var pipeline = Pipeline{ stages:[increment, doubleValue] };
+    var pipeline = Pipeline{stages:[increment, doubleValue]};
     var callable = retain(identity);
-    var specialized: func(int) -> int = identity<int>;
-    var operation = Operation.Apply(if (true) {
-        increment
-    } else {
-        doubleValue
-    });
-    var selected: func(int) -> int = operation.Apply();
-    var counter = Counter{ value: 40 };
-    var unbound: func(*Counter, int) -> int = Counter.add;
+    var specialized:func(int) -> int = identity < int > ;
+    var operation = Operation.Apply(
+        if (true) {
+            increment
+        } else {
+            doubleValue
+        }
+    );
+    var selected:func(int) -> int = operation.Apply();
+    var counter = Counter{value:40};
+    var unbound:func(*Counter,int) -> int = Counter.add;
     var total = callable(3) + specialized(5) + unbound((&counter).(*Counter), 2);
     var input = if (total > 10) {
         Number.Pair(7, 9)

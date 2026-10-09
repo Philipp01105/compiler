@@ -1,51 +1,48 @@
 package network;
 extern "system" {
-    align(8) struct NativeAddress {
-        pub var family: u16;
-        pub var padding: u8[126];
-    }
-
-    struct NativeIPv4 {
-        pub var family: u16;
-        pub var port: u16;
-        pub var address: u8[4];
-        pub var padding: u8[8];
+    align(8) struct NativeAddress{pub var family:u16;
+    pub var padding:u8[126];
+    } struct NativeIPv4 {
+        pub var family:u16;
+        pub var port:u16;
+        pub var address:u8[4];
+        pub var padding:u8[8];
     }
 
     struct NativeIPv6 {
-        pub var family: u16;
-        pub var port: u16;
-        pub var flow: u32;
-        pub var address: u8[16];
-        pub var scope: u32;
+        pub var family:u16;
+        pub var port:u16;
+        pub var flow:u32;
+        pub var address:u8[16];
+        pub var scope:u32;
     }
 
     union DropBits {
-        pub var bits: usize;
-        pub var callback: extern "system" func(*void) -> void;
+        pub var bits:usize;
+        pub var callback:extern "system" func(*void) -> void;
     }
 }
 
 func nullDrop() -> extern "system" func(*void) -> void {
-    var value: DropBits;
+    var value:DropBits;
     return value.callback;
 }
 
-func swapPort(port: u16) -> u16 {
+func swapPort(port:u16) -> u16 {
     return (port % 256) * 256 + port / 256;
 }
 
-func toNative(input: *Address, out: *NativeAddress, length: *i32) -> bit {
-    var zero: NativeAddress;
+func toNative(input:*Address, out:*NativeAddress, length:*i32) -> bit {
+    var zero:NativeAddress;
     *out = zero;
     if ((*input).port > 65535 || (*input).scope > 4294967295) {
         return false;
     }
     if ((*input).family == 4) {
-        var a: *NativeIPv4 = out.(*NativeIPv4);
+        var a:*NativeIPv4 = out.(*NativeIPv4);
         (*a).family = AF4;
         (*a).port = swapPort((*input).port.(u16));
-        var i: usize = 0;
+        var i:usize = 0;
         while (i < 4) {
             (*a).address[i] = (*input).bytes[i];
             i = i + 1;
@@ -54,11 +51,11 @@ func toNative(input: *Address, out: *NativeAddress, length: *i32) -> bit {
         return true;
     }
     if ((*input).family == 6) {
-        var a: *NativeIPv6 = out.(*NativeIPv6);
+        var a:*NativeIPv6 = out.(*NativeIPv6);
         (*a).family = AF6;
         (*a).port = swapPort((*input).port.(u16));
         (*a).scope = (*input).scope.(u32);
-        var i: usize = 0;
+        var i:usize = 0;
         while (i < 16) {
             (*a).address[i] = (*input).bytes[i];
             i = i + 1;
@@ -69,14 +66,14 @@ func toNative(input: *Address, out: *NativeAddress, length: *i32) -> bit {
     return false;
 }
 
-func fromNative(input: *NativeAddress, out: *Address) -> bit {
-    var zero: Address;
+func fromNative(input:*NativeAddress, out:*Address) -> bit {
+    var zero:Address;
     *out = zero;
     if ((*input).family == AF4) {
-        var a: *NativeIPv4 = input.(*NativeIPv4);
+        var a:*NativeIPv4 = input.(*NativeIPv4);
         (*out).family = 4;
         (*out).port = swapPort((*a).port).(u64);
-        var i: usize = 0;
+        var i:usize = 0;
         while (i < 4) {
             (*out).bytes[i] = (*a).address[i];
             i = i + 1;
@@ -84,11 +81,11 @@ func fromNative(input: *NativeAddress, out: *Address) -> bit {
         return true;
     }
     if ((*input).family == AF6) {
-        var a: *NativeIPv6 = input.(*NativeIPv6);
+        var a:*NativeIPv6 = input.(*NativeIPv6);
         (*out).family = 6;
         (*out).port = swapPort((*a).port).(u64);
         (*out).scope = (*a).scope.(u64);
-        var i: usize = 0;
+        var i:usize = 0;
         while (i < 16) {
             (*out).bytes[i] = (*a).address[i];
             i = i + 1;
@@ -98,9 +95,9 @@ func fromNative(input: *NativeAddress, out: *Address) -> bit {
     return false;
 }
 
-func serviceName(port: u64, out: *u8) -> void {
-    var digits: u8[5];
-    var count: usize = 0;
+func serviceName(port:u64, out:*u8) -> void {
+    var digits:u8[5];
+    var count:usize = 0;
     while (true) {
         digits[count] = (48 + port % 10).(u8);
         count = count + 1;
@@ -109,7 +106,7 @@ func serviceName(port: u64, out: *u8) -> void {
             break;
         }
     }
-    var index: usize = 0;
+    var index:usize = 0;
     while (index < count) {
         out[index] = digits[count - index - 1];
         index = index + 1;

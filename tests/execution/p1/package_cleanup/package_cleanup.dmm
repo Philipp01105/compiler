@@ -1,25 +1,25 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
 struct FirstResource {
-    var value: int;
-
+    var value:int;
     destructor {
         io.println(1);
     }
 }
 
 struct SecondResource {
-    var value: int;
-
+    var value:int;
     destructor {
         io.println(2);
     }
 }
 
-var first: FirstResource;
-var second: SecondResource;
+var first:FirstResource;
+var second:SecondResource;
 
 func main() -> int {
     return 0;

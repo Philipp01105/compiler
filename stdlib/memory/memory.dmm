@@ -1,23 +1,31 @@
 package memory;
-import memraw "stdlib/memory/raw";
 import (
     "stdlib/core"
+    memraw "stdlib/memory/raw"
 );
 
 struct BoxStorage<T> {
-    var value: T;
+    var value:T;
 }
 
-@[no_default] @[core.Send where T:core.Send] @[core.Sync where T:core.Sync] pub struct Box<T> {
-    var storage: *BoxStorage<T>;
+@[no_default]
+@[core.Send where T:core.Send]
+@[core.Sync where T:core.Sync]
+pub struct Box<T> {
+    var storage:*BoxStorage<T>;
+
     pub func get() -> &T {
-        if (storage == memraw.null<BoxStorage<T>>()) { memraw.core_trap(); }
+        if (storage == memraw.null<BoxStorage<T>>()) {
+            memraw.core_trap();
+        }
         return &(*self.storage).value;
     }
 
     pub func getMut() -> &mut T {
-        if (storage == memraw.null<BoxStorage<T>>()) { memraw.core_trap(); }
-        return &mut (*self.storage).value;
+        if (storage == memraw.null<BoxStorage<T>>()) {
+            memraw.core_trap();
+        }
+        return &mut(*self.storage).value;
     }
 
     destructor {
@@ -28,18 +36,18 @@ struct BoxStorage<T> {
     }
 }
 
-pub func intoInner<T>(owner:Box<T>)->T {
-    var value:T=take((*owner.storage).value);
+pub func intoInner<T>(owner:Box<T>) -> T {
+    var value:T = take((*owner.storage).value);
     memraw.core_release(owner.storage.(*u8));
-    owner.storage=memraw.null<BoxStorage<T>>();
+    owner.storage = memraw.null<BoxStorage<T>>();
     return value;
 }
 
-pub func box<T>(value: T) -> core.Result<Box<T>,core.AllocError> {
-    var storage: *BoxStorage < T >= memraw.core_alloc(sizeof(BoxStorage<T>)).(*BoxStorage<T>);
+pub func box<T>(value:T) -> core.Result<Box<T>,core.AllocError> {
+    var storage:*BoxStorage<T>= memraw.core_alloc(sizeof(BoxStorage<T>)).(*BoxStorage<T>);
     if (storage == memraw.null<BoxStorage<T>>()) {
         return core.Result<Box<T>,core.AllocError>.Err(core.AllocError.OutOfMemory);
     }
-    memraw.initialize<BoxStorage<T>>(storage, BoxStorage<T>{ value: value });
-    return core.Result<Box<T>,core.AllocError>.Ok(Box<T>{ storage: storage });
+    memraw.initialize<BoxStorage<T>>(storage, BoxStorage<T>{value:value});
+    return core.Result<Box<T>,core.AllocError>.Ok(Box<T>{storage:storage});
 }

@@ -5,21 +5,22 @@ interface Marker {
 }
 
 struct Item {
-    var value: int;
+    var value:int;
+
     func marker() -> int {
         return value;
     }
 }
 
-func identity<T>(value: T) -> T {
+func identity<T>(value:T) -> T {
     return value;
 }
 
-func use(callable: func<X>(X) -> X) -> int {
+func use(callable:func<X>(X) -> X) -> int {
     return callable(42);
 }
 
-func choose(callable: func<X>(X) -> X) -> func<Y>(Y) -> Y {
+func choose(callable:func<X>(X) -> X) -> func<Y>(Y) -> Y {
     return callable;
 }
 
@@ -27,13 +28,13 @@ const retained = identity;
 
 func main() -> int {
     var callable = identity;
-    var mono: func(int) -> int = identity<int>;
-    var contextual: func(int) -> int = identity;
-    var bounded: func<T: Marker>(T) -> T = identity;
-    var integer: int = callable(42);
-    var floating: double = callable(3.5);
+    var mono:func(int) -> int = identity < int > ;
+    var contextual:func(int) -> int = identity;
+    var bounded:func<T:Marker>(T) -> T = identity;
+    var integer:int = callable(42);
+    var floating:double = callable(3.5);
     var returned = choose(identity);
-    var item: Item;
+    var item:Item;
     item.value = 9;
     var copy = bounded(item);
     if (integer != 42 || floating != 3.5) {

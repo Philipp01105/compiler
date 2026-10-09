@@ -1,8 +1,10 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
-func choose(c: bit) -> int {
+func choose(c:bit) -> int {
     var x = 1;
     if (c) {
         x = 4;
@@ -12,7 +14,7 @@ func choose(c: bit) -> int {
     return x;
 }
 
-func loop(limit: int) -> int {
+func loop(limit:int) -> int {
     var x = 0;
     while (x < limit) {
         x += 1;
@@ -20,21 +22,21 @@ func loop(limit: int) -> int {
     return x;
 }
 
-func change(p: *int) -> int {
+func change(p:*int) -> int {
     var old = *p;
     *p += 1;
-    return old + * p;
+    return old + *p;
 }
 
 func address() -> double {
-    var x: double = 1.25;
-    var p: *double = (&x).(*double);
+    var x:double = 1.25;
+    var p:*double = (&x).(*double);
     x = 3.5;
     return *p;
 }
 
-func reads(p: *int) -> int {
-    return *p + * p;
+func reads(p:*int) -> int {
+    return *p + *p;
 }
 
 func effect() -> bit {

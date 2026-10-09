@@ -1,5 +1,5 @@
 package main;
 
 func main() -> void {
-    var value: *void = reserve(void);
+    var value:*void = reserve(void);
 }

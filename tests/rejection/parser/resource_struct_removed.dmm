@@ -1,6 +1,3 @@
 package main;
-resource struct File {
-    var handle: int;
-}
-
-func main() -> void {}
+resource struct File{var handle:int;
+} func main() -> void {}

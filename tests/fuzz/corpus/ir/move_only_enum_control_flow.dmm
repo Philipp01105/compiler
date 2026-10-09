@@ -1,8 +1,9 @@
 package main;
 
-var audit: int;
-@[no_default] struct Ticket {
-    var code: int;
+var audit:int;
+@[no_default]
+struct Ticket {
+    var code:int;
     destructor {
         audit += code;
     }
@@ -15,24 +16,24 @@ enum Message<T> {
 }
 
 struct Pair<T> {
-    var left: T;
-    var right: T;
+    var left:T;
+    var right:T;
 }
 
-func ticket(code: int) -> Ticket {
-    return Ticket{ code: code };
+func ticket(code:int) -> Ticket {
+    return Ticket{code:code};
 }
 
-func append(digit: int) -> void {
+func append(digit:int) -> void {
     audit = audit * 10 + digit;
 }
 
-func produce(flag: bit) -> Pair<Ticket> {
+func produce(flag:bit) -> Pair<Ticket> {
     defer append(1);
     var first = ticket(2);
     var second = ticket(3);
     if (!flag) {
-        return Pair<Ticket>{ left: first, right: second };
+        return Pair<Ticket>{left:first, right:second};
     }
     var selected = if (flag) {
         first
@@ -40,10 +41,10 @@ func produce(flag: bit) -> Pair<Ticket> {
         second
     };
     var extra = ticket(5);
-    return Pair<Ticket>{ left: selected, right: extra };
+    return Pair<Ticket>{left:selected, right:extra};
 }
 
-func run(flag: bit) -> int {
+func run(flag:bit) -> int {
     defer append(6);
     var message = if (flag) {
         Message<int>.Ready(8)

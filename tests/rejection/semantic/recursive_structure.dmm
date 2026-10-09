@@ -1,11 +1,11 @@
 package main;
 
 struct First {
-    var second: Second;
+    var second:Second;
 }
 
 struct Second {
-    var first: First;
+    var first:First;
 }
 
 func main() -> void {}

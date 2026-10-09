@@ -1,77 +1,248 @@
 package main;
-import (stdlib "stdlib/core" "stdlib/algorithms");
-var destroyed:i32=0;
-struct Resource { var value:i32; destructor { destroyed+=1; } }
-func positive(value:&Resource)->bit { return (*value).value>0; }
-func increment(value:&mut Resource)->void { (*value).value+=1; }
-struct View { var values:Resource[]; }
-enum Views { Items(Resource[]), Empty }
-func sum(values:Resource[])->i32 {
-    var total:i32=0;
-    for(var i:usize=0;i<values.length;i+=1) { total+=values[i].value; }
+import (
+    "stdlib/algorithms"
+    stdlib "stdlib/core"
+);
+var destroyed:i32 = 0;
+
+struct Resource {
+    var value:i32;
+    destructor {
+        destroyed += 1;
+    }
+}
+
+func positive(value:&Resource) -> bit {
+    return (*value).value > 0;
+}
+
+func increment(value:&mut Resource) -> void {
+    (*value).value += 1;
+}
+
+struct View {
+    var values:Resource[];
+}
+
+enum Views {
+    Items(Resource[]),
+    Empty
+}
+
+func sum(values:Resource[]) -> i32 {
+    var total:i32 = 0;
+    for (var i:usize = 0; i < values.length; i += 1) {
+        total += values[i].value;
+    }
     return total;
 }
-func namedArrayView()->bit {
-    var storage:Resource[2]=[Resource{value:10},Resource{value:11}];
-    var view:Resource[]=storage;
+
+func namedArrayView() -> bit {
+    var storage:Resource[2] = [Resource{value:10}, Resource{value:11}];
+    var view:Resource[] = storage;
     var reassigned:Resource[];
-    reassigned=storage;
-    var container=View{values:storage};
-    var payload=Views.Items(storage);
-    match(payload) { Items(values)=>{ if(sum(values)!=21) { return false; } } Empty=>return false; }
-    return sum(storage)==21 && sum(reassigned)==21 && sum(container.values)==21 && sum(view)==21;
+    reassigned = storage;
+    var container = View{values:storage};
+    var payload = Views.Items(storage);
+    match (payload) {
+        Items(values) => {
+            if (sum(values) != 21) {
+                return false;
+            }
+        }
+        Empty => return false;
+    }
+    return sum(storage) == 21 && sum(reassigned) == 21 && sum(container.values) == 21
+        && sum(view) == 21;
 }
-func main()->int {
+
+func main() -> int {
     {
-        var storage:Resource[3]=[Resource{value:1},Resource{value:2},Resource{value:3}];
-        var view:Resource[]=storage;
-        var calls:i32=0;
-        var wanted:i32=2;
-        var equal=func [move wanted,&mut calls](value:&Resource)->bit {
-            calls+=1; return (*value).value==wanted;
+        var storage:Resource[3] = [Resource{value:1}, Resource{value:2}, Resource{value:3}];
+        var view:Resource[] = storage;
+        var calls:i32 = 0;
+        var wanted:i32 = 2;
+        var equal = func[move wanted, &mut calls](value:&Resource) -> bit{
+            calls += 1;
+            return (*value).value == wanted;
         };
-        match(algorithms.find(&view,equal)) { Some(index)=>{ if(index!=1) { return 7; } } None=>return 8; }
-        if(calls!=2) { return 9; }
-        calls=0;
-        if(algorithms.count(&view,func [move wanted,&mut calls](value:&Resource)->bit { calls+=1; return (*value).value==wanted; })!=1 || calls!=3) { return 10; }
-        calls=0;
-        if(algorithms.all(&view,func [move wanted,&mut calls](value:&Resource)->bit { calls+=1; return (*value).value==wanted; }) || calls!=1) { return 11; }
-        calls=0;
-        if(!algorithms.any(&view,func [move wanted,&mut calls](value:&Resource)->bit { calls+=1; return (*value).value==wanted; }) || calls!=2) { return 12; }
-        calls=0;
-        match(algorithms.find(&view,func [&mut calls](value:&Resource)->bit { calls+=1; return false; })) { Some(index)=>return 18; None=>{} }
-        if(calls!=3) { return 19; }
-        calls=0;
-        if(algorithms.any(&view,func [&mut calls](value:&Resource)->bit { calls+=1; return false; }) || calls!=3) { return 20; }
-        if(!algorithms.all(&view,positive)) { return 1; }
-        if(algorithms.count(&view,positive)!=3) { return 2; }
-        match(algorithms.find(&view,positive)) { Some(index)=>{ if(index!=0) { return 3; } } None=>return 4; }
-        var visits:i32=0;
-        algorithms.forEachMut(&mut view,func [&mut visits](value:&mut Resource)->void { visits+=1; increment(value); });
-        if(visits!=3) { return 21; }
-        if(view[0].value!=2 || view[1].value!=3 || view[2].value!=4 || destroyed!=0) { return 5; }
+        match (algorithms.find(&view, equal)) {
+            Some(index) => {
+                if (index != 1) {
+                    return 7;
+                }
+            }
+            None => return 8;
+        }
+        if (calls != 2) {
+            return 9;
+        }
+        calls = 0;
+        if (
+            algorithms.count(
+                &view,
+                func[move wanted, &mut calls](value:&Resource) -> bit{
+                    calls += 1;
+                    return (*value).value == wanted;
+                }
+            ) != 1
+            || calls != 3
+        ) {
+            return 10;
+        }
+        calls = 0;
+        if (
+            algorithms.all(
+                &view,
+                func[move wanted, &mut calls](value:&Resource) -> bit{
+                    calls += 1;
+                    return (*value).value == wanted;
+                }
+            )
+            || calls != 1
+        ) {
+            return 11;
+        }
+        calls = 0;
+        if (
+            !algorithms.any(
+                &view,
+                func[move wanted, &mut calls](value:&Resource) -> bit{
+                    calls += 1;
+                    return (*value).value == wanted;
+                }
+            )
+            || calls != 2
+        ) {
+            return 12;
+        }
+        calls = 0;
+        match (
+            algorithms.find(
+                &view,
+                func[&mut calls](value:&Resource) -> bit{
+                    calls += 1;
+                    return false;
+                }
+            )
+        ) {
+            Some(index) => return 18;
+            None => {}
+        }
+        if (calls != 3) {
+            return 19;
+        }
+        calls = 0;
+        if (
+            algorithms.any(
+                &view,
+                func[&mut calls](value:&Resource) -> bit{
+                    calls += 1;
+                    return false;
+                }
+            )
+            || calls != 3
+        ) {
+            return 20;
+        }
+        if (!algorithms.all(&view, positive)) {
+            return 1;
+        }
+        if (algorithms.count(&view, positive) != 3) {
+            return 2;
+        }
+        match (algorithms.find(&view, positive)) {
+            Some(index) => {
+                if (index != 0) {
+                    return 3;
+                }
+            }
+            None => return 4;
+        }
+        var visits:i32 = 0;
+        algorithms.forEachMut(
+            &mut view,
+            func[&mut visits](value:&mut Resource) -> void{
+                visits += 1;
+                increment(value);
+            }
+        );
+        if (visits != 3) {
+            return 21;
+        }
+        if (view[0].value != 2 || view[1].value != 3 || view[2].value != 4 || destroyed != 0) {
+            return 5;
+        }
     }
-    if(destroyed!=3) { return 6; }
+    if (destroyed != 3) {
+        return 6;
+    }
     {
-        var storage:Resource[1]=[Resource{value:1}]; var view:Resource[]=storage;
-        var captured=Resource{value:2};
-        var predicate=func [move captured](value:&Resource)->bit { captured.value+=1; return (*value).value<captured.value; };
-        if(algorithms.count(&view,predicate)!=1 || destroyed!=4) { return 22; }
+        var storage:Resource[1] = [Resource{value:1}];
+        var view:Resource[] = storage;
+        var captured = Resource{value:2};
+        var predicate = func[move captured](value:&Resource) -> bit{
+            captured.value += 1;
+            return (*value).value < captured.value;
+        };
+        if (algorithms.count(&view, predicate) != 1 || destroyed != 4) {
+            return 22;
+        }
     }
-    if(destroyed!=5) { return 23; }
-    if(!namedArrayView()) { return 17; }
-    if(destroyed!=7) { return 13; }
+    if (destroyed != 5) {
+        return 23;
+    }
+    if (!namedArrayView()) {
+        return 17;
+    }
+    if (destroyed != 7) {
+        return 13;
+    }
     {
         var empty:Resource[];
-        var calls:i32=0;
-        var observe=func [&mut calls](value:&Resource)->bit { calls+=1; return true; };
-        match(algorithms.find(&empty,observe)) { Some(index)=>return 14; None=>{} }
-        if(algorithms.count(&empty,func [&mut calls](value:&Resource)->bit { calls+=1; return true; })!=0 ||
-            !algorithms.all(&empty,func [&mut calls](value:&Resource)->bit { calls+=1; return true; }) ||
-            algorithms.any(&empty,func [&mut calls](value:&Resource)->bit { calls+=1; return true; }) || calls!=0) { return 15; }
-        var visit=func [&mut calls](value:&mut Resource)->void { calls+=1; (*value).value+=1; };
-        algorithms.forEachMut(&mut empty,visit);
-        if(calls!=0 || destroyed!=7) { return 16; }
+        var calls:i32 = 0;
+        var observe = func[&mut calls](value:&Resource) -> bit{
+            calls += 1;
+            return true;
+        };
+        match (algorithms.find(&empty, observe)) {
+            Some(index) => return 14;
+            None => {}
+        }
+        if (
+            algorithms.count(
+                &empty,
+                func[&mut calls](value:&Resource) -> bit{
+                    calls += 1;
+                    return true;
+                }
+            ) != 0
+            || !algorithms.all(
+                &empty,
+                func[&mut calls](value:&Resource) -> bit{
+                    calls += 1;
+                    return true;
+                }
+            )
+            || algorithms.any(
+                &empty,
+                func[&mut calls](value:&Resource) -> bit{
+                    calls += 1;
+                    return true;
+                }
+            )
+            || calls != 0
+        ) {
+            return 15;
+        }
+        var visit = func[&mut calls](value:&mut Resource) -> void{
+            calls += 1;
+            (*value).value += 1;
+        };
+        algorithms.forEachMut(&mut empty, visit);
+        if (calls != 0 || destroyed != 7) {
+            return 16;
+        }
     }
     return 0;
 }

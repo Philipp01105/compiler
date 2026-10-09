@@ -1,7 +1,7 @@
 package threading;
 import (
-    "stdlib/native/ucrt"
     "stdlib/native/kernel32"
+    "stdlib/native/ucrt"
 );
 extern "system" from "ucrt" {
     func abort() -> void;
@@ -9,42 +9,40 @@ extern "system" from "ucrt" {
 
 extern "system" {
     struct Thread {
-        pub var callback: extern "system" func(*void) -> void;
-        pub var argument: *void;
-        pub var handle: *void;
+        pub var callback:extern "system" func(*void) -> void;
+        pub var argument:*void;
+        pub var handle:*void;
     }
 }
 
-func check(result: i32) -> void {
+func check(result:i32) -> void {
     if (result == 0) {
         abort();
     }
 }
 
-func wait(handle: *void) -> void {
+func wait(handle:*void) -> void {
     if (kernel32.WaitForSingleObject(handle, kernel32.INFINITE) != kernel32.WAIT_OBJECT_0) {
         abort();
     }
 }
 
-pub export "system" func __dmm_platform_thread_entry(address: *void) -> u32 {
-    var thread: *Thread = address.(*Thread);
+pub export "system" func __dmm_platform_thread_entry(address:*void) -> u32{
+    var thread:*Thread = address.(*Thread);
     (*thread).callback((*thread).argument);
     return 0;
-}
-
-pub export "system" func __dmm_async_thread_create(
-    callback: extern "system" func(*void) -> void,
-    argument: *void
-) -> *void {
-    var address: *void = ucrt.calloc(1, Thread.size);
+} pub export "system" func __dmm_async_thread_create(
+    callback:extern "system" func(*void) -> void,
+    argument:*void
+) -> *void{
+    var address:*void = ucrt.calloc(1, Thread.size);
     if (address == nullPointer()) {
         abort();
     }
-    var thread: *Thread = address.(*Thread);
+    var thread:*Thread = address.(*Thread);
     (*thread).callback = callback;
     (*thread).argument = argument;
-    var handle: usize = ucrt.beginThread(
+    var handle:usize = ucrt.beginThread(
         nullPointer(),
         0,
         __dmm_platform_thread_entry,
@@ -54,20 +52,15 @@ pub export "system" func __dmm_async_thread_create(
     );
     if (handle == 0) {
         abort();
-    }
-    (*thread).handle = kernel32.handleFromBits(handle);
+    }(*thread).handle = kernel32.handleFromBits(handle);
     return address;
-}
-
-pub export "system" func __dmm_async_thread_join(address: *void) -> void {
-    var thread: *Thread = address.(*Thread);
+} pub export "system" func __dmm_async_thread_join(address:*void) -> void{
+    var thread:*Thread = address.(*Thread);
     wait((*thread).handle);
     check(kernel32.CloseHandle((*thread).handle));
     ucrt.release(address);
-}
-
-pub export "system" func __dmm_async_wait_create() -> *void {
-    var event: *void = kernel32.CreateEventW(
+} pub export "system" func __dmm_async_wait_create() -> *void{
+    var event:*void = kernel32.CreateEventW(
         nullPointer().(*kernel32.SecurityAttributes),
         1,
         0,
@@ -77,24 +70,14 @@ pub export "system" func __dmm_async_wait_create() -> *void {
         abort();
     }
     return event;
-}
-
-pub export "system" func __dmm_async_wait(event: *void) -> void {
+} pub export "system" func __dmm_async_wait(event:*void) -> void{
     wait(event);
-}
-
-pub export "system" func __dmm_async_wake(event: *void) -> void {
+} pub export "system" func __dmm_async_wake(event:*void) -> void{
     check(kernel32.SetEvent(event));
-}
-
-pub export "system" func __dmm_async_wait_reset(event: *void) -> void {
+} pub export "system" func __dmm_async_wait_reset(event:*void) -> void{
     check(kernel32.ResetEvent(event));
-}
-
-pub export "system" func __dmm_async_wait_destroy(event: *void) -> void {
+} pub export "system" func __dmm_async_wait_destroy(event:*void) -> void{
     check(kernel32.CloseHandle(event));
-}
-
-pub export "system" func __dmm_platform_exit(code: i32) -> void {
+} pub export "system" func __dmm_platform_exit(code:i32) -> void{
     ucrt.immediateExit(code);
 }

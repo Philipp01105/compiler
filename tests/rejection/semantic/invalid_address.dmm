@@ -1,5 +1,5 @@
 package main;
 
 func main() -> void {
-    var pointer: *int = &(1 + 2);
+    var pointer:*int = &(1 + 2);
 }

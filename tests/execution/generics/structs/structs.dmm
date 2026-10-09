@@ -1,40 +1,43 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
-struct Pair<A, B> {
-    var first: A;
-    var second: B;
+struct Pair<A,B> {
+    var first:A;
+    var second:B;
+
     func getFirst() -> A {
         return first;
     }
 }
 
 struct Wrap<T> {
-    var pair: Pair<T, int>;
+    var pair:Pair<T,int>;
 }
 
-func identity<T>(value: T) -> T {
+func identity<T>(value:T) -> T {
     return value;
 }
 
-func get<A, B>(value: Pair<A, B>) -> A {
+func get<A,B>(value:Pair<A,B>) -> A {
     return value.first;
 }
 
-func copy(value: Pair<int, string>) -> Pair<int, string> {
+func copy(value:Pair<int,string>) -> Pair<int,string> {
     return value;
 }
 
 func main() -> void {
-    var p: Pair<int, string>;
+    var p:Pair<int,string>;
     p.first = 42;
     p.second = "hello";
-    var q: Pair<int, string> = copy(identity(p));
+    var q:Pair<int,string> = copy(identity(p));
     io.println(get(q));
     io.println(q.getFirst());
     io.println(q.second);
-    var nested: Wrap<double>;
+    var nested:Wrap<double>;
     nested.pair.first = 2.5;
     io.println(nested.pair.first);
 }

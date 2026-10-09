@@ -1,14 +1,16 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
-func set_value(p: *int, value: int) -> void {
+func set_value(p:*int, value:int) -> void {
     *p = value;
 }
 
 func main() -> void {
-    var first: *int = reserve(int);
-    var second: *double = reserve(double);
+    var first:*int = reserve(int);
+    var second:*double = reserve(double);
     set_value(first, 42);
     *second = 3.5;
     io.println(*first);

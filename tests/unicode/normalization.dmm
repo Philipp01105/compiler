@@ -1,13 +1,13 @@
 package main;
 import (
+    "stdlib/collections"
     stdlib "stdlib/core"
     "stdlib/fs"
-    "stdlib/collections"
     "stdlib/io"
     "stdlib/unicode"
 );
 
-func checked(input: u8[], form: unicode.Normalization, expected: u8[]) -> bit {
+func checked(input:u8[], form:unicode.Normalization, expected:u8[]) -> bit {
     var result = unicode.normalize(input, form);
     match (result) {
         Err(error) => return false;
@@ -15,40 +15,48 @@ func checked(input: u8[], form: unicode.Normalization, expected: u8[]) -> bit {
     }
 }
 
-func main()->int {
- match(fs.readFile("tests/unicode/normalization.bin",8000000)){Ok(data)=>return run(&data);Err(error)=>return 1;}
+func main() -> int {
+    match (fs.readFile("tests/unicode/normalization.bin", 8000000)) {
+        Ok(data) => return run(&data);
+        Err(error) => return 1;
+    }
 }
-func run(data:&collections.List<u8>)->int {
- if(data.length()<4){return 2;}
-    var view: u8[] = data.view();
-    var rows: usize = view[0].(usize) + view[1].(usize) * 256 + view[2].(usize) * 65536 + view[3].(usize) * 16777216;
-    var offset: usize = 4;
-    for (var row: usize = 0; row < rows; row += 1) {
-        var columns: u8[][5];
-        for (var column: usize = 0; column < 5; column += 1) {
+
+func run(data:&collections.List<u8>) -> int {
+    if (data.length() < 4) {
+        return 2;
+    }
+    var view:u8[] = data.view();
+    var rows:usize = view[0].(usize) + view[1].(usize) * 256 + view[2].(usize) * 65536 + view[3].(
+        usize
+    ) * 16777216;
+    var offset:usize = 4;
+    for (var row:usize = 0; row < rows; row += 1) {
+        var columns:u8[][5];
+        for (var column:usize = 0; column < 5; column += 1) {
             if (offset + 2 > view.length) {
                 return 3;
             }
-            var length: usize = view[offset].(usize) + view[offset + 1].(usize) * 256;
+            var length:usize = view[offset].(usize) + view[offset + 1].(usize) * 256;
             offset += 2;
             if (length > view.length - offset) {
                 return 4;
             }
-            columns[column] = view[offset: offset + length];
+            columns[column] = view[offset:offset + length];
             offset += length;
         }
-        for (var column: usize = 0; column < 5; column += 1) {
-            var canonical: usize = 1;
-            var decomposed: usize = 2;
+        for (var column:usize = 0; column < 5; column += 1) {
+            var canonical:usize = 1;
+            var decomposed:usize = 2;
             if (column >= 3) {
                 canonical = 3;
                 decomposed = 4;
             }
             if (
-                !checked(columns[column], unicode.Normalization.NFC, columns[canonical]) ||
-                !checked(columns[column], unicode.Normalization.NFD, columns[decomposed]) ||
-                !checked(columns[column], unicode.Normalization.NFKC, columns[3]) ||
-                !checked(columns[column], unicode.Normalization.NFKD, columns[4])
+                !checked(columns[column], unicode.Normalization.NFC, columns[canonical])
+                || !checked(columns[column], unicode.Normalization.NFD, columns[decomposed])
+                || !checked(columns[column], unicode.Normalization.NFKC, columns[3])
+                || !checked(columns[column], unicode.Normalization.NFKD, columns[4])
             ) {
                 io.println(row);
 

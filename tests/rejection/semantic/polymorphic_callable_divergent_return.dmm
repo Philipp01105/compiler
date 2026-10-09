@@ -1,14 +1,14 @@
 package main;
 
-func first<T>(value: T) -> T {
+func first<T>(value:T) -> T {
     return value;
 }
 
-func second<T>(value: T) -> T {
+func second<T>(value:T) -> T {
     return value;
 }
 
-func choose(flag: bit) -> func<X>(X) -> X {
+func choose(flag:bit) -> func<X>(X) -> X {
     if (flag) {
         return first;
     }

@@ -1,6 +1,6 @@
 package main;
 
-enum Pair(left: int, right: int) {
+enum Pair(left:int, right:int) {
     Broken(1)
 }
 

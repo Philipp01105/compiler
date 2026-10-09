@@ -1,3 +1,4 @@
 package main;
-trait Value{ func get() -> int;
+trait Value{
+    func get() -> int;
 } func main() -> void {}

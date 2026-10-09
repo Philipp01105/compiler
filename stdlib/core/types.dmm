@@ -1,6 +1,6 @@
 package core;
 
-pub enum Propagation<Output, Residual> {
+pub enum Propagation<Output,Residual> {
     pub Continue(Output),
     pub Break(Residual),
 }
@@ -13,42 +13,45 @@ pub enum Option<T> {
     pub None,
     pub Some(T),
     ;
-    pub static func branch(value: Self) -> Propagation<T, NoneResidual> {
+
+    pub static func branch(value:Self) -> Propagation<T,NoneResidual> {
         match (value) {
-            Some(output) => return Propagation<T, NoneResidual>.Continue(output);
-            None => return Propagation<T, NoneResidual>.Break(NoneResidual.None);
+            Some(output) => return Propagation<T,NoneResidual>.Continue(output);
+            None => return Propagation<T,NoneResidual>.Break(NoneResidual.None);
         }
     }
 
-    pub static func fromResidual(residual: NoneResidual) -> Self {
+    pub static func fromResidual(residual:NoneResidual) -> Self {
         match (residual) {
             None => return Option<T>.None;
         }
     }
 }
 
-@[no_default] pub enum Result<T, E> {
+@[no_default]
+pub enum Result<T,E> {
     pub Ok(T),
     pub Err(E),
     ;
-    pub static func branch(value: Self) -> Propagation<T, E> {
+
+    pub static func branch(value:Self) -> Propagation<T,E> {
         match (value) {
-            Ok(output) => return Propagation<T, E>.Continue(output);
-            Err(residual) => return Propagation<T, E>.Break(residual);
+            Ok(output) => return Propagation<T,E>.Continue(output);
+            Err(residual) => return Propagation<T,E>.Break(residual);
         }
     }
 
-    pub static func fromResidual(residual: E) -> Self {
-        return Result<T, E>.Err(residual);
+    pub static func fromResidual(residual:E) -> Self {
+        return Result<T,E>.Err(residual);
     }
 }
 
-pub interface Propagate<Output, Residual> {
-    pub static func branch(value: Self) -> Propagation<Output, Residual>;
+pub interface Propagate<Output,Residual> {
+    pub static func branch(value:Self) -> Propagation<Output,Residual>;
 }
 
 pub interface FromResidual<Residual> {
-    pub static func fromResidual(residual: Residual) -> Self;
+    pub static func fromResidual(residual:Residual) -> Self;
 }
 
 pub enum AllocError {

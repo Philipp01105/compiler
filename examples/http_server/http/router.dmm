@@ -1,82 +1,191 @@
 package http;
-import ("stdlib/core" "stdlib/collections" "stdlib/text");
+import (
+    "stdlib/collections"
+    "stdlib/core"
+    "stdlib/text"
+);
 
 enum Handler<S> {
-    Sync(func(&mut S, &Request) -> core.Result<Response, Error>),
-    Async(func(&mut S, &Request) -> Future<core.Result<Response, Error>>),
+    Sync(func(&mut S,&Request) -> core.Result<Response,Error>),
+    Async(func(&mut S,&Request) -> Future<core.Result<Response,Error>>),
 }
-struct Route<S> { var method: Method; var pattern: string; var handler: Handler<S>; }
-@[no_default] pub struct Router<S> {
-    var routes: collections.List<Route<S>>;
-    pub func on(method: Method, pattern: string, handler: func(&mut S, &Request) -> core.Result<Response, Error>) -> core.Result<void, Error> {
+
+struct Route<S> {
+    var method:Method;
+    var pattern:string;
+    var handler:Handler<S>;
+}
+
+@[no_default]
+pub struct Router<S> {
+    var routes:collections.List<Route<S>>;
+
+    pub func on(
+        method:Method,
+        pattern:string,
+        handler:func(&mut S,&Request) -> core.Result<Response,Error>
+    ) -> core.Result<void,Error> {
         self.validate(method, pattern)?;
-        routes.append(Route<S>{method: method, pattern: pattern, handler: Handler<S>.Sync(handler)})?;
-        return core.Result<void, Error>.Ok;
+        routes.append(Route<S>{method:method, pattern:pattern, handler:Handler<S>.Sync(handler)})?;
+        return core.Result<void,Error>.Ok;
     }
-    pub func onAsync(method: Method, pattern: string, handler: func(&mut S, &Request) -> Future<core.Result<Response, Error>>) -> core.Result<void, Error> {
+
+    pub func onAsync(
+        method:Method,
+        pattern:string,
+        handler:func(&mut S,&Request) -> Future<core.Result<Response,Error>>
+    ) -> core.Result<void,Error> {
         self.validate(method, pattern)?;
-        routes.append(Route<S>{method: method, pattern: pattern, handler: Handler<S>.Async(handler)})?;
-        return core.Result<void, Error>.Ok;
+        routes.append(Route<S>{method:method, pattern:pattern, handler:Handler<S>.Async(handler)})?;
+        return core.Result<void,Error>.Ok;
     }
-    pub func get(pattern: string, handler: func(&mut S, &Request) -> core.Result<Response, Error>) -> core.Result<void, Error> { return self.on(Method.Get, pattern, handler); }
-    pub func post(pattern: string, handler: func(&mut S, &Request) -> core.Result<Response, Error>) -> core.Result<void, Error> { return self.on(Method.Post, pattern, handler); }
-    pub func delete(pattern: string, handler: func(&mut S, &Request) -> core.Result<Response, Error>) -> core.Result<void, Error> { return self.on(Method.Delete, pattern, handler); }
-    func validate(method: Method, pattern: string) -> core.Result<void, Error> {
+
+    pub func get(
+        pattern:string,
+        handler:func(&mut S,&Request) -> core.Result<Response,Error>
+    ) -> core.Result<void,Error> {
+        return self.on(Method.Get, pattern, handler);
+    }
+
+    pub func post(
+        pattern:string,
+        handler:func(&mut S,&Request) -> core.Result<Response,Error>
+    ) -> core.Result<void,Error> {
+        return self.on(Method.Post, pattern, handler);
+    }
+
+    pub func delete(
+        pattern:string,
+        handler:func(&mut S,&Request) -> core.Result<Response,Error>
+    ) -> core.Result<void,Error> {
+        return self.on(Method.Delete, pattern, handler);
+    }
+
+    func validate(method:Method, pattern:string) -> core.Result<void,Error> {
         var input = text.bytes(pattern);
-        if (method == Method.Other || input.length == 0 || input[0] != 47) { return core.Result<void, Error>.Err(invalid(ErrorKind.InvalidRoute, "Route needs a method and absolute path")); }
-        for (var i: usize = 0; i < input.length; i += 1) {
-            if (input[i] < 33 || input[i] > 126 || input[i] == 63 || input[i] == 35 || input[i] == 37) {
-                return core.Result<void, Error>.Err(invalid(ErrorKind.InvalidRoute, "Invalid route pattern"));
+        if (method == Method.Other || input.length == 0 || input[0] != 47) {
+            return core.Result<void,Error>.Err(
+                invalid(ErrorKind.InvalidRoute, "Route needs a method and absolute path")
+            );
+        }
+        for (var i:usize = 0; i < input.length; i += 1) {
+            if (
+                input[i] < 33
+                || input[i] > 126
+                || input[i] == 63
+                || input[i] == 35
+                || input[i] == 37
+            ) {
+                return core.Result<void,Error>.Err(
+                    invalid(ErrorKind.InvalidRoute, "Invalid route pattern")
+                );
             }
             if (input[i] == 58) {
-                if (i == 0 || input[i - 1] != 47) { return core.Result<void, Error>.Err(invalid(ErrorKind.InvalidRoute, "Parameter must fill a path segment")); }
-                var start = i + 1; i = start;
+                if (i == 0 || input[i - 1] != 47) {
+                    return core.Result<void,Error>.Err(
+                        invalid(ErrorKind.InvalidRoute, "Parameter must fill a path segment")
+                    );
+                }
+                var start = i + 1;
+                i = start;
                 while (i < input.length && input[i] != 47) {
                     var character = input[i];
-                    if (!((character >= 65 && character <= 90) || (character >= 97 && character <= 122) || (character >= 48 && character <= 57) || character == 95)) {
-                        return core.Result<void, Error>.Err(invalid(ErrorKind.InvalidRoute, "Invalid parameter name"));
+                    if (
+                        !(
+                            (character >= 65 && character <= 90)
+                            || (character >= 97 && character <= 122)
+                            || (character >= 48 && character <= 57)
+                            || character == 95
+                        )
+                    ) {
+                        return core.Result<void,Error>.Err(
+                            invalid(ErrorKind.InvalidRoute, "Invalid parameter name")
+                        );
                     }
                     i += 1;
                 }
-                if (i == start) { return core.Result<void, Error>.Err(invalid(ErrorKind.InvalidRoute, "Empty parameter name")); }
-                for (var previous: usize = 0; previous < start - 1; previous += 1) {
+                if (i == start) {
+                    return core.Result<void,Error>.Err(
+                        invalid(ErrorKind.InvalidRoute, "Empty parameter name")
+                    );
+                }
+                for (var previous:usize = 0; previous < start - 1; previous += 1) {
                     if (input[previous] == 58) {
-                        var end = previous + 1; while (end < input.length && input[end] != 47) { end += 1; }
+                        var end = previous + 1;
+                        while (end < input.length && input[end] != 47) {
+                            end += 1;
+                        }
                         var sameName = end - previous - 1 == i - start;
-                        if (sameName) { for (var offset: usize = 0; offset < i - start; offset += 1) { if (input[previous + 1 + offset] != input[start + offset]) { sameName = false; } } }
-                        if (sameName) { return core.Result<void, Error>.Err(invalid(ErrorKind.InvalidRoute, "Duplicate parameter name")); }
+                        if (sameName) {
+                            for (var offset:usize = 0; offset < i - start; offset += 1) {
+                                if (input[previous + 1 + offset] != input[start + offset]) {
+                                    sameName = false;
+                                }
+                            }
+                        }
+                        if (sameName) {
+                            return core.Result<void,Error>.Err(
+                                invalid(ErrorKind.InvalidRoute, "Duplicate parameter name")
+                            );
+                        }
                     }
                 }
-                if (i == input.length) { break; }
+                if (i == input.length) {
+                    break;
+                }
             }
         }
-        for (var i: usize = 0; i < routes.length(); i += 1) {
+        for (var i:usize = 0; i < routes.length(); i += 1) {
             if (routes.get(i).method == method && sameShape(routes.get(i).pattern, pattern)) {
-                return core.Result<void, Error>.Err(invalid(ErrorKind.InvalidRoute, "Duplicate route shape for this method"));
+                return core.Result<void,Error>.Err(
+                    invalid(ErrorKind.InvalidRoute, "Duplicate route shape for this method")
+                );
             }
         }
-        return core.Result<void, Error>.Ok;
+        return core.Result<void,Error>.Ok;
     }
-    pub async func dispatch(request: &mut Request, state: &mut S) -> core.Result<Response, Error> {
-        var selected: core.Option<usize>; var best: usize = 0; var exact = false; var pathFound = false;
-        var allowed: bit[7];
-        for (var i: usize = 0; i < routes.length(); i += 1) {
+
+    pub async func dispatch(request:&mut Request, state:&mut S) -> core.Result<Response,Error> {
+        var selected:core.Option<usize>;
+        var best:usize = 0;
+        var exact = false;
+        var pathFound = false;
+        var allowed:bit[7];
+        for (var i:usize = 0; i < routes.length(); i += 1) {
             var route = routes.get(i);
             match (matchPath(route.pattern, request.path())) {
                 None => {}
                 Some(score) => {
                     pathFound = true;
                     match (route.method) {
-                        Get => { allowed[0] = true; allowed[1] = true; } Head => allowed[1] = true;
-                        Post => allowed[2] = true; Put => allowed[3] = true; Patch => allowed[4] = true;
-                        Delete => allowed[5] = true; Options => {} Other => {}
+                        Get => {
+                            allowed[0] = true;
+                            allowed[1] = true;
+                        }
+                        Head => allowed[1] = true;
+                        Post => allowed[2] = true;
+                        Put => allowed[3] = true;
+                        Patch => allowed[4] = true;
+                        Delete => allowed[5] = true;
+                        Options => {}
+                        Other => {}
                     }
                     var direct = route.method == request.method();
                     var fallback = request.method() == Method.Head && route.method == Method.Get;
                     if (direct || fallback) {
                         var choose = false;
-                        match (selected) { None => choose = true; Some(index) => choose = (direct && !exact) || (direct == exact && score > best); }
-                        if (choose) { selected = core.Option<usize>.Some(i); best = score; exact = direct; }
+                        match (selected) {
+                            None => choose = true;
+                            Some(index) => choose = (direct && !exact) || (
+                                direct == exact
+                                && score > best
+                            );
+                        }
+                        if (choose) {
+                            selected = core.Option<usize>.Some(i);
+                            best = score;
+                            exact = direct;
+                        }
                     }
                 }
             }
@@ -91,42 +200,95 @@ struct Route<S> { var method: Method; var pattern: string; var handler: Handler<
             }
             None => {}
         }
-        if (!pathFound) { return Response.text(Status.NotFound, "Not found\n"); }
+        if (!pathFound) {
+            return Response.text(Status.NotFound, "Not found\n");
+        }
         allowed[6] = true;
-        var allow = text.builder(); var labels: string[7] = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
+        var allow = text.builder();
+        var labels:string[7] = [
+            "GET",
+            "HEAD",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE",
+            "OPTIONS"
+        ];
         var first = true;
-        for (var i: usize = 0; i < 7; i += 1) {
-            if (allowed[i]) { if (!first) { allow.append(", ")?; } allow.append(labels[i])?; first = false; }
+        for (var i:usize = 0; i < 7; i += 1) {
+            if (allowed[i]) {
+                if (!first) {
+                    allow.append(", ")?;
+                }
+                allow.append(labels[i])?;
+                first = false;
+            }
         }
         var reply = Response.empty(Status.NoContent);
-        if (request.method() != Method.Options) { reply = Response.text(Status.MethodNotAllowed, "Method not allowed\n")?; }
+        if (request.method() != Method.Options) {
+            reply = Response.text(Status.MethodNotAllowed, "Method not allowed\n")?;
+        }
         reply.setHeader("Allow", text.finish(allow))?;
-        return core.Result<Response, Error>.Ok(reply);
+        return core.Result<Response,Error>.Ok(reply);
     }
 }
-pub func router<S>() -> Router<S> { return Router<S>{routes: collections.list<Route<S>>()}; }
-func matchPath(pattern: string, path: text.Text) -> core.Option<usize> {
-    var input = text.bytes(pattern); var p: usize = 0; var r: usize = 0; var score: usize = 0;
+
+pub func router<S>() -> Router<S> {
+    return Router<S>{routes:collections.list<Route<S>>()};
+}
+
+func matchPath(pattern:string, path:text.Text) -> core.Option<usize> {
+    var input = text.bytes(pattern);
+    var p:usize = 0;
+    var r:usize = 0;
+    var score:usize = 0;
     while (p < input.length && r < path.length()) {
         if (input[p] == 58) {
-            while (p < input.length && input[p] != 47) { p += 1; }
-            var start = r; while (r < path.length() && path.byteAt(r) != 47) { r += 1; }
-            if (r == start) { return core.Option<usize>.None; }
+            while (p < input.length && input[p] != 47) {
+                p += 1;
+            }
+            var start = r;
+            while (r < path.length() && path.byteAt(r) != 47) {
+                r += 1;
+            }
+            if (r == start) {
+                return core.Option<usize>.None;
+            }
         } else {
-            if (input[p] != path.byteAt(r)) { return core.Option<usize>.None; }
-            p += 1; r += 1; score += 1;
+            if (input[p] != path.byteAt(r)) {
+                return core.Option<usize>.None;
+            }
+            p += 1;
+            r += 1;
+            score += 1;
         }
     }
-    if (p == input.length && r == path.length()) { return core.Option<usize>.Some(score); }
+    if (p == input.length && r == path.length()) {
+        return core.Option<usize>.Some(score);
+    }
     return core.Option<usize>.None;
 }
-func sameShape(left: string, right: string) -> bit {
-    var a = text.bytes(left); var b = text.bytes(right); var i: usize = 0; var j: usize = 0;
+
+func sameShape(left:string, right:string) -> bit {
+    var a = text.bytes(left);
+    var b = text.bytes(right);
+    var i:usize = 0;
+    var j:usize = 0;
     while (i < a.length && j < b.length) {
         if (a[i] == 58 && b[j] == 58) {
-            while (i < a.length && a[i] != 47) { i += 1; }
-            while (j < b.length && b[j] != 47) { j += 1; }
-        } else { if (a[i] != b[j]) { return false; } i += 1; j += 1; }
+            while (i < a.length && a[i] != 47) {
+                i += 1;
+            }
+            while (j < b.length && b[j] != 47) {
+                j += 1;
+            }
+        } else {
+            if (a[i] != b[j]) {
+                return false;
+            }
+            i += 1;
+            j += 1;
+        }
     }
     return i == a.length && j == b.length;
 }

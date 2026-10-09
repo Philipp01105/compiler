@@ -1,9 +1,11 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
 func main() -> void {
-    var values: int[3];
-    var index: int = 3;
+    var values:int[3];
+    var index:int = 3;
     io.println(values[index]);
 }

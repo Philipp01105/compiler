@@ -1,41 +1,41 @@
 package main;
 
 interface Measure<T> {
-    func measure(value: T) -> int;
+    func measure(value:T) -> int;
 }
 
 struct IntegerMeasure {
-    func measure(value: int) -> int {
+    func measure(value:int) -> int {
         return value;
     }
 }
 
 struct DoubleMeasure {
-    func measure(value: double) -> int {
+    func measure(value:double) -> int {
         return value.(int);
     }
 }
 
-struct Box<T: Measure<int>> {
-    var value: T;
+struct Box<T:Measure<int>> {
+    var value:T;
 }
 
-func invoke<T: Measure<int>>(value: T) -> int {
+func invoke<T:Measure<int>>(value:T) -> int {
     return value.measure(3);
 }
 
-func select(flag: bit) -> Measure<int> {
+func select(flag:bit) -> Measure<int> {
     if (flag) {
-        var a: IntegerMeasure;
+        var a:IntegerMeasure;
         return a;
     }
-    var b: DoubleMeasure;
+    var b:DoubleMeasure;
     return b;
 }
 
 func main() -> int {
-    var wrong: Box<DoubleMeasure>;
-    var erased: Measure < int >= select(false);
-    var concrete: DoubleMeasure;
+    var wrong:Box<DoubleMeasure>;
+    var erased:Measure<int>= select(false);
+    var concrete:DoubleMeasure;
     return invoke(concrete) + erased.measure(5) + wrong.value.measure(2.5);
 }

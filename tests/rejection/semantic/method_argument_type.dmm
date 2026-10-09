@@ -1,10 +1,10 @@
 package main;
 
 struct Item {
-    func use(value: int) -> void {}
+    func use(value:int) -> void {}
 }
 
 func main() -> void {
-    var item: Item;
+    var item:Item;
     item.use("bad");
 }

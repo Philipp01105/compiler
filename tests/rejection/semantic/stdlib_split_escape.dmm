@@ -1,9 +1,9 @@
 package main;
 import (
-    stdlib "stdlib/core"
-    "stdlib/collections"
-    "stdlib/text"
     byteops "stdlib/bytes"
+    "stdlib/collections"
+    stdlib "stdlib/core"
+    "stdlib/text"
 );
 
 func dangling() -> u8[] {

@@ -2,7 +2,7 @@ package main;
 
 func main() -> int {
     var escaped = {
-        var local: i32 = 7;
+        var local:i32 = 7;
         &local
     };
     return *escaped;

@@ -1,6 +1,6 @@
 package main;
-var value: int;
-var reference: &int = &value;
+var value:int;
+var reference:&int = &value;
 
 func main() -> int {
     value = 1;

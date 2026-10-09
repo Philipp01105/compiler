@@ -1,10 +1,10 @@
 package main;
 
-func select<A, B>(a: A, b: B) -> int {
+func select<A,B>(a:A, b:B) -> int {
     return 1;
 }
 
-func select<A, B>(a: B, b: A) -> int {
+func select<A,B>(a:B, b:A) -> int {
     return 2;
 }
 

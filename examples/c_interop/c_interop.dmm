@@ -1,31 +1,51 @@
 package main;
-import ("stdlib/core" "stdlib/io");
+import (
+    "stdlib/core"
+    "stdlib/io"
+);
 
 extern "system" from "sensor" {
     struct SensorStats {
-        pub var minimum: double;
-        pub var maximum: double;
-        pub var mean: double;
-        pub var count: usize;
+        pub var minimum:double;
+        pub var maximum:double;
+        pub var mean:double;
+        pub var count:usize;
     }
-    func analyze(samples: *double, count: usize, output: *SensorStats) -> i32 = "sensor_analyze";
+
+    func analyze(samples:*double, count:usize, output:*SensorStats) -> i32 = "sensor_analyze";
 }
 
 // C calls this exported function while analyzing the borrowed samples.
-pub export "system" func sensor_calibrate(celsius: double) -> double { return celsius * 1.8 + 32.0; }
-
-func run() -> core.Result<void, io.Error> {
-    var samples: double[3] = [20.0, 22.0, 24.0];
-    var statistics: SensorStats;
+pub export "system" func sensor_calibrate(celsius:double) -> double{
+    return celsius * 1.8 + 32.0;
+} func run() -> core.Result<void,io.Error> {
+    var samples:double[3] = [20.0, 22.0, 24.0];
+    var statistics:SensorStats;
     if (analyze((&samples[0]).(*double), 3, (&statistics).(*SensorStats)) != 0) {
         io.println("C rejected the sample buffer")?;
-        return core.Result<void, io.Error>.Err(io.Error{kind: io.ErrorKind.InvalidInput, domain: io.ErrorDomain.Library, code: 0, transferred: 0});
+        return core.Result<void,io.Error>.Err(
+            io.Error{
+                kind:io.ErrorKind.InvalidInput,
+                domain:io.ErrorDomain.Library,
+                code:0,
+                transferred:0
+            }
+        );
     }
-    io.print("Samples: ")?; io.println(statistics.count)?;
-    io.print("Minimum (F): ")?; io.println(statistics.minimum)?;
-    io.print("Maximum (F): ")?; io.println(statistics.maximum)?;
-    io.print("Mean (F): ")?; io.println(statistics.mean)?;
-    return core.Result<void, io.Error>.Ok;
+    io.print("Samples: ")?;
+    io.println(statistics.count)?;
+    io.print("Minimum (F): ")?;
+    io.println(statistics.minimum)?;
+    io.print("Maximum (F): ")?;
+    io.println(statistics.maximum)?;
+    io.print("Mean (F): ")?;
+    io.println(statistics.mean)?;
+    return core.Result<void,io.Error>.Ok;
 }
 
-func main() -> int { match (run()) { Ok => return 0; Err(error) => return 1; } }
+func main() -> int {
+    match (run()) {
+        Ok => return 0;
+        Err(error) => return 1;
+    }
+}

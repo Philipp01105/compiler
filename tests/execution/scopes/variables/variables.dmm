@@ -1,25 +1,27 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 // Variable types test
 func main() -> void {
-    var int_val: int = 42;
+    var int_val:int = 42;
     {
-        var _output0: string = "Integer: " + int_val;
+        var _output0:string = "Integer: " + int_val;
         io.println(_output0);
         free(_output0);
     }
     // Variable reassignment
     int_val = 100;
     {
-        var _output1: string = "Updated integer: " + int_val;
+        var _output1:string = "Updated integer: " + int_val;
         io.println(_output1);
         free(_output1);
     }
     // Another variable
-    var another: int = 200;
+    var another:int = 200;
     {
-        var _output2: string = "Another integer: " + another;
+        var _output2:string = "Another integer: " + another;
         io.println(_output2);
         free(_output2);
     }

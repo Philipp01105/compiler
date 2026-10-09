@@ -1,11 +1,13 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 // else if chain test
 func main() -> void {
-    var score: int = 85;
+    var score:int = 85;
     {
-        var _output0: string = "Score: " + score;
+        var _output0:string = "Score: " + score;
         io.println(_output0);
         free(_output0);
     }

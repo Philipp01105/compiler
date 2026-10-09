@@ -1,50 +1,56 @@
 package pthreads;
 // These opaque byte layouts are specific to glibc on x86-64.
 extern "system" from "pthread" {
-    pub align(8) struct Mutex {
-        pub var storage: u8[40];
-    }
-
-    pub align(8) struct Condition {
-        pub var storage: u8[48];
-    }
-
-    pub align(8) struct Attributes {
-        pub var storage: u8[56];
-    }
-
-    pub struct MutexAttributes {
-        pub var storage: i32;
+    pub align(8) struct Mutex{pub var storage:u8[40];
+    } pub align(8) struct Condition{pub var storage:u8[48];
+    } pub align(8) struct Attributes{pub var storage:u8[56];
+    } pub struct MutexAttributes {
+        pub var storage:i32;
     }
 
     pub struct ConditionAttributes {
-        pub var storage: i32;
+        pub var storage:i32;
     }
 
     pub struct Timespec {
-        pub var seconds: i64;
-        pub var nanoseconds: i64;
+        pub var seconds:i64;
+        pub var nanoseconds:i64;
     }
 
     pub func create(
-        thread: *usize,
-        attributes: *Attributes,
-        start: extern "system" func(*void) -> *void,
-        context: *void
+        thread:*usize,
+        attributes:*Attributes,
+        start:extern "system" func(*void) -> *void,
+        context:*void
     ) -> i32 = "pthread_create";
-    pub func join(thread: usize, result: **void) -> i32 = "pthread_join";
+
+    pub func join(thread:usize, result:**void) -> i32 = "pthread_join";
+
     pub func self() -> usize = "pthread_self";
-    pub func mutexInit(mutex: *Mutex, attributes: *MutexAttributes) -> i32 = "pthread_mutex_init";
-    pub func mutexDestroy(mutex: *Mutex) -> i32 = "pthread_mutex_destroy";
-    pub func mutexLock(mutex: *Mutex) -> i32 = "pthread_mutex_lock";
-    pub func mutexUnlock(mutex: *Mutex) -> i32 = "pthread_mutex_unlock";
-    pub func conditionInit(condition: *Condition, attributes: *ConditionAttributes) -> i32 = "pthread_cond_init";
-    pub func conditionDestroy(condition: *Condition) -> i32 = "pthread_cond_destroy";
-    pub func conditionWait(condition: *Condition, mutex: *Mutex) -> i32 = "pthread_cond_wait";
-    pub func conditionTimedWait(condition: *Condition, mutex: *Mutex, deadline: *Timespec) -> i32 = "pthread_cond_timedwait";
-    pub func conditionSignal(condition: *Condition) -> i32 = "pthread_cond_signal";
-    pub func conditionBroadcast(condition: *Condition) -> i32 = "pthread_cond_broadcast";
-    pub func conditionAttributesInit(attributes: *ConditionAttributes) -> i32 = "pthread_condattr_init";
-    pub func conditionAttributesDestroy(attributes: *ConditionAttributes) -> i32 = "pthread_condattr_destroy";
-    pub func conditionAttributesSetClock(attributes: *ConditionAttributes, clock: i32) -> i32 = "pthread_condattr_setclock";
+
+    pub func mutexInit(mutex:*Mutex, attributes:*MutexAttributes) -> i32 = "pthread_mutex_init";
+
+    pub func mutexDestroy(mutex:*Mutex) -> i32 = "pthread_mutex_destroy";
+
+    pub func mutexLock(mutex:*Mutex) -> i32 = "pthread_mutex_lock";
+
+    pub func mutexUnlock(mutex:*Mutex) -> i32 = "pthread_mutex_unlock";
+
+    pub func conditionInit(condition:*Condition, attributes:*ConditionAttributes) -> i32 = "pthread_cond_init";
+
+    pub func conditionDestroy(condition:*Condition) -> i32 = "pthread_cond_destroy";
+
+    pub func conditionWait(condition:*Condition, mutex:*Mutex) -> i32 = "pthread_cond_wait";
+
+    pub func conditionTimedWait(condition:*Condition, mutex:*Mutex, deadline:*Timespec) -> i32 = "pthread_cond_timedwait";
+
+    pub func conditionSignal(condition:*Condition) -> i32 = "pthread_cond_signal";
+
+    pub func conditionBroadcast(condition:*Condition) -> i32 = "pthread_cond_broadcast";
+
+    pub func conditionAttributesInit(attributes:*ConditionAttributes) -> i32 = "pthread_condattr_init";
+
+    pub func conditionAttributesDestroy(attributes:*ConditionAttributes) -> i32 = "pthread_condattr_destroy";
+
+    pub func conditionAttributesSetClock(attributes:*ConditionAttributes, clock:i32) -> i32 = "pthread_condattr_setclock";
 }

@@ -1,5 +1,5 @@
 package main;
 
 func main() -> void {
-    var x: double = 1e;
+    var x:double = 1e;
 }

@@ -1,78 +1,78 @@
 package math;
 extern "system" {
     union DoubleBits {
-        var value: double;
-        var bits: u64;
+        var value:double;
+        var bits:u64;
     }
 }
 
-pub const PI: double = 3.14159265358979323846264338327950288;
+pub const PI:double = 3.14159265358979323846264338327950288;
 
-pub const TAU: double = 6.28318530717958647692528676655900576;
+pub const TAU:double = 6.28318530717958647692528676655900576;
 
-pub const E: double = 2.7182818284590452353602874713526625;
+pub const E:double = 2.7182818284590452353602874713526625;
 
-pub func isNaN(value: double) -> bit {
-    var word: DoubleBits;
+pub func isNaN(value:double) -> bit {
+    var word:DoubleBits;
     word.value = value;
     return word.bits % 9223372036854775808.(u64) > 9218868437227405312.(u64);
 }
 
-pub func isFinite(value: double) -> bit {
-    var word: DoubleBits;
+pub func isFinite(value:double) -> bit {
+    var word:DoubleBits;
     word.value = value;
     return word.bits % 9223372036854775808.(u64) < 9218868437227405312.(u64);
 }
 
-pub func abs(value: double) -> double {
+pub func abs(value:double) -> double {
     return nativeAbs(value);
 }
 
-pub func sqrt(value: double) -> double {
+pub func sqrt(value:double) -> double {
     return nativeSqrt(value);
 }
 
-pub func sin(value: double) -> double {
+pub func sin(value:double) -> double {
     return nativeSin(value);
 }
 
-pub func cos(value: double) -> double {
+pub func cos(value:double) -> double {
     return nativeCos(value);
 }
 
-pub func tan(value: double) -> double {
+pub func tan(value:double) -> double {
     return nativeTan(value);
 }
 
-pub func log(value: double) -> double {
+pub func log(value:double) -> double {
     return nativeLog(value);
 }
 
-pub func exp(value: double) -> double {
+pub func exp(value:double) -> double {
     return nativeExp(value);
 }
 
-pub func pow(value: double, exponent: double) -> double {
+pub func pow(value:double, exponent:double) -> double {
     return nativePow(value, exponent);
 }
 
-pub func floor(value: double) -> double {
+pub func floor(value:double) -> double {
     return nativeFloor(value);
 }
 
-pub func ceil(value: double) -> double {
+pub func ceil(value:double) -> double {
     return nativeCeil(value);
 }
 
-pub func trunc(value: double) -> double {
+pub func trunc(value:double) -> double {
     return nativeTrunc(value);
 }
 
-pub func remainder(value: double, divisor: double) -> double {
+pub func remainder(value:double, divisor:double) -> double {
     return nativeRemainder(value, divisor);
 }
 
-pub func min(a: double, b: double) -> double {
+pub func min(a:double, b:double) -> double {
     if (isNaN(a)) {
         return a;
     }
@@ -80,7 +80,7 @@ pub func min(a: double, b: double) -> double {
         return b;
     }
     if (a == 0.0 && b == 0.0) {
-        var word: DoubleBits;
+        var word:DoubleBits;
         word.value = a;
         if (word.bits >= 9223372036854775808.(u64)) {
             return a;
@@ -93,7 +93,7 @@ pub func min(a: double, b: double) -> double {
     return b;
 }
 
-pub func max(a: double, b: double) -> double {
+pub func max(a:double, b:double) -> double {
     if (isNaN(a)) {
         return a;
     }
@@ -101,7 +101,7 @@ pub func max(a: double, b: double) -> double {
         return b;
     }
     if (a == 0.0 && b == 0.0) {
-        var word: DoubleBits;
+        var word:DoubleBits;
         word.value = a;
         if (word.bits < 9223372036854775808.(u64)) {
             return a;
@@ -114,7 +114,7 @@ pub func max(a: double, b: double) -> double {
     return b;
 }
 
-pub func clamp(value: double, low: double, high: double) -> double {
+pub func clamp(value:double, low:double, high:double) -> double {
     if (value < low) {
         return low;
     }

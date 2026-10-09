@@ -1,13 +1,15 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
 func effect() -> bit {
     io.println("unexpected");
     return true;
 }
 
-func invariant(n: int, scale: int) -> int {
+func invariant(n:int, scale:int) -> int {
     var i = 0;
     var total = 0;
     while (i < n) {
@@ -17,22 +19,22 @@ func invariant(n: int, scale: int) -> int {
     return total;
 }
 
-func repeated(i: int) -> int {
-    var values: int[4];
+func repeated(i:int) -> int {
+    var values:int[4];
     values[0] = 3;
     values[1] = 5;
     return values[i] + values[i];
 }
 
-func changed(i: int) -> int {
-    var values: int[4];
+func changed(i:int) -> int {
+    var values:int[4];
     values[i] = 3;
     var before = values[i];
     values[i] = 5;
     return before + values[i];
 }
 
-func guarded(n: int, divisor: int) -> int {
+func guarded(n:int, divisor:int) -> int {
     var i = 0;
     while (i < n) {
         var unused = 1 / divisor;

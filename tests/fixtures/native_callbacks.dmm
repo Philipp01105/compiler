@@ -1,74 +1,69 @@
 package main;
 extern "system" from "callbacks" {
     pub struct Mixed {
-        pub var integer: i32;
-        pub var floating: double;
+        pub var integer:i32;
+        pub var floating:double;
     }
 
     pub struct Large {
-        pub var words: u64[3];
+        pub var words:u64[3];
     }
 
     pub struct Context {
-        pub var value: i32;
-        pub var result: i32;
+        pub var value:i32;
+        pub var result:i32;
     }
 
     pub union Overlay {
-        pub var word: u64;
-        pub var floating: double;
-        pub var bytes: u8[8];
+        pub var word:u64;
+        pub var floating:double;
+        pub var bytes:u8[8];
     }
 
-    pub pack(1) struct Packed {
-        pub var tag: u8;
-        pub var word: u64;
+    pub pack(1) struct Packed{pub var tag:u8;
+    pub var word:u64;
+    } pub align(16) struct Aligned{pub var word:u64;
+    } pub struct FunctionRecord {
+        pub var callback:extern "system" func(i32) -> i32;
     }
 
-    pub align(16) struct Aligned {
-        pub var word: u64;
-    }
+    pub func scalar(x:i32) -> i32 = "callback_scalar";
 
-    pub struct FunctionRecord {
-        pub var callback: extern "system" func(i32) -> i32;
-    }
-
-    pub func scalar(x: i32) -> i32 = "callback_scalar";
     pub func address() -> extern "system" func(i32) -> i32 = "callback_address";
-    pub func invoke(f: extern "system" func(i32) -> i32) -> i32 = "callback_invoke";
-    pub func mixed(f: extern "system" func(Mixed, double, i32) -> Mixed) -> i32 = "callback_mixed";
-    pub func large(f: extern "system" func(Large) -> Large) -> i32 = "callback_large";
-    pub func exhaust(f: extern "system" func(i64, i64, i64, i64, i64, i64, i64, i64) -> i64) -> i32 = "callback_exhaust";
-    pub func overlay(value: Overlay) -> Overlay = "callback_overlay";
-    pub func packed(value: Packed) -> Packed = "callback_packed";
-    pub func layout(a: usize, b: usize, c: usize, d: usize, e: usize, address: *Aligned) -> i32 = "callback_layout";
+
+    pub func invoke(f:extern "system" func(i32) -> i32) -> i32 = "callback_invoke";
+
+    pub func mixed(f:extern "system" func(Mixed,double,i32) -> Mixed) -> i32 = "callback_mixed";
+
+    pub func large(f:extern "system" func(Large) -> Large) -> i32 = "callback_large";
+
+    pub func exhaust(f:extern "system" func(i64,i64,i64,i64,i64,i64,i64,i64) -> i64) -> i32 = "callback_exhaust";
+
+    pub func overlay(value:Overlay) -> Overlay = "callback_overlay";
+
+    pub func packed(value:Packed) -> Packed = "callback_packed";
+
+    pub func layout(a:usize, b:usize, c:usize, d:usize, e:usize, address:*Aligned) -> i32 = "callback_layout";
+
     pub func unwind() -> i32 = "callback_unwind";
 }
 
-export "system" func add(x: i32) -> i32 {
+export "system" func add(x:i32) -> i32{
     return x + 7;
-}
-
-export "system" func transform(value: Mixed, extra: double, integer: i32) -> Mixed {
+} export "system" func transform(value:Mixed, extra:double, integer:i32) -> Mixed{
     value.integer += integer;
     value.floating += extra;
     return value;
-}
-
-export "system" func transformLarge(value: Large) -> Large {
+} export "system" func transformLarge(value:Large) -> Large{
     value.words[0] += 1;
     value.words[1] += 2;
     value.words[2] += 3;
     return value;
-}
-
-export "system" func sum(a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64) -> i64 {
+} export "system" func sum(a:i64, b:i64, c:i64, d:i64, e:i64, f:i64, g:i64, h:i64) -> i64{
     return a + b + c + d + e + f + g + h;
-}
-
-struct Holder {
-    pub var prefix: i32;
-    pub var value: Aligned;
+} struct Holder {
+    pub var prefix:i32;
+    pub var value:Aligned;
 }
 
 enum Choice {
@@ -76,10 +71,10 @@ enum Choice {
     pub Value(i32, Aligned),
 }
 
-var globalAligned: Aligned;
-var globalFunction: extern "system" func(i32) -> i32 = scalar;
+var globalAligned:Aligned;
+var globalFunction:extern "system" func(i32) -> i32 = scalar;
 
-func checkAligned(value: Aligned) -> i32 {
+func checkAligned(value:Aligned) -> i32 {
     return layout(
         Overlay.size,
         Packed.size,
@@ -91,15 +86,15 @@ func checkAligned(value: Aligned) -> i32 {
 }
 
 func main() -> int {
-    var f: extern "system" func(i32) -> i32 = scalar;
-    var functionRecord: FunctionRecord;
+    var f:extern "system" func(i32) -> i32 = scalar;
+    var functionRecord:FunctionRecord;
     functionRecord.callback = add;
     if (
-        f(8) != 9 ||
-        address()(9) != 10 ||
-        globalFunction(6) != 7 ||
-        functionRecord.callback(3) != 10 ||
-        add(2) != 9
+        f(8) != 9
+        || address()(9) != 10
+        || globalFunction(6) != 7
+        || functionRecord.callback(3) != 10
+        || add(2) != 9
     ) {
         return 1;
     }
@@ -115,20 +110,20 @@ func main() -> int {
     if (exhaust(sum) != 1) {
         return 5;
     }
-    var o: Overlay;
+    var o:Overlay;
     o.word = 10;
     o = overlay(o);
     if (o.word != 12 || o.bytes[0] != 12) {
         return 6;
     }
-    var p: Packed;
+    var p:Packed;
     p.tag = 3;
     p.word = 9;
     p = packed(p);
     if (p.tag != 4 || p.word != 11) {
         return 7;
     }
-    var a: Aligned;
+    var a:Aligned;
     if (
         layout(
             Overlay.size,
@@ -141,8 +136,8 @@ func main() -> int {
     ) {
         return 8;
     }
-    var holder: Holder;
-    var array: Aligned[2];
+    var holder:Holder;
+    var array:Aligned[2];
     if (
         layout(
             Overlay.size,
@@ -151,28 +146,28 @@ func main() -> int {
             Aligned.size,
             Aligned.align,
             (&holder.value).(*Aligned)
-        ) != 1 ||
-        layout(
+        ) != 1
+        || layout(
             Overlay.size,
             Packed.size,
             Packed.align,
             Aligned.size,
             Aligned.align,
             (&array[1]).(*Aligned)
-        ) != 1 ||
-        layout(
+        ) != 1
+        || layout(
             Overlay.size,
             Packed.size,
             Packed.align,
             Aligned.size,
             Aligned.align,
             (&globalAligned).(*Aligned)
-        ) != 1 ||
-        checkAligned(a) != 1
+        ) != 1
+        || checkAligned(a) != 1
     ) {
         return 10;
     }
-    var choice: Choice = Choice.Value(1, a);
+    var choice:Choice = Choice.Value(1, a);
     match (choice) {
         Empty => {
             return 11;

@@ -4,58 +4,55 @@ import (
     "stdlib/native/glibc"
 );
 extern "system" from "c" {
-    func nanoSleep(request: *glibc.Timespec, remaining: *glibc.Timespec) -> i32 = "nanosleep";
+    func nanoSleep(request:*glibc.Timespec, remaining:*glibc.Timespec) -> i32 = "nanosleep";
+
     func errnoAddress() -> *i32 = "__errno_location";
 }
 
-func nativeNow() -> stdlib.Result<Instant, Error> {
-    var value: glibc.Timespec;
+func nativeNow() -> stdlib.Result<Instant,Error> {
+    var value:glibc.Timespec;
     if (
-        glibc.clockGettime(1, (&value).(*glibc.Timespec)) != 0 ||
-        value.seconds < 0 ||
-        value.nanoseconds < 0 ||
-        value.nanoseconds >= 1000000000
+        glibc.clockGettime(1, (&value).(*glibc.Timespec)) != 0
+        || value.seconds < 0
+        || value.nanoseconds < 0
+        || value.nanoseconds >= 1000000000
     ) {
-        return stdlib.Result<Instant, Error>.Err(Error.ClockFailure);
+        return stdlib.Result<Instant,Error>.Err(Error.ClockFailure);
     }
-    var seconds: u64 = value.seconds.(u64);
+    var seconds:u64 = value.seconds.(u64);
     if (seconds > 18446744073.(u64)) {
-        return stdlib.Result<Instant, Error>.Err(Error.Overflow);
+        return stdlib.Result<Instant,Error>.Err(Error.Overflow);
     }
-    var nanos: u64 = seconds * 1000000000;
+    var nanos:u64 = seconds * 1000000000;
     if (value.nanoseconds.(u64) > 18446744073709551615.(u64) - nanos) {
-        return stdlib.Result<Instant, Error>.Err(Error.Overflow);
+        return stdlib.Result<Instant,Error>.Err(Error.Overflow);
     }
-    return stdlib.Result<Instant, Error>.Ok(
-        Instant{ nanoseconds: nanos + value.nanoseconds.(u64) }
-    );
+    return stdlib.Result<Instant,Error>.Ok(Instant{nanoseconds:nanos + value.nanoseconds.(u64)});
 }
 
-func nativeSystemNow() -> stdlib.Result<SystemTime, Error> {
-    var value: glibc.Timespec;
+func nativeSystemNow() -> stdlib.Result<SystemTime,Error> {
+    var value:glibc.Timespec;
     if (glibc.clockGettime(0, (&value).(*glibc.Timespec)) != 0) {
-        return stdlib.Result<SystemTime, Error>.Err(Error.ClockFailure);
+        return stdlib.Result<SystemTime,Error>.Err(Error.ClockFailure);
     }
-    return stdlib.Result<SystemTime, Error>.Ok(
-        SystemTime{ seconds: value.seconds, nanoseconds: value.nanoseconds.(u32) }
+    return stdlib.Result<SystemTime,Error>.Ok(
+        SystemTime{seconds:value.seconds, nanoseconds:value.nanoseconds.(u32)}
     );
 }
 
-func nativeSleep(duration: Duration) -> stdlib.Result<void, Error> {
-    var request: glibc.Timespec;
+func nativeSleep(duration:Duration) -> stdlib.Result<void,Error> {
+    var request:glibc.Timespec;
     request.seconds = (duration.nanoseconds / 1000000000).(i64);
     request.nanoseconds = (duration.nanoseconds % 1000000000).(i64);
     while (true) {
-        var remaining: glibc.Timespec;
-        if (
-            nanoSleep((&request).(*glibc.Timespec), (&remaining).(*glibc.Timespec)) == 0
-        ) {
-            return stdlib.Result<void, Error>.Ok;
+        var remaining:glibc.Timespec;
+        if (nanoSleep((&request).(*glibc.Timespec), (&remaining).(*glibc.Timespec)) == 0) {
+            return stdlib.Result<void,Error>.Ok;
         }
         if (*errnoAddress() != 4) {
-            return stdlib.Result<void, Error>.Err(Error.ClockFailure);
+            return stdlib.Result<void,Error>.Err(Error.ClockFailure);
         }
         request = remaining;
     }
-    return stdlib.Result<void, Error>.Err(Error.ClockFailure);
+    return stdlib.Result<void,Error>.Err(Error.ClockFailure);
 }

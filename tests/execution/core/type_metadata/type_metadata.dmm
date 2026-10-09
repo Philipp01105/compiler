@@ -1,15 +1,17 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
-import "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/core"
+    "stdlib/io"
+);
 
 struct Node {
-    var value: int;
-    var next: *Node;
+    var value:int;
+    var next:*Node;
 }
 
 struct Box<T> {
-    var value: T;
+    var value:T;
 }
 
 enum State {
@@ -19,11 +21,11 @@ enum State {
 
 const INT_NAME = int.name;
 const LENGTH = int.size;
-var side_effects: int;
+var side_effects:int;
 
 func touch() -> Node {
     side_effects += 1;
-    var node: Node;
+    var node:Node;
     return node;
 }
 
@@ -31,7 +33,7 @@ func type_name<T>() -> string {
     return T.name;
 }
 
-func describe<T>(value: T) -> int {
+func describe<T>(value:T) -> int {
     match (T) {
         case int -> return value + 1;
         case string -> return strlen(value);
@@ -46,13 +48,13 @@ func selected_return<T>() -> int {
     match (T) {
         case int -> return 42;
         case string -> {
-            var unused: UnknownType;
+            var unused:UnknownType;
             no_such_function();
         }
     }
 }
 
-func describe_value<T>(value: T) -> int {
+func describe_value<T>(value:T) -> int {
     match (value.type) {
         case int -> return value + 2;
         case string -> return strlen(value);
@@ -60,10 +62,10 @@ func describe_value<T>(value: T) -> int {
     }
 }
 
-func buffer_case<T>(value: T) -> usize {
+func buffer_case<T>(value:T) -> usize {
     match (value.type) {
         case int -> {
-            var other: T[2];
+            var other:T[2];
             return other.type.size;
         }
         case i32[] -> return value.length;
@@ -84,15 +86,19 @@ func main() -> int {
     if (*Node.name != "*dmm.test/type_metadata.Node" || (*Node).size != 8) {
         return 4;
     }
-    if (Node.name != "dmm.test/type_metadata.Node" || Node.size != sizeof(Node) || Node.align != 8) {
+    if (
+        Node.name != "dmm.test/type_metadata.Node"
+        || Node.size != sizeof(Node)
+        || Node.align != 8
+    ) {
         return 5;
     }
     if (Box<int>.name != "dmm.test/type_metadata.Box<int>" || Box<int>.size != 8) {
         return 6;
     }
     if (
-        Box<Node[]>.name != "dmm.test/type_metadata.Box<dmm.test/type_metadata.Node[]>" ||
-        Box<Node[]>.size != 16
+        Box<Node[]>.name != "dmm.test/type_metadata.Box<dmm.test/type_metadata.Node[]>"
+        || Box<Node[]>.size != 16
     ) {
         return 7;
     }
@@ -109,21 +115,21 @@ func main() -> int {
         return 11;
     }
     if (
-        describe(4) != 5 ||
-        describe("hello") != 5 ||
-        describe(1.25) != - 1 ||
-        selected_return<int>() != 42
+        describe(4) != 5
+        || describe("hello") != 5
+        || describe(1.25) != -1
+        || selected_return<int>() != 42
     ) {
         return 12;
     }
-    var node: Node;
+    var node:Node;
     node.value = 7;
     if (describe(node) != 7 || describe((&node).(*Node)) != 7) {
         return 13;
     }
-    var backing: i32[3];
-    var view: i32[] = backing;
-    if (describe(view) != 3 || type_name< * (i32[])>() != "*(i32[])") {
+    var backing:i32[3];
+    var view:i32[] = backing;
+    if (describe(view) != 3 || type_name<*(i32[])>() != "*(i32[])") {
         return 14;
     }
     match (Box<int>) {
@@ -143,23 +149,23 @@ func main() -> int {
         Done => return 18;
     }
     if (
-        node.type.name != Node.name ||
-        node.type.size != Node.size ||
-        node.type.align != Node.align
+        node.type.name != Node.name
+        || node.type.size != Node.size
+        || node.type.align != Node.align
     ) {
         return 19;
     }
     if (
-        backing.type.name != "i32[3]" ||
-        backing.type.size != sizeof(i32[3]) ||
-        view.type.name != "i32[]"
+        backing.type.name != "i32[3]"
+        || backing.type.size != sizeof(i32[3])
+        || view.type.name != "i32[]"
     ) {
         return 20;
     }
     if (touch().type.name != Node.name || side_effects != 0) {
         return 21;
     }
-    if (describe_value(5) != 7 || describe_value("hello") != 5 || describe_value(node) != - 1) {
+    if (describe_value(5) != 7 || describe_value("hello") != 5 || describe_value(node) != -1) {
         return 22;
     }
     match (node.type) {

@@ -1,2 +1,2 @@
 package main;
-# import "old.dmm" func main() -> void {}
+# import "old.dmm" func main() -> void{}

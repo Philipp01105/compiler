@@ -1,70 +1,134 @@
 package http;
-import ("stdlib/core" "stdlib/net" "stdlib/time" "stdlib/bytes" "stdlib/text" "stdlib/async");
+import (
+    "stdlib/async"
+    "stdlib/bytes"
+    "stdlib/core"
+    "stdlib/net"
+    "stdlib/text"
+    "stdlib/time"
+);
 
-@[no_default] pub struct Server {
-    var listener: net.TcpListener;
-    var options: Config;
-    pub func localAddress() -> core.Result<net.Endpoint, Error> { return core.Result<net.Endpoint, Error>.Ok(listener.localAddress()?); }
+@[no_default]
+pub struct Server {
+    var listener:net.TcpListener;
+    var options:Config;
+
+    pub func localAddress() -> core.Result<net.Endpoint,Error> {
+        return core.Result<net.Endpoint,Error>.Ok(listener.localAddress()?);
+    }
 }
+
 // A single acceptance is useful for embedded servers and controlled shutdown.
-pub async func serveOne<S>(server: &mut Server, router: &mut Router<S>, state: &mut S) -> core.Result<void, Error> {
+pub async func serveOne<S>(
+    server:&mut Server,
+    router:&mut Router<S>,
+    state:&mut S
+) -> core.Result<void,Error> {
     var connection = server.listener.accept().await()?;
     return serveConnection(connection, router, state, server.options).await();
 }
-pub async func serve<S>(server: Server, router: Router<S>, state: S) -> core.Result<void, Error> {
+
+pub async func serve<S>(server:Server, router:Router<S>, state:S) -> core.Result<void,Error> {
     while (true) {
         // Listener failures propagate; a disconnected or timed-out client does not stop the server.
         var connection = server.listener.accept().await()?;
         match (serveConnection(connection, &mut router, &mut state, server.options).await()) {
             Ok => {}
             Err(error) => {
-                if (error.kind != ErrorKind.Network && error.kind != ErrorKind.Timeout) { return core.Result<void, Error>.Err(error); }
+                if (error.kind != ErrorKind.Network && error.kind != ErrorKind.Timeout) {
+                    return core.Result<void,Error>.Err(error);
+                }
             }
         }
     }
-    return core.Result<void, Error>.Ok;
+    return core.Result<void,Error>.Ok;
 }
-pub func listen(endpoint: net.Endpoint, options: Config) -> core.Result<Server, Error> {
+
+pub func listen(endpoint:net.Endpoint, options:Config) -> core.Result<Server,Error> {
     validateConfig(options)?;
-    return core.Result<Server, Error>.Ok(Server{listener: net.listen(endpoint)?, options: options});
+    return core.Result<Server,Error>.Ok(Server{listener:net.listen(endpoint)?, options:options});
 }
-func errorResponse(error: Error) -> core.Result<Response, Error> {
+
+func errorResponse(error:Error) -> core.Result<Response,Error> {
     match (error.kind) {
         InvalidRequest => return Response.text(Status.BadRequest, "Bad request\n");
         HeadersTooLarge => return Response.text(Status.HeadersTooLarge, "Headers too large\n");
         BodyTooLarge => return Response.text(Status.PayloadTooLarge, "Body too large\n");
-        TransferEncoding => return Response.text(Status.NotImplemented, "Transfer-Encoding is unsupported\n");
+        TransferEncoding => return Response.text(
+            Status.NotImplemented,
+            "Transfer-Encoding is unsupported\n"
+        );
         Expectation => return Response.text(Status.ExpectationFailed, "Expect is unsupported\n");
         InvalidRoute => return Response.text(Status.InternalServerError, "Internal server error\n");
-        InvalidResponse => return Response.text(Status.InternalServerError, "Internal server error\n");
-        InvalidConfig => return Response.text(Status.InternalServerError, "Internal server error\n");
-        OutOfMemory => return core.Result<Response, Error>.Err(error);
-        Network => return core.Result<Response, Error>.Err(error);
-        Timeout => return core.Result<Response, Error>.Err(error);
+        InvalidResponse => return Response.text(
+            Status.InternalServerError,
+            "Internal server error\n"
+        );
+        InvalidConfig => return Response.text(
+            Status.InternalServerError,
+            "Internal server error\n"
+        );
+        OutOfMemory => return core.Result<Response,Error>.Err(error);
+        Network => return core.Result<Response,Error>.Err(error);
+        Timeout => return core.Result<Response,Error>.Err(error);
     }
 }
-async func send(stream: &mut net.TcpStream, response: Response, head: bit, deadline: time.Deadline) -> core.Result<void, Error> {
-    var encoded = response.encode(head)?; var output = encoded.view();
-    stream.writeAll(&output, deadline).await()?; stream.shutdownWrite()?;
-    return core.Result<void, Error>.Ok;
+
+async func send(
+    stream:&mut net.TcpStream,
+    response:Response,
+    head:bit,
+    deadline:time.Deadline
+) -> core.Result<void,Error> {
+    var encoded = response.encode(head)?;
+    var output = encoded.view();
+    stream.writeAll(&output, deadline).await()?;
+    stream.shutdownWrite()?;
+    return core.Result<void,Error>.Ok;
 }
-async func serveConnection<S>(connection: net.Accepted, router: &mut Router<S>, state: &mut S, options: Config) -> core.Result<void, Error> {
-    var deadline = time.Deadline.after(options.timeoutNanos); var buffer: u8[8192]; var used: usize = 0;
-    var headerEnd: usize = 0;
+
+async func serveConnection<S>(
+    connection:net.Accepted,
+    router:&mut Router<S>,
+    state:&mut S,
+    options:Config
+) -> core.Result<void,Error> {
+    var deadline = time.Deadline.after(options.timeoutNanos);
+    var buffer:u8[8192];
+    var used:usize = 0;
+    var headerEnd:usize = 0;
     while (used < options.maxHeaderBytes) {
         var destination = buffer[used:options.maxHeaderBytes];
         var count = connection.stream.read(&mut destination, deadline).await()?;
         if (count == 0) {
-            if (used == 0) { return core.Result<void, Error>.Ok; }
+            if (used == 0) {
+                return core.Result<void,Error>.Ok;
+            }
             var head = bytes.startsWith(buffer[:used], text.bytes("HEAD "));
-            return send(&mut connection.stream, Response.text(Status.BadRequest, "Bad request\n")?, head, deadline).await();
+            return send(
+                &mut connection.stream,
+                Response.text(Status.BadRequest, "Bad request\n")?,
+                head,
+                deadline
+            ).await();
         }
         used += count;
-        match (bytes.find(buffer[:used], text.bytes("\r\n\r\n"))) { None => {} Some(end) => { headerEnd = end + 4; break; } }
+        match (bytes.find(buffer[:used], text.bytes("\r\n\r\n"))) {
+            None => {}
+            Some(end) => {
+                headerEnd = end + 4;
+                break;
+            }
+        }
     }
     if (headerEnd == 0) {
         var head = bytes.startsWith(buffer[:used], text.bytes("HEAD "));
-        return send(&mut connection.stream, Response.text(Status.HeadersTooLarge, "Headers too large\n")?, head, deadline).await();
+        return send(
+            &mut connection.stream,
+            Response.text(Status.HeadersTooLarge, "Headers too large\n")?,
+            head,
+            deadline
+        ).await();
     }
     var input = buffer[:headerEnd];
     match (parseHead(&input, options)) {
@@ -75,21 +139,47 @@ async func serveConnection<S>(connection: net.Accepted, router: &mut Router<S>, 
         }
         Ok(request) => {
             var initial = used - headerEnd;
-            if (initial > request.contentLength) { initial = request.contentLength; }
-            var first = buffer[headerEnd:headerEnd + initial]; request.payload.appendSlice(&first)?;
+            if (initial > request.contentLength) {
+                initial = request.contentLength;
+            }
+            var first = buffer[headerEnd:headerEnd + initial];
+            request.payload.appendSlice(&first)?;
             while (request.payload.length() < request.contentLength) {
                 var remaining = request.contentLength - request.payload.length();
-                if (remaining > 8192) { remaining = 8192; }
-                var storage = buffer[:remaining]; var count = connection.stream.read(&mut storage, deadline).await()?;
-                if (count == 0) { return send(&mut connection.stream, Response.text(Status.BadRequest, "Bad request\n")?, request.method() == Method.Head, deadline).await(); }
-                var chunk = buffer[:count]; request.payload.appendSlice(&chunk)?;
+                if (remaining > 8192) {
+                    remaining = 8192;
+                }
+                var storage = buffer[:remaining];
+                var count = connection.stream.read(&mut storage, deadline).await()?;
+                if (count == 0) {
+                    return send(
+                        &mut connection.stream,
+                        Response.text(Status.BadRequest, "Bad request\n")?,
+                        request.method() == Method.Head,
+                        deadline
+                    ).await();
+                }
+                var chunk = buffer[:count];
+                request.payload.appendSlice(&chunk)?;
             }
             // Cancel a suspended handler on timeout; cancellation releases its state/request loans.
             match (asynchronous.timeout(router.dispatch(&mut request, state), deadline).await()) {
-                Elapsed => return core.Result<void, Error>.Err(invalid(ErrorKind.Timeout, "Handler timed out"));
+                Elapsed => return core.Result<void,Error>.Err(
+                    invalid(ErrorKind.Timeout, "Handler timed out")
+                );
                 Completed(result) => match (result) {
-                    Err(error) => return send(&mut connection.stream, errorResponse(error)?, request.method() == Method.Head, deadline).await();
-                    Ok(response) => return send(&mut connection.stream, response, request.method() == Method.Head, deadline).await();
+                    Err(error) => return send(
+                        &mut connection.stream,
+                        errorResponse(error)?,
+                        request.method() == Method.Head,
+                        deadline
+                    ).await();
+                    Ok(response) => return send(
+                        &mut connection.stream,
+                        response,
+                        request.method() == Method.Head,
+                        deadline
+                    ).await();
                 }
             }
         }

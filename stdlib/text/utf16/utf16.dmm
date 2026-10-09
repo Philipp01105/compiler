@@ -1,54 +1,121 @@
 package utf16;
-import ("stdlib/core" "stdlib/collections" "stdlib/text/utf8");
-pub enum ErrorKind {pub InvalidUtf8,pub InvalidUtf16,pub InvalidScalar,pub BufferTooSmall,pub OutOfMemory,pub CapacityOverflow}
+import (
+    "stdlib/collections"
+    "stdlib/core"
+    "stdlib/text/utf8"
+);
+
+pub enum ErrorKind {
+    pub InvalidUtf8,
+    pub InvalidUtf16,
+    pub InvalidScalar,
+    pub BufferTooSmall,
+    pub OutOfMemory,
+    pub CapacityOverflow
+}
+
 pub struct Error {
-    pub var kind:ErrorKind;pub var offset:usize;
-    pub static func fromResidual(error:core.AllocError)->Self {
-        match(error){OutOfMemory=>return Error{kind:ErrorKind.OutOfMemory,offset:0};CapacityOverflow=>return Error{kind:ErrorKind.CapacityOverflow,offset:0};}
+    pub var kind:ErrorKind;
+    pub var offset:usize;
+
+    pub static func fromResidual(error:core.AllocError) -> Self {
+        match (error) {
+            OutOfMemory => return Error{kind:ErrorKind.OutOfMemory, offset:0};
+            CapacityOverflow => return Error{kind:ErrorKind.CapacityOverflow, offset:0};
+        }
     }
-    pub static func fromResidual(error:utf8.Error)->Self {
-        var kind:ErrorKind=ErrorKind.InvalidUtf8;
-        match(error.kind){InvalidUtf8=>{}InvalidScalar=>kind=ErrorKind.InvalidScalar;BufferTooSmall=>kind=ErrorKind.BufferTooSmall;}
-        return Error{kind:kind,offset:error.offset};
+
+    pub static func fromResidual(error:utf8.Error) -> Self {
+        var kind:ErrorKind = ErrorKind.InvalidUtf8;
+        match (error.kind) {
+            InvalidUtf8 => {}
+            InvalidScalar => kind = ErrorKind.InvalidScalar;
+            BufferTooSmall => kind = ErrorKind.BufferTooSmall;
+        }
+        return Error{kind:kind, offset:error.offset};
     }
 }
-pub struct Decoded {pub var scalar:u32;pub var next:usize;}
-pub func decode(input:&u16[],offset:usize)->core.Result<Decoded,Error> {
-    if(offset>=input.length){return core.Result<Decoded,Error>.Err(Error{kind:ErrorKind.InvalidUtf16,offset:offset});}
-    var first=input[offset].(u32);
-    if(first>=56320 && first<=57343){return core.Result<Decoded,Error>.Err(Error{kind:ErrorKind.InvalidUtf16,offset:offset});}
-    if(first>=55296 && first<=56319) {
-        if(input.length-offset<2){return core.Result<Decoded,Error>.Err(Error{kind:ErrorKind.InvalidUtf16,offset:offset});}
-        var second=input[offset+1].(u32);
-        if(second<56320 || second>57343){return core.Result<Decoded,Error>.Err(Error{kind:ErrorKind.InvalidUtf16,offset:offset+1});}
-        return core.Result<Decoded,Error>.Ok(Decoded{scalar:65536+(first-55296)*1024+second-56320,next:offset+2});
-    }
-    return core.Result<Decoded,Error>.Ok(Decoded{scalar:first,next:offset+1});
+
+pub struct Decoded {
+    pub var scalar:u32;
+    pub var next:usize;
 }
-pub func encode(value:u32,output:&mut u16[],offset:usize)->core.Result<usize,Error> {
-    if(!utf8.isScalar(value)){return core.Result<usize,Error>.Err(Error{kind:ErrorKind.InvalidScalar,offset:offset});}
-    var count:usize=1;if(value>=65536){count=2;}
-    if(offset>output.length || output.length-offset<count){return core.Result<usize,Error>.Err(Error{kind:ErrorKind.BufferTooSmall,offset:offset});}
-    if(count==1){(*output)[offset]=value.(u16);}
-    else {var scalar=value-65536;(*output)[offset]=(55296+scalar/1024).(u16);(*output)[offset+1]=(56320+scalar%1024).(u16);}
+
+pub func decode(input:&u16[], offset:usize) -> core.Result<Decoded,Error> {
+    if (offset >= input.length) {
+        return core.Result<Decoded,Error>.Err(Error{kind:ErrorKind.InvalidUtf16, offset:offset});
+    }
+    var first = input[offset].(u32);
+    if (first >= 56320 && first <= 57343) {
+        return core.Result<Decoded,Error>.Err(Error{kind:ErrorKind.InvalidUtf16, offset:offset});
+    }
+    if (first >= 55296 && first <= 56319) {
+        if (input.length - offset < 2) {
+            return core.Result<Decoded,Error>.Err(
+                Error{kind:ErrorKind.InvalidUtf16, offset:offset}
+            );
+        }
+        var second = input[offset + 1].(u32);
+        if (second < 56320 || second > 57343) {
+            return core.Result<Decoded,Error>.Err(
+                Error{kind:ErrorKind.InvalidUtf16, offset:offset + 1}
+            );
+        }
+        return core.Result<Decoded,Error>.Ok(
+            Decoded{scalar:65536 + (first - 55296) * 1024 + second - 56320, next:offset + 2}
+        );
+    }
+    return core.Result<Decoded,Error>.Ok(Decoded{scalar:first, next:offset + 1});
+}
+
+pub func encode(value:u32, output:&mut u16[], offset:usize) -> core.Result<usize,Error> {
+    if (!utf8.isScalar(value)) {
+        return core.Result<usize,Error>.Err(Error{kind:ErrorKind.InvalidScalar, offset:offset});
+    }
+    var count:usize = 1;
+    if (value >= 65536) {
+        count = 2;
+    }
+    if (offset > output.length || output.length - offset < count) {
+        return core.Result<usize,Error>.Err(Error{kind:ErrorKind.BufferTooSmall, offset:offset});
+    }
+    if (count == 1) {
+        (*output)[offset] = value.(u16);
+    } else {
+        var scalar = value - 65536;
+        (*output)[offset] = (55296 + scalar / 1024).(u16);
+        (*output)[offset + 1] = (56320 + scalar % 1024).(u16);
+    }
     return core.Result<usize,Error>.Ok(count);
 }
+
 // Explicit allocating conversions; neither conversion appends a native terminator.
-pub func fromUtf8(input:&u8[])->core.Result<collections.List<u16>,Error> {
-    var result=collections.list<u16>();var offset:usize=0;
-    while(offset<input.length) {
-        var point=utf8.decode(input,offset)?;offset=point.next;
-        var raw:u16[2];var target:u16[]=raw[:];var count=encode(point.scalar,&mut target,0)?;
-        var units=raw[:count];result.appendSlice(&units)?;
+pub func fromUtf8(input:&u8[]) -> core.Result<collections.List<u16>,Error> {
+    var result = collections.list<u16>();
+    var offset:usize = 0;
+    while (offset < input.length) {
+        var point = utf8.decode(input, offset)?;
+        offset = point.next;
+        var raw:u16[2];
+        var target:u16[] = raw[:];
+        var count = encode(point.scalar, &mut target, 0)?;
+        var units = raw[:count];
+        result.appendSlice(&units)?;
     }
     return core.Result<collections.List<u16>,Error>.Ok(result);
 }
-pub func toUtf8(input:&u16[])->core.Result<collections.List<u8>,Error> {
-    var result=collections.list<u8>();var offset:usize=0;
-    while(offset<input.length) {
-        var point=decode(input,offset)?;offset=point.next;
-        var raw:u8[4];var target:u8[]=raw[:];var count=utf8.encode(point.scalar,&mut target,0)?;
-        var units=raw[:count];result.appendSlice(&units)?;
+
+pub func toUtf8(input:&u16[]) -> core.Result<collections.List<u8>,Error> {
+    var result = collections.list<u8>();
+    var offset:usize = 0;
+    while (offset < input.length) {
+        var point = decode(input, offset)?;
+        offset = point.next;
+        var raw:u8[4];
+        var target:u8[] = raw[:];
+        var count = utf8.encode(point.scalar, &mut target, 0)?;
+        var units = raw[:count];
+        result.appendSlice(&units)?;
     }
     return core.Result<collections.List<u8>,Error>.Ok(result);
 }

@@ -1,6 +1,8 @@
 package main;
-import atomic "stdlib/sync/atomic";
-import "stdlib/core";
+import (
+    "stdlib/core"
+    atomic "stdlib/sync/atomic"
+);
 
 func main() -> int {
     var count = atomic.atomicUsize(4.(usize));

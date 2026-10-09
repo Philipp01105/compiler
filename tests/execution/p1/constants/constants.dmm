@@ -1,19 +1,19 @@
 package main;
-const count: int = 2 + 3;
+const count:int = 2 + 3;
 const greeting = "folded" + " constants";
-const widened: double = 3;
-const rounded: float = (1.25 + 2.5).(float);
-const letter: char = (321).(char);
-const float_match: bit = (16777216).(float) == 16777217;
+const widened:double = 3;
+const rounded:float = (1.25 + 2.5).(float);
+const letter:char = (321).(char);
+const float_match:bit = (16777216).(float) == 16777217;
 const labeled = "count=" + count + ", char=" + 'A' + ", fraction=" + 2.5;
-const same: bit = ("hello" + " world") == "hello world";
-const different: bit = "left" != "right";
-const safe: bit = true || (1 / 0 == 0);
+const same:bit = ("hello" + " world") == "hello world";
+const different:bit = "left" != "right";
+const safe:bit = true || (1 / 0 == 0);
 
 func main() -> int {
-    const local: int = count * 2;
+    const local:int = count * 2;
     const truncated = (7.9).(int);
-    var values: int[local];
+    var values:int[local];
     values[9] = truncated;
     if (values[9] != 7) {
         return 1;
@@ -36,7 +36,7 @@ func main() -> int {
     if (rounded != 3.75 || letter != 'A') {
         return 7;
     }
-    var runtime_float: float = (16777216).(float);
+    var runtime_float:float = (16777216).(float);
     if (!float_match || !(runtime_float == 16777217)) {
         return 8;
     }

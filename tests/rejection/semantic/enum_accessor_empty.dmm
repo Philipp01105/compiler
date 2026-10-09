@@ -6,6 +6,6 @@ enum Option<T> {
 }
 
 func main() -> void {
-    var p: Option<int> = Option<int>.None;
+    var p:Option<int> = Option<int>.None;
     p.None();
 }

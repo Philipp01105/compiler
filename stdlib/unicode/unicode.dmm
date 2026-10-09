@@ -1,9 +1,9 @@
 package unicode;
 import (
-    "stdlib/core"
     "stdlib/collections"
-    "stdlib/text/utf8"
+    "stdlib/core"
     raw "stdlib/memory/raw"
+    "stdlib/text/utf8"
 );
 
 pub enum ErrorKind {
@@ -16,15 +16,23 @@ pub enum ErrorKind {
 }
 
 pub struct Error {
-    pub static func fromResidual(error:core.AllocError)->Self {return allocation(status(error));}
-    pub static func fromCodec(error:utf8.Error)->Self {
-        var kind:ErrorKind=ErrorKind.InvalidUtf8;
-        if(error.kind==utf8.ErrorKind.InvalidScalar){kind=ErrorKind.InvalidScalar;}
-        if(error.kind==utf8.ErrorKind.BufferTooSmall){kind=ErrorKind.BufferTooSmall;}
-        return Error{kind:kind,offset:error.offset};
+    pub static func fromResidual(error:core.AllocError) -> Self {
+        return allocation(status(error));
     }
-    pub var kind: ErrorKind;
-    pub var offset: usize;
+
+    pub static func fromCodec(error:utf8.Error) -> Self {
+        var kind:ErrorKind = ErrorKind.InvalidUtf8;
+        if (error.kind == utf8.ErrorKind.InvalidScalar) {
+            kind = ErrorKind.InvalidScalar;
+        }
+        if (error.kind == utf8.ErrorKind.BufferTooSmall) {
+            kind = ErrorKind.BufferTooSmall;
+        }
+        return Error{kind:kind, offset:error.offset};
+    }
+
+    pub var kind:ErrorKind;
+    pub var offset:usize;
 }
 
 pub enum Normalization {
@@ -41,100 +49,126 @@ pub enum CaseMapping {
     pub Fold,
 }
 
-func failure(kind: ErrorKind, offset: usize) -> Error {
-    return Error{ kind: kind, offset: offset };
+func failure(kind:ErrorKind, offset:usize) -> Error {
+    return Error{kind:kind, offset:offset};
 }
 
-enum AllocationStatus { None, OutOfMemory, CapacityOverflow }
-func status(error:core.AllocError)->AllocationStatus {
- match(error){OutOfMemory=>return AllocationStatus.OutOfMemory;CapacityOverflow=>return AllocationStatus.CapacityOverflow;}
+enum AllocationStatus {
+    None,
+    OutOfMemory,
+    CapacityOverflow
 }
-func pushPoint(output:*collections.List<u32>,scalar:u32)->AllocationStatus {
- match((*output).append(scalar)){Ok=>return AllocationStatus.None;Err(error)=>return status(error);}
+
+func status(error:core.AllocError) -> AllocationStatus {
+    match (error) {
+        OutOfMemory => return AllocationStatus.OutOfMemory;
+        CapacityOverflow => return AllocationStatus.CapacityOverflow;
+    }
 }
-func allocation(error: AllocationStatus) -> Error {
+
+func pushPoint(output:*collections.List<u32>, scalar:u32) -> AllocationStatus {
+    match ((*output).append(scalar)) {
+        Ok => return AllocationStatus.None;
+        Err(error) => return status(error);
+    }
+}
+
+func allocation(error:AllocationStatus) -> Error {
     if (error == AllocationStatus.CapacityOverflow) {
         return failure(ErrorKind.CapacityOverflow, 0);
     }
     return failure(ErrorKind.OutOfMemory, 0);
 }
 
-func isScalar(value:u32)->bit {return utf8.isScalar(value);}
-
-func decodeUtf8(input:u8[],offset:usize)->core.Result<utf8.Decoded,Error> {
- var result=utf8.decode(&input,offset);
- match(result){Ok(value)=>return core.Result<utf8.Decoded,Error>.Ok(value);Err(error)=>return core.Result<utf8.Decoded,Error>.Err(Error.fromCodec(error));}
+func isScalar(value:u32) -> bit {
+    return utf8.isScalar(value);
 }
 
-pub func validate(input: u8[]) -> core.Result<void, Error> {
-    var offset: usize = 0;
+func decodeUtf8(input:u8[], offset:usize) -> core.Result<utf8.Decoded,Error> {
+    var result = utf8.decode(&input, offset);
+    match (result) {
+        Ok(value) => return core.Result<utf8.Decoded,Error>.Ok(value);
+        Err(error) => return core.Result<utf8.Decoded,Error>.Err(Error.fromCodec(error));
+    }
+}
+
+pub func validate(input:u8[]) -> core.Result<void,Error> {
+    var offset:usize = 0;
     while (offset < input.length) {
         var decoded = decodeUtf8(input, offset);
         match (decoded) {
-            Err(error) => return core.Result<void, Error>.Err(error);
+            Err(error) => return core.Result<void,Error>.Err(error);
             Ok(value) => offset = value.next;
         }
     }
-    return core.Result<void, Error>.Ok;
+    return core.Result<void,Error>.Ok;
 }
 
-func encodeUtf8(scalar:u32,output:&mut u8[],offset:usize)->core.Result<usize,Error> {
- var result=utf8.encode(scalar,output,offset);
- match(result){Ok(value)=>return core.Result<usize,Error>.Ok(value);Err(error)=>return core.Result<usize,Error>.Err(Error.fromCodec(error));}
+func encodeUtf8(scalar:u32, output:&mut u8[], offset:usize) -> core.Result<usize,Error> {
+    var result = utf8.encode(scalar, output, offset);
+    match (result) {
+        Ok(value) => return core.Result<usize,Error>.Ok(value);
+        Err(error) => return core.Result<usize,Error>.Err(Error.fromCodec(error));
+    }
 }
 
-func appendScalar(output:*collections.List<u8>,scalar:u32)->AllocationStatus {
- var bytes:u8[4];var view=bytes[:];
- match(encodeUtf8(scalar,&mut view,0)) {
-  Err(error)=>{raw.core_trap();}
-  Ok(end)=>{var input=bytes[:end];match((*output).appendSlice(&input)){Ok=>return AllocationStatus.None;Err(error)=>return status(error);}}
- }
+func appendScalar(output:*collections.List<u8>, scalar:u32) -> AllocationStatus {
+    var bytes:u8[4];
+    var view = bytes[:];
+    match (encodeUtf8(scalar, &mut view, 0)) {
+        Err(error) => {
+            raw.core_trap();
+        }
+        Ok(end) => {
+            var input = bytes[:end];
+            match ((*output).appendSlice(&input)) {
+                Ok => return AllocationStatus.None;
+                Err(error) => return status(error);
+            }
+        }
+    }
 }
 
-pub func collectCodepoints(input: u8[]) -> core.Result<collections.List<u32>, Error> {
+pub func collectCodepoints(input:u8[]) -> core.Result<collections.List<u32>,Error> {
     var output = collections.list<u32>();
-    var offset: usize = 0;
+    var offset:usize = 0;
     while (offset < input.length) {
         var decoded = decodeUtf8(input, offset);
         match (decoded) {
-            Err(error) => return core.Result<collections.List<u32>, Error>.Err(error);
+            Err(error) => return core.Result<collections.List<u32>,Error>.Err(error);
             Ok(value) => {
-                var error = pushPoint((&output).(*collections.List<u32>),value.scalar);
+                var error = pushPoint((&output).(*collections.List<u32>), value.scalar);
                 if (error != AllocationStatus.None) {
-                    return core.Result<collections.List<u32>, Error>.Err(allocation(error));
+                    return core.Result<collections.List<u32>,Error>.Err(allocation(error));
                 }
                 offset = value.next;
             }
         }
     }
-    return core.Result<collections.List<u32>, Error>.Ok(output);
+    return core.Result<collections.List<u32>,Error>.Ok(output);
 }
 
-pub func fromCodepoints(input: u32[]) -> core.Result<collections.List<u8>, Error> {
+pub func fromCodepoints(input:u32[]) -> core.Result<collections.List<u8>,Error> {
     var output = collections.list<u8>();
-    for (var i: usize = 0; i < input.length; i += 1) {
+    for (var i:usize = 0; i < input.length; i += 1) {
         if (!isScalar(input[i])) {
-            return core.Result<collections.List<u8>, Error>.Err(failure(ErrorKind.InvalidScalar, i));
+            return core.Result<collections.List<u8>,Error>.Err(failure(ErrorKind.InvalidScalar, i));
         }
         var error = appendScalar((&output).(*collections.List<u8>), input[i]);
         if (error != AllocationStatus.None) {
-            return core.Result<collections.List<u8>, Error>.Err(allocation(error));
+            return core.Result<collections.List<u8>,Error>.Err(allocation(error));
         }
     }
-    return core.Result<collections.List<u8>, Error>.Ok(output);
+    return core.Result<collections.List<u8>,Error>.Ok(output);
 }
 
-
-
-
-
-func hex(table: func(usize) -> string, offset: usize, width: usize) -> u32 {
-    var value: u32 = 0;
-    for (var i: usize = 0; i < width; i += 1) {
-        var position: usize = offset + i;
-        var data: *u8 = raw.core_string_data(table(position / 480));
-        var code: u32 = data[position % 480].(u32);
-        var digit: u32 = code - 48;
+func hex(table:func(usize) -> string, offset:usize, width:usize) -> u32 {
+    var value:u32 = 0;
+    for (var i:usize = 0; i < width; i += 1) {
+        var position:usize = offset + i;
+        var data:*u8 = raw.core_string_data(table(position / 480));
+        var code:u32 = data[position % 480].(u32);
+        var digit:u32 = code - 48;
         if (code >= 97) {
             digit = code - 97 + 10;
         }
@@ -143,11 +177,11 @@ func hex(table: func(usize) -> string, offset: usize, width: usize) -> u32 {
     return value;
 }
 
-func propertyOffset(scalar: u32) -> usize {
-    var first: usize = 0;
-    var end: usize = PROPERTIES_COUNT;
+func propertyOffset(scalar:u32) -> usize {
+    var first:usize = 0;
+    var end:usize = PROPERTIES_COUNT;
     while (first < end) {
-        var middle: usize = first + (end - first) / 2;
+        var middle:usize = first + (end - first) / 2;
         if (hex(PROPERTIES, middle * 18 + 6, 6) < scalar) {
             first = middle + 1;
         } else {
@@ -160,128 +194,218 @@ func propertyOffset(scalar: u32) -> usize {
     return PROPERTIES_COUNT * 18;
 }
 
-pub enum Category {pub Unassigned,pub UppercaseLetter,pub LowercaseLetter,pub TitlecaseLetter,pub ModifierLetter,pub OtherLetter,pub NonspacingMark,pub SpacingMark,pub EnclosingMark,pub DecimalNumber,pub LetterNumber,pub OtherNumber,pub ConnectorPunctuation,pub DashPunctuation,pub OpenPunctuation,pub ClosePunctuation,pub InitialPunctuation,pub FinalPunctuation,pub OtherPunctuation,pub MathSymbol,pub CurrencySymbol,pub ModifierSymbol,pub OtherSymbol,pub SpaceSeparator,pub LineSeparator,pub ParagraphSeparator,pub Control,pub Format,pub Surrogate,pub PrivateUse}
-pub func category(scalar:u32)->Category {
- var code=categoryCode(scalar);
- if(code==1) {return Category.UppercaseLetter;}
- if(code==2) {return Category.LowercaseLetter;}
- if(code==3) {return Category.TitlecaseLetter;}
- if(code==4) {return Category.ModifierLetter;}
- if(code==5) {return Category.OtherLetter;}
- if(code==6) {return Category.NonspacingMark;}
- if(code==7) {return Category.SpacingMark;}
- if(code==8) {return Category.EnclosingMark;}
- if(code==9) {return Category.DecimalNumber;}
- if(code==10) {return Category.LetterNumber;}
- if(code==11) {return Category.OtherNumber;}
- if(code==12) {return Category.ConnectorPunctuation;}
- if(code==13) {return Category.DashPunctuation;}
- if(code==14) {return Category.OpenPunctuation;}
- if(code==15) {return Category.ClosePunctuation;}
- if(code==16) {return Category.InitialPunctuation;}
- if(code==17) {return Category.FinalPunctuation;}
- if(code==18) {return Category.OtherPunctuation;}
- if(code==19) {return Category.MathSymbol;}
- if(code==20) {return Category.CurrencySymbol;}
- if(code==21) {return Category.ModifierSymbol;}
- if(code==22) {return Category.OtherSymbol;}
- if(code==23) {return Category.SpaceSeparator;}
- if(code==24) {return Category.LineSeparator;}
- if(code==25) {return Category.ParagraphSeparator;}
- if(code==26) {return Category.Control;}
- if(code==27) {return Category.Format;}
- if(code==28) {return Category.Surrogate;}
- if(code==29) {return Category.PrivateUse;}
- return Category.Unassigned;
+pub enum Category {
+    pub Unassigned,
+    pub UppercaseLetter,
+    pub LowercaseLetter,
+    pub TitlecaseLetter,
+    pub ModifierLetter,
+    pub OtherLetter,
+    pub NonspacingMark,
+    pub SpacingMark,
+    pub EnclosingMark,
+    pub DecimalNumber,
+    pub LetterNumber,
+    pub OtherNumber,
+    pub ConnectorPunctuation,
+    pub DashPunctuation,
+    pub OpenPunctuation,
+    pub ClosePunctuation,
+    pub InitialPunctuation,
+    pub FinalPunctuation,
+    pub OtherPunctuation,
+    pub MathSymbol,
+    pub CurrencySymbol,
+    pub ModifierSymbol,
+    pub OtherSymbol,
+    pub SpaceSeparator,
+    pub LineSeparator,
+    pub ParagraphSeparator,
+    pub Control,
+    pub Format,
+    pub Surrogate,
+    pub PrivateUse
 }
-func categoryCode(scalar: u32) -> u32 {
-    var offset: usize = propertyOffset(scalar);
+
+pub func category(scalar:u32) -> Category {
+    var code = categoryCode(scalar);
+    if (code == 1) {
+        return Category.UppercaseLetter;
+    }
+    if (code == 2) {
+        return Category.LowercaseLetter;
+    }
+    if (code == 3) {
+        return Category.TitlecaseLetter;
+    }
+    if (code == 4) {
+        return Category.ModifierLetter;
+    }
+    if (code == 5) {
+        return Category.OtherLetter;
+    }
+    if (code == 6) {
+        return Category.NonspacingMark;
+    }
+    if (code == 7) {
+        return Category.SpacingMark;
+    }
+    if (code == 8) {
+        return Category.EnclosingMark;
+    }
+    if (code == 9) {
+        return Category.DecimalNumber;
+    }
+    if (code == 10) {
+        return Category.LetterNumber;
+    }
+    if (code == 11) {
+        return Category.OtherNumber;
+    }
+    if (code == 12) {
+        return Category.ConnectorPunctuation;
+    }
+    if (code == 13) {
+        return Category.DashPunctuation;
+    }
+    if (code == 14) {
+        return Category.OpenPunctuation;
+    }
+    if (code == 15) {
+        return Category.ClosePunctuation;
+    }
+    if (code == 16) {
+        return Category.InitialPunctuation;
+    }
+    if (code == 17) {
+        return Category.FinalPunctuation;
+    }
+    if (code == 18) {
+        return Category.OtherPunctuation;
+    }
+    if (code == 19) {
+        return Category.MathSymbol;
+    }
+    if (code == 20) {
+        return Category.CurrencySymbol;
+    }
+    if (code == 21) {
+        return Category.ModifierSymbol;
+    }
+    if (code == 22) {
+        return Category.OtherSymbol;
+    }
+    if (code == 23) {
+        return Category.SpaceSeparator;
+    }
+    if (code == 24) {
+        return Category.LineSeparator;
+    }
+    if (code == 25) {
+        return Category.ParagraphSeparator;
+    }
+    if (code == 26) {
+        return Category.Control;
+    }
+    if (code == 27) {
+        return Category.Format;
+    }
+    if (code == 28) {
+        return Category.Surrogate;
+    }
+    if (code == 29) {
+        return Category.PrivateUse;
+    }
+    return Category.Unassigned;
+}
+
+func categoryCode(scalar:u32) -> u32 {
+    var offset:usize = propertyOffset(scalar);
     if (offset == PROPERTIES_COUNT * 18) {
         return 0;
     }
     return hex(PROPERTIES, offset + 12, 2);
 }
 
-pub func combiningClass(scalar: u32) -> u32 {
-    var offset: usize = propertyOffset(scalar);
+pub func combiningClass(scalar:u32) -> u32 {
+    var offset:usize = propertyOffset(scalar);
     if (offset == PROPERTIES_COUNT * 18) {
         return 0;
     }
     return hex(PROPERTIES, offset + 14, 2);
 }
 
-func hasFlag(scalar: u32, flag: u32) -> bit {
-    var offset: usize = propertyOffset(scalar);
+func hasFlag(scalar:u32, flag:u32) -> bit {
+    var offset:usize = propertyOffset(scalar);
     if (offset == PROPERTIES_COUNT * 18) {
         return false;
     }
     return (hex(PROPERTIES, offset + 16, 2) / flag) % 2 == 1;
 }
 
-pub func isAlphabetic(scalar: u32) -> bit {
+pub func isAlphabetic(scalar:u32) -> bit {
     return hasFlag(scalar, 1);
 }
 
-pub func isWhitespace(scalar: u32) -> bit {
+pub func isWhitespace(scalar:u32) -> bit {
     return hasFlag(scalar, 2);
 }
 
-pub func isDigit(scalar: u32) -> bit {
+pub func isDigit(scalar:u32) -> bit {
     return categoryCode(scalar) == 9;
 }
 
-pub func isUpper(scalar: u32) -> bit {
+pub func isUpper(scalar:u32) -> bit {
     return categoryCode(scalar) == 1;
 }
 
-pub func isLower(scalar: u32) -> bit {
+pub func isLower(scalar:u32) -> bit {
     return categoryCode(scalar) == 2;
 }
 
-pub func isLetter(scalar: u32) -> bit {
-    var category: u32 = categoryCode(scalar);
+pub func isLetter(scalar:u32) -> bit {
+    var category:u32 = categoryCode(scalar);
     return category >= 1 && category <= 5;
 }
 
-pub func isMark(scalar: u32) -> bit {
-    var category: u32 = categoryCode(scalar);
+pub func isMark(scalar:u32) -> bit {
+    var category:u32 = categoryCode(scalar);
     return category >= 6 && category <= 8;
 }
 
-pub func isNumber(scalar: u32) -> bit {
-    var category: u32 = categoryCode(scalar);
+pub func isNumber(scalar:u32) -> bit {
+    var category:u32 = categoryCode(scalar);
     return category >= 9 && category <= 11;
 }
 
-pub func isPunctuation(scalar: u32) -> bit {
-    var category: u32 = categoryCode(scalar);
+pub func isPunctuation(scalar:u32) -> bit {
+    var category:u32 = categoryCode(scalar);
     return category >= 12 && category <= 18;
 }
 
-pub func isSymbol(scalar: u32) -> bit {
-    var category: u32 = categoryCode(scalar);
+pub func isSymbol(scalar:u32) -> bit {
+    var category:u32 = categoryCode(scalar);
     return category >= 19 && category <= 22;
 }
 
-pub func isControl(scalar: u32) -> bit {
+pub func isControl(scalar:u32) -> bit {
     return categoryCode(scalar) == 26;
 }
 
 pub struct Codepoints<'a> {
-    var source: &'a u8[];
-    var offset: usize;
-    pub func next() -> core.Result<core.Option<u32>, Error> {
+    var source:&'a u8[];
+    var offset:usize;
+
+    pub func next() -> core.Result<core.Option<u32>,Error> {
         if (offset == source.length) {
-            return core.Result<core.Option<u32>, Error>.Ok(core.Option<u32>.None);
+            return core.Result<core.Option<u32>,Error>.Ok(core.Option<u32>.None);
         }
         var decoded = decodeUtf8(*source, offset);
         match (decoded) {
-            Err(error) => return core.Result<core.Option<u32>, Error>.Err(error);
+            Err(error) => return core.Result<core.Option<u32>,Error>.Err(error);
             Ok(value) => {
                 offset = value.next;
-                return core.Result<core.Option<u32>, Error>.Ok(
-                    core.Option<u32>.Some(value.scalar)
-                );
+                return core.Result<core.Option<u32>,Error>.Ok(core.Option<u32>.Some(value.scalar));
             }
         }
     }
@@ -290,15 +414,15 @@ pub struct Codepoints<'a> {
     destructor {}
 }
 
-pub func iterate<'a>(input: &'a u8[]) -> Codepoints<'a> {
-    return Codepoints<'a>{ source: input, offset: 0 };
+pub func iterate<'a>(input:&'a u8[]) -> Codepoints<'a> {
+    return Codepoints<'a>{source:input, offset:0};
 }
 
-func mappingOffset(table: func(usize) -> string, count: usize, width: usize, scalar: u32) -> usize {
-    var first: usize = 0;
-    var end: usize = count;
+func mappingOffset(table:func(usize) -> string, count:usize, width:usize, scalar:u32) -> usize {
+    var first:usize = 0;
+    var end:usize = count;
     while (first < end) {
-        var middle: usize = first + (end - first) / 2;
+        var middle:usize = first + (end - first) / 2;
         if (hex(table, middle * width, 6) < scalar) {
             first = middle + 1;
         } else {
@@ -311,15 +435,15 @@ func mappingOffset(table: func(usize) -> string, count: usize, width: usize, sca
     return count * width;
 }
 
-pub func mapCase(input: u8[], mapping: CaseMapping) -> core.Result<collections.List<u8>, Error> {
+pub func mapCase(input:u8[], mapping:CaseMapping) -> core.Result<collections.List<u8>,Error> {
     var decoded = collectCodepoints(input);
     match (decoded) {
-        Err(error) => return core.Result<collections.List<u8>, Error>.Err(error);
+        Err(error) => return core.Result<collections.List<u8>,Error>.Err(error);
         Ok(points) => {
             var output = collections.list<u8>();
-            var table: func(usize) -> string = LOWER_MAP;
-            var values: func(usize) -> string = LOWER_VALUES;
-            var count: usize = LOWER_MAP_COUNT;
+            var table:func(usize) -> string = LOWER_MAP;
+            var values:func(usize) -> string = LOWER_VALUES;
+            var count:usize = LOWER_MAP_COUNT;
             if (mapping == CaseMapping.Upper) {
                 table = UPPER_MAP;
                 values = UPPER_VALUES;
@@ -335,25 +459,25 @@ pub func mapCase(input: u8[], mapping: CaseMapping) -> core.Result<collections.L
                 values = FOLD_VALUES;
                 count = FOLD_MAP_COUNT;
             }
-            for (var i: usize = 0; i < points.length(); i += 1) {
-                var scalar: u32 = *points.get(i);
-                var finalSigma: bit = false;
+            for (var i:usize = 0; i < points.length(); i += 1) {
+                var scalar:u32 = *points.get(i);
+                var finalSigma:bit = false;
                 if (mapping == CaseMapping.Lower && scalar == 931) {
-                    var before: bit = false;
-                    var j: usize = i;
+                    var before:bit = false;
+                    var j:usize = i;
                     while (j > 0) {
                         j -= 1;
-                        var cp: u32 = *points.get(j);
+                        var cp:u32 = *points.get(j);
                         if (hasFlag(cp, 8)) {
                             continue;
                         }
                         before = hasFlag(cp, 4);
                         break;
                     }
-                    var after: bit = false;
+                    var after:bit = false;
                     j = i + 1;
                     while (j < points.length()) {
-                        var cp: u32 = *points.get(j);
+                        var cp:u32 = *points.get(j);
                         j += 1;
                         if (hasFlag(cp, 8)) {
                             continue;
@@ -363,17 +487,17 @@ pub func mapCase(input: u8[], mapping: CaseMapping) -> core.Result<collections.L
                     }
                     finalSigma = before && !after;
                 }
-                var offset: usize = mappingOffset(table, count, 14, scalar);
-                var error: AllocationStatus;
+                var offset:usize = mappingOffset(table, count, 14, scalar);
+                var error:AllocationStatus;
                 if (finalSigma) {
                     error = appendScalar((&output).(*collections.List<u8>), 962);
                 } else {
                     if (offset == count * 14) {
                         error = appendScalar((&output).(*collections.List<u8>), scalar);
                     } else {
-                        var start: usize = hex(table, offset + 6, 6).(usize);
-                        var length: usize = hex(table, offset + 12, 2).(usize);
-                        for (var j: usize = 0; j < length; j += 1) {
+                        var start:usize = hex(table, offset + 6, 6).(usize);
+                        var length:usize = hex(table, offset + 12, 2).(usize);
+                        for (var j:usize = 0; j < length; j += 1) {
                             error = appendScalar(
                                 (&output).(*collections.List<u8>),
                                 hex(values, (start + j) * 6, 6)
@@ -385,17 +509,17 @@ pub func mapCase(input: u8[], mapping: CaseMapping) -> core.Result<collections.L
                     }
                 }
                 if (error != AllocationStatus.None) {
-                    return core.Result<collections.List<u8>, Error>.Err(allocation(error));
+                    return core.Result<collections.List<u8>,Error>.Err(allocation(error));
                 }
             }
-            return core.Result<collections.List<u8>, Error>.Ok(output);
+            return core.Result<collections.List<u8>,Error>.Ok(output);
         }
     }
 }
 
-func decompose(output: *collections.List<u32>, scalar: u32, compat: bit) -> AllocationStatus {
+func decompose(output:*collections.List<u32>, scalar:u32, compat:bit) -> AllocationStatus {
     if (scalar >= 44032 && scalar < 55204) {
-        var index: u32 = scalar - 44032;
+        var index:u32 = scalar - 44032;
         var error = decompose(output, 4352 + index / 588, compat);
         if (error != AllocationStatus.None) {
             return error;
@@ -409,11 +533,14 @@ func decompose(output: *collections.List<u32>, scalar: u32, compat: bit) -> Allo
         }
         return AllocationStatus.None;
     }
-    var offset: usize = mappingOffset(DECOMPOSITIONS, DECOMPOSITIONS_COUNT, 16, scalar);
-    if (offset < DECOMPOSITIONS_COUNT * 16 && (compat || hex(DECOMPOSITIONS, offset + 14, 2) == 0)) {
-        var start: usize = hex(DECOMPOSITIONS, offset + 6, 6).(usize);
-        var length: usize = hex(DECOMPOSITIONS, offset + 12, 2).(usize);
-        for (var i: usize = 0; i < length; i += 1) {
+    var offset:usize = mappingOffset(DECOMPOSITIONS, DECOMPOSITIONS_COUNT, 16, scalar);
+    if (
+        offset < DECOMPOSITIONS_COUNT * 16
+        && (compat || hex(DECOMPOSITIONS, offset + 14, 2) == 0)
+    ) {
+        var start:usize = hex(DECOMPOSITIONS, offset + 6, 6).(usize);
+        var length:usize = hex(DECOMPOSITIONS, offset + 12, 2).(usize);
+        for (var i:usize = 0; i < length; i += 1) {
             var error = decompose(output, hex(DECOMPOSITION_VALUES, (start + i) * 6, 6), compat);
             if (error != AllocationStatus.None) {
                 return error;
@@ -421,36 +548,36 @@ func decompose(output: *collections.List<u32>, scalar: u32, compat: bit) -> Allo
         }
         return AllocationStatus.None;
     }
-    var error = pushPoint(output,scalar);
+    var error = pushPoint(output, scalar);
     if (error != AllocationStatus.None) {
         return error;
     }
-    var ccc: u32 = combiningClass(scalar);
-    var index: usize = (*output).length() - 1;
+    var ccc:u32 = combiningClass(scalar);
+    var index:usize = (*output).length() - 1;
     if (ccc != 0) {
         while (index > 0 && combiningClass(*(*output).get(index - 1)) > ccc) {
-            var previous=*(*output).get(index - 1);
-            *(*output).getMut(index)=previous;
+            var previous = *(*output).get(index - 1);
+            *(*output).getMut(index) = previous;
             index -= 1;
         }
-        *(*output).getMut(index)= scalar;
+        *(*output).getMut(index) = scalar;
     }
     return AllocationStatus.None;
 }
 
-func compose(a: u32, b: u32) -> u32 {
+func compose(a:u32, b:u32) -> u32 {
     if (a >= 4352 && a < 4371 && b >= 4449 && b < 4470) {
         return 44032 + (a - 4352) * 588 + (b - 4449) * 28;
     }
     if (a >= 44032 && a < 55204 && (a - 44032) % 28 == 0 && b > 4519 && b < 4547) {
         return a + b - 4519;
     }
-    var first: usize = 0;
-    var end: usize = COMPOSITIONS_COUNT;
+    var first:usize = 0;
+    var end:usize = COMPOSITIONS_COUNT;
     while (first < end) {
-        var middle: usize = first + (end - first) / 2;
-        var x: u32 = hex(COMPOSITIONS, middle * 18, 6);
-        var y: u32 = hex(COMPOSITIONS, middle * 18 + 6, 6);
+        var middle:usize = first + (end - first) / 2;
+        var x:u32 = hex(COMPOSITIONS, middle * 18, 6);
+        var y:u32 = hex(COMPOSITIONS, middle * 18 + 6, 6);
         if (x < a || (x == a && y < b)) {
             first = middle + 1;
         } else {
@@ -458,61 +585,61 @@ func compose(a: u32, b: u32) -> u32 {
         }
     }
     if (
-        first < COMPOSITIONS_COUNT &&
-        hex(COMPOSITIONS, first * 18, 6) == a &&
-        hex(COMPOSITIONS, first * 18 + 6, 6) == b
+        first < COMPOSITIONS_COUNT
+        && hex(COMPOSITIONS, first * 18, 6) == a
+        && hex(COMPOSITIONS, first * 18 + 6, 6) == b
     ) {
         return hex(COMPOSITIONS, first * 18 + 12, 6);
     }
     return 0;
 }
 
-func renderPoints(points: *collections.List<u32>) -> core.Result<collections.List<u8>, Error> {
+func renderPoints(points:*collections.List<u32>) -> core.Result<collections.List<u8>,Error> {
     var output = collections.list<u8>();
-    for (var i: usize = 0; i < (*points).length(); i += 1) {
+    for (var i:usize = 0; i < (*points).length(); i += 1) {
         var error = appendScalar((&output).(*collections.List<u8>), *(*points).get(i));
         if (error != AllocationStatus.None) {
-            return core.Result<collections.List<u8>, Error>.Err(allocation(error));
+            return core.Result<collections.List<u8>,Error>.Err(allocation(error));
         }
     }
-    return core.Result<collections.List<u8>, Error>.Ok(output);
+    return core.Result<collections.List<u8>,Error>.Ok(output);
 }
 
-pub func normalize(input: u8[], form: Normalization) -> core.Result<collections.List<u8>, Error> {
+pub func normalize(input:u8[], form:Normalization) -> core.Result<collections.List<u8>,Error> {
     var points = collections.list<u32>();
-    var offset: usize = 0;
-    var compat: bit = form == Normalization.NFKC || form == Normalization.NFKD;
+    var offset:usize = 0;
+    var compat:bit = form == Normalization.NFKC || form == Normalization.NFKD;
     while (offset < input.length) {
         var decoded = decodeUtf8(input, offset);
         match (decoded) {
-            Err(error) => return core.Result<collections.List<u8>, Error>.Err(error);
+            Err(error) => return core.Result<collections.List<u8>,Error>.Err(error);
             Ok(value) => {
                 var error = decompose((&points).(*collections.List<u32>), value.scalar, compat);
                 if (error != AllocationStatus.None) {
-                    return core.Result<collections.List<u8>, Error>.Err(allocation(error));
+                    return core.Result<collections.List<u8>,Error>.Err(allocation(error));
                 }
                 offset = value.next;
             }
         }
     }
     if ((form == Normalization.NFC || form == Normalization.NFKC) && points.length() > 0) {
-        var starter: usize = 0;
-        var starterScalar: u32 = *points.get(0);
-        var written: usize = 1;
-        var lastClass: u32 = combiningClass(starterScalar);
-        for (var i: usize = 1; i < points.length(); i += 1) {
-            var cp: u32 = *points.get(i);
-            var ccc: u32 = combiningClass(cp);
-            var combined: u32 = compose(starterScalar, cp);
+        var starter:usize = 0;
+        var starterScalar:u32 = *points.get(0);
+        var written:usize = 1;
+        var lastClass:u32 = combiningClass(starterScalar);
+        for (var i:usize = 1; i < points.length(); i += 1) {
+            var cp:u32 = *points.get(i);
+            var ccc:u32 = combiningClass(cp);
+            var combined:u32 = compose(starterScalar, cp);
             if (combined != 0 && (lastClass == 0 || lastClass < ccc)) {
-                *points.getMut(starter)= combined;
+                *points.getMut(starter) = combined;
                 starterScalar = combined;
             } else {
                 if (ccc == 0) {
                     starter = written;
                     starterScalar = cp;
                 }
-                *points.getMut(written)= cp;
+                *points.getMut(written) = cp;
                 written += 1;
                 lastClass = ccc;
             }

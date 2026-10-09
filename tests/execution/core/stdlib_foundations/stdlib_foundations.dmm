@@ -1,80 +1,76 @@
 package main;
-import "stdlib/limits";
-import stdlib "stdlib/core";
-import "stdlib/algorithms";
-import "stdlib/numeric";
-import "stdlib/binary";
+import (
+    "stdlib/algorithms"
+    "stdlib/binary"
+    stdlib "stdlib/core"
+    "stdlib/limits"
+    "stdlib/numeric"
+);
 
-func less(a: i32, b: i32) -> bit {
+func less(a:i32, b:i32) -> bit {
     return a < b;
 }
 
-func same(a: i32, b: i32) -> bit {
+func same(a:i32, b:i32) -> bit {
     return a == b;
 }
 
-func positive(a: &i32) -> bit {
+func positive(a:&i32) -> bit {
     return *a > 0;
 }
 
-func twice(a: i32) -> i32 {
+func twice(a:i32) -> i32 {
     return a * 2;
 }
 
-func sum(a: i32, b: i32) -> i32 {
+func sum(a:i32, b:i32) -> i32 {
     return a + b;
 }
 
-func someTwice(a: i32) -> stdlib.Option<i32> {
+func someTwice(a:i32) -> stdlib.Option<i32> {
     return stdlib.Option<i32>.Some(a * 2);
 }
 
-func resultTwice(a: i32) -> stdlib.Result<i32, i32> {
-    return stdlib.Result<i32, i32>.Ok(a * 2);
+func resultTwice(a:i32) -> stdlib.Result<i32,i32> {
+    return stdlib.Result<i32,i32>.Ok(a * 2);
 }
 
-var fallbackCalls: int;
+var fallbackCalls:int;
 
 func fallback() -> i32 {
     fallbackCalls += 1;
     return 9;
 }
 
-func unsignedOk(result: stdlib.Result<u64, numeric.Error>, expected: u64) -> bit {
+func unsignedOk(result:stdlib.Result<u64,numeric.Error>, expected:u64) -> bit {
     match (result) {
         Ok(value) => return value == expected;
         Err(error) => return false;
     }
 }
 
-func signedOk(result: stdlib.Result<i64, numeric.Error>, expected: i64) -> bit {
+func signedOk(result:stdlib.Result<i64,numeric.Error>, expected:i64) -> bit {
     match (result) {
         Ok(value) => return value == expected;
         Err(error) => return false;
     }
 }
 
-func unsignedError(
-    result: stdlib.Result<u64, numeric.Error>,
-    expected: numeric.Error
-) -> bit {
+func unsignedError(result:stdlib.Result<u64,numeric.Error>, expected:numeric.Error) -> bit {
     match (result) {
         Ok(value) => return false;
         Err(error) => return error == expected;
     }
 }
 
-func signedError(
-    result: stdlib.Result<i64, numeric.Error>,
-    expected: numeric.Error
-) -> bit {
+func signedError(result:stdlib.Result<i64,numeric.Error>, expected:numeric.Error) -> bit {
     match (result) {
         Ok(value) => return false;
         Err(error) => return error == expected;
     }
 }
 
-func binaryOk(result: stdlib.Result<void, binary.Error>) -> bit {
+func binaryOk(result:stdlib.Result<void,binary.Error>) -> bit {
     match (result) {
         Ok => return true;
         Err(error) => return false;
@@ -82,16 +78,13 @@ func binaryOk(result: stdlib.Result<void, binary.Error>) -> bit {
 }
 
 func main() -> int {
-    if (
-        stdlib.unwrapOrElse<i32>(stdlib.Option<i32>.Some(4), fallback) != 4 ||
-        fallbackCalls != 0
-    ) {
+    if (stdlib.unwrapOrElse<i32>(stdlib.Option<i32>.Some(4), fallback) != 4 || fallbackCalls != 0) {
         return 1;
     }
     if (stdlib.unwrapOrElse<i32>(stdlib.Option<i32>.None, fallback) != 9 || fallbackCalls != 1) {
         return 2;
     }
-    var mapped = stdlib.mapOption<i32, i32>(stdlib.Option<i32>.Some(3), twice);
+    var mapped = stdlib.mapOption<i32,i32>(stdlib.Option<i32>.Some(3), twice);
     match (mapped) {
         Some(value) => {
             if (value != 6) {
@@ -100,103 +93,86 @@ func main() -> int {
         }
         None => return 4;
     }
-    var values: i32[7] = [5, -2, 5, 0, 99, -9, 3];
-    var valuesView=values[:];
+    var values:i32[7] = [
+        5,
+        -2,
+        5,
+        0,
+        99,
+        -9,
+        3
+    ];
+    var valuesView = values[:];
     algorithms.sort<i32>(&mut valuesView, less);
-    var expected: i32[7] = [-9, -2, 0, 3, 5, 5, 99];
+    var expected:i32[7] = [
+        -9,
+        -2,
+        0,
+        3,
+        5,
+        5,
+        99
+    ];
     if (!algorithms.equal<i32>(values, expected, same)) {
         return 5;
     }
     if (
-        algorithms.lowerBound<i32>(values, 5, less) != 4 ||
-        algorithms.lowerBound<i32>(values, 100, less) != 7
+        algorithms.lowerBound<i32>(values, 5, less) != 4
+        || algorithms.lowerBound<i32>(values, 100, less) != 7
     ) {
         return 6;
     }
     if (
-        algorithms.count<i32>(&valuesView, positive) != 4 ||
-        algorithms.all<i32>(&valuesView, positive) ||
-        !algorithms.any<i32>(&valuesView, positive)
+        algorithms.count<i32>(&valuesView, positive) != 4
+        || algorithms.all<i32>(&valuesView, positive)
+        || !algorithms.any<i32>(&valuesView, positive)
     ) {
         return 7;
     }
     algorithms.reverse<i32>(&mut valuesView);
-    if (values[0] != 99 || values[6] != - 9) {
+    if (values[0] != 99 || values[6] != -9) {
         return 8;
     }
-    var one: i32[1] = [1];
-    var oneView=one[:];
+    var one:i32[1] = [1];
+    var oneView = one[:];
     algorithms.sort<i32>(&mut oneView, less);
     algorithms.reverse<i32>(&mut oneView);
-    var empty: i32[] = one[: 0];
+    var empty:i32[] = one[:0];
     algorithms.sort<i32>(&mut empty, less);
     algorithms.reverse<i32>(&mut empty);
     if (!algorithms.all<i32>(&empty, positive) || algorithms.any<i32>(&empty, positive)) {
         return 9;
     }
-    if (
-        !unsignedError(
-            numeric.checkedAdd(limits.U64_MAX, 1.(u64)),
-            numeric.Error.Overflow
-        )
-    ) {
+    if (!unsignedError(numeric.checkedAdd(limits.U64_MAX, 1.(u64)), numeric.Error.Overflow)) {
         return 10;
     }
     if (!unsignedOk(numeric.checkedMul(limits.U64_MAX, 1.(u64)), limits.U64_MAX)) {
         return 11;
     }
-    if (
-        !unsignedError(
-            numeric.checkedMul(limits.U64_MAX, 2.(u64)),
-            numeric.Error.Overflow
-        )
-    ) {
+    if (!unsignedError(numeric.checkedMul(limits.U64_MAX, 2.(u64)), numeric.Error.Overflow)) {
         return 12;
     }
-    if (
-        !signedError(
-            numeric.checkedAdd(limits.I64_MAX, 1.(i64)),
-            numeric.Error.Overflow
-        )
-    ) {
+    if (!signedError(numeric.checkedAdd(limits.I64_MAX, 1.(i64)), numeric.Error.Overflow)) {
         return 13;
     }
     if (!signedOk(numeric.checkedMul(limits.I64_MIN, 1.(i64)), limits.I64_MIN)) {
         return 14;
     }
-    if (
-        !signedError(
-            numeric.checkedMul(limits.I64_MIN, -1.(i64)),
-            numeric.Error.Overflow
-        )
-    ) {
+    if (!signedError(numeric.checkedMul(limits.I64_MIN, -1.(i64)), numeric.Error.Overflow)) {
         return 15;
     }
-    if (
-        !signedError(
-            numeric.checkedDiv(limits.I64_MIN, -1.(i64)),
-            numeric.Error.Overflow
-        )
-    ) {
+    if (!signedError(numeric.checkedDiv(limits.I64_MIN, -1.(i64)), numeric.Error.Overflow)) {
         return 16;
     }
-    if (
-        !signedError(
-            numeric.checkedDiv(1.(i64), 0.(i64)),
-            numeric.Error.DivisionByZero
-        )
-    ) {
+    if (!signedError(numeric.checkedDiv(1.(i64), 0.(i64)), numeric.Error.DivisionByZero)) {
         return 17;
     }
-    var digits: u8[65];
+    var digits:u8[65];
     var formatted = numeric.formatInt(limits.I64_MIN, 10, digits);
     match (formatted) {
         Err(error) => return 18;
         Ok(count) => {
-            if (
-                count != 20 ||
-                !signedOk(numeric.parseInt(digits[: count], 10), limits.I64_MIN)
-            ) {
+            if (count != 20 || !signedOk(numeric.parseInt(digits[:count], 10), limits.I64_MIN)) {
                 return 19;
             }
         }
@@ -205,19 +181,16 @@ func main() -> int {
     match (formattedUnsigned) {
         Err(error) => return 20;
         Ok(count) => {
-            if (
-                count != 16 ||
-                !unsignedOk(numeric.parseUint(digits[: count], 16), limits.U64_MAX)
-            ) {
+            if (count != 16 || !unsignedOk(numeric.parseUint(digits[:count], 16), limits.U64_MAX)) {
                 return 21;
             }
         }
     }
-    var invalid: u8[1] = [33];
+    var invalid:u8[1] = [33];
     if (!unsignedError(numeric.parseUint(invalid, 10), numeric.Error.InvalidDigit)) {
         return 22;
     }
-    var small: u8[1] = [77];
+    var small:u8[1] = [77];
     var failed = numeric.formatUint(100, 10, small);
     match (failed) {
         Ok(count) => return 23;
@@ -227,16 +200,14 @@ func main() -> int {
             }
         }
     }
-    var bytes: u8[12];
-    var view: u8[] = bytes;
+    var bytes:u8[12];
+    var view:u8[] = bytes;
     {
         var writer = binary.writer(&mut view);
         if (!binaryOk(writer.writeUint(16909060, 4, binary.Endian.Big))) {
             return 25;
         }
-        if (
-            !binaryOk(writer.writeUint(limits.U64_MAX, 8, binary.Endian.Little))
-        ) {
+        if (!binaryOk(writer.writeUint(limits.U64_MAX, 8, binary.Endian.Little))) {
             return 26;
         }
         if (writer.remaining() != 0 || writer.offset() != 12) {
@@ -285,7 +256,7 @@ func main() -> int {
             }
         }
     }
-    var mappedResult = stdlib.mapResult<i32, i32, i32>(stdlib.Result<i32, i32>.Ok(4), twice);
+    var mappedResult = stdlib.mapResult<i32,i32,i32>(stdlib.Result<i32,i32>.Ok(4), twice);
     match (mappedResult) {
         Ok(value) => {
             if (value != 8) {
@@ -294,7 +265,7 @@ func main() -> int {
         }
         Err(error) => return 38;
     }
-    var mappedError = stdlib.mapError<i32, i32, i32>(stdlib.Result<i32, i32>.Err(4), twice);
+    var mappedError = stdlib.mapError<i32,i32,i32>(stdlib.Result<i32,i32>.Err(4), twice);
     match (mappedError) {
         Ok(value) => return 39;
         Err(error) => {
@@ -303,7 +274,7 @@ func main() -> int {
             }
         }
     }
-    var chained = stdlib.andThenOption<i32, i32>(stdlib.Option<i32>.Some(4), someTwice);
+    var chained = stdlib.andThenOption<i32,i32>(stdlib.Option<i32>.Some(4), someTwice);
     match (chained) {
         Some(value) => {
             if (value != 8) {
@@ -312,8 +283,8 @@ func main() -> int {
         }
         None => return 42;
     }
-    var chainedResult = stdlib.andThenResult<i32, i32, i32>(
-        stdlib.Result<i32, i32>.Ok(4),
+    var chainedResult = stdlib.andThenResult<i32,i32,i32>(
+        stdlib.Result<i32,i32>.Ok(4),
         resultTwice
     );
     match (chainedResult) {
@@ -324,9 +295,9 @@ func main() -> int {
         }
         Err(error) => return 44;
     }
-    var input: i32[] = expected;
-    var target: i32[7];
-    var to: i32[] = target;
+    var input:i32[] = expected;
+    var target:i32[7];
+    var to:i32[] = target;
     var copied = algorithms.copy<i32>(&input, &mut to);
     match (copied) {
         Ok => {}
@@ -335,106 +306,95 @@ func main() -> int {
     if (!algorithms.equal<i32>(input, to, same)) {
         return 46;
     }
-    var transformed = algorithms.transform<i32, i32>(&input, &mut to, twice);
+    var transformed = algorithms.transform<i32,i32>(&input, &mut to, twice);
     match (transformed) {
         Ok => {}
         Err(error) => return 47;
     }
-    if (target[6] != 198 || algorithms.fold<i32, i32>(one, 0, sum) != 1) {
+    if (target[6] != 198 || algorithms.fold<i32,i32>(one, 0, sum) != 1) {
         return 48;
     }
     algorithms.fill<i32>(&mut to, 7);
     if (target[0] != 7 || target[6] != 7) {
         return 49;
     }
-    for (var base: u32 = 2; base <= 36; base += 1) {
+    for (var base:u32 = 2; base <= 36; base += 1) {
         var roundtrip = numeric.formatUint(limits.U64_MAX, base, digits);
         match (roundtrip) {
             Err(error) => return 50;
             Ok(count) => {
-                if (!unsignedOk(numeric.parseUint(digits[: count], base), limits.U64_MAX)) {
+                if (!unsignedOk(numeric.parseUint(digits[:count], base), limits.U64_MAX)) {
                     return 51;
                 }
             }
         }
     }
-    var sign: u8[1] = [45];
+    var sign:u8[1] = [45];
     if (!signedError(numeric.parseInt(sign, 10), numeric.Error.Empty)) {
         return 52;
     }
     if (!unsignedError(numeric.parseUint(invalid, 1), numeric.Error.InvalidBase)) {
         return 53;
     }
-    if (
-        !unsignedError(
-            numeric.checkedSub(0.(u64), 1.(u64)),
-            numeric.Error.Overflow
-        )
-    ) {
+    if (!unsignedError(numeric.checkedSub(0.(u64), 1.(u64)), numeric.Error.Overflow)) {
         return 54;
     }
-    if (
-        !signedError(
-            numeric.checkedSub(limits.I64_MIN, 1.(i64)),
-            numeric.Error.Overflow
-        )
-    ) {
+    if (!signedError(numeric.checkedSub(limits.I64_MIN, 1.(i64)), numeric.Error.Overflow)) {
         return 55;
     }
-    var scratch: i32[64];
-    for (var length: usize = 0; length <= 64; length += 1) {
-        for (var i: usize = 0; i < length; i += 1) {
+    var scratch:i32[64];
+    for (var length:usize = 0; length <= 64; length += 1) {
+        for (var i:usize = 0; i < length; i += 1) {
             scratch[i] = ((i * 17 + length * 13) % 23).(i32);
         }
-        var prefix: i32[] = scratch[: length];
+        var prefix:i32[] = scratch[:length];
         algorithms.sort<i32>(&mut prefix, less);
-        for (var i: usize = 1; i < length; i += 1) {
+        for (var i:usize = 1; i < length; i += 1) {
             if (scratch[i - 1] > scratch[i]) {
                 return 56;
             }
         }
     }
     {
-    var cursor = binary.writer(&mut view);
-    var overflowWrite = cursor.writeUint(256, 1, binary.Endian.Big);
-    match (overflowWrite) {
-        Ok => return 61;
-        Err(error) => {
-            if (
-                error != binary.Error.ValueOverflow ||
-                cursor.offset() != 0
-            ) {
-                return 62;
+        var cursor = binary.writer(&mut view);
+        var overflowWrite = cursor.writeUint(256, 1, binary.Endian.Big);
+        match (overflowWrite) {
+            Ok => return 61;
+            Err(error) => {
+                if (error != binary.Error.ValueOverflow || cursor.offset() != 0) {
+                    return 62;
+                }
             }
         }
-    }
-    var invalidWidth = cursor.writeUint(0, 3, binary.Endian.Big);
-    match (invalidWidth) {
-        Ok => return 63;
-        Err(error) => {
-            if (error != binary.Error.InvalidWidth || cursor.offset() != 0) {
-                return 64;
+        var invalidWidth = cursor.writeUint(0, 3, binary.Endian.Big);
+        match (invalidWidth) {
+            Ok => return 63;
+            Err(error) => {
+                if (error != binary.Error.InvalidWidth || cursor.offset() != 0) {
+                    return 64;
+                }
             }
         }
+        var payload:u8[2] = [8, 9];
+        var payloadView:u8[] = payload;
+        if (!binaryOk(cursor.writeBytes(&payloadView))) {
+            return 65;
+        }
     }
-    var payload: u8[2] = [8, 9];
-    var payloadView: u8[] = payload;
-    if (!binaryOk(cursor.writeBytes(&payloadView))) {
-        return 65;
+    if (bytes[0] != 8 || bytes[1] != 9) {
+        return 62;
     }
-    }
-    if(bytes[0]!=8 || bytes[1]!=9) {return 62;}
     var readCursor = binary.reader(&view);
     if (!binaryOk(readCursor.skip(1))) {
         return 66;
     }
-    var output: u8[2];
-    var outputView: u8[] = output;
+    var output:u8[2];
+    var outputView:u8[] = output;
     if (
-        !binaryOk(readCursor.readBytes(&mut outputView)) ||
-        output[0] != 9 ||
-        output[1] != 3 ||
-        readCursor.offset() != 3
+        !binaryOk(readCursor.readBytes(&mut outputView))
+        || output[0] != 9
+        || output[1] != 3
+        || readCursor.offset() != 3
     ) {
         return 67;
     }

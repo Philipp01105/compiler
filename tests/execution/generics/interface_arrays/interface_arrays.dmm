@@ -1,39 +1,43 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
 interface Value {
-    func get(multiplier: int) -> int;
+    func get(multiplier:int) -> int;
 }
 
 struct First {
-    var number: int;
-    func get(multiplier: int) -> int {
+    var number:int;
+
+    func get(multiplier:int) -> int {
         return number * multiplier;
     }
 }
 
 struct Second {
-    var number: int;
-    var extra: int;
-    func get(multiplier: int) -> int {
+    var number:int;
+    var extra:int;
+
+    func get(multiplier:int) -> int {
         return (number * 10 + extra) * multiplier;
     }
 }
 
-func read<T: Value>(item: T) -> int {
+func read<T:Value>(item:T) -> int {
     return item.get(1);
 }
 
-func sum(items: Value[]) -> int {
+func sum(items:Value[]) -> int {
     return items[0].get(1) + items[1].get(1);
 }
 
 func main() -> void {
-    var values: Value[2];
-    var first: First;
+    var values:Value[2];
+    var first:First;
     first.number = 3;
-    var second: Second;
+    var second:Second;
     second.number = 4;
     second.extra = 1;
     values[0] = first;

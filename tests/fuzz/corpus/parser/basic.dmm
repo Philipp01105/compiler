@@ -1,9 +1,11 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
 func main() -> void {
-    var value: int = 1 + 2 * 3;
+    var value:int = 1 + 2 * 3;
     if (value > 2) {
         io.println(value);
     }

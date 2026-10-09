@@ -1,15 +1,17 @@
 package main;
-import memraw "stdlib/memory/raw";
-import ioraw "stdlib/io/raw";
-import "stdlib/core";
+import (
+    "stdlib/core"
+    ioraw "stdlib/io/raw"
+    memraw "stdlib/memory/raw"
+);
 
 struct Buffer {
-    var data: *u8;
-    var length: usize;
+    var data:*u8;
+    var length:usize;
 }
 
-func create_buffer(length: usize) -> Buffer {
-    var buffer: Buffer;
+func create_buffer(length:usize) -> Buffer {
+    var buffer:Buffer;
     buffer.data = memraw.core_alloc(length);
     buffer.length = length;
     if (buffer.data == memraw.core_null()) {
@@ -20,7 +22,7 @@ func create_buffer(length: usize) -> Buffer {
 }
 
 func main() -> int {
-    var buffer: Buffer = create_buffer(8);
+    var buffer:Buffer = create_buffer(8);
     memraw.core_copy(buffer.data, memraw.core_string_data("abcdef"), 6);
     // Overlap in both directions, then typed byte loads/stores.
     memraw.core_copy(memraw.core_offset(buffer.data, 1), buffer.data, 5);
@@ -45,7 +47,7 @@ func main() -> int {
     if (memraw.core_string_length("hello") != 5) {
         return 3;
     }
-    var fd: int = ioraw.core_open(
+    var fd:int = ioraw.core_open(
         "core_bytes.dat",
         ioraw.CORE_WRITE_ONLY + ioraw.CORE_CREATE + ioraw.CORE_TRUNCATE,
         384
@@ -59,22 +61,22 @@ func main() -> int {
     }
     memraw.core_fill(buffer.data, 255, buffer.length);
     if (
-        ioraw.core_read(fd, buffer.data, buffer.length) != 6 ||
-        ioraw.core_read(fd, buffer.data, 1) != 0
+        ioraw.core_read(fd, buffer.data, buffer.length) != 6
+        || ioraw.core_read(fd, buffer.data, 1) != 0
     ) {
         return 8;
     }
     if (
-        ioraw.core_close(fd) != 0 ||
-        memraw.core_load(buffer.data, 5) != 10 ||
-        memraw.core_load(buffer.data, 6) != 255
+        ioraw.core_close(fd) != 0
+        || memraw.core_load(buffer.data, 5) != 10
+        || memraw.core_load(buffer.data, 6) != 255
     ) {
         return 9;
     }
     if (ioraw.core_close(-1) >= 0) {
         return 4;
     }
-    var empty: *u8 = memraw.core_null();
+    var empty:*u8 = memraw.core_null();
     memraw.core_copy(empty, empty, 0);
     memraw.core_fill(empty, 255, 0);
     memraw.core_release(empty);

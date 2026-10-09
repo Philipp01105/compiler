@@ -1,25 +1,27 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
-enum JobState(code: int, label: string, progress: float, terminal: bit) {
+enum JobState(code:int, label:string, progress:float, terminal:bit) {
     queued(1, "queued", 0.0, false),
     running(2, "running", 0.5, false),
     complete(3, "complete", 1.0, true)
 }
 
 struct WorkQueue {
-    var count: int;
-    var values: int[8];
+    var count:int;
+    var values:int[8];
 
     func clear() -> void {
         count = 0;
-        for (var i: int = 0; i < 8; i++) {
+        for (var i:int = 0; i < 8; i++) {
             values[i] = 0;
         }
     }
 
-    func append(value: int) -> int {
+    func append(value:int) -> int {
         if (count < 8) {
             values[count] = value;
             count++;
@@ -28,19 +30,19 @@ struct WorkQueue {
     }
 
     func sum() -> int {
-        var result: int = 0;
-        for (var i: int = 0; i < count; i++) {
+        var result:int = 0;
+        for (var i:int = 0; i < count; i++) {
             result += values[i];
         }
         return result;
     }
 
-    static func scaled(value: int, factor: int) -> int {
+    static func scaled(value:int, factor:int) -> int {
         return value * factor;
     }
 }
 
-func choose_state(value: int) -> JobState {
+func choose_state(value:int) -> JobState {
     if (value <= 0) {
         return JobState.queued;
     }
@@ -50,20 +52,20 @@ func choose_state(value: int) -> JobState {
     return JobState.complete;
 }
 
-func weighted(value: int, divisor: double) -> double {
-    var widened: double = (value).(double);
+func weighted(value:int, divisor:double) -> double {
+    var widened:double = (value).(double);
     return widened / divisor;
 }
 
 func main() -> void {
-    var queue: WorkQueue;
+    var queue:WorkQueue;
     queue.clear();
-    var scratch: int[6];
-    var outer: int = 0;
+    var scratch:int[6];
+    var outer:int = 0;
 
     while (outer < 3) {
-        for (var inner: int = 0; inner < 2; inner++) {
-            var index: int = outer * 2 + inner;
+        for (var inner:int = 0; inner < 2; inner++) {
+            var index:int = outer * 2 + inner;
             scratch[index] = WorkQueue.scaled(index + 1, 2);
             if (scratch[index] % 3 == 0) {
                 queue.append(scratch[index] + 1);
@@ -74,13 +76,14 @@ func main() -> void {
         outer++;
     }
 
-    var state: JobState = choose_state(queue.sum());
-    var automatic: *int = reserve(int);
+    var state:JobState = choose_state(queue.sum());
+    var automatic:*int = reserve(int);
     *automatic = queue.sum();
-    var manual: *int = reserve(int);
+    var manual:*int = reserve(int);
     *manual = (weighted(*automatic, 2.0)).(int);
 
-    var message: string = "state=" + state.label + ",code=" + state.code + ",sum=" + * automatic + ",half=" + * manual + ",done=" + state.terminal;
+    var message:string = "state=" + state.label + ",code=" + state.code + ",sum=" + *automatic
+        + ",half=" + *manual + ",done=" + state.terminal;
     io.println(message);
     free(message);
     free(manual);

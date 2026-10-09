@@ -1,169 +1,284 @@
 package io;
-import memraw "stdlib/memory/raw";
-import ("stdlib/core" "stdlib/collections");
+import (
+    "stdlib/collections"
+    "stdlib/core"
+    memraw "stdlib/memory/raw"
+);
 
 pub enum ErrorKind {
-    pub Closed, pub AccessDenied, pub InvalidInput, pub UnexpectedEof,
-    pub WriteZero, pub LimitExceeded, pub OutOfMemory, pub CapacityOverflow, pub System,
+    pub Closed,
+    pub AccessDenied,
+    pub InvalidInput,
+    pub UnexpectedEof,
+    pub WriteZero,
+    pub LimitExceeded,
+    pub OutOfMemory,
+    pub CapacityOverflow,
+    pub System,
 }
-pub enum ErrorDomain { pub Library, pub Posix, pub Win32 }
+
+pub enum ErrorDomain {
+    pub Library,
+    pub Posix,
+    pub Win32
+}
+
 pub struct Error {
     pub var kind:ErrorKind;
     pub var domain:ErrorDomain;
     pub var code:isize;
     pub var transferred:usize;
-    pub static func fromResidual(error:core.AllocError)->Self {
-        match(error) {
-            OutOfMemory=>return failure(ErrorKind.OutOfMemory,0);
-            CapacityOverflow=>return failure(ErrorKind.CapacityOverflow,0);
-        }
-    }
-}
-func failure(kind:ErrorKind,progress:usize)->Error {
-    return Error{kind:kind,domain:ErrorDomain.Library,code:0,transferred:progress};
-}
-pub interface Reader { pub mut func read(output:&mut u8[])->core.Result<usize,Error>; }
-pub interface Writer { pub mut func write(input:&u8[])->core.Result<usize,Error>; }
 
-@[no_default] pub struct Input {
-    var fd:int;
-    pub func read(output:&mut u8[])->core.Result<usize,Error> {
-        return standardRead(fd,*output);
+    pub static func fromResidual(error:core.AllocError) -> Self {
+        match (error) {
+            OutOfMemory => return failure(ErrorKind.OutOfMemory, 0);
+            CapacityOverflow => return failure(ErrorKind.CapacityOverflow, 0);
+        }
     }
 }
-@[no_default] pub struct Output {
-    var fd:int;
-    pub func write(input:&u8[])->core.Result<usize,Error> {
-        return standardWrite(fd,*input);
-    }
-    pub func writeAll(input:&u8[])->core.Result<void,Error> {
-        return writeAll(&mut self,input);
-    }
-}
-pub func stdin()->Input { return Input{fd:0}; }
-pub func stdout()->Output { return Output{fd:1}; }
-pub func stderr()->Output { return Output{fd:2}; }
 
-pub func readExact<R:Reader>(source:&mut R,output:&mut u8[])->core.Result<void,Error> {
-    var offset:usize=0;
-    while(offset<output.length) {
-        var remaining=(*output)[offset:];
-        match(source.read(&mut remaining)) {
-            Err(error)=>{ error.transferred+=offset; return core.Result<void,Error>.Err(error); }
-            Ok(count)=>{
-                if(count==0) { return core.Result<void,Error>.Err(failure(ErrorKind.UnexpectedEof,offset)); }
-                if(count>remaining.length) { memraw.core_trap(); }
-                offset+=count;
-            }
-        }
-    }
-    return core.Result<void,Error>.Ok;
+func failure(kind:ErrorKind, progress:usize) -> Error {
+    return Error{
+        kind:kind,
+        domain:ErrorDomain.Library,
+        code:0,
+        transferred:progress
+    };
 }
-pub func writeAll<W:Writer>(target:&mut W,input:&u8[])->core.Result<void,Error> {
-    var offset:usize=0;
-    while(offset<input.length) {
-        var remaining=(*input)[offset:];
-        match(target.write(&remaining)) {
-            Err(error)=>{ error.transferred+=offset; return core.Result<void,Error>.Err(error); }
-            Ok(count)=>{
-                if(count==0) { return core.Result<void,Error>.Err(failure(ErrorKind.WriteZero,offset)); }
-                if(count>remaining.length) { memraw.core_trap(); }
-                offset+=count;
-            }
-        }
-    }
-    return core.Result<void,Error>.Ok;
+
+pub interface Reader {
+    pub mut func read(output:&mut u8[]) -> core.Result<usize,Error>;
 }
-pub func readToEnd<R:Reader>(source:&mut R,target:&mut collections.List<u8>,maximum:usize)
-    ->core.Result<usize,Error> {
-    var total:usize=0;
-    var scratch:u8[4096];
-    while(true) {
-        var count:usize=4096;
-        if(maximum-total<count) { count=maximum-total+1; }
-        var destination=scratch[:count];
-        match(source.read(&mut destination)) {
-            Err(error)=>{ error.transferred+=total; return core.Result<usize,Error>.Err(error); }
-            Ok(read)=>{
-                if(read>count) { memraw.core_trap(); }
-                if(read==0) { break; }
-                if(read>maximum-total) {
-                    var prefix=scratch[:maximum-total];
-                    match(target.appendSlice(&prefix)) {
-                        Ok=>{}
-                        Err(error)=>{var converted=Error.fromResidual(error);converted.transferred=total+read;return core.Result<usize,Error>.Err(converted);}
-                    }
-                    return core.Result<usize,Error>.Err(failure(ErrorKind.LimitExceeded,total+read));
+
+pub interface Writer {
+    pub mut func write(input:&u8[]) -> core.Result<usize,Error>;
+}
+
+@[no_default]
+pub struct Input {
+    var fd:int;
+
+    pub func read(output:&mut u8[]) -> core.Result<usize,Error> {
+        return standardRead(fd, *output);
+    }
+}
+
+@[no_default]
+pub struct Output {
+    var fd:int;
+
+    pub func write(input:&u8[]) -> core.Result<usize,Error> {
+        return standardWrite(fd, *input);
+    }
+
+    pub func writeAll(input:&u8[]) -> core.Result<void,Error> {
+        return writeAll(&mut self, input);
+    }
+}
+
+pub func stdin() -> Input {
+    return Input{fd:0};
+}
+
+pub func stdout() -> Output {
+    return Output{fd:1};
+}
+
+pub func stderr() -> Output {
+    return Output{fd:2};
+}
+
+pub func readExact<R:Reader>(source:&mut R, output:&mut u8[]) -> core.Result<void,Error> {
+    var offset:usize = 0;
+    while (offset < output.length) {
+        var remaining = (*output)[offset:];
+        match (source.read(&mut remaining)) {
+            Err(error) => {
+                error.transferred += offset;
+                return core.Result<void,Error>.Err(error);
+            }
+            Ok(count) => {
+                if (count == 0) {
+                    return core.Result<void,Error>.Err(failure(ErrorKind.UnexpectedEof, offset));
                 }
-                var input=scratch[:read];
-                match(target.appendSlice(&input)) {
-                    Ok=>{}
-                    Err(error)=>{
-                        var converted=Error.fromResidual(error); converted.transferred=total+read;
+                if (count > remaining.length) {
+                    memraw.core_trap();
+                }
+                offset += count;
+            }
+        }
+    }
+    return core.Result<void,Error>.Ok;
+}
+
+pub func writeAll<W:Writer>(target:&mut W, input:&u8[]) -> core.Result<void,Error> {
+    var offset:usize = 0;
+    while (offset < input.length) {
+        var remaining = (*input)[offset:];
+        match (target.write(&remaining)) {
+            Err(error) => {
+                error.transferred += offset;
+                return core.Result<void,Error>.Err(error);
+            }
+            Ok(count) => {
+                if (count == 0) {
+                    return core.Result<void,Error>.Err(failure(ErrorKind.WriteZero, offset));
+                }
+                if (count > remaining.length) {
+                    memraw.core_trap();
+                }
+                offset += count;
+            }
+        }
+    }
+    return core.Result<void,Error>.Ok;
+}
+
+pub func readToEnd<R:Reader>(
+    source:&mut R,
+    target:&mut collections.List<u8>,
+    maximum:usize
+) -> core.Result<usize,Error> {
+    var total:usize = 0;
+    var scratch:u8[4096];
+    while (true) {
+        var count:usize = 4096;
+        if (maximum - total < count) {
+            count = maximum - total + 1;
+        }
+        var destination = scratch[:count];
+        match (source.read(&mut destination)) {
+            Err(error) => {
+                error.transferred += total;
+                return core.Result<usize,Error>.Err(error);
+            }
+            Ok(read) => {
+                if (read > count) {
+                    memraw.core_trap();
+                }
+                if (read == 0) {
+                    break;
+                }
+                if (read > maximum - total) {
+                    var prefix = scratch[:maximum - total];
+                    match (target.appendSlice(&prefix)) {
+                        Ok => {}
+                        Err(error) => {
+                            var converted = Error.fromResidual(error);
+                            converted.transferred = total + read;
+                            return core.Result<usize,Error>.Err(converted);
+                        }
+                    }
+                    return core.Result<usize,Error>.Err(
+                        failure(ErrorKind.LimitExceeded, total + read)
+                    );
+                }
+                var input = scratch[:read];
+                match (target.appendSlice(&input)) {
+                    Ok => {}
+                    Err(error) => {
+                        var converted = Error.fromResidual(error);
+                        converted.transferred = total + read;
                         return core.Result<usize,Error>.Err(converted);
                     }
                 }
-                total+=read;
+                total += read;
             }
         }
     }
     return core.Result<usize,Error>.Ok(total);
 }
-pub func readAll<R:Reader>(source:&mut R,maximum:usize)->core.Result<collections.List<u8>,Error> {
-    var output=collections.list<u8>();
-    readToEnd<R>(source,&mut output,maximum)?;
+
+pub func readAll<R:Reader>(
+    source:&mut R,
+    maximum:usize
+) -> core.Result<collections.List<u8>,Error> {
+    var output = collections.list<u8>();
+    readToEnd<R>(source, &mut output, maximum)?;
     return core.Result<collections.List<u8>,Error>.Ok(output);
 }
-pub func readAll<R:Reader>(source:&mut R)->core.Result<collections.List<u8>,Error> {
-    return readAll(source,9223372036854775807.(usize));
+
+pub func readAll<R:Reader>(source:&mut R) -> core.Result<collections.List<u8>,Error> {
+    return readAll(source, 9223372036854775807.(usize));
 }
-pub func copy<R:Reader,W:Writer>(source:&mut R,target:&mut W)->core.Result<usize,Error> {
-    var scratch:u8[4096]; var total:usize=0;
-    while(true) {
-        var destination:u8[]=scratch[:];
-        var read:usize=0;
-        match(source.read(&mut destination)) {
-            Ok(count)=>read=count;
-            Err(error)=>{error.transferred=total; return core.Result<usize,Error>.Err(error);}
+
+pub func copy<R:Reader,W:Writer>(source:&mut R, target:&mut W) -> core.Result<usize,Error> {
+    var scratch:u8[4096];
+    var total:usize = 0;
+    while (true) {
+        var destination:u8[] = scratch[:];
+        var read:usize = 0;
+        match (source.read(&mut destination)) {
+            Ok(count) => read = count;
+            Err(error) => {
+                error.transferred = total;
+                return core.Result<usize,Error>.Err(error);
+            }
         }
-        if(read==0) { break; }
-        if(read>destination.length) { memraw.core_trap(); }
-        var input=scratch[:read];
-        match(writeAll(target,&input)) {
-            Ok=>{}
-            Err(error)=>{ error.transferred+=total; return core.Result<usize,Error>.Err(error); }
+        if (read == 0) {
+            break;
         }
-        if(read>18446744073709551615.(usize)-total) {
-            return core.Result<usize,Error>.Err(failure(ErrorKind.CapacityOverflow,total));
+        if (read > destination.length) {
+            memraw.core_trap();
         }
-        total+=read;
+        var input = scratch[:read];
+        match (writeAll(target, &input)) {
+            Ok => {}
+            Err(error) => {
+                error.transferred += total;
+                return core.Result<usize,Error>.Err(error);
+            }
+        }
+        if (read > 18446744073709551615.(usize) - total) {
+            return core.Result<usize,Error>.Err(failure(ErrorKind.CapacityOverflow, total));
+        }
+        total += read;
     }
     return core.Result<usize,Error>.Ok(total);
 }
+
 pub struct MemoryReader<'a> {
-    var source:&'a u8[]; var offset:usize;
-    pub func read(output:&mut u8[])->core.Result<usize,Error> {
-        var count=source.length-offset;
-        if(count>output.length) { count=output.length; }
-        for(var i:usize=0;i<count;i+=1) { (*output)[i]=source[offset+i]; }
-        offset+=count;
+    var source:&'a u8[];
+    var offset:usize;
+
+    pub func read(output:&mut u8[]) -> core.Result<usize,Error> {
+        var count = source.length - offset;
+        if (count > output.length) {
+            count = output.length;
+        }
+        for (var i:usize = 0; i < count; i += 1) {
+            (*output)[i] = source[offset + i];
+        }
+        offset += count;
         return core.Result<usize,Error>.Ok(count);
     }
 }
-pub func reader<'a>(input:&'a u8[])->MemoryReader<'a> {
-    return MemoryReader<'a>{source:input,offset:0};
+
+pub func reader<'a>(input:&'a u8[]) -> MemoryReader<'a> {
+    return MemoryReader<'a>{source:input, offset:0};
 }
+
 pub struct MemoryWriter<'a> {
-    var destination:&'a mut u8[]; var offset:usize;
-    pub func write(input:&u8[])->core.Result<usize,Error> {
-        var count=destination.length-offset;
-        if(count>input.length) { count=input.length; }
-        for(var i:usize=0;i<count;i+=1) { (*destination)[offset+i]=input[i]; }
-        offset+=count;
+    var destination:&'a mut u8[];
+    var offset:usize;
+
+    pub func write(input:&u8[]) -> core.Result<usize,Error> {
+        var count = destination.length - offset;
+        if (count > input.length) {
+            count = input.length;
+        }
+        for (var i:usize = 0; i < count; i += 1) {
+            (*destination)[offset + i] = input[i];
+        }
+        offset += count;
         return core.Result<usize,Error>.Ok(count);
     }
-    pub func length()->usize { return offset; }
+
+    pub func length() -> usize {
+        return offset;
+    }
 }
-pub func writer<'a>(output:&'a mut u8[])->MemoryWriter<'a> {
-    return MemoryWriter<'a>{destination:output,offset:0};
+
+pub func writer<'a>(output:&'a mut u8[]) -> MemoryWriter<'a> {
+    return MemoryWriter<'a>{destination:output, offset:0};
 }

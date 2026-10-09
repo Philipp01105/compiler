@@ -7,94 +7,108 @@ pub enum Error {
     pub DestinationTooSmall,
 }
 
-pub func copy<T: core.Copy>(source: &T[], destination: &mut T[]) -> core.Result<void, Error> {
+pub func copy<T:core.Copy>(source:&T[], destination:&mut T[]) -> core.Result<void,Error> {
     if ((*source).length > (*destination).length) {
-        return core.Result<void, Error>.Err(Error.DestinationTooSmall);
+        return core.Result<void,Error>.Err(Error.DestinationTooSmall);
     }
-    for (var i: usize = 0; i < (*source).length; i += 1) {
+    for (var i:usize = 0; i < (*source).length; i += 1) {
         (*destination)[i] = (*source)[i];
     }
-    return core.Result<void, Error>.Ok;
+    return core.Result<void,Error>.Ok;
 }
 
-pub func fill<T: core.Copy>(destination: &mut T[], value: T) -> void {
-    for (var i: usize = 0; i < (*destination).length; i += 1) {
+pub func fill<T:core.Copy>(destination:&mut T[], value:T) -> void {
+    for (var i:usize = 0; i < (*destination).length; i += 1) {
         (*destination)[i] = value;
     }
 }
 
-pub func transform<T: core.Copy, U>(source: &T[], destination: &mut U[], mapper: mut func(T) -> U) -> core.Result<void, Error> {
+pub func transform<T:core.Copy,U>(
+    source:&T[],
+    destination:&mut U[],
+    mapper:mut func(T) -> U
+) -> core.Result<void,Error> {
     if ((*source).length > (*destination).length) {
-        return core.Result<void, Error>.Err(Error.DestinationTooSmall);
+        return core.Result<void,Error>.Err(Error.DestinationTooSmall);
     }
-    for (var i: usize = 0; i < (*source).length; i += 1) {
+    for (var i:usize = 0; i < (*source).length; i += 1) {
         (*destination)[i] = mapper((*source)[i]);
     }
-    return core.Result<void, Error>.Ok;
+    return core.Result<void,Error>.Ok;
 }
 
-pub func fold<T: core.Copy, U>(values: T[], initial: U, combine: mut func(U, T) -> U) -> U {
-    var result: U = initial;
-    for (var i: usize = 0; i < values.length; i += 1) {
+pub func fold<T:core.Copy,U>(values:T[], initial:U, combine:mut func(U,T) -> U) -> U {
+    var result:U = initial;
+    for (var i:usize = 0; i < values.length; i += 1) {
         result = combine(result, values[i]);
     }
     return result;
 }
 
 // Borrow each element instead of requiring a copy of its owned value.
-pub func find<T>(values:&T[],predicate:mut func(&T)->bit)->core.Option<usize> {
-    for(var i:usize=0;i<values.length;i+=1) {
-        if(predicate(&values[i])) { return core.Option<usize>.Some(i); }
+pub func find<T>(values:&T[], predicate:mut func(&T) -> bit) -> core.Option<usize> {
+    for (var i:usize = 0; i < values.length; i += 1) {
+        if (predicate(&values[i])) {
+            return core.Option<usize>.Some(i);
+        }
     }
     return core.Option<usize>.None;
 }
 
-pub func count<T>(values:&T[],predicate:mut func(&T)->bit)->usize {
-    var result:usize=0;
-    for(var i:usize=0;i<values.length;i+=1) {
-        if(predicate(&values[i])) { result+=1; }
+pub func count<T>(values:&T[], predicate:mut func(&T) -> bit) -> usize {
+    var result:usize = 0;
+    for (var i:usize = 0; i < values.length; i += 1) {
+        if (predicate(&values[i])) {
+            result += 1;
+        }
     }
     return result;
 }
 
-pub func all<T>(values:&T[],predicate:mut func(&T)->bit)->bit {
-    for(var i:usize=0;i<values.length;i+=1) {
-        if(!predicate(&values[i])) { return false; }
+pub func all<T>(values:&T[], predicate:mut func(&T) -> bit) -> bit {
+    for (var i:usize = 0; i < values.length; i += 1) {
+        if (!predicate(&values[i])) {
+            return false;
+        }
     }
     return true;
 }
 
-pub func any<T>(values:&T[],predicate:mut func(&T)->bit)->bit {
-    for(var i:usize=0;i<values.length;i+=1) {
-        if(predicate(&values[i])) { return true; }
+pub func any<T>(values:&T[], predicate:mut func(&T) -> bit) -> bit {
+    for (var i:usize = 0; i < values.length; i += 1) {
+        if (predicate(&values[i])) {
+            return true;
+        }
     }
     return false;
 }
 
-pub func forEachMut<T>(values:&mut T[],action:mut func(&mut T)->void)->void {
-    for(var i:usize=0;i<values.length;i+=1) { action(&mut values[i]); }
+pub func forEachMut<T>(values:&mut T[], action:mut func(&mut T) -> void) -> void {
+    for (var i:usize = 0; i < values.length; i += 1) {
+        action(&mut values[i]);
+    }
 }
 
-pub func reverse<T: core.Copy>(values: &mut T[]) -> void {
-    var left: usize = 0;
-    var right: usize = values.length;
+pub func reverse<T:core.Copy>(values:&mut T[]) -> void {
+    var left:usize = 0;
+    var right:usize = values.length;
     while (left < right) {
         right -= 1;
         if (left >= right) {
             break;
         }
-        var temporary: T = values[left];
+        var temporary:T = values[left];
         values[left] = values[right];
         values[right] = temporary;
         left += 1;
     }
 }
 
-pub func equal<T: core.Copy>(left: T[], right: T[], same: mut func(T, T) -> bit) -> bit {
+pub func equal<T:core.Copy>(left:T[], right:T[], same:mut func(T,T) -> bit) -> bit {
     if (left.length != right.length) {
         return false;
     }
-    for (var i: usize = 0; i < left.length; i += 1) {
+    for (var i:usize = 0; i < left.length; i += 1) {
         if (!same(left[i], right[i])) {
             return false;
         }
@@ -103,11 +117,11 @@ pub func equal<T: core.Copy>(left: T[], right: T[], same: mut func(T, T) -> bit)
 }
 
 // First position at which less(element, key) is false. Input must be sorted.
-pub func lowerBound<T: core.Copy>(values: T[], key: T, less: mut func(T, T) -> bit) -> usize {
-    var first: usize = 0;
-    var last: usize = values.length;
+pub func lowerBound<T:core.Copy>(values:T[], key:T, less:mut func(T,T) -> bit) -> usize {
+    var first:usize = 0;
+    var last:usize = values.length;
     while (first < last) {
-        var middle: usize = first + (last - first) / 2;
+        var middle:usize = first + (last - first) / 2;
         if (less(values[middle], key)) {
             first = middle + 1;
         } else {
@@ -117,11 +131,15 @@ pub func lowerBound<T: core.Copy>(values: T[], key: T, less: mut func(T, T) -> b
     return first;
 }
 
-pub func binarySearch<T: core.Copy>(values: T[], key: T, less: mut func(T, T) -> bit) -> core.Option<usize> {
-    var position: usize = 0;
-    var last: usize = values.length;
+pub func binarySearch<T:core.Copy>(
+    values:T[],
+    key:T,
+    less:mut func(T,T) -> bit
+) -> core.Option<usize> {
+    var position:usize = 0;
+    var last:usize = values.length;
     while (position < last) {
-        var middle: usize = position + (last - position) / 2;
+        var middle:usize = position + (last - position) / 2;
         if (less(values[middle], key)) {
             position = middle + 1;
         } else {
@@ -135,41 +153,41 @@ pub func binarySearch<T: core.Copy>(values: T[], key: T, less: mut func(T, T) ->
 }
 
 // In-place heapsort: O(n log n), constant auxiliary space, not stable.
-pub func sort<T: core.Copy>(values: &mut T[], less: mut func(T, T) -> bit) -> void {
-    var start: usize = values.length / 2;
+pub func sort<T:core.Copy>(values:&mut T[], less:mut func(T,T) -> bit) -> void {
+    var start:usize = values.length / 2;
     while (start > 0) {
         start -= 1;
-        var root: usize = start;
+        var root:usize = start;
         while (root < values.length / 2) {
-            var child: usize = root * 2 + 1;
+            var child:usize = root * 2 + 1;
             if (child + 1 < values.length && less(values[child], values[child + 1])) {
                 child += 1;
             }
             if (!less(values[root], values[child])) {
                 break;
             }
-            var swapped: T = values[root];
+            var swapped:T = values[root];
             values[root] = values[child];
             values[child] = swapped;
             root = child;
         }
     }
-    var end: usize = values.length;
+    var end:usize = values.length;
     while (end > 1) {
         end -= 1;
-        var temporary: T = values[0];
+        var temporary:T = values[0];
         values[0] = values[end];
         values[end] = temporary;
-        var root: usize = 0;
+        var root:usize = 0;
         while (root < end / 2) {
-            var child: usize = root * 2 + 1;
+            var child:usize = root * 2 + 1;
             if (child + 1 < end && less(values[child], values[child + 1])) {
                 child += 1;
             }
             if (!less(values[root], values[child])) {
                 break;
             }
-            var swapped: T = values[root];
+            var swapped:T = values[root];
             values[root] = values[child];
             values[child] = swapped;
             root = child;

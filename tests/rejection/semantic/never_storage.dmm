@@ -1,5 +1,5 @@
 package main;
 
 func main() -> void {
-    var impossible: never;
+    var impossible:never;
 }

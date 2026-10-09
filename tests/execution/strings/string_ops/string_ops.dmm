@@ -1,9 +1,11 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 // String operations test
 func main() -> void {
-    var name: string = "Alice";
+    var name:string = "Alice";
     if (name == "Alice") {
         io.println("Name is Alice");
     }

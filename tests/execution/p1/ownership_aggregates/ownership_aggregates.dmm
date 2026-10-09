@@ -1,9 +1,11 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
 struct Resource {
-    var value: int;
+    var value:int;
     destructor {
         io.println(value);
     }
@@ -15,19 +17,19 @@ enum Holder {
 }
 
 func dropArray() -> void {
-    var first: Resource;
+    var first:Resource;
     first.value = 1;
-    var second: Resource;
+    var second:Resource;
     second.value = 2;
-    var values: Resource[2] = [first, second];
+    var values:Resource[2] = [first, second];
 }
 
 func dropEnum() -> void {
-    var first: Resource;
+    var first:Resource;
     first.value = 3;
-    var second: Resource;
+    var second:Resource;
     second.value = 4;
-    var holder: Holder = Holder.Pair(first, second);
+    var holder:Holder = Holder.Pair(first, second);
 }
 
 func main() -> int {

@@ -1,28 +1,30 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 
 func main() -> void {
-    var fd: int = sys_open("roundtrip.txt", 577, 420);
-    var written: int = sys_write(fd, "abc", 3);
-    var closed: int = sys_close(fd);
+    var fd:int = sys_open("roundtrip.txt", 577, 420);
+    var written:int = sys_write(fd, "abc", 3);
+    var closed:int = sys_close(fd);
     fd = sys_open("roundtrip.txt", 0, 0);
-    var buffer: char[4];
-    var count: int = sys_read(fd, buffer, 3);
+    var buffer:char[4];
+    var count:int = sys_read(fd, buffer, 3);
     sys_close(fd);
     if (
-        written == 3 &&
-        closed == 0 &&
-        count == 3 &&
-        buffer[0] == 'a' &&
-        buffer[1] == 'b' &&
-        buffer[2] == 'c'
+        written == 3
+        && closed == 0
+        && count == 3
+        && buffer[0] == 'a'
+        && buffer[1] == 'b'
+        && buffer[2] == 'c'
     ) {
         io.println("File round-trip OK");
     } else {
         io.println("File round-trip FAILED");
     }
-    var failed: int = sys_read(-1, buffer, 1);
+    var failed:int = sys_read(-1, buffer, 1);
     if (failed < 0) {
         io.println("Invalid descriptor rejected");
     } else {

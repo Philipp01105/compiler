@@ -1,5 +1,18 @@
 package leaf;
-pub enum Choice<T> { pub Item(T), pub Empty }
-pub func identity<T>(value: T) -> T { return value; }
-pub func answer() -> i32 { return 42; }
-func hidden() -> i32 { return 1; }
+
+pub enum Choice<T> {
+    pub Item(T),
+    pub Empty
+}
+
+pub func identity<T>(value:T) -> T {
+    return value;
+}
+
+pub func answer() -> i32 {
+    return 42;
+}
+
+func hidden() -> i32 {
+    return 1;
+}

@@ -8,7 +8,7 @@ import (
 
 pub import "stdlib/net/address";
 
-func familyCode(family: AddressFamily) -> usize {
+func familyCode(family:AddressFamily) -> usize {
     match (family) {
         Any => return 0;
         IPv4 => return 4;
@@ -16,15 +16,15 @@ func familyCode(family: AddressFamily) -> usize {
     }
 }
 
-func transportCode(transport: Transport) -> usize {
+func transportCode(transport:Transport) -> usize {
     match (transport) {
         TCP => return 1;
         UDP => return 2;
     }
 }
 
-func decodeError(kind: usize, domain: usize, code: usize) -> Error {
-    var e: Error;
+func decodeError(kind:usize, domain:usize, code:usize) -> Error {
+    var e:Error;
     e.code = code.(isize);
     e.kind = ErrorKind.System;
     if (kind == 1) {
@@ -73,16 +73,16 @@ func decodeError(kind: usize, domain: usize, code: usize) -> Error {
     return e;
 }
 
-func encodeAddress(endpoint: Endpoint, packet: *u8) -> void {
-    var words: *u64 = packet.(*u64);
+func encodeAddress(endpoint:Endpoint, packet:*u8) -> void {
+    var words:*u64 = packet.(*u64);
     words[1] = endpoint.port.(u64);
     words[2] = 0;
     memraw.core_fill(memraw.core_offset(packet, 24), 0, 16);
     match (endpoint.address) {
         V4(a) => {
             words[0] = 4;
-            var remaining: u32 = a.octets;
-            for (var i: usize = 0; i < 4; i += 1) {
+            var remaining:u32 = a.octets;
+            for (var i:usize = 0; i < 4; i += 1) {
                 memraw.core_store(packet, 27 - i, (remaining % 256).(u8));
                 remaining /= 256;
             }
@@ -90,9 +90,9 @@ func encodeAddress(endpoint: Endpoint, packet: *u8) -> void {
         V6(a) => {
             words[0] = 6;
             words[2] = a.scope.(u64);
-            var h: u64 = a.high;
-            var l: u64 = a.low;
-            for (var i: usize = 0; i < 8; i += 1) {
+            var h:u64 = a.high;
+            var l:u64 = a.low;
+            for (var i:usize = 0; i < 8; i += 1) {
                 memraw.core_store(packet, 31 - i, (h % 256).(u8));
                 h /= 256;
                 memraw.core_store(packet, 39 - i, (l % 256).(u8));
@@ -102,18 +102,18 @@ func encodeAddress(endpoint: Endpoint, packet: *u8) -> void {
     }
 }
 
-func decodeAddress(packet: *u8) -> Endpoint {
-    var words: *u64 = packet.(*u64);
+func decodeAddress(packet:*u8) -> Endpoint {
+    var words:*u64 = packet.(*u64);
     if (words[0] == 4) {
-        var octets: u32 = 0;
-        for (var i: usize = 0; i < 4; i += 1) {
+        var octets:u32 = 0;
+        for (var i:usize = 0; i < 4; i += 1) {
             octets = (octets * 256) + memraw.core_load(packet, 24 + i).(u32);
         }
         return ipv4(octets, words[1].(u16));
     }
-    var high: u64 = 0;
-    var low: u64 = 0;
-    for (var i: usize = 0; i < 8; i += 1) {
+    var high:u64 = 0;
+    var low:u64 = 0;
+    for (var i:usize = 0; i < 8; i += 1) {
         high = (high * 256) + memraw.core_load(packet, 24 + i).(u64);
         low = (low * 256) + memraw.core_load(packet, 32 + i).(u64);
     }
@@ -121,72 +121,72 @@ func decodeAddress(packet: *u8) -> Endpoint {
 }
 
 pub struct Socket {
-    var handle: usize;
+    var handle:usize;
     destructor {
         if (handle != 0) {
-            var error: u64[3];
+            var error:u64[3];
             netImpl_close(handle, (&error[0]).(*u8));
             handle = 0;
         }
     }
 }
 
-pub func socket(family: AddressFamily, transport: Transport) -> stdlib.Result<Socket, Error> {
-    if(family==AddressFamily.Any){return stdlib.Result<Socket,Error>.Err(decodeError(5,0,0));}
-    var error: u64[3];
-    var handle: usize = netImpl_socket(
+pub func socket(family:AddressFamily, transport:Transport) -> stdlib.Result<Socket,Error> {
+    if (family == AddressFamily.Any) {
+        return stdlib.Result<Socket,Error>.Err(decodeError(5, 0, 0));
+    }
+    var error:u64[3];
+    var handle:usize = netImpl_socket(
         familyCode(family),
         transportCode(transport),
         (&error[0]).(*u8)
     );
     if (handle == 0) {
-        return stdlib.Result<Socket, Error>.Err(
+        return stdlib.Result<Socket,Error>.Err(
             decodeError(error[0].(usize), error[1].(usize), error[2].(usize))
         );
     }
-    var s: Socket;
+    var s:Socket;
     s.handle = handle;
-    return stdlib.Result<Socket, Error>.Ok(s);
+    return stdlib.Result<Socket,Error>.Ok(s);
 }
 
-pub func close(socket: Socket) -> stdlib.Result<void, Error> {
-    var error: u64[3];
-    var handle: usize = socket.handle;
+pub func close(socket:Socket) -> stdlib.Result<void,Error> {
+    var error:u64[3];
+    var handle:usize = socket.handle;
     socket.handle = 0;
     if (netImpl_close(handle, (&error[0]).(*u8)) == 0) {
-        return stdlib.Result<void, Error>.Err(
+        return stdlib.Result<void,Error>.Err(
             decodeError(error[0].(usize), error[1].(usize), error[2].(usize))
         );
     }
-    return stdlib.Result<void, Error>.Ok;
+    return stdlib.Result<void,Error>.Ok;
 }
 
-pub func bind(socket: &mut Socket, endpoint: Endpoint) -> stdlib.Result<void, Error> {
-    var address: u64[5];
-    var error: u64[3];
+pub func bind(socket:&mut Socket, endpoint:Endpoint) -> stdlib.Result<void,Error> {
+    var address:u64[5];
+    var error:u64[3];
     encodeAddress(endpoint, (&address[0]).(*u8));
-    if (
-        netImpl_bind(socket.handle, (&address[0]).(*u8), (&error[0]).(*u8)) == 0
-    ) {
-        return stdlib.Result<void, Error>.Err(
+    if (netImpl_bind(socket.handle, (&address[0]).(*u8), (&error[0]).(*u8)) == 0) {
+        return stdlib.Result<void,Error>.Err(
             decodeError(error[0].(usize), error[1].(usize), error[2].(usize))
         );
     }
-    return stdlib.Result<void, Error>.Ok;
+    return stdlib.Result<void,Error>.Ok;
 }
 
-pub func listen(socket: &mut Socket, backlog: usize) -> stdlib.Result<void, Error> {
-    var error: u64[3];
+pub func listen(socket:&mut Socket, backlog:usize) -> stdlib.Result<void,Error> {
+    var error:u64[3];
     if (netImpl_listen(socket.handle, backlog, (&error[0]).(*u8)) == 0) {
-        return stdlib.Result<void, Error>.Err(
+        return stdlib.Result<void,Error>.Err(
             decodeError(error[0].(usize), error[1].(usize), error[2].(usize))
         );
     }
-    return stdlib.Result<void, Error>.Ok;
+    return stdlib.Result<void,Error>.Ok;
 }
 
-pub func shutdown(socket: &mut Socket, direction: Shutdown) -> stdlib.Result<void, Error> {
-    var which: usize = 0;
+pub func shutdown(socket:&mut Socket, direction:Shutdown) -> stdlib.Result<void,Error> {
+    var which:usize = 0;
     match (direction) {
         Read => {
             which = 0;
@@ -198,43 +198,37 @@ pub func shutdown(socket: &mut Socket, direction: Shutdown) -> stdlib.Result<voi
             which = 2;
         }
     }
-    var error: u64[3];
+    var error:u64[3];
     if (netImpl_shutdown_socket(socket.handle, which, (&error[0]).(*u8)) == 0) {
-        return stdlib.Result<void, Error>.Err(
+        return stdlib.Result<void,Error>.Err(
             decodeError(error[0].(usize), error[1].(usize), error[2].(usize))
         );
     }
-    return stdlib.Result<void, Error>.Ok;
+    return stdlib.Result<void,Error>.Ok;
 }
 
-func addressOf(socket: &Socket, peer: usize) -> stdlib.Result<Endpoint, Error> {
-    var packet: u64[6];
+func addressOf(socket:&Socket, peer:usize) -> stdlib.Result<Endpoint,Error> {
+    var packet:u64[6];
     packet[0] = peer.(u64);
-    var error: u64[3];
-    if (
-        netImpl_address_packet(
-            socket.handle,
-            (&packet[0]).(*u8),
-            (&error[0]).(*u8)
-        ) == 0
-    ) {
-        return stdlib.Result<Endpoint, Error>.Err(
+    var error:u64[3];
+    if (netImpl_address_packet(socket.handle, (&packet[0]).(*u8), (&error[0]).(*u8)) == 0) {
+        return stdlib.Result<Endpoint,Error>.Err(
             decodeError(error[0].(usize), error[1].(usize), error[2].(usize))
         );
     }
-    return stdlib.Result<Endpoint, Error>.Ok(decodeAddress((&packet[1]).(*u8)));
+    return stdlib.Result<Endpoint,Error>.Ok(decodeAddress((&packet[1]).(*u8)));
 }
 
-pub func localAddress(socket: &Socket) -> stdlib.Result<Endpoint, Error> {
+pub func localAddress(socket:&Socket) -> stdlib.Result<Endpoint,Error> {
     return addressOf(socket, 0);
 }
 
-pub func peerAddress(socket: &Socket) -> stdlib.Result<Endpoint, Error> {
+pub func peerAddress(socket:&Socket) -> stdlib.Result<Endpoint,Error> {
     return addressOf(socket, 1);
 }
 
 struct Operation {
-    var handle: usize;
+    var handle:usize;
     destructor {
         if (handle != 0) {
             netImpl_release(handle);
@@ -244,16 +238,16 @@ struct Operation {
 }
 
 func start(
-    command: usize,
-    socket: usize,
-    buffer: *u8,
-    length: usize,
-    deadline: time.Deadline,
-    endpoint: Endpoint,
-    hostname: string,
-    transport: usize
+    command:usize,
+    socket:usize,
+    buffer:*u8,
+    length:usize,
+    deadline:time.Deadline,
+    endpoint:Endpoint,
+    hostname:string,
+    transport:usize
 ) -> Operation {
-    var packet: u64[12];
+    var packet:u64[12];
     packet[0] = command.(u64);
     packet[1] = socket.(u64);
     packet[2] = netImpl_pointer(buffer).(u64);
@@ -262,12 +256,12 @@ func start(
     encodeAddress(endpoint, (&packet[5]).(*u8));
     packet[10] = netImpl_pointer(memraw.core_string_data(hostname)).(u64);
     packet[11] = transport.(u64);
-    var op: Operation;
+    var op:Operation;
     op.handle = netImpl_start((&packet[0]).(*u8));
     return op;
 }
 
-func operationError(op: &Operation) -> Error {
+func operationError(op:&Operation) -> Error {
     return decodeError(
         netImpl_result(op.handle, 0),
         netImpl_result(op.handle, 1),
@@ -276,70 +270,61 @@ func operationError(op: &Operation) -> Error {
 }
 
 pub struct ReadResult {
-    pub var bytes: usize;
-    pub var eof: bit;
+    pub var bytes:usize;
+    pub var eof:bit;
 }
 
 pub struct Datagram {
-    pub var bytes: usize;
-    pub var peer: Endpoint;
-    pub var truncated: bit;
+    pub var bytes:usize;
+    pub var peer:Endpoint;
+    pub var truncated:bit;
 }
 
 pub struct Accepted {
-    pub var socket: Socket;
-    pub var peer: Endpoint;
+    pub var socket:Socket;
+    pub var peer:Endpoint;
 }
 
 // Consumes the aggregate and transfers its socket without a partial move.
-pub func intoSocket(value:Accepted)->Socket {
-    var handle=value.socket.handle;value.socket.handle=0;
+pub func intoSocket(value:Accepted) -> Socket {
+    var handle = value.socket.handle;
+    value.socket.handle = 0;
     return Socket{handle:handle};
 }
 
-pub async func connect(socket: &Socket, endpoint: Endpoint, deadline: time.Deadline) -> stdlib.Result<void, Error> {
-    var op: Operation = start(
-        1,
-        socket.handle,
-        memraw.core_null(),
-        0,
-        deadline,
-        endpoint,
-        "",
-        1
-    );
+pub async func connect(
+    socket:&Socket,
+    endpoint:Endpoint,
+    deadline:time.Deadline
+) -> stdlib.Result<void,Error> {
+    var op:Operation = start(1, socket.handle, memraw.core_null(), 0, deadline, endpoint, "", 1);
     nativeFuture(netImpl_wait(op.handle)).await();
     if (netImpl_result(op.handle, 0) != 0) {
-        return stdlib.Result<void, Error>.Err(operationError(&op));
+        return stdlib.Result<void,Error>.Err(operationError(&op));
     }
-    return stdlib.Result<void, Error>.Ok;
+    return stdlib.Result<void,Error>.Ok;
 }
 
-pub async func accept(socket: &Socket, deadline: time.Deadline) -> stdlib.Result<Accepted, Error> {
-    var op: Operation = start(
-        2,
-        socket.handle,
-        memraw.core_null(),
-        0,
-        deadline,
-        ipv4(0, 0),
-        "",
-        1
-    );
+pub async func accept(socket:&Socket, deadline:time.Deadline) -> stdlib.Result<Accepted,Error> {
+    var op:Operation = start(2, socket.handle, memraw.core_null(), 0, deadline, ipv4(0, 0), "", 1);
     nativeFuture(netImpl_wait(op.handle)).await();
     if (netImpl_result(op.handle, 0) != 0) {
-        return stdlib.Result<Accepted, Error>.Err(operationError(&op));
+        return stdlib.Result<Accepted,Error>.Err(operationError(&op));
     }
-    var result: Accepted;
+    var result:Accepted;
     result.socket.handle = netImpl_result(op.handle, 6);
-    var address: u64[5];
+    var address:u64[5];
     netImpl_result_address(op.handle, (&address[0]).(*u8));
     result.peer = decodeAddress((&address[0]).(*u8));
-    return stdlib.Result<Accepted, Error>.Ok(result);
+    return stdlib.Result<Accepted,Error>.Ok(result);
 }
 
-pub async func read(socket: &Socket, destination: &mut u8[], deadline: time.Deadline) -> stdlib.Result<ReadResult, Error> {
-    var op: Operation = start(
+pub async func read(
+    socket:&Socket,
+    destination:&mut u8[],
+    deadline:time.Deadline
+) -> stdlib.Result<ReadResult,Error> {
+    var op:Operation = start(
         3,
         socket.handle,
         (*destination).data,
@@ -351,16 +336,20 @@ pub async func read(socket: &Socket, destination: &mut u8[], deadline: time.Dead
     );
     nativeFuture(netImpl_wait(op.handle)).await();
     if (netImpl_result(op.handle, 0) != 0) {
-        return stdlib.Result<ReadResult, Error>.Err(operationError(&op));
+        return stdlib.Result<ReadResult,Error>.Err(operationError(&op));
     }
-    var result: ReadResult;
+    var result:ReadResult;
     result.bytes = netImpl_result(op.handle, 3);
     result.eof = netImpl_result(op.handle, 4) != 0;
-    return stdlib.Result<ReadResult, Error>.Ok(result);
+    return stdlib.Result<ReadResult,Error>.Ok(result);
 }
 
-pub async func write(socket: &Socket, source: &u8[], deadline: time.Deadline) -> stdlib.Result<usize, Error> {
-    var op: Operation = start(
+pub async func write(
+    socket:&Socket,
+    source:&u8[],
+    deadline:time.Deadline
+) -> stdlib.Result<usize,Error> {
+    var op:Operation = start(
         4,
         socket.handle,
         (*source).data,
@@ -372,13 +361,17 @@ pub async func write(socket: &Socket, source: &u8[], deadline: time.Deadline) ->
     );
     nativeFuture(netImpl_wait(op.handle)).await();
     if (netImpl_result(op.handle, 0) != 0) {
-        return stdlib.Result<usize, Error>.Err(operationError(&op));
+        return stdlib.Result<usize,Error>.Err(operationError(&op));
     }
-    return stdlib.Result<usize, Error>.Ok(netImpl_result(op.handle, 3));
+    return stdlib.Result<usize,Error>.Ok(netImpl_result(op.handle, 3));
 }
 
-pub async func recvFrom(socket: &Socket, destination: &mut u8[], deadline: time.Deadline) -> stdlib.Result<Datagram, Error> {
-    var op: Operation = start(
+pub async func recvFrom(
+    socket:&Socket,
+    destination:&mut u8[],
+    deadline:time.Deadline
+) -> stdlib.Result<Datagram,Error> {
+    var op:Operation = start(
         5,
         socket.handle,
         (*destination).data,
@@ -390,19 +383,24 @@ pub async func recvFrom(socket: &Socket, destination: &mut u8[], deadline: time.
     );
     nativeFuture(netImpl_wait(op.handle)).await();
     if (netImpl_result(op.handle, 0) != 0) {
-        return stdlib.Result<Datagram, Error>.Err(operationError(&op));
+        return stdlib.Result<Datagram,Error>.Err(operationError(&op));
     }
-    var result: Datagram;
+    var result:Datagram;
     result.bytes = netImpl_result(op.handle, 3);
     result.truncated = netImpl_result(op.handle, 5) != 0;
-    var address: u64[5];
+    var address:u64[5];
     netImpl_result_address(op.handle, (&address[0]).(*u8));
     result.peer = decodeAddress((&address[0]).(*u8));
-    return stdlib.Result<Datagram, Error>.Ok(result);
+    return stdlib.Result<Datagram,Error>.Ok(result);
 }
 
-pub async func sendTo(socket: &Socket, source: &u8[], endpoint: Endpoint, deadline: time.Deadline) -> stdlib.Result<usize, Error> {
-    var op: Operation = start(
+pub async func sendTo(
+    socket:&Socket,
+    source:&u8[],
+    endpoint:Endpoint,
+    deadline:time.Deadline
+) -> stdlib.Result<usize,Error> {
+    var op:Operation = start(
         6,
         socket.handle,
         (*source).data,
@@ -414,13 +412,13 @@ pub async func sendTo(socket: &Socket, source: &u8[], endpoint: Endpoint, deadli
     );
     nativeFuture(netImpl_wait(op.handle)).await();
     if (netImpl_result(op.handle, 0) != 0) {
-        return stdlib.Result<usize, Error>.Err(operationError(&op));
+        return stdlib.Result<usize,Error>.Err(operationError(&op));
     }
-    return stdlib.Result<usize, Error>.Ok(netImpl_result(op.handle, 3));
+    return stdlib.Result<usize,Error>.Ok(netImpl_result(op.handle, 3));
 }
 
 pub struct Addresses {
-    var handle: usize;
+    var handle:usize;
     destructor {
         if (handle != 0) {
             netImpl_addresses_release(handle);
@@ -432,8 +430,8 @@ pub struct Addresses {
         return netImpl_addresses_count(handle);
     }
 
-    pub func get(index: usize) -> stdlib.Option<Endpoint> {
-        var address: u64[5];
+    pub func get(index:usize) -> stdlib.Option<Endpoint> {
+        var address:u64[5];
         if (netImpl_addresses_get(handle, index, (&address[0]).(*u8)) == 0) {
             return stdlib.Option<Endpoint>.None;
         }
@@ -442,30 +440,40 @@ pub struct Addresses {
 }
 
 pub func resolve(
-    hostname: string,
-    port: u16,
-    family: AddressFamily,
-    transport: Transport,
-    deadline: time.Deadline
-) -> Future<stdlib.Result<Addresses, Error>> {
-    var op=resolveRequest(hostname,port,family,transport,deadline);
-    var wait: Future < void >= nativeFuture(netImpl_wait(op.handle));
+    hostname:string,
+    port:u16,
+    family:AddressFamily,
+    transport:Transport,
+    deadline:time.Deadline
+) -> Future<stdlib.Result<Addresses,Error>> {
+    var op = resolveRequest(hostname, port, family, transport, deadline);
+    var wait:Future<void>= nativeFuture(netImpl_wait(op.handle));
     return resolveOperation(op, wait);
 }
 
-async func resolveOperation(op: Operation, wait: Future<void>) -> stdlib.Result<Addresses, Error> {
+async func resolveOperation(op:Operation, wait:Future<void>) -> stdlib.Result<Addresses,Error> {
     wait.await();
     if (netImpl_result(op.handle, 0) != 0) {
-        return stdlib.Result<Addresses, Error>.Err(operationError(&op));
+        return stdlib.Result<Addresses,Error>.Err(operationError(&op));
     }
-    var result: Addresses;
+    var result:Addresses;
     result.handle = netImpl_result(op.handle, 7);
-    return stdlib.Result<Addresses, Error>.Ok(result);
+    return stdlib.Result<Addresses,Error>.Ok(result);
 }
 
-func resolveRequest(hostname:string,port:u16,family:AddressFamily,transport:Transport,deadline:time.Deadline)->Operation {
+func resolveRequest(
+    hostname:string,
+    port:u16,
+    family:AddressFamily,
+    transport:Transport,
+    deadline:time.Deadline
+) -> Operation {
     var packet:u64[12];
-    packet[0]=7;packet[4]=deadline.ticks();packet[5]=familyCode(family).(u64);packet[6]=port.(u64);
-    packet[10]=netImpl_pointer(memraw.core_string_data(hostname)).(u64);packet[11]=transportCode(transport).(u64);
+    packet[0] = 7;
+    packet[4] = deadline.ticks();
+    packet[5] = familyCode(family).(u64);
+    packet[6] = port.(u64);
+    packet[10] = netImpl_pointer(memraw.core_string_data(hostname)).(u64);
+    packet[11] = transportCode(transport).(u64);
     return Operation{handle:netImpl_start((&packet[0]).(*u8))};
 }

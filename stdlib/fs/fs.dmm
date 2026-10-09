@@ -1,11 +1,11 @@
 package fs;
 import (
-    "stdlib/time"
-    "stdlib/core"
     "stdlib/collections"
+    "stdlib/core"
     "stdlib/io"
-    "stdlib/text"
     "stdlib/path"
+    "stdlib/text"
+    "stdlib/time"
 );
 
 pub enum ErrorKind {
@@ -29,24 +29,27 @@ pub enum ErrorDomain {
 }
 
 pub struct Error {
-    pub var kind: ErrorKind;
-    pub var domain: ErrorDomain;
-    pub var code: isize;
+    pub var kind:ErrorKind;
+    pub var domain:ErrorDomain;
+    pub var code:isize;
     pub var transferred:usize;
-    pub static func fromResidual(error:io.Error)->Self {
+
+    pub static func fromResidual(error:io.Error) -> Self {
         return fromIo(error);
     }
-    pub static func fromResidual(error:core.AllocError)->Self {
-        match(error) {
-            OutOfMemory=>return failure(ErrorKind.OutOfMemory);
-            CapacityOverflow=>return failure(ErrorKind.CapacityOverflow);
+
+    pub static func fromResidual(error:core.AllocError) -> Self {
+        match (error) {
+            OutOfMemory => return failure(ErrorKind.OutOfMemory);
+            CapacityOverflow => return failure(ErrorKind.CapacityOverflow);
         }
     }
-    pub static func fromResidual(error:path.Error)->Self {
-        match(error.kind){
-            InvalidPath=>return failure(ErrorKind.InvalidPath);
-            OutOfMemory=>return failure(ErrorKind.OutOfMemory);
-            CapacityOverflow=>return failure(ErrorKind.CapacityOverflow);
+
+    pub static func fromResidual(error:path.Error) -> Self {
+        match (error.kind) {
+            InvalidPath => return failure(ErrorKind.InvalidPath);
+            OutOfMemory => return failure(ErrorKind.OutOfMemory);
+            CapacityOverflow => return failure(ErrorKind.CapacityOverflow);
         }
     }
 }
@@ -73,224 +76,340 @@ pub enum EntryKind {
 }
 
 pub struct Metadata {
-    pub var kind: EntryKind;
-    pub var size: u64;
-    pub var modified: time.SystemTime;
+    pub var kind:EntryKind;
+    pub var size:u64;
+    pub var modified:time.SystemTime;
 }
 
 pub struct Entry {
-    pub var name: collections.List<u8>;
-    pub var kind: EntryKind;
+    pub var name:collections.List<u8>;
+    pub var kind:EntryKind;
 }
 
-func failure(kind: ErrorKind) -> Error {
-    return Error{ kind: kind, domain: ErrorDomain.Library, code: 0, transferred:0 };
+func failure(kind:ErrorKind) -> Error {
+    return Error{
+        kind:kind,
+        domain:ErrorDomain.Library,
+        code:0,
+        transferred:0
+    };
 }
 
 pub struct File {
-    var handle:usize; var active:bit; var readable:bit; var writable:bit;
-    pub func isOpen()->bit {return active;}
-    pub func close()->core.Result<void,io.Error> {
-        if(!active) {return core.Result<void,io.Error>.Ok;}
-        active=false;
-        match(nativeClose(handle)) {
-            Ok=>return core.Result<void,io.Error>.Ok;
-            Err(error)=>return core.Result<void,io.Error>.Err(toIo(error));
+    var handle:usize;
+    var active:bit;
+    var readable:bit;
+    var writable:bit;
+
+    pub func isOpen() -> bit {
+        return active;
+    }
+
+    pub func close() -> core.Result<void,io.Error> {
+        if (!active) {
+            return core.Result<void,io.Error>.Ok;
+        }
+        active = false;
+        match (nativeClose(handle)) {
+            Ok => return core.Result<void,io.Error>.Ok;
+            Err(error) => return core.Result<void,io.Error>.Err(toIo(error));
         }
     }
-    pub func read(destination:&mut u8[])->core.Result<usize,io.Error> {
-        if(!active) {return core.Result<usize,io.Error>.Err(toIo(failure(ErrorKind.Closed)));}
-        if(!readable) {return core.Result<usize,io.Error>.Err(toIo(failure(ErrorKind.AccessDenied)));}
-        match(nativeRead(handle,*destination)) {
-            Ok(count)=>return core.Result<usize,io.Error>.Ok(count);
-            Err(error)=>return core.Result<usize,io.Error>.Err(toIo(error));
+
+    pub func read(destination:&mut u8[]) -> core.Result<usize,io.Error> {
+        if (!active) {
+            return core.Result<usize,io.Error>.Err(toIo(failure(ErrorKind.Closed)));
+        }
+        if (!readable) {
+            return core.Result<usize,io.Error>.Err(toIo(failure(ErrorKind.AccessDenied)));
+        }
+        match (nativeRead(handle, *destination)) {
+            Ok(count) => return core.Result<usize,io.Error>.Ok(count);
+            Err(error) => return core.Result<usize,io.Error>.Err(toIo(error));
         }
     }
-    pub func write(source:&u8[])->core.Result<usize,io.Error> {
-        if(!active) {return core.Result<usize,io.Error>.Err(toIo(failure(ErrorKind.Closed)));}
-        if(!writable) {return core.Result<usize,io.Error>.Err(toIo(failure(ErrorKind.AccessDenied)));}
-        match(nativeWrite(handle,*source)) {
-            Ok(count)=>return core.Result<usize,io.Error>.Ok(count);
-            Err(error)=>return core.Result<usize,io.Error>.Err(toIo(error));
+
+    pub func write(source:&u8[]) -> core.Result<usize,io.Error> {
+        if (!active) {
+            return core.Result<usize,io.Error>.Err(toIo(failure(ErrorKind.Closed)));
+        }
+        if (!writable) {
+            return core.Result<usize,io.Error>.Err(toIo(failure(ErrorKind.AccessDenied)));
+        }
+        match (nativeWrite(handle, *source)) {
+            Ok(count) => return core.Result<usize,io.Error>.Ok(count);
+            Err(error) => return core.Result<usize,io.Error>.Err(toIo(error));
         }
     }
-    pub func writeAll(source:&u8[])->core.Result<void,io.Error> {
-        return io.writeAll<File>(&mut self,source);
+
+    pub func writeAll(source:&u8[]) -> core.Result<void,io.Error> {
+        return io.writeAll<File>(&mut self, source);
     }
-    pub func readAll(maximum:usize)->core.Result<collections.List<u8>,io.Error> {
-        return io.readAll<File>(&mut self,maximum);
+
+    pub func readAll(maximum:usize) -> core.Result<collections.List<u8>,io.Error> {
+        return io.readAll<File>(&mut self, maximum);
     }
-    pub func readAll()->core.Result<collections.List<u8>,io.Error> {
+
+    pub func readAll() -> core.Result<collections.List<u8>,io.Error> {
         return io.readAll<File>(&mut self);
     }
-    pub func seek(offset:i64,origin:SeekOrigin)->core.Result<u64,io.Error> {
-        if(!active) {return core.Result<u64,io.Error>.Err(toIo(failure(ErrorKind.Closed)));}
-        match(nativeSeek(handle,offset,origin)) {
-            Ok(position)=>return core.Result<u64,io.Error>.Ok(position);
-            Err(error)=>return core.Result<u64,io.Error>.Err(toIo(error));
+
+    pub func seek(offset:i64, origin:SeekOrigin) -> core.Result<u64,io.Error> {
+        if (!active) {
+            return core.Result<u64,io.Error>.Err(toIo(failure(ErrorKind.Closed)));
+        }
+        match (nativeSeek(handle, offset, origin)) {
+            Ok(position) => return core.Result<u64,io.Error>.Ok(position);
+            Err(error) => return core.Result<u64,io.Error>.Err(toIo(error));
         }
     }
-    destructor {if(active) {nativeClose(handle);}}
-}
-func toIo(error:Error)->io.Error {
-    var kind:io.ErrorKind=io.ErrorKind.System;
-    match(error.kind) {
-        Closed=>kind=io.ErrorKind.Closed;
-        AccessDenied=>kind=io.ErrorKind.AccessDenied;
-        InvalidInput=>kind=io.ErrorKind.InvalidInput;
-        OutOfMemory=>kind=io.ErrorKind.OutOfMemory;
-        CapacityOverflow=>kind=io.ErrorKind.CapacityOverflow;
-        LimitExceeded=>kind=io.ErrorKind.LimitExceeded;
-        InvalidPath=>{}
-        NotFound=>{}
-        AlreadyExists=>{}
-        NotDirectory=>{}
-        System=>{}
+
+    destructor {
+        if (active) {
+            nativeClose(handle);
+        }
     }
-    var domain:io.ErrorDomain=io.ErrorDomain.Library;
-    match(error.domain) { Posix=>domain=io.ErrorDomain.Posix; Win32=>domain=io.ErrorDomain.Win32; Library=>{} }
-    return io.Error{kind:kind,domain:domain,code:error.code,transferred:error.transferred};
 }
-func fromIo(error:io.Error)->Error {
-    var kind:ErrorKind=ErrorKind.System;
-    match(error.kind) {
-        Closed=>kind=ErrorKind.Closed;
-        AccessDenied=>kind=ErrorKind.AccessDenied;
-        InvalidInput=>kind=ErrorKind.InvalidInput;
-        OutOfMemory=>kind=ErrorKind.OutOfMemory;
-        CapacityOverflow=>kind=ErrorKind.CapacityOverflow;
-        LimitExceeded=>kind=ErrorKind.LimitExceeded;
-        UnexpectedEof=>{}
-        WriteZero=>{}
-        System=>{}
+
+func toIo(error:Error) -> io.Error {
+    var kind:io.ErrorKind = io.ErrorKind.System;
+    match (error.kind) {
+        Closed => kind = io.ErrorKind.Closed;
+        AccessDenied => kind = io.ErrorKind.AccessDenied;
+        InvalidInput => kind = io.ErrorKind.InvalidInput;
+        OutOfMemory => kind = io.ErrorKind.OutOfMemory;
+        CapacityOverflow => kind = io.ErrorKind.CapacityOverflow;
+        LimitExceeded => kind = io.ErrorKind.LimitExceeded;
+        InvalidPath => {}
+        NotFound => {}
+        AlreadyExists => {}
+        NotDirectory => {}
+        System => {}
     }
-    var domain:ErrorDomain=ErrorDomain.Library;
-    match(error.domain) { Posix=>domain=ErrorDomain.Posix; Win32=>domain=ErrorDomain.Win32; Library=>{} }
-    return Error{kind:kind,domain:domain,code:error.code,transferred:error.transferred};
+    var domain:io.ErrorDomain = io.ErrorDomain.Library;
+    match (error.domain) {
+        Posix => domain = io.ErrorDomain.Posix;
+        Win32 => domain = io.ErrorDomain.Win32;
+        Library => {}
+    }
+    return io.Error{
+        kind:kind,
+        domain:domain,
+        code:error.code,
+        transferred:error.transferred
+    };
 }
-pub func open(path: u8[], mode: OpenMode) -> core.Result<File, Error> {
+
+func fromIo(error:io.Error) -> Error {
+    var kind:ErrorKind = ErrorKind.System;
+    match (error.kind) {
+        Closed => kind = ErrorKind.Closed;
+        AccessDenied => kind = ErrorKind.AccessDenied;
+        InvalidInput => kind = ErrorKind.InvalidInput;
+        OutOfMemory => kind = ErrorKind.OutOfMemory;
+        CapacityOverflow => kind = ErrorKind.CapacityOverflow;
+        LimitExceeded => kind = ErrorKind.LimitExceeded;
+        UnexpectedEof => {}
+        WriteZero => {}
+        System => {}
+    }
+    var domain:ErrorDomain = ErrorDomain.Library;
+    match (error.domain) {
+        Posix => domain = ErrorDomain.Posix;
+        Win32 => domain = ErrorDomain.Win32;
+        Library => {}
+    }
+    return Error{
+        kind:kind,
+        domain:domain,
+        code:error.code,
+        transferred:error.transferred
+    };
+}
+
+pub func open(path:u8[], mode:OpenMode) -> core.Result<File,Error> {
     return nativeOpen(path, mode);
 }
 
 // Public contract; target files implement the private native operations.
-pub func metadata(path: u8[]) -> core.Result<Metadata, Error> {
+pub func metadata(path:u8[]) -> core.Result<Metadata,Error> {
     return nativeMetadata(path);
 }
 
-pub func removeFile(path: u8[]) -> core.Result<void, Error> {
+pub func removeFile(path:u8[]) -> core.Result<void,Error> {
     return nativeRemoveFile(path);
 }
 
-pub func createDir(path: u8[]) -> core.Result<void, Error> {
+pub func createDir(path:u8[]) -> core.Result<void,Error> {
     return nativeCreateDirectory(path);
 }
 
-pub func removeDir(path: u8[]) -> core.Result<void, Error> {
+pub func removeDir(path:u8[]) -> core.Result<void,Error> {
     return nativeRemoveDirectory(path);
 }
 
-pub func rename(oldPath: u8[], newPath: u8[]) -> core.Result<void, Error> {
+pub func rename(oldPath:u8[], newPath:u8[]) -> core.Result<void,Error> {
     return nativeRename(oldPath, newPath);
 }
 
 pub struct Directory {
-    var state: DirectoryState;
-    pub func close() -> core.Result<void, Error> {
+    var state:DirectoryState;
+
+    pub func close() -> core.Result<void,Error> {
         return state.close();
     }
 
-    pub func next()->core.Result<core.Option<Entry>,Error> {return state.next();}
-
-}
-
-pub func openDir(path: u8[]) -> core.Result<Directory, Error> {
-    var result = nativeReadDirectory(path);
-    match (result) {
-        Err(error) => return core.Result<Directory, Error>.Err(error);
-        Ok(state) => return core.Result<Directory, Error>.Ok(Directory{ state: state });
+    pub func next() -> core.Result<core.Option<Entry>,Error> {
+        return state.next();
     }
 }
 
-pub func open(path:string)->core.Result<File,Error> {return nativeOpen(text.bytes(path),OpenMode.Read);}
-pub func open(path:string,mode:OpenMode)->core.Result<File,Error> {return nativeOpen(text.bytes(path),mode);}
-pub func create(path:string)->core.Result<File,Error> {return nativeOpen(text.bytes(path),OpenMode.Write);}
-pub func openAppend(path:string)->core.Result<File,Error> {return nativeOpen(text.bytes(path),OpenMode.Append);}
-pub func readFile(path:u8[],maximum:usize)->core.Result<collections.List<u8>,Error> {
-    var file=nativeOpen(path,OpenMode.Read)?;
-    var result=file.readAll(maximum)?;
+pub func openDir(path:u8[]) -> core.Result<Directory,Error> {
+    var result = nativeReadDirectory(path);
+    match (result) {
+        Err(error) => return core.Result<Directory,Error>.Err(error);
+        Ok(state) => return core.Result<Directory,Error>.Ok(Directory{state:state});
+    }
+}
+
+pub func open(path:string) -> core.Result<File,Error> {
+    return nativeOpen(text.bytes(path), OpenMode.Read);
+}
+
+pub func open(path:string, mode:OpenMode) -> core.Result<File,Error> {
+    return nativeOpen(text.bytes(path), mode);
+}
+
+pub func create(path:string) -> core.Result<File,Error> {
+    return nativeOpen(text.bytes(path), OpenMode.Write);
+}
+
+pub func openAppend(path:string) -> core.Result<File,Error> {
+    return nativeOpen(text.bytes(path), OpenMode.Append);
+}
+
+pub func readFile(path:u8[], maximum:usize) -> core.Result<collections.List<u8>,Error> {
+    var file = nativeOpen(path, OpenMode.Read)?;
+    var result = file.readAll(maximum)?;
     file.close()?;
     return core.Result<collections.List<u8>,Error>.Ok(result);
 }
-pub func readFile(path:string,maximum:usize)->core.Result<collections.List<u8>,Error> {
-    return readFile(text.bytes(path),maximum);
+
+pub func readFile(path:string, maximum:usize) -> core.Result<collections.List<u8>,Error> {
+    return readFile(text.bytes(path), maximum);
 }
-pub func readFile(path:string)->core.Result<collections.List<u8>,Error> {
-    return readFile(path,9223372036854775807.(usize));
+
+pub func readFile(path:string) -> core.Result<collections.List<u8>,Error> {
+    return readFile(path, 9223372036854775807.(usize));
 }
-pub func writeFile(path:u8[],source:&u8[])->core.Result<void,Error> {
-    var file=nativeOpen(path,OpenMode.Write)?;
+
+pub func writeFile(path:u8[], source:&u8[]) -> core.Result<void,Error> {
+    var file = nativeOpen(path, OpenMode.Write)?;
     file.writeAll(source)?;
     file.close()?;
     return core.Result<void,Error>.Ok;
 }
-pub func writeFile(path:string,source:&u8[])->core.Result<void,Error> {
-    return writeFile(text.bytes(path),source);
+
+pub func writeFile(path:string, source:&u8[]) -> core.Result<void,Error> {
+    return writeFile(text.bytes(path), source);
 }
-pub func metadata(path:string)->core.Result<Metadata,Error> {return nativeMetadata(text.bytes(path));}
-pub func removeFile(path:string)->core.Result<void,Error> {return nativeRemoveFile(text.bytes(path));}
-pub func createDir(path:string)->core.Result<void,Error> {return nativeCreateDirectory(text.bytes(path));}
-pub func removeDir(path:string)->core.Result<void,Error> {return nativeRemoveDirectory(text.bytes(path));}
-pub func rename(oldPath:string,newPath:string)->core.Result<void,Error> {return nativeRename(text.bytes(oldPath),text.bytes(newPath));}
-pub func exists(path:string)->core.Result<bit,Error> {
-    match(metadata(path)) {
-        Ok(value)=>return core.Result<bit,Error>.Ok(true);
-        Err(error)=>{
-            if(error.kind==ErrorKind.NotFound) {return core.Result<bit,Error>.Ok(false);}
+
+pub func metadata(path:string) -> core.Result<Metadata,Error> {
+    return nativeMetadata(text.bytes(path));
+}
+
+pub func removeFile(path:string) -> core.Result<void,Error> {
+    return nativeRemoveFile(text.bytes(path));
+}
+
+pub func createDir(path:string) -> core.Result<void,Error> {
+    return nativeCreateDirectory(text.bytes(path));
+}
+
+pub func removeDir(path:string) -> core.Result<void,Error> {
+    return nativeRemoveDirectory(text.bytes(path));
+}
+
+pub func rename(oldPath:string, newPath:string) -> core.Result<void,Error> {
+    return nativeRename(text.bytes(oldPath), text.bytes(newPath));
+}
+
+pub func exists(path:string) -> core.Result<bit,Error> {
+    match (metadata(path)) {
+        Ok(value) => return core.Result<bit,Error>.Ok(true);
+        Err(error) => {
+            if (error.kind == ErrorKind.NotFound) {
+                return core.Result<bit,Error>.Ok(false);
+            }
             return core.Result<bit,Error>.Err(error);
         }
     }
 }
-pub func openDir(path:string)->core.Result<Directory,Error> {return openDir(text.bytes(path));}
-pub func readDir(path:string)->core.Result<collections.List<Entry>,Error> {
-    var directory=openDir(path)?;
-    var entries=collections.list<Entry>();
-    while(true) {
-        match(directory.next()?) {
-            Some(entry)=>{entries.append(entry)?;}
-            None=>break;
+
+pub func openDir(path:string) -> core.Result<Directory,Error> {
+    return openDir(text.bytes(path));
+}
+
+pub func readDir(path:string) -> core.Result<collections.List<Entry>,Error> {
+    var directory = openDir(path)?;
+    var entries = collections.list<Entry>();
+    while (true) {
+        match (directory.next()?) {
+            Some(entry) => {
+                entries.append(entry)?;
+            }
+            None => break;
         }
     }
     directory.close()?;
     return core.Result<collections.List<Entry>,Error>.Ok(entries);
 }
 
-func directorySeparator(value:u8,style:path.Style)->bit {
-    return value==47 || (style==path.Style.Windows && value==92);
+func directorySeparator(value:u8, style:path.Style) -> bit {
+    return value == 47 || (style == path.Style.Windows && value == 92);
 }
+
 // Existing directories (including directory symlinks) are accepted. A file at
 // any component remains an error. Paths are validated before creating anything.
-pub func createDirs(value:string)->core.Result<void,Error> {
-    var style=path.nativeStyle();
-    var normalized=path.normalize(text.bytes(value),style)?;
-    var input=normalized.view();var start:usize=0;
-    if(style==path.Style.Windows && input.length>=2 && input[1]==58){start=2;}
-    else if(style==path.Style.Windows && input.length>=2 && directorySeparator(input[0],style) && directorySeparator(input[1],style)){
-        start=2;
-        for(var component:usize=0;component<2;component+=1){
-            while(start<input.length && !directorySeparator(input[start],style)){start+=1;}
-            if(start<input.length){start+=1;}
+pub func createDirs(value:string) -> core.Result<void,Error> {
+    var style = path.nativeStyle();
+    var normalized = path.normalize(text.bytes(value), style)?;
+    var input = normalized.view();
+    var start:usize = 0;
+    if (style == path.Style.Windows && input.length >= 2 && input[1] == 58) {
+        start = 2;
+    } else if (
+        style == path.Style.Windows
+        && input.length >= 2
+        && directorySeparator(input[0], style)
+        && directorySeparator(input[1], style)
+    ) {
+        start = 2;
+        for (var component:usize = 0; component < 2; component += 1) {
+            while (start < input.length && !directorySeparator(input[start], style)) {
+                start += 1;
+            }
+            if (start < input.length) {
+                start += 1;
+            }
         }
+    } else if (input.length > 0 && directorySeparator(input[0], style)) {
+        start = 1;
     }
-    else if(input.length>0 && directorySeparator(input[0],style)){start=1;}
-    for(var end:usize=start;end<=input.length;end+=1){
-        if(end==input.length || directorySeparator(input[end],style)){
-            if(end==0 || (end==2 && input[1]==58)){continue;}
-            var prefix=input[:end];
-            match(nativeCreateDirectory(prefix)){
-                Ok=>{}
-                Err(error)=>{
-                    if(error.kind!=ErrorKind.AlreadyExists){return core.Result<void,Error>.Err(error);}
-                    var directory=openDir(prefix)?;directory.close()?;
+    for (var end:usize = start; end <= input.length; end += 1) {
+        if (end == input.length || directorySeparator(input[end], style)) {
+            if (end == 0 || (end == 2 && input[1] == 58)) {
+                continue;
+            }
+            var prefix = input[:end];
+            match (nativeCreateDirectory(prefix)) {
+                Ok => {}
+                Err(error) => {
+                    if (error.kind != ErrorKind.AlreadyExists) {
+                        return core.Result<void,Error>.Err(error);
+                    }
+                    var directory = openDir(prefix)?;
+                    directory.close()?;
                 }
             }
         }

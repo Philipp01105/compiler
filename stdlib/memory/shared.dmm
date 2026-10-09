@@ -1,25 +1,29 @@
 package memory;
-import memraw "stdlib/memory/raw";
-import atomic "stdlib/sync/atomic";
-import "stdlib/core";
+import (
+    "stdlib/core"
+    memraw "stdlib/memory/raw"
+    atomic "stdlib/sync/atomic"
+);
 
 struct SharedStorage<T> {
-    var references: atomic.AtomicUsize;
-    var value: T;
+    var references:atomic.AtomicUsize;
+    var value:T;
 }
 
-@[no_default] @[core.Send + core.Sync where T: core.Send + core.Sync] pub struct Shared<T> {
-    var storage: *SharedStorage<T>;
+@[no_default]
+@[core.Send + core.Sync where T:core.Send + core.Sync]
+pub struct Shared<T> {
+    var storage:*SharedStorage<T>;
 
     pub func clone() -> Shared<T> {
-        var count: usize = (*storage).references.load();
+        var count:usize = (*storage).references.load();
         while (true) {
             if (count == 18446744073709551615.(usize)) {
                 memraw.core_trap();
             }
-            var previous: usize = (*storage).references.compareExchange(count, count + 1.(usize));
+            var previous:usize = (*storage).references.compareExchange(count, count + 1.(usize));
             if (previous == count) {
-                return Shared<T>{ storage: storage };
+                return Shared<T>{storage:storage};
             }
             count = previous;
         }
@@ -31,9 +35,9 @@ struct SharedStorage<T> {
     }
 
     destructor {
-        var count: usize = (*storage).references.load();
+        var count:usize = (*storage).references.load();
         while (true) {
-            var previous: usize = (*storage).references.compareExchange(count, count - 1.(usize));
+            var previous:usize = (*storage).references.compareExchange(count, count - 1.(usize));
             if (previous == count) {
                 break;
             }
@@ -46,14 +50,14 @@ struct SharedStorage<T> {
     }
 }
 
-pub func shared<T>(value: T) -> core.Result<Shared<T>, core.AllocError> {
-    var block: *SharedStorage < T >= memraw.core_alloc(sizeof(SharedStorage<T>)).(*SharedStorage<T>);
+pub func shared<T>(value:T) -> core.Result<Shared<T>,core.AllocError> {
+    var block:*SharedStorage<T>= memraw.core_alloc(sizeof(SharedStorage<T>)).(*SharedStorage<T>);
     if (block == memraw.null<SharedStorage<T>>()) {
-        return core.Result<Shared<T>, core.AllocError>.Err(core.AllocError.OutOfMemory);
+        return core.Result<Shared<T>,core.AllocError>.Err(core.AllocError.OutOfMemory);
     }
     memraw.initialize<SharedStorage<T>>(
         block,
-        SharedStorage<T>{ references: atomic.atomicUsize(1.(usize)), value: value }
+        SharedStorage<T>{references:atomic.atomicUsize(1.(usize)), value:value}
     );
-    return core.Result<Shared<T>, core.AllocError>.Ok(Shared<T>{ storage: block });
+    return core.Result<Shared<T>,core.AllocError>.Ok(Shared<T>{storage:block});
 }

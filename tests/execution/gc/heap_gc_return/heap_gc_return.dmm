@@ -1,9 +1,11 @@
 package main;
-import "stdlib/io";
-import stdlib "stdlib/core";
+import (
+    stdlib "stdlib/core"
+    "stdlib/io"
+);
 // Manual allocation with an explicit return statement.
 func test() -> void {
-    var t: *int = reserve(int);
+    var t:*int = reserve(int);
     *t = 10;
     io.println("Inside test function");
     free(t);
@@ -12,7 +14,7 @@ func test() -> void {
 
 func main() -> int {
     var x = 10;
-    var y: int = 10;
+    var y:int = 10;
     test();
     io.println("Back in main");
     return 0;

@@ -1,70 +1,115 @@
 package json;
-import ("stdlib/core" "stdlib/collections" "stdlib/text" "stdlib/text/utf8" "stdlib/numeric");
+import (
+    "stdlib/collections"
+    "stdlib/core"
+    "stdlib/numeric"
+    "stdlib/text"
+    "stdlib/text/utf8"
+);
 
 pub enum AccessError {
-    pub WrongType, pub MissingKey, pub OutOfBounds, pub InvalidKey, pub InvalidNumber, pub Overflow,
+    pub WrongType,
+    pub MissingKey,
+    pub OutOfBounds,
+    pub InvalidKey,
+    pub InvalidNumber,
+    pub Overflow,
     ;
-    pub static func fromResidual(error: text.Error) -> Self { return AccessError.InvalidKey; }
-    pub static func fromResidual(error: numeric.Error) -> Self {
-        if (error == numeric.Error.Overflow) { return AccessError.Overflow; }
+
+    pub static func fromResidual(error:text.Error) -> Self {
+        return AccessError.InvalidKey;
+    }
+
+    pub static func fromResidual(error:numeric.Error) -> Self {
+        if (error == numeric.Error.Overflow) {
+            return AccessError.Overflow;
+        }
         return AccessError.InvalidNumber;
     }
 }
 
-@[no_default] pub struct Document {
-    var nodes: collections.List<Node>;
-    var strings: collections.List<text.String>;
-    pub func root<'a>() -> Value<'a> { return Value<'a>{document: &self, index: 0}; }
+@[no_default]
+pub struct Document {
+    var nodes:collections.List<Node>;
+    var strings:collections.List<text.String>;
+
+    pub func root<'a>() -> Value<'a> {
+        return Value<'a>{document:&self, index:0};
+    }
 }
 
 // Values borrow their document, never the input bytes or a lookup key.
-@[no_default] pub struct Value<'a> {
-    var document: &'a Document;
-    var index: usize;
-    pub func kind() -> Kind { return document.nodes.get(index).kind; }
-    pub func length() -> core.Result<usize, AccessError> {
-        var entry = document.nodes.get(index);
-        if (entry.kind == Kind.Array) { return core.Result<usize, AccessError>.Ok(entry.children); }
-        if (entry.kind == Kind.Object) { return core.Result<usize, AccessError>.Ok(entry.children / 2); }
-        return core.Result<usize, AccessError>.Err(AccessError.WrongType);
+@[no_default]
+pub struct Value<'a> {
+    var document:&'a Document;
+    var index:usize;
+
+    pub func kind() -> Kind {
+        return document.nodes.get(index).kind;
     }
-    pub func get(key: string) -> core.Result<Value<'a>, AccessError> {
+
+    pub func length() -> core.Result<usize,AccessError> {
+        var entry = document.nodes.get(index);
+        if (entry.kind == Kind.Array) {
+            return core.Result<usize,AccessError>.Ok(entry.children);
+        }
+        if (entry.kind == Kind.Object) {
+            return core.Result<usize,AccessError>.Ok(entry.children / 2);
+        }
+        return core.Result<usize,AccessError>.Err(AccessError.WrongType);
+    }
+
+    pub func get(key:string) -> core.Result<Value<'a>,AccessError> {
         var input = text.bytes(key);
         return lookup(document, index, text.view(&input)?);
     }
-    pub func get<'b>(key: text.Text<'b>) -> core.Result<Value<'a>, AccessError> {
+
+    pub func get<'b>(key:text.Text<'b>) -> core.Result<Value<'a>,AccessError> {
         return lookup(document, index, key);
     }
-    pub func at(position: usize) -> core.Result<Value<'a>, AccessError> {
-        if (self.kind() != Kind.Array) { return core.Result<Value<'a>, AccessError>.Err(AccessError.WrongType); }
+
+    pub func at(position:usize) -> core.Result<Value<'a>,AccessError> {
+        if (self.kind() != Kind.Array) {
+            return core.Result<Value<'a>,AccessError>.Err(AccessError.WrongType);
+        }
         var child = document.nodes.get(index).first;
-        var offset: usize = 0;
+        var offset:usize = 0;
         while (offset <= position) {
             match (child) {
-                None => return core.Result<Value<'a>, AccessError>.Err(AccessError.OutOfBounds);
+                None => return core.Result<Value<'a>,AccessError>.Err(AccessError.OutOfBounds);
                 Some(current) => {
-                    if (offset == position) { return core.Result<Value<'a>, AccessError>.Ok(Value<'a>{document: document, index: current}); }
-                    child = document.nodes.get(current).next; offset += 1;
+                    if (offset == position) {
+                        return core.Result<Value<'a>,AccessError>.Ok(
+                            Value<'a>{document:document, index:current}
+                        );
+                    }
+                    child = document.nodes.get(current).next;
+                    offset += 1;
                 }
             }
         }
-        return core.Result<Value<'a>, AccessError>.Err(AccessError.OutOfBounds);
+        return core.Result<Value<'a>,AccessError>.Err(AccessError.OutOfBounds);
     }
-    pub func entry(position: usize) -> core.Result<Member<'a>, AccessError> {
-        if (self.kind() != Kind.Object) { return core.Result<Member<'a>, AccessError>.Err(AccessError.WrongType); }
+
+    pub func entry(position:usize) -> core.Result<Member<'a>,AccessError> {
+        if (self.kind() != Kind.Object) {
+            return core.Result<Member<'a>,AccessError>.Err(AccessError.WrongType);
+        }
         var child = document.nodes.get(index).first;
-        var offset: usize = 0;
+        var offset:usize = 0;
         while (offset <= position) {
             match (child) {
-                None => return core.Result<Member<'a>, AccessError>.Err(AccessError.OutOfBounds);
+                None => return core.Result<Member<'a>,AccessError>.Err(AccessError.OutOfBounds);
                 Some(current) => {
                     var key = document.nodes.get(current);
                     if (key.key) {
                         if (offset == position) {
-                            return core.Result<Member<'a>, AccessError>.Ok(Member<'a>{
-                                key: document.strings.get(key.payload).view(),
-                                value: Value<'a>{document: document, index: current + 1}
-                            });
+                            return core.Result<Member<'a>,AccessError>.Ok(
+                                Member<'a>{
+                                    key:document.strings.get(key.payload).view(),
+                                    value:Value<'a>{document:document, index:current + 1}
+                                }
+                            );
                         }
                         offset += 1;
                     }
@@ -72,45 +117,85 @@ pub enum AccessError {
                 }
             }
         }
-        return core.Result<Member<'a>, AccessError>.Err(AccessError.OutOfBounds);
+        return core.Result<Member<'a>,AccessError>.Err(AccessError.OutOfBounds);
     }
-    pub func asString() -> core.Result<text.Text<'a>, AccessError> {
-        if (self.kind() != Kind.String) { return core.Result<text.Text<'a>, AccessError>.Err(AccessError.WrongType); }
-        return core.Result<text.Text<'a>, AccessError>.Ok(document.strings.get(document.nodes.get(index).payload).view());
+
+    pub func asString() -> core.Result<text.Text<'a>,AccessError> {
+        if (self.kind() != Kind.String) {
+            return core.Result<text.Text<'a>,AccessError>.Err(AccessError.WrongType);
+        }
+        return core.Result<text.Text<'a>,AccessError>.Ok(
+            document.strings.get(document.nodes.get(index).payload).view()
+        );
     }
-    pub func asBool() -> core.Result<bit, AccessError> {
-        if (self.kind() != Kind.Boolean) { return core.Result<bit, AccessError>.Err(AccessError.WrongType); }
-        return core.Result<bit, AccessError>.Ok(document.nodes.get(index).boolean);
+
+    pub func asBool() -> core.Result<bit,AccessError> {
+        if (self.kind() != Kind.Boolean) {
+            return core.Result<bit,AccessError>.Err(AccessError.WrongType);
+        }
+        return core.Result<bit,AccessError>.Ok(document.nodes.get(index).boolean);
     }
+
     // Preserve arbitrary JSON numbers exactly; integer conversion is opt-in and checked.
-    pub func asNumber() -> core.Result<text.Text<'a>, AccessError> {
-        if (self.kind() != Kind.Number) { return core.Result<text.Text<'a>, AccessError>.Err(AccessError.WrongType); }
-        return core.Result<text.Text<'a>, AccessError>.Ok(document.strings.get(document.nodes.get(index).payload).view());
+
+    pub func asNumber() -> core.Result<text.Text<'a>,AccessError> {
+        if (self.kind() != Kind.Number) {
+            return core.Result<text.Text<'a>,AccessError>.Err(AccessError.WrongType);
+        }
+        return core.Result<text.Text<'a>,AccessError>.Ok(
+            document.strings.get(document.nodes.get(index).payload).view()
+        );
     }
-    pub func asInt() -> core.Result<i64, AccessError> {
+
+    pub func asInt() -> core.Result<i64,AccessError> {
         var literal = self.asNumber()?;
-        if (literal.contains(".") || literal.contains("e") || literal.contains("E")) { return core.Result<i64, AccessError>.Err(AccessError.InvalidNumber); }
-        if (literal.length() > 20) { return core.Result<i64, AccessError>.Err(AccessError.Overflow); }
-        var buffer: u8[20]; var storage = buffer[:];
+        if (literal.contains(".") || literal.contains("e") || literal.contains("E")) {
+            return core.Result<i64,AccessError>.Err(AccessError.InvalidNumber);
+        }
+        if (literal.length() > 20) {
+            return core.Result<i64,AccessError>.Err(AccessError.Overflow);
+        }
+        var buffer:u8[20];
+        var storage = buffer[:];
         var length = literal.copyBytes(&mut storage)?;
-        return core.Result<i64, AccessError>.Ok(numeric.parseInt(buffer[:length], 10)?);
+        return core.Result<i64,AccessError>.Ok(numeric.parseInt(buffer[:length], 10)?);
     }
-    pub func asUint() -> core.Result<u64, AccessError> {
+
+    pub func asUint() -> core.Result<u64,AccessError> {
         var literal = self.asNumber()?;
-        if (literal.startsWith("-") || literal.contains(".") || literal.contains("e") || literal.contains("E")) { return core.Result<u64, AccessError>.Err(AccessError.InvalidNumber); }
-        if (literal.length() > 20) { return core.Result<u64, AccessError>.Err(AccessError.Overflow); }
-        var buffer: u8[20]; var storage = buffer[:];
+        if (
+            literal.startsWith("-")
+            || literal.contains(".")
+            || literal.contains("e")
+            || literal.contains("E")
+        ) {
+            return core.Result<u64,AccessError>.Err(AccessError.InvalidNumber);
+        }
+        if (literal.length() > 20) {
+            return core.Result<u64,AccessError>.Err(AccessError.Overflow);
+        }
+        var buffer:u8[20];
+        var storage = buffer[:];
         var length = literal.copyBytes(&mut storage)?;
-        return core.Result<u64, AccessError>.Ok(numeric.parseUint(buffer[:length], 10)?);
+        return core.Result<u64,AccessError>.Ok(numeric.parseUint(buffer[:length], 10)?);
     }
 }
 
-pub struct Member<'a> { pub var key: text.Text<'a>; pub var value: Value<'a>; }
+pub struct Member<'a> {
+    pub var key:text.Text<'a>;
+    pub var value:Value<'a>;
+}
 
-func lookup<'a, 'b>(document: &'a Document, index: usize, key: text.Text<'b>) -> core.Result<Value<'a>, AccessError> {
-    if (document.nodes.get(index).kind != Kind.Object) { return core.Result<Value<'a>, AccessError>.Err(AccessError.WrongType); }
+func lookup<'a,'b>(
+    document:&'a Document,
+    index:usize,
+    key:text.Text<'b>
+) -> core.Result<Value<'a>,AccessError> {
+    if (document.nodes.get(index).kind != Kind.Object) {
+        return core.Result<Value<'a>,AccessError>.Err(AccessError.WrongType);
+    }
     var child = document.nodes.get(index).first;
-    var found: core.Option<usize>;
+    var found:core.Option<usize>;
     while (true) {
         match (child) {
             None => break;
@@ -118,36 +203,47 @@ func lookup<'a, 'b>(document: &'a Document, index: usize, key: text.Text<'b>) ->
                 var entry = document.nodes.get(current);
                 if (entry.key) {
                     var name = document.strings.get(entry.payload).view();
-                    if (name.length() == key.length() && name.startsWith(key)) { found = core.Option<usize>.Some(current + 1); }
+                    if (name.length() == key.length() && name.startsWith(key)) {
+                        found = core.Option<usize>.Some(current + 1);
+                    }
                 }
                 child = entry.next;
             }
         }
     }
     match (found) {
-        None => return core.Result<Value<'a>, AccessError>.Err(AccessError.MissingKey);
-        Some(current) => return core.Result<Value<'a>, AccessError>.Ok(Value<'a>{document: document, index: current});
+        None => return core.Result<Value<'a>,AccessError>.Err(AccessError.MissingKey);
+        Some(current) => return core.Result<Value<'a>,AccessError>.Ok(
+            Value<'a>{document:document, index:current}
+        );
     }
 }
 
-func decoded(input: &u8[]) -> core.Result<text.String, Error> {
+func decoded(input:&u8[]) -> core.Result<text.String,Error> {
     var output = text.builder();
-    var cursor = Cursor{input: input, position: 1};
+    var cursor = Cursor{input:input, position:1};
     while (cursor.position < input.length - 1) {
-        var scalar: u32;
+        var scalar:u32;
         if (input[cursor.position] != 92) {
             var character = utf8.decode(input, cursor.position)?;
-            scalar = character.scalar; cursor.position = character.next;
+            scalar = character.scalar;
+            cursor.position = character.next;
         } else {
             cursor.position += 1;
-            var escape = input[cursor.position]; cursor.position += 1;
+            var escape = input[cursor.position];
+            cursor.position += 1;
             scalar = escape.(u32);
-            if (escape == 98) { scalar = 8; }
-            else if (escape == 102) { scalar = 12; }
-            else if (escape == 110) { scalar = 10; }
-            else if (escape == 114) { scalar = 13; }
-            else if (escape == 116) { scalar = 9; }
-            else if (escape == 117) {
+            if (escape == 98) {
+                scalar = 8;
+            } else if (escape == 102) {
+                scalar = 12;
+            } else if (escape == 110) {
+                scalar = 10;
+            } else if (escape == 114) {
+                scalar = 13;
+            } else if (escape == 116) {
+                scalar = 9;
+            } else if (escape == 117) {
                 scalar = cursor.hex()?;
                 if (scalar >= 55296 && scalar <= 56319) {
                     cursor.position += 2;
@@ -158,22 +254,27 @@ func decoded(input: &u8[]) -> core.Result<text.String, Error> {
         }
         output.appendCodepoint(scalar)?;
     }
-    return core.Result<text.String, Error>.Ok(text.finish(output));
+    return core.Result<text.String,Error>.Ok(text.finish(output));
 }
 
-pub func parse(input: &u8[]) -> core.Result<Document, Error> {
+pub func parse(input:&u8[]) -> core.Result<Document,Error> {
     var nodes = syntax(input)?;
     var strings = collections.list<text.String>();
-    for (var i: usize = 0; i < nodes.length(); i += 1) {
+    for (var i:usize = 0; i < nodes.length(); i += 1) {
         var entry = *nodes.get(i);
         if (entry.kind == Kind.String || entry.kind == Kind.Number) {
             var token = (*input)[entry.start:entry.end];
             var payload = strings.length();
-            if (entry.kind == Kind.String) { strings.append(decoded(&token)?)?; }
-            else { strings.append(text.fromUtf8(&token)?)?; }
+            if (entry.kind == Kind.String) {
+                strings.append(decoded(&token)?)?;
+            } else {
+                strings.append(text.fromUtf8(&token)?)?;
+            }
             nodes.getMut(i).payload = payload;
         }
-        if (entry.kind == Kind.Boolean) { nodes.getMut(i).boolean = input[entry.start] == 116; }
+        if (entry.kind == Kind.Boolean) {
+            nodes.getMut(i).boolean = input[entry.start] == 116;
+        }
         match (entry.parent) {
             None => {}
             Some(parent) => {
@@ -187,5 +288,5 @@ pub func parse(input: &u8[]) -> core.Result<Document, Error> {
             }
         }
     }
-    return core.Result<Document, Error>.Ok(Document{nodes: nodes, strings: strings});
+    return core.Result<Document,Error>.Ok(Document{nodes:nodes, strings:strings});
 }

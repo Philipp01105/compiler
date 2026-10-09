@@ -1,10 +1,10 @@
 package main;
 
 struct Payload {
-    var value: int;
+    var value:int;
 }
 
-enum State(payload: Payload) {
+enum State(payload:Payload) {
     Broken(Payload)
 }
 
