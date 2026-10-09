@@ -13,17 +13,26 @@ typedef struct {
 
 static size_t align(size_t n, size_t a) { return (n + a - 1) & ~(a - 1); }
 
-static int relocate(NativeObject *object, const uint64_t addresses[3]) {
+static int relocate(NativeObject *object, const uint64_t addresses[NATIVE_SECTION_COUNT], uint64_t image_base) {
     for (size_t n = 0; n < object->relocation_count; ++n) {
         const NativeRelocation *r = &object->relocations[n];
         const NativeSymbol *s = &object->symbols[r->symbol];
         size_t width = r->kind == NATIVE_ADDR64 ? 8 : 4;
-        if (!s->defined || s->section < 0 || s->section >= NATIVE_SECTION_COUNT ||
+        if (!s->defined || s->section < 0 || s->section >= NATIVE_SECTION_COUNT || r->section < 0 || r->section >= NATIVE_SECTION_COUNT ||
+            !addresses[s->section] || !addresses[r->section] ||
             r->offset > object->sections[r->section].size || width > object->sections[r->section].size - r->offset) {
             native_error(object, "Invalid or unresolved executable relocation");
             return 0;
         }
         uint64_t value = addresses[s->section] + s->offset + (uint64_t) r->addend;
+        if (r->kind == NATIVE_ADDR32NB) {
+            if (value < image_base || value - image_base > UINT32_MAX) {
+                native_error(object, "Image-relative relocation exceeds 32-bit range");
+                return 0;
+            }
+            native_buffer_patch(&object->sections[r->section], r->offset, value - image_base, 4);
+            continue;
+        }
         if (r->kind != NATIVE_ADDR64) {
             int64_t relative = (int64_t)(value - (addresses[r->section] + r->offset));
             if (relative < INT32_MIN || relative > INT32_MAX) {
@@ -103,9 +112,44 @@ static void pe_section(NativeBuffer *out, size_t header, const char *name, size_
     patch(out, header + 36, flags, 4);
 }
 
+static uint32_t unwind_uint(const unsigned char *bytes) {
+    return (uint32_t)bytes[0] | (uint32_t)bytes[1] << 8 | (uint32_t)bytes[2] << 16 | (uint32_t)bytes[3] << 24;
+}
+
+static int unwind_order(const void *left, const void *right) {
+    uint32_t a = unwind_uint(left), b = unwind_uint(right);
+    return a < b ? -1 : a > b;
+}
+
+static int validate_pe_unwind(NativeObject *object, size_t text_rva, size_t xdata_rva) {
+    NativeBuffer *table = &object->sections[NATIVE_PDATA], *info = &object->sections[NATIVE_XDATA];
+    if (!table->size) return 1;
+    if (table->size % 12 || !info->size) goto invalid;
+    qsort(table->data, table->size / 12, 12, unwind_order);
+    uint32_t previous_end = 0;
+    for (size_t at = 0; at < table->size; at += 12) {
+        uint32_t begin = unwind_uint(table->data + at), end = unwind_uint(table->data + at + 4);
+        uint32_t address = unwind_uint(table->data + at + 8);
+        if (begin < text_rva || begin >= end || end > text_rva + object->sections[NATIVE_TEXT].size ||
+            begin < previous_end || address < xdata_rva || address % 4) goto invalid;
+        size_t offset = address - xdata_rva;
+        if (offset > info->size || info->size - offset < 4) goto invalid;
+        // This emitter currently uses UNWIND_INFO version 1 without handlers or chains.
+        if (info->data[offset] != 1) goto invalid;
+        size_t codes = info->data[offset + 2];
+        if (4 + ((codes + 1) & ~(size_t)1) * 2 > info->size - offset) goto invalid;
+        previous_end = end;
+    }
+    return 1;
+invalid:
+    native_error(object, "Malformed or unsupported Windows unwind metadata");
+    return 0;
+}
+
 static int write_pe(NativeObject *object, const Import *imports, size_t count, NativeBuffer *out) {
     NativeBuffer idata = {0}, base_reloc = {0};
-    size_t rva[5], raw[5], sizes[5];
+    size_t rva[7] = {0}, raw[7] = {0}, sizes[7] = {0};
+    size_t section_count = object->sections[NATIVE_PDATA].size || object->sections[NATIVE_XDATA].size ? 7 : 5;
     sizes[0] = object->sections[0].size;
     sizes[1] = object->sections[1].size;
     sizes[2] = object->sections[2].size;
@@ -160,11 +204,28 @@ static int write_pe(NativeObject *object, const Import *imports, size_t count, N
         UINT(&base_reloc, 0, 4);
     }
     sizes[4] = base_reloc.size;
-    uint64_t addresses[3] = {
-        UINT64_C(0x140000000) + rva[0], UINT64_C(0x140000000) + rva[1], UINT64_C(0x140000000) + rva[2]
+    sizes[5] = object->sections[NATIVE_PDATA].size;
+    sizes[6] = object->sections[NATIVE_XDATA].size;
+    for (size_t n = 5; n < section_count; n++) {
+        rva[n] = align(rva[n - 1] + sizes[n - 1], 4096);
+        raw[n] = raw[n - 1] + align(sizes[n - 1], 512);
+    }
+    const uint64_t image_base = UINT64_C(0x140000000);
+    uint64_t addresses[NATIVE_SECTION_COUNT] = {
+        image_base + rva[0], image_base + rva[1], image_base + rva[2],
+        sizes[5] ? image_base + rva[5] : 0, sizes[6] ? image_base + rva[6] : 0
     };
-    if (!relocate(object, addresses))goto failure;
-    if (raw[4] + align(sizes[4], 512) > UINT32_MAX || rva[4] + align(sizes[4], 4096) > UINT32_MAX) {
+    for (size_t n = 0; n < object->relocation_count; n++) {
+        const NativeRelocation *relocation = &object->relocations[n];
+        if (relocation->section >= NATIVE_PDATA && relocation->kind != NATIVE_ADDR32NB) {
+            native_error(object, "Unwind sections require image-relative relocations");
+            goto failure;
+        }
+    }
+    if (!relocate(object, addresses, image_base))goto failure;
+    if (!validate_pe_unwind(object, rva[0], rva[6])) goto failure;
+    size_t last = section_count - 1;
+    if (raw[last] + align(sizes[last], 512) > UINT32_MAX || rva[last] + align(sizes[last], 4096) > UINT32_MAX) {
         native_error(object, "PE executable exceeds format limits");
         goto failure;
     }
@@ -173,14 +234,14 @@ static int write_pe(NativeObject *object, const Import *imports, size_t count, N
     patch(out, 0x3c, 0x80, 4);
     patch(out, 0x80, 0x4550, 4);
     patch(out, 0x84, 0x8664, 2);
-    patch(out, 0x86, 5, 2);
+    patch(out, 0x86, section_count, 2);
     patch(out, 0x94, 240, 2);
     patch(out, 0x96, 0x22, 2);
     size_t opt = 0x98;
     patch(out, opt, 0x20b, 2);
     patch(out, opt + 2, 1, 1);
     patch(out, opt + 4, align(sizes[0], 512), 4);
-    patch(out, opt + 8, raw[4] + align(sizes[4], 512) - raw[1], 4);
+    patch(out, opt + 8, raw[last] + align(sizes[last], 512) - raw[1], 4);
     size_t entry = native_symbol(object, "__dmm_entry");
     patch(out, opt + 16, rva[0] + object->symbols[entry].offset, 4);
     patch(out, opt + 20, rva[0], 4);
@@ -189,7 +250,7 @@ static int write_pe(NativeObject *object, const Import *imports, size_t count, N
     patch(out, opt + 36, 512, 4);
     patch(out, opt + 40, 6, 2);
     patch(out, opt + 48, 6, 2);
-    patch(out, opt + 56, align(rva[4] + sizes[4], 4096), 4);
+    patch(out, opt + 56, align(rva[last] + sizes[last], 4096), 4);
     patch(out, opt + 60, 1024, 4);
     patch(out, opt + 68, 3, 2);
     patch(out, opt + 70, 0x160, 2);
@@ -202,11 +263,15 @@ static int write_pe(NativeObject *object, const Import *imports, size_t count, N
     patch(out, opt + 112 + 12, (count + 1) * 20, 4);
     patch(out, opt + 112 + 5 * 8, rva[4], 4);
     patch(out, opt + 116 + 5 * 8, sizes[4], 4);
+    if (sizes[5]) {
+        patch(out, opt + 112 + 3 * 8, rva[5], 4);
+        patch(out, opt + 116 + 3 * 8, sizes[5], 4);
+    }
     patch(out, opt + 112 + 12 * 8, rva[2] + (count ? imports[0].iat : 0), 4);
     patch(out, opt + 116 + 12 * 8, count * 16, 4);
-    const char *const names[] = {".text", ".rdata", ".data", ".idata", ".reloc"};
-    const size_t flags[] = {0x60000020, 0x40000040, 0xc0000040, 0x40000040, 0x42000040};
-    for (size_t n = 0; n < 5; ++n)pe_section(out, opt + 240 + n * 40, names[n], sizes[n], rva[n], raw[n], flags[n]);
+    const char *const names[] = {".text", ".rdata", ".data", ".idata", ".reloc", ".pdata", ".xdata"};
+    const size_t flags[] = {0x60000020, 0x40000040, 0xc0000040, 0x40000040, 0x42000040, 0x40000040, 0x40000040};
+    for (size_t n = 0; n < section_count; ++n)pe_section(out, opt + 240 + n * 40, names[n], sizes[n], rva[n], raw[n], flags[n]);
     for (size_t n = 0; n < 3; ++n) {
         BYTES(out, object->sections[n].data, sizes[n]);
         PAD(out, 512);
@@ -215,6 +280,12 @@ static int write_pe(NativeObject *object, const Import *imports, size_t count, N
     PAD(out, 512);
     BYTES(out, base_reloc.data, base_reloc.size);
     PAD(out, 512);
+    if (section_count == 7) {
+        BYTES(out, object->sections[NATIVE_PDATA].data, sizes[5]);
+        PAD(out, 512);
+        BYTES(out, object->sections[NATIVE_XDATA].data, sizes[6]);
+        PAD(out, 512);
+    }
     free(idata.data);
     free(base_reloc.data);
     return 1;
@@ -246,10 +317,10 @@ static int write_elf(NativeObject *object, const Import *imports, size_t count, 
     size_t offsets[3] = {4096, 0, 0};
     offsets[1] = align(offsets[0] + object->sections[0].size, 4096);
     offsets[2] = align(offsets[1] + object->sections[1].size, 4096);
-    uint64_t addresses[3] = {
+    uint64_t addresses[NATIVE_SECTION_COUNT] = {
         UINT64_C(0x400000) + offsets[0], UINT64_C(0x400000) + offsets[1], UINT64_C(0x400000) + offsets[2]
     };
-    if (!relocate(object, addresses))return 0;
+    if (!relocate(object, addresses, UINT64_C(0x400000)))return 0;
     BYTES(out, NULL, 4096);
     memcpy(out->data, "\177ELF\2\1\1", 7);
     patch(out, 16, 2, 2);
@@ -278,6 +349,12 @@ failure:
 
 int native_link_executable(NativeObject *object, TargetFormat target, NativeBuffer *output) {
     if (!native_validate(object)) return 0;
+    for (size_t section = 3; section < NATIVE_SECTION_COUNT; section++) {
+        if (target != TARGET_COFF && object->sections[section].size) {
+            native_error(object, "Internal linking does not yet retain unwind sections; use external linking");
+            return 0;
+        }
+    }
     Import *imports = NULL;
     size_t count = 0;
     if (!native_runtime_emit(object, target) || !add_imports(object, target, &imports, &count))return 0;

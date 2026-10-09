@@ -79,7 +79,7 @@ static int make_object(NativeObject *o) {
 
 static size_t pe_offset(const NativeBuffer *b, uint64_t rva) {
     size_t table = 0x98 + 240;
-    for (size_t n = 0; n < 5; ++n) {
+    for (size_t n = 0; n < read_uint(b, 0x86, 2); ++n) {
         size_t h = table + n * 40;
         uint64_t start = read_uint(b, h + 12, 4), size = read_uint(b, h + 8, 4);
         if (rva >= start && rva - start < size)return (size_t) (read_uint(b, h + 20, 4) + rva - start);
@@ -177,4 +177,76 @@ static int binary_tests(TargetFormat target) {
     return 1;
 }
 
-int main(void) { return encoder_tests() && binary_tests(TARGET_ELF) && binary_tests(TARGET_COFF) ? 0 : 1; }
+static int unsupported_sections_test(TargetFormat target) {
+    NativeObject object = {0};
+    NativeBuffer output = {0};
+    CHECK(make_object(&object));
+    object.section = NATIVE_XDATA;
+    CHECK(native_define(&object, ".Ltest_unwind", 0, 0));
+    CHECK(native_uint(&object, 1, 4));
+    object.section = NATIVE_PDATA;
+    CHECK(native_reference(&object, "main", NATIVE_ADDR32NB, 0, 0));
+    CHECK(native_uint(&object, 0, 4));
+    if (target == TARGET_COFF) {
+        CHECK(native_write_object(&object, target, &output));
+        CHECK(read_uint(&output, 2, 2) == 5);
+        free(output.data);
+        memset(&output, 0, sizeof(output));
+    }
+    CHECK(!native_link_executable(&object, target, &output));
+    CHECK(strstr(object.error, "unwind") && output.size == 0);
+    native_object_free(&object);
+    free(output.data);
+    memset(&object, 0, sizeof(object));
+    memset(&output, 0, sizeof(output));
+    CHECK(make_object(&object));
+    object.section = NATIVE_XDATA;
+    CHECK(native_define(&object, ".Lempty_section", 0, 0));
+    object.section = NATIVE_RODATA;
+    CHECK(native_reference(&object, ".Lempty_section", NATIVE_ADDR64, object.sections[NATIVE_RODATA].size, 0));
+    CHECK(native_uint(&object, 0, 8));
+    CHECK(!native_link_executable(&object, target, &output));
+    CHECK(strstr(object.error, "relocation") && output.size == 0);
+    native_object_free(&object);
+    free(output.data);
+    return 1;
+}
+
+static int pe_unwind_retention_test(void) {
+    NativeObject object = {0};
+    NativeBuffer output = {0};
+    CHECK(make_object(&object));
+    object.section = NATIVE_XDATA;
+    CHECK(native_define(&object, ".Ltest_info", 0, 0));
+    CHECK(native_uint(&object, 1, 4)); /* Version 1, no prologue/codes/frame register. */
+    object.section = NATIVE_PDATA;
+    const char *functions[] = {"__dmm_package_cleanup", "main", "__dmm_package_init"};
+    for (size_t i = 0; i < 3; i++) {
+        CHECK(native_reference(&object, functions[i], NATIVE_ADDR32NB, object.sections[NATIVE_PDATA].size, 0));
+        CHECK(native_uint(&object, 0, 4));
+        CHECK(native_reference(&object, functions[i], NATIVE_ADDR32NB, object.sections[NATIVE_PDATA].size, 1));
+        CHECK(native_uint(&object, 0, 4));
+        CHECK(native_reference(&object, ".Ltest_info", NATIVE_ADDR32NB, object.sections[NATIVE_PDATA].size, 0));
+        CHECK(native_uint(&object, 0, 4));
+    }
+    CHECK(native_link_executable(&object, TARGET_COFF, &output));
+    CHECK(read_uint(&output, 0x86, 2) == 7);
+    size_t rva = (size_t)read_uint(&output, 0x98 + 112 + 3 * 8, 4);
+    CHECK(read_uint(&output, 0x98 + 116 + 3 * 8, 4) == 36);
+    size_t table = pe_offset(&output, rva);
+    CHECK(table != SIZE_MAX);
+    for (size_t i = 0; i < 3; i++) {
+        CHECK(read_uint(&output, table + 12 * i, 4) == 4096 + i);
+        CHECK(read_uint(&output, table + 12 * i + 4, 4) == 4097 + i);
+        size_t info = pe_offset(&output, read_uint(&output, table + 12 * i + 8, 4));
+        CHECK(info != SIZE_MAX && read_uint(&output, info, 4) == 1);
+    }
+    native_object_free(&object);
+    free(output.data);
+    return 1;
+}
+
+int main(void) {
+    return encoder_tests() && binary_tests(TARGET_ELF) && binary_tests(TARGET_COFF) &&
+           unsupported_sections_test(TARGET_ELF) && unsupported_sections_test(TARGET_COFF) && pe_unwind_retention_test() ? 0 : 1;
+}
