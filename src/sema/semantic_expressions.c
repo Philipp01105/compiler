@@ -2307,7 +2307,10 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
         expression->resolved_named_type_token == AST_TOKEN_NONE &&
         expression->resolved_symbol_id == AST_SYMBOL_NONE &&
         !(expression->has_resolved_ast_type &&
-          expression->resolved_ast_type.kind == AST_TYPE_FUNCTION) &&
+          (expression->resolved_ast_type.kind == AST_TYPE_FUNCTION ||
+           expression->resolved_ast_type.kind == AST_TYPE_FUTURE ||
+           expression->resolved_ast_type.kind == AST_TYPE_JOIN ||
+           expression->resolved_ast_type.kind == AST_TYPE_EXECUTOR)) &&
         !(expression->kind == AST_EXPR_MEMBER && expression->left != NULL &&
           find_enum_value_by_symbol(analyzer,
                                     expression->left->resolved_named_symbol_id,
@@ -2319,11 +2322,8 @@ static void analyze_expression_context(Analyzer *analyzer, AstExpression *expres
           expression->left->kind == AST_EXPR_NAME &&
           is_builtin_name(ast_program_lexeme(analyzer->program,
                                              expression->left->value_token))) &&
-        !(direct_call_callee && expression->kind == AST_EXPR_NAME)) {
-        if (analyzer->program->source_path && (strstr(analyzer->program->source_path, "http_server") || strstr(analyzer->program->source_path, "generic-async-callee")))
-            fprintf(stderr, "UNRESOLVED %s:%d:%d kind=%d name=%s direct=%d\n", analyzer->program->source_path, expression->span.begin.line, expression->span.begin.column, expression->kind, ast_program_lexeme(analyzer->program, expression->value_token), direct_call_callee);
+        !(direct_call_callee && expression->kind == AST_EXPR_NAME))
         analyzer->model->unresolved_expression_count++;
-    }
 }
 
 void analyze_expression(Analyzer *analyzer, AstExpression *expression) {

@@ -104,6 +104,8 @@ static int block_terminated(const IrFunction *function) {
 }
 
 static IrInstruction *emit(IrBuilder *builder, IrOpcode opcode, AstSourceSpan span) {
+    /* Any emission can relocate instructions. Save values/metadata, not pointers,
+       before emitting another instruction or lowering a nested expression. */
     IrFunction *function = builder->function;
     /* Structured lowering may request a join jump after a return/break. */
     if (opcode == IR_OP_JUMP && block_terminated(function)) return NULL;
@@ -725,11 +727,12 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         test->type_id = type_from_parts(
             builder->module, TYPE_BIT, 0, AST_TOKEN_NONE, 0, 0, 0, 0,
             builder->program, AST_SYMBOL_NONE);
+        size_t failure_condition = test->result;
         IrInstruction *select = emit(builder, IR_OP_BRANCH,
                                      expression->span);
         if (select == NULL) return IR_VALUE_NONE;
         set_void_type(builder, select);
-        select->operand_a = test->result;
+        select->operand_a = failure_condition;
         select->target_a = failure_label;
         select->target_b = continue_check_label;
 
@@ -813,11 +816,12 @@ static size_t lower_expression(IrBuilder *builder, const AstExpression *expressi
         continue_test->type_id = type_from_parts(
             builder->module, TYPE_BIT, 0, AST_TOKEN_NONE, 0, 0, 0, 0,
             builder->program, AST_SYMBOL_NONE);
+        size_t continue_condition = continue_test->result;
         IrInstruction *continue_select = emit(builder, IR_OP_BRANCH,
                                               expression->span);
         if (continue_select == NULL) return IR_VALUE_NONE;
         set_void_type(builder, continue_select);
-        continue_select->operand_a = continue_test->result;
+        continue_select->operand_a = continue_condition;
         continue_select->target_a = success_label;
         continue_select->target_b = invalid_label;
         emit_label(builder, success_label, expression->span);
@@ -1833,15 +1837,16 @@ static void lower_match_bindings(IrBuilder *builder, size_t value,
                                  (binding->type.borrow_kind != AST_BORROW_NONE);
         payload->type_name_token = binding->type.name_token;
         payload->is_array = binding->type.is_array;
+        IrInstruction payload_metadata = *payload;
         IrInstruction *local = emit(builder, IR_OP_DECLARE, arm->span);
         if (local == NULL) return;
-        local->operand_a = payload->result;
+        local->operand_a = payload_metadata.result;
         local->symbol_id = binding->resolved_symbol_id;
-        local->type_id = payload->type_id;
-        local->type = payload->type;
-        local->pointer_depth = payload->pointer_depth;
-        local->type_name_token = payload->type_name_token;
-        local->is_array = payload->is_array;
+        local->type_id = payload_metadata.type_id;
+        local->type = payload_metadata.type;
+        local->pointer_depth = payload_metadata.pointer_depth;
+        local->type_name_token = payload_metadata.type_name_token;
+        local->is_array = payload_metadata.is_array;
         register_local_drop(builder,binding->resolved_symbol_id,local->type_id,arm->span);
     }
 }
@@ -1869,10 +1874,11 @@ static size_t lower_match_value_arms(IrBuilder *builder,
     test->type_id = type_from_parts(builder->module, TYPE_BIT, 0,
                                     AST_TOKEN_NONE, 0, 0, 0, 0,
                                     builder->program, AST_SYMBOL_NONE);
+    size_t condition = test->result;
     IrInstruction *branch = emit(builder, IR_OP_BRANCH, arm->span);
     if (branch == NULL) return IR_VALUE_NONE;
     set_void_type(builder, branch);
-    branch->operand_a = test->result;
+    branch->operand_a = condition;
     branch->target_a = body_label;
     branch->target_b = next_label;
     emit_label(builder, body_label, arm->span);
@@ -2138,15 +2144,16 @@ static void lower_statement(IrBuilder *builder, const AstStatement *statement) {
                     register_local_drop(builder, declaration.symbol_id, declaration.type_id, statement->span);
                     continue;
                 }
-                emit_move_if_owned(builder, statement->value);
                 instruction->owns_slice_backing = statement->value != NULL &&
                                                    statement->value->owns_slice_backing;
-                register_local_drop(builder, instruction->symbol_id,
-                                    instruction->type_id, statement->span);
-                if (instruction->is_slice)
+                IrInstruction declaration = *instruction;
+                emit_move_if_owned(builder, statement->value);
+                register_local_drop(builder, declaration.symbol_id,
+                                    declaration.type_id, statement->span);
+                if (declaration.is_slice)
                     register_slice_backing_cleanup(builder,
-                                                   instruction->symbol_id,
-                                                   instruction->type_id,
+                                                   declaration.symbol_id,
+                                                   declaration.type_id,
                                                    statement->span);
             }
         } else if (statement->kind == AST_STMT_ASSIGNMENT) {
@@ -2535,15 +2542,16 @@ static int append_interface_thunk(IrModule *module, const AstProgram *program,
     if (call->type != TYPE_VOID || call->pointer_depth != 0)
         call->result = new_value(&builder);
 
+    IrInstruction call_metadata = *call;
     IrInstruction *return_instruction = emit(&builder, IR_OP_RETURN, method->span);
     if (return_instruction == NULL) return 0;
-    return_instruction->operand_a = call->result;
-    return_instruction->type = call->type;
-    return_instruction->type_id = call->type_id;
-    return_instruction->pointer_depth = call->pointer_depth;
-    return_instruction->type_name_token = call->type_name_token;
-    return_instruction->is_array = call->is_array;
-    return_instruction->is_slice = call->is_slice;
+    return_instruction->operand_a = call_metadata.result;
+    return_instruction->type = call_metadata.type;
+    return_instruction->type_id = call_metadata.type_id;
+    return_instruction->pointer_depth = call_metadata.pointer_depth;
+    return_instruction->type_name_token = call_metadata.type_name_token;
+    return_instruction->is_array = call_metadata.is_array;
+    return_instruction->is_slice = call_metadata.is_slice;
     return !builder.failed;
 }
 
@@ -2782,6 +2790,7 @@ static int append_enum_drop_glue(IrModule *module,
                                         enumeration->symbol_id);
     if (receiver->type_id == IR_TYPE_NONE) return 0;
     receiver->type_name_token = enumeration->name_token;
+    size_t receiver_value = receiver->result;
     size_t end_label = new_label(&builder);
     for (size_t v = 0; v < enumeration->variant_count; v++) {
         const IrEnumVariant *variant = &enumeration->variants[v];
@@ -2796,7 +2805,7 @@ static int append_enum_drop_glue(IrModule *module,
         IrInstruction *test = emit(&builder, IR_OP_ENUM_IS,
                                    (AstSourceSpan) {0});
         if (test == NULL) return 0;
-        test->operand_a = receiver->result;
+        test->operand_a = receiver_value;
         test->symbol_id = variant->symbol_id;
         test->result = new_value(&builder);
         test->type = TYPE_BIT;
@@ -2804,11 +2813,12 @@ static int append_enum_drop_glue(IrModule *module,
                                         AST_TOKEN_NONE, 0, 0, 0, 0,
                                         enumeration->source_program,
                                         AST_SYMBOL_NONE);
+        size_t condition = test->result;
         IrInstruction *branch = emit(&builder, IR_OP_BRANCH,
                                      (AstSourceSpan) {0});
         if (branch == NULL) return 0;
         set_void_type(&builder, branch);
-        branch->operand_a = test->result;
+        branch->operand_a = condition;
         branch->target_a = body_label;
         branch->target_b = next_label;
         emit_label(&builder, body_label, (AstSourceSpan) {0});
@@ -2820,7 +2830,7 @@ static int append_enum_drop_glue(IrModule *module,
             IrInstruction *payload = emit(&builder, IR_OP_ENUM_PAYLOAD,
                                           (AstSourceSpan) {0});
             if (payload == NULL) return 0;
-            payload->operand_a = receiver->result;
+            payload->operand_a = receiver_value;
             payload->symbol_id = variant->symbol_id;
             payload->enum_payload_index = p - 1;
             payload->target_a = body_label;
@@ -2830,12 +2840,13 @@ static int append_enum_drop_glue(IrModule *module,
                                 ? module->types[payload_type].primitive
                                 : TYPE_UNKNOWN;
             payload->is_array = module->types[payload_type].kind == IR_TYPE_ARRAY;
+            size_t payload_value = payload->result;
             IrInstruction *drop = emit(&builder, IR_OP_DROP,
                                        (AstSourceSpan) {0});
             if (drop == NULL) return 0;
             drop->type = TYPE_VOID;
             drop->type_id = payload_type;
-            drop->operand_a = payload->result;
+            drop->operand_a = payload_value;
         }
         IrInstruction *jump = emit(&builder, IR_OP_JUMP,
                                    (AstSourceSpan) {0});

@@ -230,16 +230,13 @@ func validateConfig(options: Config) -> core.Result<void, Error> {
     var contentLength: usize;
     var routePattern: string;
     pub func method() -> Method { return methodValue; }
-    pub func path() -> text.Text { return pathValue.view(); }
-    pub func body() -> u8[] { return payload.view(); }
+    pub func path<'a>() -> text.Text<'a> { return requestPath(&self); }
+    pub func body() -> &collections.List<u8> { return &self.payload; }
     pub func bodyText() -> core.Result<text.String, Error> {
         var input = payload.view(); return core.Result<text.String, Error>.Ok(text.fromUtf8(&input)?);
     }
-    pub func header<'a>(name: string) -> core.Option<text.Text<'a>> {
-        for (var i: usize = 0; i < headers.length(); i += 1) {
-            if (sameText(headers.get(i).name.view(), name, true)) { return core.Option<text.Text<'a>>.Some(headers.get(i).value.view()); }
-        }
-        return core.Option<text.Text<'a>>.None;
+    pub func header(name: string) -> core.Result<core.Option<text.String>, Error> {
+        return requestHeader(&self, name);
     }
     pub func query(name: string) -> core.Result<core.Option<text.String>, Error> {
         var input = queryValue.view(); var start: usize = 0;
@@ -269,6 +266,16 @@ func validateConfig(options: Config) -> core.Result<void, Error> {
         }
         return core.Result<core.Option<text.String>, Error>.Ok(core.Option<text.String>.None);
     }
+}
+func requestPath<'a>(request: &'a Request) -> text.Text<'a> { return request.pathValue.view(); }
+func requestHeader(request: &Request, name: string) -> core.Result<core.Option<text.String>, Error> {
+    for (var i: usize = 0; i < request.headers.length(); i += 1) {
+        if (sameText(request.headers.get(i).name.view(), name, true)) {
+            var output = text.builder(); output.appendText(request.headers.get(i).value.view())?;
+            return core.Result<core.Option<text.String>, Error>.Ok(core.Option<text.String>.Some(text.finish(output)));
+        }
+    }
+    return core.Result<core.Option<text.String>, Error>.Ok(core.Option<text.String>.None);
 }
 func parseMethod(value: u8[]) -> Method {
     if (same(value, "GET")) { return Method.Get; } if (same(value, "HEAD")) { return Method.Head; }

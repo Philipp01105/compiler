@@ -214,15 +214,72 @@ static void report_unresolved(const AstProgram *program) {
     }
 }
 
+static int instruction_growth_regression(void) {
+    char *source = malloc(65536);
+    if (source == NULL) return 1;
+    size_t used = (size_t) snprintf(source, 65536,
+        "enum Propagation<T,R> { Continue(T), Break(R) } "
+        "enum Outcome { Ok(int), Err(int); "
+        "static func branch(value:Self)->Propagation<int,int> { match(value) { "
+        "Ok(output)=>return Propagation<int,int>.Continue(output); "
+        "Err(error)=>return Propagation<int,int>.Break(error); } } "
+        "static func fromResidual(error:int)->Self { return Outcome.Err(error); } } "
+        "struct File { var handle:int; destructor {} } enum Files { ");
+    /* Drop glue keeps its receiver across many emissions and growth boundaries. */
+    for (int i = 0; i < 20; i++)
+        used += (size_t) snprintf(source + used, 65536 - used, "V%d(File),", i);
+    used += (size_t) snprintf(source + used, 65536 - used, "} ");
+    /* Shift '?' and value-match lowering across every offset of the initial
+       32-instruction allocation, then several larger allocations. */
+    for (int i = 0; i < 64; i++) {
+        used += (size_t) snprintf(source + used, 65536 - used,
+            "func step%d(input:Outcome)->Outcome { var padding:int=0;", i);
+        for (int j = 0; j < i; j++)
+            used += (size_t) snprintf(source + used, 65536 - used, "padding+=1;");
+        used += (size_t) snprintf(source + used, 65536 - used,
+            "var value=input?; var chosen=match(Outcome.Ok(value)) { "
+            "Ok(output)=>{output} Err(error)=>{error} }; return Outcome.Ok(chosen); }");
+    }
+    used += (size_t) snprintf(source + used, 65536 - used,
+        "func main()->int { var file:File; var files=Files.V0(file); "
+        "var moved=files; return 0; }");
+    const FrontendOptions options = {0};
+    AstProgram *program = test_parse_source(source, used, "instruction-growth.dmm", &options);
+    free(source);
+    SemanticModel *semantics = program == NULL ? NULL : semantic_analyze(program);
+    IrModule *module = semantics == NULL || semantics->error_count != 0
+        ? NULL : ir_lower_program(program, semantics);
+    int failed = module == NULL || !ir_verify_module(module);
+    size_t large_functions = 0;
+    for (size_t i = 0; module != NULL && i < module->function_count; i++)
+        if (module->functions[i].instruction_count > 32) large_functions++;
+    if (large_functions < 64) failed = 1;
+    ir_module_free(module);
+    semantic_model_free(semantics);
+    ast_program_free(program);
+    if (failed) fprintf(stderr, "IR instruction growth regression failed\n");
+    return failed;
+}
+
 static int generic_async_callee_regression(void) {
     const char *source =
         "struct Box<T> { var value:T; } "
         "func make<T>(value:T)->Box<T> { return Box<T>{value:value}; } "
-        "async func build()->int { var box=make<int>(42); return box.value; } "
+        "async func one()->int { return 1; } "
+        "async func invoke(callback:func()->Future<int>)->int { return callback().await(); } "
+        "async func build()->int { var box=make<int>(42); return box.value+invoke(one).await(); } "
         "func main()->int { return block_on(build()); }";
     const FrontendOptions options = {0};
     AstProgram *program = test_parse_source(source, strlen(source),
                                             "generic-async-callee.dmm", &options);
+    if (program != NULL) {
+        DmmModule *module = ast_program_alloc(program, sizeof(*module));
+        DmmFeature *feature = ast_program_alloc(program, sizeof(*feature));
+        if (module == NULL || feature == NULL) { ast_program_free(program); return 1; }
+        feature->name = "async";
+        module->features = feature;
+        program->module = module;
+    }
     SemanticModel *semantics = program == NULL ? NULL : semantic_analyze(program);
     int failed = semantics == NULL || semantics->error_count != 0 ||
                  semantics->unresolved_expression_count != 0;
@@ -300,7 +357,7 @@ int main(int argc, char **argv) {
     if (errors == NULL) return 1;
     error_handler_set_global(errors);
     int failed = control_flow_regressions() || ownership_property_regressions() ||
-                 unresolved_call_regression() || generic_async_callee_regression() ||
+                 unresolved_call_regression() || instruction_growth_regression() || generic_async_callee_regression() ||
                  thread_type_property_regression();
     int saw_cast = 0;
     int saw_alloc = 0;

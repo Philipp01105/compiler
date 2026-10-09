@@ -110,8 +110,8 @@ import it under that module's package path. The package uses only stdlib imports
 | `request.method()` / `request.path()` | Method and raw, query-free path |
 | `request.param("id")?` | Optional owned, percent-decoded path parameter |
 | `request.query("name")?` | Optional owned query value; percent decoding and `+` as space |
-| `request.header("Content-Type")` | Optional borrowed UTF-8 header value; case-insensitive name lookup |
-| `request.body()` / `request.bodyText()?` | Borrowed body bytes / owned, checked UTF-8 text |
+| `request.header("Content-Type")?` | Optional owned UTF-8 header value; case-insensitive name lookup |
+| `request.body()` / `request.bodyText()?` | Checked reference to the body byte list / owned, checked UTF-8 text |
 | `http.Response.text/json(status, literal)?` | Text or already-encoded JSON response |
 | `http.Response.ownedText/ownedJson(status, string)?` | Response from an owned `text.String` |
 | `http.Response.fromBytes(status, mediaType, bytes)?` | Binary response from an owned byte list |
@@ -122,8 +122,9 @@ import it under that module's package path. The package uses only stdlib imports
 | `router.dispatch(&mut request, &mut state).await()` | Route dispatch without opening a socket |
 | `response.encode(head)?` | Complete HTTP response bytes, useful with another transport |
 
-Requests own their paths, header strings and body. Header/path views borrow the
-request; parameter and query results own decoded strings. Query lookup returns the
+Requests own their paths, header strings and body. Path views and body references
+borrow the request; header, parameter and query results own their strings. Call
+`view()` on the borrowed body list for a byte slice. Query lookup returns the
 first occurrence and distinguishes a missing key from an empty value.
 JSON response constructors accept already-encoded JSON; they set the media type.
 Use `quote` when inserting untrusted text, as the example handlers do.

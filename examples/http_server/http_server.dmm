@@ -28,16 +28,16 @@ func listItems(state: &mut State, request: &http.Request) -> core.Result<http.Re
     return http.Response.ownedJson(http.Status.Ok, text.finish(output));
 }
 func createItem(state: &mut State, request: &http.Request) -> core.Result<http.Response, http.Error> {
-    match (request.header("Content-Type")) {
+    match (request.header("Content-Type")?) {
         None => return http.Response.text(http.Status.UnsupportedMediaType, "Use Content-Type: text/plain\n");
         Some(value) => {
-            if (!value.startsWith("text/plain") || (value.length() > 10 && value.byteAt(10) != 59)) {
+            if (!value.startsWith("text/plain") || (value.length() > 10 && value.view().byteAt(10) != 59)) {
                 return http.Response.text(http.Status.UnsupportedMediaType, "Use Content-Type: text/plain\n");
             }
         }
     }
     var body = request.body();
-    if (body.length == 0 || body.length > 256) { return http.Response.text(http.Status.UnprocessableEntity, "Title must contain 1..256 UTF-8 bytes\n"); }
+    if (body.length() == 0 || body.length() > 256) { return http.Response.text(http.Status.UnprocessableEntity, "Title must contain 1..256 UTF-8 bytes\n"); }
     if (state.items.length() == 1000) { return http.Response.text(http.Status.TooManyRequests, "Item limit reached\n"); }
     var id = state.nextId;
     state.items.append(Item{id: id, title: request.bodyText()?})?; state.nextId += 1;
@@ -82,10 +82,10 @@ func greet(state: &mut State, request: &http.Request) -> core.Result<http.Respon
     var greeting = text.finish(message); var quoted = http.quote(greeting.view())?;
     var output = text.builder(); output.append("{\"message\":")?; output.appendText(quoted.view())?; output.append("}\n")?;
     var response = http.Response.ownedJson(http.Status.Ok, text.finish(output))?;
-    match (request.header("X-Request-ID")) {
+    match (request.header("X-Request-ID")?) {
         None => {}
         Some(value) => {
-            var copied = text.builder(); copied.appendText(value)?; response.setHeader("X-Request-ID", text.finish(copied))?;
+            response.setHeader("X-Request-ID", value)?;
         }
     }
     return core.Result<http.Response, http.Error>.Ok(response);

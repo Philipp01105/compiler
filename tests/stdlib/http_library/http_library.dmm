@@ -8,6 +8,10 @@ func parse(value: string) -> core.Result<http.Request, http.Error> {
     var input = bytes.clone(text.bytes(value))?; var source = input.view();
     return http.parseRequest(&source, http.config());
 }
+func ownedHeader() -> core.Result<core.Option<text.String>, http.Error> {
+    var request = parse("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")?;
+    return request.header("Host");
+}
 func bodyEquals(reply: &http.Response, expected: string) -> core.Result<bit, http.Error> {
     var encoded = reply.encode(false)?; var input = encoded.view();
     match (bytes.find(input, text.bytes("\r\n\r\n"))) {
@@ -30,6 +34,10 @@ async func slow(state: &mut State, request: &http.Request) -> core.Result<http.R
     state.calls += 1; return http.Response.text(http.Status.Ok, "async");
 }
 async func exercise() -> core.Result<int, http.Error> {
+    match (ownedHeader()?) {
+        None => return core.Result<int, http.Error>.Ok(26);
+        Some(value) => { if (value.length() != 9 || !value.startsWith("localhost")) { return core.Result<int, http.Error>.Ok(27); } }
+    }
     var api = http.router<State>(); var state = State{calls: 0};
     api.get("/things/:name", dynamic)?; api.get("/things/new", fixed)?;
     api.on(http.Method.Head, "/things/new", dynamic)?;

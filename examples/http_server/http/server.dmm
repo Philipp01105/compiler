@@ -6,24 +6,24 @@ import ("stdlib/core" "stdlib/net" "stdlib/time" "stdlib/bytes" "stdlib/text" "s
     var options: Config;
     pub func localAddress() -> core.Result<net.Endpoint, Error> { return core.Result<net.Endpoint, Error>.Ok(listener.localAddress()?); }
 }
-    // A single acceptance is useful for embedded servers and controlled shutdown.
-    pub async func serveOne<S>(server: &mut Server, router: &mut Router<S>, state: &mut S) -> core.Result<void, Error> {
+// A single acceptance is useful for embedded servers and controlled shutdown.
+pub async func serveOne<S>(server: &mut Server, router: &mut Router<S>, state: &mut S) -> core.Result<void, Error> {
+    var connection = server.listener.accept().await()?;
+    return serveConnection(connection, router, state, server.options).await();
+}
+pub async func serve<S>(server: Server, router: Router<S>, state: S) -> core.Result<void, Error> {
+    while (true) {
+        // Listener failures propagate; a disconnected or timed-out client does not stop the server.
         var connection = server.listener.accept().await()?;
-        return serveConnection(connection, router, state, server.options).await();
-    }
-    pub async func serve<S>(server: Server, router: Router<S>, state: S) -> core.Result<void, Error> {
-        while (true) {
-            // Listener failures propagate; a disconnected or timed-out client does not stop the server.
-            var connection = server.listener.accept().await()?;
-            match (serveConnection(connection, &mut router, &mut state, server.options).await()) {
-                Ok => {}
-                Err(error) => {
-                    if (error.kind != ErrorKind.Network && error.kind != ErrorKind.Timeout) { return core.Result<void, Error>.Err(error); }
-                }
+        match (serveConnection(connection, &mut router, &mut state, server.options).await()) {
+            Ok => {}
+            Err(error) => {
+                if (error.kind != ErrorKind.Network && error.kind != ErrorKind.Timeout) { return core.Result<void, Error>.Err(error); }
             }
         }
-        return core.Result<void, Error>.Ok;
     }
+    return core.Result<void, Error>.Ok;
+}
 pub func listen(endpoint: net.Endpoint, options: Config) -> core.Result<Server, Error> {
     validateConfig(options)?;
     return core.Result<Server, Error>.Ok(Server{listener: net.listen(endpoint)?, options: options});
