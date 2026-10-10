@@ -683,6 +683,14 @@ if (BUILD_TESTING)
     add_test(NAME lexer_unit COMMAND dmm_lexer_test)
     set_tests_properties(lexer_unit PROPERTIES LABELS "unit;lexer;safety")
 
+    add_executable(dmm_source_snapshot_test
+            tests/unit/source_snapshot_test.c
+            src/diagnostics/errorHandler.c)
+    target_include_directories(dmm_source_snapshot_test PRIVATE ${DMM_INCLUDE_DIRS})
+    add_test(NAME source_snapshot_unit COMMAND dmm_source_snapshot_test
+            ${CMAKE_BINARY_DIR}/source_snapshot_unit.dmm)
+    set_tests_properties(source_snapshot_unit PROPERTIES LABELS "unit;ide;safety")
+
     add_executable(dmm_frontend_ast_test
             tests/unit/frontend_ast_test.c
             src/ast/ast.c

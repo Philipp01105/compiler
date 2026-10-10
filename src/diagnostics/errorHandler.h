@@ -116,6 +116,12 @@ typedef struct ErrorContext {
     int child_capacity;
 } ErrorContext;
 
+typedef struct DmmSourceOverlay {
+    const char *path;
+    const char *text;
+    size_t length;
+} DmmSourceOverlay;
+
 typedef struct {
     int use_colors;
     int show_source_context;
@@ -126,6 +132,14 @@ typedef struct {
     int suppressed_error_count;
     const char *source_override_name;
     const char *source_override_path;
+    const DmmSourceOverlay *overlays;
+    size_t overlay_count;
+    /* IDE-only contents captured on first read, owned by the handler. */
+    DmmSourceOverlay *source_snapshot;
+    size_t source_snapshot_count;
+    size_t source_snapshot_bytes;
+    int source_snapshot_enabled;
+    int source_snapshot_failed;
     FILE *output_stream;
     int json_output;
     int buffered;
@@ -137,6 +151,9 @@ typedef struct {
 extern ErrorHandler *global_error_handler;
 
 const char *error_handler_source_path(const char *filename);
+const DmmSourceOverlay *error_handler_overlay(const char *filename);
+FILE *error_handler_open_source(const char *filename);
+void error_handler_clear_source_snapshot(ErrorHandler *handler);
 
 ErrorHandler *error_handler_init(void);
 

@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <ctype.h>
 #ifdef _WIN32
 #include <io.h>
 #define strdup _strdup
@@ -69,6 +70,13 @@ ErrorHandler *error_handler_init(void) {
     handler->suppressed_error_count = 0;
     handler->source_override_name = NULL;
     handler->source_override_path = NULL;
+    handler->overlays = NULL;
+    handler->overlay_count = 0;
+    handler->source_snapshot = NULL;
+    handler->source_snapshot_count = 0;
+    handler->source_snapshot_bytes = 0;
+    handler->source_snapshot_enabled = 0;
+    handler->source_snapshot_failed = 0;
     handler->json_output = 0;
     handler->buffered = 1;
     handler->buffer = NULL;
@@ -84,6 +92,7 @@ void error_handler_free(ErrorHandler *handler) {
             error_context_free(handler->buffer[i]);
         }
         free(handler->buffer);
+        error_handler_clear_source_snapshot(handler);
         free(handler);
     }
 }
@@ -244,6 +253,86 @@ void error_context_set_fix(ErrorContext *ctx, int line, int column,
 
 /* Capture source context when the diagnostic is reported, including imported units.
  * Failure to read context must never hide the original diagnostic. */
+const DmmSourceOverlay *error_handler_overlay(const char *filename) {
+    if (!filename || !global_error_handler) return NULL;
+    for (size_t i=0;i<global_error_handler->overlay_count;i++) {
+        const DmmSourceOverlay *overlay=&global_error_handler->overlays[i];
+        const char *a=filename,*b=overlay->path;
+        int matches=1;
+        while (*a && *b) {
+            unsigned char ca=(unsigned char)*a++,cb=(unsigned char)*b++;
+            if(ca=='\\')ca='/';
+            if(cb=='\\')cb='/';
+#ifdef _WIN32
+            ca=(unsigned char)tolower(ca);cb=(unsigned char)tolower(cb);
+#endif
+            if(ca!=cb){matches=0;break;}
+        }
+        if(matches && !*a && !*b) return overlay;
+    }
+    return NULL;
+}
+void error_handler_clear_source_snapshot(ErrorHandler *handler) {
+    if (!handler) return;
+    for (size_t i = 0; i < handler->source_snapshot_count; i++) {
+        free((void *)handler->source_snapshot[i].path);
+        free((void *)handler->source_snapshot[i].text);
+    }
+    free(handler->source_snapshot);
+    handler->source_snapshot = NULL;
+    handler->source_snapshot_count = 0;
+    handler->source_snapshot_bytes = 0;
+    handler->source_snapshot_enabled = 0;
+    handler->source_snapshot_failed = 0;
+}
+FILE *error_handler_open_source(const char *filename) {
+    const DmmSourceOverlay *overlay = error_handler_overlay(filename);
+    ErrorHandler *handler = global_error_handler;
+    if (!overlay && handler && handler->source_snapshot_enabled) {
+        const char *path = error_handler_source_path(filename);
+        for (size_t i = 0; i < handler->source_snapshot_count; i++) {
+#ifdef _WIN32
+            int same = _stricmp(path, handler->source_snapshot[i].path) == 0;
+#else
+            int same = strcmp(path, handler->source_snapshot[i].path) == 0;
+#endif
+            if (same) {overlay = &handler->source_snapshot[i];break;}
+        }
+        if (!overlay) {
+            FILE *source = fopen(path, "rb");
+            char *text = NULL;
+            size_t size = 0;
+            int ok = !source; /* Freeze missing files as missing too. */
+            if (source && !fseek(source, 0, SEEK_END)) {
+                long length = ftell(source);
+                if (length >= 0 && (unsigned long)length <= 64u * 1024u * 1024u - handler->source_snapshot_bytes &&
+                    !fseek(source, 0, SEEK_SET)) {
+                    size = (size_t)length;
+                    text = malloc(size + 1);
+                    if (text && fread(text, 1, size, source) == size) {text[size] = 0;ok = 1;}
+                }
+            }
+            if (source) fclose(source);
+            char *copy = ok ? strdup(path) : NULL;
+            DmmSourceOverlay *entries = NULL;
+            if (copy && handler->source_snapshot_count < 10000)
+                entries = realloc(handler->source_snapshot, (handler->source_snapshot_count + 1) * sizeof(*entries));
+            if (!entries) {free(copy);free(text);handler->source_snapshot_failed = 1;return NULL;}
+            handler->source_snapshot = entries;
+            entries[handler->source_snapshot_count++] = (DmmSourceOverlay){copy, text, size};
+            handler->source_snapshot_bytes += size;
+            overlay = &entries[handler->source_snapshot_count - 1];
+        }
+    }
+    if (!overlay) return fopen(error_handler_source_path(filename), "rb");
+    if (!overlay->text) return NULL;
+    FILE *file = tmpfile();
+    if (!file) return NULL;
+    if (fwrite(overlay->text, 1, overlay->length, file) != overlay->length || fseek(file, 0, SEEK_SET)) {
+        fclose(file);return NULL;
+    }
+    return file;
+}
 const char *error_handler_source_path(const char *filename) {
     if (filename != NULL && global_error_handler != NULL && global_error_handler->source_override_name != NULL &&
         global_error_handler->source_override_path != NULL &&
@@ -259,7 +348,7 @@ const char *error_handler_source_path(const char *filename) {
 static void capture_source_line(ErrorContext *ctx) {
     for (int i = 0; i < ctx->child_count; i++) capture_source_line(ctx->children[i]);
     if (ctx->source_line != NULL || ctx->filename == NULL || ctx->line < 1) return;
-    FILE *source = fopen(error_handler_source_path(ctx->filename), "rb");
+    FILE *source = error_handler_open_source(ctx->filename);
     if (source == NULL) return;
     int line = 1;
     int ch;

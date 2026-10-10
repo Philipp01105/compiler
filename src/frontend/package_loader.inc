@@ -154,7 +154,7 @@ static int package_path_prefix(const char *path, const char *prefix) {
 static DmmModule *read_module(PackageLoader *loader, const char *directory) {
     char *manifest = joined_path(directory, "dmm.manifest");
     if (!manifest) return NULL;
-    FILE *input = fopen(manifest, "rb");
+    FILE *input = error_handler_open_source(manifest);
     if (!input) {
         package_error(loader->root, AST_TOKEN_NONE, ERR_MODULE_MANIFEST, "Missing module manifest '%s'", manifest);
         free(manifest);
@@ -293,7 +293,7 @@ static char *find_module_root(const char *file) {
         char *manifest = joined_path(directory, "dmm.manifest");
         if (!manifest) break;
         struct stat status;
-        int found = stat(manifest, &status) == 0;
+        int found = stat(manifest, &status) == 0 || error_handler_overlay(manifest) != NULL;
         free(manifest);
         if (found) return directory;
         char *parent = source_directory(directory);
