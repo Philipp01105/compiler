@@ -53,3 +53,24 @@ if (NOT result EQUAL 1 OR NOT line EQUAL 4 OR NOT context STREQUAL "var live = h
         NOT original MATCHES "package main;.*func main\\(\\) -> void \\{\\}")
     message(FATAL_ERROR "Editor override lost path/imports/context or changed source: ${diagnostics}\n${dump}")
 endif ()
+
+# Captures have inferred environment types before sema; all generated closure nodes
+# must retain source ranges so post-sema AST validation/dumping remains usable.
+foreach (body IN ITEMS
+        "func main() -> int { var offset:i32=3; var add=func [move offset](value:i32)->i32 { return value+offset; }; return add(4); }"
+        "func main() -> int { var counter:i32=0; var next=func [&mut counter]()->i32 { counter+=1; return counter; }; return next(); }"
+        "func main() -> int { var empty=func []()->i32 { return 1; }; return empty(); }"
+        "struct Owner { var pointer:*i32; destructor { free(pointer); } } func main()->int { var owner=Owner{pointer:reserve(i32)}; var consume=func [move owner]()->Owner { return owner; }; var result=consume(); return 0; }")
+    dmm_test_write("${source}" "${body}\n")
+    execute_process(COMMAND "${COMPILER}" --ide --formatError --dump-ast "${ast}" "${source}"
+            RESULT_VARIABLE result ERROR_VARIABLE diagnostics ENCODING UTF-8 TIMEOUT 5)
+    if (NOT result EQUAL 0 OR NOT diagnostics STREQUAL "" OR NOT EXISTS "${ast}")
+        message(FATAL_ERROR "Closure editor analysis failed: ${diagnostics}")
+    endif ()
+    file(READ "${ast}" dump)
+    file(READ "${source}.s" assembly)
+    if (NOT dump MATCHES "dmm-ast-v6" OR NOT dump MATCHES "__dmm_closure_" OR
+            NOT assembly STREQUAL "keep-existing-output")
+        message(FATAL_ERROR "Closure dump/assembly isolation failed: ${dump}")
+    endif ()
+endforeach ()

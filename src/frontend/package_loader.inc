@@ -408,7 +408,9 @@ static DmmPackage *resolve_package(PackageLoader *loader, AstProgram *file, cons
     }
     if (!package_path_prefix(path, module->path)) {
         if (package_path_prefix(path, "stdlib")) {
-            char *bundled = standard_library_root();
+            char *bundled = loader->options && loader->options->stdlib_root && *loader->options->stdlib_root
+                                ? canonical_existing_path(loader->options->stdlib_root)
+                                : standard_library_root();
             module = bundled ? read_module(loader, bundled) : NULL;
             free(bundled);
         } else {
@@ -446,7 +448,10 @@ static DmmPackage *resolve_package(PackageLoader *loader, AstProgram *file, cons
                 return NULL;
             }
         }
-        if (!module) return NULL;
+        if (!module) {
+            package_error(file, token, ERR_PACKAGE_NOT_FOUND, "Cannot load the module providing package '%s'; check its manifest and configured source directory", path);
+            return NULL;
+        }
     }
     const char *relative = path + strlen(module->path);
     if (*relative == '/') relative++;
@@ -611,6 +616,19 @@ static DmmPackage *load_package(PackageLoader *loader, DmmModule *module, const 
         paths[count++] = file_path;
     }
     closedir(dir);
+    /* New unsaved files in an existing package participate in the same graph. */
+    if(global_error_handler)for(size_t index=0;index<global_error_handler->overlay_count;index++) {
+        const char *overlay=global_error_handler->overlays[index].path;
+        const char *leaf=strrchr(overlay,'/');size_t length=strlen(overlay);
+        if(!leaf || (size_t)(leaf-overlay)!=strlen(directory) || strncmp(overlay,directory,strlen(directory)) ||
+           length<5 || strcmp(overlay+length-4,".dmm") || !source_matches_target(leaf+1,loader->options))continue;
+        int exists=0;for(size_t i=0;i<count;i++)if(!strcmp(paths[i],overlay))exists=1;
+        if(exists)continue;
+        if(count>=1024){discovered=0;break;}
+        char **grown=realloc(paths,(count+1)*sizeof(*grown));
+        if(!grown){discovered=0;break;}paths=grown;
+        char *copy=copy_string(overlay);if(!copy){discovered=0;break;}paths[count++]=copy;
+    }
     if (count > 1) qsort(paths, count, sizeof(*paths), string_order);
     if (!discovered)
         package_error(loader->root, AST_TOKEN_NONE, ERR_SEM_COMPLEXITY_LIMIT,
