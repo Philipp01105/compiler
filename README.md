@@ -127,12 +127,17 @@ Run `compiler --help` for the current option list. Useful groups include:
 - `--native-library NAME=PATH`, repeatable `--native-library-dir DIR`, `--dump-native-link FILE`
 - `-O0`, `-O1`, `--target=elf|coff`, `--syntax=intel|att`
 - `--formatError`, `--ide`, `--ide-buffer FILE`
+- `--ide-capabilities`, `--ide-request FILE`, `--ide-response FILE` for the `dmm-ide-v1` workspace protocol
 - `--dump-tokens`, `--dump-ast`, `--dump-symbols`, `--dump-ir-before-opt`, `--dump-ir-passes`, `--dump-ir`,
   `--dump-cfg` and `--source-map`
 - `--deterministic`, `--version`
 
 Use `dmm manifest sync [package-directory]` to reconcile direct and indirect local dependencies. It never fetches
 packages or changes dependency versions.
+
+The [IDE workspace protocol](docs/ide-protocol.md) documents source identities, dirty overlays, module discovery,
+generic implementation contexts, binding coverage, completion and validated local rename. Coverage failures are
+explicit query failures; a successful analysis does not establish general refactoring safety or source-debug support.
 
 Standalone native executables do not require libc, a CRT or a foreign-language runtime. Linux targets use syscalls; Windows
 targets import OS APIs. Assembly output can be handed to external GNU-compatible tools when required. The exact target
@@ -201,6 +206,7 @@ Each topic has one canonical document; other documents link to it instead of rep
 |---|---|
 | [Language specification](LANGUAGE_SPEC.md) | Semantics, modules, manifests, native FFI and EBNF |
 | [Architecture](ARCHITECTURE.md) | Pipeline, optimization, backend, runtime contracts, dumps and diagnostics |
+| [IDE workspace protocol](docs/ide-protocol.md) | Editor requests, source graph and coverage contracts, validation evidence and remaining gaps |
 | [Standard library](stdlib/README.md) | Package index, common value types, collections and compatibility I/O |
 | [Core](stdlib/core/README.md) | Memory, allocation, atomics, descriptors and process primitives |
 | [Streams](stdlib/io/README.md) | Synchronous streams, buffers and transfer/error contracts |
