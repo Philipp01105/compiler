@@ -18,6 +18,7 @@
 #include "errorHandler.h"
 #include "path_identity.h"
 #include "external_link.h"
+#include "ide.h"
 
 #ifndef DMM_VERSION
 #define DMM_VERSION "development"
@@ -52,7 +53,9 @@ static void print_usage(const char *program_name) {
     printf("  -O0 / -O1      Disable / enable AST and IR optimization (default: -O1)\n");
     printf("  --syntax=MODE  Assembly printing syntax: att or intel (default: intel)\n");
     printf("  --target=FMT   Target format: elf or coff (default: auto-detect)\n");
-    printf("  --dump-ast FILE Write the stable dmm-ast-v5 dump to FILE\n");
+    printf("  --dump-ast FILE Write the stable dmm-ast-v6 dump to FILE\n");
+    printf("  --ide-capabilities  Print the versioned IDE capability contract\n");
+    printf("  --ide-request FILE --ide-response FILE  Analyze a read-only workspace snapshot\n");
     printf("  --dump-tokens FILE Write the token inventory to FILE\n");
     printf("  --dump-symbols FILE Write the semantic symbol table to FILE\n");
     printf("  --dump-ir-before-opt FILE Write lowered IR before IR passes to FILE\n");
@@ -173,6 +176,11 @@ static int write_ir_optimization_trace(FILE *output, const void *value) {
 }
 
 int main(int argc, char *argv[]) {
+    if(argc==2 && !strcmp(argv[1],"--ide-capabilities")){driver_ide_capabilities(stdout);return 0;}
+    if(argc==5 && !strcmp(argv[1],"--ide-request") && !strcmp(argv[3],"--ide-response")) {
+        ErrorHandler *handler=error_handler_init();if(!handler)return 2;error_handler_set_global(handler);
+        int status=driver_ide_request(argv[2],argv[4]);error_handler_free(handler);return status;
+    }
     BackendEmission emission = BACKEND_EXECUTABLE;
     LinkMode link_mode = LINK_AUTO;
     const char *linker_driver = NULL, *runtime_shim = NULL;

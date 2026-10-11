@@ -104,6 +104,17 @@ static char *canonical_path(const char *path) {
     return result;
 }
 
+char *path_identity_canonical(const char *path) {
+    if(!path || !*path)return NULL;
+    char *result=canonical_path(path);
+    if(result) {
+#ifdef _WIN32
+        if(!strncmp(result,"\\\\?\\",4))memmove(result,result+4,strlen(result+4)+1);
+#endif
+        for(char *p=result;*p;p++)if(*p=='\\')*p='/';
+    }
+    return result;
+}
 int path_identity_equal(const char *first, const char *second) {
     if (first == NULL || second == NULL) return 0;
     if (strcmp(first, second) == 0) return 1;

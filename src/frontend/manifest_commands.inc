@@ -14,6 +14,12 @@ static int manifest_scan_packages(PackageLoader *loader, const char *directory, 
                       "Manifest discovery exceeded 4096 directories");
         return 0;
     }
+    if (loader->options && loader->options->workspace_directory &&
+        !loader->options->workspace_directory(loader->options->workspace_directory_context, directory, 0)) {
+        package_error(loader->root, AST_TOKEN_NONE, ERR_SEM_COMPLEXITY_LIMIT,
+                      "Cannot capture workspace directory inventory for '%s'", directory);
+        return 0;
+    }
     DIR *stream = opendir(directory);
     if (!stream) {
         package_error(loader->root, AST_TOKEN_NONE, ERR_PACKAGE_NOT_FOUND, "Cannot read package directory '%s'",
@@ -32,7 +38,10 @@ static int manifest_scan_packages(PackageLoader *loader, const char *directory, 
         if (path_is_directory(path)) {
             char *manifest = joined_path(path, "dmm.manifest");
             struct stat status;
-            int nested = manifest && stat(manifest, &status) == 0;
+            int nested = manifest && (error_handler_overlay(manifest) || stat(manifest, &status) == 0);
+            if (nested && loader->options && loader->options->workspace_directory &&
+                !loader->options->workspace_directory(loader->options->workspace_directory_context, path, 1))
+                ok = 0;
             free(manifest);
             char *canonical = canonical_existing_path(path);
             /* Do not follow directory aliases, which could create discovery cycles. */
@@ -47,6 +56,16 @@ static int manifest_scan_packages(PackageLoader *loader, const char *directory, 
         if (!ok) break;
     }
     closedir(stream);
+    if (!has_source && global_error_handler) {
+        size_t prefix = strlen(directory);
+        for (size_t i = 0; i < global_error_handler->overlay_count; i++) {
+            const char *path = global_error_handler->overlays[i].path;
+            if (strncmp(path, directory, prefix) || path[prefix] != '/') continue;
+            const char *leaf = path + prefix + 1;
+            size_t length = strlen(leaf);
+            if (!strchr(leaf, '/') && length > 4 && !strcmp(leaf + length - 4, ".dmm")) has_source = 1;
+        }
+    }
     if (!ok || !has_source) return ok;
     DmmModule *module = loader->root->module;
     const char *relative = directory + strlen(module->root);
@@ -57,21 +76,68 @@ static int manifest_scan_packages(PackageLoader *loader, const char *directory, 
     return package != NULL;
 }
 
+int frontend_discover_workspace(AstProgram *program, const FrontendOptions *options) {
+    if (!program || !program->module) return 0;
+    PackageLoader loader = {.root = program, .options = options};
+    size_t visited = 0;
+    return manifest_scan_packages(&loader, program->module->root, &visited);
+}
+
 static int manifest_entry_order(const void *a, const void *b) {
     return strcmp(((const ManifestEntry *) a)->path, ((const ManifestEntry *) b)->path);
 }
 
 /* Documentation survives dependency synchronization, including unrelated blocks. */
 static int manifest_copy_comments(FILE *output, const char *path) {
-    FILE *input = fopen(path, "rb");
+    FILE *input = error_handler_open_source(path);
     if (!input) return 0;
     int c, ok = 1;
     while (ok && (c = fgetc(input)) != EOF) {
         if (c != '/') continue;
         int next = fgetc(input);
         if (next == '/') {
+            long comment = ftell(input) - 2;
+            char body[128] = {0};
+            size_t length = 0;
             while ((c = fgetc(input)) != EOF && c != '\n') {
+                if (length < sizeof(body) - 1) body[length] = (char)c;
+                length++;
             }
+            long finish = ftell(input);
+            int generated = 0;
+            if (length < sizeof(body)) {
+                size_t start = 0, end = length;
+                while (start < end && (body[start] == ' ' || body[start] == '\t')) start++;
+                while (end > start && (body[end - 1] == ' ' || body[end - 1] == '\t' || body[end - 1] == '\r')) end--;
+                if (end - start == 8 && !strncmp(body + start, "indirect", 8)) {
+                    /* Only omit the generated requirement annotation, not user documentation. */
+                    long begin = comment;
+                    while (begin > 0 && comment - begin < 4096) {
+                        if (fseek(input, begin - 1, SEEK_SET)) {ok = 0;break;}
+                        if (fgetc(input) == '\n') break;
+                        begin--;
+                    }
+                    if (comment - begin < 4096 && !fseek(input, begin, SEEK_SET)) {
+                        char prefix[4096] = {0}, dependency[2048] = {0}, version[64] = {0};
+                        if (fread(prefix, 1, (size_t)(comment - begin), input) != (size_t)(comment - begin)) ok = 0;
+                        generated = sscanf(prefix, " %2047s %63s", dependency, version) == 2 &&
+                            version[0] == 'v' && version[1] >= '0' && version[1] <= '9' && strchr(version, '.');
+                        if (!generated && !strcmp(dependency, "require")) {
+                            char directive[16];
+                            generated = sscanf(prefix, " %15s %2047s %63s", directive, dependency, version) == 3 &&
+                                version[0] == 'v' && version[1] >= '0' && version[1] <= '9' && strchr(version, '.');
+                        }
+                    }
+                }
+            }
+            if (!generated && ok) {
+                if (fseek(input, comment, SEEK_SET)) ok = 0;
+                else {
+                    while ((c = fgetc(input)) != EOF && c != '\n') if (fputc(c, output) == EOF) ok = 0;
+                    if (fputs("\n\n", output) == EOF) ok = 0;
+                }
+            }
+            if (finish < 0 || fseek(input, finish, SEEK_SET)) ok = 0;
         } else if (next == '*') {
             if (fputs("/*", output) == EOF) {
                 ok = 0;
@@ -95,6 +161,38 @@ static int manifest_copy_comments(FILE *output, const char *path) {
     if (ferror(input)) ok = 0;
     fclose(input);
     return ok;
+}
+
+static int manifest_render(FILE *output, AstProgram *root, ManifestEntry *entries, size_t count) {
+    char *path = joined_path(root->module->root, "dmm.manifest");
+    int ok = path && manifest_copy_comments(output, path);
+    free(path);
+    if (fprintf(output, "module %s\n\ndmm %s\n", root->module->path, root->module->edition) < 0) ok = 0;
+    size_t feature_count = 0;
+    for (DmmFeature *feature = root->module->features; feature; feature = feature->next) feature_count++;
+    const char **features = feature_count ? malloc(feature_count * sizeof(*features)) : NULL;
+    if (feature_count && !features) ok = 0;
+    size_t feature_index = 0;
+    for (DmmFeature *feature = root->module->features; features && feature; feature = feature->next)
+        features[feature_index++] = feature->name;
+    if (features && feature_count > 1) qsort(features, feature_count, sizeof(*features), string_order);
+    if (features && fputs("\nfeatures = [\n", output) == EOF) ok = 0;
+    for (size_t i = 0; features && i < feature_count; i++)
+        if (fprintf(output, "    \"%s\",\n", features[i]) < 0) ok = 0;
+    if (features && fputs("]\n", output) == EOF) ok = 0;
+    free(features);
+    size_t retained = 0;
+    for (size_t i = 0; i < count; i++)
+        if (entries[i].used) retained++;
+    if (retained && fputs("\nrequire (\n", output) == EOF) ok = 0;
+    for (size_t i = 0; i < count; i++) {
+        const ManifestEntry *entry = &entries[i];
+        if (!entry->used) continue;
+        if (fprintf(output, "    %s %s%s\n", entry->path, entry->version, entry->direct ? "" : " // indirect") < 0)
+            ok = 0;
+    }
+    if (retained && fputs(")\n", output) == EOF) ok = 0;
+    return ok && !ferror(output);
 }
 
 static int manifest_write(AstProgram *root, ManifestEntry *entries, size_t count) {
@@ -128,32 +226,7 @@ static int manifest_write(AstProgram *root, ManifestEntry *entries, size_t count
         free(temporary);
         return 0;
     }
-    int ok = manifest_copy_comments(output, path);
-    if (fprintf(output, "module %s\n\ndmm %s\n", root->module->path, root->module->edition) < 0) ok = 0;
-    size_t feature_count = 0;
-    for (DmmFeature *feature = root->module->features; feature; feature = feature->next) feature_count++;
-    const char **features = feature_count ? malloc(feature_count * sizeof(*features)) : NULL;
-    if (feature_count && !features) ok = 0;
-    size_t feature_index = 0;
-    for (DmmFeature *feature = root->module->features; features && feature; feature = feature->next)
-        features[feature_index++] = feature->name;
-    if (features && feature_count > 1) qsort(features, feature_count, sizeof(*features), string_order);
-    if (features && fputs("\nfeatures = [\n", output) == EOF) ok = 0;
-    for (size_t i = 0; features && i < feature_count; i++)
-        if (fprintf(output, "    \"%s\",\n", features[i]) < 0) ok = 0;
-    if (features && fputs("]\n", output) == EOF) ok = 0;
-    free(features);
-    size_t retained = 0;
-    for (size_t i = 0; i < count; i++)
-        if (entries[i].used) retained++;
-    if (retained && fputs("\nrequire (\n", output) == EOF) ok = 0;
-    for (size_t i = 0; i < count; i++) {
-        const ManifestEntry *entry = &entries[i];
-        if (!entry->used) continue;
-        if (fprintf(output, "    %s %s%s\n", entry->path, entry->version, entry->direct ? "" : " // indirect") < 0)
-            ok = 0;
-    }
-    if (retained && fputs(")\n", output) == EOF) ok = 0;
+    int ok = manifest_render(output, root, entries, count);
     if (fclose(output)) ok = 0;
     if (ok) {
 #ifdef _WIN32
@@ -172,7 +245,7 @@ static int manifest_write(AstProgram *root, ManifestEntry *entries, size_t count
     return ok;
 }
 
-int frontend_sync_manifest(const char *package_directory) {
+static int manifest_sync(const char *package_directory, FILE *preview, char **manifest_path) {
     char *current = canonical_existing_path(package_directory);
     char *probe = current ? joined_path(current, ".manifest-source.dmm") : NULL;
     char *directory = probe ? find_module_root(probe) : NULL;
@@ -258,8 +331,22 @@ int frontend_sync_manifest(const char *package_directory) {
                       "Cannot analyze manifest dependency graph (resource limit)");
     if (ok && !error_handler_get_error_count(global_error_handler)) {
         if (count > 1) qsort(entries, count, sizeof(*entries), manifest_entry_order);
-        ok = manifest_write(root, entries, count);
+        ok = preview ? manifest_render(preview, root, entries, count) : manifest_write(root, entries, count);
+        if (ok && manifest_path) {
+            *manifest_path = joined_path(root->module->root, "dmm.manifest");
+            if (!*manifest_path) ok = 0;
+        }
     } else ok = 0;
     ast_program_free(root);
     return ok;
+}
+
+int frontend_sync_manifest(const char *package_directory) {
+    return manifest_sync(package_directory, NULL, NULL);
+}
+
+int frontend_preview_manifest(const char *package_directory, FILE *output, char **manifest_path) {
+    if (!output || !manifest_path) return 0;
+    *manifest_path = NULL;
+    return manifest_sync(package_directory, output, manifest_path);
 }

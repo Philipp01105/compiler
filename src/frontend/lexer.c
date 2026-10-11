@@ -199,7 +199,7 @@ TokenStream *tokenize_file(const char *filename, int debug_mode) {
 TokenStream *tokenize_file_with_interner(const char *filename, int debug_mode,
                                          StringInterner *interner) {
     (void) debug_mode;
-    FILE *file = fopen(error_handler_source_path(filename), "rb");
+    FILE *file = error_handler_open_source(filename);
     if (!file) {
         error_report(global_error_handler, SEVERITY_ERROR, 0, 0, ERROR_CATEGORY_LEXER,
                      ERR_LEX_FILE_NOT_FOUND, filename, "Could not open source file '%s': %s", filename,

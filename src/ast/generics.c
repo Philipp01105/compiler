@@ -399,6 +399,7 @@ static AstDeclarationNode *clone_closure_environment(Substitution *s,
     AstDeclarationNode *environment = owned(s, sizeof(*environment));
     if (!environment) return NULL;
     *environment = *original;
+    environment->source_origin = original->source_origin ? original->source_origin : original;
     environment->name_token = AST_TOKEN_NONE;
     environment->resolved_symbol_id = AST_SYMBOL_NONE;
     environment->next = NULL;
@@ -427,6 +428,7 @@ static AstDeclarationNode *clone_closure_environment(Substitution *s,
                                                   ? original->closure_consuming_invoke
                                                   : original->as.struct_decl.methods;
     *invoke = *source_invoke;
+    invoke->source_origin = source_invoke->source_origin ? source_invoke->source_origin : source_invoke;
     invoke->name_token = AST_TOKEN_NONE;
     invoke->resolved_symbol_id = AST_SYMBOL_NONE;
     invoke->semantic_body_checked = 0;
@@ -459,6 +461,7 @@ static AstExpression *clone_expression(Substitution *s, const AstExpression *ori
     AstExpression *e = owned(s, sizeof(*e));
     if (!e) return NULL;
     *e = *original;
+    e->source_origin = original->source_origin ? original->source_origin : original;
     e->left = clone_expression(s, original->left);
     e->right = clone_expression(s, original->right);
     e->arguments = clone_expression(s, original->arguments);
@@ -489,6 +492,7 @@ static AstStatement *clone_statement(Substitution *s, const AstStatement *origin
     AstStatement *v = owned(s, sizeof(*v));
     if (!v) return NULL;
     *v = *original;
+    v->source_origin = original->source_origin ? original->source_origin : original;
     v->type = substitute_type(s, original->closure_callable_annotation
                                      ? *original->closure_callable_annotation
                                      : original->type);
@@ -694,6 +698,7 @@ AstDeclarationNode *ast_specialize_function(AstProgram *program,
     AstDeclarationNode *result = owned(&s, sizeof(*result));
     if (!result) return NULL;
     *result = *origin;
+    result->source_origin = origin->source_origin ? origin->source_origin : origin;
     result->next = NULL;
     result->generic_parameters = NULL;
     result->where_conditions = substitute_conditions(&s, origin->where_conditions);
@@ -761,6 +766,7 @@ AstDeclarationNode *ast_specialize_function(AstProgram *program,
             if (!copy) break;
             *copy = *m;
             copy->next = NULL;
+            copy->source_origin = m->source_origin ? m->source_origin : m;
             copy->generic_origin = origin;
             copy->where_conditions = substitute_conditions(&s, m->where_conditions);
             copy->as.function.return_type = substitute_type(&s, m->as.function.return_type);
@@ -786,6 +792,7 @@ AstDeclarationNode *ast_specialize_function(AstProgram *program,
             AstDeclarationNode *copy = owned(&s, sizeof(*copy));
             if (!copy) break;
             *copy = *m;
+            copy->source_origin = m->source_origin ? m->source_origin : m;
             copy->next = NULL;
             copy->as.function.return_type = substitute_type(&s, m->as.function.return_type);
             AstParameter **parameters = &copy->as.function.parameters;
@@ -830,6 +837,7 @@ AstDeclarationNode *ast_specialize_function(AstProgram *program,
             if (!copy) break;
             *copy = *m;
             copy->next = NULL;
+            copy->source_origin = m->source_origin ? m->source_origin : m;
             copy->generic_origin = origin;
             copy->where_conditions = substitute_conditions(&s, m->where_conditions);
             copy->as.function.return_type = substitute_type(&s, m->as.function.return_type);
@@ -953,6 +961,7 @@ AstDeclarationNode *ast_specialize_callable_consumer(
     AstDeclarationNode *result = owned(&substitution, sizeof(*result));
     if (result == NULL) return NULL;
     *result = *origin;
+    result->source_origin = origin->source_origin ? origin->source_origin : origin;
     result->next = NULL;
     result->generic_parameters = NULL;
     result->generic_origin = origin;

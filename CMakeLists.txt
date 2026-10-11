@@ -42,6 +42,7 @@ set(DMM_FUZZ_PIPELINE_SOURCES
         src/sema/semantic_ownership.c
         src/sema/semantic_expressions.c
         src/sema/semantic_symbols.c
+        src/sema/semantic_source.c
         src/ast/generics.c
         src/ir/ir_optimize.c
         src/ir/ir.c
@@ -63,6 +64,8 @@ set(DMM_INCLUDE_DIRS
         ${CMAKE_CURRENT_SOURCE_DIR}/src/driver)
 
 add_executable(compiler
+        src/common/ide_json.c
+        src/driver/ide.c
         src/common/language_types.h
         src/common/string_interner.c
         src/common/string_interner.h
@@ -92,6 +95,7 @@ add_executable(compiler
         src/sema/semantic_ownership.c
         src/sema/semantic_expressions.c
         src/sema/semantic_symbols.c
+        src/sema/semantic_source.c
         src/ast/generics.c
         src/sema/semantic.h
         src/ir/ir.c
@@ -683,6 +687,14 @@ if (BUILD_TESTING)
     add_test(NAME lexer_unit COMMAND dmm_lexer_test)
     set_tests_properties(lexer_unit PROPERTIES LABELS "unit;lexer;safety")
 
+    add_executable(dmm_source_snapshot_test
+            tests/unit/source_snapshot_test.c
+            src/diagnostics/errorHandler.c)
+    target_include_directories(dmm_source_snapshot_test PRIVATE ${DMM_INCLUDE_DIRS})
+    add_test(NAME source_snapshot_unit COMMAND dmm_source_snapshot_test
+            ${CMAKE_BINARY_DIR}/source_snapshot_unit.dmm)
+    set_tests_properties(source_snapshot_unit PROPERTIES LABELS "unit;ide;safety")
+
     add_executable(dmm_frontend_ast_test
             tests/unit/frontend_ast_test.c
             src/ast/ast.c
@@ -715,6 +727,7 @@ if (BUILD_TESTING)
             src/sema/semantic_ownership.c
             src/sema/semantic_expressions.c
             src/sema/semantic_symbols.c
+            src/sema/semantic_source.c
             src/ast/generics.c
             src/ir/ir.c
             src/ir/ir_verify.c
@@ -741,6 +754,7 @@ if (BUILD_TESTING)
             src/sema/semantic_ownership.c
             src/sema/semantic_expressions.c
             src/sema/semantic_symbols.c
+            src/sema/semantic_source.c
             src/ast/generics.c
             src/ir/ir.c
             src/ir/ir_verify.c
@@ -826,12 +840,18 @@ if (BUILD_TESTING)
             LABELS "integration;diagnostics;safety")
 
     add_test(NAME ide_analysis
+        # The legacy root-overlay contract remains supported.
             COMMAND ${CMAKE_COMMAND}
             -DCOMPILER=$<TARGET_FILE:compiler>
             -DOUTPUT_DIR=${CMAKE_BINARY_DIR}/ide_test
             -P ${CMAKE_SOURCE_DIR}/tests/ide_analysis_test.cmake)
     set_tests_properties(ide_analysis PROPERTIES
             LABELS "integration;diagnostics;frontend;safety")
+
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    add_test(NAME workspace_ide
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/workspace_ide_test.py $<TARGET_FILE:compiler>)
+    set_tests_properties(workspace_ide PROPERTIES LABELS "integration;diagnostics;frontend;safety")
 
     add_test(NAME diagnostics_audit
             COMMAND ${CMAKE_COMMAND}

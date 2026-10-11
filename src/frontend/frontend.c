@@ -286,6 +286,8 @@ static int path_is_directory(const char *path) {
 }
 
 static char *canonical_existing_path(const char *path) {
+    const DmmSourceOverlay *overlay=error_handler_overlay(path);
+    if(overlay)return copy_string(overlay->path);
     char buffer[4096];
 #ifdef _WIN32
     HANDLE handle = CreateFileA(path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,

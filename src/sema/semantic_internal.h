@@ -49,11 +49,13 @@ typedef struct {
 } Analyzer;
 
 void semantic_reindex_symbols(SemanticModel * model);
+int semantic_collect_completion(Analyzer *analyzer,AstExpression *expression);
 
 typedef struct {
     char *text;
     size_t used;
     int failed;
+    int preserve_borrows; /* IDE spelling; ordinary diagnostics retain their established format. */
 } DiagnosticText;
 
 void diagnostic_append(DiagnosticText *text, const char *format, ...);

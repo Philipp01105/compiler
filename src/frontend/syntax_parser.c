@@ -300,10 +300,12 @@ static AstType parse_type(SyntaxParser *parser) {
         }
         type.kind = AST_TYPE_NAMED;
         type.name_token = parser->current++;
+        type.name_span=parser->program->tokens[type.name_token].span;
         if ((!parser->type_expression_end || parser->current < parser->type_expression_end) &&
             match(parser, TOKEN_DOT)) {
             const char *qualifier = ast_program_lexeme(parser->program, type.name_token);
             size_t member = consume(parser, TOKEN_IDENTIFIER);
+            if(member<parser->program->token_count)type.name_span=parser->program->tokens[member].span;
             char qualified[MAX_TOKEN];
             snprintf(qualified, sizeof(qualified), "%s.%s", qualifier, ast_program_lexeme(parser->program, member));
             const char *interned = string_interner_intern(parser->program->strings, qualified);
@@ -573,6 +575,7 @@ static AstParameter *parse_parameter(SyntaxParser *parser);
 static AstStatement *parse_block(SyntaxParser *parser);
 
 static AstDeclarationNode *new_declaration(SyntaxParser *parser, AstDeclarationKind kind, size_t first);
+static void finish_declaration(SyntaxParser *parser, AstDeclarationNode *declaration);
 
 static AstExpression *parse_closure(SyntaxParser *parser) {
     size_t first = parser->current;
@@ -597,6 +600,7 @@ static AstExpression *parse_closure(SyntaxParser *parser) {
         AstField *field = allocate(parser, sizeof(*field));
         if (!value || !field) break;
         value->value_token = name;
+        finish_expression(parser, value);
         if (borrowed) {
             AstExpression *reference = new_expression(parser, AST_EXPR_UNARY, capture_first);
             if (!reference) break;
@@ -609,6 +613,7 @@ static AstExpression *parse_closure(SyntaxParser *parser) {
         value->initializer_name_token = name;
         finish_expression(parser, value);
         field->name_token = name;
+        field->source_capture = borrowed ? value->right : value;
         field->closure_capture_by_reference = borrowed;
         field->span = value->span;
         field->type = inferred_type();
@@ -634,7 +639,10 @@ static AstExpression *parse_closure(SyntaxParser *parser) {
     (void) consume(parser, TOKEN_ARROW);
     invoke->as.function.return_type = parse_type(parser);
     invoke->as.function.body = parse_block(parser);
+    finish_declaration(parser, invoke);
+    finish_declaration(parser, environment);
     invoke->is_public = 1;
+    invoke->is_source_closure = 1;
     environment->is_closure_environment = 1;
     environment->no_default = 1;
     environment->as.struct_decl.methods = invoke;
