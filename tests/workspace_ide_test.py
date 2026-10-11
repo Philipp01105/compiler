@@ -576,6 +576,9 @@ class WorkspaceIdeTest(unittest.TestCase):
             self.assertNotIn(excluded.as_uri(), sources)
 
     def test_workspace_discovery_includes_closed_reverse_callers(self):
+        self.source.write_text(
+            "package main;func read()->int{return 0;}func main()->int{return read();}", encoding="utf-8"
+        )
         library = self.root / "library" / "lib.dmm"
         consumer = self.root / "consumer" / "use.dmm"
         library.parent.mkdir()
@@ -593,10 +596,14 @@ class WorkspaceIdeTest(unittest.TestCase):
         self.assertTrue(reply["workspaceDiscoveryComplete"])
         self.assertEqual(set(reply["workspaceRoots"]), {self.source.as_uri(), library.as_uri(), consumer.as_uri()})
         declarations = {d["id"]: d for d in reply["declarations"]}
-        read = next(d for d in declarations.values() if d["name"] == "read")
+        read = next(d for d in declarations.values() if d["name"] == "read" and d["uri"] == library.as_uri())
+        root_read = next(d for d in declarations.values() if d["name"] == "read" and d["uri"] == self.source.as_uri())
+        self.assertNotEqual(read["id"], root_read["id"])
         uses = [o for o in reply["occurrences"] if o["role"] == "call" and o["declaration"] == read["id"]]
         self.assertEqual({o["uri"] for o in uses}, {consumer.as_uri()})
         self.assertEqual({declarations[o["caller"]]["name"] for o in uses}, {"use"})
+        root_uses = [o for o in reply["occurrences"] if o["role"] == "call" and o["declaration"] == root_read["id"]]
+        self.assertEqual({o["uri"] for o in root_uses}, {self.source.as_uri()})
         changed = saved.replace("library.read()", "library.read()+library.read()")
         status, reply = self.request(operation="workspace-analysis", overlays=[{"uri": consumer.as_uri(), "text": changed, "version": 3}])
         self.assertEqual(status, 0)
