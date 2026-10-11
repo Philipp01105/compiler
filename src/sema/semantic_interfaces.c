@@ -941,7 +941,7 @@ void semantic_discover_interface_contexts(SemanticModel *model) {
             infer_interface_methods(&proof, interface->declaration->as.interface_decl.methods, types, known, 0);
             if (proof.incomplete) complete = 0;
         }
-        model->interface_discovery_coverage[i] = complete;
+        model->interface_discovery_coverage[i] = (unsigned char)(complete != 0);
     }
     if (steps > 50000 || model->symbol_count != count) model->interface_contexts_incomplete = 1;
 }
