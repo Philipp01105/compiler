@@ -42,6 +42,7 @@ set(DMM_FUZZ_PIPELINE_SOURCES
         src/sema/semantic_ownership.c
         src/sema/semantic_expressions.c
         src/sema/semantic_symbols.c
+        src/sema/semantic_source.c
         src/ast/generics.c
         src/ir/ir_optimize.c
         src/ir/ir.c
@@ -92,6 +93,7 @@ add_executable(compiler
         src/sema/semantic_ownership.c
         src/sema/semantic_expressions.c
         src/sema/semantic_symbols.c
+        src/sema/semantic_source.c
         src/ast/generics.c
         src/sema/semantic.h
         src/ir/ir.c
@@ -723,6 +725,7 @@ if (BUILD_TESTING)
             src/sema/semantic_ownership.c
             src/sema/semantic_expressions.c
             src/sema/semantic_symbols.c
+        src/sema/semantic_source.c
             src/ast/generics.c
             src/ir/ir.c
             src/ir/ir_verify.c
@@ -749,6 +752,7 @@ if (BUILD_TESTING)
             src/sema/semantic_ownership.c
             src/sema/semantic_expressions.c
             src/sema/semantic_symbols.c
+        src/sema/semantic_source.c
             src/ast/generics.c
             src/ir/ir.c
             src/ir/ir_verify.c

@@ -587,7 +587,10 @@ static void analyze_statement(Analyzer *analyzer, AstStatement *statement) {
                                                    ERR_SEM_DUPLICATE_DEFINITION, "Duplicate pattern binding");
                             LocalSymbol *local = push_local(analyzer, binding->name_token, binding->type,
                                                             SEMANTIC_SYMBOL_LOCAL, NULL, 0);
-                            if (local) binding->resolved_symbol_id = local->symbol_id;
+                            if (local) {
+                                binding->resolved_symbol_id = local->symbol_id;
+                                analyzer->model->symbols[local->symbol_id].source_capture = binding->source_capture;
+                            }
                         }
                         if (p || binding)
                             semantic_error(analyzer, arm->variant_token, ERROR_CATEGORY_SEMANTIC,
@@ -1516,11 +1519,15 @@ SemanticModel *semantic_analyze(AstProgram *program) {
 }
 
 SemanticModel *semantic_analyze_target(AstProgram *program, TargetFormat target) {
+    return semantic_analyze_target_ide(program,target,NULL);
+}
+SemanticModel *semantic_analyze_target_ide(AstProgram *program, TargetFormat target,const SemanticCompletionQuery *query) {
     if (program == NULL || !program->structured_ast_complete) return NULL;
     SemanticModel *model = calloc(1, sizeof(*model));
     if (model == NULL) return NULL;
     model->program = program;
     model->target_format = target;
+    model->completion_query = query;
     Analyzer analyzer = {
         .model = model,
         .program = program,

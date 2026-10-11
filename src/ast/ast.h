@@ -77,6 +77,8 @@ typedef struct AstLifetimeParameter {
 typedef struct AstType {
     AstTypeKind kind;
     AstSourceSpan span;
+    /* Original nominal name anchor survives canonicalization/specialization. */
+    AstSourceSpan name_span;
     size_t name_token;
     AstBorrowKind borrow_kind;
     /* Erased lifetime information; neither layout nor specialization identity. */
@@ -159,6 +161,7 @@ typedef struct AstImportPath {
 } AstImportPath;
 
 struct AstExpression {
+    const AstExpression *source_origin; /* Explicit provenance of a specialization clone. */
     AstExpressionKind kind;
     AstLifetimeOperation lifetime_operation;
     size_t lifetime_origin;
@@ -167,6 +170,7 @@ struct AstExpression {
     size_t first_token;
     size_t token_count;
     size_t value_token;
+    AstSourceSpan name_span; /* Original spelling before semantic token rewrites. */
     TokenType operator_type;
     AstExpression *left;
     AstExpression *right;
@@ -225,6 +229,7 @@ struct AstExpression {
 };
 
 struct AstStatement {
+    const AstStatement *source_origin;
     AstStatementKind kind;
     int begins_lifetime;
     AstSourceSpan span;
@@ -269,6 +274,7 @@ struct AstMatchArm {
 };
 
 struct AstParameter {
+    const AstExpression *source_capture;
     int iteration_borrow;
     AstSourceSpan span;
     size_t name_token;
@@ -279,6 +285,7 @@ struct AstParameter {
 };
 
 struct AstField {
+    const AstExpression *source_capture;
     int closure_capture_by_reference; /* Explicit & capture, rather than move of a reference. */
     int is_public;
     AstSourceSpan span;
@@ -299,10 +306,12 @@ struct AstEnumValue {
 };
 
 struct AstDeclarationNode {
+    const AstDeclarationNode *source_origin;
     int is_public;
     int no_default;
     int must_consume;
     int is_closure_environment;
+    int is_source_closure;
     unsigned closure_mode;
     AstField *closure_captures;
     AstDeclarationNode *closure_consuming_invoke;

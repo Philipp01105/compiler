@@ -202,7 +202,22 @@ static int valid_expression(const AstProgram *program, const AstExpression *expr
             if (!valid_expression(program, expression->left)) return 0;
             break;
         case AST_EXPR_STRUCT_LITERAL:
-            if (!valid_type(program, &expression->allocated_type, 0)) return 0;
+            if (expression->allocated_type.kind == AST_TYPE_INFERRED && expression->closure_environment) {
+                /* Editor analysis validates before sema names/types the closure environment. */
+                const AstDeclarationNode *environment = expression->closure_environment;
+                const AstDeclarationNode *invoke = environment->as.struct_decl.methods;
+                if (environment->kind != AST_DECL_STRUCT || !environment->is_closure_environment ||
+                    !invoke || invoke->kind != AST_DECL_FUNCTION || invoke->next ||
+                    !valid_type(program, &invoke->as.function.return_type, 0) ||
+                    !invoke->as.function.body || !valid_statement(program, invoke->as.function.body))
+                    return 0;
+                for (const AstParameter *parameter = invoke->as.function.parameters; parameter; parameter = parameter->next)
+                    if (!valid_token(program, parameter->name_token) || !valid_type(program, &parameter->type, 0))
+                        return 0;
+                for (const AstField *field = environment->as.struct_decl.fields; field; field = field->next)
+                    if (!valid_token(program, field->name_token) || !valid_type(program, &field->type, 1))
+                        return 0;
+            } else if (!valid_type(program, &expression->allocated_type, 0)) return 0;
             for (const AstExpression *field = expression->arguments; field != NULL; field = field->next)
                 if (!valid_token(program, field->initializer_name_token)) return 0;
             break;

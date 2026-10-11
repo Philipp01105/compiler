@@ -62,6 +62,11 @@ static void resolve_declared_type(const AstProgram *program, const AstType *type
     symbol->resolved_is_slice = type != NULL && type->is_slice;
 }
 
+size_t semantic_resolve_type_name(const SemanticModel *model,const AstProgram *program,size_t token) {
+    if(!model||!program)return AST_SYMBOL_NONE;
+    Analyzer analyzer={.model=(SemanticModel *)model,.program=(AstProgram *)program};
+    return resolve_named_symbol_id(&analyzer,program,token);
+}
 size_t resolve_named_symbol_id(const Analyzer *analyzer,
                                const AstProgram *program, size_t token) {
     if (token == AST_TOKEN_NONE || token >= program->token_count) return AST_SYMBOL_NONE;
@@ -166,7 +171,8 @@ void add_member(Analyzer *analyzer, size_t name_token, size_t owner_token,
         .owner_symbol_id = AST_SYMBOL_NONE,
         .declared_type = type,
         .node = node,
-        .scope_depth = 0
+        .scope_depth = 0,
+        .source_capture = kind == SEMANTIC_SYMBOL_FIELD && node ? ((const AstField *)node)->source_capture : NULL
     };
     for (size_t i = 0; i < analyzer->model->symbol_count; i++) {
         const SemanticSymbol *owner = &analyzer->model->symbols[i];
@@ -2115,5 +2121,11 @@ void semantic_model_free(SemanticModel *model) {
     if (model == NULL) return;
     free(model->symbol_index);
     free(model->symbols);
+    free(model->completion_symbols);
+    free(model->source_scopes);
+    for (size_t i = 0; i < model->interface_context_count; i++)
+        free(model->interface_contexts[i].arguments);
+    free(model->interface_contexts);
+    free(model->interface_discovery_coverage);
     free(model);
 }

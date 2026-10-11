@@ -7,6 +7,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+static void diagnostic_ast_type(DiagnosticText *,const Analyzer *,const AstProgram *,const AstType *);
+char *semantic_display_type(const SemanticModel *model,const AstProgram *program,const AstType *type) {
+    if(!model||!program||!type)return NULL;
+    Analyzer analyzer={.model=(SemanticModel *)model,.program=(AstProgram *)program};
+    DiagnosticText text={.preserve_borrows=1};diagnostic_ast_type(&text,&analyzer,program,type);
+    if(text.failed){free(text.text);return NULL;}return text.text;
+}
+
 static void semantic_error_at(Analyzer *analyzer, size_t token, size_t last_token, char category, int code,
                               const char *message) {
     const AstToken *location = ast_program_token(analyzer->program, token);
@@ -103,6 +111,11 @@ void diagnostic_type(DiagnosticText *text, const Analyzer *analyzer,
             for (const AstTypeArgument *argument = declaration->specialization_arguments; argument;
                  argument = argument->next) {
                 const AstType *type = &argument->type;
+                if (text->preserve_borrows) {
+                    diagnostic_ast_type(text, analyzer, symbol->source_program, type);
+                    if (argument->next) diagnostic_append(text, ",");
+                    continue;
+                }
                 char size[32];
                 snprintf(size, sizeof(size), "%zu", type->resolved_array_length);
                 diagnostic_type(text, analyzer, primitive_type(symbol->source_program, type),
@@ -119,9 +132,73 @@ void diagnostic_type(DiagnosticText *text, const Analyzer *analyzer,
     if (outer != 0 && (array || slice)) diagnostic_append(text, ")");
 }
 
+char *semantic_display_symbol_type(const SemanticModel *model, const SemanticSymbol *symbol) {
+    if (!model || !symbol || !symbol->source_program) return NULL;
+    if (symbol->resolved_named_symbol_id < model->symbol_count) {
+        const AstDeclarationNode *environment = model->symbols[symbol->resolved_named_symbol_id].declaration;
+        if (environment && environment->is_closure_environment) {
+            const AstDeclarationNode *invoke = environment->closure_consuming_invoke
+                    ? environment->closure_consuming_invoke : environment->as.struct_decl.methods;
+            if (invoke) {
+                Analyzer lookup = {.model = (SemanticModel *)model, .program = (AstProgram *)symbol->source_program};
+                DiagnosticText signature = {.preserve_borrows = 1};
+                unsigned mode = 0;
+                semantic_receiver_contract(model, invoke->resolved_symbol_id, &mode);
+                diagnostic_append(&signature, mode == 2 ? "once func(" : mode == 1 ? "mut func(" : "func(");
+                int parameters = 0;
+                for (const AstParameter *parameter = invoke->as.function.parameters; parameter; parameter = parameter->next) {
+                    if (parameter->name_token >= symbol->source_program->token_count ||
+                        symbol->source_program->tokens[parameter->name_token].span.begin.line == 0) continue;
+                    if (parameters++) diagnostic_append(&signature, ", ");
+                    diagnostic_ast_type(&signature, &lookup, symbol->source_program, &parameter->type);
+                }
+                diagnostic_append(&signature, ") -> ");
+                diagnostic_ast_type(&signature, &lookup, symbol->source_program, &invoke->as.function.return_type);
+                if (signature.failed) { free(signature.text); return NULL; }
+                return signature.text;
+            }
+        }
+    }
+    if (symbol->declared_type.kind != AST_TYPE_INFERRED)
+        return semantic_display_type(model, symbol->source_program, &symbol->declared_type);
+    const AstExpression *value = NULL;
+    if ((symbol->kind == SEMANTIC_SYMBOL_LOCAL || symbol->kind == SEMANTIC_SYMBOL_CONSTANT) && !symbol->declaration)
+        value = symbol->node;
+    else if (symbol->declaration && (symbol->kind == SEMANTIC_SYMBOL_CONSTANT || symbol->kind == SEMANTIC_SYMBOL_VARIABLE))
+        value = symbol->declaration->as.constant.value;
+    if (value && value->has_resolved_ast_type)
+        return semantic_display_type(model, value->resolved_type_program ? value->resolved_type_program : symbol->source_program,
+                                     &value->resolved_ast_type);
+    Analyzer analyzer = {.model = (SemanticModel *)model, .program = (AstProgram *)symbol->source_program};
+    DiagnosticText text = {0};
+    unsigned pointers = symbol->resolved_pointer_depth;
+    if (symbol->resolved_borrow_kind != AST_BORROW_NONE) {
+        diagnostic_append(&text, symbol->resolved_borrow_kind == AST_BORROW_MUTABLE ? "&mut " : "&");
+        if (pointers) pointers--;
+    }
+    char length[32];
+    if (value) snprintf(length, sizeof(length), "%zu", value->resolved_array_length);
+    diagnostic_type(&text, &analyzer, symbol->resolved_type, symbol->resolved_named_symbol_id,
+                    pointers, symbol->resolved_outer_pointer_depth, symbol->resolved_is_array,
+                    symbol->resolved_is_slice, value ? length : NULL);
+    if (text.failed) { free(text.text); return NULL; }
+    return text.text;
+}
+
 static void diagnostic_ast_type(DiagnosticText *text, const Analyzer *analyzer,
                                 const AstProgram *program,
                                 const AstType *type) {
+    if (text->preserve_borrows && type->borrow_kind != AST_BORROW_NONE) {
+        diagnostic_append(text, "&");
+        const char *lifetime = ast_program_lexeme(program, type->lifetime_token);
+        if (lifetime && lifetime[0] == '\'') diagnostic_append(text, "%s ", lifetime);
+        if (type->borrow_kind == AST_BORROW_MUTABLE) diagnostic_append(text, "mut ");
+        AstType referent = *type;
+        referent.borrow_kind = AST_BORROW_NONE;
+        if (type->reference_type) diagnostic_ast_type(text, analyzer, program, type->reference_type);
+        else diagnostic_ast_type(text, analyzer, program, &referent);
+        return;
+    }
     if (type->element_type != NULL) {
         for (unsigned i = 0;
              i < type->pointer_depth + type->outer_pointer_depth +
@@ -150,10 +227,19 @@ static void diagnostic_ast_type(DiagnosticText *text, const Analyzer *analyzer,
     if (type->kind == AST_TYPE_FUNCTION) {
         for (unsigned i = 0; i < type->pointer_depth + type->outer_pointer_depth; i++)
             diagnostic_append(text, "*");
+        if (text->preserve_borrows && type->callable_mode)
+            diagnostic_append(text, type->callable_mode == 2 ? "once " : "mut ");
         diagnostic_append(text, "func");
-        if (type->function_generic_parameters) {
+        if (type->function_generic_parameters || (text->preserve_borrows && type->function_lifetime_parameters)) {
             diagnostic_append(text, "<");
+            int binders = 0;
+            if (text->preserve_borrows) for (const AstLifetimeParameter *lifetime = type->function_lifetime_parameters;
+                                           lifetime; lifetime = lifetime->next) {
+                if (binders++) diagnostic_append(text, ", ");
+                diagnostic_append(text, "%s", ast_program_lexeme(program, lifetime->name_token));
+            }
             for (const AstGenericParameter *g = type->function_generic_parameters; g; g = g->next) {
+                if (binders++) diagnostic_append(text, ", ");
                 diagnostic_append(text, "%s", ast_program_lexeme(program, g->name_token));
                 if (g->bounds) {
                     diagnostic_append(text, ": ");
@@ -162,7 +248,6 @@ static void diagnostic_ast_type(DiagnosticText *text, const Analyzer *analyzer,
                         if (bound->next) diagnostic_append(text, " + ");
                     }
                 }
-                if (g->next) diagnostic_append(text, ", ");
             }
             diagnostic_append(text, ">");
         }
@@ -181,9 +266,29 @@ static void diagnostic_ast_type(DiagnosticText *text, const Analyzer *analyzer,
                              ? ast_program_lexeme(program,
                                                   type->array_length_token)
                              : NULL;
+    size_t nominal = resolve_named_symbol_id(analyzer, program, named_type_token(program, type));
+    if (text->preserve_borrows && type->kind == AST_TYPE_NAMED && primitive_type(program, type) == TYPE_UNKNOWN &&
+        nominal == AST_SYMBOL_NONE && type->name_token < program->token_count) {
+        /* Source templates are not concrete semantic symbols. Retain their spelling for IDE display. */
+        for (unsigned i = 0; i < type->outer_pointer_depth; i++) diagnostic_append(text, "*");
+        if (type->outer_pointer_depth && (type->is_array || type->is_slice)) diagnostic_append(text, "(");
+        for (unsigned i = 0; i < type->pointer_depth; i++) diagnostic_append(text, "*");
+        diagnostic_append(text, "%s", ast_program_lexeme(program, type->name_token));
+        if (type->arguments) {
+            diagnostic_append(text, "<");
+            for (const AstTypeArgument *argument = type->arguments; argument; argument = argument->next) {
+                diagnostic_ast_type(text, analyzer, program, &argument->type);
+                if (argument->next) diagnostic_append(text, ", ");
+            }
+            diagnostic_append(text, ">");
+        }
+        if (type->is_slice) diagnostic_append(text, "[]");
+        else if (type->is_array) diagnostic_append(text, "[%s]", length ? length : "?");
+        if (type->outer_pointer_depth && (type->is_array || type->is_slice)) diagnostic_append(text, ")");
+        return;
+    }
     diagnostic_type(text, analyzer, primitive_type(program, type),
-                    resolve_named_symbol_id(
-                        analyzer, program, named_type_token(program, type)),
+                    nominal,
                     type->pointer_depth +
                     (type->borrow_kind != AST_BORROW_NONE),
                     type->outer_pointer_depth, type->is_array,

@@ -1069,6 +1069,14 @@ static int expression_targets_field(const BorrowChecker *checker,
     if (expression == NULL) return 0;
     if (expression->is_receiver_reference) return 1;
     if (expression->kind == AST_EXPR_NAME) {
+        if (function && function->source_only) {
+            size_t scope = semantic_source_scope_at(checker->analyzer->model, function->source_program,
+                function->id, expression->span.begin);
+            size_t id = semantic_source_binding(checker->analyzer->model, function->source_program, scope,
+                expression->value_token, SEMANTIC_SYMBOL_LOCAL, expression->span.begin);
+            return id < checker->analyzer->model->symbol_count &&
+                checker->analyzer->model->symbols[id].kind == SEMANTIC_SYMBOL_FIELD;
+        }
         if (expression->resolved_symbol_id <
             checker->analyzer->model->symbol_count)
             return checker->analyzer->model
@@ -1173,6 +1181,107 @@ int semantic_function_mutates_receiver(const Analyzer *analyzer, size_t function
     BorrowChecker checker = {.analyzer = (Analyzer *) analyzer};
     return function->declaration && statements_mutate_receiver(&checker, function,
                                                                function->declaration->as.function.body);
+}
+
+static int source_receiver_statements_known(const SemanticModel *, const SemanticSymbol *, const AstStatement *, unsigned);
+
+static int source_expression_uses_receiver(const BorrowChecker *checker, const SemanticSymbol *function,
+                                            const AstExpression *expression, unsigned depth) {
+    if (depth > 256) return 1;
+    for (; expression; expression = expression->next)
+        if (expression->closure_environment || expression_targets_field(checker, function, expression) ||
+            source_expression_uses_receiver(checker, function, expression->left, depth + 1) ||
+            source_expression_uses_receiver(checker, function, expression->right, depth + 1) ||
+            source_expression_uses_receiver(checker, function, expression->arguments, depth + 1)) return 1;
+    return 0;
+}
+
+static int source_receiver_expressions_known(const SemanticModel *model, const SemanticSymbol *function,
+                                              const AstExpression *expression,
+                                              unsigned depth) {
+    if (depth > 256) return 0;
+    for (; expression; expression = expression->next) {
+        /* An unchecked call may acquire a mutable receiver or pass receiver
+         * storage through a mutable parameter after substitution. */
+        if (expression->kind == AST_EXPR_CALL && expression->resolved_symbol_id >= model->symbol_count) {
+            Analyzer lookup = {.model = (SemanticModel *)model, .program = (AstProgram *)function->source_program};
+            BorrowChecker checker = {.analyzer = &lookup};
+            if (source_expression_uses_receiver(&checker, function, expression, 0)) return 0;
+            const SemanticSymbol *owner = &model->symbols[function->owner_symbol_id];
+            const AstDeclarationNode *methods = owner->kind == SEMANTIC_SYMBOL_STRUCT
+                ? owner->declaration->as.struct_decl.methods : owner->declaration->as.enum_decl.methods;
+            if (expression->left && expression->left->kind == AST_EXPR_NAME)
+                for (const AstDeclarationNode *method = methods; method; method = method->next)
+                    if (!strcmp(ast_program_lexeme(function->source_program, expression->left->value_token),
+                                ast_program_lexeme(owner->source_program, method->name_token))) return 0;
+        }
+        if (!source_receiver_expressions_known(model, function, expression->left, depth + 1) ||
+            !source_receiver_expressions_known(model, function, expression->right, depth + 1) ||
+            !source_receiver_expressions_known(model, function, expression->arguments, depth + 1) ||
+            !source_receiver_statements_known(model, function, expression->control, depth + 1)) return 0;
+    }
+    return 1;
+}
+
+static int source_receiver_statements_known(const SemanticModel *model, const SemanticSymbol *function,
+                                            const AstStatement *statement,
+                                            unsigned depth) {
+    if (depth > 256) return 0;
+    for (; statement; statement = statement->next) {
+        if (!source_receiver_expressions_known(model, function, statement->expression, depth + 1) ||
+            !source_receiver_expressions_known(model, function, statement->value, depth + 1) ||
+            !source_receiver_expressions_known(model, function, statement->result, depth + 1) ||
+            !source_receiver_statements_known(model, function, statement->initializer, depth + 1) ||
+            !source_receiver_statements_known(model, function, statement->body, depth + 1) ||
+            !source_receiver_statements_known(model, function, statement->else_body, depth + 1)) return 0;
+        for (const AstMatchArm *arm = statement->match_arms; arm; arm = arm->next)
+            if (!source_receiver_statements_known(model, function, arm->body, depth + 1)) return 0;
+    }
+    return 1;
+}
+
+int semantic_receiver_contract(const SemanticModel *model, size_t function_id, unsigned *mode) {
+    if (!model || !mode || function_id >= model->symbol_count) return 0;
+    const SemanticSymbol *function = &model->symbols[function_id];
+    const AstDeclarationNode *declaration = function->declaration;
+    if (function->kind != SEMANTIC_SYMBOL_FUNCTION || !declaration) return 0;
+    if (function->source_only) {
+        if (!declaration->is_source_closure) {
+            if (function->owner_symbol_id >= model->symbol_count ||
+                (model->symbols[function->owner_symbol_id].kind != SEMANTIC_SYMBOL_STRUCT &&
+                 model->symbols[function->owner_symbol_id].kind != SEMANTIC_SYMBOL_ENUM) ||
+                !source_receiver_statements_known(model, function, declaration->as.function.body, 0)) return 0;
+            *mode = declaration->as.function.receiver_mode;
+            Analyzer lookup = {.model = (SemanticModel *)model, .program = (AstProgram *)function->source_program};
+            if (*mode < 1 && semantic_function_mutates_receiver(&lookup, function_id)) *mode = 1;
+            return 1;
+        }
+        int found = 0;
+        unsigned common = 0;
+        for (size_t i = 0; i < model->symbol_count; i++) {
+            const SemanticSymbol *checked = &model->symbols[i];
+            if (checked->source_only || checked->kind != SEMANTIC_SYMBOL_FUNCTION || !checked->declaration ||
+                (checked->declaration != declaration && checked->declaration->source_origin != declaration)) continue;
+            unsigned candidate;
+            if (!semantic_receiver_contract(model, i, &candidate)) continue;
+            if (found && candidate != common) return 0;
+            common = candidate;
+            found = 1;
+        }
+        if (found) *mode = common;
+        return found;
+    }
+    *mode = declaration->as.function.receiver_mode;
+    const AstParameter *parameter = declaration->as.function.parameters;
+    if (declaration->is_source_closure && parameter && parameter->name_token < function->source_program->token_count &&
+        function->source_program->tokens[parameter->name_token].span.begin.line == 0) {
+        /* Consuming closure lowering introduces an owned environment parameter. */
+        *mode = 2;
+        return 1;
+    }
+    Analyzer lookup = {.model = (SemanticModel *)model, .program = (AstProgram *)function->source_program};
+    if (*mode < 1 && semantic_function_mutates_receiver(&lookup, function_id)) *mode = 1;
+    return 1;
 }
 
 static void deactivate_borrower(BorrowChecker *checker, size_t borrower_symbol,

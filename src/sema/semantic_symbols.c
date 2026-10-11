@@ -7,6 +7,73 @@
 #include <stdlib.h>
 #include <string.h>
 
+static void completion_add(Analyzer *analyzer,size_t id) {
+    SemanticModel *model=analyzer->model;
+    if(id>=model->symbol_count || model->completion_count>=10000)return;
+    for(size_t i=0;i<model->completion_count;i++)if(model->completion_symbols[i]==id)return;
+    size_t *grown=realloc(model->completion_symbols,(model->completion_count+1)*sizeof(*grown));
+    if(!grown){analyzer->allocation_failed=1;return;}model->completion_symbols=grown;grown[model->completion_count++]=id;
+}
+int semantic_collect_completion(Analyzer *analyzer,AstExpression *expression) {
+    const SemanticCompletionQuery *query=analyzer->model->completion_query;
+    if(!query || (expression->kind!=AST_EXPR_NAME && expression->kind!=AST_EXPR_MEMBER) ||
+       expression->value_token>=analyzer->program->token_count || strcmp(analyzer->program->source_path,query->source_path))return 0;
+    const AstToken *token=&analyzer->program->tokens[expression->value_token];
+    if(token->span.begin.line!=query->position.line || token->span.begin.column!=query->position.column || strcmp(token->lexeme,query->marker))return 0;
+    analyzer->model->completion_found=1;
+    const DmmPackage *package=NULL;size_t owner=AST_SYMBOL_NONE;int type_receiver=0;
+    if(expression->kind==AST_EXPR_MEMBER && expression->left) {
+        AstExpression *receiver=expression->left;
+        if(receiver->kind==AST_EXPR_NAME && !find_local(analyzer,receiver->value_token)) {
+            for(const AstDeclarationNode *d=analyzer->program->root;d;d=d->next)if(d->kind==AST_DECL_IMPORT)
+                for(const AstImportPath *p=d->as.import_decl.paths;p;p=p->next)
+                    if(p->alias && p->resolved_program && same_name(analyzer->program,receiver->value_token,p->alias))package=p->resolved_program->package;
+        }
+        if(!package) {
+            analyze_expression(analyzer,receiver);
+            if(receiver->resolved_pointer_depth>(receiver->resolved_borrow_kind!=AST_BORROW_NONE) || receiver->resolved_outer_pointer_depth)return 1;
+            owner=receiver->resolved_named_symbol_id;
+            if(receiver->kind==AST_EXPR_NAME && receiver->resolved_symbol_id<analyzer->model->symbol_count) {
+                SemanticSymbolKind receiver_kind=analyzer->model->symbols[receiver->resolved_symbol_id].kind;
+                type_receiver=receiver_kind==SEMANTIC_SYMBOL_STRUCT||receiver_kind==SEMANTIC_SYMBOL_ENUM||receiver_kind==SEMANTIC_SYMBOL_INTERFACE;
+            }
+            if(owner==AST_SYMBOL_NONE)return 1;
+        }
+    } else {
+        for(LocalSymbol *local=analyzer->locals;local;local=local->next) {
+            if(local->moved || !local->initialized)continue;
+            int shadowed=0;for(LocalSymbol *earlier=analyzer->locals;earlier!=local;earlier=earlier->next)
+                if(same_name(analyzer->program,earlier->name_token,ast_program_lexeme(analyzer->program,local->name_token)))shadowed=1;
+            if(!shadowed)completion_add(analyzer,local->symbol_id);
+        }
+    }
+    for(size_t i=0;i<analyzer->model->symbol_count;i++) {
+        const SemanticSymbol *symbol=&analyzer->model->symbols[i];const AstDeclarationNode *d=symbol->declaration;
+        if(symbol->kind==SEMANTIC_SYMBOL_LOCAL||symbol->kind==SEMANTIC_SYMBOL_PARAMETER||(d&&d->generic_origin))continue;
+        if(package) {
+            if(symbol->owner_symbol_id!=AST_SYMBOL_NONE || !d || !d->is_public ||
+               (symbol->source_program->package!=package && !ast_package_reexports(package,symbol->source_program->package)))continue;
+        } else if(expression->kind==AST_EXPR_MEMBER) {
+            if(symbol->owner_symbol_id!=owner)continue;
+            int visible=same_package(analyzer->program,symbol->source_program);
+            if(d && d->is_public)visible=1;
+            if(symbol->kind==SEMANTIC_SYMBOL_FIELD && symbol->node && ((const AstField *)symbol->node)->is_public)visible=1;
+            if(symbol->kind==SEMANTIC_SYMBOL_ENUM_VALUE && symbol->node && ((const AstEnumValue *)symbol->node)->is_public)visible=1;
+            if(!visible)continue;
+            if(symbol->kind==SEMANTIC_SYMBOL_FUNCTION && d) {
+                if(d->as.function.is_static!=type_receiver || !semantic_method_constraints_satisfied(analyzer,symbol->source_program,d))continue;
+                if(expression->left->resolved_borrow_kind==AST_BORROW_IMMUTABLE && d->as.function.receiver_mode!=0)continue;
+            }
+        } else {
+            if(!symbol_matches_scope(analyzer->program,symbol,ast_program_lexeme(symbol->source_program,symbol->name_token)))continue;
+            int shadowed=0;for(LocalSymbol *local=analyzer->locals;local;local=local->next)if(same_name(analyzer->program,local->name_token,ast_program_lexeme(symbol->source_program,symbol->name_token)))shadowed=1;
+            if(shadowed)continue;
+        }
+        completion_add(analyzer,i);
+    }
+    expression->resolved_type=TYPE_INT;return 1;
+}
+
 int same_name(const AstProgram *program, size_t token, const char *name) {
     if (program == NULL || name == NULL || token >= program->token_count) return 0;
     const char *lexeme = program->tokens[token].lexeme;
@@ -266,9 +333,9 @@ static int dump_quoted(FILE *output, const char *text) {
 static const char *symbol_kind_name(SemanticSymbolKind kind) {
     static const char *names[] = {
         "function", "struct", "enum", "interface", "import", "field", "enum-value",
-        "parameter", "local", "constant", "variable"
+        "parameter", "local", "constant", "variable", "type-parameter", "lifetime-parameter"
     };
-    return kind >= SEMANTIC_SYMBOL_FUNCTION && kind <= SEMANTIC_SYMBOL_VARIABLE ? names[kind] : "invalid";
+    return kind >= SEMANTIC_SYMBOL_FUNCTION && kind <= SEMANTIC_SYMBOL_LIFETIME_PARAMETER ? names[kind] : "invalid";
 }
 
 static const char *resolved_type_name(DataType type) {

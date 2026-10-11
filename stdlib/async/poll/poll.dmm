@@ -63,9 +63,9 @@ pub enum CancelAck {
 // Ready from cancelPoll confirms that the poller has ended all child work and
 // released every wake registration. Pending leaves its pinned state intact.
 pub interface Poller<T> {
-    pub func poll(context:&mut Context) -> Poll<T>;
+    pub mut func poll(context:&mut Context) -> Poll<T>;
 
-    pub func cancelPoll(context:&mut Context) -> Poll<CancelAck>;
+    pub mut func cancelPoll(context:&mut Context) -> Poll<CancelAck>;
 }
 
 // A pending result retains ownership of the handle and all of its loans.

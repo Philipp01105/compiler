@@ -621,6 +621,7 @@ int generic_bounds_satisfied(Analyzer *a, const AstProgram *declaration_unit,
             while (source_argument != NULL &&
                    concrete_count < DMM_MAX_TYPE_PARAMETERS) {
                 AstType concrete = source_argument->type;
+                int substituted = 0;
                 if (concrete.kind == AST_TYPE_NAMED &&
                     concrete.arguments == NULL) {
                     const char *name = ast_program_lexeme(
@@ -634,9 +635,12 @@ int generic_bounds_satisfied(Analyzer *a, const AstProgram *declaration_unit,
                                         declaration_unit,
                                         parameter->name_token))) {
                             concrete = arguments[parameter_index];
+                            substituted = 1;
                             break;
                         }
                 }
+                if (!substituted)
+                    concrete = argument_type_copy(a, declaration_unit, concrete);
                 concrete_arguments[concrete_count].type = concrete;
                 concrete_arguments[concrete_count].next = NULL;
                 if (concrete_count != 0)
@@ -645,9 +649,11 @@ int generic_bounds_satisfied(Analyzer *a, const AstProgram *declaration_unit,
                 concrete_count++;
                 source_argument = source_argument->next;
             }
+            if (source_argument != NULL || a->allocation_failed) return 0;
             concrete_bound.arguments =
                     concrete_count == 0 ? NULL : &concrete_arguments[0];
             if (required_interface->generic_parameters != NULL) {
+                semantic_record_interface_context(a->model, interface_id, a->program, &concrete_bound);
                 if (!semantic_implements_specialized_interface(
                     a->model, interface_id, owner_id, a->program,
                     &concrete_bound))
