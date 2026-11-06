@@ -254,6 +254,19 @@ TokenStream *tokenize_source(const char *source, size_t length, const char *file
     return tokenize_source_with_interner(source, length, filename, NULL);
 }
 
+static int decode_string_escape(char escaped, char *decoded) {
+    switch (escaped) {
+        case 'n': *decoded = '\n'; return 1;
+        case 't': *decoded = '\t'; return 1;
+        case 'r': *decoded = '\r'; return 1;
+        case '0': *decoded = '\0'; return 1;
+        case '\\': *decoded = '\\'; return 1;
+        case '"': *decoded = '"'; return 1;
+        case '\'': *decoded = '\''; return 1;
+        default: *decoded = escaped; return 0;
+    }
+}
+
 TokenStream *tokenize_source_with_interner(const char *source, size_t length,
                                            const char *filename,
                                            StringInterner *interner) {
@@ -311,6 +324,97 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
             continue;
         }
 
+        if (c == '"' && i + 2 < length && source[i + 1] == '"' && source[i + 2] == '"') {
+            int start_col = column;
+            int start_line = line;
+            i += 3;
+            column += 3;
+
+            char str[MAX_TOKEN] = {0};
+            int j = 0;
+
+            while (i < length && j < MAX_TOKEN - 1 &&
+                   !(i + 2 < length && source[i] == '"' && source[i + 1] == '"' && source[i + 2] == '"')) {
+                if (source[i] == '\n' || source[i] == '\r') {
+                    if (source[i] == '\r' && i + 1 < length && source[i + 1] == '\n') i++;
+                    i++;
+                    str[j++] = '\n';
+                    line++;
+                    column = 1;
+                    continue;
+                }
+                if (source[i] == '\\' && i + 1 < length &&
+                    source[i + 1] != '\n' && source[i + 1] != '\r') {
+                    i++;
+                    column++;
+                    if (!decode_string_escape(source[i], &str[j])) {
+                        error_report_with_suggestion(global_error_handler, SEVERITY_ERROR, line, column - 1,
+                                                     ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_ESCAPE, filename,
+                                                     "Supported string escapes: \\n, \\t, \\r, \\0, \\\\, and \\\"",
+                                                     "Unknown escape sequence '\\%c'", source[i]);
+                        stream->has_error = 1;
+                    }
+                    j++;
+                    i++;
+                    column++;
+                    continue;
+                }
+
+                unsigned char byte = (unsigned char) source[i];
+                str[j++] = source[i++];
+                if (byte >= 0x80) {
+                    int continuation_count = 0;
+                    while (i < length && continuation_count < 3 &&
+                           ((unsigned char) source[i] & 0xC0) == 0x80 && j < MAX_TOKEN - 1) {
+                        str[j++] = source[i++];
+                        continuation_count++;
+                    }
+                }
+                column++;
+            }
+
+            str[j] = '\0';
+            int closed = i + 2 < length && source[i] == '"' && source[i + 1] == '"' && source[i + 2] == '"';
+
+            if (j == MAX_TOKEN - 1 && !closed) {
+                error_report(global_error_handler, SEVERITY_ERROR, start_line, start_col,
+                             ERROR_CATEGORY_LEXER, ERR_LEX_TOKEN_TOO_LONG, filename,
+                             "Token exceeds maximum length of %d bytes", MAX_TOKEN - 1);
+                stream->has_error = 1;
+                while (i < length &&
+                       !(i + 2 < length && source[i] == '"' && source[i + 1] == '"' && source[i + 2] == '"')) {
+                    if (source[i] == '\n' || source[i] == '\r') {
+                        if (source[i] == '\r' && i + 1 < length && source[i + 1] == '\n') i++;
+                        line++;
+                        column = 1;
+                    } else {
+                        column++;
+                    }
+                    i++;
+                }
+                if (i + 2 < length) {
+                    i += 3;
+                    column += 3;
+                }
+            } else if (closed) {
+                i += 3;
+                column += 3;
+                int previous_count = stream->count;
+                add_token(stream, TOKEN_STRING_LITERAL, str, start_line, start_col);
+                if (stream->count > previous_count) {
+                    stream->tokens[stream->count - 1].end_line = line;
+                    stream->tokens[stream->count - 1].end_column = column;
+                }
+            } else {
+                error_report(global_error_handler, SEVERITY_ERROR, start_line, start_col,
+                             ERROR_CATEGORY_LEXER, ERR_LEX_UNCLOSED_STRING, filename,
+                             "Unclosed multiline string literal");
+                stream->has_error = 1;
+            }
+
+            continue;
+        }
+
         if (c == '"') {
             int start_col = column;
             int start_line = line;
@@ -325,30 +429,14 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
                     i++;
                     column++;
 
-                    switch (source[i]) {
-                        case 'n': str[j++] = '\n';
-                            break;
-                        case 't': str[j++] = '\t';
-                            break;
-                        case 'r': str[j++] = '\r';
-                            break;
-                        case '0': str[j++] = '\0';
-                            break;
-                        case '\\': str[j++] = '\\';
-                            break;
-                        case '"': str[j++] = '"';
-                            break;
-                        case '\'': str[j++] = '\'';
-                            break;
-                        default:
-                            error_report_with_suggestion(global_error_handler, SEVERITY_ERROR, line, column - 1,
-                                                         ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_ESCAPE, filename,
-                                                         "Supported string escapes: \\n, \\t, \\r, \\0, \\\\, and \\\"",
-                                                         "Unknown escape sequence '\\%c'", source[i]);
-                            stream->has_error = 1;
-                            str[j++] = source[i];
-                            break;
+                    if (!decode_string_escape(source[i], &str[j])) {
+                        error_report_with_suggestion(global_error_handler, SEVERITY_ERROR, line, column - 1,
+                                                     ERROR_CATEGORY_LEXER, ERR_LEX_INVALID_ESCAPE, filename,
+                                                     "Supported string escapes: \\n, \\t, \\r, \\0, \\\\, and \\\"",
+                                                     "Unknown escape sequence '\\%c'", source[i]);
+                        stream->has_error = 1;
                     }
+                    j++;
                 } else {
                     unsigned char byte = (unsigned char) source[i];
                     if (byte >= 0x80) {

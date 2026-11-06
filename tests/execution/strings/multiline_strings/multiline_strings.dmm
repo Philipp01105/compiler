@@ -1,0 +1,10 @@
+package main;
+import (
+    "stdlib/io"
+);
+
+func main() -> void {
+    io.print("""first
+second\n
+third""");
+}

@@ -1239,7 +1239,9 @@ floating        = digit, { digit }, ".", digit, { digit }, [exponent]
 
 escape          = "\\", ("n" | "t" | "r" | "0" | "\\" | "'" | '"') ;
 character       = "'", (escape | character-byte), "'" ;
-string          = '"', { escape | string-byte }, '"' ;
+ordinary-string = '"', { escape | string-byte }, '"' ;
+multiline-string = '"""', { escape | multiline-string-byte | line-terminator }, '"""' ;
+string          = ordinary-string | multiline-string ;
 
 keyword         = "func" | "var" | "return" | "for" | "if" | "else"
                 | "while" | "const" | "break" | "continue"
@@ -1256,7 +1258,10 @@ primitive-type  = "int" | "char" | "byte" | "bit"
 ```
 
 `character-byte` excludes quote, backslash, and line terminators. `string-byte` excludes double quote, backslash, and
-line terminators. A leading sign is parsed as a unary operator rather than as part of a numeric token.
+line terminators. `multiline-string-byte` excludes backslash and the closing `"""` sequence. Multiline strings process
+the same escapes as ordinary strings and normalize LF, CRLF and CR source line endings to `\n` in the string value.
+All other content, including indentation and a line break immediately after the opening delimiter, is preserved.
+A leading sign is parsed as a unary operator rather than as part of a numeric token.
 
 ### Program grammar
 

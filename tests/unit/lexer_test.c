@@ -67,6 +67,36 @@ int main(void) {
     assert(tokens->tokens[1].end_column == tokens->tokens[1].column + 4);
     free_token_stream(tokens);
 
+    const char multiline[] = "\"\"\"first\r\nsecond\\nthird\"\"\" next";
+    tokens = lex(multiline, sizeof(multiline) - 1);
+    assert(tokens != NULL && !tokens->has_error && tokens->count == 3);
+    assert(tokens->tokens[0].type == TOKEN_STRING_LITERAL);
+    assert(strcmp(tokens->tokens[0].value, "first\nsecond\nthird") == 0);
+    assert(tokens->tokens[0].line == 1 && tokens->tokens[0].column == 1);
+    assert(tokens->tokens[0].end_line == 2 && tokens->tokens[0].end_column == 17);
+    assert(tokens->tokens[1].type == TOKEN_IDENTIFIER);
+    assert(tokens->tokens[1].line == 2 && tokens->tokens[1].column == 18);
+    free_token_stream(tokens);
+
+    const char multiline_cr[] = "\"\"\"left\rright\"\"\"";
+    tokens = lex(multiline_cr, sizeof(multiline_cr) - 1);
+    assert(tokens != NULL && !tokens->has_error && tokens->count == 2);
+    assert(strcmp(tokens->tokens[0].value, "left\nright") == 0);
+    assert(tokens->tokens[0].end_line == 2);
+    free_token_stream(tokens);
+
+    const char multiline_quotes[] = "\"\"\"say \"hello\" and \"\" goodbye\"\"\"";
+    tokens = lex(multiline_quotes, sizeof(multiline_quotes) - 1);
+    assert(tokens != NULL && !tokens->has_error && tokens->count == 2);
+    assert(strcmp(tokens->tokens[0].value, "say \"hello\" and \"\" goodbye") == 0);
+    free_token_stream(tokens);
+
+    const char multiline_unclosed[] = "\"\"\"unfinished\nstring";
+    tokens = lex(multiline_unclosed, sizeof(multiline_unclosed) - 1);
+    assert(tokens != NULL && tokens->has_error);
+    free_token_stream(tokens);
+    error_handler_reset(handler);
+
     const char block[] = "/* documentation\n second line */func";
     tokens = lex(block, sizeof(block) - 1);
     assert(tokens != NULL && !tokens->has_error && tokens->tokens[0].type == TOKEN_KEYWORD_FUNC);

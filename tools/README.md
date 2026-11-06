@@ -54,6 +54,6 @@ Only valid import grouping and ordering may change the token structure.
 It supports deliberately malformed diagnostic fixtures, including incomplete
 numeric exponents, without repairing their errors. Unicode table generation
 uses the same formatter, so regenerating data preserves the source style.
-Run `python -m unittest discover -s tools -p test_format_dmm.py` for formatter
+Run `python -m unittest discover -s tools -p "test_format*.py"` for formatter
 regressions and `python stdlib/unicode/generate.py --check` for generated data
 consistency. `format_source(source, width=100)` is the reusable API.

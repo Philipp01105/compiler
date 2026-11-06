@@ -48,6 +48,19 @@ def tokenize(source: str) -> list[Token]:
         elif char == "'" and tokens and tokens[-1].text in ("&", "<", ",") and re.match(r"'[A-Za-z_]\w*", source[position:]) and not re.match(r"'[A-Za-z_]\w*'", source[position:]):
             position += len(re.match(r"'[A-Za-z_]\w*", source[position:]).group())
             kind = "lifetime"
+        elif source.startswith('"""', position):
+            position += 3
+            while position < len(source) and not source.startswith('"""', position):
+                if (source[position] == "\\" and position + 1 < len(source) and
+                        source[position + 1] not in "\r\n"):
+                    position += 2
+                else:
+                    position += 1
+            if source.startswith('"""', position):
+                position += 3
+                kind = "literal"
+            else:
+                kind = "unclosed"
         elif char in "\"'":
             position += 1
             while position < len(source) and source[position] not in "\r\n":
@@ -332,7 +345,7 @@ def wrap_expression_lines(source: str, width: int) -> str:
     binary = {"&&", "||", "+", "-", "*", "/", "%", "==", "!=", "<", ">", "<=", ">=", "|", "^"}
     protected = set()
     for token in tokenize(source):
-        if token.kind == "comment":
+        if token.kind == "comment" or (token.kind == "literal" and "\n" in token.text):
             protected.update(range(source.count("\n", 0, token.start), source.count("\n", 0, token.end) + 1))
     for number, line in enumerate(source.split("\n")[:-1]):
         indent = len(line) - len(line.lstrip())
