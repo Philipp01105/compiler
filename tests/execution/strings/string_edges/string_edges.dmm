@@ -18,4 +18,6 @@ func main() -> void {
     io.println(('\\').(int));
     io.println(('\"').(int));
     io.println(('\'').(int));
+    io.println(echo(r"C:\new\tools\file.dmm"));
+    io.println(r"\n\t\q");
 }

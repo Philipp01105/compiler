@@ -1239,7 +1239,9 @@ floating        = digit, { digit }, ".", digit, { digit }, [exponent]
 
 escape          = "\\", ("n" | "t" | "r" | "0" | "\\" | "'" | '"') ;
 character       = "'", (escape | character-byte), "'" ;
-string          = '"', { escape | string-byte }, '"' ;
+ordinary-string = '"', { escape | string-byte }, '"' ;
+raw-string      = "r", '"', { raw-string-byte }, '"' ;
+string          = ordinary-string | raw-string ;
 
 keyword         = "func" | "var" | "return" | "for" | "if" | "else"
                 | "while" | "const" | "break" | "continue"
@@ -1256,7 +1258,10 @@ primitive-type  = "int" | "char" | "byte" | "bit"
 ```
 
 `character-byte` excludes quote, backslash, and line terminators. `string-byte` excludes double quote, backslash, and
-line terminators. A leading sign is parsed as a unary operator rather than as part of a numeric token.
+line terminators. `raw-string-byte` excludes only double quote and line terminators. A raw string has the same `string`
+type and value semantics as an ordinary string, but backslashes are literal bytes and do not introduce escapes. For
+example, `r"C:\tools\new"` contains both backslashes as written. A leading sign is parsed as a unary operator rather
+than as part of a numeric token.
 
 ### Program grammar
 

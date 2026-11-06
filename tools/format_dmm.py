@@ -48,6 +48,15 @@ def tokenize(source: str) -> list[Token]:
         elif char == "'" and tokens and tokens[-1].text in ("&", "<", ",") and re.match(r"'[A-Za-z_]\w*", source[position:]) and not re.match(r"'[A-Za-z_]\w*'", source[position:]):
             position += len(re.match(r"'[A-Za-z_]\w*", source[position:]).group())
             kind = "lifetime"
+        elif source.startswith('r"', position):
+            position += 2
+            while position < len(source) and source[position] not in '"\r\n':
+                position += 1
+            if position < len(source) and source[position] == '"':
+                position += 1
+                kind = "literal"
+            else:
+                kind = "unclosed"
         elif char in "\"'":
             position += 1
             while position < len(source) and source[position] not in "\r\n":
@@ -248,7 +257,8 @@ def normalize_imports(source: str) -> str:
             if tokens[i].kind == "word":
                 alias = tokens[i].text + " "
                 i += 1
-            if i >= len(tokens) or tokens[i].kind != "literal" or not tokens[i].text.startswith('"'):
+            if (i >= len(tokens) or tokens[i].kind != "literal" or
+                    not tokens[i].text.startswith(('"', 'r"'))):
                 return source
             path = tokens[i].text
             end = tokens[i].end

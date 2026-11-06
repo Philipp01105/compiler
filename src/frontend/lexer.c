@@ -311,6 +311,64 @@ TokenStream *tokenize_source_with_interner(const char *source, size_t length,
             continue;
         }
 
+        if (c == 'r' && i + 1 < length && source[i + 1] == '"') {
+            int start_col = column;
+            int start_line = line;
+            i += 2;
+            column += 2;
+
+            char str[MAX_TOKEN] = {0};
+            int j = 0;
+
+            while (i < length && source[i] != '"' && source[i] != '\n' && source[i] != '\r' &&
+                   j < MAX_TOKEN - 1) {
+                unsigned char byte = (unsigned char) source[i];
+                str[j++] = source[i++];
+                if (byte >= 0x80) {
+                    int continuation_count = 0;
+                    while (i < length && continuation_count < 3 &&
+                           ((unsigned char) source[i] & 0xC0) == 0x80 && j < MAX_TOKEN - 1) {
+                        str[j++] = source[i++];
+                        continuation_count++;
+                    }
+                }
+                column++;
+            }
+
+            str[j] = '\0';
+
+            if (j == MAX_TOKEN - 1 && i < length && source[i] != '"') {
+                error_report(global_error_handler, SEVERITY_ERROR, start_line, start_col,
+                             ERROR_CATEGORY_LEXER, ERR_LEX_TOKEN_TOO_LONG, filename,
+                             "Token exceeds maximum length of %d bytes", MAX_TOKEN - 1);
+                stream->has_error = 1;
+                while (i < length && source[i] != '"' && source[i] != '\n' && source[i] != '\r') {
+                    i++;
+                    column++;
+                }
+                if (i < length && source[i] == '"') {
+                    i++;
+                    column++;
+                }
+            } else if (i < length && source[i] == '"') {
+                i++;
+                column++;
+                int previous_count = stream->count;
+                add_token(stream, TOKEN_STRING_LITERAL, str, start_line, start_col);
+                if (stream->count > previous_count) {
+                    stream->tokens[stream->count - 1].end_line = line;
+                    stream->tokens[stream->count - 1].end_column = column;
+                }
+            } else {
+                error_report(global_error_handler, SEVERITY_ERROR, start_line, start_col,
+                             ERROR_CATEGORY_LEXER, ERR_LEX_UNCLOSED_STRING, filename,
+                             "Unclosed raw string literal");
+                stream->has_error = 1;
+            }
+
+            continue;
+        }
+
         if (c == '"') {
             int start_col = column;
             int start_line = line;

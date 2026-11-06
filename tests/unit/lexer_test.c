@@ -93,6 +93,26 @@ int main(void) {
     free_token_stream(tokens);
     error_handler_reset(handler);
 
+    const char raw_string[] = "r\"C:\\new\\tools\\file.dmm\"";
+    tokens = lex(raw_string, sizeof(raw_string) - 1);
+    assert(tokens != NULL && !tokens->has_error && tokens->count == 2);
+    assert(tokens->tokens[0].type == TOKEN_STRING_LITERAL);
+    assert(strcmp(tokens->tokens[0].value, "C:\\new\\tools\\file.dmm") == 0);
+    assert(tokens->tokens[0].column == 1 && tokens->tokens[0].end_column == 25);
+    free_token_stream(tokens);
+
+    const char raw_unknown_escape[] = "r\"\\q\\n\\t\"";
+    tokens = lex(raw_unknown_escape, sizeof(raw_unknown_escape) - 1);
+    assert(tokens != NULL && !tokens->has_error && tokens->count == 2);
+    assert(strcmp(tokens->tokens[0].value, "\\q\\n\\t") == 0);
+    free_token_stream(tokens);
+
+    const char raw_unclosed[] = "r\"unfinished";
+    tokens = lex(raw_unclosed, sizeof(raw_unclosed) - 1);
+    assert(tokens != NULL && tokens->has_error);
+    free_token_stream(tokens);
+    error_handler_reset(handler);
+
     const char unclosed[] = "\"missing";
     tokens = lex(unclosed, sizeof(unclosed) - 1);
     assert(tokens != NULL && tokens->has_error);

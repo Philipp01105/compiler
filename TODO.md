@@ -114,7 +114,8 @@ model. The normative rules and current restrictions are maintained in [LANGUAGE_
 ### Source language and declarations
 
 - [ ] Decide whether identifiers remain ASCII-only or gain normalized Unicode support.
-- [ ] Add raw and multiline string literals with unambiguous escaping and source locations.
+- [x] Add raw string literals with unambiguous escaping and source locations.
+- [ ] Add multiline string literals with explicit indentation and line-ending rules.
 - [ ] Specify documentation comments and expose their structure to tooling.
 - [ ] Decide whether partial declarations or declaration merging are needed; otherwise document their rejection.
 
